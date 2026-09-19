@@ -3614,27 +3614,93 @@ describe("CellTurn unsupported claim", () => {
     })
   })
 
-  it("hands back a completion the record does not support, and takes the next answer as written", async () => {
-    const { events, model } = await claiming(
-      [
-        editing,
-        finishing("check src/a.py", "rewrote the redirect handler and every caller of it"),
-        finishing("check src/a.py", "only the redirect handler changed; check src/a.py is green")
-      ],
+  const overclaimed = "rewrote the redirect handler and every caller of it"
+  const proven = "only the redirect handler changed; check src/a.py is green"
+
+  /** Jev answers by the sentence it is shown, so the two claims read apart. */
+  const byClaim = (request: Evaluator.Request): Readonly<Record<string, Evaluator.ScriptedAnswer>> =>
+    JSON.stringify(request.state).includes(overclaimed)
+      ? { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } }
+      : { complete: { probability: 0.95 }, overclaims: { probability: 0.02 } }
+
+  it("hands back a completion the record does not support, and judges the answer that comes back", async () => {
+    const asked: Array<Evaluator.Request> = []
+    const { events, model } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 3,
+        repeatCap: 0
+      }),
+      flows: [shell, editor],
+      script: [editing, finishing("check src/a.py", overclaimed), finishing("check src/a.py", proven)].map(emits),
+      calls: [edited, green, green],
+      tree: "a.py=base",
+      evaluator: Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return byClaim(request)
+      })
+    })
+
+    // Two readings, not one. The frame written to answer a claim demand is
+    // read like any other completion: a cap that stopped the brake here is
+    // what let an identical re-claim stand unread on a live seat.
+    expect(of(events, "claim-demanded")).toEqual([
+      expect.objectContaining({ demanded: true, nextFrame: 2, complete: 0.6, overclaims: 0.88 }),
+      expect.objectContaining({ demanded: false, complete: 0.95, overclaims: 0.02 })
+    ])
+    expect(asked).toHaveLength(2)
+    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unsupported claim")
+    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unsupported claim")
+    // The proven answer stands, on the frame it was written on: proving a
+    // claim costs the honest run no frame it would not have spent anyway.
+    expect(of(events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: proven })
+    ])
+  })
+
+  it("ends the run when the bounced claim comes back unproven, so a false answer never stands", async () => {
+    const { asked, events, failure } = await claiming(
+      [editing, finishing("check src/a.py", overclaimed), finishing("check src/a.py", overclaimed)],
       [edited, green, green],
       { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } }
     )
 
-    // One reading, and one only: the cap is spent before the request, so the
-    // frame written to answer the demand is neither judged nor paid for.
+    // The live defect, in one case: frame 1 bounced, the identical sentence
+    // returned, and it used to be accepted as the run's final answer.
+    expect(asked).toHaveLength(2)
     expect(of(events, "claim-demanded")).toEqual([
-      expect.objectContaining({ demanded: true, nextFrame: 2, complete: 0.6, overclaims: 0.88 })
+      expect.objectContaining({ demanded: true, nextFrame: 2 }),
+      expect.objectContaining({ demanded: false, nextFrame: 3 })
     ])
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Unsupported claim")
-    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Unsupported claim")
-    expect(of(events, "resolved")[0]?.message.content).toEqual([
-      expect.objectContaining({ text: "only the redirect handler changed; check src/a.py is green" })
-    ])
+    expect(failure).toMatchObject({
+      code: "claim_unproven",
+      message: expect.stringContaining("came back still unproven")
+    })
+    expect(of(events, "resolved")).toHaveLength(0)
+  })
+
+  it("never restores a bounced claim on the budget notice", async () => {
+    const { events } = await claiming(
+      // Frame 2 claims and is bounced; frame 3 works instead of completing, and
+      // the budget ends the run there.
+      [editing, finishing("check src/a.py", overclaimed), editing],
+      [edited, green, edited],
+      { complete: { probability: 0.6 }, overclaims: { probability: 0.88 } },
+      { maxFrames: 3 }
+    )
+
+    const resolved = JSON.stringify(of(events, "resolved")[0]?.message.content)
+    expect(resolved).toContain("The frame budget of 3 is exhausted")
+    // The measured demands keep their bounced answer for exactly this notice.
+    // This one may not: the sentence is the thing the brake refused.
+    expect(resolved).not.toContain(overclaimed)
+    expect(resolved).not.toContain("stands here rather than being lost")
   })
 
   it("fails the run when nothing could judge the claim, and names the reason", async () => {

@@ -550,16 +550,23 @@ export class NarrowOnlyDemanded extends Schema.TaggedClass<NarrowOnlyDemanded>(
  * a model's reading that exists nowhere else. Without the passing readings the
  * record would answer "how often did it fire" and could never answer "how
  * often did it agree", which is the only question that says whether arming it
- * was right. `demanded` is the field that separates the two, and a reading
- * with `demanded: false` cost the run nothing and changed nothing.
+ * was right. `demanded` is the field that separates them, and it says exactly one
+ * thing: whether this reading handed the completion back for a frame. A
+ * reading comes out three ways, not two. It passes, and cost the run nothing.
+ * It demands, and cost the run a frame. Or it reads against a run with no
+ * bounce left to spend, where `demanded` is false and the run ends on
+ * `CompletionClaim.unproven`: the verdict is in the run's failure, and the two
+ * probabilities here are what a grader re-applies a threshold to either way.
  *
  * `complete` and `overclaims` are the transport's probabilities for the
  * classifier's two questions, verbatim, so a grader can re-apply any
  * threshold to a whole wave without re-asking. `latencyMs` is what the
  * evaluation cost in wall clock on the hot path of a completion. No event is
- * written at all where no evaluator is bound, where the transport failed, or
- * where the cap was already spent: nothing was read, so there is nothing to
- * record. See `CompletionClaim`.
+ * written where the brake is disarmed (`claimCap` of zero), where the
+ * transport failed, or where there was no task and no claim to ask about:
+ * nothing was read, so there is nothing to record. A spent cap is no longer
+ * one of those cases — the reading still happens, and it is the reading that
+ * ends the run. See `CompletionClaim`.
  *
  * @category events
  * @since 1.0.0-rc.0

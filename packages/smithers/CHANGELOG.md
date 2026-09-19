@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `smithers opencode` says what its brake does: the start banner reads "Jev
+  judges every completion, and an unproven claim ends the turn." The first half
+  alone was a promise the harness cap did not keep, and this release's harness
+  change makes both halves true.
+
 ### Added
 
 - `smithers opencode [directory]`: serves OpenCode protocol v1 over the agent

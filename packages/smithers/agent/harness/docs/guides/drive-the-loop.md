@@ -67,7 +67,7 @@ Everything else is a budget with a default; every budget's zero disarms it:
 | `narrowingCap`    | 1 (`CellTurn.defaultNarrowingDemands`)  | Completions bounced for narrowed evidence.                                                                                                |
 | `unmovedCap`      | 1 (`CellTurn.defaultUnmovedDemands`)    | Completions bounced for an unmoved tree.                                                                                                  |
 | `unresolvedCap`   | 1 (`CellTurn.defaultUnresolvedDemands`) | Completions bounced for a displaced failing check.                                                                                        |
-| `claimCap`        | 1 (`CellTurn.defaultClaimDemands`)      | Completions bounced for a claim the run's own record does not support.                                                                    |
+| `claimCap`        | 3 (`CellTurn.defaultClaimDemands`)      | Frames the run is given to prove a claim its own record does not support; past it such a claim fails the run as `claim_unproven`.         |
 | `revalidations`   | 1 (`CellTurn.defaultRevalidations`)     | In-frame answers to an unparseable cell.                                                                                                  |
 | `checkpointCap`   | 8 (`CellTurn.defaultMaxCheckpoints`)    | Trees one run may pin with `ctx.checkpoint()`.                                                                                            |
 | `approvalChannel` | `false`                                 | Whether a human can answer this run; `false` refuses a `park` and answers it in-frame.                                                    |
@@ -182,18 +182,27 @@ controller sends the task, the completion message, whether the tree moved, and
 the last check the completing frame ran to the `Evaluator` service, and Jev
 answers two questions: does the evidence show the task as stated is done, and
 does the claim assert something the evidence does not show. A probability of
-0.3 or below on the first, or 0.8 or above on the second, hands the frame back
-once, from `claimCap`, exactly as `UnmovedDemanded` does. It is a brake only: a
-confident "complete" ends no run and bypasses no other demand, and it is never
-consulted when one of the five already spoke. Every reading is journaled,
-demand or not, with both probabilities and the evaluator latency, so a wave can
-be read for agreement rather than only for firings. It never falls back: a
-completion Jev could not judge, whether the host bound no transport or the
-gateway refused, timed out or answered something that does not decode, fails
-the run as `completion_unjudged` naming the reason, rather than standing
-unjudged. The five deterministic brakes run first and unchanged, so a claim
-they bounced never reaches Jev. See
-[`CompletionClaim`](../api.md#completionclaim).
+0.3 or below on the first, or 0.8 or above on the second, hands the frame back,
+from `claimCap`, exactly as `UnmovedDemanded` does. A confident "complete" ends
+no run and bypasses no other demand, and the brake is never consulted when one
+of the five already spoke. Every reading is journaled, demand or not, with both
+probabilities and the evaluator latency, so a wave can be read for agreement
+rather than only for firings.
+
+It never falls back and it never goes quiet. A completion Jev could not judge,
+whether the host bound no transport or the gateway refused, timed out or
+answered something that does not decode, fails the run as
+`completion_unjudged` naming the reason, rather than standing unjudged. And a
+claim the record does not support fails the run as `claim_unproven` once there
+is no bounce left to spend, either because `claimCap` is used up or because no
+frame remains to hand the completion back to. The cap is the number of frames
+the run is given to prove its claim, not the number of completions that are
+read: it used to end the brake, and the second claim stood unread, which on a
+real seat let a run re-claim "the tests pass" after a bounce and finish `stop`
+on it over a repository whose test exits 1. A claim demand also clears the
+bounced completion the frame budget would otherwise restore. The five
+deterministic brakes run first and unchanged, so a claim they bounced never
+reaches Jev. See [`CompletionClaim`](../api.md#completionclaim).
 
 `SufficiencyObserved` pairs a remembered failure with a later passing check of
 the same flow, with identical or broader inputs, after a workspace mutation.

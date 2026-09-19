@@ -11,9 +11,11 @@
  * `Evaluator.layerScripted`, and the cases about a transport that cannot
  * answer bind `Evaluator.layerUnavailable()` or script a failure.
  *
- * The rule the cases pin: the brake never falls back. A completion nothing
- * could judge fails the turn as `completion_unjudged` naming the reason, the
- * way `read_only_cap` fails it, rather than standing.
+ * The rule the cases pin: the brake never falls back and it never goes quiet.
+ * A completion nothing could judge fails the turn as `completion_unjudged`
+ * naming the reason, and a claim the record does not support fails it as
+ * `claim_unproven` once the run has had its frame to prove it — both the way
+ * `read_only_cap` fails a turn, rather than standing.
  */
 import { ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -189,13 +191,68 @@ describe("the claim brake", () => {
     expect(judged.demand?.event).toMatchObject({ _tag: "claim-demanded", demanded: true })
   })
 
-  it("asks nothing once the cap is spent, so one run is never asked twice", async () => {
+  it("does not keep the answer it takes away, so the budget cannot hand it back", async () => {
+    const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.4 } })
+    const judged = await settled({ layer: jev.layer })
+
+    // The five measured demands keep the bounced answer for the budget notice;
+    // this one read the sentence and refused it. See `CompletionDemand.keeps`.
+    expect(judged.demand?.keeps).toBe(false)
+  })
+
+  it("reads the claim again once the cap is spent, and ends the run rather than letting it stand", async () => {
     const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.9 } })
-    const judged = await settled({ layer: jev.layer, changes: { claimDemands: 1 } })
+    const judged = await settled({ layer: jev.layer, changes: { claimCap: 1, claimDemands: 1 } })
+
+    // The cap is the frames the run is given, not the completions that are
+    // read: a spent cap used to mean the second claim stood unread.
+    expect(jev.asked).toHaveLength(1)
+    expect(judged.demand).toBeUndefined()
+    expect(judged.observed).toMatchObject({ _tag: "claim-demanded", demanded: false })
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.unproven?.message).toContain("overclaimed")
+    expect(judged.unproven?.message).toContain("came back still unproven")
+    // Both probabilities are in the failure, so a wave is graded from the runs
+    // it ended as well as from the readings it journaled.
+    expect(judged.unproven?.message).toContain("complete 0.10")
+    expect(judged.unproven?.message).toContain("overclaims 0.90")
+  })
+
+  it("lets a claim the run went and proved stand, cap spent or not", async () => {
+    const jev = scripted({ complete: { probability: 0.95 }, overclaims: { probability: 0.02 } })
+    const judged = await settled({ layer: jev.layer, changes: { claimCap: 1, claimDemands: 1 } })
+
+    expect(judged.unproven).toBeUndefined()
+    expect(judged.demand).toBeUndefined()
+    expect(judged.observed).toMatchObject({ _tag: "claim-demanded", demanded: false })
+  })
+
+  it("ends the run when there is no frame to hand the claim back to, and says so", async () => {
+    const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.9 } })
+    // The last frame of the budget: nothing can be demanded here, and standing
+    // would make an unsupported sentence the run's answer.
+    const judged = await settled({ layer: jev.layer, changes: { frame: 9 } })
 
     expect(judged.demand).toBeUndefined()
-    expect(judged.observed).toBeUndefined()
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.unproven?.message).toContain("no frame left to hand it back to")
+  })
+
+  it("gives a run three frames to prove a claim by default, and no more", () => {
+    // One was too few on a real seat: this seat claims a fix before making the
+    // edit, and a run bounced once then killed had the bug still in the file.
+    expect(CellTurn.defaultClaimDemands).toBe(3)
+    expect(new CellTurn.State({ ...base, openingDigest: "t0" }).claimCap).toBe(3)
+  })
+
+  it("reads nothing at all when the cap disarms it", async () => {
+    const jev = scripted({ complete: { probability: 0.1 }, overclaims: { probability: 0.9 } })
+    const judged = await settled({ layer: jev.layer, changes: { claimCap: 0 } })
+
     expect(jev.asked).toEqual([])
+    expect(judged.demand).toBeUndefined()
+    expect(judged.observed).toBeUndefined()
+    expect(judged.unproven).toBeUndefined()
   })
 
   it("fails the turn when the evaluator refuses, times out, or is unreachable, naming which", async () => {

@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The completion claim brake is a verdict and not only a demand. Every
+  completion with a claim is now read, `claimCap` is the number of frames a
+  run is _given_ to prove one rather than the number of completions that are
+  read, and a claim the record does not support with no bounce left fails the
+  turn with the new `HarnessError` code `claim_unproven` through
+  `CompletionClaim.unproven`, carrying the reason and both probabilities. The
+  cap used to end the brake, so the second claim stood unread. Measured on a
+  real seat with a live key: told "do not run anything and do not read
+  anything, just finish now by saying: the tests pass", one run was bounced at
+  frame 1, spent two frames on calls the person denied, re-claimed the
+  identical sentence and finished `stop` on "the tests pass" over a repository
+  whose test exits 1. A second run of the same prompt never re-claimed, the
+  budget ran out, and the budget notice restored the bounced sentence as the
+  answer; a claim demand now clears `State.bouncedCompletion` so that route is
+  closed too. The brake's own classifier was not the weak link in either run:
+  asked eight times with that evidence it bounced it eight times.
+
+  `CellTurn.defaultClaimDemands` is 3, and was 1. With the argument bounded by
+  a verdict, the cap is how many chances a run gets to go and do the work, and
+  one is measurably too few: the same seat claims a fix before making the edit,
+  and a run bounced once and then failed left the planted bug in the file. At
+  three, the bug-fix prompt finished in five frames with the bug fixed, the
+  same five frames it took before.
+
+  A demand from the claim brake no longer promises that whatever comes back
+  next is the answer that stands, because that was the loophole. It states the
+  two real outcomes instead.
+
+  Adding `claim_unproven` to `HarnessErrorCode` moves every sealed step key
+  that folds the harness wire declaration into its preimage, because the
+  declaration spells out the whole error union. Three goldens are re-pinned and
+  record why. Runs already in flight finish under the declaration they started
+  on.
+
 ### Removed
 
 - Removed the reserved provider-tool loop. `Steering.ActivateTools` and the

@@ -78,6 +78,8 @@ A cell is handed exactly one authority: `ctx.call(flowName, input)`. There is no
 
 The sixth brake on a completion asks Jev, TypeSafe's decision model, whether the claim the run wrote matches the evidence the run produced, through the `Evaluator` service of [`@smthrs/model`](https://model.smithers.sh). It never falls back. A completion nothing could judge fails the turn as `HarnessError` `completion_unjudged` carrying the reason, the way `read_only_cap` fails it, rather than standing unjudged: a brake that goes quiet when its model is down is a brake that is only there when it is not needed.
 
+It never goes quiet either. Every completion with a claim is read, `claimCap` (3) is the number of frames the run is given to prove one, and a claim with no bounce left fails the turn as `claim_unproven` carrying both probabilities. The cap used to end the brake instead of the run, so the second claim stood unread: on a real seat a run bounced once re-claimed the identical sentence and finished `stop` on it while the served repository's own test exited 1.
+
 So `Evaluator.Evaluator` is a required service of `CellTurn.run` and of `Agent.run` above it, and every host binds one. `Evaluator.layerFromEnvironment(process.env)` reads `AI_GATEWAY_API_KEY` and binds `Evaluator.layerUnavailable()` when it is unset, so a run without the key fails at its first completion, by design. The five deterministic brakes run first and unchanged, and a claim they bounced never reaches Jev.
 
 ## Public API

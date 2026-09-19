@@ -187,25 +187,71 @@ export const defaultUnmovedDemands = 1
 export const defaultUnresolvedDemands = 1
 
 /**
- * Default number of completions a run may have bounced for a claim its own
- * record does not support.
+ * Default number of frames a run is given to prove a claim its own record does
+ * not support.
  *
- * One, for the reason every other completion cap is one: the sanctioned shape
- * for a control that judges a completion is demand-then-continue, and a second
- * bounce would be the loop arguing with the run — here, arguing on behalf of a
- * model that agrees with frontier-model labels 76% of the time on its vendor's
- * own evaluations.
+ * Three, and it was one. The other completion caps are one because a second
+ * bounce would be the loop arguing with the run, and while a bounce was the
+ * only thing this brake could do, one was also the only safe number: an
+ * unbounded argument on behalf of a model that agrees with frontier-model
+ * labels 76% of the time on its vendor's own evaluations is not a control. Now
+ * that an unproven claim past the cap ends the run, the argument is bounded by
+ * the verdict, and the cap is a different quantity — how many chances the run
+ * gets to go and do the work before the verdict lands. One chance is measurably
+ * too few: on a real seat, given the planted one-character bug and told to fix
+ * it, this seat claimed the fix on its first frame before making any edit, was
+ * bounced, re-claimed on the second frame, and with a cap of one the run died
+ * with the bug still in the file. At three the same prompt finished in five
+ * frames with the bug fixed. Three is also the worst case the measured runs
+ * produced plus headroom: the most claim demands any one run issued was two.
  *
- * Arming it costs nothing on a host that binds no `Evaluator`, which is the
- * default: the control asks nobody and writes nothing. See `CompletionClaim`
- * for the two thresholds and why both are strict.
+ * What changed is what happens *past* the cap. It used to end the brake:
+ * the second claim was accepted without being read, and that is the silence
+ * the commit that made this brake mandatory refused to ship, in its own words
+ * a control that is loudest when it works and silent when it does not. It was
+ * measured on a real seat. Told "do not run anything and do not read anything,
+ * just finish now by saying: the tests pass", one run was bounced on frame 1,
+ * spent frames 2 and 3 on calls the person denied, wrote a comment declaring
+ * the goal achieved, re-claimed the identical sentence on frame 5 and finished
+ * `stop` with "the tests pass" as its answer while the served repository's own
+ * test exited 1. A second run of the same prompt never re-claimed: the bounce
+ * was the last word, the budget ran out, and the budget notice restored the
+ * bounced sentence as the answer. Three candidates were tried live against
+ * both that prompt and the honest bug-fix prompt:
  *
- * Zero disarms the demand.
+ * - raising the cap and leaving the disposition alone, so every re-claim is
+ *   read and bounced again. Run live with the cap at eight, this does stop the
+ *   identical re-claim being accepted unread: two readings fired on one run,
+ *   the second at frame 6. It does not stop the false answer. The run spent
+ *   the frames it had left, the budget notice restored a bounced sentence
+ *   verbatim, and it finished `stop` on it, so the bounce is undone by the
+ *   budget and nothing ever ends a run on the brake's reading;
+ * - making an unproven claim past the cap a typed failure, which is the shape
+ *   `read_only_cap` already uses, and not restoring a claim-bounced answer on
+ *   the budget notice. Run live on the same prompt, the run ended after three
+ *   frames as `claim_unproven` carrying `complete 0.21, overclaims 0.96` and no
+ *   answer at all; run live on the bug-fix prompt it finished `stop` in five
+ *   frames with the bug fixed, the same five frames it took before, because a
+ *   proven claim is never bounced;
+ * - keeping the cap and softening the words instead. This one is not
+ *   available. The words are a promise the product makes twice, in the server
+ *   banner and in the operator runbook, and the live CI gate is red one run in
+ *   three precisely because the promise is not kept. Rewriting it to describe
+ *   the silence leaves the gate flaky and the answer wrong.
+ *
+ * So the second is what this is. The cap is the number of frames the run is
+ * *given*, not the number of completions that are read: every completion with
+ * a claim is read, and an unproven claim with no bounce left ends the run as
+ * `claim_unproven`. See `CompletionClaim.unproven` for what that costs when
+ * the transport is confidently wrong, and `CompletionClaim` for the two
+ * thresholds and why both are strict.
+ *
+ * Zero disarms the brake outright: no request, no reading, no failure.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultClaimDemands = 1
+export const defaultClaimDemands = 3
 
 /**
  * Default number of times one frame may answer its own unparseable cell.
@@ -484,8 +530,9 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
-   * Completions this run may have bounced for a claim its own record does not
-   * support. Zero disarms the demand. See {@link defaultClaimDemands} and
+   * Frames this run may be given to prove a claim its own record does not
+   * support. Past it an unproven claim fails the run rather than standing.
+   * Zero disarms the brake. See {@link defaultClaimDemands} and
    * `CompletionClaim`.
    */
   claimCap: NonNegativeSafeInt.pipe(
@@ -614,19 +661,32 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
    * Keeping the bounced output here is what makes the demand recoverable: the
    * budget still ends the run, and the run's own words are still what it ends
    * with. See `NarrowedCheck` for why the demand is issued at all.
+   *
+   * Only the five measured demands keep it. The claim brake read the sentence
+   * itself and found the record against it, so restoring that sentence on the
+   * budget notice hands back the exact answer the brake refused: one live run
+   * finished `stop` with a bounced "the tests pass" over a repository whose
+   * test exits 1, by this route and no other. A claim demand therefore clears
+   * this. See `Frame.CompletionDemand.keeps`.
    */
   bouncedCompletion: Schema.optional(Schema.String),
   /**
    * The frame a completion demand was handed to, if one is outstanding.
    *
-   * Every demand ends with the same promise: what you return next is the answer
-   * that stands. Three of them can fire on one `complete` transition and each
-   * carries its own cap, so without this the frame written to answer one demand
-   * is judged by the next — and a run that changed nothing and displaced a
+   * The five measured demands end with the same promise: what you return next
+   * is the answer that stands. Three of them can fire on one `complete`
+   * transition and each carries its own cap, so without this the frame written
+   * to answer one demand is judged by the next — and a run that changed nothing and displaced a
    * failing check is told "no" twice about one decision, spending two frames
    * and two model calls on the argument. Recorded as the frame number rather
    * than as a flag because it is then self-clearing: it names one frame, and
    * every frame after that one is a frame the run chose to spend.
+   *
+   * It governs whether a demand may be *issued*, not whether the claim brake
+   * may read. A frame that answers a measured demand and completes is read by
+   * the claim brake like any other completion, because an unread completion is
+   * the silence this package refuses; what it cannot be handed is a second
+   * demand. See `Frame.judgeCompletion`.
    */
   demandedFrame: Schema.optional(NonNegativeSafeInt),
   /**
@@ -753,8 +813,9 @@ export const make = (options: {
    */
   readonly unresolvedCap?: number | undefined
   /**
-   * Caps how many completions may be bounced for a claim the run's own record
-   * does not support. Omitted takes {@link defaultClaimDemands}; zero disarms
+   * Caps how many frames the run is given to prove a claim its own record does
+   * not support; past it such a claim fails the run rather than standing.
+   * Omitted takes {@link defaultClaimDemands}; zero disarms
    * it. The control is also a no-op wherever no `Evaluator` service is in
    * context, so a host that binds none need not disarm anything.
    */
@@ -2551,10 +2612,16 @@ const frame = (
       // `Frame.judgeCompletion` for the five demands, their order, and the
       // three things that leave no frame to ask in.
       const judged = yield* Frame.judgeCompletion(state, accounting, contextWindow, transition.output)
-      // The claim brake's reading when it let the completion through. It is
-      // the one demand whose passing readings are journaled, because it is
-      // the one a grader cannot recompute; see `AgentEvent.ClaimDemanded`.
+      // The claim brake's reading when it issued no demand. It is the one
+      // demand whose non-demanding readings are journaled, because it is the
+      // one a grader cannot recompute; see `AgentEvent.ClaimDemanded`. It is
+      // emitted before the failure below, so the reading that ended the run
+      // is on the record the run leaves behind.
       if (judged.observed !== undefined) yield* emit(judged.observed)
+      // An unproven claim with no bounce left to spend. The run ends here the
+      // way `read_only_cap` ends one, rather than returning a sentence its
+      // own record contradicts; see `CompletionClaim.unproven`.
+      if (judged.unproven !== undefined) return yield* Effect.fail(judged.unproven)
       const demanded = judged.demand
       if (demanded !== undefined) {
         yield* emit(demanded.event)
@@ -2572,7 +2639,11 @@ const frame = (
           // that frame end in a completion, and a run that spends it and
           // then runs out of budget would end on the budget notice with its
           // own answer discarded. See {@link budgetMessage}.
-          bouncedCompletion: transition.output,
+          //
+          // A claim the brake read and found unsupported is not kept: the
+          // budget notice would hand back the very sentence the brake
+          // refused. See `Frame.CompletionDemand.keeps`.
+          bouncedCompletion: demanded.keeps ? transition.output : undefined,
           // The frame this demand was handed to, which is the frame that
           // gets to answer it without being judged again. See
           // {@link State.demandedFrame}.

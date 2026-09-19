@@ -14,9 +14,10 @@
  *
  * Running a model needs two keys, not one. `AI_GATEWAY_API_KEY` is the
  * second: the harness asks Jev whether a completion describes what the run
- * did, and a completion nothing judged fails the run. The verb refuses to
- * start without it rather than serving a session that breaks at the first
- * real task. `--scripted` runs no model and needs neither key.
+ * did, a completion nothing judged fails the run, and a claim the record does
+ * not support fails it too once the run has had its frames to prove it. The
+ * verb refuses to start without it rather than serving a session that breaks
+ * at the first real task. `--scripted` runs no model and needs neither key.
  *
  * @since 1.0.0
  */
@@ -175,7 +176,12 @@ export const host = async (
       environment
     })
   if (!connection.quiet) {
-    const judge = options.scripted ? "No model runs; the recorded turn replays." : "Jev judges every completion."
+    // The words and the brake have to agree. Jev reads every completion, and
+    // a claim the run's own record does not support ends the turn instead of
+    // standing as its answer; see `CompletionClaim` and the runbook.
+    const judge = options.scripted
+      ? "No model runs; the recorded turn replays."
+      : "Jev judges every completion, and an unproven claim ends the turn."
     process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
   }
   const result = await Effect.runPromiseExit(

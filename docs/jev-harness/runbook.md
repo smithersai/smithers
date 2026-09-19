@@ -4,7 +4,7 @@ This is the page to read before the first run of `smithers opencode` against the
 
 ## Export two keys, not one
 
-The harness asks Jev whether every completion describes what the run did, and it fails a run it cannot judge. That judgement rides on the Vercel AI Gateway, so a gateway key is required in addition to a model seat key.
+The harness asks Jev whether every completion describes what the run did. It fails a run it cannot judge, and it fails a run whose claim it can read the record against: a completion Jev reads as unproven is handed back for a frame, up to three times, and a claim that still does not match the record ends the turn instead of standing as its answer. That judgement rides on the Vercel AI Gateway, so a gateway key is required in addition to a model seat key.
 
 ```
 export AI_GATEWAY_API_KEY=<your Vercel AI Gateway key>
@@ -22,7 +22,7 @@ smithers opencode ~/some-repo --seat cerebras:gpt-oss-120b
 Keep the default port. The hosted app looks for `http://localhost:4096` and nothing else, so `--port` is for a second server, not for the one the app talks to. The banner names the directory and the address:
 
 ```
-Serving /Users/you/some-repo at http://127.0.0.1:4096. Open https://app.opencode.ai and allow the local network permission. Seat: cerebras:gpt-oss-120b. Jev judges every completion.
+Serving /Users/you/some-repo at http://127.0.0.1:4096. Open https://app.opencode.ai and allow the local network permission. Seat: cerebras:gpt-oss-120b. Jev judges every completion, and an unproven claim ends the turn.
 ```
 
 State lives in `<directory>/.smithers/opencode.sqlite`. One server serves one directory.
@@ -105,6 +105,8 @@ A `classify` card in the transcript, titled with the door, the state count, the 
 **`No model seat: pass --seat provider:model, set SMITHERS_SEAT or a provider key such as CEREBRAS_API_KEY, or pass --scripted to replay the recorded turn.`** No seat and no provider key is set.
 
 **`Seat cerebras:gpt-oss-120b refused the model call (quota_exceeded, HTTP 429): ... Pass --seat provider:model or set SMITHERS_SEAT to run on another seat.`** The seat, not the harness, said no. The dot goes red and names the limit.
+
+**`A completion the run's own record does not support (overclaimed): complete 0.21, overclaims 0.96. The claim was handed back for a frame and came back still unproven.`** The turn ended because the run said it was done and Jev read the run's own record against that. The two numbers are the classifier's answers to "is the task as stated done" and "does the claim assert what the evidence does not show". The run was told once what was missing and given a frame to prove it; what came back did not. There is no answer to read, by design: the alternative is a sentence nothing supports, returned with a green finish on it. Re-prompt with the part that is actually missing, or allow the call the run needs to prove its work.
 
 **`A completion no evaluator could judge (refused): The gateway answered 503`** The turn ended because Jev could not judge its completion. The gateway is retried up to three times over eight seconds first, so this means the gateway was down or the key was rejected, not that one request was slow. A 401 or 403 is answered once, because a second request reaches the same sentence.
 

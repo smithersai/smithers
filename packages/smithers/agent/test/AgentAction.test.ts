@@ -973,7 +973,9 @@ describe("AgentAction payload-chosen seats", () => {
     SeatResolver.layer({
       resolve: (id) => {
         asked.push(id)
-        return Effect.succeed(Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 }))
+        return Effect.succeed(
+          Seat.make({ id, modelId: Seat.modelIdOf(id), model, route, contextWindowTokens: 200_000 })
+        )
       }
     })
 
@@ -988,7 +990,7 @@ describe("AgentAction payload-chosen seats", () => {
           Layer.mergeAll(Dispatched.layer, Interpreter.layer(DispatchedFlow)).pipe(
             Layer.provideMerge(AgentAction.layerHost(host)),
             Layer.provideMerge(recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)),
-            Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+            Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
@@ -1012,7 +1014,7 @@ describe("AgentAction payload-chosen seats", () => {
       Layer.provideMerge(
         recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)
       ),
-      Layer.provideMerge(Layer.merge(Agent.layer, Agent.layerDefaults)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),

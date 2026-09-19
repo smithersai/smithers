@@ -126,6 +126,13 @@ Every one of those this run has looked at somewhere else, but no other call it m
  * No probability is quoted either: a number is journal material for a grader,
  * and in front of a model it is a score to negotiate.
  *
+ * The closing sentence used to promise that whatever came back next was the
+ * answer that stands. It was not true and it was the loophole: a run that
+ * wrote the same sentence again had it accepted unread, so the demand taught
+ * the one move that defeats it. The text now states the two real outcomes, so
+ * a run that re-states rather than proves knows what re-stating costs it.
+ * See `CompletionClaim.unproven`.
+ *
  * @category conversions
  * @since 1.0.0-rc.0
  * @private
@@ -139,4 +146,4 @@ ${
       : "What is missing: nothing in the record reaches the behaviour the task asks for."
   }
 
-Nothing re-checks this and nothing grades the answer you give it. Complete again and state the working: the exact call whose result establishes the behaviour the task names, what it printed, and why that is the behaviour asked for rather than a nearby one. If the work is not finished, finish it instead of restating it. If you believe it is finished and the record simply does not carry the evidence, make the one call that would carry it and complete on that. What you return next is the answer that stands.`
+Nothing re-checks this and nothing grades the answer you give it. Complete again and state the working: the exact call whose result establishes the behaviour the task names, what it printed, and why that is the behaviour asked for rather than a nearby one. If the work is not finished, finish it instead of restating it. If you believe it is finished and the record simply does not carry the evidence, make the one call that would carry it and complete on that. What you return next is judged the same way this was, and a completion that still does not show the task being done ends this run with no answer at all.`

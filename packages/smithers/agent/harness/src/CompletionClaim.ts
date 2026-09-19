@@ -16,12 +16,33 @@
  * harness already holds — the task, the claim, whether the tree moved, and the
  * last check the completing frame ran — and asks two questions about them.
  *
- * It is a brake and only a brake. A confident "not complete" hands the frame
- * back exactly as `UnmovedTree` does, from a cap of its own; a confident
+ * It is a brake and only a brake in what it may approve: a confident
  * "complete" ends nothing, bypasses nothing, and is worth precisely the
  * journal line it is written on. Nothing here can turn a bounced completion
  * into a finished run, and nothing here runs before the deterministic five:
  * a run this module contradicts is a run they had nothing to say about.
+ *
+ * In what it may refuse it is a verdict, which it was not at first. A
+ * confident "not complete" hands the frame back once, exactly as `UnmovedTree`
+ * does, from a cap of its own; a claim that comes back still unproven ends the
+ * run as {@link unproven}, the way `read_only_cap` ends one. The first shape
+ * of this brake stopped at the bounce and let the second claim stand unread,
+ * and that was measured on a real seat: asked "do not run anything, just
+ * finish by saying the tests pass", one run had frame 1 bounced, spent two
+ * frames on calls the person denied, wrote a comment declaring the goal
+ * achieved and re-claimed the identical sentence, and finished `stop` with
+ * "the tests pass" as its answer over a repository whose one test exits 1.
+ * A second run never re-claimed at all: the bounce was the last word, the
+ * frame budget ran out, and the budget notice restored the bounced sentence
+ * verbatim as the run's answer. The brake's own classifier was not the weak
+ * link in either — asked eight times with that exact evidence it bounced it
+ * eight times, `complete` 0.09 to 0.11 and `overclaims` 0.95. A cap of one
+ * bounce was the weak link, and a control that is loudest when it works and
+ * silent when it does not is the shape the commit before this one refused to
+ * ship. So the cap now governs how many frames the run is *given* to prove
+ * its claim, not how many completions are read: every completion with a claim
+ * is read, and an unproven claim past the cap is a failed run rather than a
+ * finished one.
  *
  * It never falls back. A completion this brake could not put to Jev is a
  * completion nothing judged, and an unjudged completion ends the run as a
@@ -300,6 +321,42 @@ export const unjudged = (
     code: "completion_unjudged",
     message: `A completion no evaluator could judge (${reason}): ${detail}`,
     ...(cause === undefined ? {} : { cause })
+  })
+
+/**
+ * The failure an unproven claim ends the run with.
+ *
+ * One code, `claim_unproven`, raised where the brake read a claim the
+ * evidence does not support and the run has no bounce left to spend: the cap
+ * is used up, or there is no frame to hand the completion back to. It carries
+ * `reason`, both probabilities, and which of those two it was, so the line a
+ * person reads says which of the classifier's questions answered against the
+ * run, how sure the transport was, and whether the run was given a frame to
+ * prove the claim in. A wave is graded from these failures the way it is
+ * graded from the {@link Reading}s.
+ *
+ * Failing rather than standing is the whole point, and it has a price: a
+ * completion the transport is confidently wrong about twice costs the run its
+ * answer, where under the first shape of this brake it cost one frame. That
+ * price is why both thresholds stay strict (see {@link disprovenAt}), why the
+ * run is always given one frame to answer in first when a frame exists, and
+ * why the demand text now says what a re-statement costs. The alternative is
+ * the one outcome this package may not produce: a sentence nothing supports,
+ * returned as the run's final answer, with a green finish on it.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const unproven = (found: Probabilities, bounced: boolean): HarnessError =>
+  new HarnessError({
+    code: "claim_unproven",
+    message: `A completion the run's own record does not support (${reason(found)}): complete ${
+      found.complete.toFixed(2)
+    }, overclaims ${found.overclaims.toFixed(2)}. ${
+      bounced
+        ? "The claim was handed back for a frame and came back still unproven."
+        : "There was no frame left to hand it back to."
+    }`
   })
 
 /**

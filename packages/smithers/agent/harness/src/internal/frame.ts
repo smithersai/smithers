@@ -445,6 +445,21 @@ export interface CompletionDemand {
     | AgentEvent.ClaimDemanded
   /** The in-frame observation the next frame answers. */
   readonly note: string
+  /**
+   * Whether the answer this demand takes away may come back as the run's
+   * answer when the frame budget runs out; see `CellTurn.budgetMessage`.
+   *
+   * True for the five measured demands. Each of them says the record is
+   * missing a fact, not that the sentence is wrong, so a run that spends its
+   * last frame and never completes again is better served by the answer it
+   * wrote than by a bare budget notice. False for the claim brake, which read
+   * the sentence and found the evidence against it: restoring that sentence
+   * on the budget notice is how one measured run turned a bounced "the tests
+   * pass" into its final answer with a `stop` finish over a repository whose
+   * test exits 1. A bounce that cannot be re-judged must not be undone by the
+   * budget.
+   */
+  readonly keeps: boolean
   /** The cap the demand spends. */
   readonly spent: StateChanges
 }
@@ -465,17 +480,29 @@ export interface CompletionDemand {
  * @private
  */
 export interface CompletionJudgement {
-  /** The claim brake's reading, when it ran and let the completion through. */
+  /** The claim brake's reading, when it ran and issued no demand. */
   readonly observed: AgentEvent.ClaimDemanded | undefined
   /** The demand that hands the completion back, when one of the six issued. */
   readonly demand: CompletionDemand | undefined
+  /**
+   * The failure the run ends with when the claim brake read a claim the
+   * evidence does not support and no bounce was left to spend. It travels on
+   * the judgement rather than as the effect's own failure so the caller
+   * journals `observed` first: a reading that ends a run is the one a grader
+   * most needs, and an effect that failed would take it with it.
+   */
+  readonly unproven: HarnessError.HarnessError | undefined
 }
 
 /** Nothing to say about this completion: it stands. */
-const stands: CompletionJudgement = { observed: undefined, demand: undefined }
+const stands: CompletionJudgement = { observed: undefined, demand: undefined, unproven: undefined }
 
 /** One demand, with no separate reading to journal beside it. */
-const handBack = (demand: CompletionDemand): CompletionJudgement => ({ observed: undefined, demand })
+const handBack = (demand: CompletionDemand): CompletionJudgement => ({
+  observed: undefined,
+  demand,
+  unproven: undefined
+})
 
 /**
  * The prose the harness itself put in front of the run as its task.
@@ -532,7 +559,7 @@ const measuredDemand = (
   accounting: Accounting,
   contextWindow: ContextWindow.ContextWindow,
   nextFrame: number
-): CompletionDemand | undefined => {
+): Omit<CompletionDemand, "keeps"> | undefined => {
   const { facts, frameChecks, workspaceDigest } = accounting
   if (state.unmovedDemands < state.unmovedCap) {
     const unmoved = UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest })
@@ -647,6 +674,19 @@ const measuredDemand = (
  *    `Evaluator` is therefore a required service of this function and of
  *    every turn above it.
  *
+ * The fifth is the one that is read on *every* completion, and the three
+ * things below that take a demand away do not take the reading away. The
+ * others are recomputable from the journal, so skipping them costs a grader
+ * nothing and a skipped one lets a completion stand that the truth bar still
+ * judges. This one is a sentence being checked against the record, it is what
+ * the server banner and the operator docs promise happens to every completion,
+ * and the run's answer is the product. So when there is no bounce left to
+ * spend — the cap is used up, or none of the room below exists — an unproven
+ * claim ends the run as `claim_unproven` instead of standing. That is the
+ * shape `read_only_cap` already uses, and it is the only shape that keeps the
+ * promise: a cap that stops at the bounce means the second identical claim is
+ * accepted unread, which is what a live run did. See `CompletionClaim`.
+ *
  * At most one is named, in that order, because they are in descending order of
  * how fundamental the missing thing is: there is nothing to check, then the
  * check said no, then the check said less than it looks like it said, then
@@ -657,7 +697,8 @@ const measuredDemand = (
  * anything, and it does not judge the answer that comes back.
  *
  * Asking costs the run a frame it can answer in, so a demand is issued only
- * where that frame exists, and three separate things take it away:
+ * where that frame exists, and three separate things take it away (and leave
+ * the claim brake reading anyway, as above):
  *
  * - the frame budget, which has no frame left to spend, and turning a
  *   completion into an exhausted budget would lose the run's answer to make a
@@ -688,16 +729,18 @@ export const judgeCompletion = (
     const room = hasNextFrame(state) &&
       (state.readOnlyCap === 0 || facts.readOnlyFrames + 1 < state.readOnlyCap * 2) &&
       state.demandedFrame !== state.frame
-    if (!room) return stands
     const nextFrame = state.frame + 1
-    const measured = measuredDemand(state, accounting, contextWindow, nextFrame)
-    if (measured !== undefined) return handBack(measured)
+    if (room) {
+      const measured = measuredDemand(state, accounting, contextWindow, nextFrame)
+      // A measured demand names a missing fact, so the answer it takes away
+      // is worth restoring if the budget runs out. See `CompletionDemand`.
+      if (measured !== undefined) return handBack({ ...measured, keeps: true })
+    }
 
     // The sixth brake, and the only one that leaves this package to decide.
-    // The cap is read before the request so a run that has already been
-    // handed one claim demand is never asked a second time, and so the
-    // gateway is not paid for an answer nothing could act on.
-    if (state.claimDemands >= state.claimCap) return stands
+    // `claimCap` of zero disarms it: no request, no event, no failure, which
+    // is what a host that does not want a model in this path asks for.
+    if (state.claimCap === 0) return stands
     const task = CompletionClaim.prose(taskText(contextWindow))
     const check = lastCheck(calls)
     const reading = yield* CompletionClaim.read({
@@ -711,21 +754,31 @@ export const judgeCompletion = (
     })
     if (reading === undefined) return stands
     const found = CompletionClaim.find(reading)
+    // One bounce while the cap and a frame allow it; the verdict after that.
+    const bounced = found !== undefined && room && state.claimDemands < state.claimCap
     const event = new AgentEvent.ClaimDemanded({
       eventType: eventType.claimDemanded,
       complete: reading.complete,
       overclaims: reading.overclaims,
       latencyMs: reading.latencyMs,
-      demanded: found !== undefined,
+      demanded: bounced,
       currentDigest: workspaceDigest,
       nextFrame
     })
-    if (found === undefined) return { observed: event, demand: undefined }
-    return handBack({
-      event,
-      note: CompletionClaim.demand(found),
-      spent: { claimDemands: state.claimDemands + 1 }
-    })
+    if (found === undefined) return { observed: event, demand: undefined, unproven: undefined }
+    if (bounced) {
+      return handBack({
+        event,
+        note: CompletionClaim.demand(found),
+        keeps: false,
+        spent: { claimDemands: state.claimDemands + 1 }
+      })
+    }
+    return {
+      observed: event,
+      demand: undefined,
+      unproven: CompletionClaim.unproven(found, state.claimDemands > 0)
+    }
   })
 
 /**
