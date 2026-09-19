@@ -79,16 +79,36 @@ export const rebuildableTransport = (
     return { client: yield* rebuild, rebuild }
   })
 
-/** The production executor: an Undici agent the run may replace. */
-const rebuildableUndici: Effect.Effect<RequestExecutor.RequestExecutor, never, Scope.Scope> = Effect.flatMap(
-  rebuildableTransport(environmentDispatcher(process.env)),
-  RequestExecutor.makeWith
-)
+/**
+ * The model transport every Node host in this repository runs on: an Undici
+ * agent the run may replace.
+ *
+ * It is one constructor rather than one per host because the repair it carries
+ * is not specific to any of them. `smithers run` had it and `smithers opencode`
+ * did not, and the difference was one line: the server bound
+ * `RequestExecutor.layer` over `NodeHttpClient.layerUndici`, whose transport is
+ * {@link RequestExecutor.fixed} and whose rebuild hands back the pool that just
+ * failed. A server whose provider session the peer destroyed therefore failed
+ * every later turn identically until somebody restarted it.
+ *
+ * `acquire` is the dispatcher the pool is built from, so a caller passes
+ * {@link environmentDispatcher} over its own environment record and a test
+ * passes a scripted dispatcher.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerRebuildableRequestExecutor = (
+  acquire: Effect.Effect<Undici.Dispatcher, never, Scope.Scope>
+): Layer.Layer<RequestExecutor.RequestExecutor> =>
+  Layer.effect(
+    RequestExecutor.RequestExecutor,
+    Effect.flatMap(rebuildableTransport(acquire), RequestExecutor.makeWith)
+  )
 
 /** The production model transport, replaceable only at the composition boundary. */
-const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = Layer.effect(
-  RequestExecutor.RequestExecutor,
-  rebuildableUndici
+const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = layerRebuildableRequestExecutor(
+  environmentDispatcher(process.env)
 )
 
 /** Selects existing Node adapters for the shared native composition.

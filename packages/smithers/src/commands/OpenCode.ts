@@ -27,10 +27,9 @@
  *
  * @since 1.0.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import type * as Undici from "@effect/platform-node/Undici"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Auth from "@smthrs/opencode/Auth"
 import * as DemoScript from "@smthrs/opencode/DemoScript"
 import type * as Driver from "@smthrs/opencode/Driver"
@@ -41,6 +40,7 @@ import * as ScriptedDriver from "@smthrs/opencode/ScriptedDriver"
 import * as Serve from "@smthrs/opencode/Serve"
 import * as Store from "@smthrs/opencode/Store"
 import { Cause, Effect, Exit, Layer, Logger } from "effect"
+import type * as Scope from "effect/Scope"
 import { resolve } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as CliError from "../CliError.ts"
@@ -109,12 +109,34 @@ export const seatOf = (
  * the directory, its seat resolver over the environment, and the project's
  * flow registry.
  *
+ * The seats run on the same replaceable model transport `smithers run` uses,
+ * because a server is the host that most needs it. A provider can destroy the
+ * HTTP/2 session under the connection pool, and waiting does not bring it back:
+ * every attempt that reuses that pool fails identically, so the whole retry
+ * ladder is spent on a socket that is not coming back and the turn ends
+ * "stopped: the model call failed" with one frame and no spend. The server this
+ * host serves is long-lived, so the pool it was left holding was the same one
+ * every later turn reused: two servers lost three and two consecutive turns to
+ * that on 2026-09-19 while a third on the same key and the same machine
+ * answered normally, and only Ctrl-C fixed them.
+ *
+ * `NodeControl.layerRebuildableRequestExecutor` gives the executor a pool it
+ * can throw away. Three consecutive transport failures are one `execute`, and
+ * the next one is made on a pool the host built fresh, so the model step's own
+ * ladder meets a working transport on its second rung and the turn that found
+ * the dead session is the last one that suffers it.
+ *
+ * `dispatcher` is how that pool is built. The default reads the served
+ * environment, so a proxy the operator exported is honoured here exactly as it
+ * is for `smithers run`; a test passes a scripted dispatcher.
+ *
  * @category constructors
  * @since 1.0.0
  */
 export const nodeHost = (
   directory: string,
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  dispatcher: Effect.Effect<Undici.Dispatcher, never, Scope.Scope> = NodeControl.environmentDispatcher(environment)
 ): EngineDriver.Host => {
   const platform = NodeControl.layerGuardedPlatform(directory)
   return {
@@ -123,7 +145,7 @@ export const nodeHost = (
       Layer.provideMerge(platform)
     ),
     seats: NodeControl.layerSeatResolver(environment).pipe(
-      Layer.provide(RequestExecutor.layer.pipe(Layer.provide(NodeHttpClient.layerUndici)))
+      Layer.provide(NodeControl.layerRebuildableRequestExecutor(dispatcher))
     ),
     registry: NodeControl.layerRegistry(directory)
   }

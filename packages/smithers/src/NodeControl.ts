@@ -234,15 +234,13 @@ const websocketLayer = (remote: string, credential: string | undefined) => {
 }
 
 export type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
-export {
-  checkpointStore,
-  layerSeatResolver,
-  seatResolver,
-  testFlows,
-  testRunner
-} from "./internal/NativeEquipment.ts"
+export { checkpointStore, layerSeatResolver, seatResolver, testFlows, testRunner } from "./internal/NativeEquipment.ts"
 
-export { rebuildableTransport } from "./internal/NodeControlHost.ts"
+export {
+  environmentDispatcher,
+  layerRebuildableRequestExecutor,
+  rebuildableTransport
+} from "./internal/NodeControlHost.ts"
 
 /**
  * The flow sources a local CLI discovers: the project `flows/` directory, whose
