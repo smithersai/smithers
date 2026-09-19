@@ -50,6 +50,7 @@ const EXPECTED_FLOWS = [
   "checks/native-bun",
   "checks/policy",
   "checks/runtime",
+  "create-flow",
   "create-flow/clarify",
   "create-flow/design",
   "create-flow/document",

@@ -113,6 +113,11 @@ export const roleResolver = (base: SeatResolver.Service, implementationModel: st
     "coding/poc": models.pocModel ?? implementationModel,
     "wiki/reviewer": models.wikiModel ?? implementationModel,
     "repository/research": models.planningModel ?? implementationModel,
+    // The seat the built-in authoring bodies declare. They write a flow and
+    // run its checks, so they run on the seat this host writes code with; the
+    // alternative is a `provider:model` literal baked into a prompt file,
+    // which would outlive whatever this deployment was configured with.
+    "flow/author": implementationModel,
     "repository/evaluator": models.planningModel ?? implementationModel, "repository/author": implementationModel }
   return SeatResolver.make({ resolve: id => base.resolve(Object.hasOwn(roles, id) ? roles[id]! : id).pipe(
     Effect.map(seat => Object.hasOwn(roles, id) ? Seat.make({ ...seat, id }) : seat)

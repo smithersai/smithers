@@ -51,7 +51,22 @@ export const bundle = async (entryPoint, outfile) => {
     }]
   })
   if (result.outputFiles.length !== 1) throw new Error("Coding host must be one immutable executable")
-  const compiled = result.outputFiles[0].text
+  // The authoring pack's prompt bodies travel with the executable.
+  //
+  // They are `.mdx` files in this repository and the deployment carries no
+  // repository tree, so the host would have nothing to install on a workspace.
+  // They go in BEFORE the artifact is hashed, so the policy digest a workspace
+  // records covers the exact prompts it will run: editing one respins the
+  // host, as it should.
+  const packRoot = fileURLToPath(new URL("../create-flow/", import.meta.url))
+  const pack = {}
+  for (const name of ["", "clarify", "provision", "design", "scaffold", "fix", "document"]) {
+    const file = resolve(packRoot, name, "flow.mdx")
+    pack[name === "" ? "create-flow" : `create-flow/${name}`] = await readFile(file, "utf8")
+  }
+  const compiled = result.outputFiles[0].text.replace(/^(#![^\n]*\n)/,
+    `$1const __SMITHERS_CREATE_FLOW_PACK__ = ${JSON.stringify(pack)};\n`)
+  if (compiled === result.outputFiles[0].text) throw new Error("Coding artifact has no executable banner")
   const digest = createHash("sha256").update(compiled).digest("hex")
   // Hash the exact compiled artifact before inserting its own identity. This
   // includes the reviewer implementation and its complete bundled dependency

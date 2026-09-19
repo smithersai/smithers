@@ -398,6 +398,37 @@
       "modelInvocable": true
     },
     {
+      "id": "create-flow",
+      "description": "Turns a plain-English request into a working Smithers flow in this workspace, through the clarify, provision, design, scaffold, fix and document stages.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*"
+      ],
+      "model": "flow/author",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
       "id": "create-flow/clarify",
       "description": "Turns a plain-English request for a Smithers flow into a precise, buildable specification, without writing any files.",
       "summary": null,
@@ -405,7 +436,7 @@
       "kind": "mdx",
       "path": "flows/create-flow/clarify/flow.mdx",
       "capabilities": [],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -432,7 +463,7 @@
       "kind": "mdx",
       "path": "flows/create-flow/design/flow.mdx",
       "capabilities": [],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -462,7 +493,7 @@
         "fs:read:**",
         "fs:write:**"
       ],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -493,7 +524,7 @@
         "fs:write:**",
         "proc:spawn:*"
       ],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -523,7 +554,7 @@
         "fs:read:**",
         "proc:spawn:*"
       ],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -554,7 +585,7 @@
         "fs:write:**",
         "proc:spawn:*"
       ],
-      "model": null,
+      "model": "flow/author",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",

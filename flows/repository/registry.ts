@@ -9,13 +9,29 @@ import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import { registryError } from "@smthrs/registry/RegistryError"
 import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import { fileURLToPath } from "node:url"
+import { FLOW_AUTHORING_PACK } from "../../packages/rpc/src/FlowAuthoring.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
 import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "./schema.ts"
 import { TriggerOutcome } from "./triggers.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
+/**
+ * The authoring pack's bodies, compiled into the deployed host.
+ *
+ * They are `.mdx` files in this repository, and the deployment is one esbuild
+ * bundle that carries no repository tree, so `flows/coding/build.mjs` inlines
+ * them here — before it hashes the artifact, so the artifact's own digest
+ * covers the prompts a workspace will run. Undefined means "running from
+ * source", where {@link authoringBodies} reads the same files from disk.
+ */
+declare const __SMITHERS_CREATE_FLOW_PACK__: Readonly<Record<string, string>> | undefined
+/** Where each pack body lives, relative to this module, in source and in the bundler. */
+const authoringSource = (name: string) => `../${name}/flow.mdx`
 const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "intake.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
-  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml"]
+  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml",
+  // A prompt a workspace runs is policy: editing one changes what every
+  // built-in authoring body tells a model to do.
+  ...FLOW_AUTHORING_PACK.map(authoringSource)]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {
     if (!/^[0-9a-f]{64}$/.test(__SMITHERS_CODING_ARTIFACT_DIGEST__)) return yield* Effect.fail(new Error("Invalid repository host fingerprint"))
@@ -29,6 +45,33 @@ export const runningRepositoryPolicy = Effect.gen(function*() {
   }))
   return Digest.digest(Digest.canonical(sources))
 })
+/**
+ * The flow-authoring prompt bodies this host installs on every workspace.
+ *
+ * From the bundle they are the constant compiled into it; from source they are
+ * the repository's own files. A missing body is a startup failure rather than
+ * a workspace that silently cannot author a flow — which is exactly the state
+ * production was in, because nothing installed these at all.
+ */
+export const authoringBodies: Effect.Effect<ReadonlyMap<string, string>, Error, FileSystem.FileSystem> = Effect.gen(
+  function*() {
+    const compiled = typeof __SMITHERS_CREATE_FLOW_PACK__ === "undefined" ? undefined : __SMITHERS_CREATE_FLOW_PACK__
+    const fs = yield* FileSystem.FileSystem
+    const bodies = new Map<string, string>()
+    for (const name of FLOW_AUTHORING_PACK) {
+      const text = compiled === undefined
+        ? yield* fs.readFileString(fileURLToPath(new URL(authoringSource(name), import.meta.url))).pipe(
+          Effect.mapError(cause => new Error(`The built-in flow ${name} could not be read: ${cause.message}`))
+        )
+        : Object.hasOwn(compiled, name) && typeof compiled[name] === "string" ? compiled[name]!
+        : yield* Effect.fail(new Error(`The deployed host carries no body for the built-in flow ${name}`))
+      if (text.trim() === "") return yield* Effect.fail(new Error(`The built-in flow ${name} has an empty body`))
+      bodies.set(name, text)
+    }
+    return bodies
+  }
+)
+
 export const provisionBuiltins = (stateRoot: string, policy: string) => Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
   const root = path.join(stateRoot, "builtin-flows", policy)
@@ -54,6 +97,26 @@ export const provisionBuiltins = (stateRoot: string, policy: string) => Effect.g
     // Discovery reads ordinary modern declaration bytes. The deployed bundle
     // supplies their exact Flow value; target repos need no package imports.
     modules.set(path.resolve(file), { body, declaration: CoreFlow.make({ ...config, input: Schema.Unknown, output: Schema.Unknown }) })
+  }
+  /*
+   * The authoring pack, written beside the module built-ins as ordinary
+   * prompt bodies.
+   *
+   * A workspace's catalog is its repository's own `flows/` tree plus what is
+   * written here, and a freshly imported repository has no `flows/` tree. So
+   * before this, every workspace carried nine flows and all nine were module
+   * flows — no prompt body existed anywhere in production, which is both why
+   * `/flow.create` had nothing to launch and why no run could show a person an
+   * agent's frames (`AgentSession` runs only a Prompt body through its trace
+   * and pump). A repository that writes its own `create-flow` still wins:
+   * `bindRepositoryRegistry` reserves only the repository-job names.
+   */
+  for (const [name, text] of yield* authoringBodies) {
+    const directory = path.join(root, name)
+    yield* fs.makeDirectory(directory, { recursive: true })
+    const file = path.join(directory, "flow.mdx")
+    const previous = yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => ""))
+    if (previous !== text) yield* fs.writeFileString(file, text)
   }
   const registry = yield* Registry.make({ sources: [{ root, source: "repository-host", naming: "path", system: true }] }).pipe(Effect.provide(Discovery.layer))
   const load: NonNullable<Executable.Options["load"]> = (file, source) => {

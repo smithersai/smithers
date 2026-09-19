@@ -116,7 +116,9 @@ const codingProjectSources = [
   "apps/server/docs/EFFECT.md", "apps/server/src/index.ts", "apps/server/src/Environment.ts", "apps/server/src/Boundary.ts",
   "flows/README.md", "docs/design/agent-flow-health.md"
 ].map(path => Smithers.file(`//${path}`))
-const codingProjectInputs = [...codingProjectSources, Smithers.glob("//flows/checks/**/flow.mdx")]
+const codingProjectInputs = [...codingProjectSources, Smithers.glob("//flows/checks/**/flow.mdx"),
+  // The built-in authoring bodies the host installs on every workspace.
+  Smithers.glob("//flows/create-flow/**/flow.mdx")]
 const node = Smithers.Runtime.Node({ version: ">=22.19.0" })
 const bun = Smithers.Runtime.Bun({ version: ">=1.4.0" })
 
@@ -137,6 +139,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-project-config.test.ts"),
     Smithers.file("//flows/test/coding-steering.test.ts"), Smithers.file("//flows/test/coding-request-coordinator.test.ts"),
     Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts"),
+    Smithers.file("//flows/test/create-flow-registry.test.ts"),
     Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts"),
     Smithers.file("//flows/test/coding-landing.test.ts"), Smithers.file("//flows/test/coding-landing-config.test.ts"), Smithers.file("//flows/test/coding-vibe-landing.test.ts"),
     Smithers.file("//flows/test/coding-source-publication.test.ts"), Smithers.file("//flows/test/coding-dispatch.test.ts")]),
