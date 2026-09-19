@@ -792,6 +792,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/rpc:check",
+      "//packages/smithers/agent/harness-detect:check",
       "//packages/smithers/gateway:check",
       "//packages/smithers/ui:check"
     ],
@@ -945,6 +946,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/rpc:check",
+      "//packages/smithers/agent/harness-detect:check",
       "//packages/smithers/gateway:check",
       "//packages/smithers/ui:check"
     ],
@@ -7223,6 +7225,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/package.json"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/integrations/package.json"
       },
       {
@@ -8497,6 +8503,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/harness/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/package.json"
       },
       {
         "kind": "file",
@@ -10421,6 +10431,14 @@
       },
       {
         "kind": "file",
+        "path": "flows/wiki/jev-citations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/repository/jev-checks.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/release-support/runtime.ts"
       }
     ],
@@ -11081,6 +11099,14 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/jev-citations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/repository/jev-checks.ts"
       },
       {
         "kind": "file",
@@ -11745,6 +11771,14 @@
       },
       {
         "kind": "file",
+        "path": "flows/wiki/jev-citations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/repository/jev-checks.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/release-support/runtime.ts"
       }
     ],
@@ -12082,6 +12116,11 @@
         "kind": "glob",
         "pattern": "flows/checks/**/flow.mdx",
         "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/create-flow/**/flow.mdx",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -12274,6 +12313,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/coding-create-flow-registry.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/coding-vibe-evidence.test.ts"
       },
       {
@@ -12295,6 +12338,10 @@
       {
         "kind": "file",
         "path": "flows/test/coding-source-publication.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-dispatch.test.ts"
       },
       {
         "kind": "glob",
@@ -12406,6 +12453,11 @@
       {
         "kind": "glob",
         "pattern": "flows/checks/**/flow.mdx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/create-flow/**/flow.mdx",
         "exclude": []
       }
     ],
@@ -13862,6 +13914,267 @@
     ],
     "source": {
       "file": "packages/smithers/agent/fs/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:check",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/tsconfig.test.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/harness-detect:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:circular",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "circular",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/scripts/circular.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:docs",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "docs",
+    "rule": "DocsParity",
+    "kinds": [
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:docsFiles",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "docsFiles",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:fmt",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "fmt",
+    "rule": "Dprint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:lib",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "lib",
+    "rule": "TsBuild",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/scripts/build.mjs"
+      }
+    ],
+    "outputs": [
+      "packages/smithers/agent/harness-detect/dist/cjs",
+      "packages/smithers/agent/harness-detect/dist/esm"
+    ],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:lint",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "lint",
+    "rule": "EsLint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/eslint.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.jsdoc.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness-detect:test",
+    "package": "packages/smithers/agent/harness-detect",
+    "name": "test",
+    "rule": "Vitest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/test/**/*.test.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness-detect/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness-detect/vitest.config.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/harness-detect:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/harness-detect/PACKAGE.ts"
     }
   },
   {
