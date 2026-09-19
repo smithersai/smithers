@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import * as Path from "@smthrs/kernel/Path"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, PlatformError, Stream } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import { execFile } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -21,6 +21,43 @@ const root = mkdtempSync(join(tmpdir(), "portable-search-bounds-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 const implementation = PortableSearch.layer.pipe(Layer.provide(NodeServices.layer))
 const grep = (input: typeof Grep.Input.Type) => Effect.runPromise(Grep.run(input).pipe(Effect.provide(implementation)))
+
+it.each([false, true])(
+  "uses an atomic read only before a failing stream has yielded bytes, partial=%s",
+  async (partial) => {
+    const file = join(root, `refused-stream-${partial}.txt`)
+    writeFileSync(file, "needle\n")
+    let atomicReads = 0
+    const search = await Effect.runPromise(
+      Effect.gen(function*() {
+        const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+        const fs = yield* FileSystem.FileSystem
+        const refused = Stream.fail(PlatformError.badArgument({
+          module: "FileSystem",
+          method: "stream",
+          description: "stream unavailable"
+        }))
+        return PortableSearch.make(Context.add(services, FileSystem.FileSystem, {
+          ...fs,
+          stream: () => partial ? Stream.concat(Stream.make(new TextEncoder().encode("needle\n")), refused) : refused,
+          readFile: (path) => {
+            atomicReads++
+            return fs.readFile(path)
+          }
+        }))
+      }).pipe(Effect.provide(NodeServices.layer))
+    )
+    const result = await Effect.runPromise(
+      Grep.run({ root: file, pattern: "needle", symbols: false }).pipe(
+        Effect.provideService(Search.Search, search)
+      )
+    )
+
+    expect(atomicReads).toBe(partial ? 0 : 1)
+    expect(result.matches.map(({ line, text }) => ({ line, text })))
+      .toEqual(partial ? [] : [{ line: 1, text: "needle" }])
+  }
+)
 
 describe("portable search bounds", () => {
   it("completes a nested-quantifier near miss while timers can run", async () => {

@@ -18,14 +18,21 @@ import type { FlowRuntime } from "@smthrs/flow"
 import type * as Cell from "@smthrs/harness/Cell"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as Workspace from "@smthrs/kernel/Workspace"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Classifiers from "@smthrs/std/Classifiers"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
-import { Context, Effect, FileSystem, type Layer, Option, Path } from "effect"
+import { Context, Effect, FileSystem, Layer, Option, Path } from "effect"
 import type * as Crypto from "effect/Crypto"
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as StandardFlows from "../src/StandardFlows.ts"
 
@@ -115,6 +122,60 @@ const callOf = (flowName: string, input: unknown): Cell.Call =>
   }) as unknown as Cell.Call
 
 describe("the standard capability catalog", () => {
+  it.each([
+    {
+      flow: "glob",
+      input: { pattern: "**/add.mjs", limit: 10 },
+      value: { paths: ["add.mjs", "nested/add.mjs"], total: 2, truncated: false }
+    },
+    {
+      flow: "grep",
+      input: { pattern: "a + b", fixedStrings: true, limit: 10 },
+      value: {
+        matches: [
+          expect.objectContaining({ file: "add.mjs", line: 1 }),
+          expect.objectContaining({ file: "nested/add.mjs", line: 1 })
+        ],
+        filesSearched: 2,
+        truncated: false
+      }
+    },
+    {
+      flow: "ls",
+      input: { path: "." },
+      value: {
+        entries: [{ name: "nested/", kind: "directory" }, { name: "add.mjs", kind: "file" }],
+        total: 2,
+        truncated: false
+      }
+    }
+  ])("searches the guarded disk workspace through $flow without an absolute root", async (fixture) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-standard-search-")))
+    try {
+      await mkdir(join(root, "nested"))
+      await writeFile(join(root, "add.mjs"), "export const add = (a, b) => a + b\n")
+      await writeFile(join(root, "nested/add.mjs"), "export const sum = (a, b) => a + b\n")
+      const guarded = KernelFileSystem.layer.pipe(
+        Layer.provide(AtomicFileSystem.layer),
+        Layer.provideMerge(Path.layer),
+        Layer.provide(Workspace.layer(root)),
+        Layer.provide(GrantStore.layerNoop)
+      )
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+          const bindings = yield* StandardFlows.filesystem(services).bindings()
+          return yield* bindings.find((binding) => binding.descriptor.name === fixture.flow)!
+            .run(callOf(fixture.flow, fixture.input))
+        }).pipe(Effect.provide(guarded), Effect.scoped)
+      )
+
+      expect(result).toMatchObject({ outcome: "success", value: fixture.value })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   for (const entry of promised) {
     it(`binds exactly the flows ${entry.source.name} promises`, async () => {
       const bindings = await Effect.runPromise(entry.source.bindings())

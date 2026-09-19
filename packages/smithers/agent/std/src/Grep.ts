@@ -77,7 +77,7 @@ export const description =
 export const Input = Schema.Struct({
   pattern: Schema.String.annotate({ description: "Smithers Ripgrep ASCII v1 expression." }),
   root: Schema.optional(Schema.String).annotate({
-    description: "Search root the globs are relative to; defaults to /. Pass the project directory."
+    description: "Search root the globs are relative to; defaults to . (the host workspace)."
   }),
   fixedStrings: Schema.optional(Schema.Boolean).annotate({ description: "Ripgrep -F." }),
   ignoreCase: Schema.optional(Schema.Boolean).annotate({ description: "Ripgrep -i." }),
@@ -198,7 +198,7 @@ export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**
  * @since 1.0.0
  */
 export const effectsFor = (input: { readonly root?: string | undefined }) =>
-  envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? "/")], writes: [] })
+  envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? ".")], writes: [] })
 /**
  * Capability strings requested by grep.
  *
@@ -242,7 +242,7 @@ const normalize = (input: typeof Input.Type): Search.GrepInput | StdError.StdErr
   }
   return {
     pattern: input.pattern,
-    root: input.root ?? "/",
+    root: input.root ?? ".",
     fixedStrings,
     ignoreCase: input.ignoreCase ?? false,
     smartCase: input.smartCase ?? false,

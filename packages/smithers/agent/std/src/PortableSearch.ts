@@ -228,18 +228,27 @@ const grep = (
           if (from < chunk.length) fragments.push(chunk.slice(from))
         })
       const scanned = yield* Effect.gen(function*() {
-        yield* fileSystem.stream(file).pipe(Stream.runForEach((bytes) => {
-          if (bytes.includes(0)) {
-            return Effect.fail(
-              new StdError.StdError({
-                code: "binary_file",
-                message: `Cannot search binary file: ${file}`,
-                path: file
-              })
-            )
-          }
-          return consume(decoder.decode(bytes, { stream: true }))
-        }))
+        let started = false
+        // A guarded disk host can safely expose atomic reads while refusing
+        // open streaming handles. Retry through that same filesystem service
+        // only before any bytes arrive, so a failed partial stream is never
+        // combined with a second reading of a file that may have changed.
+        yield* fileSystem.stream(file).pipe(
+          Stream.catch((error) => started ? Stream.fail(error) : Stream.fromEffect(fileSystem.readFile(file))),
+          Stream.runForEach((bytes) => {
+            started = true
+            if (bytes.includes(0)) {
+              return Effect.fail(
+                new StdError.StdError({
+                  code: "binary_file",
+                  message: `Cannot search binary file: ${file}`,
+                  path: file
+                })
+              )
+            }
+            return consume(decoder.decode(bytes, { stream: true }))
+          })
+        )
         yield* consume(decoder.decode())
         if (fragments.length > 0) yield* scanLine(fragments.join(""))
         return true

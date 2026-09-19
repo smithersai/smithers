@@ -79,7 +79,7 @@ export const Input = Schema.Struct({
       "Ripgrep -g pattern, matched against paths relative to root, never absolute paths: *, ?, {a,b} stay inside one segment, ** crosses directories, a pattern without / matches any basename, and a leading / anchors at root."
   }),
   root: Schema.optional(Schema.String).annotate({
-    description: "Search root the pattern is relative to; defaults to /. Pass the project directory."
+    description: "Search root the pattern is relative to; defaults to . (the host workspace)."
   }),
   hidden: Schema.optional(Schema.Boolean).annotate({ description: "Ripgrep --hidden." }),
   noIgnore: Schema.optional(Schema.Literal(true)).annotate({
@@ -129,7 +129,7 @@ export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**
  * @since 1.0.0
  */
 export const effectsFor = (input: { readonly root?: string | undefined }) =>
-  envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? "/")], writes: [] })
+  envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? ".")], writes: [] })
 /**
  * Capability strings requested by glob.
  *
@@ -170,7 +170,7 @@ export const run = Effect.fn("Glob.run")(function*(
   const search = yield* Search.Search
   return yield* search.glob({
     pattern: input.pattern,
-    root: input.root ?? "/",
+    root: input.root ?? ".",
     hidden: input.hidden ?? false,
     limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
   })
