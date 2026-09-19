@@ -171,8 +171,11 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // evaluation row's verdict. It is the only model that answers any of them.
     // A host without AI_GATEWAY_API_KEY installs the unavailable transport, so
     // each of those fails with that typed error, by design: nothing falls back
-    // to a frontier seat and no unscreened text reaches a model prompt.
-    const evaluator = evaluatorLayer(process.env)
+    // to a frontier seat and no unscreened text reaches a model prompt. A
+    // platform that names its own judge binds that one here too, so this host
+    // never runs two: the agent loop's completion brake and these repository
+    // readers ask the same Jev.
+    const evaluator = platform.evaluator ?? evaluatorLayer(process.env)
     const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
         exporterPath: options.exporterPath, environment: options.checkEnvironment, evaluator }), evaluationLayers({ evaluator }),

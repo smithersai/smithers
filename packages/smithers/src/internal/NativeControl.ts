@@ -168,6 +168,20 @@ export interface Platform {
    * dispatcher does not run under Bun at all.
    */
   readonly httpClient: Layer.Layer<KernelHttpClient.HttpClient>
+  /**
+   * The judge this platform binds, when it is not the one its environment
+   * names.
+   *
+   * A deployed host leaves this out and gets
+   * `Evaluator.layerFromEnvironment(process.env)` over
+   * {@link Platform.httpClient}: Jev through the Vercel gateway when
+   * `AI_GATEWAY_API_KEY` is set, and a transport that refuses every
+   * evaluation when it is not. An offline composition names a scripted
+   * reading here instead, because the completion brake never falls back: a
+   * claim nothing could judge fails the run, so a keyless host cannot finish
+   * an agent turn at all, and `process.env` is not a seam a test owns.
+   */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly gateway: typeof NodeGateway.layer
   readonly bearerPrincipal: typeof NodeGateway.bearerPrincipal
 }
@@ -602,8 +616,10 @@ export const make = (
     // judge fails the run instead of standing; and the `test` flow, which
     // attributes a non-zero exit with it. Without `AI_GATEWAY_API_KEY` this
     // is `layerUnavailable()` and both say so. The client is the platform's
-    // own, so the Bun host does not reach for undici.
-    const evaluator = Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(native.httpClient))
+    // own, so the Bun host does not reach for undici, and a platform that
+    // names its own judge is taken at its word.
+    const evaluator = native.evaluator ??
+      Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(native.httpClient))
     // The dispatcher must live as long as the executor. A model captures this
     // service and uses it after seat resolution has returned.
     //
