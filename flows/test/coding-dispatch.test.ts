@@ -11,6 +11,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Graph } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
@@ -114,6 +115,20 @@ const agentHost = Layer.effect(AgentAction.Host, Effect.gen(function*() {
   return { registry, limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 }, capabilityEnvelope: [], maxFrames: 6 }
 })).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
 
+/**
+ * The Jev a served host binds from its environment, scripted here.
+ *
+ * The harness's completion brake never falls back: a claim nothing could
+ * judge ends the turn as `completion_unjudged`, so a host that runs a cell
+ * loop must install an `Evaluator`. These cases are about the dispatched
+ * turn, not about the brake, so this one reads every claim as done and
+ * modest and lets the completion stand.
+ */
+const confidentEvaluator = Evaluator.layerScripted(() => ({
+  complete: { probability: 0.99 },
+  overclaims: { probability: 0.01 }
+}))
+
 const runTurn = async (
   t: TestContext,
   input: typeof DispatchInput.Type,
@@ -132,6 +147,7 @@ const runTurn = async (
     Layer.provideMerge(Layer.mergeAll(agentHost, scripted({ seats, prompts, answer: options.answer ?? ["Read the greeting.", "Done."] }), Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({ tokens: { max: 250_000, onExceeded: "fail" } }))),
     Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(confidentEvaluator),
     Layer.provideMerge(Action.layerImplementations)
   )
   const host = NodeRuntime.layerHost(
