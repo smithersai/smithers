@@ -532,6 +532,45 @@ describe("Turns", () => {
     expect(result.status).toEqual({ ses_retry: { type: "busy" } })
   })
 
+  it.each(["retry", "follow-up"])("admits concurrent %s prompts without opening two turns", async (kind) => {
+    const starts: Array<Driver.StartInput> = []
+    const steers: Array<string> = []
+    const driver = Layer.succeed(Driver.Driver, {
+      start: (input) => Effect.sync(() => void starts.push(input)),
+      interrupt: () => Effect.succeed(false),
+      permission: () => Effect.void,
+      steer: (_session, text) => Effect.sync(() => (steers.push(text), true)),
+      resumeOnBoot: () => Effect.void
+    })
+    const first = { messageID: "msg_0000000000040000000000000u", text: "first" }
+    const second = kind === "retry"
+      ? first
+      : { messageID: "msg_0000000000050000000000000u", text: "second" }
+    const messages = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_concurrent"))
+        yield* Effect.all(
+          [first, second].map(({ messageID, text }) =>
+            turns.prompt({
+              sessionID: "ses_concurrent",
+              messageID,
+              parts: [{ type: "text", text }]
+            })
+          ),
+          { concurrency: "unbounded" }
+        )
+        yield* Effect.sleep("30 millis")
+        return yield* store.listMessages("ses_concurrent")
+      }).pipe(Effect.provide(stack(driver, `turns-concurrent-${kind}`)))
+    )
+    expect(starts).toHaveLength(1)
+    expect(steers).toEqual(kind === "retry" ? [] : ["second"])
+    expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(1)
+    expect(messages.filter((message) => message.info.role === "user")).toHaveLength(kind === "retry" ? 1 : 2)
+  })
+
   it("closes an open turn on abort even when the driver has nothing to interrupt", async () => {
     const silent = Layer.succeed(Driver.Driver, {
       start: () => Effect.never,

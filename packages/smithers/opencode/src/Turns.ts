@@ -34,7 +34,7 @@
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Context, Deferred, Effect, Layer, Option, Queue, Schedule, Schema, Scope } from "effect"
+import { Context, Deferred, Effect, Layer, Option, Queue, Schedule, Schema, Scope, Semaphore } from "effect"
 import * as Driver from "./Driver.ts"
 import * as Events from "./Events.ts"
 import * as Health from "./Health.ts"
@@ -232,6 +232,17 @@ export const make = (
       pricing: options.pricing
     }
     const states = new Map<string, Projection.State>()
+    // Admission includes the store reads and the queued open. Concurrent
+    // requests must not both observe idle (or the same absent message) before
+    // either open reaches the projection. Other sessions keep their own lock.
+    const admissions = new Map<string, Semaphore.Semaphore>()
+    const admission = (sessionID: string): Semaphore.Semaphore => {
+      const known = admissions.get(sessionID)
+      if (known !== undefined) return known
+      const gate = Semaphore.makeUnsafe(1)
+      admissions.set(sessionID, gate)
+      return gate
+    }
 
     /**
      * One event, stored then published. The engine holds a write transaction
@@ -493,7 +504,7 @@ export const make = (
         }
         while (states.has(session.id)) yield* Effect.sleep(steerRetryDelay)
         yield* open(session, userMessageID, partID, text, agent, model)
-      })
+      }).pipe(admission(session.id).withPermit)
 
     const prompt: Service["prompt"] = (input) =>
       Effect.gen(function*() {
@@ -562,7 +573,7 @@ export const make = (
           return
         }
         yield* open(session.value, userMessageID, partID, text, agent, model)
-      })
+      }).pipe(admission(input.sessionID).withPermit)
 
     /**
      * Interrupts the driver; when the driver has nothing to interrupt but a
