@@ -1,6 +1,9 @@
+import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, Layer, Result, Schema } from "effect"
+import { Effect, Layer, Redacted, Result, Schema } from "effect"
+import * as HttpClient from "effect/unstable/http/HttpClient"
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import * as Classifiers from "../src/Classifiers.ts"
 import * as Classify from "../src/Classify.ts"
@@ -115,6 +118,45 @@ describe("Classify declaration", () => {
 })
 
 describe("Classify.run", () => {
+  it("preserves every original JSON state when the gateway requires primitive envelopes", async () => {
+    const states = [0, 1, 2, true, false, null, "text", [0, true, null], { state: null }]
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+      Layer.provide(
+        Layer.succeed(KernelHttpClient.HttpClient)(HttpClient.make((request) => {
+          const body = request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : ""
+          const { state } = JSON.parse(body)
+          // The real gateway rejects number, boolean and null states with 400.
+          const accepted = typeof state === "string" || (typeof state === "object" && state !== null)
+          return Effect.succeed(HttpClientResponse.fromWeb(
+            request,
+            new Response(
+              JSON.stringify(accepted ? { answers: { valid: { type: "boolean", probability: 0.99 } } } : {}),
+              {
+                status: accepted ? 200 : 400,
+                headers: { "content-type": "application/json" }
+              }
+            )
+          ))
+        }))
+      )
+    )
+
+    const output = success(
+      await run(
+        Classify.run({
+          states,
+          questions: { valid: { type: "boolean", instructions: "Is the state a JSON value?" } }
+        }),
+        layer
+      )
+    )
+
+    if (!("results" in output)) throw new Error("Expected one result per state")
+    expect(output.results.map((result) => result.ok)).toEqual(states.map(() => true))
+    expect(output.results.map((result) => result.state)).toEqual(states)
+    expect(Schema.decodeUnknownSync(Classify.Output)(output)).toEqual(output)
+  })
+
   it.each(["ad-hoc", "curated"])("preserves reported usage through the %s output schema", async (door) => {
     const state = { task: "fix the parser", file: "src/Parser.ts", excerpt: "export const parse = ..." }
     const usage = { inputTokens: 1200, outputTokens: 4 }

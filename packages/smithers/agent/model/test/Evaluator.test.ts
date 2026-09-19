@@ -135,6 +135,50 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(modelCall).toBe("typesafe-ai/jev")
   })
 
+  it.each([0, 2, -1, 1.5, true, false, null])(
+    "wraps the JSON primitive %j without changing its meaning",
+    async (state) => {
+      const sent: Array<Sent> = []
+      const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+        Layer.provide(httpLayer(sent, () => json(recorded)))
+      )
+      const originalQuestions = JSON.stringify(questions)
+
+      success(await evaluate(layer, { state, questions }))
+
+      const body = JSON.parse(sent[0]!.body)
+      expect(body.state).toEqual({ state })
+      for (const [id, question] of Object.entries(questions)) {
+        expect(body.questions[id]).toEqual({
+          ...question,
+          instructions:
+            "The original JSON state is wrapped in the object's state property. Answer about that original value, not the wrapper.\n\n" +
+            question.instructions
+        })
+      }
+      expect(JSON.stringify(questions)).toBe(originalQuestions)
+    }
+  )
+
+  it.each<[string, unknown]>([
+    ["string", "hello"],
+    ["array", [0, true, null]],
+    ["object", { state: null }]
+  ])("preserves an already accepted %s state and its questions", async (_, state) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+
+    success(await evaluate(layer, { state, questions }))
+
+    expect(JSON.parse(sent[0]!.body)).toEqual({
+      state,
+      questions,
+      providerOptions: { gateway: { zeroDataRetention: true } }
+    })
+  })
+
   /**
    * The exact body main sent for this three-question classifier before the
    * question shapes became classes, read off `JSON.stringify` over the objects

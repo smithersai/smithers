@@ -542,9 +542,23 @@ export function layerVercelGateway(
               // Reject values JSON would omit or coerce, as well as cycles
               // and bigint. Keep the existing wire order after validation.
               CanonicalJson.stringify(request.state)
+              // The gateway accepts strings, arrays and objects, but rejects
+              // number, boolean and null states. The wrapper is transport
+              // only: each question must still judge the original JSON value.
+              const wrapped = request.state === null || typeof request.state === "number" ||
+                typeof request.state === "boolean"
               return JSON.stringify({
-                state: request.state,
-                questions: encodedQuestions,
+                state: wrapped ? { state: request.state } : request.state,
+                questions: wrapped ?
+                  Object.fromEntries(
+                    Object.entries(encodedQuestions).map(([id, question]) => [id, {
+                      ...question,
+                      instructions:
+                        "The original JSON state is wrapped in the object's state property. Answer about that original value, not the wrapper.\n\n" +
+                        question.instructions
+                    }])
+                  ) :
+                  encodedQuestions,
                 providerOptions: { gateway: { zeroDataRetention } }
               })
             },
