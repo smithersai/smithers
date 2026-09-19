@@ -459,7 +459,13 @@ export const createWorkflowController = (
       repo,
       binding,
       workflow: FLOW_AUTHORING_ENTRY,
-      input: { prompt: description },
+      /*
+       * A prompt body's input is the fixed `{ args: string }` marker
+       * (`Descriptor.SchemaRefMarkdownArgs`, decoded by a strict zod object in
+       * `SchemaBridge`), not a field of this door's choosing. `{ prompt }`
+       * decodes as an unknown key and the plan refuses before the run exists.
+       */
+      input: { args: description },
       title: `Creating a flow: ${repo}`
     })
     /*

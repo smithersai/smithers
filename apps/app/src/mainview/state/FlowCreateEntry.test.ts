@@ -112,7 +112,8 @@ test("the flow-authoring door launches the id the workspace host provisions", as
   try {
     const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
     expect(double.launched.map(entry => entry.flowId)).toEqual([FLOW_AUTHORING_ENTRY])
-    expect(double.launched[0]?.input).toEqual({ prompt: "summarise my issues" })
+    /* A prompt body takes the fixed `{ args }` marker, never a field of the door's choosing. */
+    expect(double.launched[0]?.input).toEqual({ args: "summarise my issues" })
     /* The 0.x name, so a regression names itself rather than just failing an equality. */
     expect(double.launched.map(entry => entry.flowId)).not.toContain("create-workflow")
     expect(said(outcome)).toContain(`run-started workflow=${FLOW_AUTHORING_ENTRY}`)

@@ -304,7 +304,7 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     const order = double.calls.map((call) => call.path)
     expect(order[0]).toBe("/api/workflow/provision")
     expect(double.state.launched).toEqual([
-      { workflow: "create-flow", input: { prompt: "a workflow that summarizes my open issues" } }
+      { workflow: "create-flow", input: { args: "a workflow that summarizes my open issues" } }
     ])
     // The provision toast reported and then SETTLED into its result — the
     // wave-9 law: a toast past the debounce never keeps its running sentence.
