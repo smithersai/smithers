@@ -535,6 +535,27 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
     expect(calls.map((call) => call.procedure)).toEqual(["List", "List"])
   })
 
+  /*
+   * A flow whose published document declares no properties — `checks/fast`'s
+   * sibling taking one string — used to be refused with `Input for "<flow>"
+   * isn't what it takes.`, which tells the person nothing they can act on. It
+   * now says what the flow takes, in the same words every other refusal here
+   * uses.
+   */
+  test("a flow that declares no properties says what it takes instead of that the input is wrong", async () => {
+    const calls: Array<RelayCall> = []
+    const document = JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(Schema.String))) as unknown
+    const { controller } = await readyToRegister(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [RPC]: relayRoute(calls, {
+        ...workspaceAnswers(),
+        List: () => okFrame({ _tag: "flows", items: [{ flowId: "checks/none", description: "No input.", inputSchema: document }, FLOW_ITEMS[1]] })
+      }) })
+    )
+    const refused = await controller.registerTrigger({ ...REQUEST, flow: "checks/none", input: '{"args":"lint"}' })
+    expect(refused).toBe('Input for "checks/none" takes "…".')
+    expect(String(refused)).not.toContain("isn't what it takes")
+  })
+
   test("a prepared registration previews the plan and offers the human's approve button; nothing is approved yet", async () => {
     const calls: Array<RelayCall> = []
     const { store, controller } = await readyToRegister(

@@ -471,7 +471,8 @@ const schemaRefusal = (document: unknown, input: unknown, flow: string): string 
   } catch {
     const schema = isRecord((document as Record<string, unknown>).schema) ? (document as Record<string, unknown>).schema as Record<string, unknown> : {}
     const example = inputExample(schema)
-    if (example === undefined) return `Input for "${flow}" isn't what it takes.`
+    /* A flow that declares no property still says what it takes, in the same words: `{}` is "nothing". */
+    if (example === undefined) return `Input for "${flow}" takes ${exampleValue(schema)}.`
     const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === "string") : []
     const missing = isRecord(input) ? required.filter((name) => !(name in input)) : required
     return missing.length > 0
