@@ -570,7 +570,13 @@ describe("coverage conformance", () => {
       // runs enter its Set, admission sets their observed position, and no
       // source is removed until that Set is refreshed once per run. Cache
       // eviction removes verdicts only, never followed sources.
-      "smithers/gateway/src/Projections.ts": 5,
+      // Retention adds two guards: finite encoded string lengths cannot
+      // overflow a safe integer, and an over-budget window cannot be empty
+      // because evicting its last event clamps encodedBytes to two.
+      "smithers/gateway/src/Projections.ts": 7,
+      // The event switch exhausts its discriminated union and assigns its
+      // default to `never`; typed journal events cannot enter that fallback.
+      "smithers/agent/src/AgentSession.ts": 1,
       // `fenced`'s `info` and `body` groups are mandatory (outside any
       // alternation or quantifier), so they participate in every match; the
       // fallbacks only discharge the optional type on
