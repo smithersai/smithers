@@ -80,11 +80,12 @@ const offlinePolicy = Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.lay
 
 // The completion brake never falls back: a claim nothing judged fails the run
 // as `completion_unjudged`. This suite is offline, so the judge is scripted and
-// answers the `completion/claim` classifier's two questions with the confidence
+// answers the `completion/claim` classifier's questions with the confidence
 // a stated completion has always carried here.
 const offlineEvaluator = Evaluator.layerScripted(() => ({
   complete: { probability: 0.99 },
-  overclaims: { probability: 0.01 }
+  overclaims: { probability: 0.01 },
+  invented: { probability: 0.01 }
 }))
 
 /**
