@@ -49,7 +49,7 @@ import { parse } from "yaml"
  * The publish job of release.yml, in its order, plus the two flow-only gates.
  *
  * The first block is the required CI `test` job, which release.yml copies out
- * of the generated ci.yml; then the `apps-e2e` pair the release runs without
+ * of the generated ci.yml; then the `apps-e2e` gates the release runs without
  * the browser suite; then the `e2e-faults` matrix and the release-only
  * targets; then the `wasm-repro` pair. `pack-release.test.mjs` proves the
  * workflow-to-workflow copy, and `release-gates.test.mjs` proves this list
@@ -91,6 +91,7 @@ export const releaseGates = [
   { name: "SWE-bench rig typecheck", verb: "build", target: "//evals/swebench:check" },
   { name: "UI typecheck", verb: "build", target: "//apps/app:check" },
   { name: "UI unit tests", verb: "test", target: "//apps/app:unitTests" },
+  { name: "UI conformance lint", verb: "test", target: "//apps/app:conformance" },
   { name: "Server typecheck and tests", verb: "ci", target: "//apps/server/..." },
   { name: "Review app and workers", verb: "ci", target: "//apps/review/..." },
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
@@ -172,7 +173,7 @@ export const releaseGateExclusions = [
   {
     job: "apps-e2e",
     commands: ["pnpm exec smthrs test '//apps/app:browserE2e' --verbose"],
-    reason: "The Playwright suite needs the browsers the apps-e2e runner installs; the release runs the job's UI typecheck and unit tests."
+    reason: "The Playwright suite needs the browsers the apps-e2e runner installs; the release runs the job's UI typecheck, unit tests and conformance lint."
   },
   {
     job: "rust",

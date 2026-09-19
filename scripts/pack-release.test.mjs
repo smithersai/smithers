@@ -292,7 +292,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
 
   // The gates the release adds on top of the mirrored jobs, pinned so an
   // extra step is a decision here rather than a silent addition. The apps/app
-  // pair mirrors the `apps-e2e` job without its browser suite; the other two
+  // gates mirror the `apps-e2e` job without its browser suite; the other two
   // are release-only targets the roster comment in release.yml explains. The
   // 2026-09-05 rename added `smthrs` copies of two gates beside their older
   // `smithers-build` twins, and the subset check this case used to be could
@@ -301,6 +301,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   const releaseOnly = [
     "pnpm exec smthrs build '//apps/app:check' --verbose",
     "pnpm exec smthrs test '//apps/app:unitTests' --verbose",
+    "pnpm exec smthrs test '//apps/app:conformance' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose",
     "pnpm exec smthrs test '//scripts:releaseVersion' --verbose"
   ]
