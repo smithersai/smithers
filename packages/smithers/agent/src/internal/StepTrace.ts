@@ -99,7 +99,10 @@ export const make = (journal: Journal.Service) =>
               cell,
               at,
               eventType: projected.eventType,
-              sourceSequence: traceIdentity(frame, ordinal, cell, projected.eventType, payload),
+              // Arrival order can change around a retained prefix. The journal
+              // identity follows the checkpoint address; ordinal only records
+              // where this observation first arrived.
+              sourceSequence: traceIdentity(frame, occurrence, cell, projected.eventType, { checkpoint: identity }),
               payload
             }
           })

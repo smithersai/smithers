@@ -376,10 +376,10 @@ const layer = Layer.mergeAll(
 ### Watching it run
 
 A step answers with one decoded value, which it only knows at the end. Provide
-`EventSink` to also receive each agent event as it happens: token deltas, the
-cell that was produced, the calls it made. The step still buffers every event
-for the decode, so the answer, the correction budget, and the failures are the
-same with a sink as without one.
+`EventSink` to observe its provider and controller events, including the cell
+it produced and the calls it made. `FlowEngineLike` records a complete provider
+call before emitting its deltas, so those deltas do not report live provider
+progress.
 
 ```ts
 import { EventSink } from "@smthrs/agent"
@@ -391,9 +391,15 @@ const watched = Layer.merge(
 )
 ```
 
-`emit` runs inside the frame that produced the event, and that frame holds the
-engine's write transaction. A sink pushes onto a queue, writes to a socket, or
-resolves a deferred. A sink that waits on a durable write stalls the run.
+An observer's `emit` consumes the public event stream. Keep it short, for
+example by updating a view or resolving a deferred.
+
+The module host installs `EventSink.durable` automatically. It checkpoints
+projected events at the controller source. Each bounded fact and its checkpoint
+outcome commit in one transaction before the owning agent step settles.
+Provider execution holds no checkpoint transaction. Recorded invocation,
+attempt, correction, quota retry, and generation coordinates keep concurrent
+steps and replayed observations separate.
 
 ## Quota-aware waits
 

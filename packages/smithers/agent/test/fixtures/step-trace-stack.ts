@@ -96,7 +96,12 @@ export const stores = (filename: string) =>
   )
 export const incarnation = (
   model: Model.Model,
-  options: { trace?: boolean; quota?: boolean; parkAfter?: boolean } = {}
+  options: {
+    trace?: boolean
+    quota?: boolean
+    parkAfter?: boolean
+    host?: Partial<AgentAction.Host>
+  } = {}
 ) =>
   Effect.gen(function*() {
     const engine = yield* EngineStore.make({
@@ -146,7 +151,8 @@ export const incarnation = (
           capabilityEnvelope: [],
           limits: { calls: 8 },
           maxFrames: 3,
-          modelRetryPolicy: Schedule.recurs(0)
+          modelRetryPolicy: Schedule.recurs(0),
+          ...options.host
         })),
         Layer.provideMerge(SeatResolver.layer({
           resolve: (id) =>
