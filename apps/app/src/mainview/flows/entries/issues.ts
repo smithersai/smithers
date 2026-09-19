@@ -24,7 +24,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "List a repository's issues",
     runtimeAny: ["cloud", "practice"],
     args: "[open|closed|all] [owner/repo]",
-    requires: ["first-run-target"],
+    requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
       repo: Schema.optional(Schema.String)
@@ -37,7 +37,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "List a repository's issues",
     runtimeAny: ["cloud", "practice"],
     args: "[open|closed|all] [owner/repo]",
-    requires: ["first-run-target"],
+    requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({
       filter: Schema.optional(Schema.Literals(["open", "closed", "all"])),
       repo: Schema.optional(Schema.String)

@@ -159,3 +159,32 @@ test("a signed-in entry with no persisted target keeps today's behaviour: it ask
     expect(store.session().pendingCommand ?? null).toBeNull()
   } finally { await controller.dispose() }
 })
+
+/*
+ * Canary W1 item 3d, receipts `W1-i-signed-out.json` (`cardIds`) and
+ * `W1-50-signed-out-issues-list.png`: an anonymous visitor on
+ * /codeplanesmithers/canary-sandbox ran `/issues.list` and got the sign-in
+ * prompt AND a `List a repository's issues` form card — Filter, Repo, Cancel,
+ * Submit — asking them to name a repository they cannot read. The run-3
+ * FAILED card was already gone; the form was what was left. Every other
+ * other list door — `files.list` — already declares `repo-source`, which is
+ * the app's one rule for an anonymous context: a signed-out visitor with no
+ * open repository, no public catalog repository and no practice source parks
+ * on it and gets the sign-in step in the form's place, while a public catalog
+ * repository still reads without an account.
+ */
+test("a signed-out visitor's issues door offers sign-in and nothing to fill in", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "system", id: "codeplanesmithers/canary-sandbox" }).isPersisted.promise
+    controller.settleFirstRunTarget()
+    await controller.commands.run("issues.list")
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(forms()).toEqual([])
+    expect([...store.collections.messages.values()].some(message => message.action?.flow === "auth.sign-in")).toBe(true)
+    expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "repo-source" })
+  } finally { await controller.dispose() }
+})

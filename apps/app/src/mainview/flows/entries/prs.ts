@@ -22,7 +22,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     summary: "List a repository's pull requests",
     runtimeAny: ["cloud", "practice"],
     args: "[owner/repo]",
-    requires: ["first-run-target"],
+    requires: ["first-run-target", "repo-source"],
     input: RepoTarget,
     prepare: ({ repo }) => actions.listLandings.preload?.(repo),
     handler: ({ repo }) => actions.listLandings(repo)
@@ -32,7 +32,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     summary: "List a repository's pull requests",
     runtimeAny: ["cloud", "practice"],
     args: "[owner/repo]",
-    requires: ["first-run-target"],
+    requires: ["first-run-target", "repo-source"],
     input: RepoTarget,
     prepare: ({ repo }) => actions.listLandings.preload?.(repo),
     handler: ({ repo }) => actions.listLandings(repo)
