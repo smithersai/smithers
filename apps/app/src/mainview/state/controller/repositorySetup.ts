@@ -11,7 +11,7 @@ import { browserWriteRefusal } from "../BrowserWriteFailure"
 import { isPracticeRepo } from "../practice/PracticeRepository"
 import { resolveTargetRepo } from "../RepoContext"
 import { setupTrialPr } from "../RepositorySetupTrial"
-import { setupRefusal } from "../RunFailure"
+import { setupFailureSentence } from "../RunFailure"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
 import { defaultSetupQuestion, repositorySetupGuide, setupGuideQuestions } from "./repositorySetupGuide"
@@ -513,9 +513,11 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
               shared.expiredSchedules.delete(id)
               void requestRecovery(id, intent.id)
             }
-            // A refusal the person has to answer states the host's sentence
-            // here too; the receipt keeps its verdict line as the evidence.
-            return receipt.phase === "completed" ? { value: `${intent.operation} completed.` } : setupRefusal(receipt.error) ?? receipt.error ?? `Setup ${receipt.phase}.`
+            // The toast says what the card says: the person's own refusal in
+            // the host's words, and every other fault in that fault's line —
+            // never the run phase and the engine's code. The receipt keeps the
+            // verdict line as the evidence.
+            return receipt.phase === "completed" ? { value: `${intent.operation} completed.` } : setupFailureSentence(receipt.error) ?? receipt.error ?? `Setup ${receipt.phase}.`
           }
           await delay()
           if (!current(id, intent.id, login, accountEpoch)) return TOAST_SUPERSEDED
@@ -562,7 +564,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         const updated = get(id)!
         attachRun(updated)
         if (updated.payload.recovery?.error) return updated.payload.recovery.error
-        if (updated.payload.request?.error) return setupRefusal(updated.payload.request.error) ?? updated.payload.request.error
+        if (updated.payload.request?.error) return setupFailureSentence(updated.payload.request.error) ?? updated.payload.request.error
         if (["requested", "running"].includes(updated.payload.request?.state ?? "")) { void send(id); return TOAST_SUPERSEDED }
         if (result.setup.state === "none" && result.registration.state === "known" && !result.registration.active && !result.registration.trial
           && updated.payload.inspectedAt === undefined && !updated.payload.request

@@ -144,20 +144,6 @@ const journalledFault = (workflow: string, code: string, sentence: string): Plue
     : workflow === REGISTRAR_FLOW || (workflow === SETUP_FLOW && SETUP_REFUSALS.has(sentence)) ? "user" : undefined
 
 /**
- * The setup bridge's own refusal, read from the settled receipt the setup card
- * and its toast render instead of a run's journal.
- *
- * A receipt carries one string: the status and the pair behind it, exactly as
- * the host wrote them. So the decision is the same one the run card makes, on
- * the same typed pair; an error line the bridge did not refuse answers nothing
- * and its copy stays what it was.
- */
-export const setupRefusal = (error: string | undefined): string | undefined => {
-  const verdict = setupVerdict(error)
-  return verdict?.fault === "user" ? verdict.message : undefined
-}
-
-/**
  * What a settled setup receipt says, typed by its own code.
  *
  * A verdict is `<phase> — <code>: <sentence>`, and a card that could not place

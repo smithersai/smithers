@@ -7,6 +7,8 @@ import type { ControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { applySetupEdit, createRepositorySetupController, projectRecoveredSetup, type RepositorySetupDependencies } from "./repositorySetup"
 import { cardContainsRun, runScopeFromCard } from "../RunReference"
+import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
+import { RECEIPT_CODES, setupFailureSentence } from "../RunFailure"
 import { PRACTICE_REPO } from "../practice/PracticeRepository"
 
 type Body = { requestId: string; repo: string; job: string; revision: number; digest: string; draft: SetupDraft; workspaceId?: string; manual?: SetupManualRequest }
@@ -1491,6 +1493,83 @@ test("the toast a settled refusal recovered after a reload states the host's sen
     const toasts = [...t.store.collections.toasts.values()].filter(toast => toast.status === "failed")
     expect(toasts.map(toast => toast.detail)).toEqual([REFUSAL])
   } finally { gate.release(); await t.close() }
+})
+
+/*
+ * W1 item 1b, at the two call sites that raise the toast, not only at the card
+ * (.artifacts/mvp-claude-orchestration-20260917/R103-review-L103.md): the same
+ * Retry press that produced `W1-g L76-issuesAfterRetry` put the fault's own
+ * sentence on the card and `failed — execution: The workspace died mid-apply`
+ * on the toast beside it. A settled verdict is `<phase> — <code>: <sentence>`,
+ * and every code `RECEIPT_CODES` holds is answered on both surfaces by the one
+ * exhaustive path, so a member added there and left unanswered fails this test
+ * as well as the compiler.
+ */
+const ENGINE_SENTENCE = "The workspace died mid-apply"
+const settledToasts = (t: Awaited<ReturnType<typeof fixture>>) =>
+  [...t.store.collections.toasts.values()].filter(toast => toast.status === "failed").map(toast => toast.detail)
+
+/*
+ * Two answers are allowed and nothing else: the host's own sentence, when the
+ * code says the request is the person's to change, or that fault's standing
+ * lead. The verdict line itself is never one of them.
+ */
+const LEADS = Object.values(REFUSAL_COPY).map(copy => copy.lead)
+const answersForPerson = (detail: string | undefined, verdict: string, code: string) => {
+  expect(detail).toBeString()
+  expect(detail).toBe(setupFailureSentence(verdict))
+  expect([ENGINE_SENTENCE, ...LEADS]).toContain(detail ?? "")
+  expect(detail).not.toContain(code)
+  expect(detail).not.toContain("failed — ")
+}
+
+test("every receipt code a settled setup raises reaches the toast as its fault's sentence", async () => {
+  for (const code of RECEIPT_CODES) {
+    const verdict = `failed — ${code}: ${ENGINE_SENTENCE}`
+    const gate = deferred()
+    const t = await fixture(async body => {
+      await gate.promise
+      const value = await response(body, "failed", "trial").json() as { receipt: Record<string, unknown> }
+      return Response.json({ ...value, receipt: { ...value.receipt, error: verdict } })
+    })
+    try {
+      await t.setup.runRepositorySetup("setup", "trial")
+      await until(() => [...t.store.collections.toasts.values()].some(toast => toast.status === "running"))
+      gate.release()
+      await Promise.all(t.background)
+      expect(t.state().request?.error).toBe(verdict)
+      const [detail, ...rest] = settledToasts(t)
+      expect(rest).toEqual([])
+      answersForPerson(detail, verdict, code)
+    } finally { gate.release(); await t.close() }
+  }
+})
+
+test("every receipt code recovered after a reload reaches the toast as its fault's sentence", async () => {
+  for (const code of RECEIPT_CODES) {
+    const verdict = `failed — ${code}: ${ENGINE_SENTENCE}`
+    const gate = deferred()
+    const t = await fixture(async body => response(body, "completed", "inspect"))
+    t.recovery.answer = async () => {
+      await gate.promise
+      const recovered = settledWorkspaceGone()
+      const receipt = recovered.setup.state === "found" ? recovered.setup.result.receipt : undefined
+      if (recovered.setup.state !== "found" || receipt === undefined) throw Error("fixture")
+      recovered.setup = { ...recovered.setup, input: { ...recovered.setup.input, operation: "trial" },
+        result: { ...recovered.setup.result, receipt: { ...receipt, operation: "trial", evidence: ["run:run-3"], error: verdict } } }
+      return Response.json(recovered)
+    }
+    try {
+      const opened = t.setup.openRepositorySetup("issues", "example/repo")
+      await until(() => [...t.store.collections.toasts.values()].some(toast => toast.status === "running"))
+      gate.release()
+      await opened; await Promise.all(t.background)
+      expect(setupCard(t).payload.request).toMatchObject({ state: "failed", error: verdict })
+      const [detail, ...rest] = settledToasts(t)
+      expect(rest).toEqual([])
+      answersForPerson(detail, verdict, code)
+    } finally { gate.release(); await t.close() }
+  }
 })
 
 /*
