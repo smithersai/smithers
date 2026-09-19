@@ -63,10 +63,15 @@ describe("recorded goal progress", () => {
     expect(checkState(records, 0)).toBe("pending")
     expect(checkState(records, 1)).toBe("running")
     expect(checkState(records, 2)).toBe("failed")
-    expect(checkState(call(1, "bash", { command: "bun test tests/memory" }))).toBe("passed")
+    for (const target of ["tests/memory", '"tests/memory"', "'tests/memory'"]) {
+      expect(checkState(call(1, "bash", { command: `bun test ${target}` }))).toBe("passed")
+    }
     expect(checkState(call(1, "bash", { command: "bun test tests/memory" }, "passed"))).toBe("pending")
   })
   test.each(["echo bun test tests/memory", "cat tests/memory", "bun test tests/memory || true", "bun test tests/memory; echo ok", "bun test tests/memory-other"])("%s never verifies the target", command => {
+    expect(checkState(call(1, "bash", { command }))).toBe("pending")
+  })
+  test.each(['bun test "tests/memory"Other', "bun test 'tests/memory'Other"])("%s cannot turn a quoted prefix into a matching target", command => {
     expect(checkState(call(1, "bash", { command }))).toBe("pending")
   })
   test.each(["bun test tests/memory/a.test.ts", "bun test tests/memory --test-name-pattern tiny", "pytest tests/memory -k tiny"])("%s records narrowed verification", command => {

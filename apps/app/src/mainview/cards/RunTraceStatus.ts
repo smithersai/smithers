@@ -98,6 +98,8 @@ const checkSelection = (flow: string, input: unknown): ReadonlyArray<string> | u
   if (flow === "test") return strings(p.selection)
   if (flow === "target.run") return text(p.label) === undefined ? undefined : [p.label as string]
   if (flow !== "bash" || typeof p.command !== "string" || /[;&|`$<>\n]/.test(p.command)) return undefined
+  // Only complete literal arguments are supported; concatenated shell words cannot prove a target.
+  if (!/^\s*(?:[^\s"'\\]+|"[^"\\]*"|'[^']*')(?:\s+(?:[^\s"'\\]+|"[^"\\]*"|'[^']*'))*\s*$/.test(p.command)) return undefined
   const tokens = p.command.match(/"[^"\n]*"|'[^'\n]*'|[^\s]+/g)?.map(token => token.replace(/^(['"])(.*)\1$/, "$2")) ?? []
   const prefix = tokens.slice(0, 3).join(" ")
   if (prefix === "bun run check" || prefix === "pnpm run check" || prefix === "python -m pytest") return tokens.slice(3)
