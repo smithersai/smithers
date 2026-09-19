@@ -227,6 +227,29 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       return options === undefined ? rest : { ...rest, options: [...options] }
     })
 
+  /*
+   * NO LINE RENDERS TWICE. A consequential door whose refusal has to outlive a
+   * four-second toast writes it into the transcript itself (the pause door,
+   * seams/TriggersSeam.ts refusePause; the setup question gate,
+   * controller/repositorySetup.ts) and RETURNS the same sentence, which is how
+   * the toast and the agent read it. Painting that return value onto the form
+   * card as well printed it twice: canary W1 item 3a read
+   * `No schedule "…" is registered on …` inside the pause card with the same
+   * sentence standing in the transcript right above it
+   * (.artifacts/mvp-canary-walk-20260917/W1-13-triggers-pause-submitted.png).
+   * The transcript line is the one the walk verified as required, so the card
+   * yields to it — and only to it: the sentence has to be the line the
+   * transcript JUST took, so a refusal that matches something said minutes ago
+   * still lands on the card the person is looking at.
+   */
+  const justSaid = (sentence: string): boolean => {
+    let latest: { readonly ordinal: number; readonly text: string } | undefined
+    for (const message of collections.messages.values()) {
+      if (latest === undefined || message.ordinal > latest.ordinal) latest = message
+    }
+    return latest?.text === sentence
+  }
+
   const patch = (card: FlowFormCard, payload: FlowFormCard["payload"], status: Card["status"]): Promise<void> => {
     const invocation = continuationFor(card)
     // Replace the payload so clearing an optional parse error is durable; patches merge omitted keys.
@@ -497,7 +520,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       return { value: outcome.value ?? `submitted /${flow}${args === "" ? "" : ` ${args}`}` }
     }
     const error = describe(outcome)
-    await patch(current, { ...current.payload, submitting: false, error }, "error")
+    const { error: _repeated, ...settledPayload } = current.payload
+    await patch(current, justSaid(error) ? { ...settledPayload, submitting: false } : { ...current.payload, submitting: false, error }, "error")
     // The card carries the refusal for the human; the agent reads it as its result.
     return actor === "smithers" ? error : undefined
   }

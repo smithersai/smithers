@@ -10,6 +10,7 @@ import { waitFor } from "../TestFixtures"
 import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { readFile } from "node:fs/promises"
+import { flowArgs } from "../../flows/FlowArgs"
 import { LIMIT_SHAPE, NO_RULES_SENTENCE, overBoundFlowSentence, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
 
 const createAppController = scopedControllers()
@@ -1310,6 +1311,34 @@ describe("triggers seam: listing and pausing a schedule", () => {
     await settled()
     expect([...store.collections.messages.values()].map((message) => message.text))
       .toContain('No schedule "canary-never-registered" is registered on will/flows.')
+  })
+
+  /*
+   * Canary W1 item 3a, receipt `W1-13-triggers-pause-submitted.png` and
+   * `W1-e-triggers-register.json` `L92-tokensCards`: the pause form card read
+   *
+   *   Pause a schedule / Repo / Slug / Cancel / Submit
+   *   No schedule "canary-w1-not-registered" is registered on codeplanesmithers/canary-sandbox.
+   *
+   * with the same sentence standing in the transcript above it. The transcript
+   * line is the durable half the door writes on purpose; the card underneath
+   * was the form repeating it back.
+   */
+  test("a refusal the door already said in the transcript is not repeated on its form card", async () => {
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [PAUSE]: json(200, { status: "ok", paused: 0 }) }),
+      { signedIn: true }
+    )
+    const sentence = 'No schedule "canary-w1-not-registered" is registered on will/flows.'
+    expect((await controller.commands.run("triggers.pause")).status).toBe("form")
+    const cardId = "form-triggers.pause"
+    await controller.runCommand("form.set", flowArgs("form.set", { cardId, field: "repo", value: "will/flows" }))
+    await controller.runCommand("form.set", flowArgs("form.set", { cardId, field: "slug", value: "canary-w1-not-registered" }))
+    await controller.runCommand("form.submit", cardId)
+    await settled()
+    const card = store.collections.cards.get(cardId)
+    expect([...store.collections.messages.values()].map((message) => message.text).filter((text) => text === sentence)).toEqual([sentence])
+    expect(card?.kind === "flow-form" ? card.payload.error : "no card").toBeUndefined()
   })
 
   test("the pause door is the agent's to ask for and the human's to confirm", async () => {

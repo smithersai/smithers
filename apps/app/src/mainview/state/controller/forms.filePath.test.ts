@@ -25,7 +25,7 @@ const fixture = (read: (path: string) => string | { readonly value: string } = (
   const reads: Array<string> = []
   const store = {
     session: () => ({ activeRepoKey: REPO }),
-    collections: { cards, repos: new Map(), repositories: new Map(), workingCopies: new Map(), harnesses: new Map() },
+    collections: { cards, messages: new Map(), repos: new Map(), repositories: new Map(), workingCopies: new Map(), harnesses: new Map() },
     dispatch: (event: { type: string; card?: Card }) => {
       if (event.type === "card.upsert") cards.set(event.card!.id, event.card!)
       return { isPersisted: { promise: Promise.resolve() } }
