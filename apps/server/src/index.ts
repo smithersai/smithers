@@ -15,7 +15,9 @@ import {
   CANCEL_PATH,
   IDENTITY_ROUTE_PREFIX,
   JEV_PATH,
+  MODEL_CATALOG_PATH,
   MODEL_STREAM_PATH,
+  MODEL_TEST_PATH,
   RECOMMEND_OUTCOME_PATH,
   RECOMMEND_PATH,
   TOOLS_BROWSER_FETCH_PATH,
@@ -56,6 +58,7 @@ import { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import { handlePublicRepoActivity, parsePublicRepoActivityPath } from "./publicRepoActivity"
 import { handlePublicRepos } from "./publicRepos"
 import { handleJev } from "./jevRelay"
+import { handleModelCatalog, handleModelTest } from "./modelProbe"
 import { handleRecommend, handleRecommendOutcome, RecommendLog } from "./recommend"
 import {
   handleTriggerApproval,
@@ -368,11 +371,12 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (refusal instanceof Response && refusal.status !== 401) return refusal
       return yield* handleCancel(request, refusal instanceof Response ? undefined : refusal)
     }
-    // The two routes that spend a model credential. Both gate on the
-    // session first and then on the login's turn ceiling, so a refusal
-    // costs one Durable Object read and never reaches an upstream. The
-    // cancel route above is deliberately unlimited: killing a turn must
-    // always work, and it spends nothing.
+    // The routes that spend a model credential: the turn, the model stream
+    // and, below them, the Models Test. Each gates on the session first and
+    // then on the login's turn ceiling, so a refusal costs one Durable
+    // Object read and never reaches an upstream. The cancel route above is
+    // deliberately unlimited: killing a turn must always work, and it
+    // spends nothing.
     if (url.pathname === TURN_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
@@ -390,6 +394,25 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
         if (refused !== undefined) return refused
       }
       return yield* handleModelStream(request, gate)
+    }
+    // The Models surface (src/modelProbe.ts). Both sit behind the session:
+    // the catalog names what this deployment holds, and a Test spends a
+    // deployment key, so it spends one turn of the login's budget first.
+    if (url.pathname === MODEL_CATALOG_PATH) {
+      if (request.method !== "GET") return methodNotAllowed()
+      const gate = yield* requireTurnSession(request)
+      if (gate instanceof Response) return gate
+      return yield* handleModelCatalog()
+    }
+    if (url.pathname === MODEL_TEST_PATH) {
+      if (request.method !== "POST") return methodNotAllowed()
+      const gate = yield* requireTurnSession(request)
+      if (gate instanceof Response) return gate
+      if (gate !== undefined) {
+        const refused = yield* loginBudget(gate.login)
+        if (refused !== undefined) return refused
+      }
+      return yield* handleModelTest(request)
     }
     if (url.pathname.startsWith("/api/repository-setup/")) return yield* handleRepositorySetup(request)
     if (url.pathname === WORKFLOW_PROVISION_PATH) {

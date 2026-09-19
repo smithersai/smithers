@@ -10,11 +10,13 @@ import * as Stream from "effect/Stream"
 import * as Semaphore from "effect/Semaphore"
 import type * as Arr from "effect/Array"
 import { AgentRuntimeContextSchema, composeAgentInstructions } from "@smthrs/rpc/AgentContext"
+import { ModelBindingSchema } from "@smthrs/rpc/ConfiguredModel"
 import { readAgentTurnCommands } from "@smthrs/rpc/NativeAgent"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { runDurable } from "./Boundary"
 import { handleCloudRoleTurn, isCloudRoleTurn, turnHints } from "./cloudRoleTurn"
+import { handleConfiguredModelTurn } from "./configuredModel"
 import { handleFrontDoor } from "./frontDoor"
 import type { RecommendLogStore } from "./recommend"
 import type { TurnRequest } from "./cloudRoleTurn"
@@ -662,6 +664,17 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
     // readAgentTurnCommands): a client that sends a list this contract does
     // not allow loses the front door, never its turn.
     const commands = readAgentTurnCommands(body.commands)
+    // The two model bindings are NOT hints: one this contract cannot read is
+    // refused here, because dropping it would answer the turn on a model the
+    // client did not ask for.
+    const model = "model" in body ? ModelBindingSchema.safeParse(body.model) : undefined
+    if (model?.success === false) {
+      return refuse("request_invalid", "model must be a model binding: { protocol, modelId, credential } with optional baseUrl and path.")
+    }
+    const decisionModel = "decisionModel" in body ? ModelBindingSchema.safeParse(body.decisionModel) : undefined
+    if (decisionModel?.success === false) {
+      return refuse("request_invalid", "decisionModel must be a model binding: { protocol, modelId, credential } with optional baseUrl and path.")
+    }
     return {
       runId: body.runId,
       messages: body.messages,
@@ -670,6 +683,8 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
       ...(body.context === undefined ? {} : { context: body.context }),
       ...(body.journal === undefined ? {} : { journal: body.journal }),
       ...(commands === undefined ? {} : { commands }),
+      ...(model === undefined ? {} : { model: model.data }),
+      ...(decisionModel === undefined ? {} : { decisionModel: decisionModel.data }),
       ...turnHints(body)
     } as const
   })
@@ -692,6 +707,15 @@ const handleTransientTurn = (
   Effect.gen(function* () {
     const body = parsed ?? (yield* readStartTurn(request))
     if (body instanceof Response) return body
+    // A sealed turn bound to a configured model (the `explainer` seat) is
+    // answered here on that model or refused, never upstream. It spends a
+    // deployment key, so where sign-in exists a signed-out caller is refused.
+    if (body.model !== undefined) {
+      if (session === undefined && (yield* ServerConfig).identityUpstreamUrl !== undefined) {
+        return refuse("sign_in_required", "Sign in to use a configured model.")
+      }
+      return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS)
+    }
     // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.
     if (isCloudRoleTurn(body)) return yield* handleCloudRoleTurn(body, ISOLATION_HEADERS)
     /*

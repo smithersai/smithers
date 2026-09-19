@@ -850,3 +850,74 @@ describe("the questions asked and the answers read", () => {
     expect(filterAnswer(["c3", " c1 ", "nope", "c3", "c0", "c7", "c2", "c5"], offered)).toEqual(["c3", "c1", "c0", "c7", "c2"])
   })
 })
+
+describe("the recommend seat: the decision model a request arms", () => {
+  const JEV_BINDING = { protocol: "evaluation", modelId: JEV_MODEL, credential: "AI_GATEWAY_API_KEY" }
+
+  const refusedBinding = async (model: unknown, config?: Partial<ServerConfigShape>) => {
+    const logs = memoryLog()
+    const limits = memoryLimits()
+    const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, model }), {
+      logs,
+      limits,
+      ...(config === undefined ? {} : { config })
+    })
+    const body = (await response.json()) as { status: string; code: string; message: string }
+    // Refused before anything is spent: no Jev, no row.
+    expect(calls).toEqual([])
+    expect(await readRows(logs)).toEqual([])
+    return { status: response.status, code: body.code, message: body.message }
+  }
+
+  test("an allowed binding is the id Jev is asked by, the id the row records and the id the answer names", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, model: JEV_BINDING }), {
+      logs,
+      jev: async () => decision({ "run.start": 0.8, help: 0.2 })
+    })
+    expect(response.status).toBe(200)
+    expect(calls.map((request) => request.headers.get("ai-model-id"))).toEqual([JEV_MODEL])
+    expect(((await response.json()) as { model: string }).model).toBe(JEV_MODEL)
+    expect((await readRows(logs)).map((row) => row.model)).toEqual([JEV_MODEL])
+  })
+
+  test("a request without a binding answers exactly as one that binds the default", async () => {
+    const jev = async () => decision({ "run.start": 0.8, help: 0.2 })
+    const bare = await ranks(jev)
+    const bound = await ranks(jev, { ...goodBody, model: JEV_BINDING })
+    expect({ ...bound.body, id: "" }).toEqual({ ...bare.body, id: "" })
+    expect(await bound.calls[0]!.text()).toBe(await bare.calls[0]!.text())
+  })
+
+  test("an id off the allowlist is request_invalid, never the default Jev", async () => {
+    const refused = await refusedBinding({ ...JEV_BINDING, modelId: "openai/gpt-x" })
+    expect([refused.status, refused.code]).toEqual([400, "request_invalid"])
+    expect(refused.message).not.toContain("openai/gpt-x")
+  })
+
+  test("a generation binding, an unpinned address and an unknown credential are each request_invalid", async () => {
+    for (const model of [
+      { protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "gpt-oss-120b", credential: "CEREBRAS_API_KEY" },
+      { ...JEV_BINDING, baseUrl: "https://attacker.test" },
+      { ...JEV_BINDING, baseUrl: "https://ai-gateway.vercel.sh/elsewhere" },
+      { ...JEV_BINDING, credential: "GITHUB_TOKEN" }
+    ]) {
+      const refused = await refusedBinding(model)
+      expect([model, refused.status, refused.code]).toEqual([model, 400, "request_invalid"])
+    }
+  })
+
+  test("a binding that is not one is request_invalid at the body, and an extra key cannot ride it", async () => {
+    for (const model of [null, JEV_MODEL, { ...JEV_BINDING, apiKey: "vck-smuggled" }]) {
+      const refused = await refusedBinding(model)
+      expect([refused.status, refused.code]).toEqual([400, "request_invalid"])
+      expect(refused.message).not.toContain("vck-smuggled")
+    }
+  })
+
+  test("an allowed binding on a deployment without the key is seam_not_configured, naming the key", async () => {
+    const refused = await refusedBinding(JEV_BINDING, { aiGatewayApiKey: undefined })
+    expect([refused.status, refused.code]).toEqual([503, "seam_not_configured"])
+    expect(refused.message).toContain("AI_GATEWAY_API_KEY")
+  })
+})

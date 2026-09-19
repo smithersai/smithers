@@ -4,6 +4,7 @@ import type { AgentChatMessage, AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { TurnRequest } from "./cloudRoleTurn"
+import { modelRefusal, planDecisionModel } from "./configuredModel"
 import { ServerConfig } from "./Config"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
@@ -323,7 +324,8 @@ export type FrontDoorRead =
  */
 export const askFrontDoor = (
   body: TurnRequest,
-  commands: ReadonlyArray<RecommendCommand>
+  commands: ReadonlyArray<RecommendCommand>,
+  model: string = JEV_DEFAULT_MODEL
 ): Effect.Effect<FrontDoorRead, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
@@ -342,7 +344,7 @@ export const askFrontDoor = (
     const keys = Object.keys(questions)
     const split = keys.length > 1
     const answer = yield* jevEvaluate({
-      model: JEV_DEFAULT_MODEL,
+      model,
       state: {
         repository: frontDoorRepo(body) ?? "(none selected)",
         conversation: earlier.length === 0 ? "(no earlier messages)" : tailText(earlier),
@@ -516,7 +518,8 @@ const logDecision = (
   body: TurnRequest,
   offered: number,
   decision: FrontDoorDecision,
-  routed: boolean
+  routed: boolean,
+  model: string
 ): Effect.Effect<void, never, RecommendLogStore> =>
   Effect.gen(function*() {
     const store = yield* RecommendLogStore
@@ -527,7 +530,7 @@ const logDecision = (
       tailDigest: digest,
       commandCount: offered,
       commands: decision.command === undefined ? [] : [decision.command],
-      model: JEV_DEFAULT_MODEL,
+      model,
       frontDoor: { confidence: decision.confidence, impossible: decision.impossible, routed },
       outcome: null
     })
@@ -546,6 +549,11 @@ export const handleFrontDoor = (
   headers: Record<string, string>
 ): Effect.Effect<Response | undefined, never, Transport | ServerConfig | RecommendLogStore> =>
   Effect.gen(function*() {
+    // The decision model this turn armed (the `front-door` seat). A binding
+    // this deployment does not allow refuses the turn before anything is
+    // spent: neither the default Jev nor the concierge answers in its place.
+    const armed = planDecisionModel(body.decisionModel, yield* ServerConfig)
+    if (!armed.ok) return modelRefusal(armed.failure, headers)
     // A leg answering this Worker's own tool call: deterministic, no model.
     const continued = frontDoorContinuation(body)
     if (continued !== undefined) return ndjson(frontDoorContinuationFrames(body.runId), headers)
@@ -554,7 +562,7 @@ export const handleFrontDoor = (
     // are turns the front door never read: the concierge answers them, as it
     // always did.
     if (commands === undefined || !isFrontDoorTurn(body)) return undefined
-    const read = yield* askFrontDoor(body, commands)
+    const read = yield* askFrontDoor(body, commands, armed.modelId)
     switch (read.kind) {
       case "skipped":
         return undefined
@@ -570,7 +578,7 @@ export const handleFrontDoor = (
         const decision = read.decision
         const routed = decision.command !== undefined && decision.confidence >= FRONT_DOOR_CONFIDENCE_FLOOR &&
           decision.isCommand >= FRONT_DOOR_IS_COMMAND_FLOOR
-        yield* logDecision(body, commands.length, decision, routed)
+        yield* logDecision(body, commands.length, decision, routed, armed.modelId)
         // Jev's own answer: `none`, or a command it is not sure enough about.
         // The concierge is what Jev decided on, so this is not a fallback.
         if (!routed) return undefined

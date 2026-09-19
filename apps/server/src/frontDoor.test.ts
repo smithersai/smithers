@@ -9,6 +9,7 @@ import { memoryStorage } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { ExecutionContext, executionContextFrom } from "./Environment"
 import {
+  askFrontDoor,
   FRONT_DOOR_CALL_PREFIX,
   FRONT_DOOR_CONFIDENCE_FLOOR,
   FRONT_DOOR_IS_COMMAND_FLOOR,
@@ -680,6 +681,85 @@ describe("a catalog too long for one choice question", () => {
 
     expect(response.status).toBe(502)
     expect((await response.json() as { code: string }).code).toBe("model_no_answer")
+    expect(calls.upstream).toEqual([])
+  })
+})
+
+describe("the front-door seat: the decision model a turn arms", () => {
+  const JEV_BINDING = { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" }
+
+  const refusedBinding = async (decisionModel: unknown, config?: Partial<ServerConfigShape>) => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody({ decisionModel }), { logs, ...(config === undefined ? {} : { config }) })
+    const body = (await response.json()) as { status: string; code: string; message: string }
+    // Refused before anything is spent: no Jev, no concierge, no row.
+    expect(calls.gateway).toEqual([])
+    expect(calls.upstream).toEqual([])
+    expect(await rowsOf(logs)).toEqual([])
+    return { status: response.status, code: body.code, message: body.message }
+  }
+
+  test("an allowed binding is the id Jev is asked by, and the id the row records", async () => {
+    const logs = memoryLog()
+    const { response, calls } = await turn(turnBody({ decisionModel: JEV_BINDING }), { jev: () => evaluation("runs.list", 0.97), logs })
+    expect(response.status).toBe(200)
+    expect(calls.gateway.map((request) => request.headers.get("ai-model-id"))).toEqual(["typesafe-ai/jev"])
+    expect(calls.upstream).toEqual([])
+    expect((await rowsOf(logs)).map((row) => row.model)).toEqual(["typesafe-ai/jev"])
+  })
+
+  test("the id on the wire is the one handed in, not a constant", async () => {
+    const asked: Array<string | null> = []
+    const transport = transportLayer(async (input, init) => {
+      asked.push(new Request(input as string, init).headers.get("ai-model-id"))
+      return evaluation("runs.list", 0.97)
+    })
+    const body = turnBody()
+    await Effect.runPromise(
+      askFrontDoor({ ...body, messages: [{ role: "user", content: "show me my runs" }] }, COMMANDS, "typesafe-ai/next").pipe(
+        Effect.provide(Layer.mergeAll(transport, testConfigLayer(GATEWAY_KEY)))
+      )
+    )
+    expect(asked).toEqual(["typesafe-ai/next"])
+  })
+
+  test("an id off the allowlist is request_invalid, never the default Jev and never the concierge", async () => {
+    const refused = await refusedBinding({ ...JEV_BINDING, modelId: "openai/gpt-x" })
+    expect(refused.status).toBe(400)
+    expect(refused.code).toBe("request_invalid")
+    expect(refused.message).not.toContain("openai/gpt-x")
+  })
+
+  test("a generation binding, an unpinned address and an unknown credential are each request_invalid", async () => {
+    for (const decisionModel of [
+      { protocol: "openai-chat", baseUrl: "https://api.cerebras.ai", modelId: "gpt-oss-120b", credential: "CEREBRAS_API_KEY" },
+      { ...JEV_BINDING, baseUrl: "https://attacker.test" },
+      { ...JEV_BINDING, baseUrl: "https://ai-gateway.vercel.sh/elsewhere" },
+      { ...JEV_BINDING, credential: "GITHUB_TOKEN" }
+    ]) {
+      const refused = await refusedBinding(decisionModel)
+      expect([decisionModel, refused.status, refused.code]).toEqual([decisionModel, 400, "request_invalid"])
+    }
+  })
+
+  test("a binding that is not one is request_invalid at the body, and an extra key cannot ride it", async () => {
+    for (const decisionModel of [null, "typesafe-ai/jev", { ...JEV_BINDING, apiKey: "vck-smuggled" }]) {
+      const refused = await refusedBinding(decisionModel)
+      expect([refused.status, refused.code]).toEqual([400, "request_invalid"])
+      expect(refused.message).not.toContain("vck-smuggled")
+    }
+  })
+
+  test("an allowed binding on a deployment without the key is seam_not_configured, naming the key", async () => {
+    const refused = await refusedBinding(JEV_BINDING, { aiGatewayApiKey: undefined })
+    expect(refused.status).toBe(503)
+    expect(refused.code).toBe("seam_not_configured")
+    expect(refused.message).toContain("AI_GATEWAY_API_KEY")
+  })
+
+  test("a bad binding refuses even a turn the front door would not read", async () => {
+    const { response, calls } = await turn(turnBody({ commands: undefined, decisionModel: { ...JEV_BINDING, modelId: "openai/gpt-x" } }))
+    expect(response.status).toBe(400)
     expect(calls.upstream).toEqual([])
   })
 })

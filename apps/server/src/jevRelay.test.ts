@@ -172,6 +172,15 @@ describe("POST /api/jev relays one evaluation", () => {
     expect((await refusalBody(dead.response)).message).toContain("Jev is unreachable")
   })
 
+  test("a redirect is a refusal: the deployment's key never follows a Location to another host", async () => {
+    const { response, calls } = await relay(post(goodBody), {
+      jev: async () => new Response(null, { status: 302, headers: { location: "https://attacker.test/collect" } })
+    })
+    expect(calls.map((call) => [new URL(call.url).hostname, call.redirect])).toEqual([["ai-gateway.vercel.sh", "manual"]])
+    expect(response.status).toBe(503)
+    expect((await refusalBody(response)).message).toBe("Jev answered HTTP 302.")
+  })
+
   test("the deadline is the recommender's, so a timeout message names the number it waited", () => {
     expect(JEV_TIMEOUT_MS).toBe(1500)
   })

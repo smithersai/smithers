@@ -20,6 +20,7 @@ import {
   handleCancel,
   handleTurn,
   MONITORING_LIMIT_ERROR,
+  readStartTurn,
   taggedTurnFrames,
   TurnCancelRegistry,
   turnCancelsLayer,
@@ -513,5 +514,29 @@ describe("the turn-cancel registry (Durable Object state)", () => {
     expect(await (await registerAs("alice")).json()).toEqual({ status: "started", generation: expect.any(String) })
     expect(await (await registerAs("bob")).json()).toEqual({ status: "already-running" })
     expect(await (await registerAs("alice")).json()).toEqual({ status: "already-running" })
+  })
+})
+
+describe("the model bindings a turn body carries", () => {
+  const read = (body: unknown) =>
+    Effect.runPromise(readStartTurn(new Request("https://mvp.test/api/agent/turn", { method: "POST", body: JSON.stringify(body) })))
+  const base = { runId: "r1", messages: [{ role: "user", content: "hi" }], instructions: "Be brief." } as const
+  const binding = { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" } as const
+
+  test("a body that binds nothing reads exactly as it did before bindings existed", async () => {
+    expect(await read(base)).toEqual(base)
+  })
+
+  test("both bindings are kept as sent", async () => {
+    expect(await read({ ...base, model: binding, decisionModel: binding })).toEqual({ ...base, model: binding, decisionModel: binding })
+  })
+
+  test("a binding this contract cannot read refuses the turn: unlike a hint it is never dropped", async () => {
+    for (const bad of [{ model: { ...binding, protocol: "carrier-pigeon" } }, { decisionModel: { modelId: "typesafe-ai/jev" } }]) {
+      const refused = await read({ ...base, tier: "gold", ...bad })
+      if (!(refused instanceof Response)) throw new Error("expected a refusal")
+      expect(refused.status).toBe(400)
+      expect(((await refused.json()) as { code: string }).code).toBe("request_invalid")
+    }
   })
 })

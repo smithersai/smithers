@@ -103,6 +103,8 @@ export const jevEvaluate = (
         "ai-model-id": request.model,
         "content-type": "application/json"
       },
+      // A redirect is never followed: the key goes to the gateway's origin and nowhere a Location names. A 3xx reads as `http`.
+      redirect: "manual",
       // Zero data retention is asked for per call, so no state this route
       // sends is kept by the gateway or the provider behind it.
       body: JSON.stringify({

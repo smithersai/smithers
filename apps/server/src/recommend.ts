@@ -19,7 +19,10 @@ import {
   AGENT_TURN_COMMANDS_MAX
 } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnCommand } from "@smthrs/rpc/NativeAgent"
-import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
+import { ModelBindingSchema } from "@smthrs/rpc/ConfiguredModel"
+import type { ModelBinding } from "@smthrs/rpc/ConfiguredModel"
+import { modelRefusal, planDecisionModel } from "./configuredModel"
+import { jevEvaluate } from "./jev"
 import type { JevAnswer, JevAnswerValue, JevQuestion } from "./jev"
 /**
  * The command recommender: which `/command` should this user run next?
@@ -153,6 +156,8 @@ export interface RecommendRequest {
   readonly repo: string | null
   readonly tail: ReadonlyArray<RecommendTailMessage>
   readonly commands: ReadonlyArray<RecommendCommand>
+  /** The decision model the `recommend` seat binds. Absent is the deployment's default. */
+  readonly model?: ModelBinding
 }
 
 /** What the scorer reads: one row per recommendation, the tail digested. */
@@ -485,6 +490,11 @@ export const validateRecommendRequest = (value: unknown): ParsedRecommendRequest
     return { ok: false, code: "request_invalid", message: "The recommendation request must be a JSON object." }
   }
   const { repo, tail, commands } = value as { repo?: unknown; tail?: unknown; commands?: unknown }
+  // Not a hint: a binding this contract cannot read is refused, never dropped for the default.
+  const model = "model" in value ? ModelBindingSchema.safeParse(value.model) : undefined
+  if (model?.success === false) {
+    return { ok: false, code: "request_invalid", message: "model must be a model binding: { protocol, modelId, credential } with optional baseUrl and path." }
+  }
   if (repo !== null && (typeof repo !== "string" || !RECOMMEND_REPO_PATTERN.test(repo))) {
     return { ok: false, code: "request_invalid", message: "repo must be \"owner/name\" or null." }
   }
@@ -509,7 +519,7 @@ export const validateRecommendRequest = (value: unknown): ParsedRecommendRequest
   if (commands.length > RECOMMEND_COMMANDS_MAX) {
     return { ok: false, code: "request_body_too_large", message: `commands may carry at most ${RECOMMEND_COMMANDS_MAX} entries.` }
   }
-  return { ok: true, body: { repo: repo ?? null, tail, commands } }
+  return { ok: true, body: { repo: repo ?? null, tail, commands, ...(model === undefined ? {} : { model: model.data }) } }
 }
 
 /** Read and validate the body under its byte cap. */
@@ -738,11 +748,11 @@ export const jevFailureMessage = (answer: Exclude<JevAnswer, { readonly ok: true
  * A Jev that refuses, misses its deadline, or answers something this client
  * cannot read is a failure the route reports; no LLM is asked in its place.
  */
-const askJev = (body: RecommendRequest): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
+const askJev = (body: RecommendRequest, model: string): Effect.Effect<ModelAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const questions = recommendQuestions(body.commands)
     const answer = yield* jevEvaluate({
-      model: JEV_DEFAULT_MODEL,
+      model,
       state: {
         repository: body.repo ?? "(none selected)",
         conversation: body.tail.length === 0 ? "(no messages yet)" : tailText(body.tail)
@@ -792,6 +802,10 @@ export const handleRecommend = (
     const parsed = yield* parseRecommendRequest(request)
     if (!parsed.ok) return refusal(parsed.code, parsed.message, headers)
     const config = yield* ServerConfig
+    // The decision model this request armed (the `recommend` seat). A binding
+    // this deployment does not allow is refused before a ceiling or Jev is spent.
+    const armed = planDecisionModel(parsed.body.model, config)
+    if (!armed.ok) return modelRefusal(armed.failure, headers)
     if (config.aiGatewayApiKey === undefined) {
       return refusal(
         "seam_not_configured",
@@ -806,7 +820,7 @@ export const handleRecommend = (
     if (!own.allowed) return turnLimitResponse(own, headers, RECOMMEND_CEILING)
     const shared = yield* limits.spend(RECOMMEND_ALL_KEY, RECOMMEND_ALL_CEILING)
     if (!shared.allowed) return turnLimitResponse(shared, headers, RECOMMEND_ALL_CEILING)
-    const answer = yield* askJev(parsed.body)
+    const answer = yield* askJev(parsed.body, armed.modelId)
     if (!answer.ok) return refusal("service_temporarily_unavailable", answer.message, headers)
     const digest = yield* sha256Hex(tailText(parsed.body.tail))
     const store = yield* RecommendLogStore
