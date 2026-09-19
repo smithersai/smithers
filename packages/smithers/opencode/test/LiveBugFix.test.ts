@@ -28,12 +28,10 @@
  *
  * One thing in the drive is NOT the server: whether a cheap 120B seat gets the
  * right answer. `cerebras:gpt-oss-120b` sometimes finishes the turn without
- * touching `add.mjs`, and sometimes claims the fix it never made, which the
- * completion brake catches and turns into a failed turn. Three of this gate's
- * failures on 2026-09-19 were that and nothing else. A gate that fails for a
- * reason unrelated to the change under test teaches people to ignore it, so
- * the seat gets exactly one second attempt, on a fresh repository and a fresh
- * server, and the retry is printed on its own line so a reader of the run's
+ * touching `add.mjs`. A failed turn, including a refused completion, always
+ * fails the gate on the first attempt. Only a normally settled turn can
+ * receive a second attempt, on a fresh repository and a fresh server. The
+ * retry is printed on its own line so a reader of the run's
  * log and of the uploaded `live-turn.log` sees that it happened. Two attempts
  * that both leave the bug in place fail the job with both reasons named: a
  * seat that cannot fix one character twice in a row is a finding, not noise.
@@ -42,8 +40,8 @@
  * seat verdict is the repository itself, read off disk: `add.mjs` says
  * `a + b` and `node test.mjs` exits zero, or the attempt did not do the job.
  * Nothing about the verdict can be satisfied by a turn that produced no
- * attempt, and every server assertion still runs, unchanged, on the attempt
- * that fixed the bug.
+ * attempt, and every server assertion runs on each attempt before a retry
+ * is considered.
  *
  * COST. A retry doubles one turn, so a bad seat day costs about two cents
  * instead of one.
@@ -189,6 +187,13 @@ interface Item {
   readonly parts: ReadonlyArray<ToolPart | { readonly type: string; readonly text?: string }>
 }
 
+/** The attempt must settle correctly even when the seat did not edit the file. */
+const assertSettledAttempt = (assistant: Item | undefined): void => {
+  expect(assistant, "the turn produced no assistant message").toBeDefined()
+  expect(assistant!.info.error, JSON.stringify(assistant!.info.error)).toBeUndefined()
+  expect(assistant!.info.finish).toBe("stop")
+}
+
 const cleanup: Array<() => void> = []
 afterAll(() => {
   for (const undo of cleanup.reverse()) undo()
@@ -260,9 +265,8 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     }
     const booted = Date.now() - started
 
-    // The event stream, drained continuously: the hub subscribes a consumer
-    // when it pulls past the replay prologue, so a reader that stops
-    // between frames misses what is published next.
+    // Drain the event stream continuously, including its reconnect prologue.
+    // The hub subscribes before that prologue so bootstrap loses no events.
     const frames: Array<Frame> = []
     const stream = new AbortController()
     undo.push(() => stream.abort())
@@ -349,9 +353,8 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     expect(record).not.toContain("completion_unjudged")
     expect(record).not.toContain("no evaluator could judge")
 
-    // 2. The seat verdict, and the one failure the caller may ask again
-    //    about. Everything below it runs only on a turn that did the job, so
-    //    a second attempt is never spent re-proving the server.
+    // 2. Record the seat verdict, but run EVERY server assertion before
+    //    returning it. An unchanged fixture cannot hide a failed server.
     //
     //    Two clauses, because the seat has two ways to lose. It can leave the
     //    bug in place, which the repository says. Or it can wander until the
@@ -374,18 +377,10 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
         health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
       }`
       : unfixed(directory)
-    if (seatFailure !== undefined) {
-      console.info(
-        `live turn: booted in ${booted} ms, idle after ${wallClockMs} ms, attempt ${attempt} of ${seatAttempts}, frames ${frames.length}, health cards ${health.length}, THE SEAT FAILED THE TASK: ${seatFailure}`
-      )
-      return seatFailure
-    }
-
     // 3. The turn completed, and completed as a stop.
-    expect(assistant.info.error, JSON.stringify(assistant.info.error)).toBeUndefined()
-    expect(assistant.info.finish).toBe("stop")
+    assertSettledAttempt(assistant)
 
-    // 4. At least one classify call answered with probabilities.
+    // 4. At least one health evaluation answered with probabilities.
     expect(judged.length).toBeGreaterThan(0)
     for (const answer of judged) {
       expect(answer.probability).toBeGreaterThanOrEqual(0)
@@ -405,10 +400,11 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     const titleNow = async (): Promise<string> =>
       ((await (await ask(`/session/${session.id}`)).json()) as { title: string }).title
     const reasons = health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
-    expect(colors.at(-1), reasons).toBe("green")
-    expect(await titleNow()).toMatch(/^\u{1F7E2}/u)
+    expect(colors.at(-1), reasons).toBe(spent ? "red" : "green")
+    const titleDot = spent ? /^\u{1F534}/u : /^\u{1F7E2}/u
+    expect(await titleNow()).toMatch(titleDot)
     await sleep(3000)
-    expect(await titleNow()).toMatch(/^\u{1F7E2}/u)
+    expect(await titleNow()).toMatch(titleDot)
 
     const summary = parts.filter((part): part is { readonly type: string; readonly text: string } =>
       part.type === "text" && typeof (part as { text?: string }).text === "string" &&
@@ -436,13 +432,34 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
         cost.toFixed(4)
       }, ${summary?.text ?? "no summary line"}`
     )
-    return undefined
+    if (seatFailure !== undefined) console.info(`live turn: THE SEAT FAILED THE TASK: ${seatFailure}`)
+    return seatFailure
   } finally {
     close()
   }
 }
 
 describe("a live turn on a real seat", () => {
+  it.each([
+    { name: "ProviderAuthError", data: { message: "The seat rejected its key" } },
+    { name: "UnknownError", data: { message: "The model connection failed" } },
+    { name: "MessageAbortedError", data: { message: "The turn was interrupted" } }
+  ])("does not retry an errored turn as an unfixed task: $name", (error) => {
+    expect(() =>
+      assertSettledAttempt({ info: { id: "msg_failed", role: "assistant", finish: "error", error }, parts: [] })
+    )
+      .toThrow()
+  })
+
+  it("does not retry a missing assistant message as an unfixed task", () => {
+    expect(() => assertSettledAttempt(undefined)).toThrow()
+  })
+
+  it("allows a settled attempt to report an unchanged fixture", () => {
+    expect(() => assertSettledAttempt({ info: { id: "msg_done", role: "assistant", finish: "stop" }, parts: [] }))
+      .not.toThrow()
+  })
+
   it("names both keys it needs when it cannot run", () => {
     expect(required.map(([name]) => name)).toEqual(["CEREBRAS_API_KEY", "AI_GATEWAY_API_KEY"])
     if (refusal !== undefined) console.info(refusal)
