@@ -55,6 +55,7 @@ const result = (call: Call): string => {
 export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinity): Meaning => {
   const ordered = [...rows].filter(row => Number(row.sequence) <= cursor).sort((a, b) => Number(a.sequence) - Number(b.sequence))
   const frames: Frame[] = [], open: Call[] = [], pins: Meaning["pins"] = []
+  const written = new Map<Frame, { paths: string[]; pin: Meaning["pins"][number] }>()
   let status = "Running"
   for (const row of ordered) {
     const p = fields(row.payload), seq = Number(row.sequence), frame = frames.at(-1), kind = word(row.kind)
@@ -78,9 +79,15 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
       const call = open.splice(index, 1)[0]!
       call.result = fields(p.value); call.outcome = word(p.outcome); call.message = word(p.message)
       if (call.outcome === "success" && WRITE_NAMES.has(call.name)) {
-        const label = pathLabel(paths(call))
-        const prior = pins.find(pin => pin.seq >= (frame?.opens ?? seq) && pin.label !== "steering")
-        if (label && !prior) pins.push({ seq, label })
+        const owner = frames.find(one => one.calls.includes(call))
+        const prior = owner === undefined ? undefined : written.get(owner)
+        const named = [...new Set([...(prior?.paths ?? []), ...paths(call)])]
+        if (prior) { prior.paths = named; prior.pin.label = pathLabel(named) }
+        else if (named.length > 0) {
+          const pin = { seq, label: pathLabel(named) }
+          pins.push(pin)
+          if (owner) written.set(owner, { paths: named, pin })
+        }
       }
       if (open.length === 0) {
         const title = ({ read: "Read", write: "Wrote", edit: "Edited", apply_patch: "Patched", bash: "Ran", test: "Tested", grep: "Searched", glob: "Listed", ls: "Listed" } as Record<string, string>)[call.name]!

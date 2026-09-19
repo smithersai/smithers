@@ -21,20 +21,10 @@ import {
   waitForGatewayProcedure,
   workflowRpcPosts
 } from "./run-inspection/ui"
-import {
-  bandIdentity,
-  frameLines,
-  frameNode,
-  journalFrames,
-  lineFramesAt,
-  phaseStrip,
-  readBands,
-  readLines,
-  readPins,
-  TIMELINE_PHASES,
-  treeFrames
-} from "./run-inspection/timeline"
-import { awaitSeededFlow, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
+import { awaitSeededFlow, FAILED_FLOW, HOST_HASH_FILE, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
+import { captureRevisions, enrichedEvidence } from "./run-inspection/revisions"
+import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
+import { compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
@@ -255,178 +245,99 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   })
 })
 
-workflowTest("a completed agent run's timeline shows its phases and frame lines, and a scrub keeps the later moments as doors across reload", scenario("runs.timeline-phase-strip-scrub-durable", {
+workflowTest("a successful prompt run matches its journal while live and after keyboard scrubbing", scenario("runs.timeline-phase-strip-scrub-durable", {
   capabilities: ["identity", "cloud"],
   coverage: [
     "action:workspace.view", "action:workspace.terminal", "action:workspace.suspend", "action:workspace.resume", "action:repo.select",
-    "action:flow.run", "action:runs.trace.view", "action:runs.trace.select", "action:runs.trace.live",
+    "action:flow.run", "action:runs.trace.select", "action:runs.trace.live",
     "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
     "dimension:real-provider", "dimension:real-pty", "dimension:keyboard", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
-    "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor",
-    "dimension:later-phase-door", "dimension:reload",
-    "evidence:gateway-journal-frames-and-durable-cursor"
+    "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor", "dimension:live-run",
+    "dimension:later-phase-door", "dimension:reload", "dimension:verified-edit", "evidence:gateway-journal-frames-and-durable-cursor"
   ],
-  description: "Give a disposable repository its own prompt flow through the workspace terminal, restart the host so it discovers it, and run it on the real provider: a prompt flow is the only run the agent's cell loop journals. Read that journal from the gateway and require the timeline's phase bands and frame lines to match the frames it opened. Scrub to the first band, prove the log stops at the cursor while every later band and pin stays a door, move forward through one, press a frame line, reload, and return to live."
+  description: "Compare live and settled timeline meanings with independent calls and outcomes, require distinct read/write/test phases and an exact workspace-file append, and reload keyboard selections. Archive frontend and measured host revisions; report unavailable producer evidence explicitly."
 }), async ({ page, request, workflowRepo }, testInfo) => {
-  const repo = workflowRepo.repo
-  const workspaceId = workflowRepo.workspaceId!
+  testInfo.setTimeout(20 * 60_000)
+  const { repo, workspaceId } = workflowRepo
+  expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
-  await writeSeededFlow(page, request, repo, workspaceId)
-  await restartWorkspaceHost(page, request, repo, workspaceId)
-  await awaitSeededFlow(page, request, repo, workspaceId)
-  // Bind the launch to THIS workspace again: without the binding flow.run provisions the repo-level route, which production refuses.
+  const host = await captureRevisions(page, testInfo)
+  const marker = fixtureInputText(`s16-timeline-${Date.now().toString(36)}`)
+  await writeSeededFlow(page, request, repo, workspaceId!, marker)
+  const measuredHash = (await readWorkspaceText(page, request, repo, workspaceId!, HOST_HASH_FILE)).split(" ")[0]
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host })
+  expect(measuredHash, "the executing workspace contains the pinned host artifact").toBe(host.sha256)
+  const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+  await restartWorkspaceHost(page, request, repo, workspaceId!)
+  await awaitSeededFlow(page, request, repo, workspaceId!)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
+  const subject = await launchSubject(page, workflowRepo, SEEDED_FLOW, { args: marker }, testInfo)
+  try {
+    await inspectRunning(page, request, workflowRepo, subject, testInfo)
+    const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 9 * 60_000, workspaceId)
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+    await attachProductionJson(testInfo, "timeline-edit-readback", { repo, workspaceId, runId: subject.runId, terminal, marker, before, after })
+    assertSuccessfulEdit(terminal.status, before, after, marker)
+    const expected = journalMeaning(rows)
+    requireLaterPhase(expected)
+    expect(expected.bands.map(band => band.phase)).toEqual(expect.arrayContaining(["researching", "implementing", "testing"]))
+    await compareMeaning(subject.card, subject.trace, expected)
+    await attachProductionJson(testInfo, "timeline-semantic-comparison", { expected, terminal })
+    await inspectKeyboard(page, subject, rows, testInfo)
+    await subject.card.screenshot({ path: testInfo.outputPath("timeline-completed.png") })
+    await testInfo.attach("timeline-completed", { path: testInfo.outputPath("timeline-completed.png"), contentType: "image/png" })
+  } finally {
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+    await enrichedEvidence(testInfo, host, rows)
+  }
+})
 
-  const marker = fixtureInputText(`s16-timeline-${Date.now().toString(36)}`)
-  const [runId] = await Promise.all([
-    acceptedRunId(page, repo, workflowRepo),
-    command(page, `/flow.run ${SEEDED_FLOW} ${repo} ${JSON.stringify({ args: marker })}`)
-  ])
+workflowTest("a budget-failed prompt run shows its recorded failure without claiming an edit", scenario("runs.timeline-failed-prompt-evidence", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:workspace.view", "action:workspace.terminal", "action:workspace.suspend", "action:workspace.resume", "action:repo.select", "action:flow.run",
+    "host:production", "path:error", "door:slash", "dimension:real-provider", "dimension:failed-run",
+    "dimension:repository-owned-prompt-flow", "dimension:timeline", "evidence:failed-journal-and-unchanged-file"
+  ],
+  description: "Run a separate prompt subject whose real work exceeds its budget, compare its failed header, frame meanings and terminal pin to the gateway journal, and prove README stayed unchanged."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  testInfo.setTimeout(20 * 60_000)
+  const { repo, workspaceId } = workflowRepo
+  expect(workspaceId).toBeDefined()
+  await bootOwnedWorkflow(page, repo, workspaceId)
+  const host = await captureRevisions(page, testInfo)
+  await writeSeededFlow(page, request, repo, workspaceId!, fixtureInputText(`failure-${Date.now().toString(36)}`))
+  const measuredHash = (await readWorkspaceText(page, request, repo, workspaceId!, HOST_HASH_FILE)).split(" ")[0]
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host })
+  expect(measuredHash).toBe(host.sha256)
+  const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+  await restartWorkspaceHost(page, request, repo, workspaceId!)
+  await awaitSeededFlow(page, request, repo, workspaceId!)
+  await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
-  // Run ids restart at run-1 on every workspace, and the signed-in profile's conversation outlives a scenario,
-  // so an earlier repository's run-1 card can still be on the page. This scenario's card is the newest one.
-  const ownCard = (): ReturnType<typeof runCard> => runCard(page, runId).last()
-  expect(await exactRunId(ownCard())).toBe(runId)
-
-  // What is under test is the timeline, not the agent: a run the provider failed has frames, calls and a
-  // terminal pin exactly as a completed one does, so either verdict is a subject. The card must say the same.
-  const terminal = await waitForTerminalRun(page, request, repo, runId, 9 * 60_000, workspaceId)
-  expect(["completed", "failed"], "the run must reach a terminal verdict the timeline can close on").toContain(terminal.status)
-  await expect(ownCard().getByTestId(`run-outcome-${runId}`)).toHaveAttribute("data-phase", String(terminal.status), { timeout: 60_000 })
-
-  // The oracle is the gateway's journal, never the card's own fold of it.
-  const eventsAnswer = await gatewayCall(page, request, repo, "Projection.Snapshot", {
-    selector: { _tag: "run-events", runId }
-  }, workspaceId)
-  const events = projectionRows(eventsAnswer)
-  const frames = journalFrames(events)
-  const kinds: Record<string, number> = {}
-  for (const event of events) kinds[String(event.kind)] = (kinds[String(event.kind)] ?? 0) + 1
-  await attachProductionJson(testInfo, "timeline-subject-journal", {
-    repo, runId, status: terminal.status, kinds,
-    // The journal's last rows, unfiltered: how a run closed is whatever it journaled last, not a list of kinds this file guessed.
-    closing: events.slice(-8)
-  })
-  expect(frames.length, "a provider-backed agent run must journal at least one turn; a journal with none has no band to scrub").toBeGreaterThan(0)
-  const opens = frames.map((entry) => entry.opens)
-  const latest = Math.max(...events.map((event) => typeof event.sequence === "number" ? event.sequence : 0))
-  expect(latest, "a completed run journals records after its first turn opened").toBeGreaterThan(opens[0]!)
-
-  const trace = ownCard().getByTestId(`run-trace-${runId}`)
-  await trace.getByRole("button", { name: "Details", exact: true }).click()
-  await expect(trace).toHaveAttribute("data-view", "timeline")
-  // The pump pages the journal onto the card; give it the same minute the outcome line gets.
-  await expect(treeFrames(trace), "the card must hold the same journal the gateway answered with").toHaveCount(frames.length, { timeout: 60_000 })
-
-  // The strip: contiguous bands, each opening where the journal opened a frame.
-  await expect(phaseStrip(trace)).toBeVisible()
-  const bands = await readBands(trace)
-  expect(bands.length).toBeGreaterThan(0)
-  expect(bands.length).toBeLessThanOrEqual(frames.length)
-  expect(bands.filter((band) => !TIMELINE_PHASES.includes(band.phase ?? "")), "every band wears one of the six phase words").toEqual([])
-  expect(bands[0]!.seq, "the first band opens where the journal's first frame opened").toBe(opens[0])
-  expect(bands.filter((band) => !opens.includes(band.seq)), "a band opens only where the journal opened a frame").toEqual([])
-  expect(bands.map((band) => band.seq)).toEqual([...bands.map((band) => band.seq)].sort((left, right) => left - right))
-  expect(new Set(bands.map((band) => band.seq)).size).toBe(bands.length)
-  expect(bands.filter((band, index) => index > 0 && band.phase === bands[index - 1]!.phase), "neighbouring frames in one phase are one band").toEqual([])
-  for (const band of bands) {
-    const opened = frames.find((entry) => entry.opens === band.seq)!
-    expect(band).toMatchObject({
-      reached: "true", current: null, enabled: true,
-      flow: "runs.trace.select", args: `${runId} ${frameNode(opened.frame)} ${band.seq}`
-    })
+  const subject = await launchSubject(page, workflowRepo, FAILED_FLOW, { args: "Observe the declared budget failure." }, testInfo)
+  try {
+    const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 4 * 60_000, workspaceId)
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+    await attachProductionJson(testInfo, "timeline-failed-readback", { repo, workspaceId, runId: subject.runId, terminal, before, after })
+    expect(terminal.status).toBe("failed")
+    expect(after).toBe(before)
+    expect(rows.some(({ kind: journalKind }) => journalKind === "control.run.failed")).toBe(true)
+    const expected = journalMeaning(rows)
+    expect(expected.frames.length).toBeGreaterThan(0)
+    expect(expected.lines.length).toBeGreaterThan(0)
+    await compareMeaning(subject.card, subject.trace, expected)
+    expect(expected.pins).toContainEqual(expect.objectContaining({ label: "failed" }))
+    await attachProductionJson(testInfo, "timeline-failed-semantic-comparison", { expected, terminal })
+  } finally {
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+    await enrichedEvidence(testInfo, host, rows)
   }
-  const pins = await readPins(trace)
-  expect(pins.filter((pin) => pin.flow !== "runs.trace.select" || !Number.isSafeInteger(pin.seq) || pin.seq < 1 || pin.seq > latest),
-    "every pin scrubs to a sequence the journal recorded").toEqual([])
-
-  // The lines: one per frame that called something, each a verb, what it acted on when the call named it, and a result.
-  const lines = await readLines(trace)
-  // Without this, a journal whose frames called nothing compares [] to [] and the loop below never runs.
-  expect(lines.length, "a provider-backed run calls at least one flow, so at least one frame has a line").toBeGreaterThan(0)
-  expect(lines.map((line) => line.node)).toEqual(lineFramesAt(frames).map(frameNode))
-  for (const line of lines) {
-    const frame = lineFramesAt(frames).find((candidate) => frameNode(candidate) === line.node)!
-    expect(line).toMatchObject({ number: String(frame), flow: "runs.trace.select", args: `${runId} ${line.node}` })
-    // A call whose input names nothing has no subject, and the card renders no empty element for it.
-    expect([line.verb.length, line.result.length], `${line.node} renders one verb and one result`).toEqual([1, 1])
-    expect(line.verb[0], `${line.node} says what the frame did`).not.toBe("")
-    expect(line.subject.length, `${line.node} names at most one subject`).toBeLessThanOrEqual(1)
-    expect(line.subject.filter((subject) => subject === ""), `${line.node} never renders an empty subject`).toEqual([])
-  }
-  // textContent, not innerText: innerText puts a newline between the verdict and the counts, which
-  // toHaveText then normalises to a space the DOM never held, so an unchanged headline reads as changed.
-  const outcome = (await ownCard().getByTestId(`run-outcome-${runId}`).textContent()) ?? ""
-  expect(outcome, "a completed run's headline carries its verdict and its counts").toMatch(/\d+ turns?/)
-
-  // Scrub to the first band: the cursor is recorded, the log stops there, the strip does not.
-  const cursor = bands[0]!.seq
-  await phaseStrip(trace).locator(`button[data-phase-band][data-seq="${cursor}"]`).click()
-  await expect(trace.getByText(`At #${cursor}`, { exact: true })).toBeVisible()
-  await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeVisible()
-  await expect(frameLines(trace)).toHaveCount(lineFramesAt(frames, cursor).length)
-  await expect(treeFrames(trace)).toHaveCount(frames.filter((entry) => entry.opens <= cursor).length)
-  await expect(ownCard().getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", frameNode(1))
-  const scrubbed = await readBands(trace)
-  expect(bandIdentity(scrubbed), "a scrub never drops a band").toEqual(bandIdentity(bands))
-  expect(scrubbed.map((band) => band.reached)).toEqual(bands.map((band) => String(band.seq <= cursor)))
-  expect(scrubbed.map((band) => band.current)).toEqual(bands.map((_band, index) => index === 0 ? "location" : null))
-  expect(scrubbed.filter((band) => !band.enabled), "a band past the cursor stays a door").toEqual([])
-  expect((await readPins(trace)).map((pin) => pin.reached)).toEqual(pins.map((pin) => String(pin.seq <= cursor)))
-  await expect(ownCard().getByTestId(`run-outcome-${runId}`), "the run's verdict and counts are not the cursor's").toHaveText(outcome)
-
-  // A later door: the last band, else the last pin past the cursor. The scenario claims
-  // `dimension:later-phase-door`, so a journal with neither fails here rather than passing
-  // on the first-band state a second time and recording coverage the run never exercised.
-  const laterBand = bands.length > 1 ? bands[bands.length - 1]! : undefined
-  const laterPin = laterBand === undefined ? [...pins].reverse().find((pin) => pin.seq > cursor) : undefined
-  expect(laterBand ?? laterPin, "this run's strip has one band and no pin past it, so it cannot prove a scrub moves forward; use a run with two phases").toBeDefined()
-  const parked = (laterBand?.seq ?? laterPin?.seq)!
-  if (laterBand !== undefined) await phaseStrip(trace).locator(`button[data-phase-band][data-seq="${laterBand.seq}"]`).click()
-  else if (laterPin !== undefined) await phaseStrip(trace).locator(`button[data-pin-row][data-flow-args="${laterPin.args}"]`).click()
-  await expect(trace.getByText(`At #${parked}`, { exact: true })).toBeVisible()
-  await expect(frameLines(trace)).toHaveCount(lineFramesAt(frames, parked).length)
-  await expect(treeFrames(trace)).toHaveCount(frames.filter((entry) => entry.opens <= parked).length)
-  expect(bandIdentity(await readBands(trace))).toEqual(bandIdentity(bands))
-
-  // A frame line is a door too: pressing one selects its frame and leaves the cursor where it was.
-  const shown = lineFramesAt(frames, parked)
-  expect(shown.length, "the later door leaves at least one frame line on screen").toBeGreaterThan(0)
-  const pressed = frameNode(shown[shown.length - 1]!)
-  await frameLines(trace).last().click()
-  await expect(ownCard().getByTestId(`run-trace-pane-${runId}`)).toHaveAttribute("data-span", pressed)
-  await expect(trace.getByText(`At #${parked}`, { exact: true })).toBeVisible()
-
-  // The cursor is the card's, not the component's: a reload keeps it.
-  await page.reload({ waitUntil: "domcontentloaded" })
-  const restored = ownCard().getByTestId(`run-trace-${runId}`)
-  await expect(restored).toHaveAttribute("data-view", "timeline")
-  await expect(restored.getByText(`At #${parked}`, { exact: true })).toBeVisible()
-  await expect(frameLines(restored)).toHaveCount(lineFramesAt(frames, parked).length)
-  const reloaded = await readBands(restored)
-  expect(bandIdentity(reloaded)).toEqual(bandIdentity(bands))
-  expect(reloaded.map((band) => band.reached)).toEqual(bands.map((band) => String(band.seq <= parked)))
-  expect(reloaded.filter((band) => band.current === "location").map((band) => band.seq))
-    .toEqual([[...bands].reverse().find((band) => band.seq <= parked)!.seq])
-
-  // Latest restores the whole log, and that survives a reload too.
-  await restored.getByRole("button", { name: "Latest", exact: true }).click()
-  await expect(restored.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
-  await expect(restored.getByText(`At #${parked}`, { exact: true })).toBeHidden()
-  await expect(frameLines(restored)).toHaveCount(lines.length)
-  await expect(treeFrames(restored)).toHaveCount(frames.length)
-  expect((await readBands(restored)).map((band) => [band.reached, band.current])).toEqual(bands.map(() => ["true", null]))
-  expect(await readLines(restored)).toEqual(lines)
-  await page.reload({ waitUntil: "domcontentloaded" })
-  const live = ownCard().getByTestId(`run-trace-${runId}`)
-  await expect(live).toHaveAttribute("data-view", "timeline")
-  await expect(live.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
-  await expect(frameLines(live)).toHaveCount(lines.length)
-  await attachProductionJson(testInfo, "timeline-phase-strip-scrub", {
-    repo, marker, runId, terminal, frames, bands, pins, lines, cursor, parked,
-    laterDoor: laterBand !== undefined ? "band" : laterPin !== undefined ? "pin" : "none"
-  })
 })
 
 workflowTest("live message, thinking, and tool steering persist as real control events across reconnect", scenario("runs.live-steering-durable-reconnect", {

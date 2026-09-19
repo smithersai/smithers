@@ -2,51 +2,51 @@ import type { APIRequestContext, Page } from "@playwright/test"
 import { closeComposer, command, expect, realApi } from "../support/test"
 import { cloudRepoPath } from "../repositories-github/production"
 
-/*
- * A run the agent loop journals, on a workspace that offers none.
- *
- * Only a PROMPT flow runs through the agent's cell loop, and only that loop
- * journals `control.agent.*` (frames, cells, calls). A fresh production
- * workspace registers nine module flows and no prompt flow, so a timeline
- * scenario has nothing to open. The host discovers flows from the repository's
- * own `flows/` directory, so the scenario gives its disposable repository one:
- * a file typed through the workspace terminal, the same door a person has.
- *
- * Three facts this file encodes, each measured on production 2026-09-19:
- *  - discovery runs when the host STARTS, never on a catalog read or a launch
- *    miss, so the workspace is suspended and resumed to restart the host;
- *  - after a resume `provision` answers `ready` from before the suspend while
- *    the gateway is still coming back (five 30 s timeouts, first answer at
- *    161 s), so the catalog is read patiently rather than trusted once;
- *  - the seat `coding/implement` is the host's own configured model, so the
- *    flow needs no provider key of its own.
- */
-
-/** The flow's name: `naming: "path"` names a flow by its directory under `flows/`. */
+/** Repository-owned prompt subjects, discovered when the disposable host restarts. */
 export const SEEDED_FLOW = "timeline-probe"
+export const FAILED_FLOW = "timeline-probe-failed"
+export const MARKER_TEST = "timeline-marker.test.ts"
+export const HOST_HASH_FILE = "timeline-host-sha.txt"
 
-/*
- * No line carries a single quote: each is typed inside one for `printf`.
- * The prompt asks for separate steps so the run opens more than one frame when
- * the model obliges; the scenario never depends on it.
- */
-const FLOW_LINES: ReadonlyArray<string> = [
+const flowText = (failure: boolean): string => [
   "---",
-  "description: Reads the README and appends one marker line, so its run can be inspected.",
-  'capabilities: ["fs:read:**", "fs:write:**"]',
+  "description: Exercise a real agent timeline in a disposable repository.",
+  'capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]',
   "model: coding/implement",
   "budget:",
   "  tokens: 80000",
-  "  milliseconds: 300000",
-  "---",
-  "",
-  "# Append a marker to the README",
-  "",
-  "Work in separate steps, one cell each: first read README.md, then append the exact line given in the appended arguments to the end of README.md, then read README.md again to confirm the line is there, then finish and say what you wrote."
-]
+  `  milliseconds: ${failure ? 30000 : 480000}`,
+  "---", "",
+  failure
+    ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 120" and timeoutMs 150000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
+    : [
+      "Append exactly the marker from the arguments to README.md. Preserve all original bytes and add one final newline.",
+      "Use one numbered step per model response, one JavaScript cell per step. Never combine steps in one response.",
+      '1. Read README.md with ctx.call("read", {path:"README.md"}); save the returned content in a variable and print it. Do not write yet.',
+      '2. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:120000}) and print the result. The marker assertion must fail before the edit.',
+      '3. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the marker to the saved text. read.content omits its final LF, so append one newline before and after the marker.',
+      '4. In the next response run the exact same bun test command and print the result. It must pass after the edit.',
+      '5. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
+    ].join("\n")
+].join("\n") + "\n"
 
-/** Types the flow file into the workspace checkout and destroys exactly the session it opened. */
-export const writeSeededFlow = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string): Promise<void> => {
+export const readWorkspaceText = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string, path: string): Promise<string> => {
+  const response = await realApi(page, request, "GET", cloudRepoPath(repo,
+    `/workspaces/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}`))
+  expect(response.status(), `workspace file ${path}`).toBe(200)
+  const body = await response.json() as { content?: unknown; encoding?: unknown }
+  expect(body.encoding).toBe("utf-8")
+  expect(typeof body.content).toBe("string")
+  return body.content as string
+}
+
+/** Type real files through the PTY, then verify the bytes through the independent file API. */
+export const writeSeededFlow = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string, marker: string): Promise<void> => {
+  const files = new Map([
+    [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false)],
+    [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true)],
+    [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(20000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 30000);\n`]
+  ])
   const sessions = cloudRepoPath(repo, "/workspace/sessions")
   let sessionId: string | undefined
   try {
@@ -56,18 +56,19 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
     await expect(terminal).toBeVisible({ timeout: 90_000 })
     sessionId = (await terminal.getAttribute("data-testid"))!.slice("terminal-".length)
     await terminal.locator(".xterm-helper-textarea").focus()
-    const typed = async (line: string, done: string): Promise<void> => {
-      await page.keyboard.type(line)
+    for (const [path, content] of files) {
+      const encoded = Buffer.from(content).toString("base64")
+      await page.keyboard.insertText(`mkdir -p flows/${SEEDED_FLOW} flows/${FAILED_FLOW}; printf %s '${encoded}' | base64 -d > '${path}'`)
       await page.keyboard.press("Enter")
-      await expect(terminal.locator(".xterm-rows")).toContainText(done, { timeout: 45_000 })
+      await expect(async () => expect(await readWorkspaceText(page, request, repo, workspaceId, path)).toBe(content)).toPass({ timeout: 45000 })
     }
-    await typed(`mkdir -p flows/${SEEDED_FLOW} && echo SEED_DIR_DONE`, "SEED_DIR_DONE")
-    const quoted = FLOW_LINES.map((line) => `'${line}'`).join(" ")
-    await typed(`printf '%s\\n' ${quoted} > flows/${SEEDED_FLOW}/flow.mdx && echo SEED_LINES_$(wc -l < flows/${SEEDED_FLOW}/flow.mdx | tr -d ' ')`, `SEED_LINES_${FLOW_LINES.length}`)
+    await page.keyboard.insertText(`sha256sum /usr/local/bin/smithers-coding-host > ${HOST_HASH_FILE}`)
+    await page.keyboard.press("Enter")
+    await expect(async () => expect(await readWorkspaceText(page, request, repo, workspaceId, HOST_HASH_FILE)).toMatch(/^[0-9a-f]{64} /)).toPass({ timeout: 45000 })
   } finally {
     if (sessionId !== undefined) {
       const destroyed = await realApi(page, request, "POST", `${sessions}/${encodeURIComponent(sessionId)}/destroy`)
-      expect(destroyed.status(), "the terminal session this scenario opened must be destroyed").toBe(204)
+      expect(destroyed.status(), "the owned terminal is destroyed").toBe(204)
     }
   }
 }
