@@ -102,3 +102,45 @@ test("a refused provision reaches the person as its registered refusal, with its
     expect([...store.collections.messages.values()].map(message => message.text)).toContain(answer)
   } finally { await controller.dispose(); await store.dispose?.() }
 })
+
+/*
+ * Walk W1, item 7 — the "dropped submission", read from its own receipt.
+ *
+ * With a setup card and a form card both open, one `/flow.create …` added
+ * nothing to the transcript over 100 s, and the identical line answered in
+ * ~25 s in the next script (W1-c-doors.json vs W1-d-doors.json). The network
+ * says what happened: EIGHT `POST /api/workflow/provision 200` at a steady
+ * 14.7 s and no rpc at all, from 23:27:59 to 23:29:42 — the door was polling a
+ * cold workspace, inside its own 180 s deadline, and the observer stopped
+ * watching at 103 s. The next script's provision answered in 0.7 s because
+ * that workspace was up by then. Nothing was dropped and the open cards
+ * changed nothing; a second sighting of this shape is a slow provision, and
+ * the way to tell is the provision count and the absent rpc.
+ */
+test("a cold workspace keeps the flow-authoring door polling: no rpc, no transcript line, and the preparing notice up", async () => {
+  const store = await signedInStore()
+  let provisioning = 8
+  const double = relay({ provision: () => provisioning-- > 0 ? { status: "provisioning" } : { status: "ready", gatewayId: "gw-1" } })
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    ...double.services,
+    toastDebounceMs: 0
+  })
+  try {
+    /* The two cards the walk had open: neither is on the submission's path. */
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: "card-form-triggers.pause", kind: "status", title: "Pause a schedule",
+      status: "active", createdAt: 1, ordinal: store.nextOrdinal(), payload: { progress: 0.5 }
+    } }).isPersisted.promise
+    const pending = controller.commands.run("flow.create", `print the repository name and the current date ${REPO}`)
+    await settle(4)
+    /* Mid-flight, exactly what the walk read: nothing said, and nothing planned. */
+    expect(double.calls.filter(call => call.path === "/api/workflow/rpc")).toEqual([])
+    expect([...store.collections.messages.values()]).toEqual([])
+    /* The progress the walk never looked at: a running notice naming the repository. */
+    expect([...store.collections.toasts.values()].map(toast => toast.title)).toContain(`Preparing your ${REPO} workspace…`)
+    await pending
+    /* The same line, once the workspace is up, reaches the plan the next script saw. */
+    expect(double.calls.filter(call => call.path === "/api/workflow/provision").length).toBeGreaterThan(1)
+    expect(double.calls.filter(call => call.path === "/api/workflow/rpc").map(call => call.body).length).toBeGreaterThan(0)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
