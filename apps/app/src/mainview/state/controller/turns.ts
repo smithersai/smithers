@@ -39,6 +39,7 @@ import { readDesktopStream } from "../seams/DesktopStream"
 import { currentAgentRoles } from "./agents"
 import { downloadUrlOf } from "./app"
 import type { ActiveTurn,ControllerContext } from "./context"
+import type { FailureController } from "./failures"
 import { createHttpTurnDriver } from "./httpTurns"
 import { assignedBinding } from "./modelSeats"
 import { latestOrdinal } from "./spokenLines"
@@ -62,7 +63,7 @@ export interface TurnControllerDependencies {
   readonly settleTurnBilling: () => void
   /** The next transcript ordinal, so a refusal card lands at the end of the conversation. */
   readonly nextOrdinal: () => number
-  readonly surfaceCommandFailure: (name: string, outcome: CommandOutcome) => void
+  readonly surfaceCommandFailure: FailureController["surfaceCommandFailure"]
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
     decision: "approved" | "denied",
