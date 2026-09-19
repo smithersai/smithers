@@ -53,10 +53,16 @@ test("rendered milestone labels fit without intersections at 360, 400 and 900 pi
           Math.min(box.right, other.right) > Math.max(box.x, other.x) + 0.1 &&
           Math.min(box.bottom, other.bottom) > Math.max(box.y, other.y) + 0.1
         ).map((other) => [box.text, other.text]))
-        return { overlaps, outside: boxes.filter((box) => box.x < axis.x - 0.1 || box.right > axis.right + 0.1 || box.y < axis.y - 0.1 || box.bottom > axis.bottom + 0.1) }
+        const ticks = [...container.querySelectorAll(".run-phase-pin-tick")].map((tick) => {
+          const box = tick.getBoundingClientRect()
+          return { x: box.x, right: box.right }
+        })
+        return { boxes, ticks, overlaps, outside: boxes.filter((box) => box.x < axis.x - 0.1 || box.right > axis.right + 0.1 || box.y < axis.y - 0.1 || box.bottom > axis.bottom + 0.1),
+          outsideTicks: ticks.filter((tick) => tick.x < axis.x - 0.1 || tick.right > axis.right + 0.1) }
       })
       expect(measured.overlaps, `label intersections at ${width}px`).toEqual([])
       expect(measured.outside, `labels outside their strip at ${width}px`).toEqual([])
+      expect(measured.outsideTicks, `ticks outside their strip at ${width}px`).toEqual([])
       const evidence = process.env.STRIP_EVIDENCE_DIR
       if (evidence !== undefined) {
         await mkdir(evidence, { recursive: true })

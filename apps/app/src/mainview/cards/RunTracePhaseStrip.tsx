@@ -70,7 +70,7 @@ const layoutPins = (container: HTMLDivElement | null): (() => void) | undefined 
       pin.dataset.pinRow = String(row)
       pin.style.setProperty("--pin-shift", `${left - anchor}px`)
       pin.style.setProperty("--pin-top", `${row * pitch}px`)
-      pin.style.setProperty("--pin-anchor", `${anchor - left}px`)
+      pin.style.setProperty("--pin-anchor", `${clamp(anchor, 0, width - 1) - left}px`)
       pin.style.setProperty("--pin-label-height", `${box.height}px`)
       pin.style.setProperty("--pin-menu-shift", `${-left}px`)
     })
