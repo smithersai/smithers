@@ -159,7 +159,7 @@
       "inputs": [
         "docs/design/agent-flow-health.md",
         "packages/smithers/control/src/Health.ts",
-        "apps/app/src/bun/SessionMonitor.ts"
+        "packages/smithers/control/src/Monitor.ts"
       ],
       "related": [
         "packages",
@@ -179,10 +179,14 @@
             "end": 110
           }
         ],
-        "apps/app/src/bun/SessionMonitor.ts": [
+        "packages/smithers/control/src/Monitor.ts": [
           {
             "start": 1,
-            "end": 75
+            "end": 18
+          },
+          {
+            "start": 96,
+            "end": 230
           }
         ]
       }

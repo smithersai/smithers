@@ -12056,10 +12056,6 @@
       },
       {
         "kind": "file",
-        "path": "apps/app/src/bun/SessionMonitor.ts"
-      },
-      {
-        "kind": "file",
         "path": "apps/server/docs/EFFECT.md"
       },
       {
@@ -12382,10 +12378,6 @@
       {
         "kind": "file",
         "path": "apps/app/src/mainview/cards/CodingPlan.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/app/src/bun/SessionMonitor.ts"
       },
       {
         "kind": "file",

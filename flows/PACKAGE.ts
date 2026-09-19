@@ -112,7 +112,7 @@ const codingProjectSources = [
   "factory/wiki/pages/coding-workspace.md", "factory/wiki/pages/health-contract.md",
   "packages/smithers/README.md", "packages/smithers/agent/README.md", "packages/smithers/build/README.md",
   "apps/app/README.md", "apps/app/package.json", "apps/app/docs/LOCAL-APP.md",
-  "apps/app/src/mainview/cards/CodingPlan.ts", "apps/app/src/bun/SessionMonitor.ts",
+  "apps/app/src/mainview/cards/CodingPlan.ts",
   "apps/server/docs/EFFECT.md", "apps/server/src/index.ts", "apps/server/src/Environment.ts", "apps/server/src/Boundary.ts",
   "flows/README.md", "docs/design/agent-flow-health.md"
 ].map(path => Smithers.file(`//${path}`))
