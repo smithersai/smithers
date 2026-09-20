@@ -72,6 +72,9 @@ export const releaseGates = [
   },
   { name: "Repository flows", verb: "test", target: "//flows:pack" },
   { name: "Judge egress", verb: "test", target: "//flows:egress" },
+  { name: "Repository flow fixtures", verb: "test", target: "//flows:repository" },
+  { name: "Wiki and release fixtures", verb: "test", target: "//flows:fixtures" },
+  { name: "Product gateway", verb: "test", target: "//flows:productHost" },
   {
     name: "Root flows typecheck", verb: "ci", target: "//flows:check",
     flowOnly: "The generated ci.yml declares no job for the root flows, so release.yml mirrors none; the flow gates its own sources."

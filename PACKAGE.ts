@@ -297,6 +297,16 @@ const ci = Smithers.GithubCiGen({
         // keeps the approved spelling and hands it an environment naming no
         // proxy passes that gate and fails this one.
         { name: "Judge egress", verb: Smithers.Verb.Test, pattern: "//flows:egress" },
+        // The repository, wiki, release-content and product-gateway fixtures.
+        // `//flows:pack` reaches none of them and neither did any other job, so
+        // until these three steps existed the only thing that ran them was
+        // `pnpm test` inside flows/, which no workflow invokes. The seven
+        // fixtures that skip themselves without the Plue adapter and exporter
+        // are deliberately not here: they are declared in the native gate,
+        // where a missing prerequisite refuses instead of skipping.
+        { name: "Repository flow fixtures", verb: Smithers.Verb.Test, pattern: "//flows:repository" },
+        { name: "Wiki and release fixtures", verb: Smithers.Verb.Test, pattern: "//flows:fixtures" },
+        { name: "Product gateway", verb: Smithers.Verb.Test, pattern: "//flows:productHost" },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },

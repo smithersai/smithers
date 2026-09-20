@@ -42,6 +42,9 @@ const provider = Smithers.NodeTest({
 // every backend package before an uncached coding test. The inventory is checked
 // against pnpm workspace membership; each glob retains its owning package boundary.
 const codingPackages = [
+  // Eighteen repository fixtures import `packages/rpc/src` by relative path.
+  // Without the member here those targets cache across an rpc edit.
+  "packages/rpc",
   "packages/smithers",
   "packages/smithers/agent",
   "packages/smithers/agent/chain",
@@ -186,5 +189,54 @@ const egress = Smithers.NodeTest({
   srcs: codingSources, deps: codingDependencies, cwd
 })
 
+// The repository flows' offline fixtures, on `egress`'s key material. Before
+// this target `egress` was the only one of its family declared anywhere, so the
+// rest ran under bare `pnpm test`, which no workflow invokes.
+//
+// The seven that skip every case without `PLUE_CODING_ADAPTER_SOURCE` and
+// `PLUE_JJ_EXPORT_BINARY` are absent on purpose: run unattended they report a
+// green job having asserted nothing. They are in the native gate's
+// `nativeTests`, where a missing prerequisite refuses. `check-context` and
+// `checks` are in both, having cases on each side of that line.
+const fixture = (name: string) => Smithers.file(`//flows/test/${name}`)
+const repositoryFixtures = ["apply-proof", "budget", "check-context", "check-receipt", "checks", "chore-events",
+  "ci-policy", "consolidated-reply", "evaluation", "feature-issue-mode", "heldout", "inspection-sources",
+  "intake-screen", "jev-checks", "jev-duplicates", "jev-observation", "jev-reproduction", "jev-score",
+  "native-error", "pause-integrity", "proposal-review", "push", "remote-source", "retention", "review-eval",
+  "selection", "setup-policy", "setup-suggestion", "sources", "stored-registration", "trial-checks",
+  "trial-registration"] as const
+const repository = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner(repositoryFixtures.map(name => fixture(`repository-${name}.test.ts`)) as
+    [Smithers.Input.File, ...Array<Smithers.Input.File>]),
+  srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
+})
+
+// The wiki, release-content and canary fixtures, also in no target until now.
+// Grouped by the inputs they read, as `suite` and `codingRuntime` are: each
+// reaches a backend package, so none fits `suite` or `wiki`, which declare no
+// dependency. `wiki-reuse` replays a whole reuse pass, two minutes on a loaded
+// machine, so the group carries an explicit deadline.
+const fixtures = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([fixture("wiki-reuse.test.ts"), fixture("wiki-jev-citations.test.ts"),
+    fixture("content-jev-template.test.ts"), fixture("run-record.test.ts"), fixture("canary-coding-setup.test.mjs")]),
+  srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
+})
+
+// The standalone product gateway, built from source by the fixture itself.
+// `serve` refuses to start on an empty `AI_GATEWAY_API_KEY` because the harness
+// judges every completion, and `Exec` passes no ambient environment. The two
+// librarian flows here reach no model, and the fixture passes offline with any
+// nonempty value, so this declares the precondition rather than a credential: a
+// composition that did reach a judge would fail on it, not pass unjudged.
+const productHost = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([fixture("product-host.test.mjs")]),
+  env: { AI_GATEWAY_API_KEY: "fixture-key-the-librarian-flows-never-spend" },
+  srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
+})
+
 export const Package = Smithers.Package({ targets: { coding, codingPolicy, codingRuntime, codingConfigBun,
-  codingNative, codingNativeBun, codingBundle, codingBundleBun, egress, pack, check, suite, recording, provider, wiki } })
+  codingNative, codingNativeBun, codingBundle, codingBundleBun, egress, fixtures, pack, check, productHost,
+  repository, suite, recording, provider, wiki } })

@@ -10,14 +10,35 @@ export const nativeTests = [
   "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts", "coding-wiki-check.test.ts",
   "coding-atoms.test.ts", "coding-correction.test.ts", "coding-planning.test.ts", "coding-planning-wiki.test.ts",
   "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts",
-  "coding-dispatch-host.test.ts", "coding-vibe-cleanup.test.ts"
+  "coding-dispatch-host.test.ts", "coding-vibe-cleanup.test.ts",
+  // The repository fixtures that read the Plue adapter or exporter path and
+  // skip every case without it. They were in no target and in no gate, so the
+  // only way any of them ran was by hand. Run unattended they report a green
+  // exit having asserted nothing; run here the preflight refuses instead, so a
+  // missing prerequisite is a failure rather than an invisible skip.
+  // `repository-check-context` and `repository-checks` are also declared in
+  // `//flows:repository`, which covers the cases that need no native tool.
+  "repository-check-context.test.ts", "repository-checks.test.ts", "repository-durable-pins.test.ts",
+  "repository-eval-source.test.ts", "repository-host.test.ts", "repository-main-retention.test.ts",
+  "repository-preserved-source.test.ts", "repository-source-import.test.ts", "repository-trigger.test.ts"
 ]
 // These three standalone fixtures hardwire the Node runtime: the atom and
 // correction fixtures build NodeRuntime directly, and the dispatch host imports
 // NodeControlHost without the `process.versions.bun` branch its request-host
 // sibling carries. The Bun request-host fixture exercises the production
 // atom/correction composition through Bun DI.
-const nodeOnly = ["coding-atoms.test.ts", "coding-correction.test.ts", "coding-dispatch-host.test.ts"]
+//
+// Of the nine repository fixtures, `repository-source-import` and
+// `repository-main-retention` each exit 1 under Bun 1.4.0 on a teardown their
+// Node run completes: `server.close()` after `closeAllConnections()` raises
+// ERR_SERVER_NOT_RUNNING between tests. `repository-durable-pins` is measured
+// green under Bun and is not listed here. The remaining six are listed because
+// their Bun behaviour is unmeasured, not because it is known bad; move one out
+// once its Bun run is green, never on the assumption that it is.
+const nodeOnly = ["coding-atoms.test.ts", "coding-correction.test.ts", "coding-dispatch-host.test.ts",
+  "repository-check-context.test.ts", "repository-checks.test.ts", "repository-eval-source.test.ts",
+  "repository-host.test.ts", "repository-main-retention.test.ts", "repository-preserved-source.test.ts",
+  "repository-source-import.test.ts", "repository-trigger.test.ts"]
 export const bunNativeTests = nativeTests.filter(name => !nodeOnly.includes(name))
 
 const digest = async path => {

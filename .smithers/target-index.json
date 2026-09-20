@@ -4525,6 +4525,118 @@
     }
   },
   {
+    "label": "//apps/docs/plan-store:build",
+    "package": "apps/docs/plan-store",
+    "name": "build",
+    "rule": "ToolBuild",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/plan-store/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/plan-store/public/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/tsconfig.json"
+      }
+    ],
+    "outputs": [
+      "apps/docs/plan-store/dist"
+    ],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
+    "source": {
+      "file": "apps/docs/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/docs/plan-store:check",
+    "package": "apps/docs/plan-store",
+    "name": "check",
+    "rule": "ToolRun",
+    "kinds": [
+      "run"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/plan-store/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/plan-store/public/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/astro.config.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
+    "source": {
+      "file": "apps/docs/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/docs/plan-store:contentSync",
+    "package": "apps/docs/plan-store",
+    "name": "contentSync",
+    "rule": "Generate",
+    "kinds": [
+      "run",
+      "lint"
+    ],
+    "summary": "Sync @smthrs/plan-store's colocated docs into the site content tree; check drift under lint.",
+    "mode": "write",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/sync-content.mjs"
+      }
+    ],
+    "outputs": [
+      "apps/docs/plan-store/src/content/docs/**"
+    ],
+    "dependencies": [
+      "//packages/smithers/flows/plan-store:docsFiles"
+    ],
+    "source": {
+      "file": "apps/docs/plan-store/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/docs/plan:build",
     "package": "apps/docs/plan",
     "name": "build",
@@ -7073,6 +7185,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/plan-store/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/platform-browser/package.json"
       },
       {
@@ -7350,6 +7466,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/package.json"
       },
       {
         "kind": "file",
@@ -7771,6 +7891,10 @@
       {
         "kind": "file",
         "path": "apps/docs/plan/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan-store/alchemy.run.ts"
       },
       {
         "kind": "file",
@@ -8354,6 +8478,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/docs/plan-store/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/docs/platform-browser/package.json"
       },
       {
@@ -8631,6 +8759,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/package.json"
       },
       {
         "kind": "file",
@@ -12516,6 +12648,70 @@
     }
   },
   {
+    "label": "//flows:fixtures",
+    "package": "flows",
+    "name": "fixtures",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/wiki-reuse.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/wiki-jev-citations.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/content-jev-template.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/run-record.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/canary-coding-setup.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//flows:pack",
     "package": "flows",
     "name": "pack",
@@ -12546,6 +12742,54 @@
       {
         "kind": "file",
         "path": ".smithers/home.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:productHost",
+    "package": "flows",
+    "name": "productHost",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/product-host.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
       }
     ],
     "outputs": [],
@@ -12598,6 +12842,178 @@
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:repository",
+    "package": "flows",
+    "name": "repository",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/repository-apply-proof.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-budget.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-check-context.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-check-receipt.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-chore-events.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-ci-policy.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-consolidated-reply.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-evaluation.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-feature-issue-mode.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-heldout.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-inspection-sources.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-intake-screen.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-jev-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-jev-duplicates.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-jev-observation.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-jev-reproduction.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-jev-score.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-native-error.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-pause-integrity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-proposal-review.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-push.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-remote-source.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-retention.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-review-eval.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-selection.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-setup-policy.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-setup-suggestion.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-sources.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-stored-registration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-trial-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/repository-trial-registration.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
       }
     ],
     "outputs": [],
@@ -23561,6 +23977,267 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/plan-store:check",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/tsconfig.test.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/flows/plan-store:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:circular",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "circular",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/scripts/circular.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:docs",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "docs",
+    "rule": "DocsParity",
+    "kinds": [
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:docsFiles",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "docsFiles",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:fmt",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "fmt",
+    "rule": "Dprint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:lib",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "lib",
+    "rule": "TsBuild",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/scripts/build.mjs"
+      }
+    ],
+    "outputs": [
+      "packages/smithers/flows/plan-store/dist/cjs",
+      "packages/smithers/flows/plan-store/dist/esm"
+    ],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:lint",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "lint",
+    "rule": "EsLint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/eslint.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.jsdoc.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/flows/plan-store:test",
+    "package": "packages/smithers/flows/plan-store",
+    "name": "test",
+    "rule": "Vitest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/test/**/*.test.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/plan-store/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan-store/vitest.config.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/flows/plan-store:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/flows/plan-store/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows/plan:check",
     "package": "packages/smithers/flows/plan",
     "name": "check",
@@ -23592,7 +24269,6 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/flows/core:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -23749,9 +24425,7 @@
       "packages/smithers/flows/plan/dist/cjs",
       "packages/smithers/flows/plan/dist/esm"
     ],
-    "dependencies": [
-      "//packages/smithers/flows/core:lib"
-    ],
+    "dependencies": [],
     "source": {
       "file": "packages/smithers/flows/plan/PACKAGE.ts"
     }
@@ -23818,7 +24492,6 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/flows/core:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {

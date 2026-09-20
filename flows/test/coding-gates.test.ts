@@ -27,11 +27,28 @@ test("coding gates track source-only groups at every Smithers package boundary",
   assert.ok(metadata.inputs.some(input => input._tag === "PnpmWorkspace" && input.path === "//pnpm-workspace.yaml"))
 })
 
-test("every coding test belongs to a declared gate; native targets stay separate and uncached", async () => {
-  const actual = (await readdir(fileURLToPath(new URL("./", import.meta.url)))).filter(name => /^coding(?:-.*)?\.test\.ts$/.test(name))
-  const ordinary = [Package.coding, Package.codingPolicy, Package.codingRuntime].flatMap(target =>
-    (Target.metadata(target).attrs as { runner: { tests: ReadonlyArray<{ path: string }> } }).runner.tests.map(file => file.path.split("/").at(-1)!))
-  assert.deepEqual([...ordinary, ...nativeTests].sort(), actual.sort())
+// Every fixture under flows/test, not just the coding family. Forty-five of the
+// eighty-seven were in no target and in no gate when this claim was widened:
+// they ran only under this package's bare `pnpm test`, which no workflow
+// invokes, so nothing they asserted could report a regression. Ownership is
+// read from the declarations, never from PACKAGE.ts source text, so a target
+// that builds its file list stays visible here.
+test("every flows fixture belongs to a declared gate; native targets stay separate and uncached", async () => {
+  const actual = (await readdir(fileURLToPath(new URL("./", import.meta.url)))).filter(name => /\.test\.(?:ts|mjs)$/.test(name))
+  const ordinary = Object.values(Package).filter(target => Target.metadata(target).target === "NodeTest")
+    .flatMap(target => (Target.metadata(target).attrs as { runner: { tests?: ReadonlyArray<{ path: string }> } }).runner.tests ?? [])
+    .map(file => file.path.split("/").at(-1)!).filter(name => actual.includes(name))
+  // Fixtures a second runtime re-runs, and the two the native gate also owns:
+  // `//flows:repository` runs the cases that need no Plue tool, and the gate
+  // runs the whole file under the prerequisites the rest of it requires.
+  const twice = ordinary.filter((name, index) => ordinary.indexOf(name) !== index).sort()
+  assert.deepEqual([...new Set(twice)], ["coding-host-policy.test.ts", "coding-landing-config.test.ts",
+    "coding-landing.test.ts", "coding-project-config.test.ts", "coding-source-publication.test.ts",
+    "coding-vibe-admission.test.ts", "coding-vibe-evidence.test.ts", "coding-vibe-landing.test.ts",
+    "coding-wiki-registry.test.ts"], "a fixture in two ordinary targets is a declared runtime pair")
+  assert.deepEqual([...new Set(ordinary)].filter(name => nativeTests.includes(name)).sort(),
+    ["repository-check-context.test.ts", "repository-checks.test.ts"], "dual ownership is declared, not accidental")
+  assert.deepEqual([...new Set([...ordinary, ...nativeTests])].sort(), actual.sort())
   for (const target of [Package.codingNative, Package.codingNativeBun, Package.codingBundle, Package.codingBundleBun]) {
     const metadata = Target.metadata(target), attrs = metadata.attrs as { timeout: string; args: string[] }
     assert.equal(metadata.target, "Shell.Test")
