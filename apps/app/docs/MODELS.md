@@ -47,8 +47,10 @@ file `{credential: "CEREBRAS_API_KEY", baseUrl: "https://attacker"}`. Therefore:
 - `resolveModelEndpoint(model, credentials)` refuses any baseUrl whose origin is not in
   the named credential's list: failure code `endpoint_forbidden`. A model request cannot
   introduce or change a pin.
-- The Worker resolves exactly CEREBRAS_API_KEY and AI_GATEWAY_API_KEY from ServerConfig
-  and never scans env.
+- The Worker resolves CEREBRAS_API_KEY and AI_GATEWAY_API_KEY from ServerConfig
+  and account credentials from the authenticated login's encrypted vault. It never scans env.
+  Cloud pins require canonical HTTPS DNS origins on port 443; no IP literals,
+  localhost or private/local names. Deployment names remain read-only.
 - The value is `Redacted` from the moment it is read; it must be unable to reach a log,
   an error message, a response body, browser persistence, the DOM after submit, or a test artifact. Redirects are never
   followed (`redirect: "manual"`; a 3xx is `refused`).
@@ -62,7 +64,7 @@ failed feature and MINIMAL TEXT forbids a row whose value is "not wired". The si
 ## R6. Consumers wired
 - `explainer`: the live `agent.explain` sealed side turn carries `model: ModelBinding`.
   Local Bun host serves it through a real `@smthrs/model` Route; the Worker through the
-  existing `cerebrasChat`. A turn carrying `model` plus tools is refused
+  deployment `cerebrasChat` or that same account's vault-backed provider wire. A turn carrying `model` plus tools is refused
   `tools_not_supported`; it never falls back to the upstream.
   Local bootstrap advertises `model.turn` independently of `agent`: an offline
   host can explain through an operator-declared loopback binding, while an
@@ -97,8 +99,10 @@ an earlier account's response cannot overwrite the new account's catalog.
 ## R8. Sign-in
 Naming what a host already holds costs nothing, so `GET /api/model/catalog` is PUBLIC on
 the Worker: a signed-out visitor reads the deployment's own rows (the Cerebras seat, Jev),
-the credential NAMES with `present`, and the seats. Only a spend is gated. On the Worker
-`POST /api/model/test` sits behind `requireTurnSession` and spends one `loginBudget` turn;
+the credential NAMES with `present`, and the seats; a valid allowlisted session adds only
+that account's own credential names and pins, never another account's. Only a spend is gated. On the Worker
+`POST /api/model/test` sits behind `requireTurnSession` and spends one `loginBudget` turn,
+whether the key is the deployment's or the account's own;
 on the LOCAL host it needs no sign-in, because it spends the operator's own env key on
 their own machine.
 
@@ -160,17 +164,22 @@ read the same host store; no value is sent back to the app.
 Each catalog, test and configured turn refreshes that snapshot from Keychain, so
 rotation/removal by another live host is observed by the next request.
 
-The Worker remains local-only for enrollment: its login-keyed
-GatewaySessionRegistry owns provisioned gateway sessions, while model consumers
-read deployment credentials. A store-only extension would leave provider-key
-ownership, identity changes, deletion and consumption unproved. Its catalog and
-disabled form option say Local host required; authenticated mutation requests
-return `local_host_required`, never a silent success.
+The Worker uses the authenticated login's `AccountModelVault` Durable Object.
+The optional `MODEL_VAULT_KEY` binding is base64 of 32 random bytes; absent or
+malformed, enrollment reports `vault_unavailable` while deployment models keep
+working. Signed-out catalogs report `sign_in_required` and contain deployment
+rows alone. Values are AES-GCM ciphertext before the object receives them, with
+a fresh nonce and AAD binding login/name/origin. Only metadata and safe receipts
+reach the browser; rotation and removal preserve the pin. Test, Ask and bound
+Explainer share the account resolver; front-door and recommend remain on the
+deployment decision allowlist. Identity is rechecked before writes and spending,
+and stale results are discarded. Browser account retirement clears model/seat
+records and catalog caches along with the account's other private state.
 
 | Route | Bun | Worker | Owner |
 | --- | --- | --- | --- |
-| POST `/api/model/credential` | enroll/rotate/remove in keychain | typed local-only refusal | `AgentApiRoutes.ts` |
-| GET `/api/model/credential/receipt?id=…` | safe completion receipt | unknown | `AgentApiRoutes.ts` |
+| POST `/api/model/credential` | enroll/rotate/remove in keychain | account-scoped encrypted vault | `AgentApiRoutes.ts` |
+| GET `/api/model/credential/receipt?id=…` | safe completion receipt | same account's safe receipt | `AgentApiRoutes.ts` |
 
 Both routes retain their host's session gate; Bun also enforces Origin. A mutation
 persists metadata, acknowledges Requested, and runs under the shared 300 ms toast

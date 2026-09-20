@@ -12,6 +12,7 @@
 import { Button } from "@smthrs/ui"
 import { MODEL_SEAT_DEFAULT, modelKindOf, modelSeat, modelTestFixOf, modelTestStateOf, seatAccepts } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelTestFailure, ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
+import { enrollmentReason } from "../state/controller/models"
 import { useLiveQuery } from "@tanstack/react-db"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
@@ -242,7 +243,7 @@ const Credentials = ({ card, onRunCommand }: { readonly card: ModelsCard; readon
         <td><Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.credential.rotate", row.name)}>Rotate</Button>
           {row.present ? <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.credential.remove", row.name)}>Remove</Button> : null}</td>
       </tr>)}</tbody></table>
-    <Button size="sm" disabled={!enrollment.available} title={enrollment.available ? undefined : enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable"}
+    <Button size="sm" disabled={!enrollment.available} title={enrollment.available ? undefined : enrollmentReason(enrollment.reason)}
       data-testid="model-credential-new" {...flowAction(onRunCommand, "model.credential.new")}>Add credential</Button>
   </section>
 }

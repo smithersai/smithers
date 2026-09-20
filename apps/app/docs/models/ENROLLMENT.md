@@ -74,3 +74,63 @@ ack, toast lifetime, duplicates, failures, stale identity and receipt recovery.
 Real UI tests enroll a generated provider key with tracing off, create/test a
 model, reload, rotate and remove; inspect all persisted state and request logs,
 and verify provider journals contain only credential digests.
+
+## Account vault on the Worker (2026-09-20, design before implementation)
+
+This supersedes the local-only Worker decision above. Keep the existing routes,
+write-only form, agent confirmation, instant acknowledgment, shared toast and
+receipt recovery. The public catalog contains deployment rows alone for visitors;
+a validated session adds only its login's names, immutable pins and presence.
+Missing encryption configuration reports `vault_unavailable`; signed out reports
+`sign_in_required`. Neither may enable credential entry.
+
+`MODEL_VAULT_KEY` is an OPTIONAL Worker secret: base64 of 32 random bytes for
+AES-256-GCM. Missing or malformed configuration disables the vault alone. It is
+not a deployment preflight requirement. Deployment credentials keep their current
+behavior, pins and ownership. Do not replace this encryption key to rotate a
+provider key: use Rotate. Replacing it without a migration makes existing values
+unreadable, which fails closed.
+
+Add `AccountModelVault` / `MODEL_VAULTS`, migration `v5`, keyed exclusively by the
+validated GitHub login, canonicalized to lowercase. The Worker encrypts values
+before the object receives them; the object never receives a plaintext value or
+the encryption key and has no decrypt/debug door. Each write uses a fresh 96-bit
+nonce. Versioned AAD is the unambiguous tuple `[version, login, name, origin]`.
+Only ciphertext, nonce, pins and bounded safe receipts are durable. A per-object
+mutex serializes read/modify/write; one atomic document commits pin/value/receipt
+together. Removal deletes ciphertext and retains the pin. Repeated request IDs
+return the original receipt; reuse with different public operation fields fails.
+
+Accept canonical HTTPS origins with public DNS names and default port 443 only:
+no IP literals (including URL-normalized variants), userinfo, paths, query,
+fragments, single-label names, localhost/local/internal/private/link-local names
+or reserved local suffixes. Contract built-in names keep their contract origins;
+the deployment's CEREBRAS_API_KEY and AI_GATEWAY_API_KEY are always read-only.
+Redirects are manual and a redirect is a typed refusal. This is an origin pin,
+not a DNS address pin; the Worker uses Cloudflare's public HTTPS fetch transport.
+The runtime filters private addresses when resolving a DNS host; this relies on
+the default public outbound network, never a VPC/internal service binding (see
+[workerd's network contract](https://github.com/cloudflare/workerd/blob/main/src/workerd/server/workerd.capnp)).
+
+Test and Ask keep `requireTurnSession` and `loginBudget`. Resolve the plan against
+deployment metadata plus the current account's vault, decrypt only its selected
+record, then call exactly that plan. Explainer uses the same resolver. Front door
+and Recommend keep their deployment-only decision allowlist. A missing, corrupt
+or undecryptable account record names that credential and never tries a deployment
+key. Revalidate the captured session after asynchronous preparation and before
+mutation or spending; discard results after identity changes. The browser's
+account epoch independently prevents stale catalog, receipt and call completion.
+
+Read/parse/storage/crypto failures are closed typed outcomes; never serialize a
+schema error, exception, request body or decrypted value. Provider outputs are
+scrubbed before responses, samples or turn frames are constructed. Internal DO
+responses carry ciphertext or metadata only; public receipts contain metadata
+only. Catalog and credential responses are `no-store`.
+
+Tests first: two-login route tests over recorded transport and the real DO on
+memory storage; enrollment/catalog/Test/Ask/Explainer, repin, duplicate, rotation,
+removal/restart, session changes, missing key, storage/crypto failure, AAD tamper,
+redirect and output scrubbing. App tests prove cloud capability enables the
+existing form, values never persist and completed receipts reconcile on reload.
+The local real tier remains the local-vault proof; MANUAL.md gains the production
+steps for Will after the optional secret is installed.

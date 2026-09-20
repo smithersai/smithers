@@ -713,7 +713,9 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       collections.githubAppStatuses,
       collections.repoTree,
       collections.repositoryFlows,
-      collections.flowDurations
+      collections.flowDurations,
+      collections.models,
+      collections.seats
     ]
   ) {
     const keys = [...(collection as { keys: () => Iterable<string> }).keys()]

@@ -1,6 +1,6 @@
 # Models surface: CONTRACT
 
-Amended for in-app enrollment on 2026-09-19. Section 8 supersedes the earlier
+Amended for in-app enrollment on 2026-09-19 and account-scoped Worker enrollment on 2026-09-20. Section 8 supersedes the earlier
 environment-only and two-route restrictions. This workspace copy is the updated
 contract; the externally supplied original remains untouched.
 
@@ -43,10 +43,10 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
 - Request: no body.
 - 200 body: `ModelCatalog` = `{ models: ConfiguredModel[], credentials: ModelCredentialListing[], seats: SeatId[] }` (strict).
   - `models`: built-in rows this host can serve, each with `builtin: true`. List a row only when a Test of it on this host would plan ok (credential `present` AND endpoint reachable under this host's egress): `servableModels(rows, table, options)` with the SAME options the host's Test plans with. An offline Bun host therefore lists no non-loopback row.
-  - `credentials`: Bun host = environment credentials plus the keychain listing (section 8). Worker = exactly two rows, `CEREBRAS_API_KEY` and `AI_GATEWAY_API_KEY`, `present` from `ServerConfig`, `origins` copied from `MODEL_CREDENTIALS`. The Worker never scans env.
+  - `credentials`: Bun host = environment credentials plus the keychain listing (section 8). Worker = two deployment rows, `CEREBRAS_API_KEY` and `AI_GATEWAY_API_KEY`, `present` from `ServerConfig`, `origins` copied from `MODEL_CREDENTIALS`. A valid allowlisted session additionally sees only its account's managed names, pins and presence. Signed-out visitors see deployment rows only. The Worker never scans env.
   - `seats`: `modelSeatsOf("local")` = `["explainer"]`; `modelSeatsOf("cloud")` = `["explainer", "front-door", "recommend"]`.
 - Never a value anywhere in the body.
-- Non-200: the host's existing refusal envelope. Worker: PUBLIC — listing what the deployment holds spends nothing, so a signed-out caller reads it (R8). Local: behind the existing local session header and Origin gate; no sign-in.
+- Non-200: the host's existing refusal envelope. Worker: PUBLIC and `no-store` — listing what the deployment holds spends nothing, so a signed-out caller reads it (R8); a valid session adds only that account's own credential metadata. Local: behind the existing local session header and Origin gate; no sign-in.
 
 ### POST /api/model/test
 - Request body: `ModelTestRequest` = `{ model: ConfiguredModel, input?: ModelCallInput }` (strict, max `MODEL_TEST_BODY_MAX_BYTES`). The client MUST strip app-only fields (`lastTest`) before sending; an extra key is `request_invalid`. With no `input` the host runs the fixed Test of the model's kind (`modelCallDefault(kind)`); with one it runs that composed request (section 9). An input of the other kind than the record's is `{ code: "invalid", field: "protocol" }`.
@@ -57,7 +57,7 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
 - Host procedure, identical on both hosts:
   1. `const table = <this host's ModelCredentialListing[]>`
   2. `const planned = planModelBinding(bindingOf(model), table, { egress })`; `!planned.ok` -> `failedModelTest(planned.failure, ...)`, NO network call.
-  3. Read the secret by name from the refreshed keychain/environment snapshot (Bun) or the closed two-entry map (Worker). Wrap in `Redacted` at the read.
+  3. Read the secret by name from the refreshed keychain/environment snapshot (Bun) or the deployment map plus the authenticated login's AES-GCM vault (Worker). Wrap in `Redacted` at the read.
   4. One request to `planned.plan.url`, `redirect: "manual"`, no retries, deadline `MODEL_TEST_DEADLINE_MS`.
   5. Map the outcome (the ONLY mapping; no message is ever read):
 
@@ -66,7 +66,7 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
 | HTTP 300 to 599 (a 3xx is never followed) | `{ code: "refused", status }` |
 | no response, connection error | `{ code: "unreachable" }` |
 | deadline ran out | `{ code: "timeout", deadlineMs: MODEL_TEST_DEADLINE_MS }` |
-| 2xx that does not decode as the protocol; a protocol this host cannot speak (Worker: `anthropic-messages`, `openai-responses`) | `{ code: "invalid", field: "protocol" }` |
+| 2xx that does not decode as the protocol; a protocol this credential cannot speak (deployment keys retain their existing wires; account keys support all four protocols) | `{ code: "invalid", field: "protocol" }` |
 
   - Fixed generation prompt: `MODEL_TEST_PROMPT`, max tokens `MODEL_TEST_MAX_TOKENS`. Fixed decision question: `MODEL_TEST_DECISION`; sample = `` `${probability >= 0.5} ${probability.toFixed(2)}` ``. A composed request replaces exactly these: system + prompt + `maxTokens` (+ `temperature`) on the generation wire, `modelStateOf(state)` + `questions` on the evaluation wire.
   - `egress: false` when the Bun host runs `cloudMode: "offline"`; otherwise omit.
@@ -402,20 +402,21 @@ All existing record, planner, failure, seat, and DOM spellings remain.
 and `MODEL_CREDENTIAL_RECEIPT_PATH = "/api/model/credential/receipt"`.
 The former is POST; the latter is GET with an `id` query parameter. Bun's session
 header and Origin checks apply. The Worker requires `requireTurnSession` and
-answers local_host_required for POST, unknown for receipt, without reading or
-forwarding a value. These routes are host-owned, never platform proxies.
+uses only the authenticated login's encrypted vault for POST and receipt.
+Without the optional MODEL_VAULT_KEY it answers vault_unavailable for POST and
+unknown for receipt, without reading a value. These routes are host-owned, never platform proxies.
 
 `ConfiguredModel.ts` adds these contracts:
 
 ```ts
-ModelEnrollmentSchema // {available:true}|{available:false,reason:"local_host_required"|"keychain_unavailable"}
+ModelEnrollmentSchema // {available:true}|{available:false,reason:"local_host_required"|"keychain_unavailable"|"vault_unavailable"|"sign_in_required"}
 ModelCredentialRequestIdSchema // 8..64 ASCII letters/digits/dashes
 ModelCredentialRequestSchema
 // strict action union: enroll {requestId,name,origin,value}; rotate {requestId,name,value}; remove {requestId,name}
 type ModelCredentialRequest
 ModelCredentialFailureSchema
 // {code:"invalid",field:"name"|"origin"|"value"|"requestId"|"action"}
-// | {code:"exists"|"unknown"|"read_only"|"storage_unavailable"|"local_host_required"|"interrupted"}
+// | {code:"exists"|"unknown"|"read_only"|"storage_unavailable"|"vault_unavailable"|"local_host_required"|"interrupted"}
 // | {code:"host_refused",status:number|null,refusal:string|null}
 type ModelCredentialFailure
 ModelCredentialResultSchema
@@ -427,7 +428,7 @@ ModelCredentialPendingSchema
 // {requestId,name,action,origin?,state:"requested"|"completed"|"failed",failure?,fault?}
 ```
 
-`ModelCredentialListing` gains optional `managed:boolean`: true for a keychain
+`ModelCredentialListing` gains optional `managed:boolean`: true for a keychain or account-vault
 credential or its removed pin. `ModelCatalog` and `ModelsCardPayload` gain optional
 `enrollment:ModelEnrollmentSchema`. `ModelsCardPayload` also gains optional
 `credentialRequests:ModelCredentialPendingSchema[]`, bounded to 64. No value
@@ -481,6 +482,26 @@ Rotate and Remove carry their registered flows. The credential select's
 `__enroll` option runs `model.credential.new` and is never saved as a credential.
 A failed mutation draws `credential-failure` with its name, code and Retry.
 
+Worker storage is `MODEL_VAULTS=AccountModelVault`, migration `v5`. It is keyed
+only by the validated lowercase GitHub login. OPTIONAL `MODEL_VAULT_KEY` is
+base64 of 32 random bytes; absent or invalid makes enrollment unavailable alone.
+The Worker encrypts before sending anything to the DO, using AES-256-GCM, a fresh
+96-bit nonce and AAD `JSON.stringify([1, login, name, origin])`. The DO holds no
+plaintext or encryption key and has no debug/decrypt route. One serialized atomic
+document contains at most 62 credentials, the last 128 successful receipts and
+at most 120,000 UTF-8 bytes. Replay returns the original receipt; reuse with
+changed action/name/enrollment origin is invalid/requestId. Removal deletes the
+ciphertext and retains the pin. Storage and decrypt failures fail closed without
+exception text or deployment-key fallback.
+
+Cloud pins are canonical HTTPS origins at port 443, without userinfo, IP literals,
+local/private/link-local DNS names, non-default ports, paths, queries or fragments.
+Other built-in names keep their contract origins; the deployment's two names are
+always read-only. Test/Ask and Explainer resolve through the same account and
+recheck its session before spending and publishing a result. Front-door and
+Recommend continue using only the deployment decision allowlist. Account changes
+clear browser models, seats and catalog caches; pending values are never replayed.
+
 The pre-implementation design and explicit limitations are in ENROLLMENT.md.
 The initial external CONTRACT path was read-only under this run's workspace
 constraint; this complete copy is its requested update.
@@ -514,7 +535,7 @@ modelCallSample(output, secret)      // the row's sample of an output (section 2
 ModelCallCardPayloadSchema // { model, request: ModelCallDraft, response?: { askedAt, request, result: ModelTestResult }, asking?: boolean, fixture?: string }
 ```
 
-Hosts: the Bun host builds `Evaluator.Question` instances from the wire questions and decodes with the real `Classifier.decodeAnswers`; the Worker asks `jevEvaluate` and decodes with `decodeModelAnswers`. Both answer `output` on every pass, fixed or composed, and `{ code: "invalid", field: "protocol" }` for an answer that does not fit its questions.
+Hosts: the Bun host builds `Evaluator.Question` instances from the wire questions and decodes with the real `Classifier.decodeAnswers`; the Worker uses `jevEvaluate` for the deployment key or the account's pinned evaluation endpoint and decodes with `decodeModelAnswers`. Both answer `output` on every pass, fixed or composed, and `{ code: "invalid", field: "protocol" }` for an answer that does not fit its questions.
 
 App: `state/controller/modelCall.ts`. The card's request is edited through the flows in section 5 and rewritten as a whole on each edit; a rewrite `ModelCallDraftSchema` would refuse is refused inline first, as `invalid · <control> · <limit>`, and the card's controls carry the same bounds as `maxLength`, so the screen never disagrees with the card. The answer is kept with the request it answered, so `stale = canonical(response.request) !== canonical(request)`; a stale answer is drawn struck and dimmed, never removed. `model.ask` toast key `` `model.ask:${id}` ``, deduplicated by model, request and account epoch; `asking: true` survives a reload and is launched again after identity loads (`resumeModelCalls`); a departed account's answer clears `asking` and writes nothing else. Record key order does not survive the store, so question ids and choice options are drawn and written in `byName` order (numeric-aware).
 

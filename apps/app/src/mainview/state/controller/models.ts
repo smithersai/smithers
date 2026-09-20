@@ -104,10 +104,14 @@ export const modelFailureLine = (failure: ModelTestFailure): string => {
 }
 
 /** The credential picker's options are host facts, including its enrollment capability. */
+export const enrollmentReason = (reason: Extract<NonNullable<ModelCatalog["enrollment"]>, { available: false }>["reason"]): string => ({
+  local_host_required: "Local host required", keychain_unavailable: "Keychain unavailable", vault_unavailable: "Vault unavailable", sign_in_required: "Sign in required"
+})[reason]
+
 export const credentialOptions = (catalog: Pick<ModelCatalog, "credentials" | "enrollment"> | undefined): FieldOption[] => [
   ...(catalog?.credentials ?? []).map(row => ({ value: row.name, label: row.name, ...(row.present ? {} : { disabled: true, reason: "missing" }) })),
   ...(catalog?.enrollment === undefined ? [] : [{ value: "__enroll", label: "Add credential", flow: "model.credential.new" as const,
-    ...(catalog.enrollment.available ? {} : { disabled: true, reason: catalog.enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" }) }])
+    ...(catalog.enrollment.available ? {} : { disabled: true, reason: enrollmentReason(catalog.enrollment.reason) }) }])
 ]
 
 /**
@@ -149,10 +153,10 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
    * a test the agent launched is the one the human's second press joins.
    */
   const shared = actorSharedState(ctx, "models", (): {
-    credentialFlights: Map<string, number>; credentialRequests: NonNullable<ModelsPayload["credentialRequests"]>; catalog: ModelCatalog | undefined; refresh: ModelsPayload["refresh"]; catalogFlight: CatalogFlight | undefined; flights: Map<string, Flight>; requested: Set<string>
+    epoch: number; credentialFlights: Map<string, number>; credentialRequests: NonNullable<ModelsPayload["credentialRequests"]>; catalog: ModelCatalog | undefined; refresh: ModelsPayload["refresh"]; catalogFlight: CatalogFlight | undefined; flights: Map<string, Flight>; requested: Set<string>
   } => {
     const saved = collections.cards.get(MODELS_CARD_ID)
-    return { credentialFlights: new Map(), credentialRequests: saved?.kind === "models" ? saved.payload.credentialRequests ?? [] : [], catalog: undefined, refresh: saved?.kind === "models" ? saved.payload.refresh : undefined, catalogFlight: undefined,
+    return { epoch: ctx.accountEpoch, credentialFlights: new Map(), credentialRequests: saved?.kind === "models" ? saved.payload.credentialRequests ?? [] : [], catalog: undefined, refresh: saved?.kind === "models" ? saved.payload.refresh : undefined, catalogFlight: undefined,
       flights: new Map(), requested: new Set(saved?.kind === "models" ? saved.payload.testing : []) }
   })
 
@@ -161,8 +165,19 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     return row?.kind === "models" ? row : undefined
   }
 
+  const syncAccount = (): void => {
+    if (shared.epoch === ctx.accountEpoch) return
+    shared.epoch = ctx.accountEpoch
+    shared.catalog = undefined
+    // Identity retirement clears cards. Boot for the same account retains its
+    // pending metadata so receipt recovery still works after the identity read.
+    shared.credentialRequests = card()?.payload.credentialRequests ?? []
+    shared.refresh = card()?.payload.refresh
+  }
+
   /** The card from the two collections, the host's last answer, and what a reload kept of it. */
   const payload = (attention: Attention | undefined, selected?: string): ModelsPayload => {
+    syncAccount()
     const existing = card()?.payload
     const rows = [...collections.models.values()]
       .sort((left, right) => Number(right.builtin === true) - Number(left.builtin === true) || left.id.localeCompare(right.id))
@@ -259,13 +274,14 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
         if (field.optionsFrom === "credentials") return { ...field, options: credentialOptions(catalog) }
         if (field.kind !== "write-only" || !form.payload.flow.startsWith("model.credential.")) return field
         const { disabledReason: _old, ...rest } = field
-        return catalog.enrollment?.available === false ? { ...rest, disabledReason: catalog.enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" } : rest
+        return catalog.enrollment?.available === false ? { ...rest, disabledReason: enrollmentReason(catalog.enrollment.reason) } : rest
       })
       store.dispatch({ type: "card.upsert", actor: "system", card: { ...form, payload: { ...form.payload, fields } } })
     }
   }
 
   const refreshCatalog = (toTail: boolean): Promise<unknown> => {
+    syncAccount()
     if (shared.catalogFlight?.epoch === ctx.accountEpoch) {
       if (toTail) render(ctx.commandActor, true, undefined)
       return shared.catalogFlight.work
@@ -445,6 +461,7 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
 
   type PendingCredential = NonNullable<ModelsPayload["credentialRequests"]>[number]
   const credentialWork = (pending: PendingCredential, send: () => Promise<ModelCredentialResult>, persisted?: Promise<unknown>): void => {
+    syncAccount()
     const epoch = ctx.accountEpoch
     shared.credentialFlights.set(pending.requestId, epoch)
     const key = `model.credential:${pending.name}`
@@ -482,6 +499,7 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
   }
 
   const mutateModelCredential: ModelsController["mutateModelCredential"] = async (action, input, gesture) => {
+    syncAccount()
     const existing = shared.credentialRequests.find(row => row.name === input.name && row.state === "requested" && shared.credentialFlights.get(row.requestId) === ctx.accountEpoch)
     if (existing) { gesture?.release(); return { value: "Requested" } }
     const requestId = crypto.randomUUID()
@@ -505,6 +523,7 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
   }
 
   const resumeModels: ModelsController["resumeModels"] = () => {
+    syncAccount()
     shared.credentialRequests = card()?.payload.credentialRequests ?? shared.credentialRequests
     for (const pending of shared.credentialRequests) {
       if (pending.state !== "requested" || shared.credentialFlights.get(pending.requestId) === ctx.accountEpoch) continue

@@ -107,6 +107,37 @@ test("credential toast waits for reconciliation, and a stale account cannot sett
   expect(t.store.collections.models.has("jev")).toBe(false)
 })
 
+test("a completed cloud receipt reconciles after reload without replaying a value", async () => {
+  const credential = { name: "CLOUD", origins: ["https://provider.example"], present: true, managed: true }
+  const cloudCatalog = { ...catalog, credentials: [...catalog.credentials, credential], enrollment: { available: true } }
+  const t = await setup(url => Promise.resolve(Response.json(url.startsWith(MODEL_CREDENTIAL_RECEIPT_PATH)
+    ? { state: "completed", result: { ok: true, credential } } : cloudCatalog)))
+  await t.models.listModels(); await t.settled()
+  const card = t.card()!
+  await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { ...card.payload, credentialRequests: [
+    { name: "CLOUD", action: "enroll", origin: credential.origins[0], requestId: "cloud-request", state: "requested" }
+  ] } } }).isPersisted.promise
+  const restored = await setup(url => Promise.resolve(Response.json(url.startsWith(MODEL_CREDENTIAL_RECEIPT_PATH)
+    ? { state: "completed", result: { ok: true, credential } } : cloudCatalog)), t.storage)
+  restored.models.resumeModels(); await restored.settled()
+  expect(restored.card()?.payload.credentialRequests?.[0]?.state).toBe("completed")
+  expect(restored.card()?.payload.credentials).toContainEqual(credential)
+  expect(restored.calls.some(call => call.path === MODEL_CREDENTIAL_PATH)).toBe(false)
+})
+
+test("a catalog cached by the departed account cannot repopulate its credential names after sign-out", async () => {
+  const enrolled = { ...catalog, credentials: [{ name: "ALICE_ONLY", origins: ["https://alice.example"], present: true, managed: true }], enrollment: { available: true } }
+  const t = await setup(() => Promise.resolve(Response.json(enrolled)))
+  await t.models.listModels(); await t.settled()
+  expect(t.card()?.payload.credentials[0]?.name).toBe("ALICE_ONLY")
+  t.ctx.accountEpoch++
+  await t.store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+  t.models.newModelCredential()
+  // Rendering before the next network response must not recover the old account's metadata.
+  await t.models.saveModel({ name: "public", protocol: "openai-chat", modelId: "public", credential: "CEREBRAS_API_KEY", baseUrl: "https://api.cerebras.ai" })
+  expect(JSON.stringify(t.card()?.payload)).not.toContain("ALICE_ONLY")
+})
+
 test("credential transport failure stays typed, retryable and contains no exception text", async () => {
   const t = await setup(async () => { await tick(); throw new Error("private-key-error-fixture") })
   await t.models.mutateModelCredential("rotate", { name: "ENROLLED" }, writeOnlyGesture("model.credential.rotate", { value: "private-key-error-fixture" }))

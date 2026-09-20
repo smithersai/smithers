@@ -76,3 +76,41 @@ test("cloud slash enrollment disables the secret option before any catalog was l
   const card = store.collections.cards.get("form-model.credential.enroll")
   expect(card?.kind === "flow-form" && card.payload.fields.find(field => field.name === "value")?.disabledReason).toBe("Local host required")
 })
+
+test.each([
+  [{ available: true }, undefined],
+  [{ available: false, reason: "vault_unavailable" }, "Vault unavailable"],
+  [{ available: false, reason: "sign_in_required" }, "Sign in required"]
+])("cloud enrollment uses the host capability and never persists its write-only value (%j)", async (enrollment, disabledReason) => {
+  const persisted = new Map<string, string>()
+  const store = await createAppStore({ kind: "localStorage", storage: {
+    getItem: key => persisted.get(key) ?? null, setItem: (key, value) => { persisted.set(key, value) }, removeItem: key => { persisted.delete(key) }
+  } })
+  const calls: string[] = []
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async (url, init) => {
+      if (String(url).endsWith(MODEL_CREDENTIAL_PATH)) {
+        calls.push(String(init?.body))
+        return Response.json({ ok: true, credential: { name: "CLOUD", origins: ["https://provider.example"], present: true, managed: true } })
+      }
+      return Response.json({ models: [], credentials: [], seats: ["explainer"], enrollment })
+    }
+  })
+  await controller.commands.run("model.list")
+  await waitFor(() => {
+    const card = store.collections.cards.get("models")
+    return card?.kind === "models" && card.payload.host === "observed"
+  })
+  await controller.commands.run("model.credential.enroll", "--name CLOUD --origin https://provider.example")
+  const id = "form-model.credential.enroll", card = store.collections.cards.get(id)
+  expect(card?.kind === "flow-form" && card.payload.fields.find(field => field.name === "value")?.disabledReason).toBe(disabledReason)
+  if (disabledReason !== undefined) return
+  const value = "cloud-write-only-fixture-value"
+  expect(await controller.commands.submit({ name: "form.submit", actor: "user", payload: { cardId: id }, gesture: writeOnlyGesture("form.submit", { value }) }))
+    .toMatchObject({ status: "executed", value: "Requested" })
+  await waitFor(() => calls.length === 1)
+  await store.settled?.()
+  expect(JSON.stringify([...persisted])).not.toContain(value)
+  expect(JSON.stringify([...store.collections.cards.values(), ...store.collections.transitions.values(), ...store.collections.messages.values()])).not.toContain(value)
+})

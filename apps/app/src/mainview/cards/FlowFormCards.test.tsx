@@ -31,6 +31,20 @@ test("a write-only input stays outside form.set, clears before submit, and trave
   expect(requests[0]?.gesture?.takeWriteOnly?.("value")).toBeUndefined()
 })
 
+test("an available cloud enrollment has an enabled Add control; unavailable keeps the disabled reason", () => {
+  for (const disabledReason of [undefined, "Vault unavailable", "Sign in required"]) {
+    const card = formCard({ flow: "model.credential.enroll", via: "user", fields: [
+      { name: "value", label: "API key", kind: "write-only", required: true, ...(disabledReason ? { disabledReason } : {}) }
+    ], draft: { name: "CLOUD", origin: "https://provider.example" }, given: {} })
+    const host = mount(<FlowFormCardBody card={card} onRunCommand={() => {}} />)
+    if (disabledReason === undefined) input(host, "flow-form-value", "cloud-dom-fixture")
+    const submit = host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!
+    expect(submit.disabled).toBe(disabledReason !== undefined)
+    expect(host.innerHTML).not.toContain("cloud-dom-fixture")
+    if (disabledReason) expect(host.textContent).toContain(disabledReason)
+  }
+})
+
 /*
  * THE FORM LAW (flow-forms.md): the generic form card. One control per
  * field kind, an unpickable option disabled with its reason, every field

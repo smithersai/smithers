@@ -265,6 +265,8 @@ describe("retained account ownership", () => {
 
 /** Every additional account projection omitted by the original scrub. */
 const seedPrivateRoster = async (store: AppStore): Promise<void> => {
+  await store.dispatch({ type: "model.saved", actor: "user", model: { id: "private", protocol: "openai-chat", modelId: "private", credential: "ALICE_PRIVATE_KEY", baseUrl: "https://alice.example" } }).isPersisted.promise
+  await store.dispatch({ type: "seat.assigned", actor: "user", seat: "explainer", recordId: "private" }).isPersisted.promise
   seedAccountState(store)
   await store.dispatch({ type: "composer.changed", actor: "user", draft: "ALICE_PRIVATE_DRAFT" }).isPersisted.promise
   await store.dispatch({
@@ -317,6 +319,8 @@ const seedPrivateRoster = async (store: AppStore): Promise<void> => {
 }
 
 const privateRosterSizes = (store: AppStore) => ({
+  models: store.collections.models.size,
+  seats: store.collections.seats.size,
   recommendations: store.collections.recommendations.size,
   repositories: store.collections.repositories.size,
   workingCopies: store.collections.workingCopies.size,

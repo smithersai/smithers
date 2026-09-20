@@ -5,7 +5,7 @@ The automated receipt is step 14. No paid key is needed before step 13.
 Step 12b composes a request and asks it.
 
 A credential is a NAME pinned to an origin. Enroll its value in the local
-macOS app; it stays in the host keychain. Model records carry only the name.
+macOS keychain or the signed-in production account vault (PRODUCTION below). Model records carry only the name.
 
 ## 0. Before you start
 
@@ -63,8 +63,9 @@ Chrome. No sign-in is needed. Use a fresh state directory for a fresh vault.
 5. Restart Terminal B with the same state directory. Reload, `/model.list`.
    See both names. The keys were restored from macOS keychain, not the browser.
 
-On the cloud host the disabled Add credential option reads Local host required.
-Off macOS it reads Keychain unavailable. A locked keychain fails visibly and can
+On the cloud host Add credential requires sign-in and the optional vault key.
+An unavailable vault reads Vault unavailable; signed out reads Sign in required.
+Off macOS the local host reads Keychain unavailable. A locked keychain fails visibly and can
 be retried after unlocking. Nothing claims successful in-memory-only enrollment.
 
 ## 3. Create
@@ -382,10 +383,43 @@ in front of the command. `SMITHERS_MODEL_PROVIDER_PORT=<port>` fixes the
 loopback provider's port; unset, the runner takes a free one before the host
 boots.
 
-See: `22 passed` in about a minute. The command then prints the quality gate.
+See: `23 passed` in about a minute. The command then prints the quality gate.
 The gate's errors, if any, name other specs, never `models.spec.ts`.
 
 The enrollment scenario reads the actual OPFS SQLite tables after the UI steps,
 checks the host request log, and checks the provider journal's SHA-256 values.
 It uses real browser input, the real local host and the real macOS keychain.
 Playwright tracing remains off for credential entry.
+
+
+## PRODUCTION — smithers.sh
+
+Prerequisite: the operator has installed optional `MODEL_VAULT_KEY` (DEPLOY.md).
+Until then, Vault unavailable is expected; deployment models still work.
+
+1. Sign out, run `/model`. See deployment models only. Add credential is disabled
+   with Sign in required. Sign in with your GitHub account and run `/model` again.
+2. New → Credential → Add credential. Enter a name such as `MY_PROVIDER`, the
+   provider's exact HTTPS origin (no path or port), and your API key. Press Add.
+   The key clears immediately, Chat stays usable, and the toast settles after
+   storage and catalog reconciliation. Never paste a key into Chat.
+3. Create a model using `MY_PROVIDER`, its protocol, model id and Base URL.
+   Test it. See green with latency. Compose → Ask also uses this account key.
+4. In DevTools → Network, inspect credential, catalog, receipt and Test responses.
+   Search each response for the key: no match. The enrollment REQUEST is the
+   sole write-only ingress and necessarily contains it. Do not export a HAR or
+   enable tracing. Elements and browser storage must contain no key.
+5. Reload and run `/model`. The credential name and pin remain. A pending request
+   with a completed host receipt reconciles; an unknown receipt says interrupted
+   and asks for a fresh key. No value is restored or resent.
+6. Maximize Models → Credentials → Rotate `MY_PROVIDER`. Enter a replacement key,
+   submit, then Test again. The origin is not editable. Add the same name with a
+   different origin: see exists; its original pin remains.
+7. Assign the model to Explainer and run `/agent.explain hello`. It uses that
+   account's provider. Set Explainer back to Default when finished.
+8. Remove `MY_PROVIDER`. Test reads `credential_missing · MY_PROVIDER` without a
+   provider call. Reload: the name and pin remain, present is false. Rotate can
+   restore a key; Add cannot repin the name.
+9. In another browser profile, sign in as a different GitHub account and run
+   `/model`. `MY_PROVIDER` is absent. Sign out there: only deployment rows remain.
+   Inspect responses again after rotation/removal: none contains either key.
