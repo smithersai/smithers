@@ -326,6 +326,16 @@ describe("private native journal supervision", () => {
         )
         expect(rejected).toMatchObject({ _tag: "Failure", failure: refusal })
         expect(yield* f.rows()).toEqual([])
+        // A launch holds this run's terminal ordering from before the executor
+        // runs. Neither of these produced a run to observe, so neither may
+        // leave a terminal write waiting out the grace for an observation that
+        // is never going to start.
+        expect(
+          yield* Effect.raceFirst(
+            Effect.as(supervisor.awaitSettled("root"), "ordering-released"),
+            Effect.as(Effect.repeat(Effect.yieldNow, { times: 500 }), "ordering-held")
+          )
+        ).toBe("ordering-released")
       }))),
     30_000
   )

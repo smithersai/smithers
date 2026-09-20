@@ -20,7 +20,8 @@
  */
 import { NodeCrypto } from "@effect/platform-node"
 import { RunNotFound } from "@smthrs/control/ControlError"
-import type { Service as ControlRuntime } from "@smthrs/control/ControlRuntime"
+import * as ControlExecutor from "@smthrs/control/ControlExecutor"
+import type { Service as ControlRuntime, StoredPlan } from "@smthrs/control/ControlRuntime"
 import type { ControlEvent, RunSummary } from "@smthrs/control/ControlSchema"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -212,6 +213,122 @@ describe("a terminal control status ordered against the native projection", () =
           const digest = Diagnosis.digest(events.slice(0, length))
           if (digest.status === "completed") expect(Diagnosis.resolvedOutput(digest)).toBe(output)
         }
+      }))),
+    30_000
+  )
+
+  it(
+    "holds a run whose body finishes before its observation is registered",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        const lifetime = yield* Scope.Scope
+        yield* f.create
+        // A grace long enough that only the observation can be what ends the
+        // wait below. Giving up is a different outcome and records a gap.
+        const supervisor = yield* f.make({ orderingGrace: Duration.minutes(5) })
+        // `AgentSession.launch` releases the drive before it returns
+        // `accepted`, so a module flow with no provider call reaches its own
+        // terminal commit inside the launch call, and asks for this ordering
+        // from there. An ordering registered after `launch` returns would have
+        // nothing to hold by then.
+        yield* f.finish
+        const ordered = Deferred.makeUnsafe<string>()
+        const released = Deferred.makeUnsafe<void>()
+        const executor = ControlExecutor.makeNoop({
+          launch: () =>
+            Effect.gen(function*() {
+              // `AgentSession.settleTerminal` asks for the ordering on its own
+              // fiber, from inside the handler this launch is still in.
+              yield* Effect.forkIn(
+                Effect.andThen(
+                  supervisor.awaitSettled(runId),
+                  Effect.sync(() => Deferred.doneUnsafe(released, Effect.void))
+                ),
+                lifetime
+              )
+              const verdict = yield* Effect.raceFirst(
+                Effect.as(Deferred.await(released), "ordering-released"),
+                Effect.as(Effect.repeat(Effect.yieldNow, { times: 500 }), "ordering-held")
+              )
+              Deferred.doneUnsafe(ordered, Effect.succeed(verdict))
+              return "accepted" as const
+            })
+        })
+        yield* f.controlJournal.transact(
+          supervisor.wrap(executor).launch({ run: summary, plan: {} as StoredPlan })
+        )
+        expect(yield* Deferred.await(ordered)).toBe("ordering-held")
+
+        yield* Deferred.await(f.reached).pipe(Effect.timeout("10 seconds"))
+        expect((yield* f.rows).map((entry) => entry.eventType)).not.toContain("control.run.completed")
+        yield* Deferred.succeed(f.release, void 0)
+        // The observation adopts the hold the launch registered, so the wait
+        // that began before there was anything to observe is ended by the
+        // settlement itself rather than by the grace running out.
+        yield* Deferred.await(released).pipe(Effect.timeout("10 seconds"))
+        yield* f.complete
+        yield* until(f.rows, (rows) => rows.some((entry) => entry.eventType === settledKind))
+
+        const events = controlEvents(yield* f.rows)
+        expect(events.map((entry) => entry.kind)).not.toContain(Projection.gapKind)
+        const whole = Diagnosis.digest(events)
+        expect(whole.status).toBe("completed")
+        expect(Diagnosis.resolvedOutput(whole)).toBe(output)
+        for (let length = 1; length <= events.length; length++) {
+          const digest = Diagnosis.digest(events.slice(0, length))
+          if (digest.status === "completed") expect(Diagnosis.resolvedOutput(digest)).toBe(output)
+        }
+      }))),
+    30_000
+  )
+
+  it(
+    "releases a hold whose host goes away before anything observes the run",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        const lifetime = yield* Scope.Scope
+        yield* f.create
+        const supervisor = yield* f.make({ orderingGrace: Duration.minutes(5) })
+        const released = Deferred.makeUnsafe<void>()
+        const holding = Deferred.makeUnsafe<void>()
+        const proceed = Deferred.makeUnsafe<void>()
+        const executor = ControlExecutor.makeNoop({
+          launch: () =>
+            Effect.gen(function*() {
+              yield* Effect.forkIn(
+                Effect.andThen(
+                  supervisor.awaitSettled(runId),
+                  Effect.sync(() => Deferred.doneUnsafe(released, Effect.void))
+                ),
+                lifetime
+              )
+              // The launch is still in flight, so nothing has admitted this
+              // run: the hold it registered is the only thing holding.
+              yield* Effect.repeat(Effect.yieldNow, { times: 100 })
+              Deferred.doneUnsafe(holding, Effect.void)
+              yield* Deferred.await(proceed)
+              return "accepted" as const
+            })
+        })
+        const launched = yield* Effect.forkScoped(
+          f.controlJournal.transact(supervisor.wrap(executor).launch({ run: summary, plan: {} as StoredPlan }))
+        )
+        yield* Deferred.await(holding).pipe(Effect.timeout("10 seconds"))
+        expect(
+          yield* Effect.raceFirst(
+            Effect.as(Deferred.await(released), "ordering-released"),
+            Effect.as(Effect.repeat(Effect.yieldNow, { times: 500 }), "ordering-held")
+          )
+        ).toBe("ordering-held")
+
+        // No observation ever adopted this hold, so no observation's death can
+        // end it. A run still owes a terminal status when its host goes away.
+        yield* supervisor.close
+        yield* Deferred.await(released).pipe(Effect.timeout("10 seconds"))
+        yield* Deferred.succeed(proceed, void 0)
+        yield* Fiber.await(launched).pipe(Effect.timeout("10 seconds"))
       }))),
     30_000
   )

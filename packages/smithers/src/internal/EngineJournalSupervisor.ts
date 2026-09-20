@@ -67,6 +67,14 @@ const orderingGrace = Duration.seconds(30)
 const orderingPhase = "terminal-ordering"
 
 /**
+ * The generation of a hold a launch registered and no observation has adopted.
+ *
+ * Below every real generation, so an admission that arrives later adopts the
+ * hold rather than reading it as a newer observer it must not replace.
+ */
+const unobserved = -1
+
+/**
  * Construct in the host scope, outside an admission transaction. No new service,
  * table or checkpoint: recovery reads native wrapper identity and existing markers.
  * @since 1.0.0
@@ -78,6 +86,7 @@ export const make = (options: Options) =>
     const host = yield* Effect.context<never>()
     const gate = yield* Semaphore.make(1)
     interface Active {
+      /** {@link unobserved} until an observation adopts this hold. */
       readonly generation: number
       /** Completed when this observation ends, however it ends. */
       readonly ended: Deferred.Deferred<void>
@@ -85,6 +94,42 @@ export const make = (options: Options) =>
     }
     const active = new Map<string, Active>()
     const runId = (id: string) => id as JournalEvent.RunId
+
+    /** Ends a hold, whether or not an observation ever adopted it. */
+    const release = (id: string, entry: Active | undefined) =>
+      Effect.sync(() => {
+        if (entry === undefined) return
+        if (active.get(id) === entry) active.delete(id)
+        Deferred.doneUnsafe(entry.ended, Effect.void)
+      })
+
+    /**
+     * Registers a run's hold before anything observes it.
+     *
+     * Nothing when this run is already held: an observation in progress is the
+     * stronger hold, and replacing it would orphan its fiber.
+     */
+    const hold = (id: string) =>
+      Effect.gen(function*() {
+        if (active.has(id)) return undefined
+        const entry: Active = { generation: unobserved, ended: yield* Deferred.make<void>() }
+        active.set(id, entry)
+        return entry
+      })
+
+    // An unadopted hold has no fiber whose interruption would end it, so the
+    // host going away between a launch and its admission must end it here.
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.sync(() => {
+        for (const [id, entry] of [...active]) {
+          if (entry.fiber === undefined) {
+            active.delete(id)
+            Deferred.doneUnsafe(entry.ended, Effect.void)
+          }
+        }
+      })
+    )
 
     // Native reads must not accidentally reuse the caller's control SQL
     // transaction. Supplying a different Journal service alone does not remove it.
@@ -268,29 +313,35 @@ export const make = (options: Options) =>
         // A delayed older admission callback must not replace a newer observer.
         if (previous !== undefined && previous.generation >= generation) return
         if (previous?.fiber !== undefined) yield* Fiber.interrupt(previous.fiber)
-        const entry: Active = { generation, ended: yield* Deferred.make<void>() }
+        // A hold the launch registered belongs to this observation: the caller
+        // waiting on it is the terminal write this observation has to precede,
+        // and it began waiting before there was anything to observe.
+        const entry: Active = {
+          generation,
+          ended: previous !== undefined && previous.fiber === undefined
+            ? previous.ended
+            : yield* Deferred.make<void>()
+        }
         active.set(id, entry)
         entry.fiber = yield* Effect.forkIn(
           // The release is in the finalizer, not after `observe`, because a
           // caller held by {@link awaitSettled} must also be released when this
           // fiber is interrupted or dies — otherwise a supervisor that goes away
           // leaves the run it was observing with no terminal status at all.
-          observe(id, generation).pipe(Effect.ensuring(Effect.sync(() => {
-            if (active.get(id) === entry) active.delete(id)
-            Deferred.doneUnsafe(entry.ended, Effect.void)
-          }))),
+          observe(id, generation).pipe(Effect.ensuring(release(id, entry))),
           scope
         )
       }))
 
-    const admit = (id: string, allowMissing: boolean) =>
+    /** Answers whether an observation is on its way to adopt {@link hold}'s entry. */
+    const admit = (id: string, allowMissing: boolean, pending?: Active) =>
       Effect.gen(function*() {
         // This row can still be uncommitted in the admission transaction.
         // Keep its read in the caller's control context; isolate native reads only.
         const control = yield* options.control.getRun(id)
         const native = yield* isolated(nativeRoot(id, control))
-        if (native.row === undefined && !allowMissing) return
-        if (yield* settled(id, native.generation)) return
+        if (native.row === undefined && !allowMissing) return false
+        if (yield* settled(id, native.generation)) return false
         yield* emit(id, native.generation, startedKind)
         const registered = yield* options.controlJournal.whenCommitted(Effect.sync(() => {
           // Short callback only. Both the registration job and follower belong to
@@ -299,8 +350,16 @@ export const make = (options: Options) =>
         }))
         if (!registered) {
           yield* gap(id, native.generation, "commit", "Caller transaction has no observable commit boundary")
+          return false
         }
-      }).pipe(Effect.catchCause((cause) => report(id, null, "admission", cause)))
+        return true
+      }).pipe(
+        Effect.catchCause((cause) => Effect.as(report(id, null, "admission", cause), false)),
+        // Nothing is coming to adopt the launch's hold, so the terminal write
+        // waiting on it would wait out the grace for an observation that will
+        // never start.
+        Effect.tap((adopting) => adopting ? Effect.void : release(id, pending))
+      )
 
     /**
      * Holds one terminal control write until this run's native evidence has
@@ -331,21 +390,42 @@ export const make = (options: Options) =>
           Deferred.await(entry.ended),
           Effect.sleep(grace).pipe(
             Effect.andThen(
-              gap(id, entry.generation, orderingPhase, `No ${settledKind} within ${Duration.format(grace)}`)
+              gap(
+                id,
+                entry.generation === unobserved ? null : entry.generation,
+                orderingPhase,
+                `No ${settledKind} within ${Duration.format(grace)}`
+              )
             ),
             Effect.ignore
           )
         )
       })
 
+    const startHeld = (id: string, pending: Active | undefined) => Effect.asVoid(admit(id, true, pending))
     /** Accepted work retains its actual acceptance even if observation fails. */
-    const start = (id: string) => admit(id, true)
+    const start = (id: string) => startHeld(id, undefined)
     const wrap = (executor: ControlExecutor.Service): ControlExecutor.Service => ({
       ...executor,
       launch: (input) =>
-        executor.launch(input).pipe(
-          Effect.tap((acceptance) => acceptance === "accepted" ? start(input.run.runId) : Effect.void)
-        ),
+        Effect.gen(function*() {
+          const id = input.run.runId
+          // Held before the executor runs, because the run can end before the
+          // admission below. `AgentSession.launch` releases the drive before it
+          // returns `accepted`, and a module flow with no provider call reaches
+          // its terminal write from there — an ordering registered afterwards
+          // would have had nothing to hold, and the status would be readable
+          // before the decision carrying the output was copied.
+          const pending = yield* hold(id)
+          const acceptance = yield* executor.launch(input).pipe(
+            Effect.onError(() => release(id, pending))
+          )
+          // Nothing this host observes: a queued launch drives no execution
+          // here, and its terminal status is another process's to order.
+          if (acceptance !== "accepted") yield* release(id, pending)
+          else yield* startHeld(id, pending)
+          return acceptance
+        }),
       resumeRun: (input) =>
         executor.resumeRun(input).pipe(
           Effect.tap((uptake) => uptake === "resuming" ? admit(input.runId, false) : Effect.void)
