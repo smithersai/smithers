@@ -21,7 +21,7 @@ import {
   waitForGatewayProcedure,
   workflowRpcPosts
 } from "./run-inspection/ui"
-import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
+import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
 import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
@@ -254,7 +254,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
     "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
     "dimension:real-provider", "dimension:real-pty", "dimension:keyboard", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
     "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor", "dimension:live-run",
-    "dimension:later-phase-door", "dimension:reload", "dimension:verified-edit", "evidence:gateway-journal-frames-and-durable-cursor"
+    "dimension:later-phase-door", "dimension:reload", "dimension:verified-edit", "dimension:milestone-cluster-keyboard", "evidence:gateway-journal-frames-and-durable-cursor"
   ],
   description: "Compare live and settled timeline meanings with independent calls and outcomes, require distinct read/write/test phases and an exact workspace-file append, and reload keyboard selections. Archive frontend and measured host revisions; report unavailable producer evidence explicitly."
 }), async ({ page, request, workflowRepo }, testInfo) => {
@@ -282,6 +282,9 @@ workflowTest("a successful prompt run matches its journal while live and after k
     const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
     await attachProductionJson(testInfo, "timeline-edit-readback", { repo, workspaceId, runId: subject.runId, terminal, marker, before, after })
     assertSuccessfulEdit(terminal.status, before, after, marker)
+    const files = await Promise.all(PIN_FILES.map(async path => ({ path, content: await readWorkspaceText(page, request, repo, workspaceId!, path) })))
+    await attachProductionJson(testInfo, "timeline-pin-file-readbacks", files)
+    for (const file of files) expect(file.content).toBe(`${marker}\n`)
     const expected = journalMeaning(rows)
     requireLaterPhase(expected)
     expect(expected.bands.map(band => band.phase)).toEqual(expect.arrayContaining(["researching", "implementing", "testing"]))

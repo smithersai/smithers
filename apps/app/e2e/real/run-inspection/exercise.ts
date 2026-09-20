@@ -192,6 +192,7 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
       const fact = { _tag: "ClusterNotRecorded", message: "This journal did not produce a milestone cluster. Cluster keyboard coverage remains absent." }
       await attachProductionJson(testInfo, "timeline-cluster-gap", fact)
       testInfo.annotations.push({ type: fact._tag, description: fact.message })
+      throw new Error(fact.message)
     } else {
       const summary = cluster.locator("summary")
       await press(summary, "Enter"); await expect(cluster).toHaveAttribute("open", "")

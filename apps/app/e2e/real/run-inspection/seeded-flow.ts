@@ -6,6 +6,7 @@ import { cloudRepoPath } from "../repositories-github/production"
 export const SEEDED_FLOW = "timeline-probe"
 export const FAILED_FLOW = "timeline-probe-failed"
 export const MARKER_TEST = "timeline-marker.test.ts"
+export const PIN_FILES = ["timeline-pin-1.txt", "timeline-pin-2.txt", "timeline-pin-3.txt"] as const
 
 const flowText = (failure: boolean): string => [
   "---",
@@ -14,7 +15,7 @@ const flowText = (failure: boolean): string => [
   "model: coding/implement",
   "budget:",
   "  tokens: 80000",
-  `  milliseconds: ${failure ? 30000 : 480000}`,
+  `  milliseconds: ${failure ? 30000 : 600000}`,
   "---", "",
   failure
     ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 120" and timeoutMs 150000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
@@ -22,10 +23,11 @@ const flowText = (failure: boolean): string => [
       "Append exactly the marker from the arguments to README.md. Preserve all original bytes and add one final newline.",
       "Use one numbered step per model response, one JavaScript cell per step. Never combine steps in one response.",
       '1. Read README.md with ctx.call("read", {path:"README.md"}); save the returned content in a variable and print it. Do not write yet.',
-      '2. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:120000}) and print the result. The marker assertion must fail before the edit.',
+      '2. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:220000}) and print the result. This deliberate three-minute check creates a live inspection interval. Its marker assertion must fail before the edit.',
       '3. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the marker to the saved text. read.content omits its final LF, so append one newline before and after the marker.',
-      '4. In the next response run the exact same bun test command and print the result. It must pass after the edit.',
-      '5. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
+      `4. In each of the next three responses write one of ${PIN_FILES.join(", ")} with ctx.call("write", {path:..., content:marker+"\\n"}). These three files record the same marker. Use a separate response for each file.`,
+      '5. In the next response run the exact same bun test command with timeoutMs 220000 and print the result. It must pass after the edit.',
+      '6. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
     ].join("\n")
 ].join("\n") + "\n"
 
@@ -91,7 +93,7 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
   const files = new Map([
     [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false)],
     [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true)],
-    [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(20000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 30000);\n`]
+    [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(180000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 200000);\n`]
   ])
   const sessions = cloudRepoPath(repo, "/workspace/sessions")
   let sessionId: string | undefined
