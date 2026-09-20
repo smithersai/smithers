@@ -115,41 +115,67 @@ export const openApp = async (page: Page): Promise<void> => {
   await page.goto(appEntryPath())
 }
 
-/** One measured post-reload boot: when it was taken, and how long the booted transcript took to appear. */
-export type ReloadBootTiming = { readonly at: string; readonly ms: number }
+/** What a measured boot followed: a fresh load of the app, or a reload of the page already on it. */
+export type BootKind = "navigate" | "reload"
+export const BOOT_KINDS = ["navigate", "reload"] as const
+
+/** One measured boot: when it was taken, what it followed, and how long the booted transcript took to appear. */
+export type ReloadBootTiming = { readonly at: string; readonly kind: BootKind; readonly ms: number }
 
 const measuredReloadBoots: ReloadBootTiming[] = []
 
 /**
- * Every post-reload boot this worker measured, oldest first.
+ * The one bound every boot wait uses.
  *
- * The 120 s budget below was chosen without a number behind it. Each reload now
- * records what the persistent production profile actually cost, so a scenario
- * can archive the distribution and the next person to touch that budget reads
- * evidence instead of guessing again.
+ * The persistent production profile reached its booted view in 12 to 72 s, and
+ * a fresh navigation climbs the same way, so both waits are held to the same
+ * measured budget rather than to Playwright's 15 s assertion default.
+ */
+export const BOOT_TIMEOUT_MS = 120_000
+
+/**
+ * Every boot this worker measured, oldest first.
+ *
+ * Each boot records what the run actually cost, so a scenario can archive the
+ * distribution and the next person to touch the budget above reads this run's
+ * evidence rather than repeating the measurement.
  */
 export const reloadBootTimings = (): ReadonlyArray<ReloadBootTiming> => measuredReloadBoots
 
 /**
- * Reload, then wait for the app to finish booting before anything on it is read.
+ * Wait for the app to finish booting before anything on it is read, and record
+ * what that wait cost.
  *
- * `domcontentloaded` resolves while the app is still fetching its view chunk
- * and opening its store, so an assertion made straight afterwards spends its
- * whole budget inside the boot skeleton and then reports the element it wanted
- * as missing, where the product had simply not rendered yet. Two production
+ * A navigation resolves while the app is still fetching its view chunk and
+ * opening its store, so an assertion made straight afterwards spends its whole
+ * budget inside the boot skeleton and then reports the element it wanted as
+ * missing, where the product had simply not rendered yet. Two production
  * attempts of the run-timeline scenario failed exactly there, both with
  * `status "Loading view"` as the entire page. The transcript is what the booted
  * view renders, so waiting for it names what this wait is for, and the failure
  * says the boot did not finish rather than blaming the thing being read.
  *
+ * Pass `startedAt`, a `performance.now()` reading taken before the navigation,
+ * to measure the whole navigate-to-boot rather than its tail.
+ *
  * A boot that never finished is not a boot time, so a timed-out wait records
  * nothing and fails as before.
  */
-export const reloadApp = async (page: Page, timeout = 120_000): Promise<void> => {
+export const awaitBoot = async (
+  page: Page,
+  kind: BootKind = "navigate",
+  startedAt: number = performance.now(),
+  timeout = BOOT_TIMEOUT_MS
+): Promise<void> => {
+  await expect(page.getByTestId("transcript"), `the app must finish booting after a ${kind}`).toBeVisible({ timeout })
+  measuredReloadBoots.push({ at: new Date().toISOString(), kind, ms: Math.round(performance.now() - startedAt) })
+}
+
+/** Reload, then wait for the booted view. */
+export const reloadApp = async (page: Page, timeout = BOOT_TIMEOUT_MS): Promise<void> => {
   const startedAt = performance.now()
   await page.reload({ waitUntil: "domcontentloaded" })
-  await expect(page.getByTestId("transcript"), "the app must finish booting after a reload").toBeVisible({ timeout })
-  measuredReloadBoots.push({ at: new Date().toISOString(), ms: Math.round(performance.now() - startedAt) })
+  await awaitBoot(page, "reload", startedAt, timeout)
 }
 
 /** Open the transient Command-K composer and wait for its real input focus. */

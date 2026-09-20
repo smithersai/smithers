@@ -116,10 +116,10 @@ describe("the deployed header source comparison", () => {
 })
 
 describe("the measured post-reload boot summary", () => {
-  const boot = (ms: number) => ({ at: new Date(ms).toISOString(), ms })
+  const boot = (ms: number, kind: "navigate" | "reload" = "reload") => ({ at: new Date(ms).toISOString(), kind, ms })
 
-  test("a run that reloaded nothing reports no boot time rather than a zero", () => {
-    expect(reloadBootFact([])).toEqual({ _tag: "ReloadBootUnmeasured", samples: [] })
+  test("a run that booted nothing reports no boot time rather than a zero", () => {
+    expect(reloadBootFact([])).toEqual({ _tag: "ReloadBootUnmeasured", samples: [], counts: { navigate: 0, reload: 0 } })
   })
 
   test("the extremes and the middle come from the values, not the order they were measured in", () => {
@@ -132,6 +132,14 @@ describe("the measured post-reload boot summary", () => {
   test("an even count takes the middle pair's mean, and one boot is its own summary", () => {
     expect(reloadBootFact([boot(1_000), boot(2_000), boot(2_001), boot(9_000)])).toMatchObject({ minMs: 1_000, medianMs: 2_001, maxMs: 9_000 })
     expect(reloadBootFact([boot(4_100)])).toMatchObject({ minMs: 4_100, medianMs: 4_100, maxMs: 4_100 })
+  })
+
+  test("both kinds share the one budget's distribution, and the counts say what the mix was", () => {
+    const fact = reloadBootFact([boot(12_000, "navigate"), boot(24_000), boot(18_000, "navigate")])
+    // One bound covers a navigation and a reload alike, so one distribution is what it is chosen from.
+    expect(fact).toMatchObject({ _tag: "ReloadBootMeasured", minMs: 12_000, medianMs: 18_000, maxMs: 24_000 })
+    expect(fact.counts).toEqual({ navigate: 2, reload: 1 })
+    expect(fact.samples.map(({ kind }) => kind)).toEqual(["navigate", "reload", "navigate"])
   })
 })
 

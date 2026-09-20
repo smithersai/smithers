@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
 import { attachProductionJson } from "../repositories-github/production"
-import { expect, reloadBootTimings, type ReloadBootTiming } from "../support/test"
+import { BOOT_KINDS, expect, reloadBootTimings, type BootKind, type ReloadBootTiming } from "../support/test"
 import type { JournalRow } from "./semantic"
 import { moduleRows } from "./module-evidence"
 
@@ -74,29 +74,35 @@ export const captureRevisions = async (page: Page, testInfo: TestInfo, attachmen
 }
 
 export type ReloadBootFact =
-  | { _tag: "ReloadBootMeasured"; samples: ReadonlyArray<ReloadBootTiming>; minMs: number; medianMs: number; maxMs: number }
-  | { _tag: "ReloadBootUnmeasured"; samples: ReadonlyArray<ReloadBootTiming> }
+  | {
+    _tag: "ReloadBootMeasured"; samples: ReadonlyArray<ReloadBootTiming>
+    minMs: number; medianMs: number; maxMs: number; counts: Readonly<Record<BootKind, number>>
+  }
+  | { _tag: "ReloadBootUnmeasured"; samples: ReadonlyArray<ReloadBootTiming>; counts: Readonly<Record<BootKind, number>> }
 
 /**
- * Summarise the post-reload boots `reloadApp` measured.
+ * Summarise the boots `awaitBoot` measured.
  *
- * `reloadApp` waits 120 s for the booted transcript and nothing records what
- * that wait is worth, so every later edit of the budget is another guess. A run
- * that reloaded nothing is reported as unmeasured: `Math.min` of no samples is
+ * Every boot wait is held to one budget, so one distribution is what that
+ * budget is chosen from; `counts` says how many of each kind went into it, and
+ * each sample carries its own kind for a reader who wants them apart. A run
+ * that booted nothing is reported as unmeasured: `Math.min` of no samples is
  * `Infinity`, which JSON writes as `null`, and a null minimum reads like a
- * measured zero.
+ * measured zero. A count of zero is a real count, so it stays a number.
  */
 export const reloadBootFact = (samples: ReadonlyArray<ReloadBootTiming>): ReloadBootFact => {
-  if (samples.length === 0) return { _tag: "ReloadBootUnmeasured", samples }
+  const counts = Object.fromEntries(BOOT_KINDS.map((kind) =>
+    [kind, samples.filter((sample) => sample.kind === kind).length])) as Record<BootKind, number>
+  if (samples.length === 0) return { _tag: "ReloadBootUnmeasured", samples, counts }
   const sorted = samples.map(({ ms }) => ms).sort((left, right) => left - right)
   const middle = sorted.length >> 1
   return {
-    _tag: "ReloadBootMeasured", samples, minMs: sorted[0]!, maxMs: sorted[sorted.length - 1]!,
+    _tag: "ReloadBootMeasured", samples, counts, minMs: sorted[0]!, maxMs: sorted[sorted.length - 1]!,
     medianMs: sorted.length % 2 === 1 ? sorted[middle]! : Math.round((sorted[middle - 1]! + sorted[middle]!) / 2)
   }
 }
 
-/** Archive this worker's measured boots, so the reload budget is evidence rather than a number someone picked. */
+/** Archive this worker's measured boots, so the boot budget is evidence rather than a number someone picked. */
 export const reloadBootEvidence = async (testInfo: TestInfo): Promise<void> => {
   await attachProductionJson(testInfo, "timeline-reload-boot-ms", reloadBootFact(reloadBootTimings()))
 }
