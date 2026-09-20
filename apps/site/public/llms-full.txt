@@ -20183,11 +20183,13 @@ https://smithers.sh/docs/reference/api/crypto/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md) · [package docs](https://crypto.smithers.sh)
 
-Every name below is exported from the root entry point and from
-`@smthrs/crypto/Sha256`. There is no other public module.
+Every hashing, schema, error, and service name below is exported from the root
+entry point and from `@smthrs/crypto/Sha256`. Function identity is the one
+other public module: it is exported as the `Identity` namespace from the root
+and from `@smthrs/crypto/Identity`.
 
 ```ts
-import { Digest, digest, digestSync, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
+import { Digest, digest, digestSync, Identity, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
 ```
 
 ## Hashing
@@ -20399,6 +20401,94 @@ Full detail is in [what a digest covers](https://crypto.smithers.sh/concepts/wha
 and the guarantees these rules add up to, along with what they do not cover,
 are in [the contract](https://crypto.smithers.sh/contract/).
 
+## Function identity
+
+A digest of bytes identifies data. `Identity` digests a _function_: the plan-time
+mapper, continuation, or predicate a node AST embeds but cannot serialize. It is
+a separate module because its admission rules are about JavaScript values, not
+about hashing, and because every node model in Smithers has to embed the same
+one.
+
+```ts
+import { Identity } from "@smthrs/crypto"
+// or
+import * as Identity from "@smthrs/crypto/Identity"
+```
+
+### Identity.functionIdentity
+
+```ts
+const functionIdentity: (operation: unknown) => Identity.FunctionIdentity
+```
+
+Digests a function's exact source as UTF-8 with SHA-256. Exact source matters:
+whitespace inside a string literal is behavior, so normalizing before hashing
+could make two different functions share an identity.
+
+- Returns `{ _tag: "FunctionIdentity", algorithm, digest }`, where `digest` is
+  64 lowercase hexadecimal characters.
+- `algorithm` is `sha256-source-captures/v4` when the operation was declared
+  with [`Identity.capture`](#identitycapture), and `sha256-source-ephemeral/v4`
+  otherwise. An undeclared closure folds in process-local, per-function
+  entropy, because JavaScript cannot inspect what a closure captured and
+  source-only identity would permit an incorrect cache hit.
+- **Throws** `TypeError("function identity requires a function")` for anything
+  that is not a function.
+
+### Identity.capture
+
+```ts
+const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
+) => (...args: Args) => A
+```
+
+Declares the inert values a function closes over, which is what earns it a
+deterministic identity. A deeply frozen plain copy of `captures` is
+canonicalized into the identity and bound as the callback's `this` receiver, so
+use a function expression to read it; ordinary arguments keep their positions.
+
+- Caller objects are left unchanged, and a mutable lexical alias must not
+  supply semantic state: only the owned frozen copy enters identity.
+- Sealed, non-extensible, frozen, and Immer-style ordinary data are all
+  supported, and shared references stay shared in the copy.
+- Admission walks original descriptors once and never evaluates a getter.
+  Built-in brands, non-plain prototypes, accessors, non-enumerable members,
+  symbol keys, cycles, non-finite numbers, and nesting beyond 256 levels are
+  refused with a `TypeError` naming the path.
+- Object capture requires `structuredClone`, which is how a Proxy is refused.
+  A host without it refuses every object capture.
+- Capturing an already-captured function keeps the inner source and folds both
+  capture sets into one identity.
+
+### Identity.processNonce
+
+```ts
+const processNonce: () => string
+```
+
+The process-local nonce every ephemeral identity folds in, as 32 lowercase
+hexadecimal characters. It exists so a second ephemeral encoding, such as the
+projection of an unregistered symbol, shares this process's value instead of
+minting a second one. It is seeded lazily on first use: reading entropy while
+the module evaluates is rejected by Cloudflare Workers with upload error 10021.
+
+### Identity.FunctionIdentity
+
+```ts
+interface FunctionIdentity {
+  readonly _tag: "FunctionIdentity"
+  readonly algorithm: Identity.Algorithm
+  readonly digest: string
+}
+type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
+```
+
+The serializable stand-in a node AST stores in place of the function itself. The
+algorithm tag is versioned, so a change to identity semantics re-keys what is
+derived from one rather than colliding with it.
+
 ## Requirements and platform
 
 - Node.js 22.19.0 or later. The package also runs under Bun and in a browser:
@@ -20407,6 +20497,9 @@ are in [the contract](https://crypto.smithers.sh/contract/).
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
   export map. The handwritten implementation is reachable only through
   `digestSync` and `syncCrypto`.
+- `Identity.capture` uses `structuredClone`, a global on Node.js 22, Bun, and
+  modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
+  Neither is read while the module evaluates.
 
 ## Neighbouring packages
 
@@ -34080,7 +34173,7 @@ https://smithers.sh/docs/reference/api/plan/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) · [package docs](https://plan.smithers.sh)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
 
 `@smthrs/plan` exports eleven modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
@@ -34745,7 +34838,7 @@ A pure graph-building value. `R` is Effect's requirement channel and it is phant
 ### Node.Ast
 
 ```ts
-type Ast = Succeed | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
+type Ast = Succeed | Fail | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
 ```
 
 The inspectable AST a node stores: closure-free, and JSON serializable for every JSON payload an author puts in it. Every variant carries an optional `priority`.
@@ -34785,6 +34878,16 @@ const succeed: <A>(value: A) => Node<Succeed<A>>
 ```
 
 A node that succeeds with the constant’s inert JSON projection, typed as `Succeed<A>`. Dates produce `string | null` (an invalid date produces `null`); URLs produce strings. Callable `toJSON` results are projected recursively. Function and symbol members are omitted from objects and become `null` in arrays. Planned references resolve to their referenced result types. Use `Node.map` to reconstruct a domain value explicitly.
+
+### Node.fail
+
+```ts
+const fail: <E>(error: E) => Node<never, Fail<E>>
+```
+
+A node that fails with the constant’s inert JSON projection, in the typed error channel. `Fail<E>` is the same projection `Succeed<E>` describes, because a plan stores an error exactly as it stores a value.
+
+It is how a plan states a refusal it already knows about, such as an unsupported input, an exhausted budget, or a compensation with nothing left to undo, without an action that exists only to fail. `Node.catch` recovers it exactly as it recovers an action’s failure, including schema filtering, and an uncaught one is the flow’s typed failure. It is a leaf: it declares no effects, and its error is keyed into its step identity, so two different refusals are two different steps.
 
 ### Node.all
 
@@ -34938,9 +35041,9 @@ const capture: <C extends Readonly<Record<string, unknown>>, Args extends Readon
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [core admission algorithm](https://core.smithers.sh/reference/api/#nodecapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [admission algorithm](https://crypto.smithers.sh/reference/api/#identitycapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
 
-Plan uses the capture and function-identity implementation from `@smthrs/core/Node`. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
+Plan uses the capture and function-identity implementation from `@smthrs/crypto/Identity`, the one implementation every node model embeds. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 
 ### Node.plannedReference
 

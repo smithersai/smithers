@@ -555,6 +555,11 @@ const interpretWithPolicy = (
             )
           case "Succeed":
             return resolve(node.payload)
+          case "Fail":
+            // The typed error channel, from a constant the plan already holds.
+            // An enclosing catch observes it exactly as it observes an action's
+            // failure, and an uncaught one is the body's typed failure.
+            return yield* Effect.fail(resolve(node.payload))
           case "Map": {
             const transform = Node.mapper(ast)!
             return transform(yield* settleNode(children[0]!))

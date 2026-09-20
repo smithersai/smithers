@@ -4959,9 +4959,6 @@ importers:
       '@smthrs/canonical':
         specifier: 1.0.0-rc.0
         version: link:../canonical
-      '@smthrs/core':
-        specifier: 1.0.0-rc.0
-        version: link:../core
       '@smthrs/crypto':
         specifier: 1.0.0-rc.0
         version: link:../crypto

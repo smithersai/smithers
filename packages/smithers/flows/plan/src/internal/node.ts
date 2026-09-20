@@ -24,8 +24,8 @@
  * @since 0.1.0
  */
 import { isRecord } from "@smthrs/canonical/Record"
-import * as CoreNode from "@smthrs/core/Node"
 import { digestSync } from "@smthrs/crypto"
+import * as Identity from "@smthrs/crypto/Identity"
 import { identity } from "effect/Function"
 import { pipeArguments } from "effect/Pipeable"
 import * as Schema from "effect/Schema"
@@ -80,6 +80,22 @@ export interface Scheduled {
 export interface Succeed extends Scheduled {
   readonly _tag: "Succeed"
   readonly value: unknown
+}
+
+/**
+ * A constant typed failure, known before anything runs.
+ *
+ * The error is an inert JSON mirror for the same reason {@link Succeed.value}
+ * is: a stored plan has to carry what the node produces without the process
+ * that built it.
+ *
+ * @since 1.0.0
+ * @private
+ * @slop
+ */
+export interface Fail extends Scheduled {
+  readonly _tag: "Fail"
+  readonly error: unknown
 }
 
 /**
@@ -262,12 +278,15 @@ export interface FunctionIdentity {
 }
 
 /**
- * Uses core's canonical captures, nested metadata, and freezing contract.
+ * Brands an operation with every inert value it closes over, so its identity
+ * covers what it computes with and not only its source.
+ *
+ * `@smthrs/crypto` owns the captures, nested metadata, and freezing contract.
  *
  * @since 0.1.0
  * @private
  */
-export const capture = CoreNode.capture
+export const capture = Identity.capture
 
 /**
  * The serializable form of a planned value embedded in an AST value or
@@ -315,7 +334,7 @@ export const plannedReference = (value: unknown): PlannedReference | undefined =
  * @private
  * @slop
  */
-export type NodeAst = Succeed | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
+export type NodeAst = Succeed | Fail | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
 
 type Operation = (value: unknown) => unknown
 
@@ -347,7 +366,7 @@ const payloadMirror = (input: unknown): unknown =>
  * @private
  * @slop
  */
-export const functionIdentity: (operation: unknown) => FunctionIdentity = CoreNode.functionIdentity
+export const functionIdentity: (operation: unknown) => FunctionIdentity = Identity.functionIdentity
 
 /**
  * The prototype every node shares, so `pipe` is one function rather than one
@@ -416,6 +435,7 @@ export const isNodeAst = (value: unknown): value is NodeAst => {
     const children: Array<unknown> = []
     switch (ast._tag) {
       case "Succeed":
+      case "Fail":
         break
       case "All": {
         if (!isRecord(ast.nodes) || Array.isArray(ast.nodes)) return false
@@ -509,6 +529,15 @@ export const makeNode = <A = unknown, E = never, R = never>(ast: NodeAst): Node<
  * @slop
  */
 export const succeed = (input: unknown): Succeed => ({ _tag: "Succeed", value: payloadMirror(input) })
+
+/**
+ * Constructs a {@link Fail}.
+ *
+ * @since 1.0.0
+ * @private
+ * @slop
+ */
+export const fail = (error: unknown): Fail => ({ _tag: "Fail", error: payloadMirror(error) })
 
 /**
  * Constructs an {@link All}.

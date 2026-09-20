@@ -1,5 +1,5 @@
 import { describe, expect, it, onTestFinished } from "vitest"
-import * as Node from "../src/Node.ts"
+import { capture, functionIdentity } from "../src/Identity.ts"
 
 describe("capture admission", () => {
   it.each([false, true])(
@@ -19,7 +19,7 @@ describe("capture admission", () => {
       Object.freeze(carrier)
       const captures = { carrier, config }
       if (frozen) Object.freeze(captures)
-      expect(() => Node.capture(captures, () => captures.config.value))
+      expect(() => capture(captures, () => captures.config.value))
         .toThrow(/capture at \$\.carrier has built-in internal slots/)
       expect(reads).toBe(0)
       expect(config.value).toBe(1)
@@ -41,7 +41,7 @@ describe("capture admission", () => {
       applyState(config)
       const captures = { config }
       if (frozen) Object.freeze(captures)
-      const operation = Node.capture(captures, function() {
+      const operation = capture(captures, function() {
         return this
       })
       const copy = operation()
@@ -54,10 +54,10 @@ describe("capture admission", () => {
       expect(Object.isFrozen(copy.config.nested)).toBe(true)
       expect(Object.getPrototypeOf(copy.config)).toBe(Object.prototype)
       expect(Object.getPrototypeOf(config)).toBe(null)
-      const identity = Node.functionIdentity(operation)
+      const identity = functionIdentity(operation)
       config.nested.value = 99
       expect(operation().config.nested.value).toBe(5)
-      expect(Node.functionIdentity(operation)).toEqual(identity)
+      expect(functionIdentity(operation)).toEqual(identity)
     }
   })
 
@@ -93,7 +93,7 @@ describe("capture admission", () => {
           }
         })
         Object.setPrototypeOf(value, prototype)
-        expect(() => Node.capture({ value }, () => undefined)).toThrow(
+        expect(() => capture({ value }, () => undefined)).toThrow(
           /capture at \$\.value has built-in internal slots/
         )
         expect(reads).toBe(0)
@@ -109,21 +109,26 @@ describe("capture admission", () => {
         return "Map"
       }
     })
-    expect(() => Node.capture({ value }, () => undefined)).toThrow(/capture at \$\.value has symbol key/)
+    expect(() => capture({ value }, () => undefined)).toThrow(/capture at \$\.value has symbol key/)
     expect(reads).toBe(0)
   })
 
   it("refuses Promise and Error brands that cannot be safely branded on the original", () => {
     const promise = Promise.resolve(1)
-    expect(() => Node.capture({ promise }, () => undefined)).toThrow(/capture at \$\.promise has a non-plain prototype/)
+    expect(() => capture({ promise }, () => undefined)).toThrow(/capture at \$\.promise has a non-plain prototype/)
     Object.setPrototypeOf(promise, null)
-    expect(() => Node.capture({ promise }, () => undefined)).toThrow(
+    expect(() => capture({ promise }, () => undefined)).toThrow(
       /capture at \$\.promise cannot be structured-cloned/
     )
+    // An Error's own properties differ by host: V8 gives it `stack`, Bun adds
+    // `line`, `column`, and `sourceURL`. Stripping all of them leaves only the
+    // internal brand, so both hosts reach the same refusal instead of stopping
+    // one step earlier at a non-enumerable member.
     const error = new Error()
-    Reflect.deleteProperty(error, "stack")
+    for (const key of Reflect.ownKeys(error)) Reflect.deleteProperty(error, key)
     Object.setPrototypeOf(error, Object.prototype)
-    expect(() => Node.capture({ error }, () => undefined)).toThrow(/capture at \$\.error clones as a built-in object/)
+    expect(Reflect.ownKeys(error)).toEqual([])
+    expect(() => capture({ error }, () => undefined)).toThrow(/capture at \$\.error clones as a built-in object/)
   })
 
   it("normalizes reflection and revoked Proxy failures to path-bearing TypeErrors", () => {
@@ -154,7 +159,7 @@ describe("capture admission", () => {
         })
       ]
     ) {
-      expect(() => Node.capture({ value }, () => undefined)).toThrow(
+      expect(() => capture({ value }, () => undefined)).toThrow(
         /capture at \$\.value could not inspect its own data/
       )
     }
@@ -171,7 +176,7 @@ describe("capture admission", () => {
           return Reflect.ownKeys(object)
         }
       })
-      expect(() => Node.capture({ earlier, proxy }, () => undefined)).toThrow(
+      expect(() => capture({ earlier, proxy }, () => undefined)).toThrow(
         /capture at \$\.proxy cannot be structured-cloned/
       )
       expect(reads).toBe(0)
@@ -180,19 +185,19 @@ describe("capture admission", () => {
 
   it("binds only the detached snapshot, preserves arguments and ignores later receivers", () => {
     const original = { config: { value: 2 } }
-    const operation = Node.capture(original, function(value: number, extra: number) {
+    const operation = capture(original, function(value: number, extra: number) {
       expect(Object.isFrozen(this)).toBe(true)
       expect(Object.isFrozen(this.config)).toBe(true)
       return this.config.value + value + extra
     })
-    const identity = Node.functionIdentity(operation)
+    const identity = functionIdentity(operation)
     original.config.value = 99
     expect(operation(3, 4)).toBe(9)
     expect(operation.call({ config: { value: -1 } }, 3, 4)).toBe(9)
-    expect(Node.functionIdentity(operation)).toEqual(identity)
-    const nested = Node.capture({ outer: 9 }, operation)
+    expect(functionIdentity(operation)).toEqual(identity)
+    const nested = capture({ outer: 9 }, operation)
     expect(nested(3, 4)).toBe(9)
-    expect(Node.functionIdentity(nested)).not.toEqual(identity)
+    expect(functionIdentity(nested)).not.toEqual(identity)
   })
 
   it("selects the host clone before a Proxy trap can replace it", () => {
@@ -210,7 +215,7 @@ describe("capture admission", () => {
         return Reflect.ownKeys(target)
       }
     })
-    expect(() => Node.capture({ value }, () => undefined)).toThrow(/capture at \$\.value cannot be structured-cloned/)
+    expect(() => capture({ value }, () => undefined)).toThrow(/capture at \$\.value cannot be structured-cloned/)
     expect(calls).toBe(0)
   })
 
@@ -222,8 +227,8 @@ describe("capture admission", () => {
         return undefined
       }
     })
-    Node.capture({}, operation)
-    Node.functionIdentity(operation)
+    capture({}, operation)
+    functionIdentity(operation)
     expect(reads).toBe(0)
   })
 
@@ -231,9 +236,9 @@ describe("capture admission", () => {
     const read = function(this: Record<string, number>) {
       return Object.values(this).join(",")
     }
-    const one = Node.capture({ a: 1, b: 2 }, read)
-    const two = Node.capture({ b: 2, a: 1 }, read)
-    expect(Node.functionIdentity(one)).toEqual(Node.functionIdentity(two))
+    const one = capture({ a: 1, b: 2 }, read)
+    const two = capture({ b: 2, a: 1 }, read)
+    expect(functionIdentity(one)).toEqual(functionIdentity(two))
     expect(one()).toBe("1,2")
     expect(two()).toBe(one())
   })

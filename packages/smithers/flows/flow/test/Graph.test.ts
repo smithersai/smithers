@@ -1099,6 +1099,43 @@ describe("Graph.build into a plan", () => {
       expect(planNode(plan, "root.failure").dependsOn).toEqual(["root.protected"])
     }))
 
+  it.effect("drafts a constant failure and keys it on the error it carries", () =>
+    Effect.gen(function*() {
+      const graph = Graph.build(Node.fail({ reason: "quota" }))
+      const plan = yield* compile("plan-fail", "fail", graph)
+
+      expect(Graph.nodes(graph).map((observed) => [observed.id, observed.kind])).toEqual([["root", "Fail"]])
+      expect(Graph.edges(graph)).toEqual([])
+      expect(node(graph, "root").payload).toEqual({ reason: "quota" })
+      expect(body(graph, "root")).toEqual({ _tag: "Fail" })
+      // The error is hashed the way a Succeed value is, so two different
+      // refusals are two different steps.
+      expect(material(graph, "root").inputs).toEqual([{ _tag: "Literal", value: { reason: "quota" } }])
+      expect(planNode(plan, "root").key).toMatch(/^key1_[0-9a-f]{64}$/)
+      const other = yield* compile("plan-fail", "fail", Graph.build(Node.fail({ reason: "budget" })))
+      expect(planNode(other, "root").key).not.toBe(planNode(plan, "root").key)
+    }))
+
+  it.effect("wires a failure arm onto a constant failure", () =>
+    Effect.gen(function*() {
+      const graph = Graph.build(
+        Node.fail("boom").pipe(Node.catch({ onFailure: (error) => Node.succeed({ recovered: error }) }))
+      )
+      const plan = yield* compile("plan-fail-catch", "fail", graph)
+
+      expect(Graph.nodes(graph).map((observed) => [observed.id, observed.kind])).toEqual([
+        ["root.protected", "Fail"],
+        ["root.failure", "Succeed"],
+        ["root", "Catch"]
+      ])
+      expect(Graph.edges(graph)).toContainEqual({
+        from: "root.protected",
+        to: "root.failure",
+        reason: "failure"
+      })
+      expect(planNode(plan, "root.failure").dependsOn).toEqual(["root.protected"])
+    }))
+
   it("keeps a captured outer catch subject inside a nested catch arm", () => {
     const graph = Graph.build(
       Read.call({ path: "outer.txt" }).pipe(Node.catch({

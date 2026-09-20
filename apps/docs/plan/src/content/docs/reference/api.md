@@ -667,7 +667,7 @@ A pure graph-building value. `R` is Effect's requirement channel and it is phant
 ### Node.Ast
 
 ```ts
-type Ast = Succeed | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
+type Ast = Succeed | Fail | All | Map | AndThen | Branch | Catch | FlowCall | ActionCall
 ```
 
 The inspectable AST a node stores: closure-free, and JSON serializable for every JSON payload an author puts in it. Every variant carries an optional `priority`.
@@ -707,6 +707,16 @@ const succeed: <A>(value: A) => Node<Succeed<A>>
 ```
 
 A node that succeeds with the constant’s inert JSON projection, typed as `Succeed<A>`. Dates produce `string | null` (an invalid date produces `null`); URLs produce strings. Callable `toJSON` results are projected recursively. Function and symbol members are omitted from objects and become `null` in arrays. Planned references resolve to their referenced result types. Use `Node.map` to reconstruct a domain value explicitly.
+
+### Node.fail
+
+```ts
+const fail: <E>(error: E) => Node<never, Fail<E>>
+```
+
+A node that fails with the constant’s inert JSON projection, in the typed error channel. `Fail<E>` is the same projection `Succeed<E>` describes, because a plan stores an error exactly as it stores a value.
+
+It is how a plan states a refusal it already knows about, such as an unsupported input, an exhausted budget, or a compensation with nothing left to undo, without an action that exists only to fail. `Node.catch` recovers it exactly as it recovers an action’s failure, including schema filtering, and an uncaught one is the flow’s typed failure. It is a leaf: it declares no effects, and its error is keyed into its step identity, so two different refusals are two different steps.
 
 ### Node.all
 
@@ -860,9 +870,9 @@ const capture: <C extends Readonly<Record<string, unknown>>, Args extends Readon
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [core admission algorithm](https://core.smithers.sh/reference/api/#nodecapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [admission algorithm](https://crypto.smithers.sh/reference/api/#identitycapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
 
-Plan uses the capture and function-identity implementation from `@smthrs/core/Node`. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
+Plan uses the capture and function-identity implementation from `@smthrs/crypto/Identity`, the one implementation every node model embeds. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 
 ### Node.plannedReference
 

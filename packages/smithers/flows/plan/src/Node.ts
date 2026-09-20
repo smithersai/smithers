@@ -272,6 +272,31 @@ type SucceedArrayMember<A> = A extends Planned.Planned<infer Value> ? Value
 export const succeed = <A>(value: A): Node<Succeed<A>> => internal.makeNode<Succeed<A>>(internal.succeed(value))
 
 /**
+ * The inert error delivered by {@link fail}: the same JSON projection
+ * {@link Succeed} describes, because a plan stores an error exactly as it
+ * stores a value.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type Fail<E> = Succeed<E>
+
+/**
+ * A node that fails with the constant's inert JSON projection, in the typed
+ * error channel.
+ *
+ * It is how a plan states a refusal it already knows about — an unsupported
+ * input, an exhausted budget, a compensation that has nothing left to undo —
+ * without an action that exists only to fail. {@link catch} recovers it exactly
+ * as it recovers an action's failure, and an uncaught one is the flow's typed
+ * failure.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const fail = <E>(error: E): Node<never, Fail<E>> => internal.makeNode<never, Fail<E>>(internal.fail(error))
+
+/**
  * Combines independent children into one node, keyed by name.
  *
  * Width is fixed here, at plan time. Fanning out over something a step

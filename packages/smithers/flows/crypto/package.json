@@ -37,6 +37,7 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
+    "./Identity": "./src/Identity.ts",
     "./Sha256": "./src/Sha256.ts",
     "./index": "./src/index.ts"
   },
@@ -69,6 +70,16 @@
       },
       "./internal/*": null,
       "./*/index": null,
+      "./Identity": {
+        "import": {
+          "types": "./dist/esm/Identity.d.ts",
+          "default": "./dist/esm/Identity.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Identity.d.ts",
+          "default": "./dist/cjs/Identity.js"
+        }
+      },
       "./Sha256": {
         "import": {
           "types": "./dist/esm/Sha256.d.ts",

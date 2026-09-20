@@ -128,8 +128,8 @@ export interface GraphNode {
    * What this node passes on, hydrated: real data where the author wrote data,
    * and a {@link module:Planned.Planned} placeholder where a step result goes.
    * It is the call payload of an `ActionCall` or a `FlowCall`, the value of a
-   * `Succeed`, and `undefined` for every other variant, which passes nothing of
-   * its own.
+   * `Succeed`, the error of a `Fail`, and `undefined` for every other variant,
+   * which passes nothing of its own.
    */
   readonly payload: unknown
 }
@@ -1244,6 +1244,27 @@ export const build = (
           inputs: [...payloadInputs(value, id), ...inputs],
           ast,
           payload: value
+        })
+        return
+      }
+      case "Fail": {
+        // A constant failure is a leaf exactly as `Succeed` is, and its error
+        // is hydrated and keyed the same way: two different refusals are two
+        // different steps, and one that reads an upstream result depends on it.
+        const error = hydrate(ast.error, substitutions, id)
+        record({
+          id,
+          kind: ast._tag,
+          dependencies,
+          capabilities,
+          effects: undefined,
+          placement: undefined,
+          priority,
+          tier: "sealed",
+          body: { _tag: ast._tag },
+          inputs: [...payloadInputs(error, id), ...inputs],
+          ast,
+          payload: error
         })
         return
       }

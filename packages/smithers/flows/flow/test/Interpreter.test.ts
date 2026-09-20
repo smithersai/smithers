@@ -350,6 +350,56 @@ describe("Interpreter catches", () => {
       expect(interpretation.skipped).toEqual([])
     }))
 
+  it.effect("recovers a constant failure exactly as it recovers an action failure", () =>
+    Effect.gen(function*() {
+      calls.length = 0
+      const interpretation = yield* drive(Interpreter.interpret(
+        Node.fail({ reason: "quota" } as const).pipe(
+          Node.catch({ onFailure: (error) => Node.succeed({ recovered: error }) })
+        )
+      ))
+
+      expect(interpretation.value).toEqual({ recovered: { reason: "quota" } })
+      expect(calls).toEqual([])
+      expect(interpretation.settled.has("root.protected")).toBe(false)
+      expect(interpretation.failed.get("root.protected")).toEqual({ reason: "quota" })
+      expect(interpretation.skipped).toEqual([])
+    }))
+
+  it.effect("filters a constant failure by schema like any other typed error", () =>
+    Effect.gen(function*() {
+      const caught = yield* drive(Interpreter.interpret(
+        Node.fail("recoverable" as const).pipe(
+          Node.catch({ error: Schema.Literal("recoverable"), onFailure: () => Node.succeed(0) })
+        )
+      ))
+      expect(caught.value).toBe(0)
+
+      expect(
+        yield* refusal(Interpreter.interpret(
+          Node.fail("fatal" as const).pipe(
+            Node.catch({ error: Schema.Literal("recoverable"), onFailure: () => Node.succeed(0) })
+          )
+        ))
+      ).toMatchObject({ error: "fatal" })
+    }))
+
+  it.effect("surfaces an uncaught constant failure as the flow's typed failure", () =>
+    Effect.gen(function*() {
+      calls.length = 0
+      const exit = yield* drive(Effect.exit(Interpreter.interpret(
+        Write.call({ path: "unreached.txt", value: 1 }).pipe(
+          Node.andThen(Node.fail({ reason: "quota" } as const))
+        )
+      )))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(exit.cause.reasons[0]).toMatchObject({ error: { reason: "quota" } })
+      }
+      expect(calls).toEqual(["write:unreached.txt:1"])
+    }))
+
   it.effect("passes through success and leaves the failure arm skipped", () =>
     Effect.gen(function*() {
       const interpretation = yield* drive(Interpreter.interpret(

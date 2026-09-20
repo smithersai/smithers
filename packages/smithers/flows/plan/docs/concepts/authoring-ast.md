@@ -24,9 +24,9 @@ const greeting = Node.map(Node.succeed({ name: "world" }), (value) => value.name
 produced no string. The same split as a build system's action declaration: you
 describe the work, and something else decides when to do it.
 
-The AST has eight variants: `Succeed`, `All`, `Map`, `AndThen`, `Branch`,
-`Catch`, `FlowCall`, and `ActionCall`. `Node.Ast` is the union, and every node
-exposes it as `node.ast`.
+The AST has nine variants: `Succeed`, `Fail`, `All`, `Map`, `AndThen`,
+`Branch`, `Catch`, `FlowCall`, and `ActionCall`. `Node.Ast` is the union, and
+every node exposes it as `node.ast`.
 
 ## Requirements are phantom
 

@@ -1,14 +1,16 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/crypto: digest, digestSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, and syncCrypto, with signatures, failures, and the input policy they share."
+description: "Every public export of @smthrs/crypto: digest, digestSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto, and the Identity module for function identity, with signatures, failures, and the input policy they share."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/crypto/docs/api.md"
 ---
 
-Every name below is exported from the root entry point and from
-`@smthrs/crypto/Sha256`. There is no other public module.
+Every hashing, schema, error, and service name below is exported from the root
+entry point and from `@smthrs/crypto/Sha256`. Function identity is the one
+other public module: it is exported as the `Identity` namespace from the root
+and from `@smthrs/crypto/Identity`.
 
 ```ts
-import { Digest, digest, digestSync, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
+import { Digest, digest, digestSync, Identity, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
 ```
 
 ## Hashing
@@ -220,6 +222,94 @@ Full detail is in [what a digest covers](/concepts/what-a-digest-covers/),
 and the guarantees these rules add up to, along with what they do not cover,
 are in [the contract](/contract/).
 
+## Function identity
+
+A digest of bytes identifies data. `Identity` digests a _function_: the plan-time
+mapper, continuation, or predicate a node AST embeds but cannot serialize. It is
+a separate module because its admission rules are about JavaScript values, not
+about hashing, and because every node model in Smithers has to embed the same
+one.
+
+```ts
+import { Identity } from "@smthrs/crypto"
+// or
+import * as Identity from "@smthrs/crypto/Identity"
+```
+
+### Identity.functionIdentity
+
+```ts
+const functionIdentity: (operation: unknown) => Identity.FunctionIdentity
+```
+
+Digests a function's exact source as UTF-8 with SHA-256. Exact source matters:
+whitespace inside a string literal is behavior, so normalizing before hashing
+could make two different functions share an identity.
+
+- Returns `{ _tag: "FunctionIdentity", algorithm, digest }`, where `digest` is
+  64 lowercase hexadecimal characters.
+- `algorithm` is `sha256-source-captures/v4` when the operation was declared
+  with [`Identity.capture`](#identitycapture), and `sha256-source-ephemeral/v4`
+  otherwise. An undeclared closure folds in process-local, per-function
+  entropy, because JavaScript cannot inspect what a closure captured and
+  source-only identity would permit an incorrect cache hit.
+- **Throws** `TypeError("function identity requires a function")` for anything
+  that is not a function.
+
+### Identity.capture
+
+```ts
+const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
+  captures: C,
+  operation: (this: Readonly<C>, ...args: Args) => A
+) => (...args: Args) => A
+```
+
+Declares the inert values a function closes over, which is what earns it a
+deterministic identity. A deeply frozen plain copy of `captures` is
+canonicalized into the identity and bound as the callback's `this` receiver, so
+use a function expression to read it; ordinary arguments keep their positions.
+
+- Caller objects are left unchanged, and a mutable lexical alias must not
+  supply semantic state: only the owned frozen copy enters identity.
+- Sealed, non-extensible, frozen, and Immer-style ordinary data are all
+  supported, and shared references stay shared in the copy.
+- Admission walks original descriptors once and never evaluates a getter.
+  Built-in brands, non-plain prototypes, accessors, non-enumerable members,
+  symbol keys, cycles, non-finite numbers, and nesting beyond 256 levels are
+  refused with a `TypeError` naming the path.
+- Object capture requires `structuredClone`, which is how a Proxy is refused.
+  A host without it refuses every object capture.
+- Capturing an already-captured function keeps the inner source and folds both
+  capture sets into one identity.
+
+### Identity.processNonce
+
+```ts
+const processNonce: () => string
+```
+
+The process-local nonce every ephemeral identity folds in, as 32 lowercase
+hexadecimal characters. It exists so a second ephemeral encoding, such as the
+projection of an unregistered symbol, shares this process's value instead of
+minting a second one. It is seeded lazily on first use: reading entropy while
+the module evaluates is rejected by Cloudflare Workers with upload error 10021.
+
+### Identity.FunctionIdentity
+
+```ts
+interface FunctionIdentity {
+  readonly _tag: "FunctionIdentity"
+  readonly algorithm: Identity.Algorithm
+  readonly digest: string
+}
+type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
+```
+
+The serializable stand-in a node AST stores in place of the function itself. The
+algorithm tag is versioned, so a change to identity semantics re-keys what is
+derived from one rather than colliding with it.
+
 ## Requirements and platform
 
 - Node.js 22.19.0 or later. The package also runs under Bun and in a browser:
@@ -228,6 +318,9 @@ are in [the contract](/contract/).
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
   export map. The handwritten implementation is reachable only through
   `digestSync` and `syncCrypto`.
+- `Identity.capture` uses `structuredClone`, a global on Node.js 22, Bun, and
+  modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
+  Neither is read while the module evaluates.
 
 ## Neighbouring packages
 

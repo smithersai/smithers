@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import * as CoreNode from "@smthrs/core/Node"
+import * as Identity from "@smthrs/crypto/Identity"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as SchemaAST from "effect/SchemaAST"
@@ -26,6 +26,37 @@ describe("Node", () => {
     expect(Node.succeed(1).ast).toEqual({ _tag: "Succeed", value: 1 })
     expect(Node.isNode(Node.succeed(1))).toBe(true)
     expect(Node.isNode({ ast: { _tag: "Succeed", value: 1 } })).toBe(false)
+  })
+
+  it("records a constant failure in the typed error channel", () => {
+    const node = Node.fail({ _tag: "Refused", reason: "quota" } as const)
+
+    expect(node.ast).toEqual({ _tag: "Fail", error: { _tag: "Refused", reason: "quota" } })
+    expect(Node.isNode(node)).toBe(true)
+    expectTypeOf(node).toEqualTypeOf<Node.Node<never, { readonly _tag: "Refused"; readonly reason: "quota" }>>()
+    // The error is mirrored to inert JSON exactly as a success value is, so a
+    // stored plan carries it without the process that built it.
+    expect(tagged(Node.fail({ reason: "quota", ignored: () => 1 }).ast, "Fail").error).toEqual({ reason: "quota" })
+    const json = JSON.stringify(node.ast)
+    expect(JSON.parse(json)).toEqual(node.ast)
+    expect(Node.isNode({ ast: JSON.parse(json) as Node.Ast })).toBe(false)
+  })
+
+  it("carries a scheduling priority on a failure like any other node", () => {
+    expect(Node.fail("boom").pipe(Node.priority(3)).ast).toEqual({ _tag: "Fail", error: "boom", priority: 3 })
+  })
+
+  it("recovers a constant failure through catch, binding its error", () => {
+    const recovered = Node.catch(Node.fail("boom" as const), {
+      onFailure: (error) => Node.succeed({ handled: error })
+    })
+
+    const ast = tagged(recovered.ast, "Catch")
+    expect(tagged(ast.protected, "Fail").error).toBe("boom")
+    // The constant failure is what the failure arm is typed against, so a
+    // recovery that mishandles it does not compile.
+    expectTypeOf<Node.Success<typeof recovered>>().toEqualTypeOf<{ handled: "boom" }>()
+    expectTypeOf<Node.Error<typeof recovered>>().toBeNever()
   })
 
   it("snapshots the branch predicate before building either arm", () => {
@@ -694,25 +725,24 @@ describe("internal/node call factories", () => {
     expect(Node.functionIdentity(one)).not.toEqual(Node.functionIdentity(Node.capture({ outer: false }, make(1))))
   })
 
-  it("shares captured and raw function identities with core", () => {
+  // The digest lives in `@smthrs/crypto`, and every node model embeds that one
+  // implementation. A capture declared through either surface has to be
+  // interchangeable, nested captures included, or two planners would key the
+  // same function two ways.
+  it("shares captured and raw function identities with the digest package", () => {
     const operation = (value: number) => value + 1
-    const coreIdentity = (fn: (value: number) => number) => {
-      const ast = CoreNode.map(CoreNode.succeed(1), fn).ast
-      if (ast._tag !== "Map") throw new Error("expected Map")
-      expect(CoreNode.functionIdentity(fn)).toEqual(ast.mapper)
-      return ast.mapper
-    }
     const plan = Node.capture({ offset: 1 }, operation)
-    const core = CoreNode.capture({ offset: 1 }, operation)
-    expect(Node.functionIdentity(plan)).toEqual(coreIdentity(core))
+    const digest = Identity.capture({ offset: 1 }, operation)
+
+    expect(internal.functionIdentity).toBe(Identity.functionIdentity)
+    expect(Node.functionIdentity(plan)).toEqual(Identity.functionIdentity(digest))
     expect(Node.functionIdentity(Node.capture({ outer: true }, plan))).toEqual(
-      coreIdentity(CoreNode.capture({ outer: true }, core))
+      Identity.functionIdentity(Identity.capture({ outer: true }, digest))
     )
-    expect(Node.functionIdentity(core)).toEqual(coreIdentity(core))
-    expect(coreIdentity(plan)).toEqual(Node.functionIdentity(plan))
-    expect(Node.functionIdentity(operation)).toEqual(coreIdentity(operation))
-    expect(Node.functionIdentity(Node.capture({ outer: true }, core))).toEqual(
-      coreIdentity(CoreNode.capture({ outer: true }, plan))
+    expect(Node.functionIdentity(digest)).toEqual(Identity.functionIdentity(digest))
+    expect(Node.functionIdentity(operation)).toEqual(Identity.functionIdentity(operation))
+    expect(Node.functionIdentity(Node.capture({ outer: true }, digest))).toEqual(
+      Identity.functionIdentity(Identity.capture({ outer: true }, plan))
     )
   })
 

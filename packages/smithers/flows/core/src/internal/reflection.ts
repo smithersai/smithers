@@ -16,6 +16,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import { processNonce } from "@smthrs/crypto/Identity"
 import { Chunk, Option, Result, Schema, SchemaAST } from "effect"
 import type * as Context from "effect/Context"
 import type * as Effects from "../Effects.ts"
@@ -151,7 +152,7 @@ const symbolIdentity = (value: symbol): SymbolIdentity => {
   if (wellKnown !== undefined) return { scope: "well-known", id: `well-known:${wellKnown}` }
   let id = symbolIdentities.get(value)
   if (id === undefined) {
-    id = `${internal.processNonce()}:${symbolOrdinal++}`
+    id = `${processNonce()}:${symbolOrdinal++}`
     symbolIdentities.set(value, id)
   }
   return { scope: "process-local", id }
