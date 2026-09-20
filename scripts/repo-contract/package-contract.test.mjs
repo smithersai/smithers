@@ -331,4 +331,21 @@ describe("the workspace package contract", () => {
     assert.equal(platform.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
     assert.equal(platform.manifest.devDependencies?.["@effect/platform-node-shared"], effectVersion)
   })
+
+  it("declares the shared Node adapter beside create-app's optional Node adapter peer", () => {
+    const createApp = publishable.find((entry) => entry.manifest.name === "@smthrs/create-app")
+    assert.ok(createApp, "@smthrs/create-app must be publishable")
+    // `./testing` names @effect/platform-node as an optional peer. A consumer
+    // that installs exactly that still gets the shared adapter through the
+    // Node adapter's caret, which admits a later RC whose own Effect peer this
+    // release does not satisfy. The sibling belongs in the contract, at the
+    // same exact version and the same optionality.
+    assert.equal(createApp.manifest.peerDependencies?.["@effect/platform-node-shared"], effectVersion)
+    assert.equal(createApp.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional, true)
+    assert.equal(
+      createApp.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional,
+      createApp.manifest.peerDependenciesMeta?.["@effect/platform-node"]?.optional
+    )
+    assert.equal(createApp.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
+  })
 })
