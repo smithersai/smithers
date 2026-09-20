@@ -28,7 +28,7 @@ import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWork
 import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
-import { compareEmptyTimeline, compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
+import { compareEmptyTimeline, compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readFinalOutput, readJournal } from "./run-inspection/exercise"
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
@@ -401,8 +401,8 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     expect(terminal.status).toBe("completed")
     expect(after).toBe(before)
     // The gateway records this module's final output as a JSON document, not as a decoded object.
-    expect(typeof terminal.finalOutput).toBe("string")
-    const output = JSON.parse(terminal.finalOutput as string) as { status: string; eventKey: string; publicActions: unknown[]
+    const document = await readFinalOutput(page, request, workflowRepo, subject.runId)
+    const output = JSON.parse(document) as { status: string; eventKey: string; publicActions: unknown[]
       digest: string; repo: string; job: string; revision: number; sourceRevision: string
       results: { stepId: string; status: string; summary: string; output: { citations: string[]; question: string; reproduction: unknown } }[] }
     expect(output.status).toBe("completed")

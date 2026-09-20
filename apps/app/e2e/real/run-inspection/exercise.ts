@@ -14,6 +14,22 @@ export const readJournal = async (page: Page, request: APIRequestContext, owned:
   return rows as readonly JournalRow[]
 }
 
+/**
+ * A run can report a terminal status before its final output document is
+ * readable: two production runs of the same module answered `completed` with
+ * the document present once and absent once. This waits for the document the
+ * terminal status promises instead of reading whichever arrived first.
+ */
+export const readFinalOutput = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository, runId: string): Promise<string> => {
+  let document: unknown
+  await expect.poll(async () => {
+    const answer = await gatewayCall(page, request, owned.repo, "Projection.Snapshot", { selector: { _tag: "run-summary", runId } }, owned.workspaceId)
+    document = runSummary(answer)?.finalOutput
+    return typeof document === "string"
+  }, { message: "a completed run must record its final output document", timeout: 120_000, intervals: [500, 1_000, 2_000] }).toBe(true)
+  return document as string
+}
+
 /** Resolve the source card from the accepted request in this exact repository/workspace. */
 export const launchSubject = async (page: Page, owned: OwnedWorkflowRepository, flow: string, input: Record<string, unknown>, testInfo: TestInfo) => {
   const accepted = acceptedRunId(page, owned.repo, owned)
