@@ -315,7 +315,10 @@ export const hostModelCredentials = (env: ModelCredentialEnv): ReadonlyArray<Mod
  */
 export const ModelEnrollmentSchema = z.discriminatedUnion("available", [
   z.strictObject({ available: z.literal(true) }),
-  z.strictObject({ available: z.literal(false), reason: z.enum(["local_host_required", "keychain_unavailable"]) })
+  z.strictObject({
+    available: z.literal(false),
+    reason: z.enum(["local_host_required", "keychain_unavailable", "vault_unavailable", "sign_in_required"])
+  })
 ])
 /** A bounded identity for one host mutation.
  * @since 1.0.0
@@ -351,7 +354,15 @@ export type ModelCredentialRequest = z.infer<typeof ModelCredentialRequestSchema
  */
 export const ModelCredentialFailureSchema = z.discriminatedUnion("code", [
   z.strictObject({ code: z.literal("invalid"), field: z.enum(["name", "origin", "value", "requestId", "action"]) }),
-  ...(["exists", "unknown", "read_only", "storage_unavailable", "local_host_required", "interrupted"] as const).map(
+  ...([
+    "exists",
+    "unknown",
+    "read_only",
+    "storage_unavailable",
+    "vault_unavailable",
+    "local_host_required",
+    "interrupted"
+  ] as const).map(
     (code) => z.strictObject({ code: z.literal(code) })
   ),
   z.strictObject({
