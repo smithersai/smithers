@@ -73,18 +73,36 @@ wanted as missing. An absence assertion made there is worse: it passes, because
 nothing has rendered yet.
 
 Use `awaitBoot(page, kind, startedAt)` from `real/support/index.ts` after a
-navigation, and `reloadApp(page)` — which is `page.reload` plus `awaitBoot` —
-in place of a raw reload. Both wait up to `BOOT_TIMEOUT_MS` (120 s) for the
-booted transcript and record what the wait cost. `startedAt` is a
+navigation, and `reloadApp(page)`, which is `page.reload` plus `awaitBoot`, in
+place of a raw reload. Both wait up to `BOOT_TIMEOUT_MS` (120 s) for the
+booted view and record what the wait cost. `startedAt` is a
 `performance.now()` reading taken before the navigation, so the recorded time
 covers the whole navigate-to-boot. `reloadBootTimings()` returns every boot
 this worker measured, each tagged `navigate` or `reload`, and
 `reloadBootFact` summarises them into the `timeline-reload-boot-ms` evidence.
 
+"Booted" is `BOOTED_SELECTOR`, and it is matched attached rather than visible,
+because a restore produces one of two layouts. In the chat layout the
+transcript is present and not busy, `[data-testid="transcript"][aria-busy="false"]`.
+In the tab layout a tab body is the active one,
+`[data-testid^="tab-body-"]:not([hidden])`. Every tab body stays mounted and
+the inactive ones carry `hidden`, the main body with the transcript inside it
+included (`src/mainview/App.tsx:516`, `src/mainview/tabs/TabBodies.tsx:43`), so
+a reload that restores a durable card or terminal tab leaves the transcript
+attached with `aria-busy="false"` and hidden for as long as that tab is
+active. Waiting for it to be visible there spends the whole 120 s on a signal
+that layout cannot produce and then names the transcript, which is the one
+thing that was never wrong. Neither half of the selector exists inside the boot
+skeleton, which is the whole page while the view chunk loads (`role="status"`,
+`aria-label="Loading view"`, `src/mainview/ViewSkeleton.tsx:2`), so the wait is
+still false for exactly as long as the app is still booting, and it is one
+locator on one budget rather than a fallback tried after the first has spent
+its own.
+
 Measured 2026-09-20 against the canary from the persistent production profile
 `~/.multi-e2e-profile`, build 9eefdba7:
 
-| Sample | Time to booted transcript |
+| Sample | Time to booted view |
 | --- | --- |
 | First scenario invocation, 4 reloads | 12.3, 12.6, 18.8, 20.9 s |
 | One scenario walk, 14 reloads, two canary redeploys under it | 16.8 s min, 45.8 s median, 72.5 s max |

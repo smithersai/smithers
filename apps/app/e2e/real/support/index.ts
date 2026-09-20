@@ -119,7 +119,7 @@ export const openApp = async (page: Page): Promise<void> => {
 export type BootKind = "navigate" | "reload"
 export const BOOT_KINDS = ["navigate", "reload"] as const
 
-/** One measured boot: when it was taken, what it followed, and how long the booted transcript took to appear. */
+/** One measured boot: when it was taken, what it followed, and how long the booted view took to appear. */
 export type ReloadBootTiming = { readonly at: string; readonly kind: BootKind; readonly ms: number }
 
 const measuredReloadBoots: ReloadBootTiming[] = []
@@ -143,6 +143,34 @@ export const BOOT_TIMEOUT_MS = 120_000
 export const reloadBootTimings = (): ReadonlyArray<ReloadBootTiming> => measuredReloadBoots
 
 /**
+ * What a booted view looks like, in either layout a restore can produce.
+ *
+ * Either half alone is a partial reading of the product. The transcript is
+ * what the chat layout renders, but it is not always the layout: every tab
+ * body stays mounted and the inactive ones carry `hidden`, the main body with
+ * the transcript inside it included (`src/mainview/App.tsx:516`,
+ * `src/mainview/tabs/TabBodies.tsx:43`). A reload that restores a durable card
+ * or terminal tab therefore leaves the transcript attached and not busy but
+ * hidden for as long as that tab is active, so a visibility wait there waits
+ * for a signal the layout cannot produce. Reading only the active tab body
+ * would be the mirror mistake.
+ *
+ * Neither half exists inside the boot skeleton, which is the whole page while
+ * the view chunk loads and the store opens (`role="status"`,
+ * `aria-label="Loading view"`, `src/mainview/ViewSkeleton.tsx:2`): both the
+ * transcript and every tab body render under the view this skeleton stands in
+ * for. So this is false for exactly as long as the app is still booting, true
+ * the moment either layout is up, and needs no marker the product does not
+ * already carry.
+ *
+ * `aria-busy` is the transcript's own streaming state
+ * (`src/mainview/App.tsx:550`), so a restore that resumes a streaming turn
+ * reads as booted through the tab-body half rather than stalling.
+ */
+export const BOOTED_SELECTOR =
+  ':is([data-testid="transcript"][aria-busy="false"], [data-testid^="tab-body-"]:not([hidden]))'
+
+/**
  * Wait for the app to finish booting before anything on it is read, and record
  * what that wait cost.
  *
@@ -151,9 +179,14 @@ export const reloadBootTimings = (): ReadonlyArray<ReloadBootTiming> => measured
  * budget inside the boot skeleton and then reports the element it wanted as
  * missing, where the product had simply not rendered yet. Two production
  * attempts of the run-timeline scenario failed exactly there, both with
- * `status "Loading view"` as the entire page. The transcript is what the booted
- * view renders, so waiting for it names what this wait is for, and the failure
- * says the boot did not finish rather than blaming the thing being read.
+ * `status "Loading view"` as the entire page.
+ *
+ * `BOOTED_SELECTOR` above is what this waits for, attached rather than
+ * visible: visibility is the wrong question for a layout that keeps its
+ * inactive bodies mounted and hidden. It is one locator and one budget, not a
+ * fallback tried after the first has spent its own, so a boot that never
+ * finishes still reds as fast as it ever did, and it says the boot did not
+ * finish rather than blaming the thing being read.
  *
  * Pass `startedAt`, a `performance.now()` reading taken before the navigation,
  * to measure the whole navigate-to-boot rather than its tail.
@@ -167,7 +200,7 @@ export const awaitBoot = async (
   startedAt: number = performance.now(),
   timeout = BOOT_TIMEOUT_MS
 ): Promise<void> => {
-  await expect(page.getByTestId("transcript"), `the app must finish booting after a ${kind}`).toBeVisible({ timeout })
+  await expect(page.locator(BOOTED_SELECTOR).first(), `the app must finish booting after a ${kind}`).toBeAttached({ timeout })
   measuredReloadBoots.push({ at: new Date().toISOString(), kind, ms: Math.round(performance.now() - startedAt) })
 }
 
