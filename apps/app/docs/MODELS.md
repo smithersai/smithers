@@ -95,10 +95,22 @@ Retry on the failed toast. Reload reconnects pending refreshes after identity;
 an earlier account's response cannot overwrite the new account's catalog.
 
 ## R8. Sign-in
-On the LOCAL host `model.test` needs no sign-in: it spends the operator's own env key on
-their own machine. On the Worker both routes sit behind `requireTurnSession` and Test
-spends one `loginBudget` turn. So the flow's `requires` must NOT be `signed-in`
-globally; the Worker's typed refusal is shown on the card.
+Naming what a host already holds costs nothing, so `GET /api/model/catalog` is PUBLIC on
+the Worker: a signed-out visitor reads the deployment's own rows (the Cerebras seat, Jev),
+the credential NAMES with `present`, and the seats. Only a spend is gated. On the Worker
+`POST /api/model/test` sits behind `requireTurnSession` and spends one `loginBudget` turn;
+on the LOCAL host it needs no sign-in, because it spends the operator's own env key on
+their own machine.
+
+So the flows' `requires` must NOT be `signed-in` globally. The two acts that make a real
+call — `model.test` and `model.ask` — name `signed-in-to-spend`, the host-aware row in
+`flows/entries/auth.ts`. Its predicate reads `CommandState.hostSpendsOwnKey`, true only on
+a cloud bootstrap that has an identity seam, and only the DEFINITIVE signed-out answer
+defers. On the Worker a signed-out press parks the command and renders the house sign-in
+step (`auth.prompt`), and the park resumes itself once identity is signed in; on the local
+host the same press runs with nobody signed in. `sign_in_required` is therefore never a
+red line on the card: it is offered as the sign-in step, and `No models.` is drawn only
+for a catalog that was actually read (`host: "observed"`).
 
 ## R9. App state
 Collections `app-models`, `app-seats`; nothing is seeded — builtin rows arrive through a

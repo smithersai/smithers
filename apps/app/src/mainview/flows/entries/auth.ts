@@ -23,6 +23,19 @@ export const requirements: ReadonlyArray<FlowRequirement> = [
   },
   {
     /*
+     * A spend the HOST pays for (the Worker's model Test, which spends a
+     * deployment key and one turn of the login's budget) needs the session
+     * that route asks for; the local app spends the operator's own key on
+     * their own machine, so the same act there waits for nobody. Listing what
+     * a host holds is free and names this requirement nowhere.
+     */
+    id: "signed-in-to-spend",
+    satisfied: (state) => state.hostSpendsOwnKey !== true || !state.signedOut,
+    fulfill: "auth.prompt",
+    reason: "Sign in with GitHub first"
+  },
+  {
+    /*
      * Repository reads use the resolved local, public, bundled practice or
      * signed-in source. An unrelated selection cannot authorize the target.
      */

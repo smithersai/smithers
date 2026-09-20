@@ -365,6 +365,13 @@ export interface CommandState {
   readonly admin: boolean
   /** No validated session: the one next step is sign-in. */
   readonly signedOut: boolean
+  /**
+   * This host spends the DEPLOYMENT's own key behind its own session (the
+   * cloud Worker with an identity seam). The local app spends the operator's
+   * key on their own machine and asks nobody, so a spend there needs no
+   * account. Optional so state fixtures stay minimal.
+   */
+  readonly hostSpendsOwnKey?: boolean
   /** A repository is open in the local app (the repos collection); optional so fixtures stay minimal. */
   readonly hasOpenRepos?: boolean
   /** The selected repository came from the public catalog: readable signed out. Optional like hasOpenRepos. */

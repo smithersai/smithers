@@ -46,9 +46,11 @@ const ModelRecord = Schema.Struct({
 
 /*
  * The `model` flows registered as one aggregator block. None names a host
- * capability or sign-in: both hosts answer the Models routes themselves, the
- * local one spends the operator's own key with nobody signed in, and the
- * Worker's refusal is typed onto the card.
+ * capability: both hosts answer the Models routes themselves, and listing
+ * what a host holds is free on either. The two acts that make a real call
+ * name `signed-in-to-spend`, the host-aware row in entries/auth.ts: the
+ * Worker spends a deployment key behind its session, the local host spends
+ * the operator's own key with nobody signed in.
  */
 export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({ name: "model.credential.new", summary: "Add credential", input: NoPayload, handler: () => actions.newModelCredential() }),
@@ -147,6 +149,7 @@ export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "model.test",
     summary: "Test a model with one real call",
     args: "<name>",
+    requires: ["signed-in-to-spend"],
     input: ModelTarget,
     form: target,
     handler: ({ id }) => actions.testModel(id)
@@ -163,6 +166,7 @@ export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "model.ask",
     summary: "Ask a model its composed request",
     args: "<name>",
+    requires: ["signed-in-to-spend"],
     input: ModelTarget,
     form: target,
     handler: ({ id }) => actions.askModel(id)

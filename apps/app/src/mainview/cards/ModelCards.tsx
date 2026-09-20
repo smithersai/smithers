@@ -51,9 +51,18 @@ const failureText = (failure: ModelTestFailure): string => {
   }
 }
 
+/**
+ * A host with an identity seam asks a signed-out caller to sign in. That is an
+ * expected condition of not having an account yet, not a failure of anything
+ * the user configured, so it is offered as the step it is (auth.prompt) and
+ * never announced as an error.
+ */
+const signInRefused = (failure: ModelTestFailure): boolean =>
+  failure.code === "host_refused" && failure.refusal === "sign_in_required"
+
 /** A dot, then the latency or the typed failure. No sentence. */
 const TestMark = ({ test, running }: { readonly test: ModelTestRecord | undefined; readonly running: boolean }) => (
-  <span className="models-test" role={!running && test?.result.ok === false ? "alert" : undefined}>
+  <span className="models-test" role={!running && test?.result.ok === false && !signInRefused(test.result.failure) ? "alert" : undefined}>
     <span className="models-dot" aria-hidden="true" />
     {running || test === undefined ? null : test.result.ok ? `${test.result.latencyMs} ms` : failureText(test.result.failure)}
   </span>
@@ -138,15 +147,18 @@ const attentionOf = (card: ModelsCard, onRunCommand: RunCommand) => {
   }
   const model = models.find((row) => row.id === attention.recordId)
   if (model === undefined) return undefined
+  const result = card.payload.tests.find((test) => test.id === model.id)?.result
   // The record's own mistake is edited; a fault that is not the record's is tried again.
-  const fix = modelTestFixOf(model.builtin === true, card.payload.tests.find((test) => test.id === model.id)?.result)
+  const fix = result?.ok === false && signInRefused(result.failure) ? "sign-in" : modelTestFixOf(model.builtin === true, result)
   return (
     <div className="models-attention" data-testid="models-attention" data-kind={attention.kind}>
       <ul className="workflow-list">
         <ModelRow model={model} card={card} onRunCommand={onRunCommand} selected={false} selectable={false} acts={false} />
       </ul>
       <div className="flow-run-actions">
-        {fix === "test" ?
+        {fix === "sign-in" ?
+          <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "auth.prompt")}>Sign in</Button> :
+          fix === "test" ?
           <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.test", model.id)}>Test</Button> :
           <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.edit", model.id)}>Edit</Button>}
       </div>
@@ -251,10 +263,17 @@ export const ModelsCardBody = ({
   readonly onRunCommand: RunCommand
   readonly presentation: Presentation
 }) => {
-  const { models, selected, error } = card.payload
+  const { models, selected, error, refresh, host } = card.payload
   const create = <Button size="sm" data-testid="model-new" {...flowAction(onRunCommand, "model.new")}>New</Button>
-  const alert = <>{error === undefined ? null : <p className="sui-approval-error" role="alert" data-testid="models-error">{error}</p>}<CredentialFailures card={card} onRunCommand={onRunCommand} /></>
-  const empty = <p className="world-card-empty" data-testid="models-empty">No models.</p>
+  const wantsSession = refresh?.state === "failed" && signInRefused(refresh.failure)
+  const alert = <>
+    {wantsSession ?
+      <div className="flow-run-actions"><Button size="sm" data-testid="models-sign-in" {...flowAction(onRunCommand, "auth.prompt")}>Sign in</Button></div> :
+      error === undefined ? null : <p className="sui-approval-error" role="alert" data-testid="models-error">{error}</p>}
+    <CredentialFailures card={card} onRunCommand={onRunCommand} />
+  </>
+  // "No models." is a fact about a catalog that was read. A catalog this host never answered says nothing about what it holds.
+  const empty = host === "observed" ? <p className="world-card-empty" data-testid="models-empty">No models.</p> : null
   if (presentation === "embedded") {
     const attention = attentionOf(card, onRunCommand)
     if (attention !== undefined) return <div className="models-card" data-presentation="embedded" data-credential-state={card.payload.credentialRequests?.at(-1)?.state}>{attention}{alert}</div>

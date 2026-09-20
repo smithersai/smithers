@@ -1904,6 +1904,9 @@ export const createAppController = (
         admin: (signedIn && identity.admin) ||
           (import.meta.env?.DEV as boolean | string | undefined) === true,
         signedOut: identity?.state === "signed-out",
+        // The Worker's spending routes sit behind its own identity seam; the
+        // local host spends the operator's key and asks nobody.
+        hostSpendsOwnKey: services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "identity"),
         /*
          * First run has not finished choosing its target: a bare command waits
          * for it. The whole decision counts, not just the identity read — the

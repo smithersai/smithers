@@ -360,6 +360,15 @@ Then `New`: Name `cerebras-revoked`, Protocol `openai-chat`, Base URL
 `REVOKED`. `Test`. See: `endpoint_forbidden`. `REVOKED` is pinned to your
 loopback origin, so the vendor never sees it.
 
+## 13b. Production, signed out
+
+Open https://smithers.sh in a private window and run `/model`.
+See: the deployment's own models listed, and the seats. Not `No models.`, and
+no red line.
+
+Click `Test`. See: the sign-in step in the chat, and no `POST /api/model/test`
+in Network. Sign in, and the Test you asked for runs by itself.
+
 ## 14. The automated receipt
 
 ```sh

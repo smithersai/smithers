@@ -46,7 +46,7 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
   - `credentials`: Bun host = environment credentials plus the keychain listing (section 8). Worker = exactly two rows, `CEREBRAS_API_KEY` and `AI_GATEWAY_API_KEY`, `present` from `ServerConfig`, `origins` copied from `MODEL_CREDENTIALS`. The Worker never scans env.
   - `seats`: `modelSeatsOf("local")` = `["explainer"]`; `modelSeatsOf("cloud")` = `["explainer", "front-door", "recommend"]`.
 - Never a value anywhere in the body.
-- Non-200: the host's existing refusal envelope. Worker: behind `requireTurnSession`. Local: behind the existing local session header and Origin gate; no sign-in.
+- Non-200: the host's existing refusal envelope. Worker: PUBLIC — listing what the deployment holds spends nothing, so a signed-out caller reads it (R8). Local: behind the existing local session header and Origin gate; no sign-in.
 
 ### POST /api/model/test
 - Request body: `ModelTestRequest` = `{ model: ConfiguredModel, input?: ModelCallInput }` (strict, max `MODEL_TEST_BODY_MAX_BYTES`). The client MUST strip app-only fields (`lastTest`) before sending; an extra key is `request_invalid`. With no `input` the host runs the fixed Test of the model's kind (`modelCallDefault(kind)`); with one it runs that composed request (section 9). An input of the other kind than the record's is `{ code: "invalid", field: "protocol" }`.
@@ -318,10 +318,10 @@ export type ModelsCardPayload = {
 | `model.save` | `--name --protocol --model --credential [--url] [--path]` | `{ name, protocol, modelId, credential, baseUrl?, path? }` | flags map `model`->`modelId`, `url`->`baseUrl`, `path`->`path`; `name` becomes `id` |
 | `model.show` | `<name>` | `{ id: string }` | writes `payload.selected` |
 | `model.remove` | `<name>` | `{ id: string }` | confirm |
-| `model.test` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; NOT `requires: ["signed-in"]` (R8) |
+| `model.test` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; `requires: ["signed-in-to-spend"]`, the host-aware row, never `signed-in` (R8) |
 | `model.assign` | `<seat> <name\|default>` | `{ seat: string, recordId: string }` | `recordId === MODEL_SEAT_DEFAULT` deletes the seat's row |
 | `model.compose` | `<name>` | `{ id: string }` | opens the model's composer at the tail; a new one is prefilled from the last recorded Test (section 9); from the maximized Models pane a user's compose returns the card to the transcript, like `model.new` (a `smithers` compose does not) |
-| `model.ask` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; refuses a request with a problem as `modelCallProblemLine` |
+| `model.ask` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; `requires: ["signed-in-to-spend"]` like `model.test` (R8); refuses a request with a problem as `modelCallProblemLine` |
 | `model.recall` | `<name>` | `{ id: string }` | the composer back to the fixed request and the last recorded Test's answer; refused with no test; an ask still out stays out, and its answer lands stale against the recalled request |
 | `model.fixture` | `<name>` | `{ id: string }` | writes and answers the `Evaluator.layerScripted` fixture of the last decision answer |
 | `model.prompt` | `<JSON>` | `{ id, system?, prompt?, maxTokens?, temperature?: string }` | hidden, disclosed to the agent; a blank temperature clears it; a text past `MODEL_CALL_TEXT_MAX`, a non-integer `maxTokens` or a temperature outside 0–2 is `invalid · <field> · <limit>` and nothing is written |

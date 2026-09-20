@@ -64,6 +64,9 @@ const modelsCard = (payload: Partial<Payload>): ModelsCard => ({
   payload: ModelsCardPayloadSchema.parse({ models: [], seats: [], credentials, tests: [], testing: [], host: "observed", ...payload })
 })
 
+/** The refusal a host with an identity seam answers a signed-out caller with. */
+const signInRefusal: ModelTestFailure = { code: "host_refused", refusal: "sign_in_required", status: 401, fault: "user" }
+
 const passed = (id: string, latencyMs: number, sample = "ok"): ModelTestRecord => ({ id, testedAt: 1, result: { ok: true, latencyMs, sample } })
 const failed = (id: string, failure: ModelTestFailure): ModelTestRecord => ({ id, testedAt: 1, result: failedModelTest(failure, 40, "local") })
 
@@ -96,7 +99,7 @@ const many = (count: number): Payload["models"] => Array.from({ length: count },
 describe("the Models card, embedded", () => {
   test("no models is two words and one act", () => {
     const { onRunCommand } = recorder()
-    const host = mount(<ModelsCardBody card={modelsCard({})} onRunCommand={onRunCommand} presentation="embedded" />)
+    const host = mount(<ModelsCardBody card={modelsCard({ host: "observed" })} onRunCommand={onRunCommand} presentation="embedded" />)
     expect(host.querySelector("[data-presentation]")?.getAttribute("data-presentation")).toBe("embedded")
     expect(host.querySelector('[data-testid="models-empty"]')?.textContent).toBe("No models.")
     expect(host.textContent).toBe("No models.New")
@@ -161,6 +164,40 @@ describe("the Models card, embedded", () => {
     const alert = host.querySelector('[data-testid="models-error"]')
     expect(alert?.getAttribute("role")).toBe("alert")
     expect(alert?.textContent).toBe("The server answered 500")
+  })
+
+  /* A catalog nobody read says nothing about what the host holds. */
+  test("an unread catalog never claims there are no models", () => {
+    const { onRunCommand } = recorder()
+    const host = mount(<ModelsCardBody card={modelsCard({ host: "unavailable" })} onRunCommand={onRunCommand} presentation="embedded" />)
+    expect(host.querySelector('[data-testid="models-empty"]')).toBeNull()
+    expect(host.textContent).not.toContain("No models")
+    expect(acts(host)).toEqual([["New", "model.new", null]])
+  })
+
+  /*
+   * Will, signed out on production: "No models." beside a red `host_refused ·
+   * sign_in_required`. Being signed out is an expected condition, so it is a
+   * step — one button, no alert, no sentence.
+   */
+  test("a host that wants a session offers the sign-in step, never a red line", () => {
+    const { onRunCommand } = recorder()
+    const host = mount(<ModelsCardBody
+      card={modelsCard({ host: "unavailable", refresh: { state: "failed", failure: signInRefusal }, error: "host_refused · sign_in_required" })}
+      onRunCommand={onRunCommand} presentation="embedded" />)
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(host.textContent).not.toContain("sign_in_required")
+    expect(acts(host)).toEqual([["Sign in", "auth.prompt", null], ["New", "model.new", null]])
+  })
+
+  test("a session that lapsed mid-use offers the same step in place of Test or Edit", () => {
+    const { onRunCommand } = recorder()
+    const host = mount(<ModelsCardBody
+      card={modelsCard({ models: [builtin], tests: [failed("cerebras", signInRefusal)], attention: { kind: "test-failed", recordId: "cerebras" } })}
+      onRunCommand={onRunCommand} presentation="embedded" />)
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(host.querySelector('[data-testid="models-attention-fix"]')?.getAttribute("data-flow")).toBe("auth.prompt")
+    expect(acts(host)).toEqual([["Sign in", "auth.prompt", null]])
   })
 })
 
