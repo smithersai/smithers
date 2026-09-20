@@ -197,12 +197,27 @@ const scrubWithinBand = async (page: Page, trace: Locator, seq: number): Promise
   const band = phaseStrip(trace).locator(`button[data-phase-band][data-seq="${seq}"]`)
   const box = await band.boundingBox()
   expect(box, "the band must be laid out before it can be dragged").not.toBeNull()
+  const slider = trace.getByRole("slider", { name: "Run position" })
+  const before = await slider.getAttribute("aria-valuenow")
   const y = box!.y + box!.height / 2
   await page.mouse.move(box!.x + box!.width * 0.15, y)
   await page.mouse.down()
   await page.mouse.move(box!.x + box!.width * 0.85, y, { steps: 8 })
   await page.mouse.up()
-  const now = await trace.getByRole("slider", { name: "Run position" }).getAttribute("aria-valuenow")
+  /*
+   * The release dispatches one selection that is persisted before the card
+   * re-renders, so the slider still reads the previous cursor for a beat. A
+   * production attempt read it in the same tick and reported the position the
+   * cluster walk had left behind. This waits for the write, bounded, and then
+   * returns whatever the slider says, so the caller's assertions carry the
+   * value the card actually committed rather than a message about waiting.
+   */
+  const deadline = Date.now() + 15_000
+  let now = before
+  while (now === before && Date.now() < deadline) {
+    await page.waitForTimeout(250)
+    now = await slider.getAttribute("aria-valuenow")
+  }
   return Number(now)
 }
 
