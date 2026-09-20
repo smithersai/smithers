@@ -64,35 +64,51 @@ between the page and its host, or the provider's journal, which holds a sha256.
 Those scenarios are `host:local` only: a deployed Worker cannot reach a
 loopback provider. `real/models/MANUAL.md` is the same walk by hand.
 
-### Waiting after a reload
+### Waiting after a navigation or a reload
 
-`page.reload` resolves while the app is still fetching its view chunk and
-opening its store, so an assertion made straight after one spends its budget
-inside the boot skeleton and then reports the element it wanted as missing.
-Use `reloadApp(page)` from `real/support/index.ts`: it reloads, waits up to
-120 s for the booted transcript, and records how long that took.
-`reloadBootTimings()` returns every time this worker measured.
+`page.goto` and `page.reload` both resolve while the app is still fetching its
+view chunk and opening its store, so an assertion made straight after one
+spends its budget inside the boot skeleton and then reports the element it
+wanted as missing. An absence assertion made there is worse: it passes, because
+nothing has rendered yet.
+
+Use `awaitBoot(page, kind, startedAt)` from `real/support/index.ts` after a
+navigation, and `reloadApp(page)` — which is `page.reload` plus `awaitBoot` —
+in place of a raw reload. Both wait up to `BOOT_TIMEOUT_MS` (120 s) for the
+booted transcript and record what the wait cost. `startedAt` is a
+`performance.now()` reading taken before the navigation, so the recorded time
+covers the whole navigate-to-boot. `reloadBootTimings()` returns every boot
+this worker measured, each tagged `navigate` or `reload`, and
+`reloadBootFact` summarises them into the `timeline-reload-boot-ms` evidence.
 
 Measured 2026-09-20 against the canary from the persistent production profile
 `~/.multi-e2e-profile`, build 9eefdba7:
 
-| Sample | Reload to booted transcript |
+| Sample | Time to booted transcript |
 | --- | --- |
 | First scenario invocation, 4 reloads | 12.3, 12.6, 18.8, 20.9 s |
 | One scenario walk, 14 reloads, two canary redeploys under it | 16.8 s min, 45.8 s median, 72.5 s max |
 | 12 idle reloads, no scenario activity | 12.3 s min, 18.3 s median, 24.9 s max |
+| One cold `page.goto`, same profile | 11.8 s |
 
 The idle series climbed from 12.3 s to 24.9 s while the profile's stored bytes
 stayed at 91.9 MB, so the boot slows with the age of the browser session
 rather than with the size of the store, and a scenario's own activity
-multiplies it. A budget under 90 s is a coin toss late in a walk.
+multiplies it. A cold navigation starts at 11.8 s and climbs the same way, so
+Playwright's 15 s assertion default is a coin toss on the first navigation and
+loses outright later in a walk. Re-measure when the profile's store is pruned.
 
-Choose a post-reload budget from the measurement, and re-measure when the
-profile's store is pruned.
+The waits are bounded above the measurement, not above the test: the real
+project's own `timeout` is 90 s, so a boot that never finishes fails the test
+first. The point of the bound is that the wait names the booted view, so a
+genuine failure reads as "the boot did not finish" instead of blaming the
+element that was being looked for. Waiting for boot never delays a real
+failure, because it returns as soon as the view exists.
 
-A raw `page.reload` remains correct where the next step navigates again, as
-`boot` and `bootPracticeIssues` do, or reads only an API response. Those sites
-never assert against the reloaded document.
+A raw navigation without `awaitBoot` remains correct where the next step
+navigates again, reads only an API response, or expects the app NOT to boot —
+the OPFS schema-fault case in `navigation-frames.spec.ts` waits for
+"Smithers failed to start" instead.
 
 `contracts/` holds the assertion contracts both tiers share: pure predicates
 that decide what counts as evidence, each with its own Bun test.
