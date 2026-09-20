@@ -82,10 +82,20 @@ tokens.
 Browser-only features such as Wiki notes, drafts, and appearance declare
 `capabilities: []`: they still use real browser storage and verified bootstrap,
 and must run on every declared applicable host. Do not invent a local-only
-service dependency to exclude them from production. Use `openApp(page)` from
-`support` instead of navigating to `/`: the deployed root is the marketing
-site. `SMITHERS_REAL_APP_PATH` selects a same-origin app repository path; its
-production default is `/codeplanesmithers/canary-sandbox`.
+service dependency to exclude them from production.
+
+A default-off release flag is not such an invention. Wiki is gated by
+`VITE_SMITHERS_WIKI`, read at build time, and the deployed canary ships it off:
+`/wiki.*` and `/world.*` are absent from the registry there and the app answers
+"There is no /wiki.new-note flow." The Wiki scenarios therefore declare
+`host:local` only, and `playwright.real.config.ts` turns the flag on for the
+local host's own build so that coverage stays real. Restore `host:production`
+when the deployed build ships Wiki on, not before.
+
+Use `openApp(page)` from `support` instead of navigating to `/`: the deployed
+root is the marketing site. `SMITHERS_REAL_APP_PATH` selects a same-origin app
+repository path; its production default is
+`/codeplanesmithers/canary-sandbox`.
 
 The shared `scenario()` details also derive `@real-host:*` Playwright tags.
 The real config selects the current host before fixtures execute, so a

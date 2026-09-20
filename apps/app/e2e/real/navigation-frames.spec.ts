@@ -7,15 +7,16 @@ import {
   expectSameElement,
   frameLocation,
   openPracticeIssues,
-  openWikiForm,
-  WIKI_FORM_CARD_ID
+  openVehicleForm,
+  FORM_VEHICLE_CARD_ID,
+  FORM_VEHICLE_FIELD_TESTID
 } from "./navigation-frames/cards"
 import { downloadRecovery, takeDatabaseControl } from "./navigation-frames/storage"
 
 test("a portable form card keeps its component and unfinished value through keyboard maximize/minimize, then Cancel dismisses durably", scenario("navigation.card.identity-dismiss", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:card.minimize",
@@ -33,10 +34,10 @@ test("a portable form card keeps its component and unfinished value through keyb
     "dimension:keyboard",
     "evidence:same-dom-node-and-reload"
   ],
-  description: "The provider-free wiki form stays mounted and keeps an unfinished required field across keyboard frame transitions; its real card.dismiss Cancel persists removal."
+  description: "The provider-free form vehicle stays mounted and keeps an unfinished required field across keyboard frame transitions; its real card.dismiss Cancel persists removal."
 }), async ({ page }) => {
   const marker = "navigation-identity-unsaved.md"
-  const { card, path } = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
+  const { card, input } = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
   const original = await card.elementHandle()
   await expect(card).toHaveAttribute("data-maximized", "false")
 
@@ -45,13 +46,13 @@ test("a portable form card keeps its component and unfinished value through keyb
   await maximize.press("Enter")
   await expect(card).toHaveAttribute("data-maximized", "true")
   await expect(card.getByRole("button", { name: "Restore", exact: true })).toBeFocused()
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
   await expectSameElement(card, original)
 
   await page.keyboard.press("Escape")
   await expect(card).toHaveAttribute("data-maximized", "false")
   await expect(maximize).toBeFocused()
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
   await expectSameElement(card, original)
 
   const cancel = card.getByTestId("flow-form-cancel")
@@ -60,13 +61,13 @@ test("a portable form card keeps its component and unfinished value through keyb
   await cancel.press("Enter")
   await expect(card).toHaveCount(0)
   await reloadApp(page)
-  await expect(page.getByTestId(WIKI_FORM_CARD_ID)).toHaveCount(0)
+  await expect(page.getByTestId(FORM_VEHICLE_CARD_ID)).toHaveCount(0)
 })
 
 test("URL-pointer mode traverses browser history and restores its maximized form pointer on reload", scenario("navigation.frame.url-history-reload", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:card.minimize",
@@ -83,20 +84,20 @@ test("URL-pointer mode traverses browser history and restores its maximized form
   description: "In local /w URL-pointer mode, browser back/forward and reload reconstruct the durable form frame without claiming direct frame.back or frame.forward invocation."
 }), async ({ page }) => {
   const marker = "navigation-url-mode.md"
-  const { card, path } = await openWikiForm(page, marker, enterUrlApp)
+  const { card, input } = await openVehicleForm(page, marker, enterUrlApp)
   const rootUrl = page.url()
   expect(decodedFramePath(page)).toMatch(/^\/w\/workspace-main\/b\/branch-main\/f\/frame-root:branch-main$/)
 
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
   const maximizedUrl = page.url()
   expect(maximizedUrl).not.toBe(rootUrl)
-  expect(decodedFramePath(page)).toMatch(/^\/w\/workspace-main\/b\/branch-main\/f\/frame-card:branch-main:form-wiki\.open$/)
+  expect(decodedFramePath(page)).toMatch(/^\/w\/workspace-main\/b\/branch-main\/f\/frame-card:branch-main:form-tab\.read$/)
   await expect(card).toHaveAttribute("data-maximized", "true")
 
   await page.goBack()
   await expect(page).toHaveURL(rootUrl)
   await expect(card).toHaveAttribute("data-maximized", "false")
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 
   await page.goForward()
   await expect(page).toHaveURL(maximizedUrl)
@@ -104,19 +105,19 @@ test("URL-pointer mode traverses browser history and restores its maximized form
   await reloadApp(page)
   await expect(page).toHaveURL(maximizedUrl)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 
   await card.getByRole("button", { name: "Restore", exact: true }).click()
   await expect(page).toHaveURL(rootUrl)
   await reloadApp(page)
   await expect(card).toHaveAttribute("data-maximized", "false")
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 })
 
 test("canonical slashless repository navigation keeps the URL fixed and persists frame pointers in history.state", scenario("navigation.frame.repo-history-state", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:card.minimize",
@@ -134,7 +135,7 @@ test("canonical slashless repository navigation keeps the URL fixed and persists
   description: "A slashless /owner/repo entry remains exact while maximize, reload, restore, and browser traversal preserve distinct durable frame locations in history.state."
 }), async ({ page }) => {
   const marker = "navigation-repo-history-state.md"
-  const { card, path } = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
+  const { card, input } = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
   const repositoryUrl = page.url()
   const root = await frameLocation(page)
   expect(root.frameId).toBe(`frame-root:${root.branchId}`)
@@ -151,7 +152,7 @@ test("canonical slashless repository navigation keeps the URL fixed and persists
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(maximized)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 
   await card.getByRole("button", { name: "Restore", exact: true }).click()
   await expect(page).toHaveURL(repositoryUrl)
@@ -164,13 +165,13 @@ test("canonical slashless repository navigation keeps the URL fixed and persists
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(root)
   await expect(card).toHaveAttribute("data-maximized", "false")
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 })
 
 test("direct Previous frame button and frame.forward slash command traverse one real frame history", scenario("navigation.frame.direct-controls", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:frame.back",
@@ -187,7 +188,7 @@ test("direct Previous frame button and frame.forward slash command traverse one 
   description: "The maximized card's frame.back button and the registered /frame.forward command independently traverse the same real browser history entries."
 }), async ({ page }) => {
   const marker = "navigation-direct-frame-controls.md"
-  const { card, path } = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
+  const { card, input } = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
   const root = await frameLocation(page)
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
   await expect(card).toHaveAttribute("data-maximized", "true")
@@ -204,13 +205,13 @@ test("direct Previous frame button and frame.forward slash command traverse one 
   await expect(card).toHaveAttribute("data-maximized", "true")
   await expect.poll(() => frameLocation(page)).toEqual(maximized)
   await closeComposer(page)
-  await expect(path).toHaveValue(marker)
+  await expect(input).toHaveValue(marker)
 })
 
-test("open in tab shares unfinished wiki state and persists both the session and embedded projection", scenario("navigation.card.open-in-tab", {
+test("open in tab shares unfinished form state and persists both the session and embedded projection", scenario("navigation.card.open-in-tab", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:tab.card",
@@ -229,32 +230,32 @@ test("open in tab shares unfinished wiki state and persists both the session and
 }), async ({ page }) => {
   const first = "tab-shared-before.md"
   const second = "tab-shared-after.md"
-  const { card } = await openWikiForm(page, first, enterCanonicalRepositoryApp)
+  const { card } = await openVehicleForm(page, first, enterCanonicalRepositoryApp)
   const repositoryUrl = page.url()
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
   const openInTab = card.getByRole("button", { name: "Open in tab", exact: true })
   await expect(openInTab).toHaveAttribute("data-flow", "tab.card")
   await openInTab.click()
 
-  const body = page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)
-  const tabCard = page.locator(".card-tab").getByTestId(WIKI_FORM_CARD_ID)
+  const body = page.getByTestId(`tab-body-${FORM_VEHICLE_CARD_ID}`)
+  const tabCard = page.locator(".card-tab").getByTestId(FORM_VEHICLE_CARD_ID)
   await expect(body).toBeVisible()
   await expect(tabCard).toHaveAttribute("data-maximized", "false")
-  await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(first)
+  await expect(tabCard.getByTestId(FORM_VEHICLE_FIELD_TESTID)).toHaveValue(first)
   await expect(page).toHaveURL(repositoryUrl)
 
-  await tabCard.getByTestId("flow-form-path").fill(second)
+  await tabCard.getByTestId(FORM_VEHICLE_FIELD_TESTID).fill(second)
   await reloadApp(page)
   // The durable tab restores active; the shared form record keeps the edit.
-  await expect(page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)).toBeVisible()
-  await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(second)
+  await expect(page.getByTestId(`tab-body-${FORM_VEHICLE_CARD_ID}`)).toBeVisible()
+  await expect(tabCard.getByTestId(FORM_VEHICLE_FIELD_TESTID)).toHaveValue(second)
 
   await page.keyboard.press("Meta+1")
-  const transcriptCard = page.getByTestId("transcript").getByTestId(WIKI_FORM_CARD_ID)
+  const transcriptCard = page.getByTestId("transcript").getByTestId(FORM_VEHICLE_CARD_ID)
   await expect(transcriptCard).toBeVisible()
-  await expect(transcriptCard.getByTestId("flow-form-path")).toHaveValue(second)
+  await expect(transcriptCard.getByTestId(FORM_VEHICLE_FIELD_TESTID)).toHaveValue(second)
   await expect(transcriptCard).toHaveAttribute("data-maximized", "false")
-  await expect(page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)).toHaveCount(1)
+  await expect(page.getByTestId(`tab-body-${FORM_VEHICLE_CARD_ID}`)).toHaveCount(1)
 })
 
 test("the shipped practice issue card keeps local history, reloads it, and discards forward state after new navigation", scenario("navigation.card.local-history", {
@@ -301,7 +302,7 @@ test("the shipped practice issue card keeps local history, reloads it, and disca
 test("forking a historical form frame restores its recorded draft and isolates later source and fork edits", scenario("navigation.frame.form-draft-fork-isolation", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:card.maximize",
     "action:card.minimize",
@@ -323,25 +324,25 @@ test("forking a historical form frame restores its recorded draft and isolates l
   const recorded = "fork-recorded.md"
   const sourceLater = "fork-source-later.md"
   const forkOnly = "fork-only.md"
-  const { card, path } = await openWikiForm(page, recorded, enterCanonicalRepositoryApp)
+  const { card, input } = await openVehicleForm(page, recorded, enterCanonicalRepositoryApp)
   const repositoryUrl = page.url()
 
   await card.getByRole("button", { name: "Maximize card", exact: true }).click()
   await expect(card).toHaveAttribute("data-maximized", "true")
   await expect.poll(async () => (await frameLocation(page)).frameId).toContain("frame-card:")
   const sourceFrame = await frameLocation(page)
-  await expect(path).toHaveValue(recorded)
+  await expect(input).toHaveValue(recorded)
   await card.getByRole("button", { name: "Restore", exact: true }).click()
   await expect(card).toHaveAttribute("data-maximized", "false")
   await expect.poll(async () => (await frameLocation(page)).frameId).toContain("frame-root:")
-  await path.fill(sourceLater)
-  await expect(path).toHaveValue(sourceLater)
+  await input.fill(sourceLater)
+  await expect(input).toHaveValue(sourceLater)
 
   await page.goBack()
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(sourceFrame)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(path).toHaveValue(sourceLater)
+  await expect(input).toHaveValue(sourceLater)
 
   const fork = card.getByRole("button", { name: "Fork frame", exact: true })
   await expect(fork).toHaveAttribute("data-flow", "frame.fork")
@@ -351,21 +352,21 @@ test("forking a historical form frame restores its recorded draft and isolates l
   expect(forkFrame.branchId).not.toBe(sourceFrame.branchId)
   expect(forkFrame.frameId).not.toBe(sourceFrame.frameId)
   await expect(page).toHaveURL(repositoryUrl)
-  await expect(path).toHaveValue(recorded)
+  await expect(input).toHaveValue(recorded)
 
-  await path.fill(forkOnly)
-  await expect(path).toHaveValue(forkOnly)
+  await input.fill(forkOnly)
+  await expect(input).toHaveValue(forkOnly)
   await reloadApp(page)
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(forkFrame)
-  await expect(path).toHaveValue(forkOnly)
+  await expect(input).toHaveValue(forkOnly)
 
   await page.goBack()
   await expect.poll(() => frameLocation(page)).toEqual(sourceFrame)
-  await expect(path).toHaveValue(sourceLater)
+  await expect(input).toHaveValue(sourceLater)
   await page.goForward()
   await expect.poll(() => frameLocation(page)).toEqual(forkFrame)
-  await expect(path).toHaveValue(forkOnly)
+  await expect(input).toHaveValue(forkOnly)
 })
 
 test("the practice issue payload also isolates historical fork state and preserves its immediate-reload race contract", scenario("navigation.frame.practice-fork-isolation", {
@@ -467,7 +468,7 @@ test("archive creates a durable new conversation whose recovery link restores th
 test("an older physical OPFS schema stamp upgrades while preserving the current durable form row", scenario("navigation.storage.opfs-schema-stamp-upgrade", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "host:local",
     "host:production",
@@ -481,9 +482,9 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
   description: "A real SQLite metadata stamp one version behind is upgraded during boot while a row written with the current schema remains visible; this does not claim arbitrary historical-row migration."
 }), async ({ page, context }) => {
   const marker = "physical-opfs-schema-stamp.md"
-  const opened = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
+  const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
   await reloadApp(page)
-  await expect(opened.path).toHaveValue(marker)
+  await expect(opened.input).toHaveValue(marker)
 
   const database = await takeDatabaseControl(page, context)
   const versionRows = await database.execute("SELECT value FROM smithers_metadata WHERE key = 'schema-version'")
@@ -501,7 +502,7 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
   await database.page.goto(database.appUrl)
   await awaitBoot(database.page, "navigate", upgradedStartedAt)
   await expect(database.page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await expect(database.page.getByTestId(WIKI_FORM_CARD_ID).getByTestId("flow-form-path")).toHaveValue(marker)
+  await expect(database.page.getByTestId(FORM_VEHICLE_CARD_ID).getByTestId(FORM_VEHICLE_FIELD_TESTID)).toHaveValue(marker)
 
   const upgraded = await takeDatabaseControl(database.page, context)
   expect(await upgraded.execute("SELECT value FROM smithers_metadata WHERE key = 'schema-version'"))
@@ -515,7 +516,7 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
 test("a future-schema physical OPFS database fails closed, exports exact rows, and boots after its real bytes are restored", scenario("navigation.storage.opfs-failure-recovery", {
   capabilities: [],
   coverage: [
-    "action:wiki.open",
+    "action:tab.read",
     "action:form.set",
     "action:storage.recovery",
     "host:local",
@@ -536,9 +537,9 @@ test("a future-schema physical OPFS database fails closed, exports exact rows, a
 }), async ({ page, context }, testInfo) => {
   const marker = "physical-opfs-recovery.md"
   const futureVersion = "2147483647"
-  const opened = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
+  const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
   await reloadApp(page)
-  await expect(opened.path).toHaveValue(marker)
+  await expect(opened.input).toHaveValue(marker)
   await command(page, "/storage.recovery")
   await expect(page.getByRole("button", { name: "Download local recovery file" })).toHaveAttribute("data-flow", "storage.recovery.export")
   await closeComposer(page)
@@ -590,7 +591,7 @@ test("a future-schema physical OPFS database fails closed, exports exact rows, a
   await awaitBoot(database.page, "navigate", recoveredStartedAt)
   await expect(database.page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(database.page.getByTestId("composer-input")).toBeHidden()
-  await expect(database.page.getByTestId(WIKI_FORM_CARD_ID).getByTestId("flow-form-path")).toHaveValue(marker)
+  await expect(database.page.getByTestId(FORM_VEHICLE_CARD_ID).getByTestId(FORM_VEHICLE_FIELD_TESTID)).toHaveValue(marker)
   await openComposer(database.page)
   await expect(database.page.getByTestId("composer-input")).toBeVisible()
 })

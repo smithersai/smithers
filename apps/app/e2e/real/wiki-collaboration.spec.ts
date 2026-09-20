@@ -35,7 +35,7 @@ test(
     capabilities: [],
     coverage: [
       "action:wiki.new-note", "action:wiki.edit", "action:wiki.card.select", "action:wiki", "action:wiki.card.view",
-      "host:local", "host:production", "path:persistence", "door:slash", "door:button",
+      "host:local", "path:persistence", "door:slash", "door:button",
       "dimension:shared-browser-context", "dimension:selection-persistence", "evidence:world-document-readback"
     ]
   }),
@@ -71,7 +71,7 @@ test(
     capabilities: [],
     coverage: [
       "action:wiki.new-note", "action:wiki.edit", "action:wiki.heading", "action:wiki.card.select",
-      "host:local", "host:production", "path:keyboard", "door:slash", "door:button", "door:user-only",
+      "host:local", "path:keyboard", "door:slash", "door:button", "door:user-only",
       "dimension:keyboard", "dimension:outline-keyboard", "dimension:heading-scroll", "evidence:editor-focus-and-readback"
     ]
   }),
@@ -100,7 +100,7 @@ test(
   scenario("local-wiki-create-refusal-no-side-effects", {
     capabilities: [],
     coverage: [
-      "action:wiki.create", "action:wiki", "host:local", "host:production", "path:permission", "door:slash", "door:button",
+      "action:wiki.create", "action:wiki", "host:local", "path:permission", "door:slash", "door:button",
       "dimension:signed-out-refusal", "dimension:no-side-effects", "evidence:refusal-card-readback"
     ]
   }),
@@ -123,7 +123,7 @@ test(
     capabilities: [],
     coverage: [
       "action:wiki.cloud", "action:wiki.cloud.open", "action:wiki.sync", "action:wiki.new-note",
-      "host:local", "host:production", "path:permission", "door:slash", "door:user-only",
+      "host:local", "path:permission", "door:slash", "door:user-only",
       "dimension:cloud-refusal", "dimension:local-draft-preservation", "evidence:cloud-refusal-readback"
     ]
   }),

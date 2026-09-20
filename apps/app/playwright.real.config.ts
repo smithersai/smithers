@@ -46,6 +46,15 @@ export default defineConfig({
     env: {
       SMITHERS_REAL_PORT: String(PORT),
       SMITHERS_CHAT_STUB: "0",
+      /*
+       * Wiki is a default-off release flag read at BUILD time
+       * (state/KnowledgeFeatures.ts), and `serve` builds the SPA once for the
+       * whole tier, so it cannot be turned on per test. The local host owns its
+       * own build, so it turns Wiki on and keeps the Wiki scenarios as real
+       * local coverage. The deployed canary ships Wiki off, which is why those
+       * scenarios declare `host:local` and never `host:production`.
+       */
+      VITE_SMITHERS_WIKI: "true",
       ...modelCredentials
     }
   }

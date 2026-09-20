@@ -2,14 +2,44 @@ import type { Locator, Page } from "@playwright/test"
 import { appEntryPath, awaitBoot, closeComposer, command, expect, openApp } from "../support/test"
 import type { FlowName } from "../../../src/mainview/flows/FlowName"
 
-const WIKI_FORM_FLOW: FlowName = "wiki.open"
-export const WIKI_FORM_CARD_ID = `card-form-${WIKI_FORM_FLOW}`
+/*
+ * THE FORM VEHICLE. The scenarios that open this form (navigation-frames.spec.ts,
+ * navigation-recovery.spec.ts) are about card identity, frame history, tab
+ * sessions and the physical OPFS database — not about the flow behind the
+ * form. That flow is a VEHICLE, and it is chosen against three criteria,
+ * never by convenience:
+ *
+ *   1. REGISTERED IN THE DEPLOYED BUILD. No release flag gates it, so a
+ *      scenario driving it can honestly claim `host:production`.
+ *   2. PROVIDER-FREE. Opening the form dials no model and no upstream, so a
+ *      red here is the subject's fault and never a provider's.
+ *   3. A REQUIRED INPUT. The form-draft, focus and fork scenarios need one
+ *      field to hold an unfinished value across a frame transition.
+ *
+ * `tab.read` meets all three — `tabHarnessFlows` is registered
+ * unconditionally in Flows.ts, its handler only reads local state, and its
+ * `tab` field is required — and reading a tab mutates nothing if the form is
+ * ever submitted.
+ *
+ * The vehicle was `wiki.open` until it failed criterion 1: the Wiki flows sit
+ * behind VITE_SMITHERS_WIKI (Flows.ts), off in every deployed build, so they
+ * are absent from the live `.app-shell[data-flows]` registry and nine
+ * scenarios whose subject was never Wiki could not execute in production.
+ * Re-point FORM_VEHICLE_FLOW and FORM_VEHICLE_FIELD to change the vehicle
+ * again; the card and field ids below derive from them.
+ */
+const FORM_VEHICLE_FLOW: FlowName = "tab.read"
+const FORM_VEHICLE_FIELD = "tab"
+export const FORM_VEHICLE_CARD_ID = `card-form-${FORM_VEHICLE_FLOW}`
+/** The vehicle's required field, for the scenarios that re-locate it on a page they booted themselves. */
+export const FORM_VEHICLE_FIELD_TESTID = `flow-form-${FORM_VEHICLE_FIELD}`
 export const PRACTICE_REPOSITORY = "practice:smithersai/hello-server"
 export const LOCAL_REPOSITORY_PATH = "/smithersai/smithers"
 
-export interface WikiForm {
+export interface VehicleForm {
   readonly card: Locator
-  readonly path: Locator
+  /** The vehicle's one required field, holding whatever value the scenario put there. */
+  readonly input: Locator
 }
 
 export interface FrameLocation {
@@ -52,22 +82,22 @@ export const enterCanonicalRepositoryApp = async (page: Page): Promise<void> => 
   expect(new URL(page.url()).pathname.endsWith("/")).toBe(false)
 }
 
-/** Open the provider-free, required-input wiki form through its real slash door. */
-export const openWikiForm = async (
+/** Open the form vehicle through its real slash door and leave `value` unfinished in its required field. */
+export const openVehicleForm = async (
   page: Page,
   value: string,
   enter: ConversationEntry = enterPortableApp
-): Promise<WikiForm> => {
+): Promise<VehicleForm> => {
   await enter(page)
-  await command(page, "/wiki.open")
-  const card = page.getByTestId(WIKI_FORM_CARD_ID)
-  const input = card.getByTestId("flow-form-path")
+  await command(page, `/${FORM_VEHICLE_FLOW}`)
+  const card = page.getByTestId(FORM_VEHICLE_CARD_ID)
+  const input = card.getByTestId(FORM_VEHICLE_FIELD_TESTID)
   await expect(card).toBeVisible()
-  await expect(card.locator('form[data-flow-name="wiki.open"]')).toBeVisible()
+  await expect(card.locator(`form[data-flow-name="${FORM_VEHICLE_FLOW}"]`)).toBeVisible()
   await closeComposer(page)
   await input.fill(value)
   await expect(input).toHaveValue(value)
-  return { card, path: input }
+  return { card, input }
 }
 
 /** Open the shipped practice issue stack. It proves local card behavior, not a provider call. */

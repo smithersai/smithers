@@ -36,7 +36,7 @@ test(
     coverage: [
       "action:world", "action:world.new-note", "action:world.select", "action:world.delete",
       "action:world.delete.cancel", "action:world.delete.confirm", "action:wiki.edit", "action:wiki.open",
-      "host:local", "host:production", "path:success", "path:persistence", "path:keyboard",
+      "host:local", "path:success", "path:persistence", "path:keyboard",
       "door:slash", "door:button", "door:user-only", "dimension:keyboard", "dimension:legacy-alias", "dimension:confirmation-boundary",
       "evidence:document-readback-after-reload"
     ],
