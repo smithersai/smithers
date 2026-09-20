@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import type { BrowserContext, Page } from "@playwright/test"
-import { command, expect, openApp, realApi, reloadApp, test } from "./support/test"
+import { awaitBoot, command, expect, openApp, realApi, reloadApp, test } from "./support/test"
 import {
   authenticatedTest,
   clearProductSession,
@@ -161,10 +161,13 @@ authenticatedTest("the saved admin identity can read admin health and survives a
   expect(requestSession.status()).toBe(200)
   expect(await requestSession.json()).toEqual(expectedWireSession)
 
+  const startedAt = performance.now()
   await page.goto(new URL(APP_PATH, String(testInfo.project.use.baseURL)).toString(), { waitUntil: "domcontentloaded" })
   const afterNavigation = await request.get("/api/auth/session")
   expect(afterNavigation.status()).toBe(200)
   expect(await afterNavigation.json()).toEqual(expectedWireSession)
+  // A boot skeleton shows no sign-in door either, so boot before reading its absence.
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.locator('[data-testid="chrome-sign-in"], [data-flow="auth.sign-in"]:visible')).toHaveCount(0)
 
   await openChat(page)

@@ -243,6 +243,9 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   await latest.press("Enter")
   await expect(latest).toBeHidden()
   await reloadApp(page)
+  // The card restores after the boot, so require it before reading what it does
+  // not show; an absence read from an empty transcript is true of every run.
+  await expect(runCard(page, launched.runId)).toBeVisible()
   await expect(runCard(page, launched.runId).getByRole("button", { name: "Latest", exact: true })).toBeHidden()
   await attachProductionJson(testInfo, "completed-run-inspection", {
     repo, marker, runId: launched.runId, terminal, selectedSpan, events, transcript
