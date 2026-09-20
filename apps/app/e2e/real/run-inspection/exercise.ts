@@ -232,6 +232,14 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     const frame = [...whole.frames].reverse().find(frame => frame.opens <= seq)
     const selected = frame?.node ?? `run:${subject.runId}`
     const current = [...whole.bands].reverse().find(band => band.seq <= seq)?.seq
+    // What the card actually parked on, recorded before the assertions so a
+    // failed step says where the cursor went instead of only where it did not.
+    const observed = await trace.evaluate(element => ({
+      cursor: element.querySelector(".run-trace-cursor")?.textContent ?? null,
+      valuenow: element.querySelector('[role="slider"]')?.getAttribute("aria-valuenow") ?? null,
+      latest: element.querySelector('button[data-flow="runs.trace.live"]') !== null
+    }))
+    steps.push({ action, seq, observed })
     const check = async () => {
       await expect(trace.getByText(`At #${seq}`, { exact: true })).toBeVisible()
       await expect(trace.getByRole("slider", { name: "Run position" })).toHaveAttribute("aria-valuenow", String(seq))
