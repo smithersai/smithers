@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
 import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
-import { demandInventory, deployedHeaderSource, HEADER_SOURCES, repositoryRoot } from "../run-inspection/revisions"
+import { demandInventory, deployedHeaderSource, HEADER_SOURCES, reloadBootFact, repositoryRoot } from "../run-inspection/revisions"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 
@@ -112,6 +112,26 @@ describe("the deployed header source comparison", () => {
   test("every declared header source exists under the resolved repository root", () => {
     expect(HEADER_SOURCES.length).toBeGreaterThan(0)
     for (const path of HEADER_SOURCES) expect(existsSync(resolve(repositoryRoot(), path))).toBe(true)
+  })
+})
+
+describe("the measured post-reload boot summary", () => {
+  const boot = (ms: number) => ({ at: new Date(ms).toISOString(), ms })
+
+  test("a run that reloaded nothing reports no boot time rather than a zero", () => {
+    expect(reloadBootFact([])).toEqual({ _tag: "ReloadBootUnmeasured", samples: [] })
+  })
+
+  test("the extremes and the middle come from the values, not the order they were measured in", () => {
+    const samples = [boot(9_000), boot(1_200), boot(3_400)]
+    expect(reloadBootFact(samples)).toMatchObject({ _tag: "ReloadBootMeasured", minMs: 1_200, medianMs: 3_400, maxMs: 9_000 })
+    // The reader hands out the live list, so summarising it must not reorder it.
+    expect(samples.map(({ ms }) => ms)).toEqual([9_000, 1_200, 3_400])
+  })
+
+  test("an even count takes the middle pair's mean, and one boot is its own summary", () => {
+    expect(reloadBootFact([boot(1_000), boot(2_000), boot(2_001), boot(9_000)])).toMatchObject({ minMs: 1_000, medianMs: 2_001, maxMs: 9_000 })
+    expect(reloadBootFact([boot(4_100)])).toMatchObject({ minMs: 4_100, medianMs: 4_100, maxMs: 4_100 })
   })
 })
 

@@ -115,6 +115,21 @@ export const openApp = async (page: Page): Promise<void> => {
   await page.goto(appEntryPath())
 }
 
+/** One measured post-reload boot: when it was taken, and how long the booted transcript took to appear. */
+export type ReloadBootTiming = { readonly at: string; readonly ms: number }
+
+const measuredReloadBoots: ReloadBootTiming[] = []
+
+/**
+ * Every post-reload boot this worker measured, oldest first.
+ *
+ * The 120 s budget below was chosen without a number behind it. Each reload now
+ * records what the persistent production profile actually cost, so a scenario
+ * can archive the distribution and the next person to touch that budget reads
+ * evidence instead of guessing again.
+ */
+export const reloadBootTimings = (): ReadonlyArray<ReloadBootTiming> => measuredReloadBoots
+
 /**
  * Reload, then wait for the app to finish booting before anything on it is read.
  *
@@ -126,10 +141,15 @@ export const openApp = async (page: Page): Promise<void> => {
  * `status "Loading view"` as the entire page. The transcript is what the booted
  * view renders, so waiting for it names what this wait is for, and the failure
  * says the boot did not finish rather than blaming the thing being read.
+ *
+ * A boot that never finished is not a boot time, so a timed-out wait records
+ * nothing and fails as before.
  */
 export const reloadApp = async (page: Page, timeout = 120_000): Promise<void> => {
+  const startedAt = performance.now()
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.getByTestId("transcript"), "the app must finish booting after a reload").toBeVisible({ timeout })
+  measuredReloadBoots.push({ at: new Date().toISOString(), ms: Math.round(performance.now() - startedAt) })
 }
 
 /** Open the transient Command-K composer and wait for its real input focus. */

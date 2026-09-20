@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
 import { attachProductionJson } from "../repositories-github/production"
-import { expect } from "../support/test"
+import { expect, reloadBootTimings, type ReloadBootTiming } from "../support/test"
 import type { JournalRow } from "./semantic"
 import { moduleRows } from "./module-evidence"
 
@@ -71,6 +71,34 @@ export const captureRevisions = async (page: Page, testInfo: TestInfo, attachmen
   expect(manifest.sha256).toMatch(/^[0-9a-f]{64}$/)
   await attachProductionJson(testInfo, attachment, { frontend, host: manifest, capturedAt: new Date().toISOString() })
   return { ...manifest, frontendRevision: frontend.gitSha as string }
+}
+
+export type ReloadBootFact =
+  | { _tag: "ReloadBootMeasured"; samples: ReadonlyArray<ReloadBootTiming>; minMs: number; medianMs: number; maxMs: number }
+  | { _tag: "ReloadBootUnmeasured"; samples: ReadonlyArray<ReloadBootTiming> }
+
+/**
+ * Summarise the post-reload boots `reloadApp` measured.
+ *
+ * `reloadApp` waits 120 s for the booted transcript and nothing records what
+ * that wait is worth, so every later edit of the budget is another guess. A run
+ * that reloaded nothing is reported as unmeasured: `Math.min` of no samples is
+ * `Infinity`, which JSON writes as `null`, and a null minimum reads like a
+ * measured zero.
+ */
+export const reloadBootFact = (samples: ReadonlyArray<ReloadBootTiming>): ReloadBootFact => {
+  if (samples.length === 0) return { _tag: "ReloadBootUnmeasured", samples }
+  const sorted = samples.map(({ ms }) => ms).sort((left, right) => left - right)
+  const middle = sorted.length >> 1
+  return {
+    _tag: "ReloadBootMeasured", samples, minMs: sorted[0]!, maxMs: sorted[sorted.length - 1]!,
+    medianMs: sorted.length % 2 === 1 ? sorted[middle]! : Math.round((sorted[middle - 1]! + sorted[middle]!) / 2)
+  }
+}
+
+/** Archive this worker's measured boots, so the reload budget is evidence rather than a number someone picked. */
+export const reloadBootEvidence = async (testInfo: TestInfo): Promise<void> => {
+  await attachProductionJson(testInfo, "timeline-reload-boot-ms", reloadBootFact(reloadBootTimings()))
 }
 
 export const hostContains = (revision: string, producingCommit: string): boolean => {

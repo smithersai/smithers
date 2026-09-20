@@ -25,7 +25,7 @@ import {
   workflowRpcPosts
 } from "./run-inspection/ui"
 import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
-import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
+import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence, reloadBootEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
 import { compareEmptyTimeline, compareMeaning, gatherEvidence, inspectKeyboard, inspectRunning, launchSubject, readFinalOutput, readJournal } from "./run-inspection/exercise"
@@ -299,6 +299,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
     await testInfo.attach("timeline-completed", { path: testInfo.outputPath("timeline-completed.png"), contentType: "image/png" })
   } finally {
     await gatherEvidence(testInfo, async () => {
+      await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
       await enrichedEvidence(testInfo, host, rows)
@@ -349,6 +350,7 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
     await attachProductionJson(testInfo, "timeline-failed-semantic-comparison", { expected, rendered, terminal })
   } finally {
     await gatherEvidence(testInfo, async () => {
+      await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
       await enrichedEvidence(testInfo, host, rows)
@@ -437,6 +439,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
   } finally {
     await gatherEvidence(testInfo, async () => {
+      await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-module-journal", { repo, workspaceId, runId: subject.runId, events: rows })
       await moduleEvidence(testInfo, host, rows)
