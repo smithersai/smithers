@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { scenario } from "./coverage/types"
 import { bootProductionRepository, PRODUCTION_REPO } from "./repositories-github/production"
-import { closeComposer, command, expect, realApi, test } from "./support"
+import { closeComposer, command, expect, realApi, reloadApp, test } from "./support"
 
 const transcript = (page: Page) => page.getByTestId("transcript")
 
@@ -34,7 +34,7 @@ test("signed-out approvals park behind the real sign-in door and survive reload 
   await expect(transcript(page)).toContainText(/Sign in with GitHub to list the workspace's pending approvals/i)
   expect(workflowPaths(requests)).toEqual([])
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="approvals-inbox"]')).toHaveCount(0)
   expect(workflowPaths(requests)).toEqual([])
@@ -68,7 +68,7 @@ test("signed-out dispatcher reads the public mirror, renders one real card, and 
   expect(workflowReads).toEqual([])
   await expect(card.locator('[data-testid="trigger-live"]')).toHaveCount(0)
   await expect(card.locator('[data-source="box"]')).toHaveCount(0)
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('.smithers-card[data-kind="trigger-list"]').last()).toBeVisible()
 })
 
@@ -115,7 +115,7 @@ authenticatedTest("production dispatcher and approvals are read from the authent
   const body = await approvalApi.json() as { ok?: unknown; payload?: { rows?: unknown } }
   expect(body.ok).toBe(true)
   expect(body.payload?.rows).toEqual([])
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('.smithers-card[data-kind="approvals-inbox"]').last()).toBeVisible()
 })
 

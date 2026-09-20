@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
-import { closeComposer, command, expect, realApi, test } from "./support/test"
+import { closeComposer, command, expect, realApi, reloadApp, test } from "./support/test"
 
 const PUBLIC_REPO = "smithersai/smithers"
 
@@ -86,7 +86,7 @@ test("a signed-out production user can verify a public change and diff but chang
   await closeComposer(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="change"]')).toHaveCount(0)
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="change"]')).toHaveCount(0)
   await testInfo.attach("public-change-read", {
@@ -123,7 +123,7 @@ test("review.request issues no mutation while a production user is signed out", 
   await closeComposer(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   expect(uiRequests.some((event) => event.method === "POST" && event.path.includes("/review-requests"))).toBe(false)
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
 
   const afterResponse = await realApi(page, request, "GET", `/api/repos/${PUBLIC_REPO}/changes/${change.change_id}`)
@@ -200,7 +200,7 @@ authenticatedTest("an authenticated production user reads a live change and trav
   await review.press("Enter")
   await expect(review).toHaveAttribute("aria-selected", "true")
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   const restored = page.getByTestId(`card-change-${PUBLIC_REPO}-${change.change_id}`)
   await expect(restored).toBeVisible()
   await expect(restored.getByRole("tab", { name: "Review", exact: true })).toHaveAttribute("aria-selected", "true")
@@ -285,7 +285,7 @@ authenticatedTest("an authenticated production user opens the exact live diff th
   await expect(fromButton).toContainText(`${String(file?.change_type)} · +${String(file?.additions)} −${String(file?.deletions)}`)
   await expect(fromButton).toContainText(String(hunkText))
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   const restored = page.getByTestId(`card-diff-${PUBLIC_REPO}-${change.change_id}`)
   await expect(restored).toContainText(path)
   await expect(restored).toContainText(`${String(file?.change_type)} · +${String(file?.additions)} −${String(file?.deletions)}`)

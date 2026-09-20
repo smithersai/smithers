@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import type { BrowserContext, Page } from "@playwright/test"
-import { command, expect, openApp, realApi, test } from "./support/test"
+import { command, expect, openApp, realApi, reloadApp, test } from "./support/test"
 import {
   authenticatedTest,
   clearProductSession,
@@ -51,7 +51,7 @@ test("a signed-out required action parks behind a durable GitHub sign-in step", 
   await expect(signIn).toBeVisible()
   await expect(page.getByText("Sign in with GitHub to show your balance.", { exact: false }).last()).toBeVisible()
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="balance"]')).toHaveCount(0)
   const after = await realApi(page, request, "GET", "/api/auth/session")
@@ -170,7 +170,7 @@ authenticatedTest("the saved admin identity can read admin health and survives a
   await openChat(page)
   await command(page, "/admin.health")
   await expect(page.locator('.smithers-card[data-kind="admin-health"]')).toBeVisible({ timeout: 30_000 })
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect.poll(() => readAuthenticatedSession(page)).toEqual(expectedSession)
   await openChat(page)
   await command(page, "/admin.devtools")
@@ -214,7 +214,7 @@ authenticatedTest("authenticated cookies survive the canonical document and boot
   expect(await readAuthenticatedSession(page)).toEqual(expectedSession)
   expect(await browserSession(page)).toEqual(expectedWireSession)
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   expect(await browserSession(page)).toEqual(expectedWireSession)
   await openChat(page)
   await command(page, "/account.show")
@@ -267,12 +267,14 @@ authenticatedTest("sign-out clears the real session and a real OAuth round trip 
 
   await expect.poll(() => readAuthenticatedSession(page)).toBeUndefined()
   await expect(page.locator('.smithers-card[data-kind="account"]')).toHaveCount(0)
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   expect(await readAuthenticatedSession(page)).toBeUndefined()
 
   const restored = await restoreAuthenticatedSession(page, baseURL)
   expect(restored).toEqual({ login: "codeplanesmithers", allowlisted: true, admin: true })
+  // A raw reload: the restart evidence is the session endpoint, which answers
+  // from the browser's cookie jar whether or not the app has finished booting.
   await page.reload({ waitUntil: "domcontentloaded" })
   expect(await readAuthenticatedSession(page)).toEqual(restored)
 })
