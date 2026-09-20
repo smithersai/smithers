@@ -164,9 +164,14 @@ export default Flow.make({
             }
             admittedRoot = receipt.runId
             // These are the existing control events read by the gateway. Native
-            // completion must reach this journal, not just the engine database.
+            // completion must reach this journal, not just the engine database,
+            // and it must reach it BEFORE the terminal control status: that
+            // status is what a reader folds a run's outcome from, and the
+            // copied decision is the only thing that answers for its output.
             return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
-              Stream.takeUntil((event) => event.kind === settledKind),
+              Stream.takeUntil((event) =>
+                event.kind === "control.run.completed" || event.kind === "control.run.failed"
+              ),
               Stream.runCollect,
               Effect.timeout("30 seconds")
             )
@@ -182,10 +187,8 @@ export default Flow.make({
             Effect.scoped
           )
         )
-        expect(result.some((event) => event.kind === (drift ? "control.run.failed" : "control.run.completed"))).toBe(
-          true
-        )
-        expect(result.at(-1)?.kind).toBe(settledKind)
+        expect(result.at(-1)?.kind).toBe(drift ? "control.run.failed" : "control.run.completed")
+        expect(result.slice(0, -1).map((event) => event.kind)).toContain(settledKind)
         const facts = result.flatMap((event) => {
           const envelope = event.payload as { eventType?: string; payload?: unknown }
           return event.kind === "control.engine.event" && envelope.eventType === StepFact.eventType
