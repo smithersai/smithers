@@ -472,6 +472,111 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(Projection.bashSubject({ command }).always).toEqual([])
   })
 
+  it("offers no reusable grant for a line an interpreter decides, so a later line asks again", async () => {
+    const directory = scratch()
+    const marker = join(directory, "interpreter-marker")
+    const payload = join(directory, "payload.sh")
+    writeFileSync(payload, `printf reached > ${marker}\n`)
+    const first = recorder()
+    const second = recorder()
+    // The person approves one harmless interpreter line. The next line is a
+    // different program entirely, and the only word the two share is the
+    // interpreter that was never what they approved.
+    script.replies = [bashCell("bash -c whoami"), bashCell(`bash ${payload}`)]
+    const result = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_interp", "msg_interp_1"), first.sink)
+        yield* answering(driver, {
+          sessionID: "ses_interp",
+          permissionID: permissionOf(first.events),
+          response: "always"
+        })
+        yield* driver.start(input("ses_interp", "msg_interp_2"), second.sink)
+        const before = { outcomes: [...second.outcomes], wrote: existsSync(marker) }
+        const grants = yield* store.listGrants("ses_interp")
+        return { before, grants }
+      }))
+    // The second line was asked about, and nothing had run when it was.
+    expect(result.before).toEqual({ outcomes: [{ _tag: "suspended" }], wrote: false })
+    // What the first answer bought: that one call, not `bash *`.
+    expect(result.grants).toEqual([
+      { sessionID: "ses_interp", kind: "once", key: permissionOf(first.events) }
+    ])
+    expect(cards(second.events)).toHaveLength(1)
+  })
+
+  it.each([
+    "bash -c whoami",
+    "sh -c whoami",
+    "/bin/bash -c whoami",
+    "python3 -c print",
+    "node -e process.exit",
+    "env FOO=1 whoami",
+    "sudo whoami",
+    "xargs rm",
+    "timeout 5 whoami",
+    "find . -exec rm"
+  ])("offers no reusable grant for %o", (command) => {
+    expect(Projection.bashSubject({ command }).always).toEqual([])
+    expect(EngineDriver.alwaysKey("/repo", "bash", { command })).toBeUndefined()
+  })
+
+  it.each([
+    ["bun test", "bash bun *"],
+    ["pnpm run check", "bash pnpm *"],
+    ["git status --short", "bash git *"],
+    ["/usr/bin/grep -n needle file", "bash /usr/bin/grep *"]
+  ])("still offers a reusable grant for %o", (command, key) => {
+    expect(EngineDriver.alwaysKey("/repo", "bash", { command })).toBe(key)
+  })
+
+  it("does not ask about a call the flow will refuse on its input", async () => {
+    const directory = scratch()
+    const log = recorder()
+    // `args` belong to a script; a command line carries its own. `Bash.run`
+    // refuses this before it runs anything, so a card for it is a question
+    // with no consequence, and `Allow always` on it would have written
+    // `bash echo *` off a command line that never ran.
+    script.replies = [
+      `const r = await ctx.call("bash", { mode: "unhermetic", command: "echo one", args: ["x"] })
+ctx.done(r.ok === false ? "refused " + r.error.code : "ran " + r.stdout.trim())`
+    ]
+    const grants = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* driver.start(input("ses_invalid", "msg_invalid"), log.sink)
+        return yield* store.listGrants("ses_invalid")
+      }))
+    expect(log.outcomes).toEqual([{ _tag: "completed" }])
+    expect(cards(log.events)).toEqual([])
+    expect(answer(log.events)).toBe("refused flow_failed")
+    expect(settledCalls(log.events, "bash")[0]!.result.message).toBe(
+      "Flow bash failed: args belong to a script; a command carries its own arguments in the line"
+    )
+    expect(grants).toEqual([])
+  })
+
+  it.each([
+    [{ mode: "unhermetic", command: "echo one", script: "echo one" }, true],
+    [{ mode: "unhermetic" }, true],
+    [{ mode: "unhermetic", script: "echo one", stdin: "x" }, true],
+    [{ mode: "unhermetic", command: "echo one", args: ["x"] }, true],
+    [{ mode: "unhermetic", command: "echo one", interpreter: "python3" }, true],
+    [{ mode: "hermetic", command: "echo one", container: "box", reads: [], writes: [] }, true],
+    [{ mode: "hermetic", script: "print(1)", interpreter: "python3", reads: [], writes: [] }, true],
+    [{ mode: "hermetic", script: "echo one", reads: [], writes: [] }, false],
+    [{ mode: "unhermetic", command: "echo one" }, false],
+    [{ mode: "unhermetic", command: "echo one", container: "box" }, false]
+  ])("reads %o as unrunnable: %o", (call, unrunnable) => {
+    expect(EngineDriver.unrunnable("bash", call as never)).toBe(unrunnable)
+  })
+
+  it("asks about every other flow and every input shape it cannot read", () => {
+    expect(EngineDriver.unrunnable("read", { path: "a.txt" })).toBe(false)
+    expect(EngineDriver.unrunnable("bash", "echo one")).toBe(false)
+    expect(EngineDriver.unrunnable("bash", null)).toBe(false)
+    expect(EngineDriver.unrunnable("bash", ["echo one"])).toBe(false)
+  })
+
   it("shows a script-form call its program, and Allow always on it covers that one call", async () => {
     const directory = scratch()
     const first = recorder()

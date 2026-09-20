@@ -457,6 +457,29 @@ export const alwaysKey = (directory: string, flow: string, input: Schema.Json): 
 export const cardSubject = (directory: string, flow: string, input: Schema.Json): string =>
   Projection.permissionPatterns(flow, Projection.toolInput(directory, flow, input)).patterns[0]
 
+/**
+ * Whether a call names something the flow will refuse before it runs it.
+ *
+ * Such a call is not a decision. Asking about it puts a card in front of the
+ * person for work that cannot happen, and `Allow always` on it writes a
+ * session-wide grant derived from a command line that never ran: approving
+ * `{ command: "echo one", args: ["x"] }` mints `bash echo *` while the flow
+ * refuses the call itself as `invalid_input`. The ask is skipped and the
+ * flow's own refusal reaches the cell.
+ *
+ * Only `bash` is read, because `bash` is the only flow this server asks
+ * about; any other flow answers `false` and is asked about as before.
+ *
+ * @param flow the flow the call asked for
+ * @param input the call's input
+ * @category predicates
+ * @since 1.0.0
+ */
+export const unrunnable = (flow: string, input: Schema.Json): boolean => {
+  if (flow !== "bash" || typeof input !== "object" || input === null || Array.isArray(input)) return false
+  return Projection.bashRefusal(input as Record<string, unknown>) !== undefined
+}
+
 /** The key a rejected subject is remembered under for the turn. */
 const deniedKey = (flow: string, subject: string): string => `${flow} ${subject}`
 
@@ -760,6 +783,9 @@ export const layer = (options: Options) =>
     const authorize = (instance: FlowRuntime.FlowInstance["Service"], sessionID: string) => (call: Cell.Call) =>
       Effect.gen(function*() {
         if (!asks.has(call.flowName)) return
+        // A call the flow refuses on its input is not a question: answering
+        // it would approve, and grant from, work that never happens.
+        if (unrunnable(call.flowName, call.input)) return
         // What the card offered, and nothing wider. Every flow but bash offers
         // its whole self, so its own key is `<flow> *`; a `bash *` row can only
         // come from a database written before the bash card stopped offering

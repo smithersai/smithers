@@ -377,13 +377,92 @@ const programLine = (script: string): string => {
 }
 
 /**
+ * Programs whose whole job is to run something else: a shell, and the
+ * wrappers that exec whatever they are handed. A grant on the first word of
+ * such a line covers every line that word will ever front, because the first
+ * word never decided anything: `sudo` and `env` and `xargs` are the same
+ * first word in front of any command at all, and `bash one.sh` and `bash
+ * exfiltrate.sh` are the same first word in front of any program at all.
+ *
+ * A toolchain that runs project code (`pnpm run`, `bun test`, `cargo`) is not
+ * here. Its first word is the word the person approved and the word the card
+ * showed, and a grant that excluded it would leave `Allow always` covering
+ * nothing anyone runs. What such a grant is worth is bounded by what the
+ * project's own scripts do, which is the bound the person took when they
+ * opened the project.
+ */
+const launchers = new Set([
+  "bash",
+  "command",
+  "csh",
+  "dash",
+  "doas",
+  "env",
+  "eval",
+  "exec",
+  "find",
+  "fish",
+  "ionice",
+  "ksh",
+  "nice",
+  "nohup",
+  "setsid",
+  "sh",
+  "ssh",
+  "su",
+  "sudo",
+  "tcsh",
+  "time",
+  "timeout",
+  "watch",
+  "xargs",
+  "zsh"
+])
+
+/** `bash5`, `sh.exe` aside, a shell carrying its version: `zsh5.9`. */
+const versioned = /^(?:bash|dash|ksh|sh|zsh)[\d.]*$/
+
+/**
+ * Arguments that hand a program the text of another program to run. The
+ * dangerous part of `bash -c whoami` is an argument, not the program, so a
+ * grammar that reads only the first word approves the interpreter and every
+ * line it will ever be given. `python -c`, `node -e` and `find -exec` are the
+ * same shape, whatever the program in front of them is.
+ */
+const codeArguments = new Set(["-c", "--command", "-e", "--eval", "-exec", "--exec", "-execdir"])
+
+/** The last path segment of a program word: `/usr/bin/python3` is `python3`. */
+const programName = (word: string): string => word.slice(word.lastIndexOf("/") + 1)
+
+/**
+ * Whether the first word of a command line decides what the line runs. It
+ * does not when the word names a launcher, and it does not when an argument
+ * carries program text; in both cases the line offers no pattern a later
+ * line could be measured against, so it asks for its own approval.
+ *
+ * @param program the line's first word
+ * @param args the words after it
+ * @category predicates
+ * @since 1.0.0
+ */
+export const programDecides = (program: string, args: ReadonlyArray<string>): boolean => {
+  const name = programName(program)
+  if (launchers.has(name) || versioned.test(name)) return false
+  return !args.some((word) => codeArguments.has(word))
+}
+
+/**
  * What a bash call asks for, from any input `@smthrs/agent/std/Bash` accepts:
  * the one line the person is approving, and the `always` pattern a grant may
  * cover.
  *
  * A simple command line names its program in its first word, so a grant can
- * cover that word. Shell syntax can run other programs or redirect output;
- * those calls offer no reusable pattern and ask for their own approval.
+ * cover that word, but only when that word decides what the line does. Shell
+ * syntax can run other programs or redirect output; so can a launcher such as
+ * `bash`, `python`, `env` or `xargs`, whose arguments are the act; and so can
+ * an argument that carries program text, such as the `-c` of `bash -c`. Those
+ * calls offer no reusable pattern and ask for their own approval
+ * ({@link programDecides}).
  * A script is program text an interpreter reads
  * on standard input; it has no first word, and the first word of the program
  * is not the name of anything the shell would run. Such a call therefore
@@ -419,11 +498,57 @@ export const bashSubject = (input: Record<string, unknown>): {
     // Quotes, substitutions, redirections, operators, and line breaks all
     // need their own approval instead of borrowing the first word's grant.
     if (!/^[\w./-]+(?:[ \t]+[\w./:=+,%@*?-]+)*$/.test(simple)) return { command, always: [] }
-    const word = simple.replace(/\s[\s\S]*$/, "")
+    const words = simple.split(/[ \t]+/)
+    // The grammar proves the line runs one program. Whether the NAME of that
+    // program describes what it will do is a second question, and the answer
+    // is no for every interpreter and every launcher.
+    const word = words[0]!
+    if (!programDecides(word, words.slice(1))) return { command, always: [] }
     const container = asString(input["container"])
     return { command, always: [container === undefined ? `${word} *` : `${word} * in container ${container}`] }
   }
   return { command: "", always: [] }
+}
+
+/**
+ * The shells whose text `@smthrs/std/Bash` can pre-check hermetically.
+ */
+const hermeticShells = new Set(["bash", "zsh", "sh", "dash"])
+
+/**
+ * Why `@smthrs/std/Bash` will refuse a call's input before running anything,
+ * or `undefined` when the input names an invocation.
+ *
+ * A card for such a call is a question with no consequence: the flow refuses
+ * it as `invalid_input` whatever the person answers, and an `Allow always`
+ * on it mints a session-wide grant off a command line that never ran. The
+ * ask is skipped for these, and the flow's own refusal is what the cell
+ * reads.
+ *
+ * These are `Bash.plan`'s rules, read from the same input the card reads.
+ * They are mirrored rather than imported because `@smthrs/opencode` does not
+ * depend on `@smthrs/std`; a rule added there and not here costs a needless
+ * card, never a missing one, because a call this returns `undefined` for is
+ * asked about exactly as before.
+ *
+ * @param input the call input, as the cell wrote it
+ * @category getters
+ * @since 1.0.0
+ */
+export const bashRefusal = (input: Record<string, unknown>): string | undefined => {
+  const command = asString(input["command"])
+  const script = asString(input["script"])
+  const interpreter = asString(input["interpreter"])
+  if (command !== undefined && script !== undefined) return "names both a command and a script"
+  if (command === undefined && script === undefined) return "names neither a command nor a script"
+  if (script !== undefined && asString(input["stdin"]) !== undefined) return "gives a script its own stdin"
+  if (command !== undefined && input["args"] !== undefined) return "gives a command line separate args"
+  if (command !== undefined && interpreter !== undefined) return "gives a command line an interpreter"
+  if (input["mode"] !== "hermetic") return undefined
+  if (asString(input["container"]) !== undefined) return "declares reads and writes for a container"
+  return script !== undefined && !hermeticShells.has(interpreter ?? "bash")
+    ? "asks the hermetic pre-check to read a program that is not shell"
+    : undefined
 }
 
 /**
