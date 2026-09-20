@@ -84,6 +84,17 @@ export const FlowCycleDetected = FlowRuntime.FlowCycleDetected
 export type FlowCycleDetected = FlowRuntime.FlowCycleDetected
 
 /**
+ * Why the engine itself asked a parked execution to resume.
+ *
+ * The operator's own resume is absent on purpose: it is the one wake a host
+ * has already claimed before the engine hears about it.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type RequestedResumeReason = "deferred" | "clock" | "parent"
+
+/**
  * Dependencies for the run driver.
  *
  * @since 0.1.0
@@ -101,6 +112,29 @@ export interface Dependencies {
    */
   readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
+  /**
+   * Records, for a host that keeps one, that this driver has asked a
+   * SUSPENDED execution to resume.
+   *
+   * Every wake the engine itself initiates passes through here: a durable
+   * clock firing, a durable deferred completing (a signal, a queue offer, a
+   * registration-time sweep of completions taken while the host was down),
+   * and a child settling under a parent that parked on it. A host that guards
+   * re-entry into a parked run — `AgentSession` refuses a round for a parked
+   * control row that nobody asked for — otherwise cannot tell those from its
+   * own heartbeat sweep, and a run that slept never settled.
+   *
+   * An operator resume is NOT recorded: `Control.resume` and
+   * `ControlLive.decide` claim the control row themselves, and recording a
+   * second request for the resume a host is already taking up would buy that
+   * park a second re-drive.
+   *
+   * Optional. A composition with no such host leaves it undefined and the
+   * wake is exactly what it was.
+   */
+  readonly requestResume?:
+    | ((executionId: string, reason: RequestedResumeReason) => Effect.Effect<void>)
+    | undefined
   readonly engine: Effect.Effect<FlowRuntime.FlowRuntime["Service"]>
   /**
    * In-process wake bus announced to whenever a durable write makes a run
@@ -488,6 +522,41 @@ export const make = (
 
     const decodeState = (stateJson: string): Effect.Effect<RunState> =>
       Schema.decodeUnknownEffect(RunStateJson)(stateJson).pipe(Effect.orDie)
+
+    /**
+     * Tells the host that this driver is asking a PARKED execution to resume.
+     *
+     * Only a parked one. A wake against a run that is still running is
+     * already covered by the round it is in, and a request recorded for it
+     * would be a delegation no park ever takes up: the host polls it for as
+     * long as the run lives, and every poll pays a park wait for a run that
+     * is not parked.
+     *
+     * See {@link Dependencies.requestResume} for which wakes reach here.
+     */
+    const recordResume = (
+      executionId: string,
+      parked: boolean,
+      reason: RequestedResumeReason
+    ): Effect.Effect<void> =>
+      dependencies.requestResume === undefined || !parked
+        ? Effect.void
+        : dependencies.requestResume(executionId, reason)
+
+    /**
+     * {@link recordResume} for the parent a settling child is waking.
+     *
+     * The waiting row is the park: it is written in the same transaction as
+     * the suspended transition and cleared by the claim that ends it, so a
+     * parent that has one is parked and a parent mid-round has none. It is
+     * read only for a host that records, so a composition without one pays
+     * nothing per child settlement.
+     */
+    const recordParentResume = (parentExecutionId: string): Effect.Effect<void> =>
+      dependencies.requestResume === undefined ? Effect.void : Effect.flatMap(
+        engineState.waiting(parentExecutionId),
+        (waiting) => recordResume(parentExecutionId, Option.isSome(waiting), "parent")
+      )
 
     /**
      * Run decisions are lifecycle records: they take the journal's durable
@@ -2008,6 +2077,12 @@ export const make = (
                 yield* wakeBus.wake(executionId)
                 if (activeState.parentExecutionId !== undefined) {
                   const activeCoordinator = yield* Deferred.await(coordinatorDeferred)
+                  // A parent that parked on this child is runnable now, and
+                  // this wake is the only thing that says so: a child
+                  // settlement never passes through `scheduleResume`. Recorded
+                  // for the same reason it is there — the round this wake
+                  // schedules is the one a host's park guard has to recognize.
+                  yield* recordParentResume(activeState.parentExecutionId)
                   yield* activeCoordinator.wake(activeState.parentExecutionId)
                   yield* wakeBus.wake(activeState.parentExecutionId)
                 }
@@ -2539,6 +2614,9 @@ export const make = (
           decision: "wake-scheduled",
           reason
         }, sourceId)
+        // Before the wake, so the host's record is already standing when the
+        // round it schedules reaches the host's own guard.
+        if (reason !== "operator") yield* recordResume(executionId, row.status === "suspended", reason)
         yield* coordinator.wake(executionId)
         // The runnability change (deferred completed, clock fired, operator
         // resume) is already durable — the caller commits before scheduling —

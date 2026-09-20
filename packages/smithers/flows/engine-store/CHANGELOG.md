@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `EngineStore.Options.requestResume` reports every wake this engine itself
+  initiates against a parked execution: a durable deferred completing, a
+  durable clock firing, and a child settling under a parent that parked on it.
+  An operator's own resume is not reported, because the host that asked for it
+  has already claimed the run. A host that refuses to re-enter a parked run
+  nobody asked for had no way to tell an engine wake from its own heartbeat
+  sweep, so a run that slept, or whose child parked, never settled. Optional: a
+  composition without such a host leaves it undefined and every wake is exactly
+  what it was.
+
 ### Fixed
 
 - Compiled `stop-merge` recovery retains the stopped attempt's `skipped`

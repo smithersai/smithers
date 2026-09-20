@@ -40,6 +40,15 @@ import * as WakeBus from "./WakeBus.ts"
 import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 
 /**
+ * Why the engine itself asked a parked execution to resume, as reported to
+ * {@link Options.requestResume}.
+ *
+ * @since 1.0.0-rc.0
+ * @category models
+ */
+export type RequestedResumeReason = RunDriver.RequestedResumeReason
+
+/**
  * Engine-store construction options.
  *
  * @since 0.1.0
@@ -69,6 +78,22 @@ export interface Options {
   readonly isAlive?: Ownership.LivenessCheck | undefined
   /** Host routing, checked before claiming a run (including automatic wakes). */
   readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
+  /**
+   * Records, for a host that keeps one, that this engine has asked a parked
+   * execution to resume: a durable clock fired, a durable deferred completed,
+   * or a child settled under a parent that parked on it.
+   *
+   * A host that refuses to re-enter a parked run nobody asked for — the
+   * control plane's executor does — reads the record to tell those wakes from
+   * its own heartbeat sweep. Without it a run that slept never settled.
+   *
+   * Optional; a composition with no such host leaves it undefined.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly requestResume?:
+    | ((executionId: string, reason: RequestedResumeReason) => Effect.Effect<void>)
+    | undefined
   /**
    * Redispatch policy for a durable clock whose fire failed. Defaults to
    * {@link DeferredPersistence.defaultFireRetryPolicy} — exponential from
@@ -166,6 +191,7 @@ const makeWithEngineJj = (
       journalSource: options.journalSource,
       isAlive: options.isAlive,
       canExecute: options.canExecute,
+      requestResume: options.requestResume,
       engine: Deferred.await(engine),
       wakeBus
     })

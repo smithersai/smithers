@@ -25,7 +25,8 @@ it("reports invalid JavaScript configuration before constructing injected servic
     [{ filename: "" }, "filename"],
     [{ owner: undefined }, "owner.hostId"],
     [{ isAlive: undefined }, "isAlive"],
-    [{ canExecute: "yes" }, "canExecute"]
+    [{ canExecute: "yes" }, "canExecute"],
+    [{ requestResume: "yes" }, "requestResume"]
   ] as const
   for (const [patch, field] of invalid) {
     const parameters = [

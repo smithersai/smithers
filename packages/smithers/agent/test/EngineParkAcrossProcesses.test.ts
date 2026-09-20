@@ -38,7 +38,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -185,10 +185,20 @@ let noteEntered: Deferred.Deferred<void> | undefined
  * A composition that hosts executions: control plane, production executor,
  * real engine over `engine.db`, exactly as `NodeControl` composes them.
  */
-const host = (root: string, owner: Ownership.OwnerId, engineHost = "engine-park-host") => {
+const host = (
+  root: string,
+  owner: Ownership.OwnerId,
+  engineHost = "engine-park-host",
+  options: { readonly adoptsAtOnce?: boolean } = {}
+) => {
   const registration = AgentSession.layer({
     quotaPolicy: Safety.quotaPolicy,
     budget: Safety.budget,
+    // A composition that did not park the run may only adopt a standing
+    // delegation once it has gone unanswered (`AgentSession.hostsPark`). A
+    // restart case says so with zero rather than by waiting out the default
+    // `Ownership.heartbeatStaleAfter`.
+    ...(options.adoptsAtOnce === true ? { abandonedParkAfter: Duration.zero } : {}),
     flows: [
       FlowBinding.source("test/notes", [
         FlowBinding.make({
@@ -212,12 +222,24 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost = "engine-park-
       )
     )
   )
+  // The control plane the engine records its own wakes against, captured the
+  // way `NativeControl` captures it: the engine layer is built before the
+  // control runtime exists, and the record is what tells this composition's
+  // park guard a fired clock from its own heartbeat sweep.
+  let resumes: ControlRuntime.Service | undefined
+  const bindControl = Layer.effectDiscard(
+    Effect.map(ControlRuntime.ControlRuntime, (service) => {
+      resumes = service
+    })
+  )
   const engine = NodeRuntime.layer(
     {
       filename: join(root, "engine.db"),
       workspaceRoot: root,
       owner: { hostId: engineHost },
-      isAlive: () => Effect.succeed(false)
+      isAlive: () => Effect.succeed(false),
+      requestResume: (runId) =>
+        Effect.suspend(() => resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId)))
     },
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
@@ -226,11 +248,13 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost = "engine-park-
   return ControlLive.layer.pipe(
     Layer.provide(engine),
     Layer.provideMerge(
-      Layer.mergeAll(
-        SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
-        NotificationQueue.layer,
-        registryLayer
-      )
+      bindControl.pipe(Layer.provideMerge(
+        Layer.mergeAll(
+          SqlControlRuntime.layer({ owner, flows: controlFlows }).pipe(Layer.orDie),
+          NotificationQueue.layer,
+          registryLayer
+        )
+      ))
     ),
     Layer.provideMerge(Layer.merge(controlStores(join(root, "control.db")), NodeCrypto.layer))
   )
@@ -277,6 +301,24 @@ const readPendingClocks = (root: string, runId: string): ReadonlyArray<{ readonl
     return database.prepare(
       "SELECT due_at_ms FROM flows_clock_deadlines WHERE execution_id = ? AND completed_at_ms IS NULL"
     ).all(runId) as unknown as ReadonlyArray<{ readonly due_at_ms: number }>
+  } finally {
+    database.close()
+  }
+}
+
+/**
+ * Moves a run's pending clock deadlines into the past, between two processes.
+ *
+ * A durable deadline that fell due while the host was down is the ordinary
+ * case — the engine re-arms what it finds on disk at registration — and this
+ * is how a test states it without waiting one out.
+ */
+const expireClocks = (root: string, runId: string): void => {
+  const database = new DatabaseSync(join(root, "engine.db"))
+  try {
+    database.prepare(
+      "UPDATE flows_clock_deadlines SET due_at_ms = ? WHERE execution_id = ? AND completed_at_ms IS NULL"
+    ).run(Date.now() - 1_000, runId)
   } finally {
     database.close()
   }
@@ -558,6 +600,55 @@ const awaitEngineStatus = (
     yield* Effect.sleep("100 millis")
     return yield* awaitEngineStatus(root, runId, status, attempts - 1)
   })
+
+describe("a run parked on a durable clock that fell due while its process was down", () => {
+  /**
+   * The wake nobody asks for: a timer fires, and the only thing that knows
+   * the run is runnable again is the engine.
+   *
+   * A restart is what makes it the whole story. The parking process is gone,
+   * so no in-memory wake survives; a second composition arms the deadline it
+   * finds on disk, the fire completes the durable wait, and the round the
+   * engine schedules next is the one the executor's park guard sees. Without
+   * the engine recording that request the guard reads it as its own heartbeat
+   * sweep, refuses it, and the run sleeps forever — which is every
+   * `flows/repository` job, because `AwaitReply` sleeps its remaining budget
+   * on the durable clock while it waits for an author.
+   *
+   * The deadline is moved to the past between the two processes rather than
+   * waited out, so nothing here is timing.
+   */
+  it("wakes and completes under a second process", async () => {
+    frame = timerFrame
+    const root = makeRoot()
+    const runId = await Effect.runPromise(
+      Effect.gen(function*() {
+        const id = yield* launch
+        yield* awaitParkEvent(id, "parked")
+        return id
+      }).pipe(Effect.provide(host(root, hostOwner)), Effect.scoped, Effect.orDie)
+    )
+
+    expect(readEngineRun(root, runId)?.waiting_reason).toBe("timer")
+    expect(readPendingClocks(root, runId)).toHaveLength(1)
+    expireClocks(root, runId)
+
+    const settled = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime.ControlRuntime
+        yield* awaitStatus(runtime, runId, "completed", 3_000)
+        return yield* runtime.getRun(runId)
+      }).pipe(
+        Effect.provide(host(root, secondOwner, "engine-park-second", { adoptsAtOnce: true })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+
+    expect(settled.status).toBe("completed")
+    expect(notes).toContain("engine-park-second:woke")
+  }, 120_000)
+})
 
 describe("a run parked on an in-run ask that a later process cancels", () => {
   it("settles both rows and answers the ask with the run's terminal status", async () => {

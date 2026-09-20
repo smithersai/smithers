@@ -605,6 +605,27 @@ export const make = (
     // client. They refuse until that existing final phase installs the reader.
     let admission: ((runId: string) => Effect.Effect<boolean>) | undefined
     const canExecute = (runId: string) => Effect.suspend(() => admission?.(runId) ?? Effect.succeed(false))
+    // The control plane the engine records its own wakes against, captured the
+    // same way and for the same reason as `admission` above: the engine layer
+    // is built before the registration phase that holds the control runtime.
+    //
+    // A durable clock firing, a durable deferred completing, and a child
+    // settling under a parent that parked on it are the wakes nobody asks for
+    // — no operator, no approval, no answer — and `AgentSession`'s round guard
+    // refuses a parked run whose resume nothing delegated. Recording the
+    // request is what tells that guard an engine wake from its own heartbeat
+    // sweep; without it a run that slept never settled.
+    //
+    // Every refusal is tolerated rather than raised: a run this control plane
+    // never launched has no row (`RunNotFound`), a settled one owes no resume
+    // (`InvalidInput`), and neither is a reason to fail the wake.
+    let resumes: ControlRuntime.Service | undefined
+    const requestResume = (runId: string) =>
+      Effect.suspend(() =>
+        resumes === undefined
+          ? Effect.void
+          : Effect.ignore(resumes.requestResume(runId))
+      )
     // The same guarded platform the registry discovers under: kernel FileSystem
     // over descriptor-relative atomic access, with the selected service bundle
     // (Path, raw spawner, crypto) merged through. `grants` is passed rather than
@@ -722,9 +743,13 @@ export const make = (
         const engineSql = yield* SqlClient
         const controlSql = yield* SqlClient.pipe(Effect.provide(engine.stores))
         const routing = yield* WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
+        // The engine's wake recorder and the admission check are filled in
+        // together: this is the first point in the composition that holds the
+        // control runtime.
+        resumes = yield* ControlRuntime.ControlRuntime
         const moduleAdmission = ModuleAdmission.make({
           runs: yield* RunStore.RunStore,
-          control: yield* ControlRuntime.ControlRuntime,
+          control: resumes,
           registry: yield* Registry.Registry,
           catalog
         })
@@ -856,7 +881,8 @@ export const make = (
         // table instead, and answers only about this host: a run recorded on
         // another host is left to the lease, which `RunStore.steal` verifies.
         isAlive: Ownership.sameHostPidProbe,
-        canExecute: (row) => canExecute(row.runId)
+        canExecute: (row) => canExecute(row.runId),
+        requestResume
       },
       StepBoundary.layer,
       WorkspaceSandbox.layerFileSystem(),

@@ -335,6 +335,35 @@ describe("the supported Node SQLite composition", () => {
     expect(existsSync(database)).toBe(false)
   })
 
+  it("validates the optional engine-wake recorder eagerly without invoking it or opening storage", () => {
+    const root = join(directory, "recorder-validation")
+    const database = join(root, "runtime.sqlite")
+    const declare = (requestResume: NodeRuntime.Options["requestResume"]) =>
+      NodeRuntime.layer(
+        { ...options("recorder-validation"), filename: database, workspaceRoot: root, requestResume },
+        StepBoundary.layer,
+        WorkspaceSandbox.layerFileSystem(),
+        Layer.empty
+      )
+    for (const invalid of [null, false, 0, "not a function", {}, []]) {
+      expect(() => declare(invalid as never)).toThrowError(expect.objectContaining({
+        code: "invalid_runtime_configuration",
+        field: "requestResume"
+      }))
+    }
+    let invocations = 0
+    expect(() =>
+      declare(() => {
+        invocations++
+        return Effect.void
+      })
+    ).not.toThrow()
+    expect(() => declare(undefined)).not.toThrow()
+    expect(invocations).toBe(0)
+    expect(existsSync(root)).toBe(false)
+    expect(existsSync(database)).toBe(false)
+  })
+
   it("stores artifacts beside the database without nesting a second .flows directory", async () => {
     const root = join(directory, "artifact-root")
     const database = join(root, ".flows", "engine.sqlite")

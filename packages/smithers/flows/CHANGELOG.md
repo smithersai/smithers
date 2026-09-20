@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Runtime.Options.requestResume`, passed through to the engine store, records
+  that the engine has asked a parked execution to resume — a durable clock
+  fired, a durable deferred completed, or a child settled under a parent that
+  parked on it. A control plane that refuses to re-enter a parked run nobody
+  asked for reads it to tell an engine wake from its own heartbeat sweep.
+
 ## [1.0.0-rc.0] - 2026-08-31
 
 ### Added

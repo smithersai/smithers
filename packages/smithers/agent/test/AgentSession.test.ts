@@ -21,7 +21,7 @@ import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, Co
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
-import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"
+import { Action, Flow, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
@@ -329,12 +329,24 @@ const stack = (options: StackOptions) => {
     restore: () => Effect.void,
     diff: () => Effect.succeed("")
   })
+  // The control plane this engine reports its own wakes to, captured the way
+  // `NativeControl` captures it: the engine layer is built before the control
+  // runtime it will record against exists, and the record is what tells the
+  // executor's park guard a clock fire or a settled child from its own sweep.
+  let resumes: ControlRuntime.Service | undefined
+  const bindControl = Layer.effectDiscard(
+    Effect.map(ControlRuntime.ControlRuntime, (service) => {
+      resumes = service
+    })
+  )
   const engine = NodeRuntime.layer(
     {
       filename: join(root, "engine.db"),
       workspaceRoot: root,
       owner: { hostId: "agent-session-test" },
-      isAlive: () => Effect.succeed(false)
+      isAlive: () => Effect.succeed(false),
+      requestResume: (runId) =>
+        Effect.suspend(() => resumes === undefined ? Effect.void : Effect.ignore(resumes.requestResume(runId)))
     },
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
@@ -342,7 +354,9 @@ const stack = (options: StackOptions) => {
   ).pipe(Layer.provide([NodeFileSystem.layer, NodeCrypto.layer, jj]))
   return ControlLive.layer.pipe(
     Layer.provideMerge(engine),
-    Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry)),
+    Layer.provideMerge(
+      bindControl.pipe(Layer.provideMerge(Layer.mergeAll(runtime, journal, notifications, registry)))
+    ),
     Layer.provide(Action.layerImplementations)
   )
 }
@@ -389,6 +403,82 @@ const awaitStatus = (
     }
     yield* Effect.yieldNow
     return yield* awaitStatus(runtime, runId, status, attempts - 1)
+  })
+
+/**
+ * Runs one registered module flow on the full stack and counts its claims.
+ *
+ * The agent run parks on the module's own execution, so every park this
+ * exercises is one the executor refuses to re-enter unasked, and `claims` is
+ * how many incarnations re-entered the agent body after that park: one per
+ * legitimate wake, and none for a wake nobody asked for.
+ */
+const moduleRun = (options: {
+  readonly flow: Executable.Executable["flow"]
+  readonly registration: Layer.Layer<never, never, Executable.Registration>
+  readonly idempotencyKey: string
+}): Effect.Effect<{ readonly claims: number }, unknown> =>
+  Effect.gen(function*() {
+    const catalog: Executable.Catalog = {
+      executables: [{
+        descriptor: moduleDescriptor,
+        delegate: "test/Module",
+        lowered: { cache: undefined, placement: undefined, priority: undefined },
+        invocation: (input) => ({
+          flow: moduleDescriptor.name,
+          input,
+          prompt: "",
+          model: null,
+          placement: null,
+          placementOptions: null,
+          capabilities: [],
+          flows: ["test/Module"]
+        }),
+        flow: options.flow,
+        layer: Interpreter.layer(options.flow)
+      }],
+      refused: []
+    }
+    const gate = yield* Deferred.make<void>()
+    return yield* Effect.gen(function*() {
+      const control = yield* Control.Control
+      const runtime = yield* ControlRuntime.ControlRuntime
+      const journal = yield* Journal.Journal
+      const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+      yield* control.approve(card.approval)
+      const receipt = yield* control.run({
+        _tag: "Plan",
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: options.idempotencyKey
+      })
+      if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+        return yield* Effect.die("expected admission")
+      }
+      const runId = receipt.runId
+      yield* awaitStatus(runtime, runId, "completed")
+      const page = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 })
+      return { claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length }
+    }).pipe(Effect.provide(stack({
+      gate,
+      notes: [],
+      resolve: () => Effect.die("a module must not resolve a model seat"),
+      modules: { catalog, layer: options.registration }
+    })))
+  }).pipe(Effect.scoped) as Effect.Effect<{ readonly claims: number }, unknown>
+
+/**
+ * Runs every other in-process fiber to a standstill, `times` over.
+ *
+ * The bound is a turn count, not a duration: a negative claim about a parked
+ * run must not be a claim about how long a poll takes.
+ */
+const yieldTimes = (times: number): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    if (times <= 0) return
+    yield* Effect.yieldNow
+    return yield* yieldTimes(times - 1)
   })
 
 interface Outcome {
@@ -1482,6 +1572,206 @@ describe("AgentSession", () => {
     // requests none.
     expect(answers).toEqual([true])
     expect(observed.claims).toBe(1)
+  }, 30_000)
+
+  /**
+   * A park the ENGINE itself ends: a durable clock fires, the module execution
+   * the agent run is waiting on wakes, runs its next action, and settles.
+   *
+   * No person answers anything here, so nothing on the answering path can
+   * record the resume: the wake is the engine's own. The run still has to be
+   * re-driven, exactly once, or a run that sleeps never settles — which is
+   * every `flows/repository` job, because `AwaitReply` sleeps its remaining
+   * budget on `DurableClock` while it waits for an author.
+   */
+  it("re-drives a run whose durable clock fired, exactly once", async () => {
+    const woke: Array<unknown> = []
+    const Woke = Action.make("test/SleepWoke", {
+      payload: { at: Schema.Json },
+      success: Schema.Json,
+      error: Schema.Never
+    })
+    const flow = Flow.make("agents/module", {
+      payload: Executable.Payload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => Sleep.action.call({ millis: 60 }).pipe(Node.bindPlanned(() => Woke.call({ at: true })))
+    })
+    const observed = await Effect.runPromise(
+      moduleRun({
+        flow,
+        idempotencyKey: "run:clock-resume",
+        registration: Layer.mergeAll(
+          Interpreter.layer(flow),
+          Sleep.layer,
+          Woke.toLayer(({ at }) =>
+            Effect.sync(() => {
+              woke.push(at)
+              return at
+            })
+          )
+        )
+      })
+    )
+
+    // The clock fired, the body past the sleep ran, and the park cost one
+    // claim: an engine wake requests one re-drive, and an unanswered round
+    // still requests none.
+    expect(woke).toEqual([true])
+    expect(observed.claims).toBe(1)
+  }, 30_000)
+
+  /**
+   * The same park, one execution deeper: the module flow calls a CHILD flow,
+   * and it is the child's settlement that has to carry the run on.
+   *
+   * A child settlement never passes through `scheduleResume` — the driver
+   * wakes the parent coordinator directly — so this is the wake with no
+   * scheduler at all behind it, and it is the shape every `flows/repository`
+   * job has: `Investigate.child`, `PublishReply.child`, `AwaitReply.child`.
+   */
+  it("re-drives a run whose child execution settled, exactly once", async () => {
+    const woke: Array<unknown> = []
+    const Woke = Action.make("test/ChildWoke", {
+      payload: { at: Schema.Json },
+      success: Schema.Json,
+      error: Schema.Never
+    })
+    const sleeper = Flow.make("test/Sleeper", {
+      payload: Schema.Struct({}),
+      success: Schema.Void,
+      error: Schema.Unknown,
+      body: () => Sleep.action.call({ millis: 60 })
+    })
+    const flow = Flow.make("agents/module", {
+      payload: Executable.Payload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => sleeper.child({}).pipe(Node.bindPlanned(() => Woke.call({ at: true })))
+    })
+    const observed = await Effect.runPromise(
+      moduleRun({
+        flow,
+        idempotencyKey: "run:child-resume",
+        registration: Layer.mergeAll(
+          Interpreter.layer(flow),
+          Interpreter.layer(sleeper),
+          Sleep.layer,
+          Woke.toLayer(({ at }) =>
+            Effect.sync(() => {
+              woke.push(at)
+              return at
+            })
+          )
+        )
+      })
+    )
+
+    expect(woke).toEqual([true])
+    expect(observed.claims).toBe(1)
+  }, 30_000)
+
+  /**
+   * The other half of the same rule: a park nobody has answered is not a
+   * resume, however many rounds the engine offers.
+   *
+   * Asserted on state rather than on elapsed time. A delegation is what makes
+   * a round a resume, so "nothing asked for this" is exactly "no delegation
+   * stands", and the claim count is what an unrequested re-drive would move.
+   * The yields run every in-process fiber this composition has — the engine's
+   * coordinator, the recorded-signal replay, the delegation poll's first pass
+   * — so nothing here is waiting for a clock to prove a negative.
+   */
+  it("never re-drives a run parked on a human ask nobody has answered", async () => {
+    const answers: Array<unknown> = []
+    const Answered = Action.make("test/UnansweredAsk", {
+      payload: { answer: Schema.Json },
+      success: Schema.Json,
+      error: Schema.Never
+    })
+    const flow = Flow.make("agents/module", {
+      payload: Executable.Payload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () =>
+        HumanTask.action.call({ name: "ship-it", kind: "confirm", prompt: "Ship the change?", maxAttempts: 1 }).pipe(
+          Node.bindPlanned((answer) => Answered.call({ answer }))
+        )
+    })
+    const catalog: Executable.Catalog = {
+      executables: [{
+        descriptor: moduleDescriptor,
+        delegate: "test/Module",
+        lowered: { cache: undefined, placement: undefined, priority: undefined },
+        invocation: (input) => ({
+          flow: moduleDescriptor.name,
+          input,
+          prompt: "",
+          model: null,
+          placement: null,
+          placementOptions: null,
+          capabilities: [],
+          flows: ["test/Module"]
+        }),
+        flow,
+        layer: Interpreter.layer(flow)
+      }],
+      refused: []
+    }
+    const registration = Layer.mergeAll(
+      Interpreter.layer(flow),
+      HumanTask.layer,
+      Answered.toLayer(({ answer }) =>
+        Effect.sync(() => {
+          answers.push(answer)
+          return answer
+        })
+      )
+    )
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:unanswered-ask"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected admission")
+          }
+          const runId = receipt.runId
+          yield* awaitStatus(runtime, runId, "parked")
+          yield* yieldTimes(20_000)
+          const page = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 })
+          return {
+            status: (yield* runtime.getRun(runId)).status,
+            delegations: (yield* runtime.pendingResumes).map((entry) => entry.runId),
+            claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length
+          }
+        }).pipe(Effect.provide(stack({
+          gate,
+          notes: [],
+          resolve: () => Effect.die("a module must not resolve a model seat"),
+          modules: { catalog, layer: registration }
+        })))
+      }).pipe(Effect.scoped) as Effect.Effect<
+        { readonly status: string; readonly delegations: ReadonlyArray<string>; readonly claims: number },
+        unknown
+      >
+    )
+
+    // Nothing asked, nothing ran: no delegation stands, the body past the ask
+    // never entered, and the run was never re-claimed.
+    expect(observed).toEqual({ status: "parked", delegations: [], claims: 0 })
+    expect(answers).toEqual([])
   }, 30_000)
 
   it("journals a bounded cause when the model fails, for an empty and an absent input", async () => {

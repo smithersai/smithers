@@ -1,6 +1,7 @@
 /** Runtime configuration shared by injected and native hosts.
  * @since 1.0.0
  */
+import type * as EngineStore from "@smthrs/engine-store/EngineStore"
 import type { Ownership, RunStore } from "@smthrs/run-store"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -38,6 +39,19 @@ export interface Options {
   readonly isAlive: Ownership.LivenessCheck
   /** Routes shared-store runs to the host configured for their workspace. */
   readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
+  /**
+   * Records, for a host that keeps one, that the engine has asked a parked
+   * execution to resume — a durable clock fired, a durable deferred
+   * completed, or a child settled under a parent that parked on it.
+   *
+   * A control plane that refuses to re-enter a parked run nobody asked for
+   * reads the record to tell an engine wake from its own heartbeat sweep.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly requestResume?:
+    | ((executionId: string, reason: EngineStore.RequestedResumeReason) => Effect.Effect<void>)
+    | undefined
 }
 
 /**
@@ -104,11 +118,16 @@ export const validate = (options: Options, label = "Runtime"): Options => {
   if (canExecute !== undefined && typeof canExecute !== "function") {
     throw invalidConfiguration("canExecute", `${label} canExecute must be a function when supplied`)
   }
+  const requestResume = options.requestResume
+  if (requestResume !== undefined && typeof requestResume !== "function") {
+    throw invalidConfiguration("requestResume", `${label} requestResume must be a function when supplied`)
+  }
   return Object.freeze({
     filename,
     workspaceRoot,
     owner: Object.freeze({ hostId }),
     isAlive,
-    canExecute
+    canExecute,
+    requestResume
   })
 }

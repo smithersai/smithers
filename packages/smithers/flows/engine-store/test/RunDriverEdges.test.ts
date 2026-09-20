@@ -493,6 +493,119 @@ describe("RunDriver execute preconditions", () => {
     }))
 })
 
+/**
+ * Every wake the engine itself initiates, reported to the host that guards
+ * re-entry into a parked run.
+ *
+ * The class is closed and this is the enumeration of it: a durable deferred
+ * completing, a durable clock firing, and a child settling under a parent
+ * that parked on it. An operator's own resume is deliberately outside it —
+ * the host has already claimed that one before the engine hears of it — and
+ * so is a wake against a run that is not parked, which has a round of its own
+ * to carry it.
+ */
+describe("RunDriver requestResume", () => {
+  const recordingDriver = (recorded: Array<readonly [string, RunDriver.RequestedResumeReason]>) =>
+    RunDriver.make({
+      owner,
+      journalSource: "run-driver-edges",
+      isAlive: () => Effect.succeed(false),
+      engine: Effect.succeed(fakeEngine),
+      requestResume: (executionId, reason) => Effect.sync(() => void recorded.push([executionId, reason]))
+    })
+
+  const suspend = (runId: string) =>
+    Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      yield* store.create(runId, stateJson(EdgeFlow._tag))
+      yield* store.claimAndOwn(runId, { status: "pending", owner: null, heartbeatAtMs: null }, owner, 0)
+      yield* store.transitionOwned(runId, owner, "suspended", undefined)
+    })
+
+  it.effect("reports every scheduled wake for a parked run, and never the operator's own", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
+        const driver = yield* recordingDriver(recorded)
+        yield* suspend("parked")
+        yield* driver.scheduleResume(EdgeFlow._tag, "parked", "deferred")
+        yield* driver.scheduleResume(EdgeFlow._tag, "parked", "clock")
+        yield* driver.scheduleResume(EdgeFlow._tag, "parked", "parent")
+        yield* driver.scheduleResume(EdgeFlow._tag, "parked", "operator")
+        return { recorded, decisions: yield* decisionsFor("parked") }
+      })))
+
+      expect(result.recorded).toEqual([
+        ["parked", "deferred"],
+        ["parked", "clock"],
+        ["parked", "parent"]
+      ])
+      // The operator's wake still happened; it is the RECORD that is refused,
+      // because `Control.resume` claims the control row itself and a second
+      // request would buy the park a second re-drive.
+      expect(result.decisions).toEqual(["wake-scheduled", "wake-scheduled", "wake-scheduled", "wake-scheduled"])
+    }))
+
+  it.effect("reports nothing for a wake against a run that is not parked", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
+        const driver = yield* recordingDriver(recorded)
+        yield* store.create("pending", stateJson(EdgeFlow._tag))
+        yield* driver.scheduleResume(EdgeFlow._tag, "pending", "clock")
+        return { recorded, decisions: yield* decisionsFor("pending") }
+      })))
+
+      expect(result.recorded).toEqual([])
+      expect(result.decisions).toEqual(["wake-scheduled"])
+    }))
+
+  it.effect("reports the parent a settling child wakes, when that parent is parked", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const engineState = yield* DurableEngineState.DurableEngineState
+        const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
+        const driver = yield* recordingDriver(recorded)
+        yield* driver.register(EdgeFlow, () => Effect.succeed("done"))
+        yield* suspend("waiting-parent")
+        yield* engineState.park("waiting-parent", { reason: "event" }, owner)
+        yield* driver.execute(EdgeFlow, {
+          executionId: "settling-child",
+          payload: {},
+          discard: true,
+          parent: FlowEngine.makeInstance(EdgeFlow, "waiting-parent")
+        })
+        return recorded
+      })))
+
+      // A child settlement never passes through `scheduleResume`: the driver
+      // wakes the parent's coordinator directly, and this is the only place
+      // that wake is announced.
+      expect(result).toEqual([["waiting-parent", "parent"]])
+    }))
+
+  it.effect("reports nothing for a parent that is still inside its own round", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
+        const driver = yield* recordingDriver(recorded)
+        yield* driver.register(EdgeFlow, () => Effect.succeed("done"))
+        yield* store.create("running-parent", stateJson(EdgeFlow._tag))
+        yield* driver.execute(EdgeFlow, {
+          executionId: "running-child",
+          payload: {},
+          discard: true,
+          parent: FlowEngine.makeInstance(EdgeFlow, "running-parent")
+        })
+        return recorded
+      })))
+
+      expect(result).toEqual([])
+    }))
+})
+
 describe("RunDriver scheduleResume", () => {
   it.effect("ignores a wake for a missing row and for a flow-name mismatch", () =>
     Effect.gen(function*() {

@@ -111,7 +111,8 @@ export const layer = <
     owner: validated.owner,
     journalSource: `${validated.owner.hostId}-engine`,
     isAlive: validated.isAlive,
-    canExecute: validated.canExecute
+    canExecute: validated.canExecute,
+    requestResume: validated.requestResume
   }).pipe(Layer.provideMerge(execution))
   // The registry is built BETWEEN the engine and the registration phase, so a
   // registration that reads a catalog off it — `@smthrs/registry`'s
