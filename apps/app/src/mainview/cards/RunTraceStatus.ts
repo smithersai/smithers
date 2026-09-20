@@ -111,7 +111,10 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
   // The run's condition is what its steps still carry: a decision a person owes
   // first, then a park that needs a resume, then a brake that needs neither.
   const outstanding = [...conditions.values()]
-  const parked = outstanding.find((one) => one.parked !== undefined)?.parked
+  // A park a person can resume outranks one waiting on a decision, whichever
+  // step recorded it first: the action is what the header offers.
+  const parked = outstanding.some((one) => one.parked === "resume")
+    ? "resume" : outstanding.find((one) => one.parked !== undefined)?.parked
   const condition: RunStatus["condition"] = approvals.size > 0 ? "approval"
     : parked !== undefined ? "blocked"
     : outstanding.some((one) => one.thrashing) ? "thrashing" : undefined

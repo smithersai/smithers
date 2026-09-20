@@ -295,8 +295,10 @@ describe("recorded step identity", () => {
       { runId: "run", sequence: 6, kind: "control.run.resumed", payload: { at: 600 } }
     ]
     expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere])).condition).toBe("thrashing")
-    expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere,
-      nativeStep(7, "control.agent.mutation-observed", left, { basis: "observed", mutated: true })])).condition).toBeUndefined()
+    for (const closing of [
+      nativeStep(7, "control.agent.mutation-observed", left, { basis: "observed", mutated: true }),
+      nativeStep(7, "control.agent.sufficiency-observed", left, { flow: "test", failed: "before", passed: "after" })
+    ]) expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere, closing])).condition).toBeUndefined()
   })
 
   test("a park belongs to its step, a run-level resume ends it, and an approval outranks both", () => {
