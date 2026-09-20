@@ -347,6 +347,9 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     steps.push({ action: "pointer drag", band: widest.band, dropped })
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await reloadApp(page)
+    // An absent card hides every button, so the card is required before its
+    // live-tail state is read.
+    await expect(trace, "the run card must re-render before its live-tail state is read").toBeVisible()
     await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
     await compareMeaning(card, trace, whole)
     steps.push({ action: "Latest Enter/reload", persisted: true })

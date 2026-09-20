@@ -76,7 +76,9 @@ const openOwnedTerminal = async (page: Page, repo: string, workspaceId: string) 
   // The released terminal adapter retains its first stream when the session changes.
   // Reload mounts the measured session and exercises its persisted binding.
   await reloadApp(page)
-  await expect(terminal).toBeVisible()
+  // The booted app still has to re-open this session's stream, which is the
+  // same 90s budget the first mount is given, not the default assertion budget.
+  await expect(terminal, "the measured terminal session must remount after the reload").toBeVisible({ timeout: 90000 })
   return { terminal, sessionId: receipt.id }
 }
 
