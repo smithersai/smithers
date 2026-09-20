@@ -156,12 +156,13 @@ describe("module agent frame ownership", () => {
   })
 
   test("scoped summaries retain descriptor precedence and recorded write outcomes", () => {
-    const descriptors = [{ name: "write", activity: "reads", presentation: {
-      verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" }, subject: "path", result: "text"
-    } }] as const
     const starts = [
       event(1, "control.agent.turn-opened", left),
-      event(2, "control.agent.cell-call-started", left, { callId: "inspect", flowName: "write", input: { path: "a.ts" } }),
+      event(2, "control.agent.cell-call-started", left, { callId: "inspect", flowName: "write", input: { path: "a.ts" }, descriptor: {
+        name: "write", activity: "reads", presentation: {
+          verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" }, subject: "path", result: "text"
+        }
+      } }),
       event(3, "control.agent.turn-opened", right),
       event(4, "control.agent.cell-call-started", right, { callId: "write", flowName: "write", input: { path: "b.ts" }, descriptor: {
         name: "write", activity: "writes", presentation: {
@@ -170,19 +171,22 @@ describe("module agent frame ownership", () => {
       } }),
       event(5, "control.agent.cell-call-settled", left, { callId: "inspect", flowName: "write", outcome: "success", value: "found" })
     ]
-    const pending = traceFromJournal(run, starts, { descriptors })
+    const pending = traceFromJournal(run, starts)
+    // The header reads the descriptor its own row reads, or the card says a
+    // step is writing a file it is only inspecting.
+    expect(traceStatus(pending, 2).activity).toBe("Inspecting a.ts")
     expect(pending.bands.map((band) => band.phase)).toEqual(["researching", "implementing"])
     expect(pending.lines[0]).toMatchObject({ verb: "inspected", result: "found", wrote: false })
     expect(pending.lines[1]).toMatchObject({ verb: "writing", result: "", wrote: false })
     const failed = traceFromJournal(run, [...starts,
       event(6, "control.agent.cell-call-settled", right, { callId: "write", flowName: "write", outcome: "failure", message: "denied" })
-    ], { descriptors })
+    ])
     expect(failed.lines[1]).toMatchObject({ verb: "failed to write", result: "denied", failed: true, wrote: false })
     expect(failed.milestones).toEqual([])
     const value = { path: "b.ts", bytesWritten: 12 }
     const completed = traceFromJournal(run, [...starts,
       event(6, "control.agent.cell-call-settled", right, { callId: "write", flowName: "write", outcome: "success", value })
-    ], { descriptors })
+    ])
     expect(completed.lines[1]).toMatchObject({ verb: "wrote", result: "12 bytes", failed: false, wrote: true })
     expect(completed.milestones).toEqual([{ seq: 6, at: 600, label: "b.ts", tone: "brand", spanId: framesOfModel(completed)[1]!.id }])
     expect(completed.rows.find((span) => span.kind === "call" && span.detail.input !== undefined && span.startedAt === 400)?.detail.output)

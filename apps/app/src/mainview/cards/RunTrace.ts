@@ -166,8 +166,6 @@ export interface TraceNote {
 export interface TraceOptions {
   /** Plan targets are coverage requirements, never evidence that a call ran tests. */
   readonly checkTargets?: ReadonlyArray<string>
-  /** Descriptor metadata for this journal. Recorded call metadata takes precedence. */
-  readonly descriptors?: ReadonlyArray<Pick<FlowDescriptor, "name" | "activity" | "presentation">>
 }
 
 export interface TraceModel {
@@ -427,11 +425,10 @@ const shellActivity = (command: string): FlowActivity => {
  * phase bands and the run header.
  *
  * Precedence, and why: the record's own `descriptor` wins, because it is what
- * the declaration said when the call was made; metadata a caller supplies for
- * this journal comes next; and only a record that carries neither falls back
- * to {@link LEGACY_PRESENTATION}, which is a guess about the flows that were
- * journaled before a declaration could say anything. A flow the table does not
- * know stays unknown, and unknown is said as unknown.
+ * the declaration said when the call was made, and only a record that carries
+ * none falls back to {@link LEGACY_PRESENTATION}, which is a guess about the
+ * flows that were journaled before a declaration could say anything. A flow the
+ * table does not know stays unknown, and unknown is said as unknown.
  *
  * `bash` is the one activity read off the call rather than the declaration.
  * `@smthrs/std` declares none for it on purpose — the same flow runs a test
@@ -441,17 +438,13 @@ const shellActivity = (command: string): FlowActivity => {
  *
  * @param flowName the flow the record names
  * @param payload the `cell-call-started` payload, as journaled
- * @param supplied descriptor metadata for this journal, when the caller has it
  */
 export const callSemantics = (
   flowName: string,
-  payload: Record<string, unknown>,
-  supplied?: CallMetadata | undefined
+  payload: Record<string, unknown>
 ): CallMetadata => {
   const recorded = recordedMetadata(payload.descriptor, flowName)
-  const declared = recorded ?? supplied
-  const known = recorded !== undefined || declared?.activity !== undefined || declared?.presentation !== undefined
-  const metadata = known ? declared : LEGACY_PRESENTATION.get(flowName)
+  const metadata = recorded ?? LEGACY_PRESENTATION.get(flowName)
   const activity = metadata?.activity
     ?? (flowName === "bash" ? shellActivity(commandOf(payload.input) ?? "") : undefined)
   return {
@@ -580,14 +573,11 @@ const dominantCall = (entry: FrameFacts): CallFacts | undefined =>
  *
  * @param runId the run, for the notes that land before any frame opened
  * @param ordered the journal, in sequence order, call events already deduplicated
- * @param options the check targets the plan declared, if any
  */
 const disciplineFold = (
   runId: string,
-  ordered: ReadonlyArray<JournalRecord>,
-  options: TraceOptions
+  ordered: ReadonlyArray<JournalRecord>
 ): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes" | "owners"> => {
-  const descriptors = new Map(options.descriptors?.map((descriptor) => [descriptor.name, descriptor]))
   const frames: Array<FrameFacts> = []
   const notes: Array<TraceNote> = []
   const milestones: Array<Milestone> = []
@@ -635,7 +625,7 @@ const disciplineFold = (
       }
       case "control.agent.cell-call-started": {
         const flowName = asString(payload.flowName) ?? ""
-        const metadata = callSemantics(flowName, payload, descriptors.get(flowName))
+        const metadata = callSemantics(flowName, payload)
         const call: CallFacts = {
           flowName,
           callId: asString(payload.callId),
@@ -1015,12 +1005,10 @@ const disciplineFold = (
  *
  * @param run the run as its card knows it
  * @param records the run's journal, in sequence order
- * @param options what the plan declared; absent leaves every derived field at its empty reading
  */
 const foldJournal = (
   run: TraceRun,
-  records: ReadonlyArray<JournalRecord>,
-  options: TraceOptions = {}
+  records: ReadonlyArray<JournalRecord>
 ): TraceModel => {
   const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
   const ordered = uniqueCallEvents(rawOrdered)
@@ -1289,15 +1277,21 @@ const foldJournal = (
       running: rows.filter((span) => span.kind !== "run" && span.status === "running").length,
       failed: rows.filter((span) => span.kind !== "run" && span.status === "failed").length
     },
-    ...disciplineFold(run.runId, ordered, options)
+    ...disciplineFold(run.runId, ordered)
   }
 }
 
-/** Fold each recorded dispatch independently, keeping prompt-run addresses unchanged. */
+/**
+ * Fold each recorded dispatch independently, keeping prompt-run addresses unchanged.
+ *
+ * The options the card carries are accepted and read by nothing: a plan's
+ * check targets are a coverage requirement, and a requirement is not evidence
+ * that any call ran it. Every word this fold says is read off a record.
+ */
 export const traceFromJournal = (
   run: TraceRun,
   records: ReadonlyArray<JournalRecord>,
-  options: TraceOptions = {}
+  _options: TraceOptions = {}
 ): TraceModel => {
   const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
   const ordered = uniqueCallEvents(rawOrdered)
@@ -1312,8 +1306,8 @@ export const traceFromJournal = (
       groups.set(scope, group)
     }
   }
-  if (groups.size === 0) return foldJournal(run, records, options)
-  const base = foldJournal(run, unscoped, options)
+  if (groups.size === 0) return foldJournal(run, records)
+  const base = foldJournal(run, unscoped)
   const children = [...base.root.children]
   const bands = [...base.bands]
   const milestones = [...base.milestones]
@@ -1325,7 +1319,7 @@ export const traceFromJournal = (
   const terminalAt = terminal === undefined ? undefined : timeOf(terminal, asRecord(terminal.payload))
   for (const [scope, group] of groups) {
     const prefix = `step:${encodeURIComponent(scope)}/`
-    const scoped = foldJournal({ ...run, status: "running" }, group, options)
+    const scoped = foldJournal({ ...run, status: "running" }, group)
     const rename = (span: TraceSpan): TraceSpan => ({
       ...span, id: `${prefix}${span.id}`, children: span.children.map(rename),
       ...(span.status === "running" && TERMINAL_RUN.has(base.root.status) ? {

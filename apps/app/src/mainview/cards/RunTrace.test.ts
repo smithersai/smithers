@@ -39,9 +39,14 @@ const JOURNAL: ReadonlyArray<JournalRecord> = [
 const RUN = { runId: "run-1", flowId: "implement", status: "running", kind: "implement" }
 
 /** A single recorded call, with settlement omitted while it is pending. */
-const oneCall = (flowName: string, input: unknown, settlement?: Record<string, unknown>): ReadonlyArray<JournalRecord> => [
+const oneCall = (
+  flowName: string,
+  input: unknown,
+  settlement?: Record<string, unknown>,
+  descriptor?: Pick<FlowDescriptor, "name" | "activity" | "presentation">
+): ReadonlyArray<JournalRecord> => [
   at(1, "control.agent.turn-opened", {}, 1000),
-  at(2, "control.agent.cell-call-started", { flowName, input }, 1100),
+  at(2, "control.agent.cell-call-started", { flowName, input, ...(descriptor === undefined ? {} : { descriptor }) }, 1100),
   ...(settlement === undefined ? [] : [at(3, "control.agent.cell-call-settled", { flowName, ...settlement }, 1200)])
 ]
 
@@ -76,17 +81,17 @@ describe("descriptor-backed activity and presentation", () => {
   })
 
   test("descriptor activity and presentation override standard names and support custom flows", () => {
-    const descriptors: ReadonlyArray<Pick<FlowDescriptor, "name" | "activity" | "presentation">> = [{
+    const inspects = {
       name: "write", activity: "reads", presentation: {
         verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" }, subject: "pattern", result: "text"
       }
-    }, { name: "custom.test", activity: "tests" }, { name: "read", activity: "other" }]
-    const model = traceFromJournal(RUN, oneCall("write", { path: "a.ts", pattern: "needle" }, { outcome: "success", value: "found" }), { descriptors })
+    } as const
+    const model = traceFromJournal(RUN, oneCall("write", { path: "a.ts", pattern: "needle" }, { outcome: "success", value: "found" }, inspects))
     expect(model.bands[0]?.phase).toBe("researching")
     expect(model.lines[0]).toMatchObject({ verb: "inspected", subject: "needle", result: "found", wrote: false })
     expect(model.milestones).toEqual([])
-    expect(traceFromJournal(RUN, oneCall("custom.test", {}), { descriptors }).bands[0]?.phase).toBe("testing")
-    expect(traceFromJournal(RUN, oneCall("read", {}), { descriptors }).bands[0]?.phase).toBe("unrecorded")
+    expect(traceFromJournal(RUN, oneCall("custom.test", {}, undefined, { name: "custom.test", activity: "tests" })).bands[0]?.phase).toBe("testing")
+    expect(traceFromJournal(RUN, oneCall("read", {}, undefined, { name: "read", activity: "other" })).bands[0]?.phase).toBe("unrecorded")
   })
 
   test.each([
@@ -100,7 +105,7 @@ describe("descriptor-backed activity and presentation", () => {
           }
         } }
       } : record)
-    const model = traceFromJournal(RUN, JSON.parse(JSON.stringify(journal)), { descriptors: [{ name: "custom", activity: "other" }] })
+    const model = traceFromJournal(RUN, JSON.parse(JSON.stringify(journal)))
     expect(model.bands[0]?.phase).toBe(phase)
     expect(model.lines[0]).toMatchObject({ verb: "handled", subject: "a.ts", result: "done" })
   })
@@ -165,9 +170,8 @@ describe("descriptor-backed activity and presentation", () => {
 
   test("presentation suppresses unrequested subjects and results and bounds plain text", () => {
     const presentation = { verb: { pending: "waiting", success: "finished", failure: "failed" }, subject: "none", result: "none" } as const
-    expect(traceFromJournal(RUN, oneCall("custom", { path: "a.ts" }, { outcome: "success", value: "private" }), {
-      descriptors: [{ name: "custom", activity: "other", presentation }]
-    }).lines[0]).toMatchObject({ verb: "finished", subject: "", result: "" })
+    expect(traceFromJournal(RUN, oneCall("custom", { path: "a.ts" }, { outcome: "success", value: "private" },
+      { name: "custom", activity: "other", presentation })).lines[0]).toMatchObject({ verb: "finished", subject: "", result: "" })
     const line = traceFromJournal(RUN, oneCall("read", { path: "a" }, { outcome: "success", value: "x".repeat(500) })).lines[0]!
     expect(line.result).toHaveLength(160)
     expect(line.result.endsWith("…")).toBe(true)
