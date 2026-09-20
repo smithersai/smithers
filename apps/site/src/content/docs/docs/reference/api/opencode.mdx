@@ -8,10 +8,12 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/ope
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/opencode/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/docs/api.md)
 
-> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
 
-The package declares `effect`, `@effect/platform-node` and
-`@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Use the same Effect
+The package declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared` and `@effect/sql-sqlite-node` as exact
+`4.0.0-rc.115` peers; the shared adapter is the sibling `@effect/platform-node`
+pulls in, declared so it cannot float to a later release. Use the same Effect
 version in the host.
 
 The root entry point exports one namespace per module, and every module is
@@ -263,14 +265,18 @@ broken cursor is reported rather than read as the end of the history.
 
 ## `Cors` and `Auth`
 
-| Export                 | Meaning                                                                                            |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                               |
-| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                    |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.               |
-| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both. |
-| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.      |
-| `Auth.Credentials`     | `{ username, password }`.                                                                          |
-| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                   |
-| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                |
-| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.     |
+| Export                 | Meaning                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`. Loopback is not allowed by default; a local build names itself with `--cors`.                                                                                      |
+| `Cors.loopbackExample` | `http://localhost:5173`, the `--cors` value a local build of the app passes.                                                                                                                |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                                                                                                             |
+| `Cors.patternRefusal`  | `(pattern) => string \| undefined`: why a `--cors` pattern is not an origin, such as `*`.                                                                                                   |
+| `Cors.refusal`         | `(extras) => string \| undefined`: the first `--cors` pattern the policy cannot use.                                                                                                        |
+| `Cors.forbiddenOrigin` | The JSON 403 body a disallowed origin gets in place of the route.                                                                                                                           |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights, stamps the allow headers on a 404 too, and refuses a disallowed origin with 403 before any route runs. A request with no `Origin` passes through. |
+| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both.                                                                                          |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.                                                                                               |
+| `Auth.Credentials`     | `{ username, password }`.                                                                                                                                                                   |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                                                                                                            |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                                                                                                         |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.                                                                                              |

@@ -38,6 +38,31 @@ Add the repository as a project and send a prompt. The terminal client can attac
 `opencode attach http://127.0.0.1:4096 --dir "$PWD"`. An idle session starts a Smithers turn; a prompt sent while it is busy steers
 the current turn. The timeline shows its frames, calls, and prints.
 
+## Who can reach the server
+
+The default bind is `127.0.0.1` and asks for no password, so the boundary is
+the browser's: a page is allowed to talk to the server only when its origin is
+one the server was told about. The hosted app (`https://*.opencode.ai`) is the
+only origin allowed out of the box. Every other origin is answered `403`
+before the route runs, including a page served on a loopback port, because a
+page on `http://localhost:1234` is a page any dev server or preview tool put
+there, and the operator never chose it.
+
+A local build of the app names itself:
+
+```sh
+smithers opencode --cors http://localhost:5173
+```
+
+A pattern that is not an origin is refused at the bind rather than accepted
+and ignored, so `--cors '*'` exits with the shape that would have worked.
+
+Clients that send no `Origin` are not browser pages acting across origins and
+are unaffected: `opencode attach`, `curl`, and anything else on the machine
+reach the server as before. What bounds those is the machine, so set
+`OPENCODE_SERVER_PASSWORD` when the machine is shared, and `--listen` on a
+non-loopback host requires it.
+
 ## Keys
 
 | Variable                                                  | What it does                                                                                                                                     |

@@ -258,14 +258,18 @@ broken cursor is reported rather than read as the end of the history.
 
 ## `Cors` and `Auth`
 
-| Export                 | Meaning                                                                                            |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                               |
-| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                    |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.               |
-| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both. |
-| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.      |
-| `Auth.Credentials`     | `{ username, password }`.                                                                          |
-| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                   |
-| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                |
-| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.     |
+| Export                 | Meaning                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`. Loopback is not allowed by default; a local build names itself with `--cors`.                                                                                      |
+| `Cors.loopbackExample` | `http://localhost:5173`, the `--cors` value a local build of the app passes.                                                                                                                |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                                                                                                             |
+| `Cors.patternRefusal`  | `(pattern) => string \| undefined`: why a `--cors` pattern is not an origin, such as `*`.                                                                                                   |
+| `Cors.refusal`         | `(extras) => string \| undefined`: the first `--cors` pattern the policy cannot use.                                                                                                        |
+| `Cors.forbiddenOrigin` | The JSON 403 body a disallowed origin gets in place of the route.                                                                                                                           |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights, stamps the allow headers on a 404 too, and refuses a disallowed origin with 403 before any route runs. A request with no `Origin` passes through. |
+| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both.                                                                                          |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.                                                                                               |
+| `Auth.Credentials`     | `{ username, password }`.                                                                                                                                                                   |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                                                                                                            |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                                                                                                         |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.                                                                                              |
