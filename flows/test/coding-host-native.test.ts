@@ -192,13 +192,14 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
     task: "Write hello.txt", claim, treeMoved: true, checksRun: []
   }).pipe(Effect.provide(judge.layer)))
   const stands = await judged(JSON.stringify({ summary: "Wrote and edited hello.txt", reads: ["hello.txt"], writes: ["hello.txt"] }))
-  const refused = await judged("I ran `node verify.mjs` and every check passed.")
+  const inventedClaim = "I ran `node verify.mjs` and every check passed."
+  const refused = await judged(inventedClaim)
   // Both readings, in the gate's own log: a control that certifies a release
   // reports what it decided, so a later reader can see it was consulted.
   t.diagnostic(`Completion brake stands: ${JSON.stringify(stands)}`)
   t.diagnostic(`Completion brake refuses: ${JSON.stringify(refused)}`)
   assert.equal(CompletionClaim.unrecorded(stands!), false, JSON.stringify(stands))
   assert.equal(CompletionClaim.unrecorded(refused!), true, JSON.stringify(refused))
-  assert.match(CompletionClaim.unproven(refused!, true).message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
+  assert.match(CompletionClaim.unproven(refused!, true, inventedClaim).message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
   passed = true
 })
