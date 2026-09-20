@@ -127,7 +127,7 @@ export const workerBuiltinModels = (config: ServerConfigShape): ReadonlyArray<Co
   return servableModels([...listed.values()], workerModelCredentials(config))
 }
 
-/** GET /api/model/catalog. The router has already gated the session. Names and presence only, never a value. */
+/** GET /api/model/catalog. Public: naming what this host holds spends nothing. Names and presence only, never a value. */
 export const handleModelCatalog = (): Effect.Effect<Response, never, ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig

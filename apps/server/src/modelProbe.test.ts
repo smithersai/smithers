@@ -15,6 +15,7 @@ import {
   ModelCatalogSchema,
   ModelTestResultSchema,
   bindingOf,
+  modelSeatsOf,
   planModelBinding
 } from "@smthrs/rpc/ConfiguredModel"
 import type { ConfiguredModel, ModelCallInput, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
@@ -483,9 +484,10 @@ describe("POST /api/model/test refuses a body it will not run", () => {
 /*
  * The two routes through the Worker's real fetch handler, with the platform
  * fetch patched: identity decides the session, and anything else is the
- * provider.
+ * provider. The catalog is public; the Test is what the session and the
+ * login's budget gate.
  */
-describe("the model routes behind the session and the login's budget", () => {
+describe("the model routes, the public catalog and the gated Test", () => {
   const realFetch = globalThis.fetch
   afterEach(() => {
     globalThis.fetch = realFetch
@@ -553,29 +555,48 @@ describe("the model routes behind the session and the login's budget", () => {
     expect((await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, { method: "POST" }), env)).status).toBe(401)
   })
 
-  test("a signed-out caller is sign_in_required on both, and no key is spent", async () => {
+  /*
+   * Naming what this deployment already holds spends nothing, so the catalog
+   * is public: a signed-out visitor sees the free seat rather than a refusal
+   * that reads as "no models". Only the Test spends, and it keeps the gate.
+   */
+  test("the catalog is public: a signed-out caller reads the rows and seats, and no value is in the body", async () => {
     const { provider } = seams(() => new Response("{}", { status: 401 }))
-    for (const request of [catalogRequest(), testRequest()]) {
-      const response = await worker.fetch(request, gatedEnv())
-      expect(response.status).toBe(401)
-      expect(await codeOf(response)).toBe("sign_in_required")
-    }
+    const response = await worker.fetch(catalogRequest(), gatedEnv())
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    const body = ModelCatalogSchema.parse(JSON.parse(text))
+    expect(body.models.length).toBeGreaterThan(0)
+    expect(body.models.every((model) => model.builtin === true && model.credential === "CEREBRAS_API_KEY")).toBe(true)
+    expect(body.seats).toEqual([...modelSeatsOf("cloud")])
+    expect(body.credentials.map((row) => [row.name, row.present])).toEqual([
+      ["CEREBRAS_API_KEY", true],
+      ["AI_GATEWAY_API_KEY", false]
+    ])
+    expect(text).not.toContain(CEREBRAS_SECRET)
     expect(provider.length).toBe(0)
   })
 
-  test("an account off the allowlist is refused on both", async () => {
+  test("a signed-out caller is sign_in_required on the Test, and no key is spent", async () => {
+    const { provider } = seams(() => new Response("{}", { status: 401 }))
+    const response = await worker.fetch(testRequest(), gatedEnv())
+    expect(response.status).toBe(401)
+    expect(await codeOf(response)).toBe("sign_in_required")
+    expect(provider.length).toBe(0)
+  })
+
+  test("an account off the allowlist still reads the catalog, and is refused the Test", async () => {
     const { provider } = seams(session("stranger", false))
-    for (const request of [catalogRequest(SIGNED_IN), testRequest(SIGNED_IN)]) {
-      const response = await worker.fetch(request, gatedEnv())
-      expect(response.status).toBe(403)
-      expect(await codeOf(response)).toBe("account_not_allowlisted")
-    }
+    expect((await worker.fetch(catalogRequest(SIGNED_IN), gatedEnv())).status).toBe(200)
+    const response = await worker.fetch(testRequest(SIGNED_IN), gatedEnv())
+    expect(response.status).toBe(403)
+    expect(await codeOf(response)).toBe("account_not_allowlisted")
     expect(provider.length).toBe(0)
   })
 
   test("each route answers its own method only", async () => {
     seams(session("will", true))
-    const posted = await worker.fetch(new Request(`https://mvp.test${MODEL_CATALOG_PATH}`, { method: "POST", headers: SIGNED_IN }), gatedEnv())
+    const posted = await worker.fetch(new Request(`https://mvp.test${MODEL_CATALOG_PATH}`, { method: "POST" }), gatedEnv())
     expect(await codeOf(posted)).toBe("method_not_allowed")
     const got = await worker.fetch(new Request(`https://mvp.test${MODEL_TEST_PATH}`, { headers: SIGNED_IN }), gatedEnv())
     expect(await codeOf(got)).toBe("method_not_allowed")

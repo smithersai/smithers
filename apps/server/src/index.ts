@@ -397,9 +397,10 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       }
       return yield* handleModelStream(request, gate)
     }
-    // The Models surface (src/modelProbe.ts). Both sit behind the session:
-    // the catalog names what this deployment holds, and a Test spends a
-    // deployment key, so it spends one turn of the login's budget first.
+    // The Models surface (src/modelProbe.ts). Naming what this deployment
+    // holds spends nothing, so the catalog is public; a Test spends a
+    // deployment key, so it sits behind the session and spends one turn of
+    // the login's budget first.
     if (url.pathname === MODEL_CREDENTIAL_PATH || url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH) {
       if (request.method !== (url.pathname === MODEL_CREDENTIAL_PATH ? "POST" : "GET")) return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
@@ -410,8 +411,6 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     }
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
-      const gate = yield* requireTurnSession(request)
-      if (gate instanceof Response) return gate
       return yield* handleModelCatalog()
     }
     if (url.pathname === MODEL_TEST_PATH) {
