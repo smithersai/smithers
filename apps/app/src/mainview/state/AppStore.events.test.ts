@@ -12,6 +12,7 @@ import { PRIVACY_RETIREMENT_KEY, readPrivacyRetirement } from "../chain/PrivacyR
 import { ENVELOPE_STORAGE_KEY,parseStorageEnvelope } from "../chain/TransactionalStorage"
 import { digest } from "@smthrs/core/Digest"
 import { APP_PROJECTOR_VERSION, AppProjectorVersionError, AppEventIntegrityError, appProjectionHash, retiredAppStreamKey, replayAppEvents } from "./AppEventStream"
+import { APP_PROJECTION_COLLECTION_NAMES } from "./AppProjection"
 import { initialSession, cardFrameId } from "./AppState"
 import { createAppStore,PERSISTED_COLLECTION_SPECS,type AppStore } from "./AppStore"
 import { canonicalEventValue, decodeEventValue, encodeEventValue } from "./EventValue"
@@ -382,6 +383,53 @@ describe("the live store's authoritative event path", () => {
     expect([restored.collections.models.size, restored.collections.seats.size]).toEqual([0, 0])
     await restored.dispatch({ type: "model.saved", actor: "user", model: { id: "mine", protocol: "anthropic-messages", modelId: "claude-fable-5", credential: "ANTHROPIC_API_KEY" } }).isPersisted.promise
     expect((await restored.verifyState()).valid).toBe(true)
+  })
+
+  test("the collection roster is pinned to the projector version", () => {
+    /*
+     * A checkpoint naming another roster is refused at boot, so a collection
+     * added or removed without moving the version locks every saved stream
+     * out. Changing this list owes a bump and an upgrade test like the ones
+     * below.
+     */
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 12, roster: [
+      "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "chainEvents", "changes",
+      "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
+      "githubAppStatuses", "harnesses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
+      "notificationReceipts", "pinnedRepos", "practiceIssues", "recommendations", "repoTree", "repos", "repositories",
+      "repositoryContexts", "repositoryFlows", "repositoryNotifications", "retiredChainLineages", "runtimeApprovals",
+      "runtimeRuns", "seats", "sessions", "starredTargets", "tabs", "toasts", "toolCalls", "transitions", "workingCopies",
+      "workspaces", "worldDocuments"
+    ] })
+  })
+
+  test("version 11 upgrade rotates a checkpoint written before flow durations existed", async () => {
+    /*
+     * Version 11 checkpointed 44 collections. The flow builder added
+     * `flowDurations` without moving the version, so every saved version 11
+     * stream was refused at boot (projection). The version moves and the
+     * rotation re-seeds from the rows on disk.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "kept" }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    const { flowDurations: _flowDurations, ...snapshot } = structuredClone(old.checkpoint.snapshot)
+    const head = { ...old.head, projectorVersion: 11 }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 11, snapshot }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session().draft).toBe("kept")
+    expect(restored.collections.flowDurations.size).toBe(0)
   })
 
   test("version 3 upgrade preserves a deferred repository command and its route receipt", async () => {
