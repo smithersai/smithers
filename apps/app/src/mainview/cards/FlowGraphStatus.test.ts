@@ -179,6 +179,57 @@ describe("the run graph folded from recorded run-events", () => {
     }
   })
 
+  /*
+   * A node wider than one page is seated with no dependencies on it and
+   * continued on the pages that follow, each carrying the next slice of
+   * `dependsOn`. That is how `@smthrs/flow` records an input-driven fan-in at
+   * any width, so the fold has to union the slices.
+   */
+  test("unions the dependency slices of a node paged across records", () => {
+    const plan = rowsOf("flows.engine.plan-recorded")
+      .find((row) => envelopeOf(row).payload["flow"] === RECORDED.flow)
+    if (plan === undefined) throw new Error("the recording records no plan for the fixture flow")
+    const envelope = envelopeOf(plan)
+    const graph = envelope.payload["graph"] as {
+      readonly nodes: ReadonlyArray<{ readonly id: string; readonly dependsOn: ReadonlyArray<string> }>
+      readonly edges: ReadonlyArray<unknown>
+    }
+    const wide = graph.nodes.find((node) => node.dependsOn.length > 1)
+    if (wide === undefined) throw new Error("the recording plans no node with two dependencies")
+    // The recorded page with that node's dependency list cut in two: the seat
+    // keeps the first, and one subgraph page carries the rest.
+    const seated = edited(plan, {
+      graph: {
+        ...graph,
+        nodes: graph.nodes.map((node) => node === wide ? { ...node, dependsOn: wide.dependsOn.slice(0, 1) } : node)
+      }
+    })
+    const continued: JournalRecord = {
+      ...plan,
+      sequence: after(),
+      payload: {
+        ...envelope,
+        sequence: envelope.sequence + 10_000,
+        eventType: "flows.engine.subgraph-appended",
+        payload: {
+          flow: envelope.payload["flow"],
+          generation: envelope.payload["generation"],
+          nodeIds: [wide.id],
+          page: 1,
+          pages: 2,
+          graph: { nodes: [{ ...wide, dependsOn: wide.dependsOn.slice(1) }], edges: [] }
+        }
+      }
+    }
+    const paged = runGraphOf(
+      foldRunGraph([...ROWS.map((row) => row === plan ? seated : row), continued]),
+      { planNodeIds: PLAN_IDS }
+    )
+    expect(paged?.nodes.find((node) => node.id === wide.id)?.dependsOn).toEqual([...wide.dependsOn])
+    // Nothing else moved: the seat and the continuation describe one node.
+    expect(paged?.nodes.map((node) => node.id).sort()).toEqual([...PLAN_IDS].sort())
+  })
+
   test("keeps a node running when its settlement never arrives", () => {
     const settled = rowsOf("flows.engine.node-settled")
       .find((row) => envelopeOf(row).payload["nodeId"] === "root.flow.then.map.all.steady")

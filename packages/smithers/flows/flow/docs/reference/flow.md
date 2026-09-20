@@ -1191,12 +1191,18 @@ The execution id a `child` boundary runs its child under, derived from the paren
 
 The largest UTF-8 encoded plan page, including its envelope. The runtime's
 optional `nodeRecordBytes` hook measures a conservative complete journal entry;
-without a writer hook the interpreter measures the whole node record. Pages
-keep nodes and their incoming edges together. If one node cannot fit alone,
-`node_record_too_large` refuses the graph before any page or action is written.
-Every page has a deterministic source id across resume. The gateway refuses a
-bridged graph event exceeding 16 KiB including its control envelope; it never
-clips topology.
+without a writer hook the interpreter measures the whole node record. Nothing
+about one node has to fit one page: a node is seated with no dependencies on
+it, and its dependency list and its incoming edges are spread over as many
+following pages as they need, so an input-driven fan-in of any width is
+recorded rather than refused. A continuation page re-seats the same summary
+with the next disjoint slice of `dependsOn`; a reader assembles pages in order,
+unions `dependsOn` per node id and concatenates edges. Only a node whose
+summary with NO dependencies on it still exceeds the budget is refused, with
+`node_record_too_large`, before any page or action is written. Every page has a
+deterministic source id across resume. The gateway refuses a bridged graph
+event exceeding 16 KiB including its control envelope; it never clips
+topology.
 
 ### `Interpreter.interpret`
 

@@ -567,17 +567,44 @@ admission/boundary checks as execution. This lane leaves it blocked rather
 than claiming Will's cross-run incremental goal is implemented.
 
 
-### D-061 — Graph pages have an encoded bound and an explicit refusal. RULED (cfxengine review fix)
+### D-061 — Graph pages have an encoded bound, and no width is refused. RULED (cfxengine review fix; AMENDED 2026-09-20)
 The interpreter preflights every page at 12,000 UTF-8 bytes. A durable host
 measures the full redacted journal entry, including producer/event ids and
-reserved sequence/time fields, through `nodeRecordBytes`. Nodes and incoming
-edges stay together; a node that cannot fit alone returns
-`InterpreterError {code: "node_record_too_large"}` before recording a partial
-plan or dispatching work. Thus the original 400-way fan-in is refused; a
-400-leaf tree with bounded joins pages without losing topology.
+reserved sequence/time fields, through `nodeRecordBytes`.
 
-Page ids are deterministic within an execution, including page boundaries:
-measurement reserves numeric envelope widths rather than reading the clock or
+AMENDED: nothing about one node has to fit one page. A node is seated with no
+dependencies on it, and then its dependency list and the edges that END on it
+are spread over as many following pages as they need; a continuation page
+re-seats the same summary with the next DISJOINT slice of `dependsOn`. A
+reader assembles pages in order, unions `dependsOn` per node id and
+concatenates edges (`FlowGraphStatus.absorb`). The summary is seated no later
+than the first page naming one of its dependencies or edges, so an assembled
+PREFIX never names an edge whose destination is unknown. The page boundary is
+found by bisection, so a thousand-way fan-in costs a logarithmic number of
+measurements per page rather than one per item.
+
+The original ruling kept nodes and incoming edges together and refused any
+node that could not fit alone. Review 3 measured what that costs: a flat
+`Node.all` was accepted at 130 members and refused at 140 under the in-memory
+measure, lower on a durable host, while `flows/wiki/workflow.ts:66` fans out
+over `input.pages` — a caller-sized width. A plan-time refusal that depends on
+the caller's input size is not a bound anyone can design against, so the width
+is paged instead. `InterpreterError {code: "node_record_too_large"}` is left
+for the one thing paging cannot divide: a node whose summary with NO
+dependencies on it still exceeds the budget, and a runtime whose envelope has
+no room for a single dependency or edge beside a seated node. Both refuse
+before any page is recorded or any work is dispatched.
+
+A 1,000-way fan-in is now recorded, through the durable envelope, park and
+resume included (`engine-store/test/InterpreterNodeJournal.test.ts` "pages a
+thousand-way fan-in through the durable envelope, once across resume").
+
+Page ids remain deterministic within an execution, including page boundaries:
+the reserved page-count width is nodes + dependencies + edges, an upper bound
+on how many pages can exist, so replacing it with the final count can only
+shrink an encoded envelope.
+
+Measurement reserves numeric envelope widths rather than reading the clock or
 journal sequence. Real SQLite park/resume tests compare the persisted pages
 byte for byte. The gateway applies its 16 KiB UTF-8 event bound to the complete
 bridged graph envelope and returns `resource_limit` for an oversized legacy

@@ -593,10 +593,23 @@ it("keeps every Unicode plan page within the encoded entry budget exactly once a
             )
           }
           expect(before.length).toBeGreaterThan(1)
-          const ids = before.flatMap((entry) =>
-            (entry.payload as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((node) => node.id)
-          )
-          expect(ids).toEqual(Graph.nodes(Graph.build(Paged, {})).map((node) => node.id))
+          // Assembled in page order. A node wider than one page is seated and
+          // then continued, so the same id appears again with the next slice
+          // of its dependency list; the graph is the union.
+          const assembled = new Map<string, Array<string>>()
+          for (const entry of before) {
+            const graph = (entry.payload as {
+              graph: { nodes: Array<{ id: string; dependsOn: ReadonlyArray<string> }> }
+            }).graph
+            for (const node of graph.nodes) {
+              const held = assembled.get(node.id)
+              if (held === undefined) assembled.set(node.id, [...node.dependsOn])
+              else held.push(...node.dependsOn)
+            }
+          }
+          const planned = Graph.nodes(Graph.build(Paged, {}))
+          expect([...assembled.keys()]).toEqual(planned.map((node) => node.id))
+          for (const node of planned) expect(assembled.get(node.id)).toEqual([...node.dependencies])
           yield* engine.deferredDone(gate, {
             flowName: Paged._tag,
             executionId: runId,
@@ -617,6 +630,115 @@ it("keeps every Unicode plan page within the encoded entry budget exactly once a
     await rm(root, { recursive: true, force: true })
   }
 })
+
+/*
+ * The width a caller chooses, not the width a page happens to hold.
+ *
+ * `flows/wiki` fans out over an input-sized list, so a fan-in of any width is
+ * something a host really records. The node's summary, its dependency list and
+ * the thousand edges that end on it are spread over as many pages as they
+ * need, measured through the DURABLE envelope — the redacted journal entry
+ * this store writes, not an in-memory guess — and the run still parks and
+ * resumes onto the rows the first walk wrote.
+ */
+it("pages a thousand-way fan-in through the durable envelope, once across resume", async () => {
+  const root = await mkdtemp(join(tmpdir(), "smithers-fan-in-"))
+  const runId = "fan-in-run"
+  const Wide = Flow.make("node-journal/fan-in", {
+    payload: {},
+    success: Schema.Number,
+    body: () => {
+      const members: Record<string, Node.Node<number>> = {}
+      for (let index = 0; index < 1000; index++) members[`page-of-a-caller-sized-list-${index}`] = Node.succeed(index)
+      return Node.all({ values: Node.all(members), gate: Ask.call({}) }).pipe(
+        Node.map(({ values }) => Object.keys(values).length)
+      )
+    }
+  })
+  try {
+    await runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "fan-in" },
+          journalSource: "fan-in-test",
+          isAlive: () => Effect.succeed(false)
+        })
+        const layer = Layer.mergeAll(parkingImplementations, Interpreter.layer(Wide)).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+        )
+        yield* Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          const runs = yield* RunStore.RunStore
+          const pages = () =>
+            journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 10_000 }).pipe(
+              Effect.map((result) =>
+                result.entries.filter((entry) =>
+                  entry.eventType === "flows.engine.plan-recorded" ||
+                  entry.eventType === "flows.engine.subgraph-appended"
+                )
+              )
+            )
+          yield* Wide.execute({}, { executionId: runId, discard: true })
+          expect((yield* runs.get(runId)).status).toBe("suspended")
+          const before = yield* pages()
+          expect(before.length).toBeGreaterThan(1)
+          for (const page of before) {
+            expect(new TextEncoder().encode(JSON.stringify(page)).byteLength).toBeLessThanOrEqual(
+              Interpreter.maximumPageBytes
+            )
+          }
+          const graphOf = (entry: { readonly payload: unknown }) =>
+            (entry.payload as {
+              graph: {
+                nodes: ReadonlyArray<{ id: string; dependsOn: ReadonlyArray<string> }>
+                edges: ReadonlyArray<{ from: string; to: string; reason: string }>
+              }
+            }).graph
+          // Assembled, the pages are the whole graph: each node once, with the
+          // dependency list it was built with, and each edge exactly once.
+          const built = Graph.build(Wide, {})
+          const assembled = new Map<string, Array<string>>()
+          for (const entry of before) {
+            for (const node of graphOf(entry).nodes) {
+              const held = assembled.get(node.id)
+              if (held === undefined) assembled.set(node.id, [...node.dependsOn])
+              else held.push(...node.dependsOn)
+            }
+          }
+          expect([...assembled.keys()]).toEqual(Graph.nodes(built).map((node) => node.id))
+          for (const node of Graph.nodes(built)) expect(assembled.get(node.id)).toEqual([...node.dependencies])
+          const edge = (value: { readonly from: string; readonly to: string; readonly reason: string }) =>
+            `${value.from}->${value.to}:${value.reason}`
+          expect(before.flatMap((entry) => graphOf(entry).edges.map(edge)).sort())
+            .toEqual(Graph.edges(built).map(edge).sort())
+          // An assembled PREFIX never names an edge with no destination.
+          const known = new Set<string>()
+          for (const entry of before) {
+            for (const node of graphOf(entry).nodes) known.add(node.id)
+            for (const value of graphOf(entry).edges) expect(known.has(value.to)).toBe(true)
+          }
+          yield* engine.deferredDone(gate, {
+            flowName: Wide._tag,
+            executionId: runId,
+            deferredName: gate.name,
+            exit: Exit.succeed(4)
+          })
+          expect((yield* settledRun(runs, runId)).status).toBe("completed")
+          // Exactly once across the resume: the same page ids, the same rows.
+          expect(yield* pages()).toEqual(before)
+          expect(new Set(before.map((page) => page.sourceId)).size).toBe(before.length)
+        }).pipe(Effect.provide(layer))
+      })).pipe(
+        Effect.provide(jj),
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(TestStores.layerAt(join(root, "state.sqlite")))
+      )
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}, 300_000)
 
 /**
  * One run under a declared revision, and the pages its graph was recorded on.

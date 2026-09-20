@@ -239,10 +239,18 @@ const absorb = (execution: Building, graph: typeof EngineEvent.NodeGraph.Type | 
   else if (execution.sourceRevision !== graph.sourceRevision) execution.sourceRevision = undefined
   execution.pages += 1
   for (const node of graph.nodes) {
+    /*
+     * A node wider than one page is seated with no dependencies on it and
+     * continued on the pages that follow, each carrying the next disjoint
+     * slice of `dependsOn` (`@smthrs/flow`'s `planPages`). The slices are
+     * UNIONED: replacing the held node would keep only the last slice, and a
+     * fan-in would read as a node with two dependencies.
+     */
+    const held = execution.nodes.get(node.id)
     execution.nodes.set(node.id, {
       id: node.id,
       kind: node.kind,
-      dependsOn: [...node.dependsOn],
+      dependsOn: held === undefined ? [...node.dependsOn] : [...held.dependsOn, ...node.dependsOn],
       tier: node.tier,
       ...(node.action === undefined ? {} : { action: node.action }),
       ...(node.declaredAt === undefined ? {} : { declaredAt: { path: node.declaredAt.path, line: node.declaredAt.line } })

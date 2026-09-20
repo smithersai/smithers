@@ -253,8 +253,8 @@ describe("Interpreter node events", () => {
       const paged = pages.flatMap((page) => page.nodes.map((node) => node.id))
       expect(paged).toEqual(Graph.nodes(Graph.build(wide, {})).map((node) => node.id))
       expect(paged).toHaveLength(pages[0]!._tag === "PlanRecorded" ? pages[0]!.nodeCount : 0)
-      const edgeIds = (edges: ReadonlyArray<FlowRuntime.EdgeSummary>) => edges.map((edge) =>
-        JSON.stringify([edge.from, edge.to, edge.reason])).sort()
+      const edgeIds = (edges: ReadonlyArray<FlowRuntime.EdgeSummary>) =>
+        edges.map((edge) => JSON.stringify([edge.from, edge.to, edge.reason])).sort()
       expect(edgeIds(pages.flatMap((page) => page.edges))).toEqual(edgeIds(Graph.edges(Graph.build(wide, {}))))
       for (const page of pages) {
         expect(new TextEncoder().encode(JSON.stringify(page)).byteLength).toBeLessThanOrEqual(
@@ -314,16 +314,44 @@ describe("Interpreter node events", () => {
       expect(records(memory)).toEqual([])
     }))
 
-  it.effect("refuses a 400-way fan-in before recording any partial plan or dispatching", () =>
+  it.effect("refuses when a fresh page cannot hold one more of a node's dependencies", () =>
     Effect.gen(function*() {
-      const wide = Flow.make("node-events/oversized", {
+      const memory = makeMemoryState()
+      // A host whose envelope has room for a node summary and none for a
+      // single dependency beside it. Paging has nowhere left to put one, so
+      // the graph is refused rather than started on page after page.
+      const error = yield* drive(
+        Effect.flip(
+          Interpreter.interpret(Chain, { path: "abcd" }).pipe(
+            Effect.updateService(FlowRuntime.FlowRuntime, (runtime) => ({
+              ...runtime,
+              nodeRecordBytes: (record: FlowRuntime.NodeRecord) =>
+                Effect.succeed(
+                  record._tag === "PlanRecorded" || record._tag === "SubgraphAppended"
+                    ? record.nodes.reduce((total, node) => total + node.dependsOn.length, record.edges.length) *
+                      (Interpreter.maximumPageBytes + 1)
+                    : 0
+                )
+            }))
+          )
+        ),
+        memory
+      )
+      expect(error).toBeInstanceOf(Interpreter.InterpreterError)
+      expect(error).toMatchObject({ code: "node_record_too_large", flow: Chain._tag })
+      expect(records(memory)).toEqual([])
+    }))
+
+  it.effect("pages a thousand-way fan-in rather than refusing the width", () =>
+    Effect.gen(function*() {
+      const wide = Flow.make("node-events/fan-in", {
         payload: {},
         success: Schema.Array(Schema.Number),
         body: () =>
           Node.all(
             Object.fromEntries(
               Array.from(
-                { length: 400 },
+                { length: 1000 },
                 (_, index) => [`member-with-a-long-enough-name-to-page-${index}`, Node.succeed(index)]
               )
             )
@@ -331,9 +359,62 @@ describe("Interpreter node events", () => {
             .pipe(Node.map((values) => Object.values(values)))
       })
       const memory = makeMemoryState()
-      const error = yield* drive(Effect.flip(Interpreter.interpret(wide, {})), memory)
+      yield* drive(Interpreter.interpret(wide, {}), memory)
+
+      const pages = records(memory).filter((record) =>
+        record._tag === "PlanRecorded" || record._tag === "SubgraphAppended"
+      )
+      const built = Graph.build(wide, {})
+      expect(pages[0]!._tag).toBe("PlanRecorded")
+      expect(pages.slice(1).every((page) => page._tag === "SubgraphAppended")).toBe(true)
+      // Every page fits the budget, and the join node's thousand dependencies
+      // and thousand incoming edges are spread over as many pages as they need.
+      for (const page of pages) {
+        expect(new TextEncoder().encode(JSON.stringify(page)).byteLength).toBeLessThanOrEqual(
+          Interpreter.maximumPageBytes
+        )
+      }
+      // Assembled, the pages are the whole graph: each node once, with the
+      // dependency list it was built with, and every edge exactly once.
+      const assembled = new Map<string, Array<string>>()
+      for (const page of pages) {
+        for (const node of page.nodes) {
+          const held = assembled.get(node.id)
+          if (held === undefined) assembled.set(node.id, [...node.dependsOn])
+          else held.push(...node.dependsOn)
+        }
+      }
+      expect([...assembled.keys()]).toEqual(Graph.nodes(built).map((node) => node.id))
+      for (const node of Graph.nodes(built)) {
+        expect(assembled.get(node.id)).toEqual([...node.dependencies])
+      }
+      const edge = (value: { readonly from: string; readonly to: string; readonly reason: string }) =>
+        `${value.from}->${value.to}:${value.reason}`
+      expect(pages.flatMap((page) => page.edges.map(edge)).sort()).toEqual(Graph.edges(built).map(edge).sort())
+      expect(new Set(pages.map((page) => page.sourceId)).size).toBe(pages.length)
+      // The node's summary is never later than a page naming it, so an
+      // assembled PREFIX of pages never names an edge with no destination.
+      const known = new Set<string>()
+      for (const page of pages) {
+        for (const node of page.nodes) known.add(node.id)
+        for (const edge of page.edges) expect(known.has(edge.to)).toBe(true)
+      }
+    }))
+
+  it.effect("refuses only the node whose bare summary cannot fit a page", () =>
+    Effect.gen(function*() {
+      const huge = Flow.make("node-events/oversized", {
+        payload: {},
+        success: Schema.Number,
+        body: () =>
+          Node.all({ ["m".repeat(Interpreter.maximumPageBytes * 2)]: Node.succeed(1) }).pipe(
+            Node.map((values) => Object.values(values).length)
+          )
+      })
+      const memory = makeMemoryState()
+      const error = yield* drive(Effect.flip(Interpreter.interpret(huge, {})), memory)
       expect(error).toBeInstanceOf(Interpreter.InterpreterError)
-      expect(error).toMatchObject({ code: "node_record_too_large", flow: wide._tag })
+      expect(error).toMatchObject({ code: "node_record_too_large", flow: huge._tag })
       expect(records(memory)).toEqual([])
     }))
 

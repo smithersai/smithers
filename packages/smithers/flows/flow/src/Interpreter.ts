@@ -227,9 +227,21 @@ const summarize = (node: Graph.GraphNode): NodeRecord.NodeSummary => {
 /**
  * The graph, as the pages a journal can hold.
  *
- * Each page carries its nodes and the edges that END on them, so an assembled
- * set of pages is the whole graph and a page on its own never names an edge
- * whose destination is missing.
+ * Nothing about one node has to fit one page. A node's summary is seated on a
+ * page with no dependencies on it, and then its dependency list and the edges
+ * that END on it are spread over as many following pages as they need: a
+ * continuation page re-seats the same summary and carries the next disjoint
+ * slice of `dependsOn`, so a reader that unions `dependsOn` per node id and
+ * concatenates edges reassembles exactly the graph that was built. That is
+ * what lets an input-driven fan-in — `Node.all` over a caller-sized list — be
+ * recorded at any width instead of refused.
+ *
+ * A node's summary is seated no later than the first page naming one of its
+ * dependencies or one of its incoming edges, so an assembled PREFIX of pages
+ * never names an edge whose destination is unknown.
+ *
+ * The typed refusal is left for the one thing paging cannot divide: a node
+ * whose summary with NO dependencies on it still exceeds the budget.
  *
  * @private
  */
@@ -244,7 +256,9 @@ const planPages = (
 > =>
   Effect.gen(function*() {
     const incoming = new Map<string, Array<NodeRecord.EdgeSummary>>()
+    let edgeCount = 0
     for (const edge of Graph.edges(graph)) {
+      edgeCount += 1
       const summary = { from: edge.from, to: edge.to, reason: edge.reason }
       const existing = incoming.get(edge.to)
       if (existing === undefined) incoming.set(edge.to, [summary])
@@ -269,28 +283,110 @@ const planPages = (
       pages: count,
       ...page
     })
-    // The page count is at most the node count. Reserve that many digits so
-    // replacing it with the final count can never grow an encoded envelope.
+    // Every page is started by a node seat or by an edge, and a node is seated
+    // once plus at most once per dependency that starts a continuation page,
+    // so the page count is at most nodes + dependencies + edges. Reserving
+    // that many digits is what makes replacing the reservation with the final
+    // count shrink an encoded envelope or leave it alone, never grow it.
+    const reserved = graphNodes.reduce(
+      (total, node) => total + KeyMaterial.dependencies(node.draft.material).length,
+      graphNodes.length + edgeCount
+    )
     const fits = (page: Page) =>
-      Effect.map(measure(record(page, pages.length, graphNodes.length)), (bytes) => bytes <= maximumPageBytes)
+      Effect.map(measure(record(page, pages.length, reserved)), (bytes) => bytes <= maximumPageBytes)
+    const flush = () => {
+      pages.push(current)
+      current = { nodes: [], edges: [] }
+    }
+    /**
+     * How many of the remaining items the page still holds.
+     *
+     * A page only grows as items are added to it, so the boundary is found by
+     * bisection: a thousand-way fan-in costs a logarithmic number of
+     * measurements per page rather than one per item. Taking none is the page
+     * as it stands, which was measured before anything was offered to it.
+     */
+    const admits = <T>(rest: ReadonlyArray<T>, grow: (take: number) => Page) =>
+      Effect.gen(function*() {
+        if (yield* fits(grow(rest.length))) return rest.length
+        let low = 0
+        let high = rest.length - 1
+        while (low < high) {
+          const mid = low + Math.ceil((high - low) / 2)
+          if (yield* fits(grow(mid))) low = mid
+          else high = mid - 1
+        }
+        return low
+      })
+    /**
+     * Puts every item somewhere, starting a page whenever the current one is
+     * full. `resume` prepares a freshly started page so what follows still
+     * says which node it belongs to, and a page that was just started and
+     * admits nothing is the end of what paging can do.
+     */
+    const spread = <T>(
+      items: ReadonlyArray<T>,
+      onto: (page: Page, taken: ReadonlyArray<T>) => Page,
+      resume: (page: Page) => Page,
+      refusal: () => InterpreterError
+    ): Effect.Effect<void, InterpreterError, FlowInstance> =>
+      Effect.gen(function*() {
+        let rest = items
+        let started = false
+        while (rest.length > 0) {
+          const take = yield* admits(rest, (count) => onto(current, rest.slice(0, count)))
+          if (take > 0) {
+            current = onto(current, rest.slice(0, take))
+            rest = rest.slice(take)
+            started = false
+            continue
+          }
+          if (started) return yield* refusal()
+          flush()
+          current = resume(current)
+          started = true
+        }
+      })
     for (const node of graphNodes) {
       const summary = summarize(node)
       const arriving = incoming.get(node.id) ?? []
-      const next = { nodes: [...current.nodes, summary], edges: [...current.edges, ...arriving] }
-      if (yield* fits(next)) {
-        current = next
-        continue
-      }
-      if (current.nodes.length > 0) pages.push(current)
-      current = { nodes: [summary], edges: arriving }
-      if (!(yield* fits(current))) {
-        return yield* new InterpreterError({
+      // The summary alone first. What a page must hold whole is the node
+      // itself, and that is the only thing left to refuse.
+      const bare: NodeRecord.NodeSummary = { ...summary, dependsOn: [] }
+      const seat = (page: Page): Page => ({ nodes: [...page.nodes, bare], edges: page.edges })
+      const tooLarge = () =>
+        new InterpreterError({
           code: "node_record_too_large",
           flow,
           node: node.id,
-          message: `Node topology and its encoded envelope exceed ${maximumPageBytes} bytes`
+          message:
+            `Node "${node.id}" and its encoded envelope exceed ${maximumPageBytes} bytes with no dependencies on it`
         })
+      if (!(yield* fits(seat(current)))) {
+        if (current.nodes.length > 0 || current.edges.length > 0) flush()
+        if (!(yield* fits(seat(current)))) return yield* tooLarge()
       }
+      current = seat(current)
+      // Then its dependencies, onto the summary the page just seated, and then
+      // the edges that end on it. Either may run past this page onto the next.
+      yield* spread(
+        summary.dependsOn,
+        (page, taken) => {
+          const seated = page.nodes[page.nodes.length - 1]!
+          return {
+            nodes: [...page.nodes.slice(0, -1), { ...seated, dependsOn: [...seated.dependsOn, ...taken] }],
+            edges: page.edges
+          }
+        },
+        seat,
+        tooLarge
+      )
+      yield* spread(
+        arriving,
+        (page, taken) => ({ nodes: page.nodes, edges: [...page.edges, ...taken] }),
+        (page) => page,
+        tooLarge
+      )
     }
     pages.push(current)
     return pages.map((page, index) => record(page, index, pages.length))

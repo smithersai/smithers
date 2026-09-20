@@ -29,6 +29,12 @@ import type { DeclaredAt } from "../internal/DeclarationSite.ts"
  * is provenance and never identity: it is outside key material by
  * construction, so adding it re-keys nothing.
  *
+ * A node whose dependency list is wider than one page appears on several,
+ * each carrying the next DISJOINT slice of `dependsOn` and everything else
+ * unchanged. A reader assembles pages in order and unions `dependsOn` per id;
+ * keeping only the last summary would read a thousand-way fan-in as a node
+ * with two dependencies.
+ *
  * @since 1.0.0
  * @category models
  */
@@ -71,7 +77,11 @@ export type NodeOutcome = "built" | "clean" | "failed" | "skipped"
  *
  * A large plan is paged rather than truncated: the first page is the plan
  * record and the rest are appended subgraphs, because a journal entry has a
- * byte bound and a projection that clips one loses nodes silently.
+ * byte bound and a projection that clips one loses nodes silently. Nothing
+ * about one node has to fit one page — its summary, its dependency list and
+ * the edges that end on it may each run onto the next — so a page's `nodes`
+ * and `edges` are a SLICE of the graph and only the assembled pages are the
+ * whole of it.
  *
  * @since 1.0.0
  * @category models
