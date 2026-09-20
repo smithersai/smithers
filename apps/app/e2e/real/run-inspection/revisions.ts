@@ -73,6 +73,41 @@ export const captureRevisions = async (page: Page, testInfo: TestInfo, attachmen
   return { ...manifest, frontendRevision: frontend.gitSha as string }
 }
 
+/** A live boundary this tier compared the card at, and the run status it was compared under. */
+export type LiveBoundary = { readonly status: string; readonly seq: number }
+export type LiveInspectionFact =
+  | { _tag: "LiveInspectionObserved"; samples: number; firstSampleStatus: string; sampledAtSeq: number }
+  | {
+    _tag: "LiveInspectionUnexercised"
+    reason: "run-terminal-before-first-sample" | "run-terminal-before-second-sample"
+    samples: number; firstSampleStatus: string; sampledAtSeq: number; message: string
+  }
+
+/**
+ * Whether this run exercised the live claim, or only ended before it could.
+ *
+ * The claim `inspectRunning` makes is that the card follows a GROWING journal
+ * while the run is still running, so it takes two live boundaries to make.
+ * A subject that finishes first proves nothing about a live card, and a pass
+ * that depended on the subject staying slow would be luck rather than
+ * coverage, so the shortfall is named here instead of being counted.
+ */
+export const liveInspectionFact = (
+  observed: readonly LiveBoundary[], stopped?: LiveBoundary
+): LiveInspectionFact => {
+  const first = observed[0] ?? stopped
+  const firstSampleStatus = first?.status ?? "unobserved"
+  const sampledAtSeq = first?.seq ?? -1
+  if (observed.length >= 2) return { _tag: "LiveInspectionObserved", samples: observed.length, firstSampleStatus, sampledAtSeq }
+  return {
+    _tag: "LiveInspectionUnexercised",
+    reason: observed.length === 0 ? "run-terminal-before-first-sample" : "run-terminal-before-second-sample",
+    samples: observed.length, firstSampleStatus, sampledAtSeq,
+    message: `the run read ${stopped?.status ?? "no further boundary"} at #${stopped?.seq ?? sampledAtSeq} after ${observed.length} live ${
+      observed.length === 1 ? "boundary" : "boundaries"}; the live comparison is not this run's evidence`
+  }
+}
+
 export type ReloadBootFact =
   | {
     _tag: "ReloadBootMeasured"; samples: ReadonlyArray<ReloadBootTiming>

@@ -3,7 +3,7 @@ import type { OwnedWorkflowRepository } from "../flow-execution/fixture"
 import { acceptedRunId, gatewayCall, runSummary } from "../flow-execution/production"
 import { attachProductionJson } from "../repositories-github/production"
 import { closeComposer, command, expect, reloadApp } from "../support/test"
-import { GESTURE_SOURCES, STRIP_SOURCES, deployedHeaderSource, deployedSource } from "./revisions"
+import { GESTURE_SOURCES, STRIP_SOURCES, deployedHeaderSource, deployedSource, liveInspectionFact, type LiveBoundary, type LiveInspectionFact } from "./revisions"
 import { journalMeaning, requireLaterPhase, type JournalRow, type Meaning } from "./semantic"
 import { frameLines, phaseStrip, readBands, readLines, readPins } from "./timeline"
 
@@ -122,40 +122,68 @@ const liveDom = (card: Locator) => card.evaluate(element => {
   }
 })
 
-/** Match each DOM snapshot to the independently read journal sequence, then require growth between them. */
+const TERMINAL = new Set(["completed", "failed", "cancelled"])
+
+/**
+ * Match each DOM snapshot to the independently read journal sequence, then require growth between them.
+ *
+ * `onTerminal` is what a subject that finished first means. `fail` is the
+ * claim: this run was supposed to still be running, and a terminal status at
+ * the first comparable boundary is a broken scenario. `report` is for a
+ * subject with no duration floor, where finishing first is an ordinary
+ * outcome: the shortfall becomes a typed fact the caller must carry, and
+ * never a silently passing live claim.
+ */
 export const inspectRunning = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository,
   subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, frontendRevision: string,
-  meaningOf = journalMeaning, requireCallGrowth = true): Promise<void> => {
+  meaningOf = journalMeaning, requireCallGrowth = true, onTerminal: "fail" | "report" = "fail"): Promise<LiveInspectionFact> => {
   type Sample = { journal: readonly JournalRow[]; expected: Meaning; rendered: Awaited<ReturnType<typeof liveDom>>; summary: ReturnType<typeof runSummary> }
   const samples: Sample[] = []
-  const observe = async (previous?: Sample): Promise<Sample> => {
+  const observed: LiveBoundary[] = []
+  let stopped: LiveBoundary | undefined
+  const status = async () => runSummary(await gatewayCall(page, request, owned.repo, "Projection.Snapshot", {
+    selector: { _tag: "run-summary", runId: subject.runId }
+  }, owned.workspaceId))?.status
+  const observe = async (previous?: Sample): Promise<Sample | undefined> => {
     let sample: Sample | undefined
     await expect.poll(async () => {
       const journal = await readJournal(page, request, owned, subject.runId)
       const expected = meaningOf(journal)
+      const through = journal.length === 0 ? -1 : Math.max(...journal.map(row => Number(row.sequence)))
       const callCount = (meaning: Meaning) => meaning.frames.reduce((n, frame) => n + frame.calls.length, 0)
-      if (expected.frames.length <= (previous?.expected.frames.length ?? 0) ||
-        requireCallGrowth && previous !== undefined && callCount(expected) <= callCount(previous.expected)) return false
-      const rendered = await liveDom(subject.card)
-      const through = Math.max(...journal.map(row => Number(row.sequence)))
-      if (rendered.through !== through) return false
-      const summary = runSummary(await gatewayCall(page, request, owned.repo, "Projection.Snapshot", {
-        selector: { _tag: "run-summary", runId: subject.runId }
-      }, owned.workspaceId))
-      expect(summary?.status, "the shared journal boundary is observed while running").toBe("running")
-      sample = { journal, expected, rendered, summary }
-      return true
+      const grew = expected.frames.length > (previous?.expected.frames.length ?? 0) &&
+        (!requireCallGrowth || previous === undefined || callCount(expected) > callCount(previous.expected))
+      if (grew) {
+        const rendered = await liveDom(subject.card)
+        if (rendered.through === through) {
+          const summary = runSummary(await gatewayCall(page, request, owned.repo, "Projection.Snapshot", {
+            selector: { _tag: "run-summary", runId: subject.runId }
+          }, owned.workspaceId))
+          if (onTerminal === "fail") expect(summary?.status, "the shared journal boundary is observed while running").toBe("running")
+          if (summary?.status === "running") {
+            sample = { journal, expected, rendered, summary }
+            observed.push({ status: summary.status, seq: through })
+          } else stopped = { status: String(summary?.status ?? "unknown"), seq: through }
+          return true
+        }
+      }
+      // A run that has stopped will never open the boundary this is waiting for.
+      if (onTerminal === "report") {
+        const now = await status()
+        if (now !== undefined && TERMINAL.has(now)) { stopped = { status: now, seq: through }; return true }
+      }
+      return false
       // A later sample needs the subject's next frame, which is a model response away.
     }, { message: "a later journal boundary must arrive while the run is still running", timeout: 300000, intervals: [250, 500, 1000] }).toBe(true)
-    return sample!
+    return sample
   }
   const deployed = deployedHeaderSource(frontendRevision)
   const headerGaps: unknown[] = []
   try {
     const first = await observe()
-    samples.push(first)
-    const later = await observe(first)
-    samples.push(later)
+    if (first !== undefined) samples.push(first)
+    const later = first === undefined ? undefined : await observe(first)
+    if (later !== undefined) samples.push(later)
     for (const sample of samples) {
       expect(sample.rendered.bands).toEqual(sample.expected.bands)
       expect(sample.rendered.lines).toEqual(sample.expected.lines)
@@ -174,18 +202,24 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
       } else expect(sample.rendered.status).toBe(sample.expected.status)
       expect(sample.rendered.phase).toBe("running")
     }
-    expect(later.rendered.through).toBeGreaterThan(first.rendered.through)
-    // Two consecutive frames of the same phase are one band, so a live strip can
-    // advance without a new band. The frame lines are what must have grown.
-    expect(later.rendered.lines).not.toEqual(first.rendered.lines)
-    expect(later.rendered.lines.length).toBeGreaterThan(first.rendered.lines.length)
-    await subject.card.screenshot({ path: testInfo.outputPath("timeline-running.png") })
-    await testInfo.attach("timeline-running", { path: testInfo.outputPath("timeline-running.png"), contentType: "image/png" })
+    if (first !== undefined && later !== undefined) {
+      expect(later.rendered.through).toBeGreaterThan(first.rendered.through)
+      // Two consecutive frames of the same phase are one band, so a live strip can
+      // advance without a new band. The frame lines are what must have grown.
+      expect(later.rendered.lines).not.toEqual(first.rendered.lines)
+      expect(later.rendered.lines.length).toBeGreaterThan(first.rendered.lines.length)
+      await subject.card.screenshot({ path: testInfo.outputPath("timeline-running.png") })
+      await testInfo.attach("timeline-running", { path: testInfo.outputPath("timeline-running.png"), contentType: "image/png" })
+    }
   } finally {
     await attachProductionJson(testInfo, "timeline-live-observations", samples)
     await attachProductionJson(testInfo, "timeline-deployed-header-source", { deployed, headerGaps })
     for (const gap of headerGaps) testInfo.annotations.push({ type: "DeployedHeaderPredatesWorkingCopy", description: String((gap as { message: string }).message) })
   }
+  const fact = liveInspectionFact(observed, stopped)
+  await attachProductionJson(testInfo, "timeline-live-inspection", fact)
+  if (fact._tag === "LiveInspectionUnexercised") testInfo.annotations.push({ type: fact._tag, description: fact.message })
+  return fact
 }
 
 /**

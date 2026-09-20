@@ -368,7 +368,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     "host:production", "path:success", "door:slash", "dimension:real-provider", "dimension:ordinary-module-flow",
     "dimension:host-revision-evidence", "evidence:recorded-module-step-trail-or-host-predates-commit"
   ],
-  description: "Launch the registered repository issues module through the ordinary UI in an owned workspace. Compare recorded step meanings while live and at completion when the host contains the producer; archive a visible typed host limitation otherwise. Verify two source-grounded research results and that README stays unchanged."
+  description: "Launch the registered repository issues module through the ordinary UI in an owned workspace. Compare recorded step meanings at completion when the host contains the producer, and while live when the run is still running at a comparable boundary; archive a typed host limitation or a typed unexercised live claim otherwise. Verify two source-grounded research results and that README stays unchanged."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   testInfo.setTimeout(30 * 60_000)
   const { repo, workspaceId } = workflowRepo
@@ -402,7 +402,16 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
       payload: { issue: { title: "What is README.md's exact first line?", body: "Answer from README.md and cite it. Do not change files or propose changes." } } } }
   const subject = await launchSubject(page, workflowRepo, "repository-jobs/issues", input, testInfo)
   try {
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, host.frontendRevision, moduleMeaning, false)
+    /*
+     * This module has no duration floor: every one of its steps is one model
+     * turn, and the only structurally long phases the repository job graph
+     * owns are human gates and durable sleeps, which park the run rather than
+     * keep it running. So a live boundary is taken when the run offers one and
+     * named unexercised when it does not, and never assumed.
+     */
+    const live = hostContains(host.sourceCommit, MODULE_COMMIT)
+      ? await inspectRunning(page, request, workflowRepo, subject, testInfo, host.frontendRevision, moduleMeaning, false, "report")
+      : undefined
     const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 10 * 60_000, workspaceId)
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
@@ -432,11 +441,18 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     }
     const expected = moduleMeaning(rows)
     // A host that carries the producer must record this module's steps; only an older one may read empty.
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) expect(expected.frames.length).toBeGreaterThanOrEqual(2)
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) {
+      expect(expected.frames.length).toBeGreaterThanOrEqual(2)
+      // Each frame is placed by the invocation that recorded it, so two steps
+      // cannot be folded into one timeline by a shared frame number.
+      expect(expected.frames.every(frame => frame.node.startsWith("step:")),
+        "a module frame is named by its recorded step scope").toBe(true)
+      expect(new Set(expected.frames.map(frame => frame.node)).size).toBe(expected.frames.length)
+    }
     const rendered = expected.frames.length === 0
       ? await compareEmptyTimeline(subject.card, subject.trace, expected)
       : await compareMeaning(subject.card, subject.trace, expected)
-    await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal,
+    await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal, live,
       recordedFrames: expected.frames.length, hostRevision: host.sourceCommit })
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-module.png") })
     await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
