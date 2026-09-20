@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest, readAuthenticatedSession } from "./auth-permissions/profile"
-import { closeComposer, command, expect, realApi, reloadApp, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, realApi, reloadApp, test } from "./support/test"
 
 const PUBLIC_REPO = "smithersai/smithers"
 
@@ -65,6 +65,7 @@ test("a signed-out production user can verify a public change and diff but chang
   ],
   description: "The deployed public mirror independently proves a concrete change and nonempty diff exist, while the protected UI flow persists its real GitHub sign-in step and renders no invented change card."
 }), async ({ page, request }, testInfo) => {
+  const startedAt = performance.now()
   await page.goto(`/${PUBLIC_REPO}`, { waitUntil: "domcontentloaded" })
   const session = await realApi(page, request, "GET", "/api/auth/session")
   expect(session.status()).toBe(200)
@@ -81,6 +82,8 @@ test("a signed-out production user can verify a public change and diff but chang
   expect(diff.change_id).toBe(change.change_id)
   expect(diff.file_diffs?.length).toBeGreaterThan(0)
 
+  // Every read above is an API read; the view is first needed here.
+  await awaitBoot(page, "navigate", startedAt)
   await openProductionChat(page)
   await command(page, `/change.view ${change.change_id}`)
   await closeComposer(page)
@@ -104,6 +107,7 @@ test("review.request issues no mutation while a production user is signed out", 
   ],
   description: "A real public change establishes the target; review.request parks behind GitHub sign-in, survives reload, and emits no review-request POST while signed out."
 }), async ({ page, request }, testInfo) => {
+  const startedAt = performance.now()
   await page.goto(`/${PUBLIC_REPO}`, { waitUntil: "domcontentloaded" })
   const session = await realApi(page, request, "GET", "/api/auth/session")
   expect(session.status()).toBe(200)
@@ -118,6 +122,7 @@ test("review.request issues no mutation while a production user is signed out", 
     if (url.origin === new URL(page.url()).origin) uiRequests.push({ method: event.method(), path: url.pathname })
   })
 
+  await awaitBoot(page, "navigate", startedAt)
   await openProductionChat(page)
   await command(page, `/review.request ${change.change_id} codeplanesmithers`)
   await closeComposer(page)
@@ -148,6 +153,7 @@ authenticatedTest("an authenticated production user reads a live change and trav
 }), async ({ page, request }, testInfo) => {
   const expectedSession = { login: "codeplanesmithers", allowlisted: true, admin: true }
   expect(await readAuthenticatedSession(page)).toEqual(expectedSession)
+  const startedAt = performance.now()
   await page.goto(`/${PUBLIC_REPO}`, { waitUntil: "domcontentloaded" })
   expect(await readAuthenticatedSession(page)).toEqual(expectedSession)
 
@@ -171,6 +177,7 @@ authenticatedTest("an authenticated production user reads a live change and trav
   const firstFile = diff.file_diffs?.find((file) => typeof file.path === "string")
   expect(firstFile, "The live change must expose a named file in its real diff").toBeDefined()
 
+  await awaitBoot(page, "navigate", startedAt)
   await openProductionChat(page)
   await command(page, `/change.view ${change.change_id}`)
   await closeComposer(page)
@@ -222,6 +229,7 @@ authenticatedTest("an authenticated production user opens the exact live diff th
 }), async ({ page, request }, testInfo) => {
   const expectedSession = { login: "codeplanesmithers", allowlisted: true, admin: true }
   expect(await readAuthenticatedSession(page)).toEqual(expectedSession)
+  const startedAt = performance.now()
   await page.goto(`/${PUBLIC_REPO}`, { waitUntil: "domcontentloaded" })
   const change = await currentPublicChange(page, request)
   const diffResponse = await realApi(page, request, "GET", `/api/repos/${PUBLIC_REPO}/changes/${change.change_id}/diff`)
@@ -236,6 +244,7 @@ authenticatedTest("an authenticated production user opens the exact live diff th
   const hunkText = representativeHunkText(String(file?.patch))
   expect(hunkText, "The selected live patch must contain representative changed text").toBeDefined()
 
+  await awaitBoot(page, "navigate", startedAt)
   await openProductionChat(page)
   await command(page, `/change.diff ${change.change_id} parent current ${path}`)
   await closeComposer(page)
