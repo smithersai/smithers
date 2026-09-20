@@ -1037,10 +1037,10 @@ const stateSection = (state: State): string => {
 /**
  * Places the run's memory after the transcript and before this frame's asks.
  *
- * The count is clamped against the rendered window rather than trusted: a
- * compaction can replace the tail a state was counting, and a block one
- * message too early is a cosmetic misplacement while a splice past the start
- * would drop it.
+ * The count is clamped against the rendered window rather than trusted,
+ * because it is carried in state while the window is rebuilt every frame. A
+ * block one message too early is a misplacement; a splice past the start
+ * would drop the block entirely.
  */
 const withStateSection = (
   messages: ReadonlyArray<ModelRequest.Message>,
