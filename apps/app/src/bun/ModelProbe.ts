@@ -34,7 +34,10 @@ import { localModelCatalog, manualRedirects, modelFailureOf, planOnLocal } from 
 import type { LocalPlanned } from "./ConfiguredModelHost"
 import { toEvaluatorLayer, toModel } from "./ConfiguredModelRoute"
 
+import type { ModelCredentials } from "./ModelCredentials"
+
 export interface ModelProbeOptions {
+  readonly credentials?: ModelCredentials
   /** The record credentials are read from. The host passes the one it was started with. */
   readonly env: ModelCredentialEnv
   /** False on the offline host, which may reach loopback only. */
@@ -102,7 +105,8 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
     const started = performance.now()
     const failed = (failure: ModelTestFailure): ModelTestResult =>
       failedModelTest(failure, performance.now() - started, "local")
-    const planned = planOnLocal(bindingOf(model), options.env, planOptions)
+    await options.credentials?.refresh()
+    const planned = planOnLocal(bindingOf(model), options.env, planOptions, options.credentials)
     if (!planned.ok) return failed(planned.failure)
     const http = manualRedirects(options.fetch)
     const exit = await Effect.runPromiseExit(
@@ -124,5 +128,5 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
       : { ok: true, latencyMs: Math.max(0, Math.round(performance.now() - started)), sample: exit.value.sample }
   }
 
-  return { catalog: () => localModelCatalog(options.env, planOptions), test }
+  return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test }
 }

@@ -51,4 +51,15 @@ describe("darwin keychain writer", () => {
     await darwinKeychain(run).write("smithers-cloud", "evil\" -w x\nhost", secret)
     expect(run.calls).toHaveLength(0)
   })
+
+  test("strict storage distinguishes missing from locked and verifies interactive write success", async () => {
+    const run = recordingRun()
+    // security -i can exit zero even though its command failed.
+    await expect(darwinKeychain(run, true).write("model-vault", "account", secret)).rejects.toThrow("Keychain unavailable")
+    expect(run.calls).toHaveLength(2)
+    expect(JSON.stringify(run.calls.map(call => call.argv))).not.toContain(secret)
+    await expect(darwinKeychain(async () => ({ code: 44, stdout: "" }), true).read("model-vault", "account")).resolves.toBeNull()
+    await expect(darwinKeychain(async () => ({ code: 36, stdout: secret }), true).read("model-vault", "account")).rejects.toThrow("Keychain unavailable")
+    await expect(darwinKeychain(async () => ({ code: 0, stdout: secret }), true).write("model-vault", "account", secret)).resolves.toBeUndefined()
+  })
 })

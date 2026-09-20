@@ -23,6 +23,8 @@ import {
   HEALTH_PATH,
   IDENTITY_ROUTE_PREFIX,
   MODEL_CATALOG_PATH,
+  MODEL_CREDENTIAL_PATH,
+  MODEL_CREDENTIAL_RECEIPT_PATH,
   MODEL_TEST_PATH,
   TURN_PATH,
   TURN_REPLAY_PATH,
@@ -62,6 +64,8 @@ import { createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
 import { createCloudAuth } from "./CloudAuth"
 import type { CloudAuth, CloudKeychain } from "./CloudAuth"
+import { createModelCredentials } from "./ModelCredentials"
+import { nativeStateDirectory } from "./NativeState"
 import { modelFailureLine, planOnLocal, sealedMessages, sealedTurn } from "./ConfiguredModelHost"
 import { createModelProbe } from "./ModelProbe"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
@@ -166,6 +170,7 @@ export interface LocalServerOptions {
    * native launcher passes the platform's application-support directory; a
    * test passes a temp dir or nothing.
    */
+  readonly modelKeychain?: CloudKeychain
   readonly stateDir?: string
   /** The home directory reported by `/api/health`. */
   readonly home?: string
@@ -730,6 +735,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     }))
 
   const modelEnv: ModelCredentialEnv = options.env ?? Bun.env
+  const modelCredentials = await createModelCredentials({ env: modelEnv, scope: resolve(options.stateDir ?? nativeStateDirectory()), ...(options.modelKeychain ? { keychain: options.modelKeychain } : {}) })
   /** Offline performs no egress, so a configured model may be reached on loopback only. */
   const modelEgress = remoteEnabled ? {} : { egress: false }
   /** Live configured-model turns by runId: what a cancel interrupts. */
@@ -806,7 +812,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     if (messages === undefined) {
       return refuse("tools_not_supported", "A configured model runs no tools, so it cannot continue a tool call.")
     }
-    const planned = planOnLocal(model, modelEnv, { kind: "generation", ...modelEgress })
+    const planned = planOnLocal(model, modelEnv, { kind: "generation", ...modelEgress }, modelCredentials)
     if (!planned.ok) return refuse(modelFailureRefusalCode(planned.failure), modelFailureLine(planned.failure))
     const runId = body.runId
     if (writers.has(runId)) return jsonError("turn_running", "That Smithers turn is already running.")
@@ -852,6 +858,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       return jsonError("invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
     }
     const body = parsed.body
+    if ("model" in body) await modelCredentials.refresh()
     if (body.journal === undefined) return startChatTurn(body)
     const journal = AgentTurnJournalRequestSchema.safeParse(body.journal)
     if (!journal.success) return jsonError("invalid_request", "The recorded turn identity is invalid.")
@@ -893,12 +900,19 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
    * (R8). The catalog carries names and presence, never a value.
    */
   const modelProbe = createModelProbe({
+    credentials: modelCredentials,
     env: modelEnv,
     egress: remoteEnabled,
     ...(options.modelTestDeadlineMs === undefined ? {} : { deadlineMs: options.modelTestDeadlineMs }),
     ...(options.modelFetch === undefined ? {} : { fetch: options.modelFetch })
   })
-  router.add("GET", MODEL_CATALOG_PATH, () => json(modelProbe.catalog()))
+  router.add("POST", MODEL_CREDENTIAL_PATH, async ({ request }) => {
+    const parsed = await readJson(request, 16 * 1024)
+    if ("error" in parsed) return parsed.error
+    return json(await modelCredentials.mutate(parsed.body))
+  })
+  router.add("GET", MODEL_CREDENTIAL_RECEIPT_PATH, async ({ url }) => json(await modelCredentials.receipt(url.searchParams.get("id") ?? "")))
+  router.add("GET", MODEL_CATALOG_PATH, async () => { await modelCredentials.refresh(); return json(modelProbe.catalog()) })
   router.add("POST", MODEL_TEST_PATH, async ({ request }) => {
     const parsed = await readJson(request, MODEL_TEST_BODY_MAX_BYTES)
     if ("error" in parsed) return parsed.error

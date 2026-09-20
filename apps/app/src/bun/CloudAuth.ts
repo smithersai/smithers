@@ -124,35 +124,38 @@ const interactiveWord = (value: string): string | null => /["\\\r\n]/.test(value
  * the serialized CloudCredentials, so a restart restores the whole session,
  * not just the token. The writer feeds `add-generic-password -X <hex>` to
  * `security -i` on stdin, so the PAT never appears in a process's argv.
- * Every operation is best-effort: a keychain refusal loses persistence,
- * never the in-memory session.
+ * Cloud sessions retain best-effort persistence. Strict callers require a
+ * successful read/write (including readback), with no memory-only success.
  */
-export const darwinKeychain = (run: KeychainRun = spawnRun): CloudKeychain => ({
+export const darwinKeychain = (run: KeychainRun = spawnRun, strict = false): CloudKeychain => ({
   read: async (service, account) => {
     try {
       const { code, stdout } = await run(["security", "find-generic-password", "-s", service, "-a", account, "-w"])
+      if (strict && code !== 0 && code !== 44) throw new Error("Keychain unavailable")
       return code === 0 && stdout !== "" ? stdout : null
     } catch {
+      if (strict) throw new Error("Keychain unavailable")
       return null
     }
   },
   write: async (service, account, secret) => {
     try {
-      const s = interactiveWord(service)
-      const a = interactiveWord(account)
-      if (s === null || a === null) return
+      const s = interactiveWord(service), a = interactiveWord(account)
+      if (s === null || a === null) throw new Error("Keychain unavailable")
       const hex = Buffer.from(secret, "utf8").toString("hex")
-      await run(["security", "-i"], `add-generic-password -U -s ${s} -a ${a} -X ${hex}\n`)
-    } catch {
-      // Best-effort: the in-memory session still holds the token.
-    }
+      const written = await run(["security", "-i"], `add-generic-password -U -s ${s} -a ${a} -X ${hex}\n`)
+      if (strict) {
+        // Interactive security can exit successfully after a command refusal.
+        const verified = await run(["security", "find-generic-password", "-s", service, "-a", account, "-w"])
+        if (written.code !== 0 || verified.code !== 0 || verified.stdout !== secret) throw new Error("Keychain unavailable")
+      }
+    } catch { if (strict) throw new Error("Keychain unavailable") }
   },
   remove: async (service, account) => {
     try {
-      await run(["security", "delete-generic-password", "-s", service, "-a", account])
-    } catch {
-      // Already gone is the same end state.
-    }
+      const result = await run(["security", "delete-generic-password", "-s", service, "-a", account])
+      if (strict && result.code !== 0 && result.code !== 44) throw new Error("Keychain unavailable")
+    } catch { if (strict) throw new Error("Keychain unavailable") }
   }
 })
 

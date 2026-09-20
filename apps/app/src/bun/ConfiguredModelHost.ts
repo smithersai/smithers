@@ -3,8 +3,8 @@
  * which credentials this machine resolves, the catalog it reports, and the
  * sealed turn it serves for the explainer seat.
  *
- * A credential is read by NAME from the environment record the host was
- * started with, at exactly one env key (`modelCredentialEnvName`), and only
+ * A credential is read by NAME from the host keychain or the environment
+ * record it was started with, at exactly one env key, and only
  * after the planner has pinned the request's origin to that name. The value is
  * Redacted at the read and is sent nowhere but the planned URL: redirects are
  * never followed, and no failure here carries provider text.
@@ -37,6 +37,7 @@ import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAg
 import { Effect, Layer, Redacted, Stream } from "effect"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
+import type { ModelCredentials } from "./ModelCredentials"
 import { toModel } from "./ConfiguredModelRoute"
 
 /** The most an explainer answer may run to. */
@@ -58,10 +59,10 @@ export type LocalPlanned =
   | { readonly ok: false; readonly failure: ModelTestFailure }
 
 /** Plans an untrusted binding against THIS host's table, then reads the secret the plan names and no other. */
-export const planOnLocal = (input: unknown, env: ModelCredentialEnv, options: ModelPlanOptions = {}): LocalPlanned => {
-  const planned = planModelBinding(input, hostModelCredentials(env), options)
+export const planOnLocal = (input: unknown, env: ModelCredentialEnv, options: ModelPlanOptions = {}, credentials?: ModelCredentials): LocalPlanned => {
+  const planned = planModelBinding(input, credentials?.list() ?? hostModelCredentials(env), options)
   if (!planned.ok) return planned
-  const apiKey = localModelCredential(env, planned.plan.credential)
+  const apiKey = credentials ? credentials.read(planned.plan.credential) : localModelCredential(env, planned.plan.credential)
   return apiKey === undefined
     ? { ok: false, failure: { code: "credential_missing", credential: planned.plan.credential } }
     : { ok: true, plan: planned.plan, apiKey }
@@ -94,12 +95,13 @@ const LOCAL_BUILTIN_MODELS: ReadonlyArray<ConfiguredModel> = [
  * value. `options` are the ones this host's Test plans with, so an offline
  * host lists no row it could not reach.
  */
-export const localModelCatalog = (env: ModelCredentialEnv, options: ModelPlanOptions = {}): ModelCatalog => {
-  const credentials = hostModelCredentials(env).map((row) => ({ ...row, origins: [...row.origins] }))
+export const localModelCatalog = (env: ModelCredentialEnv, options: ModelPlanOptions = {}, stored?: ModelCredentials): ModelCatalog => {
+  const credentials = (stored?.list() ?? hostModelCredentials(env)).map((row) => ({ ...row, origins: [...row.origins] }))
   return {
     models: [...servableModels(LOCAL_BUILTIN_MODELS, credentials, options)],
     credentials,
-    seats: [...modelSeatsOf("local")]
+    seats: [...modelSeatsOf("local")],
+    ...(stored ? { enrollment: stored.enrollment() } : {})
   }
 }
 
