@@ -38,6 +38,31 @@
   misclassified as a read cannot admit a run that would die at its first
   completion.
 
+- A run whose body finishes before its observation is registered still waits
+  for its copied decision. `AgentSession.launch` releases the drive before it
+  returns `accepted`, and `EngineJournalSupervisor` registered the run only
+  after that, in a fiber forked once the caller's control transaction had
+  committed, so a module flow with no provider call could reach its terminal
+  write while `awaitSettled` had nothing to wait on. The journal then read
+  `control.run.completed` ahead of `projection-started`, the copied
+  `flows.engine.run-decision` and `projection-settled`, which is the fold that
+  reports `completed` with no output. A launch now registers the hold before
+  the executor runs, releases it when the acceptance is not `accepted`, when
+  the launch fails, when no observation is coming and when the host scope
+  closes first, and the observation adopts it.
+
+  The scope of the ordering, exactly: every terminal `completed` or `failed`
+  that `AgentSession.settle` or `settleDriverFailure` writes waits for this
+  run's `control.engine.projection-settled`, including when the run settles
+  before its observation is registered, bounded by a 30 second grace that
+  records in the journal which wait gave up. One terminal write stays
+  unordered, `ControlLive.reconcileTerminal` in `@smthrs/control`, which
+  `Control.cancel` reaches only when it finds a run another process already
+  completed without settling the control row. Ordering that one needs a
+  `ControlExecutor` port, because the supervisor is internal to `@smthrs/cli`
+  while `ControlLive` lives in `@smthrs/control` and can reach no observation
+  from there.
+
 - `smithers opencode` refuses to start on a directory another live server
   already serves, names that server, and exits 2, the way it refuses a missing
   `AI_GATEWAY_API_KEY`. Two servers over one directory came up with no refusal
