@@ -914,6 +914,27 @@ describe("CellTurn read-only cap", () => {
     })
   })
 
+  it("shows the run's memory above the demand, so the demand is the last thing read", async () => {
+    const { model } = await run({
+      state: capped(2, 5),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] }), editor],
+      script: readCells(5),
+      calls: successes(5)
+    })
+
+    // A run answers the last thing it read. With the roster of names below the
+    // demand, a retained chat turn asked for the letter A completed with the
+    // word "letter" in 23 of 24 bounded probes of the shipped seat; with the
+    // roster above it, the same seat on the same captured request answered A
+    // in 8 of 8. See `CellTurn` `stateSection`.
+    const texts = (model.recorder.requests[2]?.messages ?? []).map((message) =>
+      message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+    )
+    expect(texts.at(-1)).toContain("Read-only discipline")
+    expect(texts.at(-2)).toContain("realm holds")
+    expect(texts.at(-2)).toContain("Calls this run has settled")
+  })
+
   it("records a demanded frame that writes before continuing", async () => {
     const { events } = await run({
       state: capped(1, 3),
@@ -3671,6 +3692,12 @@ describe("CellTurn unsupported claim", () => {
     expect(asked).toHaveLength(2)
     expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Completion review")
     expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Completion review")
+    // The review is an ask too, so it reads last for the same reason the
+    // read-only demand does. See `CellTurn` `stateSection`.
+    expect(
+      model.recorder.requests[2]?.messages.at(-1)?.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+        .join("\n")
+    ).toContain("Completion review")
     // The proven answer stands, on the frame it was written on: proving a
     // claim costs the honest run no frame it would not have spent anyway.
     expect(of(events, "resolved")[0]?.message.content).toEqual([

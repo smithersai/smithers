@@ -127,6 +127,32 @@ one name, or a binding has no name. `FlowBinding.catalogResult` refuses both
 because one name must resolve to exactly one implementation; rename one or
 drop it before composing.
 
+**The run answers something from its own prompt instead of the request.** A
+run answers the last thing it read. Every frame ends with the block of run
+memory that `CellTurn` `stateSection` builds, and until the ordering below
+landed, a frame that also carried an intervention put that block after the
+intervention, so the last thing the run read was a roster of its own variable
+names.
+
+A retained chat turn asked to reply with only the letter `A` had printed `A`
+six times and bound it as `letter`, and the read-only demand fired on frame
+seven. On the captured frame-seven request, against `cerebras:gpt-oss-120b`
+and with one authored cell scored per reading:
+
+| Window                                       | Exact `A` |
+| -------------------------------------------- | --------- |
+| demand, then the memory block (what shipped) | 1 of 24   |
+| memory block, then the demand                | 8 of 8    |
+| demand only, memory block removed            | 7 of 7    |
+| memory block only, demand removed            | 2 of 8    |
+
+The failures were not refusals: the run completed with `"letter"`,
+`["letter"]` or `letter = A`, the roster's own word. Stating the value of a
+short binding in the roster instead of its length was measured too and moved
+nothing (1 of 8), so it was not kept. The demand text was never the problem;
+being second-to-last was. The block now sits above whatever the frame is
+being asked to answer, counted by `CellTurn` `State.interventions`.
+
 ## Structured output fails
 
 `StructuredOutput.decode` turns one agent answer into a typed value or a

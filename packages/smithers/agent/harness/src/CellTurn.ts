@@ -437,6 +437,27 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     cap: NonNegativeSafeInt
   })),
   /**
+   * How many messages at the end of the window are interventions the next
+   * frame is being asked to answer.
+   *
+   * The controller's own asks, which are the read-only demand, the repeat
+   * redirect, the sufficiency observation and the completion review, are
+   * appended to the transcript when the frame that earned them closes. The block of run memory
+   * is appended when the next request is built, so without this count the ask
+   * was always the second-to-last message and a roster of variable names was
+   * always the last. {@link stateSection} says what that cost.
+   *
+   * It is a count rather than a flag because a frame can earn several asks at
+   * once, and it is state rather than something recomputed from the window
+   * because the messages carry no mark that says which of them is an ask.
+   * Zero on a state decoded from an older journal, which puts the block last
+   * exactly as that run had it.
+   */
+  interventions: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
    * Consecutive repeat-observation frames this run may spend before the
    * controller redirects it. Zero disarms the demand.
    *
@@ -856,6 +877,7 @@ export const make = (options: {
     readOnlyFrames: 0,
     readOnlyGrace: 0,
     pendingReadOnlyDemand: undefined,
+    interventions: 0,
     repeatCap: options.repeatCap ?? defaultRepeatFrames,
     repeatFrames: 0,
     callSignatures: [],
@@ -988,6 +1010,19 @@ const keyMaterialFrom = (
  * at the system boundary on every frame and the accumulated transcript behind
  * it was re-read at full price; two graded instances ran at 38% and 69% cached
  * input against model time that is 76% to 93% of wall clock.
+ *
+ * It goes after the transcript and *before* whatever the frame is being asked
+ * to answer, because a run answers the last thing it read. A retained chat
+ * turn asked for the letter A had printed it six times and bound it to
+ * `letter`; on the frame the read-only demand fired, the window ended with the
+ * demand and then this block, and the seat returned `"letter"`, `["letter"]`
+ * or `letter = A` in 23 of 24 bounded probes, the roster's own word rather
+ * than the person's answer. With this block moved above the demand and nothing else
+ * changed, the same seat on the same captured request returned exactly `A` in
+ * 8 of 8, and dropping the block entirely returned it in 7 of 7. The demand
+ * had never been the problem: being second-to-last was. See
+ * {@link State.interventions} for how many messages that is, and
+ * `docs/troubleshooting.md` for the readings.
  */
 const stateSection = (state: State): string => {
   // The panel is stamped by the frame that ran, which is the frame before the
@@ -997,6 +1032,26 @@ const stateSection = (state: State): string => {
     VariablesPanel.render({ ledger: state.panel, frame: state.frame - 1 }),
     ...(settled === undefined ? [] : [settled])
   ].join("\n\n")
+}
+
+/**
+ * Places the run's memory after the transcript and before this frame's asks.
+ *
+ * The count is clamped against the rendered window rather than trusted: a
+ * compaction can replace the tail a state was counting, and a block one
+ * message too early is a cosmetic misplacement while a splice past the start
+ * would drop it.
+ */
+const withStateSection = (
+  messages: ReadonlyArray<ModelRequest.Message>,
+  state: State
+): ReadonlyArray<ModelRequest.Message> => {
+  const asks = Math.min(state.interventions, messages.length)
+  return [
+    ...messages.slice(0, messages.length - asks),
+    ModelRequest.Message.user(stateSection(state)),
+    ...messages.slice(messages.length - asks)
+  ]
 }
 
 const requestFrom = (
@@ -1019,7 +1074,7 @@ const requestFrom = (
     ModelRequest.ModelRequest.make({
       modelId: contextWindow.modelId,
       system: rendered.system,
-      messages: [...rendered.messages, ModelRequest.Message.user(stateSection(state))],
+      messages: withStateSection(rendered.messages, state),
       // A cell-first frame never declares provider tools: the cell is the plan
       // and `ctx.call` is the only invocation path.
       tools: [],
@@ -2266,7 +2321,14 @@ const finish = (settling: Settling, step: Step): Effect.Effect<Step> =>
  */
 const continuing = (settling: Settling, changes: Frame.StateChanges): Continue => ({
   _tag: "Continue",
-  state: advance(settling.state, { frame: settling.state.frame + 1, ...settling.facts, ...changes })
+  // A frame carries no ask unless its own exit says how many it appended, so
+  // the default is zero and the two exits that intervene state their count.
+  state: advance(settling.state, {
+    frame: settling.state.frame + 1,
+    interventions: 0,
+    ...settling.facts,
+    ...changes
+  })
 })
 
 /** Continues the run on the frame's own pair and whatever steering it was sent. */
@@ -2700,6 +2762,9 @@ const frame = (
           // no context for a next frame, and a run answering this one needs
           // the frame it just wrote.
           contextWindow: observedOn(contextWindow, answer, demanded.note, liveCellEcho),
+          // The note is the ask this frame appended; the run's memory goes
+          // above it. See `withStateSection`.
+          interventions: 1,
           pendingReadOnlyDemand: undefined,
           ...demanded.spent,
           // The answer the demand is taking away, kept so it cannot be lost.
@@ -2751,6 +2816,9 @@ const frame = (
       modelParams,
       contextWindowTokens,
       contextWindow: windowOn(state, seat, context),
+      // Whatever this frame earned is what the next one answers, so the run's
+      // memory goes above it. See `withStateSection`.
+      interventions: disciplined.messages.length,
       ...disciplined.changes
     })
   })
