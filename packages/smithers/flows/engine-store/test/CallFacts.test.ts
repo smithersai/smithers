@@ -49,7 +49,25 @@ const activate = Effect.gen(function*() {
     ))._tag
   ).toBe("Activated")
 })
-const dispatch = (phase: "invoked" | "settled", execute: Effect.Effect<unknown>, annotated = true) =>
+/** The same call, with the display projection its declaration carried. */
+const described: CallFact.Call = {
+  ...call,
+  descriptor: {
+    name: "write",
+    activity: "writes",
+    presentation: {
+      verb: { pending: "writing", success: "wrote", failure: "failed to write" },
+      subject: "path",
+      result: "write"
+    }
+  }
+}
+const dispatch = (
+  phase: "invoked" | "settled",
+  execute: Effect.Effect<unknown>,
+  annotated = true,
+  annotated_call: CallFact.Call = call
+) =>
   ActionPersistence.make({
     runId: "calls",
     owner,
@@ -60,7 +78,9 @@ const dispatch = (phase: "invoked" | "settled", execute: Effect.Effect<unknown>,
     action: {
       name: `call/${phase}`,
       ...(annotated && phase === "settled" ? { successSchema: CallFact.Result } : {}),
-      annotations: annotated ? Context.make(CallFact.Annotation, { phase, call }) : Context.empty()
+      annotations: annotated
+        ? Context.make(CallFact.Annotation, { phase, call: annotated_call })
+        : Context.empty()
     },
     key: phase,
     attempt: 1,
@@ -279,6 +299,34 @@ describe("native call facts over file SQLite", () => {
             expect(Exit.isFailure(refused)).toBe(true)
             expect(yield* facts).toEqual([])
             expect(Schema.is(CallFact.Result)(invalid)).toBe(false)
+          }).pipe(Effect.provide(services))
+        )
+      )
+    ))
+  it.effect("an invoked fact carries the declaration's display projection whole, and omits it when there is none", () =>
+    fixture((file) =>
+      onFile(
+        file,
+        Effect.scoped(
+          Effect.gen(function*() {
+            yield* activate
+            yield* dispatch("invoked", Effect.succeed("ran"), true, described)
+            const [row] = yield* facts
+            // Whole, not bounded: four short fields its owner already
+            // validated, where a truncation marker would read as a
+            // declaration that claimed something unreadable.
+            expect(row?.payload).toMatchObject({ phase: "invoked", descriptor: described.descriptor })
+            // A declaration that claimed nothing writes no key, not a null.
+            expect(
+              Schema.encodeUnknownSync(CallFact.Fact)({
+                version: 1,
+                phase: "invoked",
+                callId: call.callId,
+                identity: call.identity,
+                flowName: call.flowName,
+                input: call.input
+              })
+            ).not.toHaveProperty("descriptor")
           }).pipe(Effect.provide(services))
         )
       )

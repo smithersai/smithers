@@ -24,6 +24,7 @@ import * as Workspace from "@smthrs/kernel/Workspace"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Classifiers from "@smthrs/std/Classifiers"
 import * as Search from "@smthrs/std/Search"
@@ -182,6 +183,52 @@ describe("the standard capability catalog", () => {
       expect(bindings.map((binding) => binding.descriptor.name)).toEqual(entry.flows)
     })
   }
+
+  /**
+   * What each standard flow says a call to it does, on the descriptor a run
+   * journals and a card reads.
+   *
+   * These are the words the compatibility table in `apps/app` `RunTrace.ts`
+   * guesses for a journal recorded before a declaration could say anything, so
+   * a record with metadata and one without must read identically. `bash`
+   * declares no activity on purpose and is the one row that says so.
+   */
+  it("declares what a call to each standard flow does and how it reads", async () => {
+    const bound = await Effect.runPromise(
+      Effect.forEach(
+        [StandardFlows.filesystem(filesystemServices), StandardFlows.shell(shellServices), StandardFlows.tests(
+          testServices
+        )],
+        (source) => source.bindings()
+      )
+    )
+    const declared = new Map(
+      bound.flat().map((binding) => [
+        binding.descriptor.name,
+        [binding.descriptor.activity, binding.descriptor.presentation] as const
+      ])
+    )
+    expect([...declared].map(([name, [activity, presentation]]) =>
+      [name, activity, presentation?.verb.success, presentation?.subject, presentation?.result]
+    )).toEqual([
+      ["read", "reads", "read", "path", "read"],
+      ["write", "writes", "wrote", "path", "write"],
+      ["edit", "writes", "edited", "path", "edit"],
+      ["apply_patch", "writes", "patched", "patch", "patch"],
+      ["ls", "reads", "listed", "path", "entries"],
+      ["glob", "reads", "listed", "pattern", "paths"],
+      ["grep", "reads", "searched", "pattern", "matches"],
+      ["bash", undefined, "ran", "command", "command"],
+      ["test", "tests", "ran", "selection", "tests"]
+    ])
+    // Display fields grant nothing: the identity a plan approves and a call
+    // replays against is the same number with and without them.
+    const read = bound.flat().find((binding) => binding.descriptor.name === "read")!.descriptor
+    const { activity: _activity, presentation: _presentation, ...bare } = read
+    expect(Descriptor.declarationDigest(new Descriptor.FlowDescriptor(bare))).toBe(
+      Descriptor.declarationDigest(read)
+    )
+  })
 
   it("names its sources so a composed catalog says where each flow came from", () => {
     expect(promised.map((entry) => entry.source.name)).toEqual([

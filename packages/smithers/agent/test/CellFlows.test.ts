@@ -57,8 +57,11 @@ import {
 import * as ByteSize from "effect/ByteSize"
 import type * as Crypto from "effect/Crypto"
 import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { readFile, writeFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
+import * as AgentSession from "../src/AgentSession.ts"
 import * as CellPlugin from "../src/CellPlugin.ts"
 import * as ChildFlows from "../src/ChildFlows.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -1332,4 +1335,224 @@ ctx.done(child.child + ":" + answer.answer)`
       { type: "text", text: "child-1:yes" }
     ])
   })
+})
+
+/**
+ * The four call semantics a run card has to tell apart, produced by real
+ * declarations through the real boundary.
+ *
+ * Nothing here writes a journal payload by hand. Each record is what
+ * `AgentSession.trace` projected out of an event the production controller
+ * emitted, and each call's `descriptor` field is whatever `Cell.callOf` copied
+ * off the declaration the catalog resolved. The four cases are the ones a
+ * reader must keep apart: a standard flow, a custom flow that declares its own
+ * words, a custom flow that takes a standard name and means something else,
+ * and a flow that declares nothing at all.
+ *
+ * The produced trail is pinned as `fixtures/call-descriptor-trail.json` and
+ * read back by `apps/app` `RunTraceDescriptor.test.ts`, which is the card half
+ * of the same proof. Regenerate with `SMITHERS_UPDATE_FIXTURES=1`; a change
+ * this test does not accept is a change the card is never shown.
+ */
+describe("a call carries what its declaration says it does", () => {
+  /** A custom flow with words of its own: the declaration a host author writes. */
+  const inspect = CoreFlow.make({
+    name: "inspect",
+    description: "Look at one file without changing it.",
+    input: Schema.Struct({ path: Schema.String }),
+    output: Schema.Struct({ note: Schema.String }),
+    effects: { reads: ["/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+  })
+
+  /** A custom flow that takes a standard name and means the opposite of it. */
+  const shadowed = CoreFlow.make({
+    name: "write",
+    description: "Record a reading about one file. It changes nothing.",
+    input: Schema.Struct({ path: Schema.String }),
+    output: Schema.Struct({ note: Schema.String }),
+    effects: { reads: ["/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+  })
+
+  /** A flow that declares no display metadata: unknown, and said as unknown. */
+  const mystery = CoreFlow.make({
+    name: "mystery",
+    description: "Declares nothing about how it reads.",
+    input: Schema.Struct({ path: Schema.String }),
+    output: Schema.Struct({ note: Schema.String }),
+    effects: { reads: ["/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+  })
+
+  const reading: Descriptor.CallPresentation = {
+    verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" },
+    subject: "path",
+    result: "text"
+  }
+
+  /**
+   * Identities a card only has to see pair, replaced by ones that do not move.
+   *
+   * A cell digest, a call id and a declaration digest are content hashes, so
+   * every unrelated edit to a standard flow's source would otherwise rewrite
+   * this fixture. The three measured durations are zeroed for the same reason:
+   * a wall clock is not a fact about a declaration. Every other byte is the
+   * producer's.
+   */
+  const settle = () => {
+    const identities = new Map<string, string>()
+    return <A>(value: A): A =>
+      JSON.parse(
+        JSON.stringify(value)
+          .replaceAll(/(cell-call-v1:)?[0-9a-f]{64}/g, (held) => {
+            // A call id keeps its declared shape: it is the one identity a
+            // reader decodes rather than merely pairs on.
+            const minted = identities.get(held) ??
+              (held.startsWith("cell-call-v1:")
+                ? `cell-call-v1:${String(identities.size + 1).padStart(64, "0")}`
+                : `digest-${identities.size + 1}`)
+            identities.set(held, minted)
+            return minted
+          })
+          .replaceAll(/"(durationMillis|latencyMs|elapsedMs)":\s*\d+/g, (_whole, field: string) => `"${field}": 0`)
+      ) as A
+  }
+
+  /** The agent trail, as the run card stores a journal row. */
+  const trail = (collected: ReadonlyArray<AgentEvent.AgentEvent>) => {
+    const records: Array<unknown> = []
+    for (const event of collected) {
+      const projected = AgentSession.trace(event)
+      if (projected === undefined) continue
+      // `at` is the record's position: the producer stamps wall-clock time
+      // where it journals, outside `trace`.
+      const at = (records.length + 1) * 100
+      records.push({
+        runId: "run-1",
+        sequence: records.length + 1,
+        kind: projected.eventType,
+        occurredAt: at,
+        payload: { ...projected.payload as Record<string, unknown>, at }
+      })
+    }
+    return records
+  }
+
+  /**
+   * The invoked half of the same calls, as the native producer delivers them.
+   *
+   * The envelope is the shape `@smthrs/engine-store` `CallFacts` writes and
+   * `@smthrs/gateway` `nativeCallEvent` accepts, each pinned by its own
+   * package's tests. What is produced here is `descriptor`, read off the real
+   * call the controller built.
+   */
+  const nativeFacts = (collected: ReadonlyArray<AgentEvent.AgentEvent>) =>
+    collected.flatMap((event) => {
+      if (event._tag !== "cell-call-started") return []
+      const { session, ...identity } = event.call.identity
+      const descriptor = Cell.displayDescriptor(event.call)
+      const id = AgentSession.callId(event.call.identity)
+      const sequence = identity.ordinal + 1
+      return [{
+        runId: "run-1",
+        sequence,
+        kind: "control.engine.event",
+        occurredAt: sequence * 100,
+        payload: {
+          version: 1,
+          executionId: "native",
+          generation: 0,
+          sequence,
+          emittedAtMs: sequence * 100,
+          sourceSequence: 0,
+          sourceId: `call-fact-v1:${id}:invoked`,
+          eventType: "flows.harness.call-fact.v1",
+          payload: {
+            version: 1,
+            phase: "invoked",
+            callId: id,
+            identity: { runId: "run-1", ...identity },
+            flowName: event.call.flowName,
+            input: event.call.input,
+            ...(descriptor === undefined ? {} : { descriptor })
+          }
+        }
+      }]
+    })
+
+  it("produces standard, custom, shadowed and unknown semantics for a card to read", async () => {
+    const filesystem = files({ "/repo/alpha.md": "first line\nsecond line" })
+    const note = (input: { readonly path: string }) => Effect.succeed({ note: `about ${input.path}` })
+
+    // Run one: the standard catalog beside a custom flow with its own words.
+    const declared = await drive(
+      collect({
+        flows: [
+          StandardFlows.filesystem(filesystem.services),
+          FlowBinding.source("host/inspect", [
+            FlowBinding.make({ flow: inspect, handler: note, activity: "reads", presentation: reading })
+          ])
+        ],
+        cells: [
+          `const page = await ctx.call("read", { path: "/repo/alpha.md" })
+const seen = await ctx.call("inspect", { path: "/repo/alpha.md" })
+ctx.done(page.startLine + ":" + seen.note)`
+        ]
+      })
+    )
+    expect(declared._tag).toBe("completed")
+
+    // Run two: a flow named `write` that reads, beside one that declares
+    // nothing. The catalog refuses a duplicate name, so the standard `write`
+    // is not offered here — which is what shadowing a standard name means.
+    const unnamed = await drive(
+      collect({
+        flows: [
+          FlowBinding.source("host/shadowed", [
+            FlowBinding.make({ flow: shadowed, handler: note, activity: "reads", presentation: reading }),
+            FlowBinding.make({ flow: mystery, handler: note })
+          ])
+        ],
+        cells: [
+          `const seen = await ctx.call("write", { path: "/repo/alpha.md" })
+const other = await ctx.call("mystery", { path: "/repo/alpha.md" })
+ctx.done(seen.note + "|" + other.note)`
+        ]
+      })
+    )
+    expect(unnamed._tag).toBe("completed")
+
+    const stable = settle()
+    const produced = stable({
+      declared: trail(eventsOf(declared)),
+      shadowed: trail(eventsOf(unnamed)),
+      native: nativeFacts(eventsOf(unnamed))
+    })
+
+    const opened = [...produced.declared, ...produced.shadowed].filter((record) =>
+      (record as { kind: string }).kind === "control.agent.cell-call-started"
+    ).map((record) => (record as { payload: Record<string, unknown> }).payload)
+
+    // The producer emitted the declaration's own fields, for every case.
+    expect(opened.map((payload) => payload.descriptor)).toEqual([
+      {
+        name: "read",
+        activity: "reads",
+        presentation: {
+          verb: { pending: "reading", success: "read", failure: "failed to read" },
+          subject: "path",
+          result: "read"
+        }
+      },
+      { name: "inspect", activity: "reads", presentation: reading },
+      { name: "write", activity: "reads", presentation: reading },
+      // A flow that declared nothing carries nothing: no key, not a null.
+      undefined
+    ])
+    expect(opened.every((payload) => payload.descriptor === undefined || "name" in (payload.descriptor as object)))
+      .toBe(true)
+
+    const path = fileURLToPath(new URL("./fixtures/call-descriptor-trail.json", import.meta.url))
+    const serialized = `${JSON.stringify(produced, undefined, 2)}\n`
+    if (process.env.SMITHERS_UPDATE_FIXTURES === "1") await writeFile(path, serialized)
+    expect(serialized).toBe(await readFile(path, "utf8"))
+  }, 60_000)
 })

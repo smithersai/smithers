@@ -107,4 +107,31 @@ describe("native call fact projections", () => {
     const old = event(3, "control.agent.cell-call-started", { flowName: "write" })
     expect(uniqueCallEvents([old, old])).toEqual([old, old])
   })
+
+  it("carries the declaration's display projection through to the reading card", () => {
+    const descriptor = {
+      name: "write",
+      activity: "reads",
+      presentation: {
+        verb: { pending: "inspecting", success: "inspected", failure: "failed to inspect" },
+        subject: "path",
+        result: "text"
+      }
+    }
+    const invoked = fact(1, "invoked")
+    const envelope = invoked.payload as Record<string, unknown>
+    const described = {
+      ...invoked,
+      payload: {
+        ...envelope,
+        payload: { ...(envelope.payload as object), descriptor }
+      } as ControlSchema.ControlEvent["payload"]
+    }
+    // The projection passes the field through rather than interpreting it: the
+    // vocabulary belongs to `@smthrs/registry` and the card validates it.
+    expect((nativeCallEvent(described)?.payload as { descriptor?: unknown }).descriptor).toEqual(descriptor)
+    expect((uniqueCallEvents([described])[0]?.payload as { descriptor?: unknown }).descriptor).toEqual(descriptor)
+    // A fact without one keeps its absence; nothing is invented from the name.
+    expect((nativeCallEvent(invoked)?.payload as { descriptor?: unknown }).descriptor).toBeUndefined()
+  })
 })
