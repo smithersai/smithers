@@ -211,6 +211,23 @@ describe("agent checkpoint process recovery", () => {
           yield* TestClock.setTime((abandoned.heartbeatAtMs ?? 0) + 120_000)
           const prefix = yield* facts(runId)
           expect(prefix.length).toBe(marker.facts)
+          // The process died with its second provider call open. What that
+          // call was asked is already committed, because the request's fact is
+          // its own checkpoint inside the step and not a row some writer was
+          // going to flush: there is nothing between settle and flush to lose.
+          const requestsOf = (rows: typeof prefix) =>
+            rows.filter((row) => row.payload.eventType === "control.agent.model-requested")
+          const asked = requestsOf(prefix).map((row) => row.payload.payload as Record<string, unknown>)
+          expect(asked).toMatchObject([
+            { frame: 0, attempt: 1, prefixCount: 0 },
+            { frame: 1, attempt: 1 }
+          ])
+          // The step's facts are written against each other the way a prompt
+          // run's rows are: the second call's fact holds what it added past
+          // the realm note each frame closes on, and the teaching both calls
+          // ran under is stored once.
+          expect(asked[1]!.prefixCount).toBe((asked[0]!.messages as ReadonlyArray<unknown>).length - 1)
+          expect(asked.map((payload) => Object.hasOwn(payload, "system"))).toEqual([true, false])
           const wiring = yield* incarnation(Model.make({
             stream: () =>
               Stream.suspend(() => {
@@ -223,6 +240,11 @@ describe("agent checkpoint process recovery", () => {
           const after = yield* facts(runId)
           expect(after.slice(0, prefix.length)).toEqual(prefix)
           expect(new Set(after.map((row) => `${row.sourceId}:${row.sourceSeq}`)).size).toBe(after.length)
+          // The resumed process replays frame zero and re-opens frame one, and
+          // republishes neither request: one fact per model call, still.
+          expect(requestsOf(after)).toEqual(requestsOf(prefix))
+          const decisions = after.filter((row) => row.payload.eventType === "control.agent.decision-settled")
+          expect(decisions.map((row) => row.payload.payload)).toMatchObject([{ frame: 1 }])
           expect((yield* runs.get(runId)).status).toBe("completed")
           expect(resumedCalls).toBe(1)
         })).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer), Effect.provide(TestClock.layer()))
@@ -264,6 +286,18 @@ describe("agent checkpoint time travel", () => {
       yield* Fiber.interrupt(fiber)
       const before = yield* facts("rewind-trace")
       expect(before.length).toBeGreaterThan(0)
+      // The request and the decision are facts of the step like any other, so
+      // they sit inside its boundary, survive the rewind below, and are not
+      // written again by the replay after it. Each joins to its turn by the
+      // scope and frame it carries, which are the step's own.
+      for (const kind of ["control.agent.model-requested", "control.agent.decision-settled"]) {
+        const rows = before.filter((row) => row.payload.eventType === kind)
+        expect(rows).toHaveLength(1)
+        expect(rows[0]!.payload.payload).toMatchObject({
+          scope: rows[0]!.payload.step.scope,
+          frame: rows[0]!.payload.frame
+        })
+      }
       const all = yield* records("rewind-trace")
       const stepId = before[0]!.payload.step.stepId
       const boundary = all.find((row) =>

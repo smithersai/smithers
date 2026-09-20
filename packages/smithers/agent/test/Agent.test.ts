@@ -14,6 +14,7 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
+import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
@@ -272,6 +273,8 @@ const collect = (options: {
   readonly config?: FlowsConfig | undefined
   readonly memory?: MemorySource.DeclaredText | undefined
   readonly activeSeatSamples?: Array<number> | undefined
+  /** Receives every event as it arrives, so a run that fails still shows what it emitted. */
+  readonly sink?: Array<AgentEvent.AgentEvent> | undefined
 }) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
@@ -295,7 +298,12 @@ const collect = (options: {
       memory: options.memory,
       maxFrames: options.maxFrames ?? 3
     }).pipe(
-      Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+      Stream.runForEach((event) =>
+        Effect.sync(() => {
+          events.push(event)
+          options.sink?.push(event)
+        })
+      ),
       Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
     )
     if (options.activeSeatSamples !== undefined) {
@@ -546,6 +554,113 @@ describe("Agent.run", () => {
     expect(requests[0]).toContain("The fs/list flow.|pre|normal")
     expect(requests[0]).toContain("plugin:pre\nplugin:normal")
     expect(requests[0]).not.toContain("excluded")
+  })
+
+  it("journals the request a plugin rewrote, and runs that plugin once per model call", async () => {
+    const requests: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    let rewrites = 0
+    const outcome = await drive(
+      collect({
+        registry: registryOf([]),
+        model: recorded(requests),
+        maxFrames: 1,
+        plugins: [makePlugin<FlowsHooks>({
+          name: "request-addendum",
+          hooks: {
+            cellModelRequest: (request) =>
+              Effect.sync(() => {
+                rewrites++
+                return ModelRequest.ModelRequest.make({
+                  ...request,
+                  system: [...request.system, ModelRequest.SystemPart.make({ text: "plugin:addendum" })]
+                })
+              })
+          }
+        })]
+      }).pipe(Effect.tap((collected) => Effect.sync(() => events.push(...collected))))
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const asked = events.filter((event) => event._tag === "model-requested")
+    expect(asked).toHaveLength(requests.length)
+    // The record is of the call that was made. The controller never saw the
+    // addendum; the provider did, and so does whoever reopens this step.
+    expect(asked[0]?.request.system.at(-1)?.text).toBe("plugin:addendum")
+    expect(requests[0]).toContain("plugin:addendum")
+    expect(asked[0]?.binding).toEqual(new EngineLike.Binding({ routeId: "route-a", protocolId: "test-protocol" }))
+    // Recording the request must not cost the composition a second run of its
+    // hooks: a plugin that counts, meters or logs sees one call per model call.
+    expect(rewrites).toBe(requests.length)
+  })
+
+  it("fails the step on a request plugin that fails once, runs it once, and records no request it never sent", async () => {
+    const requests: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    let runs = 0
+    const outcome = await drive(
+      collect({
+        registry: registryOf([]),
+        model: recorded(requests),
+        maxFrames: 1,
+        sink: events,
+        plugins: [makePlugin<FlowsHooks>({
+          name: "fails-once",
+          hooks: {
+            // The first ask fails and every later one would rewrite: a second
+            // run of the waterfall would send a request no record describes.
+            cellModelRequest: (request) =>
+              Effect.suspend(() =>
+                ++runs === 1
+                  ? Effect.fail(new Error("lookup failed"))
+                  : Effect.succeed(ModelRequest.ModelRequest.make({
+                    ...request,
+                    system: [...request.system, ModelRequest.SystemPart.make({ text: "plugin:addendum" })]
+                  }))
+              )
+          }
+        })]
+      })
+    )
+
+    expect(outcome).toMatchObject({
+      _tag: "failed",
+      error: { code: "engine_failed", cause: { code: "hook_failed", plugin: "fails-once", hook: "cellModelRequest" } }
+    })
+    expect(runs).toBe(1)
+    expect(requests).toHaveLength(0)
+    expect(events.filter((event) => event._tag === "model-requested")).toHaveLength(0)
+  })
+
+  it("runs every request plugin once for a model call the waterfall fails", async () => {
+    const events: Array<AgentEvent.AgentEvent> = []
+    let metered = 0
+    const outcome = await drive(
+      collect({
+        registry: registryOf([]),
+        model: recorded([]),
+        maxFrames: 1,
+        sink: events,
+        plugins: [
+          makePlugin<FlowsHooks>({
+            name: "meter",
+            hooks: { cellModelRequest: () => Effect.sync(() => void metered++) }
+          }),
+          makePlugin<FlowsHooks>({
+            name: "failing-request",
+            hooks: { cellModelRequest: () => Effect.fail(new Error("request hook failed")) }
+          })
+        ]
+      })
+    )
+
+    expect(outcome).toMatchObject({
+      _tag: "failed",
+      error: { code: "engine_failed", cause: { code: "hook_failed", plugin: "failing-request" } }
+    })
+    expect(metered).toBe(1)
+    // The un-rewritten request was never sent, so no record presents it as sent.
+    expect(events.filter((event) => event._tag === "model-requested")).toHaveLength(0)
   })
 
   it("reports config observer failures without exposing their causes or failing the run", async () => {

@@ -162,6 +162,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as AgentEvent from "./AgentEvent.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import * as DemandText from "./internal/demandText.ts"
@@ -458,6 +459,17 @@ export interface Reading extends Probabilities {
   readonly latencyMs: number
   /** Token usage reported by the evaluator, absent when it supplied none. */
   readonly usage?: Evaluator.Usage | undefined
+  /**
+   * What was asked and what came back, in the shape `decision-settled`
+   * journals: the encoded evidence exactly as the transport was sent it, and
+   * every answer tagged by kind. Absent from a reader that reports neither, which
+   * journals no decision rather than one reconstructed from the three numbers
+   * above.
+   */
+  readonly asked?: {
+    readonly state: Schema.Json
+    readonly answers: Readonly<Record<string, AgentEvent.DecisionAnswer>>
+  } | undefined
 }
 
 /**
@@ -638,13 +650,23 @@ export const read = (
       return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host"))
     }
     // The classifier returns answers. Keep the transport's accounting at
-    // its service boundary so the durable reading can carry both.
+    // its service boundary so the durable reading can carry both. The
+    // provider's own confidence is kept the same way and for the same reason:
+    // the classifier drops it, and `decision-settled` may report no other.
+    // The state is read off the request for the reason the other two are read
+    // off the response: what crossed the boundary is the encoded evidence, and
+    // a record of what was asked has to be of that and not of a second encoding.
     let usage: Evaluator.Usage | undefined
+    let confidence: Readonly<Record<string, number>> | undefined
+    let sent: Schema.Json = null
     const metered = Evaluator.Evaluator.of({
       evaluate: (request) =>
         bound.value.evaluate(request).pipe(Effect.tap((response) =>
           Effect.sync(() => {
             usage = response.usage
+            confidence = response.confidence
+            // `Evidence` is a struct of JSON members, so its encoding is JSON.
+            sent = request.state as Schema.Json
           })
         ))
     })
@@ -669,7 +691,8 @@ export const read = (
       overclaims: answers.overclaims.probability,
       invented: answers.invented.probability,
       latencyMs: Math.round(Duration.toMillis(elapsed)),
-      ...(usage === undefined ? {} : { usage })
+      ...(usage === undefined ? {} : { usage }),
+      asked: { state: sent, answers: AgentEvent.decisionAnswers(answers, confidence) }
     }
   })
 

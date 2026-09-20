@@ -64,6 +64,7 @@ import type * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
@@ -295,11 +296,37 @@ const compositionLayers = (
 const withRequestPlugins = (
   engine: EngineLike.EngineLike,
   plugins: Plugins.Service<FlowsHooks>
-): EngineLike.EngineLike =>
-  EngineLike.make({
+): EngineLike.EngineLike => {
+  // The controller asks what a request resolves to and then seals that same
+  // request, so the waterfall's answer is kept between the two by the request
+  // object it answered. A plugin that counts, meters or logs therefore still
+  // sees one call per model call, which is what it saw before the controller
+  // asked anything. Weak, so a request the controller drops takes its entry
+  // with it.
+  //
+  // What is kept is the waterfall's exit, its failure included. A hook is an
+  // effect and nothing makes it answer the same way twice: one that failed the
+  // first ask and succeeded the second would send a provider a request whose
+  // record was written from the failure. Holding the failure means the sealed
+  // step reports the failure that was met, and no plugin runs a second time
+  // to produce it. An interruption is never held: an interrupted fiber does
+  // not run the continuation that holds the exit, and a hook that interrupts
+  // itself reaches here as the waterfall's typed `hook_failed`.
+  const rewritten = new WeakMap<ModelRequest.ModelRequest, Exit.Exit<ModelRequest.ModelRequest, PluginError>>()
+  const rewrite = (request: ModelRequest.ModelRequest): Effect.Effect<ModelRequest.ModelRequest, PluginError> =>
+    Effect.suspend(() => {
+      const held = rewritten.get(request)
+      return held !== undefined
+        ? held
+        : Effect.exit(CellPlugin.modelRequest(plugins, request)).pipe(
+          Effect.tap((exit) => Effect.sync(() => rewritten.set(request, exit))),
+          Effect.flatten
+        )
+    })
+  return EngineLike.make({
     sealStep: (step) =>
       Stream.unwrap(
-        CellPlugin.modelRequest(plugins, step.request).pipe(
+        rewrite(step.request).pipe(
           Effect.mapError((cause) =>
             new HarnessError({
               code: "engine_failed",
@@ -326,8 +353,19 @@ const withRequestPlugins = (
     record: engine.record,
     observe: engine.observe,
     capture: engine.capture,
+    // The request the provider is sent is the one the waterfall hands on, so
+    // that is the one the record of the call has to hold. A waterfall that
+    // fails has no request to hand on, so it resolves to none and the call
+    // leaves no record: `sealStep` reads the failure held above and reports
+    // it, without asking the waterfall again.
+    resolve: (request) =>
+      rewrite(request).pipe(
+        Effect.flatMap((next) => EngineLike.resolve(engine, next)),
+        Effect.orElseSucceed(() => Option.none<EngineLike.Resolved>())
+      ),
     suspend: engine.suspend
   })
+}
 
 /**
  * The agent: one method that runs one whole agent loop.

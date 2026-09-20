@@ -4,6 +4,8 @@
  * @since 0.1.0
  */
 import * as Permission from "@smthrs/capability/Permission"
+import type * as Classifier from "@smthrs/model/Classifier"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Schema } from "effect"
@@ -153,6 +155,56 @@ export class TurnOpened extends Schema.TaggedClass<TurnOpened>(
    */
   activeToolNames: Schema.Array(Schema.String),
   contextDigest: Schema.String
+}) {}
+
+/**
+ * What one model call was asked, written before the call is made.
+ *
+ * `model-settled` journals what a call answered and what it cost, and until
+ * this event nothing journaled what it was asked: the request existed only in
+ * the sealed step's key material, as a digest. A reader that wants to open one
+ * step and run it again needs the request itself, so this is the request
+ * itself, carried whole here and bounded where it is journaled.
+ *
+ * It is written when the call is OPENED rather than when it settles, so a call
+ * that never settles (a deadline, a refusal, a process that died mid-stream)
+ * still leaves what it asked on the record.
+ *
+ * `scope`, `frame` and `attempt` are the join keys, and they are on the record
+ * because position is not one. `scope` is the run's session, which for a
+ * module step is the step's recorded scope; `frame` is the controller's own
+ * frame number; `attempt` counts the model calls one frame made, from one,
+ * and is the same number `cell-rejected-in-frame` names when it refuses that
+ * call's answer. A compaction call runs before its frame's `turn-opened`, so a
+ * reader counting turns would file it under the frame before; `purpose` and
+ * `frame` say where it belongs.
+ *
+ * Credential-free by construction. The request is the provider-neutral
+ * `ModelRequest`, which has no member a credential can occupy, and
+ * {@link EngineLike.Binding} carries two names read off the prepared request
+ * that exists before any secret is signed on.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class ModelRequested extends Schema.TaggedClass<ModelRequested>(
+  "flows/harness/AgentEvent/ModelRequested"
+)("model-requested", {
+  eventType: Schema.Literal("flows.harness.model-requested.v1"),
+  /** The run's session, which is the recorded scope of the step that made the call. */
+  scope: Schema.String,
+  /** The controller's frame number for the turn this call belongs to. */
+  frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Which model call of that frame and purpose this is, counting from one. */
+  attempt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  /** What the call is for: the frame's own turn, or the compaction ahead of it. */
+  purpose: Schema.Literals(["frame", "compaction"]),
+  /** The seat the frame ran on, as `turn-opened` names it. */
+  seat: Schema.String,
+  /** The route the host resolved, absent where the host names none. */
+  binding: Schema.optional(EngineLike.Binding),
+  /** The request the provider is sent, whole: after any rewrite the host applies. */
+  request: ModelRequest.ModelRequest
 }) {}
 
 /**
@@ -619,6 +671,147 @@ export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
   nextFrame: Schema.Int
 }) {}
 
+const Probability = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+
+/**
+ * One classifier answer as `decision-settled` journals it, tagged by kind.
+ *
+ * `confidence` is the PROVIDER's number, `Evaluator.Response.confidence`, and
+ * it is absent whenever the provider sent none. It is never the largest
+ * probability wearing the name: `Classifier.confidence` reads 1 for an answer
+ * that carried no distribution at all, so a record that filled the field from
+ * it would report certainty exactly where the provider reported nothing. A
+ * boolean has no such field because its probability is the whole answer.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const DecisionAnswer = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("boolean"),
+    /** The probability the transport gave to yes. */
+    p: Probability
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("choice"),
+    /** The option chosen. */
+    value: Schema.String,
+    probabilities: Schema.Record(Schema.String, Probability),
+    /** The provider's own number, unchecked: it is theirs to define, and a record must not fail a run. */
+    confidence: Schema.optionalKey(Schema.Number)
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("score"),
+    /** The score as the transport gave it, interpolated over rung indexes. */
+    value: Schema.Number,
+    /** The label of the nearest rung. */
+    label: Schema.String,
+    probabilities: Schema.Record(Schema.String, Probability),
+    /** The provider's own number, unchecked: it is theirs to define, and a record must not fail a run. */
+    confidence: Schema.optionalKey(Schema.Number)
+  })
+])
+
+/**
+ * The decoded form of {@link DecisionAnswer}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type DecisionAnswer = typeof DecisionAnswer.Type
+
+/**
+ * The answers of one evaluation in the shape {@link DecisionSettled} carries.
+ *
+ * `confidence` is `Evaluator.Response.confidence`, passed through per question
+ * and left out per question: see {@link DecisionAnswer}.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const decisionAnswers = (
+  answers: Readonly<Record<string, Classifier.Answer>>,
+  confidence: Readonly<Record<string, number>> | undefined
+): Readonly<Record<string, DecisionAnswer>> =>
+  Object.fromEntries(
+    Object.entries(answers).map(([id, answer]): readonly [string, DecisionAnswer] => {
+      if ("probability" in answer) return [id, { kind: "boolean", p: answer.probability }]
+      const reported = confidence !== undefined && Object.hasOwn(confidence, id) ? confidence[id] : undefined
+      const provided = reported === undefined ? {} : { confidence: reported }
+      return "label" in answer
+        ? [id, {
+          kind: "score",
+          value: answer.value,
+          label: answer.label,
+          probabilities: answer.probabilities,
+          ...provided
+        }]
+        : [id, { kind: "choice", value: answer.value, probabilities: answer.probabilities, ...provided }]
+    })
+  )
+
+/**
+ * One decision a classifier made, with everything a reader needs to make it
+ * again: the state it read, the questions it was asked, and what it answered.
+ *
+ * The generalisation of {@link ClaimDemanded}, which stays. That event is three
+ * probabilities and a verdict, and it cannot say what the probabilities were
+ * probabilities OF: the evidence the brake assembled exists nowhere else, so a
+ * reading could be re-thresholded and never re-asked. This one carries the
+ * evidence. It is written beside `claim-demanded` rather than instead of it,
+ * because every projection that counts readings counts that event.
+ *
+ * `classifier` is the declaration's stable id, never its description, and
+ * `digest` is `Classifier.digest`, so a reader can tell a decision made under
+ * questions that have since been reworded from one it can reproduce.
+ * `questions` are the wire shapes the transport was sent.
+ *
+ * `acted` says whether the decision changed what the run did next. For the
+ * completion brake that is a completion handed back or a run ended; a reading
+ * that let the claim stand is `false`, and it is journaled all the same,
+ * because the passing decisions are what say whether asking was right.
+ *
+ * `decidedBy` names who answered: `jev` for the decision-only model behind
+ * `Evaluator`, `seat` for a generation seat asked to judge, `human` for a
+ * person. Only `jev` is written today.
+ *
+ * `scope` and `frame` are the join keys {@link ModelRequested} carries, for the
+ * reason it carries them.
+ *
+ * An emitter must produce the reading inside a recorded boundary, as the
+ * completion brake does, and emit what the record holds. The answers are a
+ * model's and the latency is a clock's, so a replayed frame that asked again
+ * would journal a second, different decision at the same coordinates.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class DecisionSettled extends Schema.TaggedClass<DecisionSettled>(
+  "flows/harness/AgentEvent/DecisionSettled"
+)("decision-settled", {
+  eventType: Schema.Literal("flows.harness.decision-settled.v1"),
+  /** The run's session, which is the recorded scope of the step that decided. */
+  scope: Schema.String,
+  /** The controller's frame number for the turn the decision was made in. */
+  frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** The classifier's stable id. */
+  classifier: Schema.String,
+  /** `Classifier.digest`: the canonical hash of the id and the questions. */
+  digest: Schema.String,
+  /** The encoded state the questions were asked about, as the transport was sent it. */
+  state: Schema.Json,
+  /** The questions as they crossed the wire, keyed by question id. */
+  questions: Schema.Record(Schema.String, Evaluator.Question),
+  /** One answer per question id, tagged by kind. */
+  answers: Schema.Record(Schema.String, DecisionAnswer),
+  /** Wall-clock milliseconds the evaluation took. */
+  latencyMs: Schema.Int,
+  /** Whether this decision changed what the run did next. */
+  acted: Schema.Boolean,
+  /** Who answered. */
+  decidedBy: Schema.Literals(["jev", "seat", "human"])
+}) {}
+
 /**
  * The controller telling a run that its own evidence is complete.
  *
@@ -896,6 +1089,7 @@ export const AgentEvent = Schema.Union([
   DisciplineArmed,
   TurnOpened,
   ModelDelta,
+  ModelRequested,
   ModelRetried,
   ModelSettled,
   CellProduced,
@@ -915,6 +1109,7 @@ export const AgentEvent = Schema.Union([
   UnmovedDemanded,
   UnresolvedDemanded,
   ClaimDemanded,
+  DecisionSettled,
   SufficiencyObserved,
   VacuousVerificationObserved,
   Suspended,
@@ -960,8 +1155,10 @@ export const eventType = {
   checkpointMinted: "flows.harness.checkpoint-minted.v1",
   claimDemanded: "flows.harness.claim-demanded.v1",
   compactionSettled: "flows.harness.compaction-settled.v1",
+  decisionSettled: "flows.harness.decision-settled.v1",
   disciplineArmed: "flows.harness.discipline-armed.v1",
   modelDelta: "flows.harness.model-delta.v1",
+  modelRequested: "flows.harness.model-requested.v1",
   modelRetried: "flows.harness.model-retried.v1",
   modelSettled: "flows.harness.model-settled.v1",
   mutationObserved: "flows.harness.mutation-observed.v1",

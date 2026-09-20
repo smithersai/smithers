@@ -12,7 +12,7 @@ import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
-import { maxTracedBytes, trace, traceIdentity } from "../AgentSession.ts"
+import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.ts"
 import type * as EventSink from "../EventSink.ts"
 
 interface Cursor {
@@ -20,6 +20,10 @@ interface Cursor {
   ordinal: number
   cell: string
   occurrences: Map<string, number>
+  // A request fact is written against the step's last one. Kept with the
+  // step's position because it has the same life: one dispatch, replayed from
+  // its first frame, so the facts a replay regenerates are the facts it wrote.
+  project: ReturnType<typeof tracer>
 }
 
 const boundCallFields = (payload: Record<string, Schema.Json>): Record<string, Schema.Json> =>
@@ -55,13 +59,13 @@ export const make = (journal: Journal.Service) =>
             })
           )
         }
-        const projected = trace(event)
-        if (projected === undefined) return
         let cursor = cursors.get(step)
         if (cursor === undefined) {
-          cursor = { frame: -1, ordinal: 0, cell: "", occurrences: new Map() }
+          cursor = { frame: -1, ordinal: 0, cell: "", occurrences: new Map(), project: tracer() }
           cursors.set(step, cursor)
         }
+        const projected = cursor.project(event)
+        if (projected === undefined) return
         if (event._tag === "turn-opened") {
           cursor.frame++
           cursor.ordinal = 0

@@ -935,7 +935,9 @@ describe("AgentAction event sink", () => {
     )
 
     expect(outcome.settledDuring).toBe(false)
-    expect(outcome.during).toEqual(["discipline-armed", "turn-opened", "model-delta"])
+    // The third is the request the model is about to be asked, journaled
+    // before the call: the model had not answered when the sink saw it.
+    expect(outcome.during).toEqual(["discipline-armed", "turn-opened", "model-requested"])
     expect(outcome.value).toEqual({ approved: true, issues: [] })
     // The terminal answer is unchanged by the sink watching it.
     expect(seen).toContain("transition-applied")
@@ -1018,7 +1020,7 @@ describe("AgentAction event sink", () => {
     expect(result).toEqual({ approved: true, issues: [] })
     // The override is the only method the service has, so it saw the same run
     // the layer form sees.
-    expect(seen.slice(0, 3)).toEqual(["discipline-armed", "turn-opened", "model-delta"])
+    expect(seen.slice(0, 4)).toEqual(["discipline-armed", "turn-opened", "model-requested", "model-delta"])
     expect(seen).toContain("transition-applied")
   })
 })

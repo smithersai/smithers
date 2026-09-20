@@ -15,9 +15,9 @@ importable as `@smthrs/harness/<Module>`.
 | Module | Public exports | Description |
 | --- | --- | --- |
 | `HarnessError` | `HarnessErrorCode`, `HarnessError` | Stable failures reported at the harness translation boundary. |
-| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
+| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
 | `Plan` | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent` | Local structural plan nodes used at the harness-to-engine boundary. |
-| `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
+| `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
 | `ContextWindow` | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render` | The immutable, provider-neutral context assembled for one model request. |
 | `Transcript` | `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult` | Transcript projection from durable journal entries. |
@@ -64,6 +64,7 @@ Serializable events emitted by harness adapters.
 | --- | --- | --- | --- |
 | `DisciplineArmed` | class | events | The loop discipline a run was armed with, journaled once when it starts. |
 | `TurnOpened` | class | events | The serializable snapshot fixed when a turn opens. |
+| `ModelRequested` | class | events | What one model call was asked, written before the call is made. |
 | `ModelDelta` | class | events | One provider-neutral model progress event. |
 | `ModelRetried` | class | events | A transport-only model retry taken before the sealed step settled. |
 | `ModelSettled` | class | events | The complete recorded model settlement and usage. |
@@ -82,6 +83,9 @@ Serializable events emitted by harness adapters.
 | `UnresolvedDemanded` | class | events | The controller refusing one completion that stepped around a failing check. |
 | `NarrowOnlyDemanded` | class | events | The controller refusing one completion that holds a single reading. |
 | `ClaimDemanded` | class | events | What Jev read off one completion claim, whether or not it braked. |
+| `DecisionAnswer` | const | models | One classifier answer as `decision-settled` journals it, tagged by kind. |
+| `decisionAnswers` | const | conversions | The answers of one evaluation in the shape `DecisionSettled` carries. |
+| `DecisionSettled` | class | events | One decision a classifier made, with everything a reader needs to make it again: the state it read, the questions it was asked, and what it answered. |
 | `SufficiencyObserved` | class | events | The controller telling a run that its own evidence is complete. |
 | `VacuousVerificationObserved` | class | events | The controller telling a run that its stored proof was already green. |
 | `MutationObserved` | class | events | What one frame did to the workspace, and how the controller knows. |
@@ -135,10 +139,13 @@ and [step keys and the model layer](./concepts.md#step-keys-and-the-model-layer)
 | `RecordBoundary` | interface | models | One nondeterministic read the controller must perform exactly once per run. |
 | `Observation` | class | models | One measurement of the workspace the run is changing. |
 | `Snapshot` | class | models | One pinned tree the run can come back to. |
+| `Binding` | class | models | The names of the route one model request resolves to. |
+| `Resolved` | interface | models | What one model request resolves to on its way out of the host. |
 | `CaptureRequest` | interface | models | A request to pin the workspace as it stands right now. |
 | `EngineLike` | interface | services | The engine operations required by harness translation. |
 | `make` | const | constructors | Constructs an engine port from an implementation. |
 | `layer` | const | layers | Provides an engine port implementation. |
+| `resolve` | const | conversions | What one request resolves to on this engine. |
 | `makeNoop` | const | constructors | Constructs an unavailable engine stub, optionally overriding operations. |
 | `layerNoop` | const | layers | Provides an unavailable engine stub. |
 

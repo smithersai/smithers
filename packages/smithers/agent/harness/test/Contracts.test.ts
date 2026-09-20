@@ -1,5 +1,6 @@
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect"
@@ -201,6 +202,45 @@ describe("AgentEvent", () => {
         eventType: "flows.harness.resolved.v1",
         message: assistantMessage
       }),
+      new AgentEvent.ModelRequested({
+        eventType: "flows.harness.model-requested.v1",
+        scope: "session-1",
+        frame: 3,
+        attempt: 1,
+        purpose: "frame",
+        seat: "anthropic:model",
+        binding: new EngineLike.Binding({ routeId: "anthropic-direct", protocolId: "anthropic-messages" }),
+        request: ModelRequest.ModelRequest.make({
+          modelId: "model",
+          system: [ModelRequest.SystemPart.make({ text: "cell contract" })],
+          messages: [ModelRequest.Message.user("start")],
+          tools: [],
+          toolChoice: "none",
+          params: ModelRequest.GenerationParams.make({ maxTokens: 1024 })
+        })
+      }),
+      new AgentEvent.DecisionSettled({
+        eventType: "flows.harness.decision-settled.v1",
+        scope: "session-1",
+        frame: 3,
+        classifier: "triage/relevance",
+        digest: "classifier-digest",
+        state: { title: "a pull request" },
+        questions: {
+          relevant: Evaluator.BooleanQuestion.of({ instructions: "Relevant?", criteria: { true: "yes", false: "no" } }),
+          role: Evaluator.ChoiceQuestion.of({
+            instructions: "Which?",
+            criteria: { lead: "leads", support: "supports" }
+          })
+        },
+        answers: {
+          relevant: { kind: "boolean", p: 0.8 },
+          role: { kind: "choice", value: "lead", probabilities: { lead: 0.7, support: 0.3 }, confidence: 0.91 }
+        },
+        latencyMs: 480,
+        acted: true,
+        decidedBy: "jev"
+      }),
       // The ten variants this list used to omit. A round-trip suite that names
       // two thirds of a union proves nothing about the third it skipped.
       new AgentEvent.CellPrinted({
@@ -334,6 +374,46 @@ describe("AgentEvent", () => {
         new AgentEvent.Aborted({ eventType: AgentEvent.eventType.aborted, reason: "cancelled" })
       )
     ).toEqual({ _tag: "aborted", eventType: "flows.harness.aborted.v1", reason: "cancelled" })
+
+    // The decision is stored whole inside the recorded completion judgement, so
+    // its encoding is what a replayed frame decodes: the questions in their
+    // wire form, and no `confidence` key where the provider reported none.
+    expect(
+      Schema.encodeSync(AgentEvent.AgentEvent)(
+        new AgentEvent.DecisionSettled({
+          eventType: AgentEvent.eventType.decisionSettled,
+          scope: "session-1",
+          frame: 0,
+          classifier: "completion/claim",
+          digest: "digest",
+          state: { claim: "done" },
+          questions: { done: Evaluator.BooleanQuestion.of({ instructions: "Done?" }) },
+          answers: {
+            done: { kind: "boolean", p: 0.9 },
+            role: { kind: "choice", value: "lead", probabilities: { lead: 1, support: 0 } }
+          },
+          latencyMs: 12,
+          acted: false,
+          decidedBy: "jev"
+        })
+      )
+    ).toEqual({
+      _tag: "decision-settled",
+      eventType: "flows.harness.decision-settled.v1",
+      scope: "session-1",
+      frame: 0,
+      classifier: "completion/claim",
+      digest: "digest",
+      state: { claim: "done" },
+      questions: { done: { type: "boolean", instructions: "Done?" } },
+      answers: {
+        done: { kind: "boolean", p: 0.9 },
+        role: { kind: "choice", value: "lead", probabilities: { lead: 1, support: 0 } }
+      },
+      latencyMs: 12,
+      acted: false,
+      decidedBy: "jev"
+    })
   })
 
   it("round-trips the same variants with every optional field absent", () => {

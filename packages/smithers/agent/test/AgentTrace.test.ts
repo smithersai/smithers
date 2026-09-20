@@ -13,6 +13,7 @@ import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as Transcript from "@smthrs/harness/Transcript"
 import { Redaction } from "@smthrs/journal"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Option, Result } from "effect"
@@ -1105,5 +1106,442 @@ describe("prompt-flow arguments", () => {
     const rendered = AgentSession.prompt("Body.", { args: "x".repeat(AgentSession.maxTracedBytes + 1) })
     const payload = AgentSession.promptRendered(rendered).payload as { readonly arguments: unknown }
     expect(payload.arguments).toMatchObject({ truncated: true })
+  })
+})
+
+/*
+ * The two records a reader reopens one step from.
+ *
+ * `model-settled` holds an answer and `claim-demanded` holds three numbers,
+ * and until these two records nothing in the trail held what either was an
+ * answer TO. The projection is what bounds them and what keeps them readable
+ * through the journal's own redaction, so both are pinned here rather than in
+ * the harness, which carries the request whole.
+ */
+describe("the request and the decision behind a step", () => {
+  const request = (overrides: Partial<ConstructorParameters<typeof ModelRequest.ModelRequest>[0]> = {}) =>
+    ModelRequest.ModelRequest.make({
+      modelId: "test-model",
+      system: [ModelRequest.SystemPart.make({ text: "cell contract" }), ModelRequest.SystemPart.make({ text: "task" })],
+      messages: [
+        ModelRequest.Message.user("start"),
+        ModelRequest.Message.assistant("```cell\nctx.done(1)\n```", { stopReason: "stop" })
+      ],
+      tools: [],
+      toolChoice: "none",
+      params: ModelRequest.GenerationParams.make({ maxTokens: 2048, temperature: 0.2, reasoningEffort: "high" }),
+      ...overrides
+    })
+  const requested = (overrides: Partial<ConstructorParameters<typeof AgentEvent.ModelRequested>[0]> = {}) =>
+    new AgentEvent.ModelRequested({
+      eventType: "flows.harness.model-requested.v1",
+      scope: "run-1/step@abc:1#0",
+      frame: 3,
+      attempt: 2,
+      purpose: "frame",
+      seat: "anthropic:test-model",
+      binding: new EngineLike.Binding({ routeId: "anthropic-direct", protocolId: "anthropic-messages" }),
+      request: request(),
+      ...overrides
+    })
+
+  const digestOf = (value: unknown): string => Digest.digest(CanonicalJson.stringify(value))
+
+  it("projects everything a composer rebuilds the call from, under the keys that join it to its turn", () => {
+    const messages = [{ role: "user", text: "start" }, { role: "assistant", text: "```cell\nctx.done(1)\n```" }]
+    const params = { maxOutput: 2048, temperature: 0.2, reasoningEffort: "high" }
+    expect(AgentSession.trace(requested())).toEqual({
+      eventType: "control.agent.model-requested",
+      payload: {
+        scope: "run-1/step@abc:1#0",
+        frame: 3,
+        attempt: 2,
+        purpose: "frame",
+        seat: "anthropic:test-model",
+        modelId: "test-model",
+        routeId: "anthropic-direct",
+        protocolId: "anthropic-messages",
+        system: ["cell contract", "task"],
+        systemDigest: digestOf(["cell contract", "task"]),
+        messages,
+        messagesDigest: digestOf(messages),
+        prefixCount: 0,
+        params,
+        paramsDigest: digestOf(params),
+        toolCount: 0
+      }
+    })
+  })
+
+  it("names no route where the host resolved none", () => {
+    const payload = AgentSession.trace(requested({ binding: undefined }))!.payload as Record<string, unknown>
+    expect(Object.hasOwn(payload, "routeId")).toBe(false)
+    expect(Object.hasOwn(payload, "protocolId")).toBe(false)
+  })
+
+  it("marks an oversized message truncated, leaves its text out, and keeps the messages beside it", () => {
+    const huge = "x".repeat(AgentSession.maxTracedBytes + 1)
+    const messages = [ModelRequest.Message.user("start"), ModelRequest.Message.user(huge)]
+    const oversized = AgentSession.trace(requested({ request: request({ messages }) }))!
+    const payload = oversized.payload as Record<string, unknown>
+
+    // A reader says "unavailable" off one flag, and finds no text to prefill a
+    // partial request from: the message holds its size and digest, never a
+    // prefix. The bound is per message, so the one that fits is still read.
+    expect(payload.truncated).toBe(true)
+    const projected = { role: "user", text: huge }
+    const journaled = [{ role: "user", text: "start" }, {
+      truncated: true,
+      bytes: new TextEncoder().encode(CanonicalJson.stringify(projected)).byteLength,
+      digest: digestOf(projected)
+    }]
+    expect(payload.messages).toEqual(journaled)
+    expect(payload.messagesDigest).toBe(digestOf(journaled))
+    expect(JSON.stringify(payload)).not.toContain("xxxx")
+    // What fits is still there, so the record says what was truncated and not
+    // only that something was.
+    expect(payload.system).toEqual(["cell contract", "task"])
+    // A request that fits carries no flag at all.
+    expect(Object.hasOwn(AgentSession.trace(requested())!.payload as object, "truncated")).toBe(false)
+  })
+
+  it("gives a field's digest as its marker's digest when the field is left out", () => {
+    const system = [ModelRequest.SystemPart.make({ text: "s".repeat(AgentSession.maxTracedBytes + 1) })]
+    const payload = AgentSession.trace(requested({ request: request({ system }) }))!.payload as Record<string, unknown>
+    expect(payload.truncated).toBe(true)
+    expect(payload.system).toEqual({
+      truncated: true,
+      bytes: expect.any(Number),
+      digest: payload.systemDigest
+    })
+    expect(payload.systemDigest).toBe(digestOf(system.map((part) => part.text)))
+  })
+
+  it("keeps the whole record inside the step-fact payload bound, however many messages one call adds", () => {
+    // Three bounded fields and a handful of names stay inside the
+    // 262,144-byte step-fact payload, so the durable sink never replaces the
+    // record, and with it the join keys, by a bare marker. The messages share
+    // one field's bound between them: past it a message is a marker, and a
+    // field of nothing but markers that still overflows is one marker.
+    const system = [ModelRequest.SystemPart.make({ text: "s".repeat(AgentSession.maxTracedBytes - 16) })]
+    const bytesOf = (payload: unknown) => new TextEncoder().encode(JSON.stringify(payload)).byteLength
+    const many = Array.from(
+      { length: 40 },
+      (_, index) => ModelRequest.Message.user(`${index}:${"\u0000".repeat(4_000)}`)
+    )
+    const crowded = AgentSession.trace(requested({ request: request({ system, messages: many }) }))!
+      .payload as Record<string, unknown>
+    expect(bytesOf(crowded)).toBeLessThan(262_144)
+    expect(crowded.truncated).toBe(true)
+    expect((crowded.messages as ReadonlyArray<unknown>).length).toBe(40)
+
+    const flood = Array.from({ length: 2_000 }, (_, index) => ModelRequest.Message.user(`${index}:${"y".repeat(100)}`))
+    const flooded = AgentSession.trace(requested({ request: request({ system, messages: flood }) }))!
+      .payload as Record<string, unknown>
+    expect(bytesOf(flooded)).toBeLessThan(262_144)
+    expect(flooded.messages).toEqual({ truncated: true, bytes: expect.any(Number), digest: flooded.messagesDigest })
+  })
+
+  describe("what one call adds to the call before it", () => {
+    const message = (index: number, bytes = 16) => ModelRequest.Message.user(`${index}:${"m".repeat(bytes)}`)
+    const calls = (transcripts: ReadonlyArray<ReadonlyArray<ModelRequest.Message>>) => {
+      const project = AgentSession.tracer()
+      return transcripts.map((messages, frame) =>
+        JSON.parse(JSON.stringify(
+          project(requested({ frame, attempt: 1, request: request({ messages }) }))!.payload
+        )) as Record<string, unknown>
+      )
+    }
+    /** The reader's walk, as `docs/api.md` states it. */
+    const rebuilt = (rows: ReadonlyArray<Record<string, unknown>>) => {
+      let transcript: ReadonlyArray<unknown> = []
+      let system: unknown
+      for (const row of rows) {
+        if (row.truncated === true) return undefined
+        const prefix = transcript.slice(0, row.prefixCount as number)
+        if (prefix.length !== row.prefixCount) return undefined
+        if (prefix.length > 0 && digestOf(prefix.map(digestOf)) !== row.prefixDigest) return undefined
+        if (digestOf(row.messages) !== row.messagesDigest) return undefined
+        transcript = [...prefix, ...(row.messages as ReadonlyArray<unknown>)]
+        if (Object.hasOwn(row, "system")) system = row.system
+        if (digestOf(system) !== row.systemDigest) return undefined
+      }
+      return { system, messages: transcript }
+    }
+
+    it("writes the system text once and the transcript's new messages only, so the trail grows linearly", () => {
+      const teaching = "t".repeat(20_000)
+      const system = [ModelRequest.SystemPart.make({ text: teaching })]
+      // 200 KiB of transcript across four calls, each adding 50 KiB.
+      const transcript = Array.from({ length: 40 }, (_, index) => message(index, 5_120))
+      const project = AgentSession.tracer()
+      const rows = [10, 20, 30, 40].map((upto, frame) =>
+        JSON.parse(JSON.stringify(
+          project(requested({ frame, attempt: 1, request: request({ system, messages: transcript.slice(0, upto) }) }))!
+            .payload
+        )) as Record<string, unknown>
+      )
+
+      expect(rows.map((row) => row.prefixCount)).toEqual([0, 10, 20, 30])
+      expect(rows.map((row) => (row.messages as ReadonlyArray<unknown>).length)).toEqual([10, 10, 10, 10])
+      expect(rows.map((row) => Object.hasOwn(row, "system"))).toEqual([true, false, false, false])
+      expect(new Set(rows.map((row) => row.systemDigest)).size).toBe(1)
+      expect(rows.some((row) => Object.hasOwn(row, "truncated"))).toBe(false)
+      // One transcript, one system text, and a constant per record.
+      const spoken = transcript.map((entry) => ({ role: "user", text: (entry.content[0] as { text: string }).text }))
+      const journaled = new TextEncoder().encode(JSON.stringify(rows)).byteLength
+      const once = new TextEncoder().encode(JSON.stringify(spoken) + teaching).byteLength
+      expect(journaled).toBeLessThan(once + rows.length * 1_024)
+      // And the last call is still the call that was made.
+      expect(rebuilt(rows)).toEqual({ system: [teaching], messages: spoken })
+    })
+
+    it("keeps what the two calls share where the transcript was rewritten, and says how much that is", () => {
+      const [first, reasked, next, compacted] = calls([
+        [message(0), message(1)],
+        // An in-frame re-ask extends the call it follows.
+        [message(0), message(1), message(2), message(3)],
+        // The next frame dropped the refusal: two shared, one new.
+        [message(0), message(1), message(4)],
+        // A compaction shares nothing with what it replaced.
+        [message(9), message(4)]
+      ])
+      expect([first, reasked, next, compacted].map((row) => row!.prefixCount)).toEqual([0, 2, 2, 0])
+      expect(Object.hasOwn(first!, "prefixDigest")).toBe(false)
+      expect(Object.hasOwn(compacted!, "prefixDigest")).toBe(false)
+      expect(reasked!.prefixDigest).toBe(
+        digestOf(
+          [{ role: "user", text: `0:${"m".repeat(16)}` }, { role: "user", text: `1:${"m".repeat(16)}` }].map(digestOf)
+        )
+      )
+      expect(rebuilt([first!, reasked!, next!])?.messages).toHaveLength(3)
+      expect(rebuilt([first!, reasked!, next!, compacted!])?.messages).toHaveLength(2)
+    })
+
+    it("writes the system text again when it changes, and folds each scope and purpose on its own", () => {
+      const project = AgentSession.tracer()
+      const row = (overrides: Parameters<typeof requested>[0]) =>
+        project(requested(overrides))!.payload as Record<string, unknown>
+      const messages = [message(0)]
+      const rewritten = request({ messages, system: [ModelRequest.SystemPart.make({ text: "another contract" })] })
+      expect(Object.hasOwn(row({ request: request({ messages }) }), "system")).toBe(true)
+      expect(Object.hasOwn(row({ request: request({ messages }) }), "system")).toBe(false)
+      expect(row({ request: rewritten }).system).toEqual(["another contract"])
+      // A compaction call and another step's call start from nothing.
+      expect(row({ purpose: "compaction", request: rewritten })).toMatchObject({
+        system: ["another contract"],
+        prefixCount: 0
+      })
+      expect(row({ scope: "run-1/other", request: rewritten })).toMatchObject({
+        system: ["another contract"],
+        prefixCount: 0
+      })
+    })
+
+    it("reports the walk unavailable through a record that was truncated", () => {
+      const rows = calls([
+        [message(0, AgentSession.maxTracedBytes)],
+        [message(0, AgentSession.maxTracedBytes), message(1)]
+      ])
+      expect(rows[0]!.truncated).toBe(true)
+      // The second call is whole and small, and still cannot be rebuilt: the
+      // message it builds on was never written.
+      expect(Object.hasOwn(rows[1]!, "truncated")).toBe(false)
+      expect(rows[1]!.prefixCount).toBe(1)
+      expect(rebuilt(rows)).toBeUndefined()
+    })
+
+    it("regenerates the same records and the same identities on a replayed incarnation", () => {
+      const transcripts = [[message(0)], [message(0), message(1)], [message(0), message(1), message(2)]]
+      const identities = (rows: ReadonlyArray<Record<string, unknown>>) =>
+        rows.map((row, frame) => AgentSession.traceIdentity(frame, 0, "", "control.agent.model-requested", row))
+      const original = calls(transcripts)
+      const replayed = calls(transcripts)
+      expect(replayed).toEqual(original)
+      expect(identities(replayed)).toEqual(identities(original))
+      expect(new Set(identities(original)).size).toBe(3)
+    })
+  })
+
+  describe("what survives the journal's own redaction", () => {
+    it("survives with every field a composer needs", () => {
+      const projected = AgentSession.trace(requested())!.payload
+      // `maxTokens` is a credential by the journal's naming rule, and a row that
+      // read `"maxTokens": "[REDACTED]"` would prefill a composer with a lie. The
+      // projection names the same number `maxOutput`; `scope` and not `session`
+      // for the same reason.
+      expect(Redaction.isSensitiveKey("maxTokens")).toBe(true)
+      expect(Redaction.isSensitiveKey("session")).toBe(true)
+      expect(Redaction.make()(projected)).toEqual(projected)
+    })
+
+    it("lets a reader tell a request the journal rewrote from the one that was sent", () => {
+      // The journal's textual rules read `apiKey: abc` and `maxTokens: 4096`
+      // as credentials wherever they occur, and a coding transcript is full of
+      // both. The row carries no mark of its own, so each rebuildable field
+      // travels with the digest of what it was before the journal saw it.
+      const spoken = request({
+        system: [ModelRequest.SystemPart.make({ text: "Use maxTokens: 4096 for the summary." })],
+        messages: [ModelRequest.Message.user("set apiKey: abc and rerun")]
+      })
+      const projected = JSON.parse(JSON.stringify(AgentSession.trace(requested({ request: spoken }))!.payload))
+      const journaled = Redaction.make()(projected) as Record<string, unknown>
+
+      expect(journaled.messages).not.toEqual(projected.messages)
+      expect(journaled.system).not.toEqual(projected.system)
+      expect(Object.hasOwn(journaled, "truncated")).toBe(false)
+      // The digests come through untouched, and each disagrees with what is
+      // now beside it: redacted, not re-askable.
+      expect(journaled.messagesDigest).toBe(projected.messagesDigest)
+      expect(digestOf(journaled.messages)).not.toBe(journaled.messagesDigest)
+      expect(digestOf(journaled.system)).not.toBe(journaled.systemDigest)
+      // A field the journal left alone still agrees.
+      expect(digestOf(journaled.params)).toBe(journaled.paramsDigest)
+      // And every field of a request it left alone agrees, read back as JSON.
+      const clean = Redaction.make()(
+        JSON.parse(JSON.stringify(AgentSession.trace(requested())!.payload))
+      ) as Record<string, unknown>
+      for (const field of ["system", "messages", "params"]) {
+        expect(digestOf(clean[field])).toBe(clean[`${field}Digest`])
+      }
+    })
+  })
+
+  it("derives one identity for a replayed request and another for the next call of the frame", () => {
+    const identity = (event: AgentEvent.ModelRequested) => {
+      const projected = AgentSession.trace(event)!
+      return AgentSession.traceIdentity(
+        3,
+        0,
+        "",
+        projected.eventType,
+        JSON.parse(JSON.stringify(projected.payload)) as Record<string, unknown>
+      )
+    }
+    expect(identity(requested())).toBe(identity(requested()))
+    expect(identity(requested({ attempt: 3 }))).not.toBe(identity(requested()))
+    expect(identity(requested({ purpose: "compaction" }))).not.toBe(identity(requested()))
+  })
+
+  const decided = (overrides: Partial<ConstructorParameters<typeof AgentEvent.DecisionSettled>[0]> = {}) =>
+    new AgentEvent.DecisionSettled({
+      eventType: "flows.harness.decision-settled.v1",
+      scope: "run-1",
+      frame: 4,
+      classifier: "completion/claim",
+      digest: "classifier-digest",
+      state: { task: "Say hello.", claim: "hello" },
+      questions: {
+        invented: Evaluator.BooleanQuestion.of({ instructions: "Invented?", criteria: { true: "yes", false: "no" } })
+      },
+      answers: { invented: { kind: "boolean", p: 0.02 } },
+      latencyMs: 412,
+      acted: false,
+      decidedBy: "jev",
+      ...overrides
+    })
+
+  it("projects a decision with its state, its wire questions and its answers", () => {
+    const questions = [{
+      id: "invented",
+      type: "boolean",
+      instructions: "Invented?",
+      criteria: { true: "yes", false: "no" }
+    }]
+    const answers = [{ id: "invented", kind: "boolean", p: 0.02 }]
+    expect(AgentSession.trace(decided())).toEqual({
+      eventType: "control.agent.decision-settled",
+      payload: {
+        scope: "run-1",
+        frame: 4,
+        classifier: "completion/claim",
+        digest: "classifier-digest",
+        state: { task: "Say hello.", claim: "hello" },
+        stateDigest: digestOf({ task: "Say hello.", claim: "hello" }),
+        questions,
+        questionsDigest: digestOf(questions),
+        answers,
+        answersDigest: digestOf(answers),
+        latencyMs: 412,
+        acted: false,
+        decidedBy: "jev"
+      }
+    })
+  })
+
+  it("marks an oversized state truncated and leaves it out", () => {
+    const state = { task: "t".repeat(AgentSession.maxTracedBytes + 1) }
+    const payload = AgentSession.trace(decided({ state }))!.payload as Record<string, unknown>
+    expect(payload.truncated).toBe(true)
+    expect(payload.state).toEqual({
+      truncated: true,
+      bytes: new TextEncoder().encode(CanonicalJson.stringify(state)).byteLength,
+      digest: Digest.digest(CanonicalJson.stringify(state))
+    })
+    expect(payload.stateDigest).toBe(digestOf(state))
+    expect(payload.answers).toEqual([{ id: "invented", kind: "boolean", p: 0.02 }])
+  })
+
+  it("writes names a caller chose as values, so the journal redacts none of them by name", () => {
+    // A question id and an option are the caller's words, and the journal
+    // replaces whatever sits under a key it reads as a credential name.
+    // `maxTokens` was renamed for this; a caller's names cannot be, so they
+    // are never keys.
+    expect(Redaction.isSensitiveKey("auth")).toBe(true)
+    expect(Redaction.isSensitiveKey("needsAuth")).toBe(true)
+    const routed = decided({
+      questions: {
+        needsAuth: Evaluator.BooleanQuestion.of({ instructions: "Does it need a sign-in?" }),
+        route: Evaluator.ChoiceQuestion.of({
+          instructions: "Which desk?",
+          criteria: { auth: "sign-in trouble", billing: "an invoice", session: "a dropped connection" }
+        })
+      },
+      answers: {
+        needsAuth: { kind: "boolean", p: 0.5 },
+        route: {
+          kind: "choice",
+          value: "auth",
+          probabilities: { auth: 0.8, billing: 0.1, session: 0.1 },
+          confidence: 0.7
+        }
+      }
+    })
+    const payload = JSON.parse(JSON.stringify(AgentSession.trace(routed)!.payload)) as Record<string, unknown>
+    expect(payload.questions).toEqual([
+      { id: "needsAuth", type: "boolean", instructions: "Does it need a sign-in?" },
+      {
+        id: "route",
+        type: "choice",
+        instructions: "Which desk?",
+        criteria: [
+          { option: "auth", description: "sign-in trouble" },
+          { option: "billing", description: "an invoice" },
+          { option: "session", description: "a dropped connection" }
+        ]
+      }
+    ])
+    const journaled = Redaction.make()(payload) as typeof payload
+    expect(journaled).toEqual(payload)
+    const route = (journaled.answers as ReadonlyArray<Record<string, unknown>>).find((answer) => answer.id === "route")
+    expect(route).toEqual({
+      id: "route",
+      kind: "choice",
+      value: "auth",
+      probabilities: [{ option: "auth", p: 0.8 }, { option: "billing", p: 0.1 }, { option: "session", p: 0.1 }],
+      confidence: 0.7
+    })
+  })
+
+  it("lets a reader tell a decision's state the journal rewrote from the one that was judged", () => {
+    const evidence = { task: "Say hello.", claim: "hello", output: "secret = hunter2" }
+    const projected = JSON.parse(JSON.stringify(AgentSession.trace(decided({ state: evidence }))!.payload))
+    const journaled = Redaction.make()(projected) as Record<string, unknown>
+    expect(journaled.state).not.toEqual(evidence)
+    expect(Object.hasOwn(journaled, "truncated")).toBe(false)
+    expect(digestOf(journaled.state)).not.toBe(journaled.stateDigest)
+    expect(journaled.stateDigest).toBe(digestOf(evidence))
+    expect(digestOf(journaled.questions)).toBe(journaled.questionsDigest)
+    expect(digestOf(journaled.answers)).toBe(journaled.answersDigest)
   })
 })

@@ -479,6 +479,39 @@ describe("Diagnosis handler classes", () => {
     })
   })
 
+  it("reads no run-level fact off a model request or a decision, from a step or from the run", () => {
+    // Neither kind has a handler, and that is the decision: a request is what
+    // a call was ASKED and a decision is what a classifier read, so neither
+    // is a turn, a token, a call or an answer. The payloads below carry every
+    // field a handler reads (`seat`, `usage`, `flowName`, `text`, `question`)
+    // so a handler added for either kind by mistake moves this digest.
+    const baseline = [
+      event("control.agent.turn-opened", { seat: "opus" }, 100),
+      event("control.agent.model-settled", { usage: { inputTokens: 10, outputTokens: 5 } }, 200),
+      event("control.agent.resolved", { text: "the run's answer" }, 300),
+      event("control.run.completed", {}, 400)
+    ]
+    const looksLikeEverything = {
+      scope: step.scope,
+      frame: 0,
+      seat: "a step's seat",
+      usage: { inputTokens: 9_999, outputTokens: 9_999 },
+      flowName: "write",
+      text: "a step's text",
+      question: "a step's question",
+      outcome: "failure",
+      message: "a step's refusal"
+    }
+    for (const kind of ["control.agent.model-requested", "control.agent.decision-settled"]) {
+      expect(Object.hasOwn(Diagnosis.handlerReach, kind)).toBe(false)
+      // Recorded far outside the run's span, so widening it would show too.
+      const scoped = stepFact(kind, looksLikeEverything, 9_000)
+      expect(Diagnosis.nativeStepEvent(scoped)).toMatchObject({ kind, payload: { step: { scope: step.scope } } })
+      const unscoped = event(kind, looksLikeEverything, 9_000)
+      expect(Diagnosis.digest([...baseline, scoped, unscoped])).toEqual(Diagnosis.digest(baseline))
+    }
+  })
+
   it("cannot receive a run status or an approval from a step fact", () => {
     // `StepFact.Fact` accepts `^control\.agent\.[a-z-]+$` alone, so the
     // root-only status fields have no step-scoped reading to refuse.

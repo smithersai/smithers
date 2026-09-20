@@ -1418,7 +1418,11 @@ const RecordedCompletion = Schema.Struct({
       claimDemands: Schema.optionalKey(NonNegativeSafeInt)
     })
   })),
-  unproven: Schema.NullOr(HarnessError)
+  unproven: Schema.NullOr(HarnessError),
+  // An optional key, not a nullable one: a judgement recorded before decisions
+  // existed has no such member, and it must replay as a judgement with no
+  // decision to report rather than fail to decode.
+  decision: Schema.optionalKey(Schema.NullOr(AgentEvent.DecisionSettled))
 })
 
 /**
@@ -1826,6 +1830,44 @@ const callHandler = (
   })
 
 /**
+ * Journals what one model call is about to be asked.
+ *
+ * Emitted before the sealed step rather than beside its settlement, so a call
+ * that never settles still leaves its request behind. What is journaled is the
+ * request as the host will send it, which is not always the one built here:
+ * see {@link EngineLike.EngineLike.resolve}, which is also why the answer is
+ * asked for on every attempt and not recorded.
+ *
+ * A host that cannot say what it would send leaves no record. The sealed step
+ * that follows fails on the same request, so the call the missing record would
+ * have described is one that was never made.
+ */
+const requested = (
+  state: State,
+  engine: EngineLike.EngineLike,
+  request: ModelRequest.ModelRequest,
+  purpose: AgentEvent.ModelRequested["purpose"],
+  attempt: number,
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const resolved = yield* EngineLike.resolve(engine, request)
+    if (Option.isNone(resolved)) return
+    yield* emit(
+      new AgentEvent.ModelRequested({
+        eventType: eventType.modelRequested,
+        scope: state.session,
+        frame: state.frame,
+        attempt,
+        purpose,
+        seat: state.seat,
+        binding: Option.getOrUndefined(resolved.value.binding),
+        request: resolved.value.request
+      })
+    )
+  })
+
+/**
  * Compacts the frame's context before the model is asked anything.
  *
  * Compaction is a transition of the run, not a repair applied to a request on
@@ -1872,6 +1914,7 @@ const compacted = (
       toolChoice: "none",
       params: summaryRequest.params
     })
+    yield* requested(state, engine, request, "compaction", 1, emit)
     const events = yield* Stream.runCollect(
       engine.sealStep({
         request,
@@ -1990,6 +2033,7 @@ const seal = (
     let contextWindow = state.contextWindow
     for (let attempt = 0;; attempt++) {
       const request = yield* Effect.fromResult(requestFrom(state, contextWindow))
+      yield* requested(state, engine, request, "frame", attempt + 1, emit)
       // Timed on the injected clock, never on ambient wall time, so a test that
       // supplies a clock sees the duration it declared.
       const startedAt = yield* Clock.currentTimeMillis
@@ -2731,16 +2775,18 @@ const frame = (
           readCompletion
         ).pipe(
           Effect.provideContext(services),
-          Effect.map((decision) => ({
-            observed: decision.observed ?? null,
-            demand: decision.demand ?? null,
-            unproven: decision.unproven ?? null
+          Effect.map((judgement) => ({
+            observed: judgement.observed ?? null,
+            demand: judgement.demand ?? null,
+            unproven: judgement.unproven ?? null,
+            decision: judgement.decision ?? null
           }))
         )
-      }).pipe(Effect.map((decision) => ({
-        observed: decision.observed ?? undefined,
-        demand: decision.demand ?? undefined,
-        unproven: decision.unproven ?? undefined
+      }).pipe(Effect.map((judgement) => ({
+        observed: judgement.observed ?? undefined,
+        demand: judgement.demand ?? undefined,
+        unproven: judgement.unproven ?? undefined,
+        decision: judgement.decision ?? undefined
       })))
       // The claim brake's reading when it issued no demand. It is the one
       // demand whose non-demanding readings are journaled, because it is the
@@ -2748,6 +2794,11 @@ const frame = (
       // emitted before the failure below, so the reading that ended the run
       // is on the record the run leaves behind.
       if (judged.observed !== undefined) yield* emit(judged.observed)
+      // The same reading with its evidence, from the same record, so a
+      // replayed frame reports the decision the original attempt made. It
+      // follows `claim-demanded` on every path but the bounce, where that
+      // event is the demand's own and is emitted below.
+      if (judged.decision !== undefined) yield* emit(judged.decision)
       // An unproven claim with no bounce left to spend. The run ends here the
       // way `read_only_cap` ends one, rather than returning a sentence its
       // own record contradicts; see `CompletionClaim.unproven`.

@@ -4,6 +4,49 @@
 
 ### Added
 
+- `control.agent.model-requested` and `control.agent.decision-settled`: the
+  request a model call was asked and the decision a classifier made, journaled
+  with the `scope` and `frame` that join each to its turn.
+  `GenerationParams.maxTokens` is written as `maxOutput`, because the journal
+  redacts a key ending in `token`. On a module step both are step facts,
+  committed inside the step's own boundary. The executor writes them without
+  advancing the frame ordinal, so a run journaled before they existed still
+  deduplicates its prefix when resumed.
+- A `model-requested` record holds what its call added to the previous record
+  of the same `scope` and `purpose`: `prefixCount` and `prefixDigest` name the
+  leading messages the two share, `messages` is the rest, and `system` is
+  written only where `systemDigest` moved. A hundred-frame run journaled its
+  system teaching a hundred times and its transcript quadratically, and once
+  the transcript passed one field's bound every later call was unreadable; the
+  trail now grows with the transcript, and a reader rebuilds a call by walking
+  back until `prefixCount` is `0`. `AgentSession.tracer()` is the fold that
+  keeps the previous record's digests, one per incarnation, and
+  `AgentSession.trace(event, previous?)` stays pure. `AgentSession.RequestTrail`
+  is what it keeps.
+- Each rebuildable field travels with its pre-journal digest (`systemDigest`,
+  `messagesDigest`, `paramsDigest`, `stateDigest`, `questionsDigest`,
+  `answersDigest`). The journal's redaction rewrites text that only looks like
+  a credential (`maxTokens: 4096`, `secret = hunter2`) and marks nothing, so a
+  reader re-digests what it read and treats a mismatch as "redacted, not
+  re-askable", the way it treats `truncated`.
+- Bounds: `system`, `params`, `state`, `questions` and `answers` are each
+  bounded by `AgentSession.maxTracedBytes`; the messages of one record share
+  one such bound and each is replaced by its own marker past it. A record with
+  any marker carries `truncated: true` so a reader reports it unavailable
+  rather than rebuilding it from what fit.
+- `decision-settled` writes `questions`, `answers`, a choice question's
+  `criteria` and an answer's `probabilities` as arrays of entries (`{ id, ... }`,
+  `{ option, description }`, `{ option, p }`). They were records keyed by names
+  the classifier's author chose, and the journal replaces the value under a key
+  such as `auth` or `session`.
+- `FlowEngineLike` implements `EngineLike.resolve` from the credential-free
+  prepared request, and `Agent` wraps it so the recorded request is the one its
+  `cellModelRequest` plugins rewrote. The waterfall's exit is held per request,
+  its failure included, so each plugin runs once per model call on success and
+  on failure. A waterfall that fails, or a request no route accepts, resolves
+  to none: no `model-requested` is written and the sealed step reports the held
+  failure, so no record presents a request that was never sent.
+
 - `ScriptedJudge.layer` is an explicit completion-only offline fixture that
   compares command claims with recorded evidence and refuses other questions.
   Whole-host scripts must dispatch all their classifier question IDs; see

@@ -231,8 +231,14 @@ Provides the production `ControlExecutor`.
 
 ```ts
 const trace: (
-  event: AgentEvent.AgentEvent
+  event: AgentEvent.AgentEvent,
+  previous?: RequestTrail
 ) => { readonly eventType: string; readonly payload: unknown } | undefined
+
+interface RequestTrail {
+  readonly systemDigest: string
+  readonly messageDigests: ReadonlyArray<string>
+}
 ```
 
 The journal projection of one agent event: `model-settled` becomes
@@ -244,6 +250,95 @@ a run's event count by its token count. Free-text and value fields larger than
 the field's byte count and digest. This includes completion `output` nested in
 `cell-settled.outcome.transition` and `transition-applied.transition`; the
 containing outcome and transition retain their tags.
+
+Two records hold what a step was asked, so a reader can reopen one step:
+
+| Event type                       | Payload                                                                                                                                                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control.agent.model-requested`  | `scope`, `frame`, `attempt`, `purpose`, `seat`, `modelId`, `routeId?`, `protocolId?`, `system?`, `systemDigest`, `messages`, `messagesDigest`, `prefixCount`, `prefixDigest?`, `params`, `paramsDigest`, `toolCount`, `truncated?` |
+| `control.agent.decision-settled` | `scope`, `frame`, `classifier`, `digest`, `state`, `stateDigest`, `questions`, `questionsDigest`, `answers`, `answersDigest`, `latencyMs`, `acted`, `decidedBy`, `truncated?`                                                      |
+
+`scope` and `frame` join either record to its turn; position never does.
+`system` is the system text, part by part, and `messages` is `{ role, text }`
+per message. `params` carries `GenerationParams` with `maxTokens` written as
+`maxOutput`, because the journal redacts a key ending in `token` and a composer
+prefilled from `"[REDACTED]"` would send a lie.
+
+A `model-requested` record holds what its call added to the call before it,
+where "before" is the previous record of the same `scope` and `purpose` in
+`(frame, attempt)` order:
+
+- `prefixCount` is how many leading messages the call shares with that
+  record's whole transcript, and `messages` is the rest. It is the longest
+  common prefix, so an in-frame re-ask, the next frame, and the realm note a
+  frame closes on each cost only what changed. The first call, a compaction,
+  and a host rewrite share nothing and are written whole with `prefixCount: 0`.
+- `prefixDigest` is present when `prefixCount` is above zero. It is
+  `Digest.digest(CanonicalJson.stringify(digests))`, where `digests` holds one
+  `Digest.digest(CanonicalJson.stringify({ role, text }))` per shared message.
+- `system` is written when `systemDigest` differs from the previous record's,
+  and is otherwise left out. `systemDigest` is always written.
+
+A reader rebuilds one call by walking back through those records until
+`prefixCount` is `0`, taking the first `prefixCount` messages of each rebuilt
+predecessor, and reads `system` from the nearest record at or before the call
+that carries it under the same `systemDigest`. The request is unavailable when
+any record on the walk carries `truncated: true`, when a `prefixDigest` does
+not match the messages taken, or when a predecessor is missing. A resumed run
+that diverged can leave two records at one `(scope, purpose, frame, attempt)`;
+the one whose messages satisfy the next record's `prefixDigest` is on the walk.
+
+Every field a record is rebuilt from travels with the digest of that field as
+it stood before the journal saw it: `systemDigest`, `messagesDigest` and
+`paramsDigest`, and `stateDigest`, `questionsDigest` and `answersDigest`. Each
+is `Digest.digest(CanonicalJson.stringify(field))` over the JSON the record
+holds. The journal's redaction rewrites text that only looks like a credential
+(`maxTokens: 4096`, `cacheKey = id`, `secret = hunter2`) and leaves no mark on
+the row. A reader re-digests each field it read and treats a mismatch as
+"redacted, not re-askable", the same way it treats `truncated`.
+
+`system` and `params`, and `state`, `questions` and `answers`, are each bounded
+by `maxTracedBytes`, and a field over the bound is replaced by its marker,
+whose `digest` equals the field's sibling digest. The messages of one record
+share one `maxTracedBytes` between them: each is written whole while the field
+has room and as its own marker after, so one oversized message does not erase
+the messages beside it and the record stays inside the step-fact payload
+bound. When any marker is written the record also carries `truncated: true` at
+the top level, so a reader reports the request unavailable instead of
+rebuilding it from the fields that fit. A call whose host could not say what
+would be sent writes no `model-requested`. A trail written before these
+records existed has neither: a request or decision that was not journaled is
+absent, never reconstructed.
+
+`decision-settled` writes every name a classifier's author chose as a value,
+never as a key, because the journal replaces the value under any key it reads
+as a credential name (`auth`, `session`, `token`). `questions` is an array of
+`{ id, type, instructions, criteria? }` in declaration order, and a choice
+question's `criteria` is an array of `{ option, description }`. `answers` is an
+array of `{ id, kind, ... }`, and the `probabilities` of a choice or a score is
+an array of `{ option, p }`. `digest` hashes the wire form, which keys the
+questions by id and a choice's criteria by option, so a reader rebuilds those
+records from the entries before checking them against it.
+
+The executor writes both without advancing the frame ordinal that
+`traceIdentity` folds in, so a run journaled before they existed and resumed
+after still deduplicates its recorded prefix.
+
+### AgentSession.tracer
+
+```ts
+const tracer: () => (event: AgentEvent.AgentEvent) => ReturnType<typeof trace>
+```
+
+`trace` over one run's events in order. It keeps one `RequestTrail` per
+`(scope, purpose)`, which is what a `model-requested` record is written
+against; every other event projects exactly as `trace` projects it. Make one
+per incarnation, where the events are consumed, and never keep it across a
+restart: a resumed attempt replays from its first frame, and a fold that starts
+empty regenerates the payloads, and so the identities, the first attempt wrote.
+
+`trace(event, previous?)` takes the same `RequestTrail` as an argument and
+stays pure. Without one it writes the request whole.
 
 ### AgentSession.traceIdentity
 
@@ -1672,6 +1767,14 @@ Constructs or provides the durable harness engine port. `FlowInstance` is
 per-execution, so this must be built inside a running flow body. The captured
 services are supplied back to every activity, which is what keeps the port's
 streams requirement-free the way `EngineLike` declares them.
+
+The port implements `EngineLike.resolve`: it returns the request unchanged and
+the `routeId` and `protocolId` of the `Route.PreparedRequest` its
+`RouteResolver` prepares, which exists before any credential is signed on. A
+request no route accepts resolves with no binding, and `sealStep` reports the
+route's error. `Agent` wraps the port so `resolve` returns the request its
+`cellModelRequest` plugins rewrote, and runs those plugins once per model
+call.
 
 ### FlowEngineLike.Options
 

@@ -8,6 +8,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import * as EngineLike from "@smthrs/harness/EngineLike"
@@ -47,6 +48,7 @@ import {
 import * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
+import * as AgentSession from "../src/AgentSession.ts"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InternalFlowEngineLike from "../src/internal/FlowEngineLike.ts"
@@ -1943,5 +1945,72 @@ describe("FlowEngineLike.routeResolver", () => {
     expect(prepared.routeId).toBe("anthropic")
     // The api key is signed on by the route after the digest, never here.
     expect(Object.keys(prepared.publicHeaders)).not.toContain("x-api-key")
+  })
+})
+
+describe("FlowEngineLike.resolve", () => {
+  it("names the route a request goes to, and never the credential the route authorizes with", async () => {
+    const secret = "sk-ant-api03-credential-value-that-must-never-be-journaled"
+    const route = Route.anthropic({ apiKey: Redacted.make(secret) })
+    if (!Result.isSuccess(route)) throw new Error("the anthropic route did not build")
+    const asked = request("hello")
+    const outcome = await drive(Effect.gen(function*() {
+      const engine = yield* FlowEngineLike.make({
+        model: countingModel([]),
+        route: FlowEngineLike.routeResolver(route.success)
+      })
+      return Option.getOrThrow(yield* engine.resolve!(asked))
+    }))
+    const resolved = completed(outcome) as EngineLike.Resolved
+    // The port rewrites nothing: the request is the one it was handed.
+    expect(resolved.request).toBe(asked)
+    expect(Option.getOrUndefined(resolved.binding)).toEqual(
+      new EngineLike.Binding({ routeId: "anthropic", protocolId: route.success.protocol.id })
+    )
+
+    // Through the event, its durable encoding, and the row the executor
+    // journals: a `Redacted` key was on the route the whole time, and none of
+    // the three holds its value or the header it is signed onto.
+    const event = new AgentEvent.ModelRequested({
+      eventType: AgentEvent.eventType.modelRequested,
+      scope: "session-1",
+      frame: 0,
+      attempt: 1,
+      purpose: "frame",
+      seat: "anthropic:test-model",
+      binding: Option.getOrUndefined(resolved.binding),
+      request: resolved.request
+    })
+    const written = JSON.stringify([
+      resolved,
+      Schema.encodeSync(AgentEvent.AgentEvent)(event),
+      AgentSession.trace(event)
+    ])
+    expect(written).toContain("\"routeId\":\"anthropic\"")
+    expect(written).not.toContain(secret)
+    expect(written.toLowerCase()).not.toContain("x-api-key")
+    expect(written).not.toContain("<redacted>")
+    // There is nowhere for one to go: the binding is two names and no more.
+    expect(Object.keys(Schema.encodeSync(EngineLike.Binding)(Option.getOrThrow(resolved.binding)))).toEqual([
+      "routeId",
+      "protocolId"
+    ])
+  })
+
+  it("resolves a request no route accepts to none, and leaves the failure to the sealed step", async () => {
+    const asked = request("hello")
+    const outcome = await drive(Effect.gen(function*() {
+      const engine = yield* FlowEngineLike.make({ model: countingModel([]), route: failingRoute })
+      const resolved = yield* engine.resolve!(asked)
+      const sealed = yield* Stream.runCollect(engine.sealStep(step("hello"))).pipe(Effect.exit)
+      return { resolved, sealed: classify(sealed) }
+    }))
+    const { resolved, sealed } = completed(outcome) as {
+      resolved: Option.Option<EngineLike.Resolved>
+      sealed: Outcome
+    }
+    // Nothing true can be said of where it goes, so no record says it went.
+    expect(resolved).toEqual(Option.none())
+    expect(sealed._tag).toBe("failed")
   })
 })

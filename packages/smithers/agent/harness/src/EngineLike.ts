@@ -204,6 +204,38 @@ export class Snapshot extends Schema.Class<Snapshot>("flows/harness/EngineLike/S
 }) {}
 
 /**
+ * The names of the route one model request resolves to.
+ *
+ * Names and nothing else. A route is an endpoint, a protocol and the
+ * credentials it authorizes with, and only the first two have a name a journal
+ * may carry: this is read off the credential-free `Route.PreparedRequest` the
+ * sealed step is keyed on, which is built before any secret is signed onto the
+ * request. So there is no field here a credential could travel in.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export class Binding extends Schema.Class<Binding>("flows/harness/EngineLike/Binding")({
+  /** The configured route's id, as `Route.PreparedRequest.routeId` names it. */
+  routeId: Schema.String,
+  /** The wire protocol that route speaks, as `Route.PreparedRequest.protocolId` names it. */
+  protocolId: Schema.String
+}) {}
+
+/**
+ * What one model request resolves to on its way out of the host.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Resolved {
+  /** The request the provider is sent, after any rewrite the host applies. */
+  readonly request: ModelRequest.ModelRequest
+  /** The route it goes to, or none where the host names none. */
+  readonly binding: Option.Option<Binding>
+}
+
+/**
  * A request to pin the workspace as it stands right now.
  *
  * `identity` travels with it so a store *can* namespace what it writes by the
@@ -332,6 +364,36 @@ export interface EngineLike {
    * {@link EngineLike.record} rather than calling this on a replayed frame.
    */
   readonly capture: (request: CaptureRequest) => Effect.Effect<Option.Option<Snapshot>, HarnessError>
+  /**
+   * Says what one request will actually be asked as, for the record of it.
+   *
+   * Two things stand between the request the controller builds and the call a
+   * provider receives, and both belong to the host: a composition may rewrite
+   * the request on its way out, and a route decides where it goes. The record
+   * of a model call has to be of the call that was made, so the controller
+   * asks here before it seals and journals the answer.
+   *
+   * Optional, and total where it exists. A host that rewrites nothing and
+   * names no route omits it, and the controller records the request it built.
+   *
+   * `Option.none()` is the honest answer for a request the host cannot say
+   * anything true about: its own rewrite failed, or no route accepts what the
+   * rewrite produced. The controller then journals no request for that call,
+   * because the only request it holds is one no provider would be sent, and a
+   * record that presented it as sent would prefill a call that never
+   * happened. It is not an error. The resolution that matters is the one
+   * {@link EngineLike.sealStep} performs, and that is where the same request
+   * fails with its typed error. A host that answers none here MUST fail that
+   * sealed step, and with the failure it already met rather than a second run
+   * of whatever produced it: a rewrite asked twice may answer twice.
+   *
+   * Pure in the request and the composition, so it is asked again on a
+   * replayed frame rather than journaled: the same request under the same
+   * composition resolves the same way, and a composition that has since
+   * changed has changed the sealed key too, so the call it describes is a new
+   * one.
+   */
+  readonly resolve?: (request: ModelRequest.ModelRequest) => Effect.Effect<Option.Option<Resolved>>
   readonly suspend: (reason: SuspendReason) => Effect.Effect<never, HarnessError>
 }
 
@@ -364,6 +426,26 @@ export const make = (implementation: EngineLike): EngineLike => EngineLike.of(im
  */
 export const layer = (implementation: EngineLike): Layer.Layer<EngineLike> =>
   Layer.succeed(EngineLike)(make(implementation))
+
+/**
+ * What one request resolves to on this engine.
+ *
+ * The answer of {@link EngineLike.resolve} where the host gives one, and
+ * otherwise the honest default: the request as it was built, going to no route
+ * anybody named. Written once, here, because a port that wraps another port
+ * needs the same default the controller does. None is the host's own answer
+ * and never the default: a port with no `resolve` sends what it was handed.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const resolve = (
+  engine: EngineLike,
+  request: ModelRequest.ModelRequest
+): Effect.Effect<Option.Option<Resolved>> =>
+  engine.resolve === undefined
+    ? Effect.succeed(Option.some({ request, binding: Option.none() }))
+    : engine.resolve(request)
 
 const unavailable = (operation: string, code: "engine_failed" | "suspended" = "engine_failed"): HarnessError =>
   new HarnessError({

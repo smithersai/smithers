@@ -500,16 +500,29 @@ export interface CompletionJudgement {
    * most needs, and an effect that failed would take it with it.
    */
   readonly unproven: HarnessError.HarnessError | undefined
+  /**
+   * The claim brake's whole decision, whenever it read one: the evidence, the
+   * questions and the answers behind the three numbers `observed` or the
+   * demand carries. Set on every way a reading comes out, because the record a
+   * reader reopens a decision from is needed most for the one that acted.
+   */
+  readonly decision: AgentEvent.DecisionSettled | undefined
 }
 
 /** Nothing to say about this completion: it stands. */
-const stands: CompletionJudgement = { observed: undefined, demand: undefined, unproven: undefined }
+const stands: CompletionJudgement = {
+  observed: undefined,
+  demand: undefined,
+  unproven: undefined,
+  decision: undefined
+}
 
-/** One demand, with no separate reading to journal beside it. */
-const handBack = (demand: CompletionDemand): CompletionJudgement => ({
+/** One demand, with the brake's decision beside it when the brake issued it. */
+const handBack = (demand: CompletionDemand, decision?: AgentEvent.DecisionSettled): CompletionJudgement => ({
   observed: undefined,
   demand,
-  unproven: undefined
+  unproven: undefined,
+  decision
 })
 
 /**
@@ -869,7 +882,23 @@ export const judgeCompletion = (
       currentDigest: workspaceDigest,
       nextFrame
     })
-    if (found === undefined) return { observed: event, demand: undefined, unproven: undefined }
+    // The same reading with what it was a reading OF. `acted` is the two ways
+    // a reading changes what the run does next, and a reader that reported no
+    // evidence journals no decision: see `CompletionClaim.Reading.asked`.
+    const decision = reading.asked === undefined ? undefined : new AgentEvent.DecisionSettled({
+      eventType: eventType.decisionSettled,
+      scope: state.session,
+      frame: state.frame,
+      classifier: CompletionClaim.classifier.id,
+      digest: CompletionClaim.classifier.digest,
+      state: reading.asked.state,
+      questions: CompletionClaim.classifier.questions,
+      answers: reading.asked.answers,
+      latencyMs: reading.latencyMs,
+      acted: bounced || refused,
+      decidedBy: "jev"
+    })
+    if (found === undefined) return { observed: event, demand: undefined, unproven: undefined, decision }
     if (bounced) {
       return handBack({
         event,
@@ -878,14 +907,17 @@ export const judgeCompletion = (
         // exhausted budget; one it would refuse is not. See `CompletionDemand`.
         keeps: !CompletionClaim.unrecorded(found),
         spent: { claimDemands: state.claimDemands + 1 }
-      })
+      }, decision)
     }
     // Out of bounces. A claim the brake only found thin stands here: it was
     // handed back once, the run answered, and refusing the answer as well is
     // the price that destroyed honest runs. Only an unrecorded claim is refused.
-    return refused
-      ? { observed: event, demand: undefined, unproven: CompletionClaim.unproven(found, state.claimDemands > 0, claim) }
-      : { observed: event, demand: undefined, unproven: undefined }
+    return {
+      observed: event,
+      demand: undefined,
+      unproven: refused ? CompletionClaim.unproven(found, state.claimDemands > 0, claim) : undefined,
+      decision
+    }
   })
 
 /**

@@ -204,6 +204,33 @@ describe("the claim brake", () => {
     })
   })
 
+  it("journals no decision for a reader that reports no evidence, rather than rebuilding one from its numbers", async () => {
+    const state = new CellTurn.State({ ...base, openingDigest: "t0" })
+    const judged = await Effect.runPromise(
+      Frame.judgeCompletion(
+        state,
+        Frame.account({
+          state,
+          calls: [],
+          opened: tree("t0"),
+          closed: tree("t1"),
+          minted: [],
+          bindings: [],
+          captures: []
+        }),
+        state.contextWindow,
+        claim,
+        // A host's own reader: three probabilities and a latency, and nothing
+        // about what it sent. The reading is still journaled; the decision is
+        // explicitly unavailable, because the evidence this judge assembled is
+        // not proof of what that reader asked.
+        () => Effect.succeed({ complete: 0.9, overclaims: 0.1, invented: 0.1, latencyMs: 5 })
+      ).pipe(Effect.provide(Evaluator.layerUnavailable()))
+    )
+    expect(judged.observed).toMatchObject({ _tag: "claim-demanded", demanded: false })
+    expect(judged.decision).toBeUndefined()
+  })
+
   it("asks a soft-bounced conversational answer to keep the requested form without alleging invented work", async () => {
     const jev = reading({ complete: 0.27, overclaims: 0.20, invented: 0.14 })
     const contextWindow = ContextWindow.make({

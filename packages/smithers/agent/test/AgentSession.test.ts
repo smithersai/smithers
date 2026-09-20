@@ -1173,6 +1173,96 @@ describe("AgentSession", () => {
     expect(outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.resolved")).toHaveLength(1)
   })
 
+  it("journals each model request and each decision once across two parks, without moving any other row's identity", {
+    timeout: 30_000
+  }, async () => {
+    const captured: Array<Captured> = []
+    const outcome = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        yield* Deferred.succeed(gate, void 0)
+        return yield* driveTwoParks.pipe(
+          Effect.provide(stack({ resolve: seat(scripted(askFrames, captured)), notes: [], gate }))
+        )
+      }).pipe(Effect.scoped) as Effect.Effect<{
+        questions: ReadonlyArray<string>
+        agentTrail: ReadonlyArray<JournalEvent.Entry>
+      }>
+    )
+    const trail = [...outcome.agentTrail].sort((left, right) => left.seq - right.seq)
+    const typed = (eventType: string) => trail.filter((entry) => entry.eventType === eventType)
+
+    // Three incarnations, two provider calls, two request records: the second
+    // and third attempts republish the requests of every frame they replay, and
+    // the unique index refuses each of them.
+    expect(captured).toHaveLength(2)
+    const requested = typed("control.agent.model-requested").map((entry) => entry.payload as Record<string, unknown>)
+    expect(requested.map((payload) => [payload.frame, payload.attempt, payload.purpose])).toEqual([
+      [0, 1, "frame"],
+      [1, 1, "frame"]
+    ])
+    // Joined to its turn by what it says, not by where it sits.
+    const runId = trail[0]!.runId
+    expect(requested.every((payload) => payload.scope === runId)).toBe(true)
+    // What the provider was actually asked, readable back: the request record
+    // and the captured request agree on the conversation.
+    // Each record holds what its call added, so counting what it shares with
+    // the record before it and what it wrote gives the conversation back.
+    expect(
+      requested.map((payload) => (payload.prefixCount as number) + (payload.messages as ReadonlyArray<unknown>).length)
+    ).toEqual(captured.map((call) => call.request.messages.length))
+    // The second call keeps the first's opening and replaces the realm note
+    // every frame closes on, and the teaching did not change: what the two
+    // share and the system text are written once. A replayed incarnation folds
+    // from the first frame again, which is why the two records above are still
+    // two after three of them.
+    expect(requested[1]!.prefixCount).toBe(captured[0]!.request.messages.length - 1)
+    expect(requested.map((payload) => Object.hasOwn(payload, "system"))).toEqual([true, false])
+    expect(requested[1]!.systemDigest).toBe(requested[0]!.systemDigest)
+    expect(requested[0]).toMatchObject({
+      seat: "anthropic:test-model",
+      modelId: "test-model",
+      routeId: "route-a",
+      protocolId: "test-protocol",
+      toolCount: 0
+    })
+
+    // One completion, judged once and replayed from its record thereafter.
+    const decisions = typed("control.agent.decision-settled").map((entry) => entry.payload as Record<string, unknown>)
+    expect(decisions).toHaveLength(typed("control.agent.claim-demanded").length)
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]).toMatchObject({ scope: runId, frame: 1, classifier: "completion/claim", decidedBy: "jev" })
+    expect(new Set(trail.map((entry) => entry.sourceSeq)).size).toBe(trail.length)
+
+    // The two records take no ordinal. Every other row of the first frame
+    // carries the identity a producer that never wrote them derives for it, so
+    // a run journaled before these records existed and resumed after still
+    // deduplicates its whole recorded prefix. Walked up to the park, which is
+    // as far as the first attempt's rows run unbroken.
+    const material = (entry: JournalEvent.Entry): Record<string, unknown> => {
+      const { at: _at, journalVersion: _version, ...rest } = entry.payload as Record<string, unknown>
+      return rest
+    }
+    const additions = new Set(["control.agent.model-requested", "control.agent.decision-settled"])
+    const opened = trail.findIndex((entry) => entry.eventType === "control.agent.turn-opened")
+    const parked = trail.findIndex((entry) => entry.eventType === "control.agent.permission-required")
+    let ordinal = 0
+    let cell = ""
+    const walked: Array<string> = []
+    for (const entry of trail.slice(opened, parked + 1)) {
+      if (additions.has(entry.eventType)) continue
+      if (entry.eventType === "control.agent.cell-produced") cell = String(material(entry).digest)
+      expect([entry.eventType, entry.sourceSeq]).toEqual([
+        entry.eventType,
+        AgentSession.traceIdentity(0, ordinal, cell, entry.eventType, material(entry))
+      ])
+      walked.push(entry.eventType)
+      ordinal += 1
+    }
+    expect(walked.slice(0, 2)).toEqual(["control.agent.turn-opened", "control.agent.model-settled"])
+    expect(walked.at(-1)).toBe("control.agent.permission-required")
+  })
+
   it("settles resume events for runs it never launched without holding the bridge", { timeout: 30_000 }, async () => {
     const notes: Array<string> = []
     const outcome = await Effect.runPromise(

@@ -7,6 +7,7 @@ import type * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CellHistory from "../../src/CellHistory.ts"
 import * as CellTurn from "../../src/CellTurn.ts"
 import * as ContextWindow from "../../src/ContextWindow.ts"
+import * as EngineLike from "../../src/EngineLike.ts"
 import * as QuickJSSandbox from "../../src/QuickJSSandbox.ts"
 import type * as Sandbox from "../../src/Sandbox.ts"
 import * as Steering from "../../src/Steering.ts"
@@ -170,6 +171,12 @@ export interface Options {
    * `CompletionClaim`.
    */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /**
+   * What the host says a request resolves to on its way out. Omitted is the
+   * host that rewrites nothing and names no route, which is what the scripted
+   * engine is.
+   */
+  readonly resolve?: EngineLike.EngineLike["resolve"]
 }
 
 /**
@@ -232,7 +239,11 @@ export const run = async (options: Options): Promise<Run> => {
     limits: options.limits
   }).pipe(
     Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(engine.layer),
+    Effect.provide(
+      options.resolve === undefined
+        ? engine.layer
+        : EngineLike.layer({ ...engine.engine, resolve: options.resolve })
+    ),
     Effect.provide(QuickJSSandbox.layer),
     Effect.provide(options.steering ?? Steering.layerNoop()),
     (effect) => options.clock === undefined ? effect : Effect.provideService(effect, Clock.Clock, options.clock),

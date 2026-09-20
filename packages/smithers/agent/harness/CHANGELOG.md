@@ -124,6 +124,30 @@
 
 ### Added
 
+- `AgentEvent.ModelRequested` (`flows.harness.model-requested.v1`) journals what
+  one model call was asked, before the call is made: the `ModelRequest` the
+  provider is sent, the seat, the route names, and the keys that join it to its
+  turn (`scope`, `frame`, `attempt`, `purpose`). `model-settled` recorded what
+  a call answered and nothing recorded what it was asked, so a reader could not
+  reopen one step and ask it again. A compaction call is recorded too, with
+  `purpose: "compaction"`.
+- `AgentEvent.DecisionSettled` (`flows.harness.decision-settled.v1`) journals
+  one classifier decision with the state it read, the questions in their wire
+  form, and one `AgentEvent.DecisionAnswer` per question. The completion brake
+  writes it beside `claim-demanded`, from the same recorded judgement, so a
+  replayed frame reports the decision it made and never asks again.
+  `confidence` on a choice or a score is `Evaluator.Response.confidence` and is
+  absent when the provider sent none; it is never the largest probability.
+  `CompletionClaim.Reading.asked` carries the evidence and the answers, and a
+  judgement recorded before this event existed replays with no decision.
+- `EngineLike.resolve`, optional: what one request will actually be asked as,
+  as an `Option` of an `EngineLike.Resolved` holding the request after any host
+  rewrite and the `EngineLike.Binding` (`routeId`, `protocolId`) it goes to. A
+  host that cannot say what would be sent answers `Option.none()`, and the
+  controller journals no `model-requested` for that call: the sealed step that
+  follows fails on the same request, so the missing record describes a call
+  that was never made.
+
 - Added `CompletionClaim`, a sixth brake on a completion and the first that is
   not a measurement. Once the five deterministic demands have found nothing,
   `judgeCompletion` sends the task, the completion message, whether the tree

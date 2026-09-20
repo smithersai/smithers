@@ -1072,6 +1072,25 @@ export const make = (
         )
     })
 
+    // What this port does to a request on its way out is nothing, so the
+    // request is the one it was handed; the route is the two names of it, read
+    // off the same credential-free view the sealed key digests. A request no
+    // route accepts resolves to none, so no record says it was sent, and it
+    // fails where it always did, in `sealStep`, with the route's typed error:
+    // this is the record of a call, not a second place for the call to fail.
+    const resolve = (request: ModelRequest.ModelRequest): Effect.Effect<Option.Option<EngineLike.Resolved>> =>
+      options.route.prepare(request).pipe(
+        Effect.map((prepared) =>
+          Option.some({
+            request,
+            binding: Option.some(
+              new EngineLike.Binding({ routeId: prepared.routeId, protocolId: prepared.protocolId })
+            )
+          })
+        ),
+        Effect.orElseSucceed(() => Option.none<EngineLike.Resolved>())
+      )
+
     return EngineLike.make({
       sealStep,
       splice,
@@ -1079,6 +1098,7 @@ export const make = (
       record,
       observe,
       capture,
+      resolve,
       suspend: (reason) =>
         Effect.andThen(
           Effect.annotateLogs(Effect.logDebug("Harness parked the engine frame"), {

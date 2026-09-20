@@ -73,6 +73,7 @@ import * as Transcript from "@smthrs/harness/Transcript"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
@@ -274,7 +275,8 @@ const observationOnly = new Set(["at", "durationMillis"])
  * so no recorded prefix can mismatch it, and excluding its fields would only
  * collapse distinct events onto one key. Add an entry when you add a field to
  * an event type that is already being journaled; add nothing when you add the
- * event type itself.
+ * event type itself. A new type emitted in the MIDDLE of a frame has a
+ * different cost, which this table cannot pay: see {@link unordered}.
  *
  * A Map rather than an object literal because the key is an event type read
  * off a decoded event. A literal resolves `lateFields["constructor"]` through
@@ -308,6 +310,27 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // `false`, so a resumed run would derive a new identity for every
   // `claim-demanded` in its recorded prefix and publish the prefix twice.
   ["control.agent.claim-demanded", new Set(["refused"])]
+])
+
+/**
+ * Record types that take no ordinal in their frame.
+ *
+ * {@link traceIdentity} folds in an event's ordinal within its frame, so an
+ * event type added in the MIDDLE of a frame moves every row after it: a run
+ * journaled before the type existed and resumed after would re-derive its
+ * whole recorded prefix one ordinal along, match none of it, and publish all
+ * of it a second time. {@link lateFields} cannot help, because nothing about
+ * the rows that moved has changed except where they sit.
+ *
+ * These two are therefore identified by what they say rather than by where
+ * they sit, the way `prompt-rendered` is. Each carries its own coordinates in
+ * its payload (`scope`, `frame`, and for a request `purpose` and `attempt`),
+ * which no two records of one run share, and they are written at ordinal zero
+ * without advancing the count the other rows are numbered by.
+ */
+const unordered: ReadonlySet<string> = new Set([
+  "control.agent.model-requested",
+  "control.agent.decision-settled"
 ])
 
 /** The exclusion set for an event type that has never been enriched. */
@@ -399,17 +422,81 @@ export const maxTracedBytes = 65_536
 
 const traceEncoder = new TextEncoder()
 
-const tracedField = <A extends Schema.Json | string>(value: A): A | {
+/**
+ * What stands in a record for a field too large to journal.
+ *
+ * An alias rather than an interface so that it is JSON to the compiler as well:
+ * an interface has no index signature and cannot sit inside a `Schema.Json`.
+ */
+type Marker = {
   readonly truncated: true
   readonly bytes: number
   readonly digest: string
-} => {
-  const canonical = CanonicalJson.stringify(value)
-  const bytes = traceEncoder.encode(typeof value === "string" ? value : canonical).byteLength
-  return bytes <= maxTracedBytes
-    ? value
-    : { truncated: true, bytes, digest: Digest.digest(canonical) }
 }
+
+/**
+ * The size and digest of one value, from the one canonical form of it.
+ *
+ * `bytes` is what the value costs where it is written whole, and `digest` is
+ * the digest a {@link Marker} carries for it.
+ */
+const measured = (value: Schema.Json | string): { readonly bytes: number; readonly digest: string } => {
+  const canonical = CanonicalJson.stringify(value)
+  return {
+    bytes: traceEncoder.encode(typeof value === "string" ? value : canonical).byteLength,
+    digest: Digest.digest(canonical)
+  }
+}
+
+/**
+ * One field bounded for the trail, with the digest of the whole of it.
+ *
+ * The digest is the one the marker carries, so a record that writes a digest
+ * beside every field it is rebuilt from canonicalizes each field once.
+ */
+const bounded = <A extends Schema.Json | string>(
+  value: A
+): { readonly field: A | Marker; readonly digest: string } => {
+  const { bytes, digest } = measured(value)
+  return { field: bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest }, digest }
+}
+
+const tracedField = <A extends Schema.Json | string>(value: A): A | Marker => bounded(value).field
+
+/**
+ * The top-level marker a record carries when any of the fields it is rebuilt
+ * from, or any one message of a request, was replaced by its {@link Marker}.
+ *
+ * The per-field marker says which field was left out and what it digested to;
+ * this says, in one place, that the record cannot be used to rebuild what it
+ * describes. A reader that prefills a request from `model-requested` checks
+ * this and reports the request unavailable, rather than sending the fields
+ * that happened to fit. Compared by reference because {@link bounded} returns
+ * the value it was given whenever that value fits, so a state that merely
+ * looks like a marker is not mistaken for one. Absent, never `false`.
+ */
+const truncatedMarker = (
+  fields: ReadonlyArray<readonly [original: unknown, traced: unknown]>
+): { readonly truncated?: true } => fields.some(([original, traced]) => original !== traced) ? { truncated: true } : {}
+
+/**
+ * Generation parameters under names the journal does not redact.
+ *
+ * `maxTokens` ends in a word the journal's redaction treats as a credential
+ * name, so the row would read `"maxTokens": "[REDACTED]"` and a composer
+ * prefilled from it would send a string where the provider wants a number.
+ * It travels as `maxOutput`; every other parameter keeps its name.
+ */
+const tracedParams = (params: ModelRequest.GenerationParams): Schema.Json =>
+  JSON.parse(JSON.stringify({
+    maxOutput: params.maxTokens,
+    temperature: params.temperature,
+    topP: params.topP,
+    topK: params.topK,
+    stopSequences: params.stopSequences,
+    thinkingBudget: params.thinkingBudget,
+    reasoningEffort: params.reasoningEffort
+  })) as Schema.Json
 
 const tracedTransition = (transition: Cell.Transition) =>
   transition._tag === "complete" ? { ...transition, output: tracedField(transition.output) } : transition
@@ -455,6 +542,142 @@ const messageText = (message: ModelRequest.Message): string => {
 }
 
 /**
+ * What the last `model-requested` of one scope and purpose said, as digests.
+ *
+ * The next record of the same scope and purpose is written against this: the
+ * system text is left out while its digest stands, and the messages the two
+ * calls share are counted rather than repeated. Digests only, so holding it
+ * for the length of a run holds no transcript.
+ *
+ * @category projections
+ * @since 1.0.0-rc.0
+ */
+export interface RequestTrail {
+  /** The digest of the system text the last record of this scope and purpose named. */
+  readonly systemDigest: string
+  /** One digest per message of that record's whole transcript, in order. */
+  readonly messageDigests: ReadonlyArray<string>
+}
+
+/**
+ * The payload of one `model-requested` record, and the trail the next is
+ * written against.
+ *
+ * A run asks one model call per frame and each call's transcript is the last
+ * one's and a little more, so a record that carried its request whole wrote
+ * the run's transcript once per call and its system teaching every time: a
+ * hundred frames journaled the same twenty kilobytes of teaching a hundred
+ * times, and the transcript as a whole stopped fitting one field long before
+ * any compaction, which left every later call of a long run unreadable. So a
+ * record carries what its call ADDED. `prefixCount` is how many leading
+ * messages it shares with the record before it, `messages` is the rest, and
+ * `system` is written only where `systemDigest` moved.
+ *
+ * What is shared is the longest common prefix and not only a whole previous
+ * transcript, because the next call never simply extends the last one: every
+ * frame closes on a note about the realm that the next frame replaces, and an
+ * in-frame re-ask carries a refusal the following frame drops. A compaction
+ * or a host rewrite shares nothing and is written whole, which is also what
+ * the first call is.
+ *
+ * A reader rebuilds a call by walking back through the records of its scope
+ * and purpose until `prefixCount` is zero, and checks each step of the walk:
+ * `prefixDigest` is the digest of the per-message digests of the messages it
+ * takes from the record before, so a missing, reordered or redacted
+ * predecessor is a mismatch and never a wrong request.
+ *
+ * The messages share one field's bound. Each is written whole while the field
+ * has room and as its own marker after, so one oversized result costs the
+ * record that message and not the transcript beside it, and the record stays
+ * inside the step-fact payload bound however many messages a call adds.
+ *
+ * Deterministic in the event and the trail, and the trail is a fold over the
+ * same events from an empty start, so a replayed incarnation regenerates every
+ * payload byte for byte and with it every {@link traceIdentity}.
+ */
+const tracedRequest = (
+  event: AgentEvent.ModelRequested,
+  previous: RequestTrail | undefined
+): { readonly payload: Readonly<Record<string, unknown>>; readonly trail: RequestTrail } => {
+  // The system text is carried here rather than referenced from
+  // `prompt-rendered`: that record holds the launch arguments and not the
+  // teaching around them, it is written once per run while the system text is
+  // per call (compaction asks under a different one), and a module step writes
+  // no `prompt-rendered` at all.
+  const system = event.request.system.map((part) => part.text)
+  const tracedSystem = bounded(system)
+  const systemMoved = previous?.systemDigest !== tracedSystem.digest
+  // Messages travel as role and prose, the way `steering-drained` writes
+  // them. A thinking block's provider attestation is a field named
+  // `signature`, which the journal redacts by name, so a block journaled
+  // whole would come back unusable; and a cell-first request carries no tool
+  // parts to lose.
+  const spoken = event.request.messages.map((message) => {
+    const value = { role: message.role, text: messageText(message) }
+    return { value, ...measured(value) }
+  })
+  const messageDigests = spoken.map((message) => message.digest)
+  const before = previous?.messageDigests ?? []
+  let prefixCount = 0
+  while (
+    prefixCount < before.length
+    && prefixCount < messageDigests.length
+    && before[prefixCount] === messageDigests[prefixCount]
+  ) prefixCount++
+  let room = maxTracedBytes
+  const added = spoken.slice(prefixCount)
+  const messages = added.map(({ bytes, digest, value }): typeof value | Marker => {
+    if (bytes > room) return { truncated: true, bytes, digest }
+    room -= bytes
+    return value
+  })
+  const tracedMessages = bounded(messages)
+  const params = tracedParams(event.request.params)
+  const tracedParameters = bounded(params)
+  return {
+    trail: { systemDigest: tracedSystem.digest, messageDigests },
+    payload: {
+      // The join keys. A reader finds this call's turn by these, never by
+      // where the row sits: a compaction request is written before its
+      // frame's `turn-opened`.
+      scope: event.scope,
+      frame: event.frame,
+      attempt: event.attempt,
+      purpose: event.purpose,
+      seat: event.seat,
+      modelId: event.request.modelId,
+      // Names only. `EngineLike.Binding` has nowhere a credential could
+      // sit, and a host that resolved no route adds neither key.
+      ...(event.binding === undefined
+        ? {}
+        : { routeId: event.binding.routeId, protocolId: event.binding.protocolId }),
+      // Each digest is of its field as it stood before the journal saw it.
+      // The journal's redaction rewrites text that merely looks like a
+      // credential (`maxTokens: 4096`, `cacheKey = id`) and leaves no mark on
+      // the row, so a reader digests what it read and treats a mismatch the
+      // way it treats `truncated`: this is not the request that was sent.
+      ...(systemMoved ? { system: tracedSystem.field } : {}),
+      systemDigest: tracedSystem.digest,
+      messages: tracedMessages.field,
+      messagesDigest: tracedMessages.digest,
+      prefixCount,
+      ...(prefixCount === 0
+        ? {}
+        : { prefixDigest: Digest.digest(CanonicalJson.stringify(messageDigests.slice(0, prefixCount))) }),
+      params: tracedParameters.field,
+      paramsDigest: tracedParameters.digest,
+      toolCount: event.request.tools.length,
+      ...truncatedMarker([
+        ...(systemMoved ? [[system, tracedSystem.field] as const] : []),
+        [messages, tracedMessages.field],
+        ...messages.map((message, index) => [added[index]?.value, message] as const),
+        [params, tracedParameters.field]
+      ])
+    }
+  }
+}
+
+/**
  * The journal projection of one agent event.
  *
  * The executor consumes the harness stream itself, so without this the whole
@@ -467,11 +690,18 @@ const messageText = (message: ModelRequest.Message): string => {
  *
  * `undefined` means "not journaled".
  *
+ * `previous` is what the last `model-requested` of the same scope and purpose
+ * said, and only that record reads it: see {@link RequestTrail}. Without one
+ * the request is written whole, which is what a caller projecting one event on
+ * its own wants. A caller projecting a run's events in order uses
+ * {@link tracer}, which keeps it.
+ *
  * @category projections
  * @since 0.1.0
  */
 export const trace = (
-  event: AgentEvent.AgentEvent
+  event: AgentEvent.AgentEvent,
+  previous?: RequestTrail
 ): { readonly eventType: Transcript.ControlEventType; readonly payload: unknown } | undefined => {
   switch (event._tag) {
     case "model-delta":
@@ -528,6 +758,10 @@ export const trace = (
         eventType: "control.agent.turn-opened",
         payload: { seat: event.seat, contextDigest: event.contextDigest }
       }
+    case "model-requested":
+      // What the call was asked, so a reader can open this one step and ask
+      // it again: see {@link tracedRequest}.
+      return { eventType: "control.agent.model-requested", payload: tracedRequest(event, previous).payload }
     case "model-settled":
       return {
         eventType: "control.agent.model-settled",
@@ -745,6 +979,61 @@ export const trace = (
           nextFrame: event.nextFrame
         }
       }
+    case "decision-settled": {
+      // The state, the questions and the answers, because a decision is the
+      // one record a reader cannot recompute: it is a model's answer about
+      // evidence the run assembled and kept nowhere else.
+      //
+      // A question id and an option are names the classifier's author chose,
+      // and the journal replaces the value under any key it reads as a
+      // credential name: a router over `auth`, `billing` and `session` would
+      // come back with two of its three probabilities `"[REDACTED]"`. So the
+      // caller's names are written as values, never as keys, in the order the
+      // declaration gave them. `digest` hashes the wire form, which keys the
+      // same questions by id and a choice's criteria by option, so a reader
+      // rebuilds that record from these entries before checking it.
+      const questions = Object.entries(Evaluator.encodeQuestions(event.questions)).map(([id, question]) => {
+        const wire = question as { readonly type: string; readonly criteria?: Readonly<Record<string, string>> }
+        return wire.type === "choice" && wire.criteria !== undefined
+          ? {
+            id,
+            ...wire,
+            criteria: Object.entries(wire.criteria).map(([option, description]) => ({ option, description }))
+          }
+          : { id, ...wire }
+      }) as Schema.Json
+      const answers = Object.entries(event.answers).map(([id, answer]) =>
+        answer.kind === "boolean"
+          ? { id, ...answer }
+          : { id, ...answer, probabilities: Object.entries(answer.probabilities).map(([option, p]) => ({ option, p })) }
+      ) as Schema.Json
+      // The digests are what `model-requested` writes them for: the state is
+      // free text the journal's redaction may rewrite without a mark.
+      const traced = { state: bounded(event.state), questions: bounded(questions), answers: bounded(answers) }
+      return {
+        eventType: "control.agent.decision-settled",
+        payload: {
+          scope: event.scope,
+          frame: event.frame,
+          classifier: event.classifier,
+          digest: event.digest,
+          state: traced.state.field,
+          stateDigest: traced.state.digest,
+          questions: traced.questions.field,
+          questionsDigest: traced.questions.digest,
+          answers: traced.answers.field,
+          answersDigest: traced.answers.digest,
+          latencyMs: event.latencyMs,
+          acted: event.acted,
+          decidedBy: event.decidedBy,
+          ...truncatedMarker([
+            [event.state, traced.state.field],
+            [questions, traced.questions.field],
+            [answers, traced.answers.field]
+          ])
+        }
+      }
+    }
     case "sufficiency-observed":
       // The one control in the set that is not a brake, and the only event
       // written for a frame that has done nothing wrong: the run watched a
@@ -831,6 +1120,35 @@ export const trace = (
       const unknown = unreachable as AgentEvent.AgentEvent
       return { eventType: `control.agent.${unknown._tag}`, payload: {} }
     }
+  }
+}
+
+/**
+ * {@link trace} over one run's events in order.
+ *
+ * `model-requested` is the one record written against the record before it,
+ * and this is where "before it" is kept: one {@link RequestTrail} per scope
+ * and purpose, so a compaction call and a frame call, or two steps sharing a
+ * sink, never count each other's messages. Every other event projects exactly
+ * as {@link trace} projects it.
+ *
+ * One per incarnation, made where the events are consumed and never shared or
+ * kept across a restart. A resumed attempt replays its events from the first
+ * frame, so a fold that starts empty regenerates the payloads the first
+ * attempt wrote and the journal's unique index refuses them; one that carried
+ * the last attempt's trail over would write the replayed prefix as new rows.
+ *
+ * @category projections
+ * @since 1.0.0-rc.0
+ */
+export const tracer = (): (event: AgentEvent.AgentEvent) => ReturnType<typeof trace> => {
+  const trails = new Map<string, RequestTrail>()
+  return (event) => {
+    if (event._tag !== "model-requested") return trace(event)
+    const key = JSON.stringify([event.scope, event.purpose])
+    const { payload, trail } = tracedRequest(event, trails.get(key))
+    trails.set(key, trail)
+    return { eventType: "control.agent.model-requested", payload }
   }
 }
 
@@ -2080,6 +2398,10 @@ export const make = (
         let frame = -1
         let ordinal = 0
         let cell = ""
+        // Made per incarnation for the same reason the counters start over: a
+        // request record is written against the one before it, and a replayed
+        // prefix regenerates its rows only if it folds from the first frame.
+        const project = tracer()
         const record = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
           Effect.flatMap(Clock.currentTimeMillis, (at) =>
             Effect.sync(() => {
@@ -2090,7 +2412,7 @@ export const make = (
                 cell = ""
               }
               if (event._tag === "cell-produced") cell = event.cell.digest
-              const projected = trace(event)
+              const projected = project(event)
               if (projected !== undefined) {
                 // Normalized once, here, so the identity is derived from the
                 // same bytes the journal stores. A projection carries optional
@@ -2099,8 +2421,11 @@ export const make = (
                 // threw on the first `cell-call-settled` that answered without
                 // a message.
                 const material = JSON.parse(JSON.stringify(projected.payload)) as Record<string, unknown>
-                const sourceSeq = traceIdentity(frame, ordinal, cell, projected.eventType, material)
-                ordinal += 1
+                // A record that carries its own coordinates takes no ordinal,
+                // so its arrival moves no other row; see {@link unordered}.
+                const positioned = !unordered.has(projected.eventType)
+                const sourceSeq = traceIdentity(frame, positioned ? ordinal : 0, cell, projected.eventType, material)
+                if (positioned) ordinal += 1
                 pending.push({
                   sourceSeq,
                   eventType: projected.eventType,
