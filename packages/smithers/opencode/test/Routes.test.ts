@@ -829,7 +829,7 @@ describe("Routes through the OpenCode SDK client", () => {
             Layer.succeed(Driver.Driver, {
               start: () => Effect.void,
               interrupt: () => Effect.succeed(false),
-              permission: () => Effect.void,
+              permission: () => Effect.succeed(Effect.void),
               steer: () => Effect.succeed(false),
               resumeOnBoot: () => Effect.void
             })
@@ -912,7 +912,7 @@ describe("Routes through the OpenCode SDK client", () => {
                 Layer.succeed(Driver.Driver, {
                   start: () => Effect.void,
                   interrupt: () => Effect.succeed(false),
-                  permission: () => Effect.void,
+                  permission: () => Effect.succeed(Effect.void),
                   steer: () => Effect.succeed(false),
                   resumeOnBoot: () => Effect.void
                 })

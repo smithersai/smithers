@@ -156,7 +156,7 @@ describe("the TUI's routes", () => {
     const instant = Layer.succeed(Driver.Driver, {
       start: (_input, sink) => sink.closed({ _tag: "completed" }),
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })

@@ -181,7 +181,7 @@ describe("Turns", () => {
           yield* sink.closed({ _tag: "interrupted" })
           return true
         }),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })
@@ -226,6 +226,119 @@ describe("Turns", () => {
       properties: { sessionID: "ses_stopped", requestID: park.requestId, reply: "reject" }
     }])
     expect(result.left).toEqual([])
+  })
+
+  it("records the answer before the card comes down", async () => {
+    const park = new Permission.PermissionRequired({
+      requestId: "per_durable_1_cafebabe_0",
+      runId: "msg_durable",
+      capability: Capability.make("proc:spawn", "bash"),
+      tier: "irreversible",
+      meta: { flow: "bash", input: { command: "ls -la" }, identity: { frame: 1, cell: "cafebabe", ordinal: 0 } }
+    })
+    // What the store and the hub showed at the moment the driver was asked to
+    // record the answer. The reply is what takes the card down, so a driver
+    // asked after it was published is a driver asked after the person lost
+    // the only thing they could answer with.
+    const seen: Array<{ readonly cards: number; readonly replies: number }> = []
+    const store = Store.layerSqlite(`${scratch.directory}/turns-durable.sqlite`)
+    const hub = Events.layer({ directory: scratch.directory, project: "p" })
+    const asking = Layer.effect(
+      Driver.Driver,
+      Effect.gen(function*() {
+        const stored = yield* Store.Store
+        const events = yield* Events.Events
+        return {
+          start: (_input: Driver.StartInput, sink: Driver.Sink) =>
+            sink.event(
+              new AgentEvents.PermissionRequired({
+                eventType: "flows.harness.permission-required.v1",
+                request: park
+              })
+            ),
+          interrupt: () => Effect.succeed(false),
+          permission: () =>
+            Effect.gen(function*() {
+              seen.push({
+                cards: (yield* Effect.orDie(stored.listPermissions())).length,
+                replies: (yield* events.replay()).filter((envelope) =>
+                  envelope.payload.type === "permission.replied"
+                ).length
+              })
+              return Effect.void
+            }),
+          steer: () => Effect.succeed(false),
+          resumeOnBoot: () => Effect.void
+        }
+      })
+    ).pipe(Layer.provide(Layer.mergeAll(store, hub)))
+    const left = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const stored = yield* Store.Store
+        yield* stored.putSession(session("ses_durable"))
+        yield* turns.prompt({ sessionID: "ses_durable", parts: [{ type: "text", text: "run ls" }] })
+        yield* Effect.promise(() =>
+          until(() =>
+            Effect.runPromise(
+              Effect.map(stored.listPermissions("ses_durable"), (pending) => pending.length === 1)
+            )
+          )
+        )
+        yield* turns.permission({ sessionID: "ses_durable", permissionID: park.requestId, response: "once" })
+        return yield* stored.listPermissions("ses_durable")
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(Turns.layer(options), store, hub).pipe(
+            Layer.provideMerge(Layer.mergeAll(asking, store, hub, Evaluator.layerUnavailable()))
+          )
+        )
+      )
+    )
+    // The driver was asked once, while the card still stood and before any
+    // reply had been published: a process that stopped from here on carries
+    // the answer, and nobody is asked twice.
+    expect(seen).toEqual([{ cards: 1, replies: 0 }])
+    // And the card is down by the time the answer route returns.
+    expect(left).toEqual([])
+  })
+
+  it("logs a resume that dies after the answer was recorded", async () => {
+    const park = new Permission.PermissionRequired({
+      requestId: "per_dead_1_deadfa11_0",
+      runId: "msg_dead",
+      capability: Capability.make("proc:spawn", "bash"),
+      tier: "irreversible",
+      meta: { flow: "bash", input: { command: "ls -la" }, identity: { frame: 1, cell: "deadfa11", ordinal: 0 } }
+    })
+    // The answer was recorded; what failed is the turn going on afterwards.
+    // The card is already down and stays down: it is answered, and the
+    // person is not asked again for a turn that broke after they answered.
+    const dying = Layer.succeed(Driver.Driver, {
+      start: (_input, sink) =>
+        sink.event(
+          new AgentEvents.PermissionRequired({ eventType: "flows.harness.permission-required.v1", request: park })
+        ),
+      interrupt: () => Effect.succeed(true),
+      permission: () => Effect.succeed(Effect.die("the engine went away")),
+      steer: () => Effect.succeed(false),
+      resumeOnBoot: () => Effect.void
+    })
+    const left = await run(
+      Effect.gen(function*() {
+        const turns = yield* Turns.Turns
+        const store = yield* Store.Store
+        yield* store.putSession(session("ses_dead"))
+        yield* turns.prompt({ sessionID: "ses_dead", parts: [{ type: "text", text: "run ls" }] })
+        yield* Effect.promise(() =>
+          until(() => Effect.runPromise(Effect.map(store.listPermissions("ses_dead"), (list) => list.length === 1)))
+        )
+        yield* turns.permission({ sessionID: "ses_dead", permissionID: park.requestId, response: "once" })
+        yield* Effect.sleep("50 millis")
+        return yield* store.listPermissions("ses_dead")
+      }).pipe(Effect.provide(stack(dying, "turns-dead")))
+    )
+    expect(left).toEqual([])
   })
 
   it("logs a driver that refuses the answer to a card it asked for", async () => {
@@ -393,7 +506,7 @@ describe("Turns", () => {
           sinks.push(sink)
         }),
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })
@@ -477,7 +590,7 @@ describe("Turns", () => {
           sinks.push(sink)
         }),
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: (_session, text) =>
         Effect.sync(() => {
           steers.push(text)
@@ -538,7 +651,7 @@ describe("Turns", () => {
     const driver = Layer.succeed(Driver.Driver, {
       start: (input) => Effect.sync(() => void starts.push(input)),
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: (_session, text) => Effect.sync(() => (steers.push(text), true)),
       resumeOnBoot: () => Effect.void
     })
@@ -575,7 +688,7 @@ describe("Turns", () => {
     const silent = Layer.succeed(Driver.Driver, {
       start: () => Effect.never,
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })
@@ -612,7 +725,7 @@ describe("Turns", () => {
           running = sink
         }),
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })
@@ -1092,7 +1205,7 @@ describe("Turns", () => {
     const booting = Layer.succeed(Driver.Driver, {
       start: () => Effect.never,
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: (open) =>
         Effect.gen(function*() {
@@ -1161,7 +1274,7 @@ describe("Turns", () => {
     const failing = Layer.succeed(Driver.Driver, {
       start: () => Effect.never,
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.fail(new Driver.DriverError({ code: "engine_failed", message: "no engine" }))
     })
@@ -1207,7 +1320,7 @@ describe("Turns", () => {
           yield* sink.closed({ _tag: "interrupted" })
           return true
         }),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })
@@ -1243,7 +1356,7 @@ describe("Turns", () => {
     const idle = Layer.succeed(Driver.Driver, {
       start: () => Effect.void,
       interrupt: () => Effect.succeed(false),
-      permission: () => Effect.void,
+      permission: () => Effect.succeed(Effect.void),
       steer: () => Effect.succeed(false),
       resumeOnBoot: () => Effect.void
     })

@@ -194,7 +194,9 @@ export const make = (options: Options): Effect.Effect<Driver.Service, never, Sco
           cursor: 0
         }
         sessions.set(input.sessionID, resumed)
-        yield* drive(input.sessionID, resumed)
+        // The script has nothing durable to record, so the answer is safe the
+        // moment the park is cleared; the replay itself is the resume.
+        return drive(input.sessionID, resumed)
       })
 
     const steer: Driver.Service["steer"] = (sessionID, text) =>

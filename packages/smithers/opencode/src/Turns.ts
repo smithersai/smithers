@@ -630,6 +630,19 @@ export const make = (
           })
           return
         }
+        // The answer is recorded before the card comes down. The reply
+        // published below is what takes the card off the screen, so a server
+        // that stopped between the two left a person who had already answered
+        // with no card to answer again, and the turn asked them a second time
+        // on the next boot. The driver records the answer and hands back the
+        // resume; a failure to record is logged and the card still comes down,
+        // because a card the person has answered is not theirs to answer
+        // twice.
+        const resume = yield* driver.permission(input).pipe(
+          Effect.catchCause((cause) =>
+            Effect.as(Effect.logError({ message: "The permission could not be answered", cause }), Effect.void)
+          )
+        )
         yield* commit({
           _tag: "emit",
           sessionID: input.sessionID,
@@ -644,8 +657,8 @@ export const make = (
         // is waiting on.
         yield* commit({ _tag: "replied", sessionID: input.sessionID })
         yield* Effect.forkIn(
-          driver.permission(input).pipe(
-            Effect.catchCause((cause) => Effect.logError({ message: "The permission could not be answered", cause }))
+          resume.pipe(
+            Effect.catchCause((cause) => Effect.logError({ message: "The turn could not be resumed", cause }))
           ),
           scope
         )

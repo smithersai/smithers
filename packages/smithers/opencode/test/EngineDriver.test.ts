@@ -29,6 +29,18 @@ import * as Store from "../src/Store.ts"
 import * as Turns from "../src/Turns.ts"
 import { until } from "./Harness.ts"
 
+/**
+ * Answers a park and runs the resume the driver hands back.
+ *
+ * The driver returns once the answer is recorded, so that the caller can take
+ * the card down before anything else happens; running the resume here is the
+ * whole answer, the way it read before the two halves were separated.
+ */
+const answering = (
+  driver: Driver.Service,
+  input: Driver.PermissionInput
+): Effect.Effect<void, Driver.DriverError> => Effect.flatMap(driver.permission(input), (resume) => resume)
+
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
   protocolId: "test-protocol",
@@ -330,7 +342,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         const unknown = yield* Effect.flip(
           driver.permission({ sessionID: "ses_other", permissionID: "per_nope", response: "once" })
         )
-        yield* driver.permission({ sessionID: "ses_a", permissionID: permissionOf(log.events), response: "once" })
+        yield* answering(driver, { sessionID: "ses_a", permissionID: permissionOf(log.events), response: "once" })
         return {
           parked,
           busy,
@@ -384,11 +396,11 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     await process_(directory, (driver) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_b", "msg_1"), first.sink)
-        yield* driver.permission({ sessionID: "ses_b", permissionID: permissionOf(first.events), response: "always" })
+        yield* answering(driver, { sessionID: "ses_b", permissionID: permissionOf(first.events), response: "always" })
         yield* driver.start(input("ses_b", "msg_2"), second.sink)
         // The answer covered `echo *`, what the card showed: another command asks again.
         yield* driver.start(input("ses_b", "msg_rm"), other.sink)
-        yield* driver.permission({ sessionID: "ses_b", permissionID: permissionOf(other.events), response: "reject" })
+        yield* answering(driver, { sessionID: "ses_b", permissionID: permissionOf(other.events), response: "reject" })
       }))
     expect(first.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "completed" }])
     expect(second.outcomes).toEqual([{ _tag: "completed" }])
@@ -425,7 +437,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     const result = await process_(directory, (driver) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_compound", "msg_compound_1"), first.sink)
-        yield* driver.permission({
+        yield* answering(driver, {
           sessionID: "ses_compound",
           permissionID: permissionOf(first.events),
           response: "always"
@@ -433,7 +445,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         yield* driver.start(input("ses_compound", "msg_compound_2"), second.sink)
         const before = { outcomes: [...second.outcomes], wrote: existsSync(marker) }
         if (second.outcomes.at(-1)?._tag === "suspended") {
-          yield* driver.permission({
+          yield* answering(driver, {
             sessionID: "ses_compound",
             permissionID: permissionOf(second.events),
             response: "once"
@@ -470,12 +482,12 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
       Effect.gen(function*() {
         yield* driver.start(input("ses_p", "msg_p"), first.sink)
         // The person answers the strongest answer the card offers.
-        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(first.events), response: "always" })
+        yield* answering(driver, { sessionID: "ses_p", permissionID: permissionOf(first.events), response: "always" })
         // The same program, and an unrelated command: neither is covered.
         yield* driver.start(input("ses_p", "msg_q"), again.sink)
-        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(again.events), response: "once" })
+        yield* answering(driver, { sessionID: "ses_p", permissionID: permissionOf(again.events), response: "once" })
         yield* driver.start(input("ses_p", "msg_r"), other.sink)
-        yield* driver.permission({ sessionID: "ses_p", permissionID: permissionOf(other.events), response: "once" })
+        yield* answering(driver, { sessionID: "ses_p", permissionID: permissionOf(other.events), response: "once" })
         return yield* store.listGrants("ses_p")
       }))
     // What the person was asked: the interpreter and the program, never a blank
@@ -510,13 +522,13 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     const grants = await process_(directory, (driver, store) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_n", "msg_n"), log.sink)
-        yield* driver.permission({
+        yield* answering(driver, {
           sessionID: "ses_n",
           permissionID: cards(log.events)[0]!.request.requestId,
           response: "reject"
         })
         yield* wait(() => cards(log.events).length === 2)
-        yield* driver.permission({
+        yield* answering(driver, {
           sessionID: "ses_n",
           permissionID: cards(log.events)[1]!.request.requestId,
           response: "once"
@@ -613,7 +625,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     await process_(directory, (driver) =>
       Effect.gen(function*() {
         yield* driver.start(input("ses_c", "msg_c"), log.sink)
-        yield* driver.permission({ sessionID: "ses_c", permissionID: permissionOf(log.events), response: "reject" })
+        yield* answering(driver, { sessionID: "ses_c", permissionID: permissionOf(log.events), response: "reject" })
       }))
     expect(log.outcomes).toEqual([{ _tag: "suspended" }, { _tag: "completed" }])
     expect(printed(log.events)).toContain("\"code\":\"capability_refused\"")
@@ -937,8 +949,8 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         yield* rewrite("DELETE FROM flows_runs WHERE run_id = 'msg_g'")
         // The other was cancelled by another process before the person answered.
         yield* rewrite("UPDATE flows_runs SET status = 'cancelled' WHERE run_id = 'msg_h'")
-        yield* driver.permission({ sessionID: "ses_g", permissionID: permissionOf(gone.events), response: "once" })
-        yield* driver.permission({ sessionID: "ses_h", permissionID: permissionOf(closed.events), response: "once" })
+        yield* answering(driver, { sessionID: "ses_g", permissionID: permissionOf(gone.events), response: "once" })
+        yield* answering(driver, { sessionID: "ses_h", permissionID: permissionOf(closed.events), response: "once" })
         return { gone: yield* driver.interrupt("ses_g"), closed: yield* driver.interrupt("ses_h") }
       }))
     expect(result).toEqual({ gone: false, closed: false })
@@ -1057,8 +1069,8 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         )
         const steered = yield* driver.steer("ses_h", "hurry")
         expect(steered).toBe(true)
-        yield* driver.permission({ sessionID: "ses_h", permissionID: request, response: "once" })
-        yield* driver.permission({ sessionID: "ses_o", permissionID: otherRequest, response: "always" })
+        yield* answering(driver, { sessionID: "ses_h", permissionID: request, response: "once" })
+        yield* answering(driver, { sessionID: "ses_o", permissionID: otherRequest, response: "always" })
         return yield* store.listGrants("ses_o")
       }))
     expect(second.outcomes).toEqual([{ _tag: "completed" }])
@@ -1158,7 +1170,7 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
         // the host that has just opened a sink for the turn.
         yield* wait(() => cards(seventh.events).length === 1)
         expect(permissionOf(seventh.events)).toBe(engineRow(directory, "msg_l").token)
-        yield* driver.permission({
+        yield* answering(driver, {
           sessionID: "ses_i",
           permissionID: permissionOf(seventh.events),
           response: "once"
@@ -1671,7 +1683,7 @@ ctx.done("Fixed src/hello.js: add now returns a + b, and node test.mjs passes.")
         yield* driver.resumeOnBoot(() => Effect.succeed(second.sink))
         yield* wait(() => cards(second.events).length === 1)
         expect(permissionOf(second.events)).toBe(token)
-        yield* driver.permission({ sessionID: "ses_gap", permissionID: token, response: "once" })
+        yield* answering(driver, { sessionID: "ses_gap", permissionID: token, response: "once" })
         yield* wait(() => second.outcomes.some((outcome) => outcome._tag === "completed"))
       }))
     expect(answer(second.events)).toBe("ran again")

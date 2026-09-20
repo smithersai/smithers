@@ -6,6 +6,18 @@ import * as Driver from "../src/Driver.ts"
 import * as ScriptedDriver from "../src/ScriptedDriver.ts"
 import { until } from "./Harness.ts"
 
+/**
+ * Answers a park and runs the resume the driver hands back.
+ *
+ * The driver returns once the answer is recorded, so that the caller can take
+ * the card down before anything else happens; running the resume here is the
+ * whole answer, the way it read before the two halves were separated.
+ */
+const answering = (
+  driver: Driver.Service,
+  input: Driver.PermissionInput
+): Effect.Effect<void, Driver.DriverError> => Effect.flatMap(driver.permission(input), (resume) => resume)
+
 /** The driver's fibers live in a scope: every test runs inside one. */
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>): Promise<A> => Effect.runPromise(Effect.scoped(effect))
 
@@ -44,7 +56,7 @@ describe("ScriptedDriver", () => {
         const unknown = yield* Effect.flip(
           scripted.permission({ sessionID: "ses_other", permissionID: "x", response: "once" })
         )
-        yield* scripted.permission({ sessionID: "ses_test", permissionID: permissionID!, response: "once" })
+        yield* answering(scripted, { sessionID: "ses_test", permissionID: permissionID!, response: "once" })
         yield* scripted.resumeOnBoot(() => Effect.succeed(log.sink))
         return { parked, tags, busy, steered, notSteered, wrong, unknown }
       })
@@ -73,7 +85,7 @@ describe("ScriptedDriver", () => {
         const permission = log.events.find((event) =>
           event._tag === "permission-required"
         ) as AgentEvent.PermissionRequired
-        yield* scripted.permission({
+        yield* answering(scripted, {
           sessionID: "ses_test",
           permissionID: permission.request.requestId,
           response: "reject"

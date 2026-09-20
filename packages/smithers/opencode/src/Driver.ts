@@ -149,10 +149,18 @@ export interface Service {
   /** Interrupts the session's running turn. True when there was one. */
   readonly interrupt: (sessionID: string) => Effect.Effect<boolean>
   /**
-   * Answers a parked permission: `once` and `always` resume the same
-   * execution, `reject` resumes it with the call refused.
+   * Records a parked permission's answer and hands back the resume that
+   * carries it into the turn: `once` and `always` resume the same execution,
+   * `reject` resumes it with the call refused.
+   *
+   * The two halves are separate because the answer has to outlive the card.
+   * The card comes down on the reply the caller publishes, and a caller that
+   * published first lost the answer of anyone whose server stopped in
+   * between and charged them a second one. So everything that makes the
+   * answer durable happens before this returns, and the resume the caller
+   * forks afterwards adds nothing the person would have to give again.
    */
-  readonly permission: (input: PermissionInput) => Effect.Effect<void, DriverError>
+  readonly permission: (input: PermissionInput) => Effect.Effect<Effect.Effect<void>, DriverError>
   /** Queues text for the session's running turn to drain at its next frame boundary. True when it was queued. */
   readonly steer: (sessionID: string, text: string) => Effect.Effect<boolean>
   /**

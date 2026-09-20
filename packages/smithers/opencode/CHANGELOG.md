@@ -77,6 +77,16 @@
   the server stopping, and the route answers 503 `UnavailableError` naming the
   session. Nothing else about the route changes.
 
+- A permission answer is durable before the card comes down. `Turns.permission`
+  published the reply first, and the reply is what deletes the card, so a
+  server lost between the two lost an answer the person had already given and
+  asked them for it again on the next boot. `Driver.permission` now records the
+  answer and hands back the resume, and `Turns` takes the card down only once
+  the record has returned: for the engine driver that means the grant is in the
+  store, and for the scripted driver that the park is cleared. The re-ask that
+  landed in 1.0.0-rc.0 stays as the backstop for the narrower window before the
+  record.
+
 - A store read that failed writes its cause to the log. `Routes.onStoreError`
   answered the person with the `StoreError`'s sentence and dropped its `cause`,
   so a one-off HTTP 500 on `GET /session/:id/message` left a log saying a read

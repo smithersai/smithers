@@ -1133,9 +1133,13 @@ export const layer = (options: Options) =>
               denialsOf(running.input.messageID).add(deniedKey(running.parked.flow, running.parked.subject))
             }
             remember(grant)
+            // Durable before the caller takes the card down. A stop anywhere
+            // after this line carries the answer into the next boot, where
+            // `resumeOnBoot` reads the grant and drives the call through the
+            // gate the person already passed.
             yield* Effect.ignoreCause(stored.putGrant(grant))
             running.parked = undefined
-            yield* drive(running, "resume")
+            return drive(running, "resume")
           })
 
         const steer: Driver.Service["steer"] = (sessionID, text) =>
