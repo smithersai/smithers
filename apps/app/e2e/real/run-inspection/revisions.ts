@@ -5,6 +5,7 @@ import { expect } from "../support/test"
 import type { JournalRow } from "./semantic"
 
 export const ENRICHED_COMMIT = "3b2b9f518c"
+export const MODULE_COMMIT = "0c31eb19cecf"
 export type HostManifest = { sourceCommit: string; sha256: string; object: string }
 export type ProducerFact =
   | { _tag: "HostPredatesCommit"; hostRevision: string; producingCommit: string; message: string; observed: number }
@@ -54,4 +55,16 @@ export const enrichedEvidence = async (testInfo: TestInfo, host: HostManifest, r
   if (fact._tag !== "EnrichedPayloadsVerified") testInfo.annotations.push({ type: fact._tag, description: fact.message })
   if (fact._tag === "HostPredatesCommit") return
   expect(missing, "required enriched payload fields").toEqual([])
+}
+
+export const moduleEvidence = async (testInfo: TestInfo, host: HostManifest, rows: readonly JournalRow[]): Promise<void> => {
+  const events = rows.filter(row => (row.payload as Record<string, unknown> | undefined)?.eventType === "flows.harness.step-fact.v1")
+  const fact = !hostContains(host.sourceCommit, MODULE_COMMIT)
+    ? { _tag: "HostPredatesCommit", hostRevision: host.sourceCommit, producingCommit: MODULE_COMMIT, observed: events.length,
+      message: `host predates ${MODULE_COMMIT}; module step frames are not release evidence` }
+    : { _tag: events.length > 0 ? "ModuleStepTrailRecorded" : "ModuleStepTrailMissing", hostRevision: host.sourceCommit,
+      producingCommit: MODULE_COMMIT, observed: events.length, message: events.length > 0 ? "Recorded module checkpoints" : "The module agent recorded no checkpoints" }
+  await attachProductionJson(testInfo, "timeline-module-capability", { fact, events })
+  testInfo.annotations.push({ type: fact._tag, description: fact.message })
+  if (fact._tag !== "HostPredatesCommit") expect(events.length, fact.message).toBeGreaterThan(0)
 }

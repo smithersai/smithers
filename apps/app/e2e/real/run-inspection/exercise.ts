@@ -90,14 +90,14 @@ const liveDom = (card: Locator) => card.evaluate(element => {
 
 /** Match each DOM snapshot to the independently read journal sequence, then require growth between them. */
 export const inspectRunning = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository,
-  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo): Promise<void> => {
+  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, meaningOf = journalMeaning): Promise<void> => {
   type Sample = { journal: readonly JournalRow[]; expected: Meaning; rendered: Awaited<ReturnType<typeof liveDom>>; summary: ReturnType<typeof runSummary> }
   const samples: Sample[] = []
   const observe = async (previous?: Sample): Promise<Sample> => {
     let sample: Sample | undefined
     await expect.poll(async () => {
       const journal = await readJournal(page, request, owned, subject.runId)
-      const expected = journalMeaning(journal)
+      const expected = meaningOf(journal)
       const callCount = (meaning: Meaning) => meaning.frames.reduce((n, frame) => n + frame.calls.length, 0)
       if (expected.frames.length <= (previous?.expected.frames.length ?? 0) ||
         previous !== undefined && callCount(expected) <= callCount(previous.expected)) return false
@@ -145,7 +145,7 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
   const steps: unknown[] = []
   const at = async (seq: number, action: string) => {
     const frame = [...whole.frames].reverse().find(frame => frame.opens <= seq)
-    const selected = frame === undefined ? `run:${subject.runId}` : `frame-${frame.frame}`
+    const selected = frame?.node ?? `run:${subject.runId}`
     const current = [...whole.bands].reverse().find(band => band.seq <= seq)?.seq
     const check = async () => {
       await expect(trace.getByText(`At #${seq}`, { exact: true })).toBeVisible()

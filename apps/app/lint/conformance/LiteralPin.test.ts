@@ -80,6 +80,21 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "flows.harness.step-fact.v1",
+    file: "e2e/real/run-inspection/module-evidence.ts",
+    reason: "The module checkpoint envelope is declared by packages/smithers/flows/journal/src/StepFact.ts, outside the app vocabulary."
+  },
+  {
+    literal: "flows.harness.step-fact.v1",
+    file: "e2e/real/run-inspection/revisions.ts",
+    reason: "The capability attachment counts the native checkpoint envelope declared by packages/smithers/flows/journal/src/StepFact.ts."
+  },
+  {
+    literal: "flows.harness.step-fact.v1",
+    file: "e2e/real/coverage/timeline-semantic.test.ts",
+    reason: "The oracle tests the journal package's native module checkpoint wire format, outside the app vocabulary."
+  },
+  {
     literal: "flows.harness.call-fact.v1",
     file: "e2e/real/run-inspection/semantic.ts",
     reason: "The native call envelope is declared in the packages/smithers harness and gateway, outside the app vocabulary; the independent oracle reads that wire format."

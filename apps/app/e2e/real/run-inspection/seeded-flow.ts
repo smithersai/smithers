@@ -39,25 +39,45 @@ export const readWorkspaceText = async (page: Page, request: APIRequestContext, 
   return body.content as string
 }
 
+/** Await the new session's receipt; command submission alone does not replace the prior terminal. */
+const openOwnedTerminal = async (page: Page, repo: string, workspaceId: string) => {
+  const created = page.waitForResponse(response => response.request().method() === "POST" &&
+    new URL(response.url()).pathname === cloudRepoPath(repo, "/workspace/sessions") &&
+    response.request().postDataJSON()?.workspace_id === workspaceId && response.status() === 201)
+  void created.catch(() => undefined)
+  await command(page, `/workspace.terminal ${workspaceId}`)
+  const receipt = await (await created).json() as { id: string; workspace_id: string }
+  expect(receipt.workspace_id).toBe(workspaceId)
+  expect(receipt.id).toMatch(/^[0-9a-f-]{36}$/)
+  await closeComposer(page)
+  const terminal = page.getByTestId(`card-workspace-${workspaceId}`).getByTestId(`terminal-${receipt.id}`)
+  await expect(terminal).toBeVisible({ timeout: 90000 })
+  // The released terminal adapter retains its first stream when the session changes.
+  // Reload mounts the measured session and exercises its persisted binding.
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(terminal).toBeVisible()
+  return { terminal, sessionId: receipt.id }
+}
+
 /** Measure after resume, using a new file so an earlier measurement cannot satisfy the readback. */
-export const measureWorkspaceHost = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string): Promise<string> => {
+export const measureWorkspaceHost = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string): Promise<{ sha256: string; workspaceRoot: string }> => {
   const path = `timeline-host.${crypto.randomUUID()}.txt`
   let sessionId: string | undefined
   try {
-    await command(page, `/workspace.terminal ${workspaceId}`)
-    await closeComposer(page)
-    const terminal = page.getByTestId(`card-workspace-${workspaceId}`).locator('[data-testid^="terminal-"]')
-    await expect(terminal).toBeVisible({ timeout: 90000 })
-    sessionId = (await terminal.getAttribute("data-testid"))!.slice("terminal-".length)
+    const opened = await openOwnedTerminal(page, repo, workspaceId)
+    const { terminal } = opened
+    sessionId = opened.sessionId
     await terminal.locator(".xterm-helper-textarea").focus()
-    await page.keyboard.insertText(`sha256sum /usr/local/bin/smithers-coding-host > ${path}`)
+    await page.keyboard.insertText(`sha256sum /usr/local/bin/smithers-coding-host > ${path} && pwd -P >> ${path}`)
     await page.keyboard.press("Enter")
     let content = ""
     await expect(async () => {
       content = await readWorkspaceText(page, request, repo, workspaceId, path)
       expect(content).toMatch(/^[0-9a-f]{64} /)
+      expect(content.split("\n")).toHaveLength(3)
+      expect(content.split("\n")[1]?.startsWith("/")).toBe(true)
     }).toPass({ timeout: 45000 })
-    return content.split(" ")[0]!
+    return { sha256: content.split(" ")[0]!, workspaceRoot: content.split("\n")[1]! }
   } finally {
     if (sessionId !== undefined) {
       const response = await realApi(page, request, "POST", `${cloudRepoPath(repo, "/workspace/sessions")}/${encodeURIComponent(sessionId)}/destroy`)
@@ -76,11 +96,9 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
   const sessions = cloudRepoPath(repo, "/workspace/sessions")
   let sessionId: string | undefined
   try {
-    await command(page, `/workspace.terminal ${workspaceId}`)
-    await closeComposer(page)
-    const terminal = page.getByTestId(`card-workspace-${workspaceId}`).locator('[data-testid^="terminal-"]')
-    await expect(terminal).toBeVisible({ timeout: 90_000 })
-    sessionId = (await terminal.getAttribute("data-testid"))!.slice("terminal-".length)
+    const opened = await openOwnedTerminal(page, repo, workspaceId)
+    const { terminal } = opened
+    sessionId = opened.sessionId
     await terminal.locator(".xterm-helper-textarea").focus()
     for (const [path, content] of files) {
       const encoded = Buffer.from(content).toString("base64")

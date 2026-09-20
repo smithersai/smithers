@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
+import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
 
 const event = (sequence: number, kind: string, payload: Record<string, unknown> = {}) => ({ sequence, kind, payload })
 const opened = "control.agent.turn-opened"
@@ -17,6 +18,43 @@ const journal = [
   event(9, settled, { flowName: "bash", callId: "c", outcome: "success", value: { exitCode: 0 } }),
   event(10, "control.run.completed")
 ]
+
+const moduleFact = (sequence: number, kind: string, payload: Record<string, unknown>, suffix = "a") => {
+  const step = { stepId: suffix.repeat(64), executionId: `child-${suffix}`, action: "coding/dispatch-turn", attempt: 1, ask: 0, retry: 1, scope: "turn" }
+  return { ...event(sequence, "control.engine.event", {
+    version: 1, eventType: "flows.harness.step-fact.v1", executionId: step.executionId, generation: 0, sequence, emittedAtMs: sequence,
+    sourceId: `step-fact-v1:${step.stepId}:1:0:1`, sourceSequence: sequence,
+    payload: { version: 1, step, generation: 0, frame: 0, ordinal: sequence, cell: "cell", at: sequence,
+      eventType: kind, sourceSequence: sequence, payload }
+  }), runId: "run-1" }
+}
+
+describe("ordinary module journal evidence", () => {
+  test("recorded module ownership keeps identical call ids in separate steps", () => {
+    const rows = [moduleFact(1, opened, {}), moduleFact(2, opened, {}, "b"),
+      moduleFact(3, started, { callId: "same", flowName: "read", input: { path: "one.txt" } }),
+      moduleFact(4, started, { callId: "same", flowName: "read", input: { path: "two.txt" } }, "b"),
+      moduleFact(5, settled, { callId: "same", flowName: "read", outcome: "success", value: { startLine: 1, endLine: 2 } }, "b"),
+      moduleFact(6, settled, { callId: "same", flowName: "read", outcome: "success", value: { startLine: 1, endLine: 4 } })]
+    const meaning = moduleMeaning(rows)
+    expect(meaning.lines.map(line => [line.subject, line.result])).toEqual([["one.txt", "4 lines"], ["two.txt", "2 lines"]])
+    expect(new Set(meaning.lines.map(line => line.node)).size).toBe(2)
+    expect(moduleMeaning(rows, 5).status).toBe("Reading one.txt")
+    expect(meaning.bands).toEqual([{ seq: 1, phase: "researching" }, { seq: 2, phase: "researching" }])
+  })
+
+  test("replayed observations are deduplicated by their recorded source", () => {
+    const first = moduleFact(1, opened, {})
+    const replay = { ...first, sequence: 9 }
+    expect(moduleRows([first, replay])).toHaveLength(1)
+    expect(moduleMeaning([first, replay]).frames).toHaveLength(1)
+  })
+
+  test("a mismatched module execution is unsupported evidence", () => {
+    const row = moduleFact(1, opened, {})
+    expect(() => moduleRows([{ ...row, payload: { ...row.payload, executionId: "another" } }])).toThrow(TimelineEvidenceError)
+  })
+})
 
 describe("the independent timeline evidence oracle", () => {
   test("read, write and test bands and lines come from calls and their outcomes", () => {

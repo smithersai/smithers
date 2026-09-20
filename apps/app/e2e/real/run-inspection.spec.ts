@@ -22,7 +22,8 @@ import {
   workflowRpcPosts
 } from "./run-inspection/ui"
 import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
-import { captureRevisions, enrichedEvidence } from "./run-inspection/revisions"
+import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
+import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
 import { compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
 
@@ -268,9 +269,9 @@ workflowTest("a successful prompt run matches its journal while live and after k
   await restartWorkspaceHost(page, request, repo, workspaceId!)
   await awaitSeededFlow(page, request, repo, workspaceId!)
   const host = await captureRevisions(page, testInfo)
-  const measuredHash = await measureWorkspaceHost(page, request, repo, workspaceId!)
-  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host, measuredAfterResume: true })
-  expect(measuredHash, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
+  const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host, measuredAfterResume: true })
+  expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, SEEDED_FLOW, { args: marker }, testInfo)
@@ -315,9 +316,9 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
   await restartWorkspaceHost(page, request, repo, workspaceId!)
   await awaitSeededFlow(page, request, repo, workspaceId!)
   const host = await captureRevisions(page, testInfo)
-  const measuredHash = await measureWorkspaceHost(page, request, repo, workspaceId!)
-  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measuredHash, host, measuredAfterResume: true })
-  expect(measuredHash, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
+  const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host, measuredAfterResume: true })
+  expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, FAILED_FLOW, { args: "Observe the declared budget failure." }, testInfo)
@@ -340,6 +341,59 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
   } finally {
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+    await enrichedEvidence(testInfo, host, rows)
+  }
+})
+
+workflowTest("an ordinary module run reports recorded step evidence or its pinned host limitation", scenario("runs.timeline-ordinary-module-evidence", {
+  capabilities: ["identity", "cloud"],
+  coverage: [
+    "action:workspace.view", "action:workspace.terminal", "action:repo.select", "action:flow.run",
+    "host:production", "path:success", "door:slash", "dimension:real-provider", "dimension:ordinary-module-flow",
+    "dimension:host-revision-evidence", "evidence:recorded-module-step-trail-or-host-predates-commit"
+  ],
+  description: "Launch the registered coding dispatch module through the ordinary UI in an owned workspace. Compare recorded step meanings while live and at completion when the host contains the producer; archive a visible typed host limitation otherwise. Verify the requested read-only task leaves README unchanged."
+}), async ({ page, request, workflowRepo }, testInfo) => {
+  testInfo.setTimeout(20 * 60_000)
+  const { repo, workspaceId } = workflowRepo
+  expect(workspaceId).toBeDefined()
+  await bootOwnedWorkflow(page, repo, workspaceId)
+  const host = await captureRevisions(page, testInfo)
+  const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
+  await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host })
+  expect(measured.sha256).toBe(host.sha256)
+  const catalog = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workspaceId)
+  expect((catalog.payload as { items: { flowId: string }[] }).items.map(one => one.flowId)).toContain("coding/dispatch")
+  const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+  await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
+  await closeComposer(page)
+  const input = { turnId: crypto.randomUUID(), role: "coding/implement", history: [], workspaceRoot: measured.workspaceRoot,
+    prompt: 'Read-only task. Do not change files. Use one numbered step per model response, one JavaScript cell per step. 1. Read README.md with ctx.call("read", {path:"README.md"}) and print the result. 2. In the next response call ctx.call("bash", {command:"sleep 20", timeoutMs:60000}) and print the result. 3. In the next response read README.md again, then return messages containing its exact first line. Do not combine these steps.' }
+  const subject = await launchSubject(page, workflowRepo, "coding/dispatch", input, testInfo)
+  try {
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, moduleMeaning)
+    const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 10 * 60_000, workspaceId)
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
+    await attachProductionJson(testInfo, "timeline-module-readback", { repo, workspaceId, runId: subject.runId, input, terminal, before, after })
+    expect(terminal.status).toBe("completed")
+    expect(after).toBe(before)
+    expect((terminal.finalOutput as { turnId?: string })?.turnId).toBe(input.turnId)
+    expect(JSON.stringify((terminal.finalOutput as { messages?: unknown })?.messages)).toContain(before.split("\n")[0])
+    const expected = moduleMeaning(rows)
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) {
+      expect(expected.frames.length).toBeGreaterThanOrEqual(2)
+      expect(expected.lines.length).toBeGreaterThanOrEqual(2)
+      requireLaterPhase(expected)
+    }
+    const rendered = await compareMeaning(subject.card, subject.trace, expected)
+    await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal })
+    await subject.card.screenshot({ path: testInfo.outputPath("timeline-module.png") })
+    await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
+  } finally {
+    const rows = await readJournal(page, request, workflowRepo, subject.runId)
+    await attachProductionJson(testInfo, "timeline-module-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+    await moduleEvidence(testInfo, host, rows)
     await enrichedEvidence(testInfo, host, rows)
   }
 })

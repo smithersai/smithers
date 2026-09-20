@@ -12,7 +12,7 @@ export class TimelineEvidenceError extends Error {
 }
 
 type Call = { seq: number; name: string; id?: string; input: Fields; result?: Fields; outcome?: string; message?: string }
-type Frame = { frame: number; opens: number; calls: Call[]; changed: boolean; blocked: boolean }
+type Frame = { frame: number; node: string; opens: number; calls: Call[]; changed: boolean; blocked: boolean }
 export type ExpectedBand = { phase: string; seq: number }
 export type ExpectedLine = { node: string; number: string; verb: string; subject: string; result: string }
 export type Meaning = {
@@ -101,7 +101,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
     if (kind.includes("PreparePlan") || p.flowName === "coding/PreparePlan" || p.flowName === "coding/PrepareWithWiki" || fields(p.value).plan !== undefined) {
       throw new TimelineEvidenceError("unsupported-evidence", `Recorded plan at #${seq} needs a goal oracle; no goal claim was made.`)
     }
-    if (kind === OPEN) { frames.push({ frame: frames.length + 1, opens: seq, calls: [], changed: false, blocked: false }); status = "Thinking" }
+    if (kind === OPEN) { frames.push({ frame: frames.length + 1, node: `frame-${frames.length + 1}`, opens: seq, calls: [], changed: false, blocked: false }); status = "Thinking" }
     if (kind === "control.agent.cell-produced" && open.length === 0) status = "Running code"
     if (kind === READ) {
       const name = word(p.flowName)
@@ -150,7 +150,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
       frame.calls.some(checks) ? "testing" : frame.calls.some(call => READ_NAMES.has(call.name)) ? "researching" : "unrecorded"
     if (bands.at(-1)?.phase !== phase) bands.push({ phase, seq: frame.opens })
     const call = frame.calls.find(call => WRITE_NAMES.has(call.name)) ?? frame.calls.find(checks) ?? frame.calls[0]
-    if (call) lines.push({ node: `frame-${frame.frame}`, number: String(frame.frame),
+    if (call) lines.push({ node: frame.node, number: String(frame.frame),
       verb: verbs[call.name]![call.outcome === undefined ? 0 : call.outcome === "failure" ? 2 : 1], subject: subject(call), result: result(call) })
   }
   return { frames, bands, pins: pins.sort((a, b) => a.seq - b.seq), lines, status: terminalStatus ?? status, goals: [] }
