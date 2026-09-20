@@ -160,6 +160,49 @@ const SOURCE_PATH = resolve(__dirname, "../../../..", GRAPH_FLOW_SOURCE)
 /** One line of that file, 1-based, as the engine numbers a declaration site. */
 const sourceLine = (line: number): string => readFileSync(SOURCE_PATH, "utf8").split("\n")[line - 1] ?? ""
 
+/**
+ * Runs a case that moves the fixture's source under the running host, and puts
+ * the file back whatever happens.
+ *
+ * Two cases need the WORKING TREE to move while a host serves a revision it
+ * already read, so a copy under `TMPDIR` cannot stand in: the file has to be
+ * the tracked one, because the revision that answers the Code tab is a jj or
+ * git object and neither can serve a path no revision holds.
+ *
+ * What is avoidable is leaving it edited. A run killed between the write and
+ * the restore leaves uncommitted work in the checkout, and
+ * `SourceRevision.read` then answers NOTHING for a git tree — so the next host
+ * records no revision and every Code tab disappears, which reads as a product
+ * defect rather than as this suite's litter. The restore therefore also runs
+ * on the signals a killed run sends and on process exit, and it is idempotent.
+ */
+const overTheFixtureSource = async (
+  body: (original: string, edit: (bytes: string) => void) => Promise<void>
+): Promise<void> => {
+  const original = readFileSync(SOURCE_PATH, "utf8")
+  let restored = false
+  const restore = () => {
+    if (restored) return
+    restored = true
+    writeFileSync(SOURCE_PATH, original)
+  }
+  const onSignal = () => {
+    restore()
+    process.exit(1)
+  }
+  process.once("exit", restore)
+  process.once("SIGINT", onSignal)
+  process.once("SIGTERM", onSignal)
+  try {
+    await body(original, (bytes) => writeFileSync(SOURCE_PATH, bytes))
+  } finally {
+    restore()
+    process.off("exit", restore)
+    process.off("SIGINT", onSignal)
+    process.off("SIGTERM", onSignal)
+  }
+}
+
 test.describe("the flow builder's plan door", () => {
   /*
    * A healthy stack raises nothing.
@@ -323,6 +366,16 @@ test.describe("the flow builder's plan door", () => {
     // And the node wears the count its own settlement states, which is the
     // engine's count of the dispatches it ran.
     await expect(canvas.locator(`[data-node="${node}"] .flow-run-node-attempt`)).toHaveText("attempt 2")
+    /*
+     * The foot's facts do not run together. `attempt 2` sat against `built`
+     * with nothing between them, so the gap is MEASURED on the composited box
+     * rather than read back out of the stylesheet that sets it.
+     */
+    const gap = await canvas.locator(`[data-node="${node}"] .flow-graph-node-foot`).evaluate((foot) => {
+      const boxes = [...foot.children].map((child) => child.getBoundingClientRect())
+      return boxes.slice(1).reduce((least, box, index) => Math.min(least, box.left - boxes[index]!.right), Infinity)
+    })
+    expect(gap).toBeGreaterThan(1)
 
     /*
      * Code: the declaration site the engine recorded, repo-relative, and the
@@ -531,9 +584,8 @@ test.describe("the flow builder's plan door", () => {
    */
   test("shows the source the plan was built from, not the file on disk", async ({ page }) => {
     await listFlows(page)
-    const original = readFileSync(SOURCE_PATH, "utf8")
     const marker = "// edited after the host loaded this flow"
-    try {
+    await overTheFixtureSource(async (original, edit) => {
       await page.locator(`[data-flow="flow.plan"][data-flow-args="${GRAPH_FLOW}"]`).click()
       await expect(canvasOf(page).locator("[data-node]")).toHaveCount(GRAPH_NODE_IDS.length)
       const node = GRAPH_STEADY
@@ -549,7 +601,7 @@ test.describe("the flow builder's plan door", () => {
       const before = index + 1
 
       // The file changes under the plan, and the declaration moves down a line.
-      writeFileSync(SOURCE_PATH, [...lines.slice(0, index), marker, ...lines.slice(index)].join("\n"))
+      edit([...lines.slice(0, index), marker, ...lines.slice(index)].join("\n"))
       expect(sourceLine(before)).toBe(marker)
       expect(sourceLine(before + 1)).toContain(declaration)
 
@@ -564,9 +616,7 @@ test.describe("the flow builder's plan door", () => {
       await expect(inline).not.toContainText(marker)
       // Nothing was refused: a read the route could not serve would say so here.
       await expect(drawer(page).locator(".flow-graph-code-error")).toHaveCount(0)
-    } finally {
-      writeFileSync(SOURCE_PATH, original)
-    }
+    })
   })
 
   /*
@@ -743,10 +793,9 @@ test.describe("the flow builder's plan door", () => {
     // Read the recorded ID with runIdOf; the manual guide's old instruction
     // is tracked as a deviation rather than restoring unrequested copy.
 
-    const original = readFileSync(SOURCE_PATH, "utf8")
     const rekey = page.locator(".flow-plan-rekey").last()
-    try {
-      writeFileSync(SOURCE_PATH, original.replace("steady:${label}", "steady-edited:${label}"))
+    await overTheFixtureSource(async (original, edit) => {
+      edit(original.replace("steady:${label}", "steady-edited:${label}"))
       await command(page, `/flow.plan against=${runId} ${GRAPH_FLOW} ${GRAPH_REPO}`)
       await expect(rekey.locator(".flow-plan-rerun")).toHaveText(`re-keyed 0 of ${GRAPH_NODE_IDS.length}`)
       // `was` is a measurement of the run this plan was compared against: the
@@ -758,9 +807,7 @@ test.describe("the flow builder's plan door", () => {
       await expect(rekey.locator(".flow-plan-clean")).toHaveCount(0)
       // Doomed has no successful duration; unchanged does not make it free.
       await expect(rekey.locator(".flow-plan-rekey-eta")).toHaveCount(0)
-    } finally {
-      writeFileSync(SOURCE_PATH, original)
-    }
+    })
 
     await command(page, `/flow.plan against=${runId} ${GRAPH_FLOW} ${GRAPH_REPO} {"label":"edited"}`)
     // Ten of the eleven: every node whose key material carries the label. The

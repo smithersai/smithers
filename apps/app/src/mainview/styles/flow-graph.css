@@ -79,10 +79,17 @@
 	border-color: var(--warning-border);
 }
 
+/*
+ * The foot's items are separate facts — the node's address, the attempt it
+ * took, the word it settled with, what it cost — so they are spaced by the
+ * row rather than by whichever item happens to carry a margin. Without it
+ * `attempt 2` abutted `built` on the retried node.
+ */
 .flow-graph-node-foot {
 	display: flex;
 	align-items: center;
 	justify-content: flex-end;
+	gap: var(--sp-2);
 }
 
 .flow-graph-node-word {
@@ -283,7 +290,6 @@
  * a node with no history carries no row saying it has none.
  */
 .flow-graph-node-eta {
-	margin-left: var(--sp-2);
 	font-size: var(--fs-caption);
 	font-variant-numeric: tabular-nums;
 	color: var(--text-muted);
