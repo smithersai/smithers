@@ -13,6 +13,8 @@ export type HostManifest = { sourceCommit: string; sha256: string; object: strin
 
 /** The card sources whose deployed bytes decide the run header this tier reads. */
 export const HEADER_SOURCES = ["apps/app/src/mainview/cards/RunTraceStatus.ts"] as const
+/** The source whose deployed bytes decide where a pointer release commits. */
+export const STRIP_SOURCES = ["apps/app/src/mainview/cards/RunTracePhaseStrip.tsx"] as const
 /** Playwright transpiles this tier without import.meta, so the root is the first ancestor that owns the app. */
 export const repositoryRoot = (): string => {
   for (let directory = process.cwd(), previous = ""; directory !== previous; previous = directory, directory = resolve(directory, "..")) {
@@ -31,19 +33,22 @@ export type DeployedSourceFact =
  * own fix the moment it is rebased; the file contents keep saying what the
  * browser under test is actually running.
  */
-export const deployedHeaderSource = (frontendRevision: string): DeployedSourceFact => {
+export const deployedSource = (frontendRevision: string, sources: readonly string[]): DeployedSourceFact => {
   if (!/^[0-9a-f]{40}$/.test(frontendRevision)) throw new Error("Invalid deployed frontend revision")
   const root = repositoryRoot()
-  const differing = HEADER_SOURCES.filter(path => {
+  const differing = sources.filter(path => {
     const deployed = execFileSync("jj", ["file", "show", "--ignore-working-copy", "-r", frontendRevision, path],
       { encoding: "utf8", cwd: root, timeout: 30000 })
     return deployed !== readFileSync(resolve(root, path), "utf8")
   })
   return differing.length === 0
-    ? { _tag: "DeployedSourceMatchesWorkingCopy", frontendRevision, files: HEADER_SOURCES }
+    ? { _tag: "DeployedSourceMatchesWorkingCopy", frontendRevision, files: sources }
     : { _tag: "DeployedSourcePredatesWorkingCopy", frontendRevision, files: differing,
       message: `the deployed frontend ${frontendRevision} does not carry this working copy's ${differing.join(", ")}` }
 }
+
+export const deployedHeaderSource = (frontendRevision: string): DeployedSourceFact =>
+  deployedSource(frontendRevision, HEADER_SOURCES)
 export type ProducerFact =
   | { _tag: "HostPredatesCommit"; hostRevision: string; producingCommit: string; message: string; observed: number }
   | { _tag: "EnrichedPayloadsVerified"; hostRevision: string; producingCommit: string; observed: number }

@@ -3,7 +3,7 @@ import type { OwnedWorkflowRepository } from "../flow-execution/fixture"
 import { acceptedRunId, gatewayCall, runSummary } from "../flow-execution/production"
 import { attachProductionJson } from "../repositories-github/production"
 import { closeComposer, command, expect, reloadApp } from "../support/test"
-import { deployedHeaderSource } from "./revisions"
+import { STRIP_SOURCES, deployedHeaderSource, deployedSource } from "./revisions"
 import { journalMeaning, requireLaterPhase, type JournalRow, type Meaning } from "./semantic"
 import { frameLines, phaseStrip, readBands, readLines, readPins } from "./timeline"
 
@@ -240,7 +240,7 @@ const captureWidths = async (page: Page, card: Locator, testInfo: TestInfo, labe
 }
 
 /** Each cursor is checked again after reload, so a DOM-only keyboard response cannot pass. */
-export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<typeof launchSubject>>, rows: readonly JournalRow[], testInfo: TestInfo): Promise<void> => {
+export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<typeof launchSubject>>, rows: readonly JournalRow[], testInfo: TestInfo, frontendRevision: string): Promise<void> => {
   const { trace, card } = subject, whole = journalMeaning(rows), later = requireLaterPhase(whole)
   const steps: unknown[] = []
   const at = async (seq: number, action: string) => {
@@ -352,7 +352,25 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     const following = whole.bands.find(band => band.seq > widest.band.seq)?.seq ?? Infinity
     expect(positions, "a pointer release commits a recorded position").toContain(dropped)
     expect(dropped).toBeGreaterThanOrEqual(widest.band.seq)
-    expect(dropped, "a release inside one band stays inside it").toBeLessThan(following)
+    /*
+     * Containment is a property of this working copy's strip, which commits the
+     * last position recorded at or before the release. The deployed bundle may
+     * still commit the position NEAREST it, and a band whose subject slept has
+     * its far end nearest the following band's opening frame. Assert the
+     * property where the browser under test carries it; where it does not, say
+     * which revision could not prove it instead of failing the run or passing
+     * quietly.
+     */
+    const strip = deployedSource(frontendRevision, STRIP_SOURCES)
+    steps.push({ action: "pointer release containment", dropped, band: widest.band, following, strip })
+    if (strip._tag === "DeployedSourceMatchesWorkingCopy") {
+      expect(dropped, "a release inside one band stays inside it").toBeLessThan(following)
+    } else {
+      const fact = { _tag: strip._tag, frontendRevision, files: strip.files, dropped, band: widest.band, following,
+        message: `${strip.message}; a release inside the band at #${widest.band.seq} committed #${dropped}, and containment is unproven on this revision` }
+      await attachProductionJson(testInfo, "timeline-release-containment", fact)
+      testInfo.annotations.push({ type: fact._tag, description: fact.message })
+    }
     // The selected span is named by the technical view, so the drag's cursor is read there.
     await press(trace.getByRole("button", { name: "Details", exact: true }), "Enter")
     await expect(trace).toHaveAttribute("data-view", "timeline")

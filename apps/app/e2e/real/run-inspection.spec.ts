@@ -294,7 +294,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
     expect(expected.bands.map(band => band.phase)).toEqual(expect.arrayContaining(["researching", "implementing", "testing"]))
     const rendered = await compareMeaning(subject.card, subject.trace, expected)
     await attachProductionJson(testInfo, "timeline-semantic-comparison", { expected, rendered, terminal })
-    await inspectKeyboard(page, subject, rows, testInfo)
+    await inspectKeyboard(page, subject, rows, testInfo, host.frontendRevision)
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-completed.png") })
     await testInfo.attach("timeline-completed", { path: testInfo.outputPath("timeline-completed.png"), contentType: "image/png" })
   } finally {
