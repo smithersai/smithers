@@ -110,6 +110,18 @@ const garbled = (protocol: ProviderProtocol, questions: Record<string, unknown>)
     ? json(200, { answers: Object.fromEntries(Object.keys(questions).map((id) => [id, { type: "boolean" }])) })
     : sse([{ data: "{not json" }])
 
+/** What a composed request asked, as evidence: never the credential, never the answer. */
+const composed = (protocol: ProviderProtocol, body: Record<string, unknown> | null): Partial<ProviderJournalEntry> => {
+  if (body === null) return {}
+  if (protocol === "evaluation") return { ...(isRecord(body.questions) ? { questions: Object.keys(body.questions) } : {}), ...("state" in body ? { state: body.state } : {}) }
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  // Anthropic carries the system prompt as a string or as blocks; OpenAI wires as a system or developer message.
+  const system = typeof body.system === "string" ? body.system.length > 0 : Array.isArray(body.system) ? body.system.length > 0
+    : messages.some((message) => isRecord(message) && (message.role === "system" || message.role === "developer"))
+  const maxTokens = typeof body.max_tokens === "number" ? body.max_tokens : typeof body.max_completion_tokens === "number" ? body.max_completion_tokens : undefined
+  return { system, ...(maxTokens === undefined ? {} : { maxTokens }), ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}) }
+}
+
 const bearer = (request: Request): string | null => /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? null
 const PUBLIC_HEADERS = ["anthropic-version", "ai-gateway-protocol-version", "ai-gateway-auth-method", "ai-evaluation-model-specification-version", "ai-model-id"]
 
@@ -124,7 +136,8 @@ const serve = async (protocol: ProviderProtocol, request: Request): Promise<Resp
     journal.push({
       at: new Date().toISOString(), protocol, modelId, status: response.status, authorized,
       credentialSha256: presented === null ? null : sha(presented),
-      headers: Object.fromEntries(PUBLIC_HEADERS.flatMap((name) => { const value = request.headers.get(name); return value === null ? [] : [[name, value]] }))
+      headers: Object.fromEntries(PUBLIC_HEADERS.flatMap((name) => { const value = request.headers.get(name); return value === null ? [] : [[name, value]] })),
+      ...composed(protocol, body)
     })
     return response
   }

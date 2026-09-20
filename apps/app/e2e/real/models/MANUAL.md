@@ -2,6 +2,7 @@
 
 Every step names what to do and what you must see. Anything else is a bug.
 The automated receipt is step 14. No paid key is needed before step 13.
+Step 12b composes a request and asks it.
 
 A credential is a NAME pinned to an origin. Enroll its value in the local
 macOS app; it stays in the host keychain. Model records carry only the name.
@@ -301,6 +302,51 @@ Reload while a submission is pending: a completed host receipt resolves it.
 If no receipt exists, see `interrupted`; Retry asks for the key again. It never
 replays a persisted key, and a duplicate press never rotates or repins anything.
 
+## 12b. Compose a request and ask
+
+The request is yours to edit; the answer is the model's. Nothing on the card
+edits an answer.
+
+1. On `loopback-jev` (step 9, tested green), click `Compose`.
+   See: a `loopback-jev` card with one state field `text` = `The sky is blue.`,
+   one question `ok` of kind `boolean`, its answer `yes · 0.97`, and a green
+   latency: the Test you ran, prefilled. Buttons: `Ask again`, `Last test`,
+   `Fixture`.
+2. Click `Add question`. See: `q1`, kind `boolean`, an empty question, the
+   line `question_empty · q1` and `Ask again` disabled. The answers above are
+   struck: the request no longer matches what they answered.
+3. Set `q1`'s kind to `choice`. See: `options_count · q1 · 0`. Click
+   `Add option` twice, type `Which is it?` as the question, type `the sky`
+   beside `option1`. Set another question to `score` and add two rungs. See:
+   the line is gone and `Ask again` is enabled. Type `pick` over `q1` and
+   leave the box. See: the block reads `pick` with its kind, wording and
+   options kept.
+4. Click `Add field`, set its kind to `boolean`, tick it.
+5. Click `Ask again`. See at once: the card's pill reads running and chat still
+   works. See within a second: per question, `ok` `yes · 0.97`, `pick`
+   `option1 · 0.97`, `q2` `rung2 · 1`, and a latency. The journal's new entry
+   carries `"questions":["ok","pick","q2"]` and the state as one JSON object
+   with `"field1":true`.
+6. Edit any question. See: every answer struck and dimmed, nothing removed.
+   Click `Last test`. See: the fixed request and the Test's answer are back.
+7. Click `Fixture`. See: an `Evaluator.layerScripted(() => ({ ... }))` block
+   with one line per question, and `Copy`.
+8. On `loopback-chat`, click `Compose`. See: `System`, `Prompt` =
+   `Reply with the single word: ok`, `Max tokens` 32, `Temperature` empty,
+   and no `Last test`: it was never tested. Type a system prompt and `ping?`,
+   click `Ask`. See: `loopback pong` and a latency; the journal's entry reads
+   `"system":true`. Change the prompt. See: the words struck until you ask
+   again. Paste more than 16 KiB into `Prompt`. See: the box stops at 16 KiB
+   and the card keeps what it holds.
+9. Reload. See: the composer cards are still there with their requests and
+   answers.
+10. Run `/model.list`, click `Maximize card`, click `Compose` in the detail
+    pane. See: the pane closes and the composer is at the tail.
+
+Cmd+K doors for the same acts: `/model.compose loopback-jev`,
+`/model.ask loopback-jev`, `/model.recall loopback-jev`,
+`/model.fixture loopback-jev`.
+
 ## 13. One real paid call
 
 The loopback provider cannot prove a vendor accepts our bytes. With
@@ -327,7 +373,7 @@ in front of the command. `SMITHERS_MODEL_PROVIDER_PORT=<port>` fixes the
 loopback provider's port; unset, the runner takes a free one before the host
 boots.
 
-See: `19 passed` in about a minute. The command then prints the quality gate.
+See: `22 passed` in about a minute. The command then prints the quality gate.
 The gate's errors, if any, name other specs, never `models.spec.ts`.
 
 The enrollment scenario reads the actual OPFS SQLite tables after the UI steps,

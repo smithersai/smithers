@@ -136,6 +136,36 @@ export const testModel = async (page: Page, row: Locator): Promise<RowTestResult
   return { ok: false, failure: failureOf(code!, detail), fault: (await row.getAttribute("data-failure-fault")) ?? "" }
 }
 
+/** The composer card of one model: the request's controls and the answer beside them. */
+export const composerCard = (page: Page, name: string): Locator =>
+  page.locator('.smithers-card[data-kind="model-call"]').filter({ has: page.locator(`[data-testid="model-call"][data-model="${name}"]`) })
+
+/** Compose under `scope` (a row, or the maximized pane's detail), and the composer it opens. */
+export const composeModel = async (page: Page, scope: Locator, name: string): Promise<Locator> => {
+  await scope.getByRole("button", { name: "Compose", exact: true }).click()
+  const composer = composerCard(page, name)
+  await expect(composer).toBeVisible()
+  return composer
+}
+
+/** Press Ask and read the settled answer: the host answers 200 for both outcomes, and the card carries the typed result. */
+export const askModel = async (page: Page, composer: Locator): Promise<{ readonly ok: boolean; readonly answers: Readonly<Record<string, string>>; readonly text: string | undefined }> => {
+  const answered = page.waitForResponse((response) => new URL(response.url()).pathname === MODEL_TEST_PATH, { timeout: 60_000 })
+  await composer.getByTestId("model-call-ask").click()
+  expect((await answered).status()).toBe(200)
+  await expect(composer.getByTestId("model-call")).not.toHaveAttribute("data-asking", "true")
+  await expect(composer.getByTestId("model-call-result")).toBeVisible()
+  const ok = (await composer.getByTestId("model-call-result").getAttribute("data-ok")) === "true"
+  const answers: Record<string, string> = {}
+  for (const question of await composer.locator("[data-question]").all()) {
+    const id = await question.getAttribute("data-question")
+    const answer = question.getByTestId("model-call-answer")
+    if (id !== null && await answer.count() > 0) answers[id] = ((await answer.textContent()) ?? "").trim()
+  }
+  const text = composer.getByTestId("model-call-text")
+  return { ok, answers, text: await text.count() > 0 ? ((await text.textContent()) ?? "") : undefined }
+}
+
 /** The pane, however the card stands: a maximized card is still maximized after a reload. */
 export const maximize = async (page: Page): Promise<void> => {
   const card = modelsCard(page)

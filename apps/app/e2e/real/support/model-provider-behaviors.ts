@@ -38,4 +38,11 @@ export interface ProviderJournalEntry {
   readonly credentialSha256: string | null
   /** Non-credential protocol headers only: anthropic-version, ai-gateway-*, ai-evaluation-*, ai-model-id. */
   readonly headers: Readonly<Record<string, string>>
+  /** An evaluation's question ids, in body order, and the state it was asked about. */
+  readonly questions?: ReadonlyArray<string>
+  readonly state?: unknown
+  /** A generation's parameters: whether a system prompt was sent, and the knobs the body named. */
+  readonly system?: boolean
+  readonly maxTokens?: number
+  readonly temperature?: number
 }

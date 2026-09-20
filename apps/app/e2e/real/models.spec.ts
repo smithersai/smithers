@@ -3,12 +3,12 @@ import { takeDatabaseControl } from "./navigation-frames/storage"
 import { MODEL_CREDENTIAL_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 import { scenario } from "./coverage/types"
-import { PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_REPLY } from "./support/model-provider-behaviors"
+import { PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_REPLY } from "./support/model-provider-behaviors"
 import { runnerCredential } from "./support/model-provider-process"
 import { closeComposer, command, expect, openComposer, test } from "./support"
 import {
-  ACCEPTED_CREDENTIAL, REJECTED_CREDENTIAL, boot, captureTraffic, createModel, credentialSha256, fillModelForm, listModels,
-  maximize, modelDetail, modelRow, modelsCard, pageText, providerJournal, providerOrigin, testModel, seatSelect, uniqueName,
+  ACCEPTED_CREDENTIAL, REJECTED_CREDENTIAL, askModel, boot, captureTraffic, composeModel, composerCard, createModel, credentialSha256, fillModelForm,
+  listModels, maximize, modelDetail, modelRow, modelsCard, pageText, providerJournal, providerOrigin, testModel, seatSelect, uniqueName,
   type ModelDraft
 } from "./models/ui"
 
@@ -428,6 +428,145 @@ test("the chat-embedded Models card maximizes to its pane and collapses by keybo
   await expect(open).toBeFocused()
 })
 
+
+test("a decision request is composed with a question of each kind, asked, answered per question, and kept across a reload", scenario("models.compose-decision", {
+  capabilities: [],
+  coverage: ["action:model.new", "action:model.compose", "action:model.question", "action:model.option", "action:model.state", "action:model.ask", "host:local", "path:success", "path:persistence", "door:button", "dimension:evaluation-protocol", "dimension:typed-questions", "dimension:instant-acknowledgment", "evidence:provider-request-journal", "evidence:persisted-state-after-reload"]
+}), async ({ page }) => {
+  await boot(page)
+  const before = (await providerJournal()).length
+  const name = uniqueName("e2e-composed")
+  await createModel(page, chat(name, { protocol: "evaluation" }))
+  // Compose from the maximized pane: the composer is a card in the transcript, so the pane returns the card there.
+  await maximize(page)
+  const composer = await composeModel(page, modelDetail(page), name)
+  await expect(modelsCard(page)).toHaveAttribute("data-maximized", "false")
+  const body = composer.getByTestId("model-call")
+  // Prefilled from the fixed Test: one text field, one boolean question, nothing answered yet.
+  await expect(body).toHaveAttribute("data-kind", "decision")
+  await expect(composer.locator('[data-field="text"] input[type="text"]')).toHaveValue("The sky is blue.")
+  await expect(composer.locator("[data-question]")).toHaveCount(1)
+  await expect(composer.getByTestId("model-call-result")).toHaveCount(0)
+  // A second question, made a choice with two options; a third, made a score with two rungs.
+  await composer.getByTestId("model-call-question-add").click()
+  const q1 = composer.locator('[data-question="q1"]')
+  await expect(q1).toHaveAttribute("data-question-type", "boolean")
+  // Nothing asked yet: the request says so and Ask waits.
+  await expect(composer.getByTestId("model-call-problem")).toHaveAttribute("data-problem", "question_empty")
+  await expect(composer.getByTestId("model-call-ask")).toBeDisabled()
+  await q1.getByLabel("q1 kind").selectOption("choice")
+  await expect(q1).toHaveAttribute("data-question-type", "choice")
+  await q1.getByLabel("q1 question").fill("Which is it?")
+  await expect(composer.getByTestId("model-call-problem")).toHaveAttribute("data-problem", "options_count")
+  await q1.getByTestId("model-call-option-add").click()
+  await q1.getByTestId("model-call-option-add").click()
+  await expect(q1.locator("[data-option]")).toHaveCount(2)
+  await q1.locator('[data-option="option1"]').getByLabel("About option1").fill("the sky")
+  await composer.getByTestId("model-call-question-add").click()
+  const q2 = composer.locator('[data-question="q2"]')
+  await q2.getByLabel("q2 kind").selectOption("score")
+  await q2.getByLabel("q2 question").fill("How blue?")
+  await q2.getByTestId("model-call-option-add").click()
+  await q2.getByTestId("model-call-option-add").click()
+  await expect(q2.locator("[data-option]")).toHaveCount(2)
+  // The id is the person's: renamed in place, the question keeps its kind, wording, options and place.
+  await q1.getByLabel("Id").fill("pick")
+  await q1.getByLabel("Id").blur()
+  const pick = composer.locator('[data-question="pick"]')
+  await expect(pick).toHaveAttribute("data-question-type", "choice")
+  await expect(pick.locator("[data-option]")).toHaveCount(2)
+  await expect(pick.getByLabel("pick question")).toHaveValue("Which is it?")
+  await expect(composer.locator('[data-question="q1"]')).toHaveCount(0)
+  // A field of another kind joins the state.
+  await composer.getByTestId("model-call-field-add").click()
+  const field = composer.locator('[data-field="field1"]')
+  await field.getByLabel("Kind").selectOption("boolean")
+  await expect(field).toHaveAttribute("data-field-kind", "boolean")
+  // The box is the store's projection: it flips once the flow has written, not on the click itself.
+  await field.locator('input[type="checkbox"]').click()
+  await expect(field.locator('input[type="checkbox"]')).toBeChecked()
+  await expect(composer.getByTestId("model-call-problem")).toHaveCount(0)
+  await expect(composer.getByTestId("model-call-ask")).toBeEnabled()
+  const result = await askModel(page, composer)
+  expect(result.ok).toBe(true)
+  expect(result.answers).toEqual({ ok: `yes · ${PROVIDER_CONFIDENCE.toFixed(2)}`, pick: `option1 · ${PROVIDER_CONFIDENCE.toFixed(2)}`, q2: "rung2 · 1" })
+  await expect(body).toHaveAttribute("data-stale", "false")
+  const journal = (await providerJournal()).slice(before)
+  expect(journal).toHaveLength(1)
+  expect(journal[0]).toMatchObject({ protocol: "evaluation", authorized: true, questions: ["ok", "pick", "q2"], state: { text: "The sky is blue.", field1: true } })
+  // The fixture is the answer as every test in the repo scripts an evaluator, under the ids the person chose.
+  await composer.getByTestId("model-call-fixture").click()
+  await expect(composer.getByTestId("model-call-fixture-text")).toContainText("Evaluator.layerScripted")
+  await expect(composer.getByTestId("model-call-fixture-text")).toContainText(`pick: { choice: "option1"`)
+  await page.reload()
+  await boot(page)
+  const kept = composerCard(page, name)
+  await expect(kept.locator("[data-question]")).toHaveCount(3)
+  await expect(kept.locator('[data-question="pick"] [data-option]')).toHaveCount(2)
+  await expect(kept.getByTestId("model-call-answer")).toHaveCount(3)
+  await expect(kept.getByTestId("model-call")).toHaveAttribute("data-stale", "false")
+})
+
+test("a generation request is composed and asked, and an edit after the answer reads stale until asked again", scenario("models.compose-generation", {
+  capabilities: [],
+  coverage: ["action:model.new", "action:model.compose", "action:model.prompt", "action:model.ask", "host:local", "path:success", "door:button", "dimension:streaming", "dimension:stale-answer", "evidence:provider-request-journal"]
+}), async ({ page }) => {
+  await boot(page)
+  const before = (await providerJournal()).length
+  const name = uniqueName("e2e-prompted")
+  const row = await createModel(page, chat(name))
+  const composer = await composeModel(page, row, name)
+  const body = composer.getByTestId("model-call")
+  await expect(body).toHaveAttribute("data-kind", "generation")
+  await expect(composer.getByTestId("model-call-prompt")).toHaveValue("Reply with the single word: ok")
+  // Never tested: there is no last test to go back to, so nothing offers it.
+  await expect(composer.getByTestId("model-call-recall")).toHaveCount(0)
+  await composer.getByTestId("model-call-system").fill("Answer tersely.")
+  await composer.getByTestId("model-call-prompt").fill("ping?")
+  await composer.getByTestId("model-call-max-tokens").fill("64")
+  await composer.getByTestId("model-call-temperature").fill("0.2")
+  const first = await askModel(page, composer)
+  expect(first).toMatchObject({ ok: true, text: PROVIDER_REPLY.join("") })
+  await expect(body).toHaveAttribute("data-stale", "false")
+  await expect(composer.getByTestId("model-call-ask")).toHaveText("Ask again")
+  // The answer belongs to the request it answered: edit the request and it stands, struck.
+  await composer.getByTestId("model-call-prompt").fill("pong?")
+  await expect(body).toHaveAttribute("data-stale", "true")
+  await expect(composer.getByTestId("model-call-text")).toHaveText(PROVIDER_REPLY.join(""))
+  const second = await askModel(page, composer)
+  expect(second.ok).toBe(true)
+  await expect(body).toHaveAttribute("data-stale", "false")
+  const journal = (await providerJournal()).slice(before)
+  expect(journal).toHaveLength(2)
+  expect(journal[0]).toMatchObject({ protocol: "openai-chat", status: 200, authorized: true, system: true, maxTokens: 64, temperature: 0.2 })
+})
+
+test("the composer prefills from the model's last Test, and Last test brings it back to ask again", scenario("models.compose-recall", {
+  capabilities: [],
+  coverage: ["action:model.new", "action:model.test", "action:model.compose", "action:model.question", "action:model.recall", "action:model.ask", "host:local", "path:success", "door:button", "dimension:prefill-from-record", "evidence:provider-request-journal"]
+}), async ({ page }) => {
+  await boot(page)
+  const before = (await providerJournal()).length
+  const name = uniqueName("e2e-recalled")
+  const row = await createModel(page, chat(name, { protocol: "evaluation" }))
+  expect((await testModel(page, row)).ok).toBe(true)
+  const composer = await composeModel(page, row, name)
+  // The Test's own request and the answer it recorded, already on the card.
+  await expect(composer.locator('[data-question="ok"]')).toHaveAttribute("data-question-type", "boolean")
+  await expect(composer.locator('[data-question="ok"]').getByTestId("model-call-answer")).toHaveText(`yes · ${PROVIDER_CONFIDENCE.toFixed(2)}`)
+  await expect(composer.getByTestId("model-call-result")).toHaveAttribute("data-ok", "true")
+  await expect(composer.getByTestId("model-call")).toHaveAttribute("data-stale", "false")
+  await composer.getByTestId("model-call-question-add").click()
+  await expect(composer.locator("[data-question]")).toHaveCount(2)
+  await expect(composer.getByTestId("model-call")).toHaveAttribute("data-stale", "true")
+  await composer.getByTestId("model-call-recall").click()
+  await expect(composer.locator("[data-question]")).toHaveCount(1)
+  await expect(composer.getByTestId("model-call")).toHaveAttribute("data-stale", "false")
+  const again = await askModel(page, composer)
+  expect(again).toMatchObject({ ok: true, answers: { ok: `yes · ${PROVIDER_CONFIDENCE.toFixed(2)}` } })
+  const journal = (await providerJournal()).slice(before)
+  expect(journal.map((entry) => entry.questions)).toEqual([["ok"], ["ok"]])
+})
 
 test("models credentials enroll in the UI, pin once, rotate and remove without persisting a value", scenario("models.credential-enrollment", {
   capabilities: [],

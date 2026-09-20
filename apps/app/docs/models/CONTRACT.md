@@ -49,9 +49,9 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
 - Non-200: the host's existing refusal envelope. Worker: behind `requireTurnSession`. Local: behind the existing local session header and Origin gate; no sign-in.
 
 ### POST /api/model/test
-- Request body: `ModelTestRequest` = `{ model: ConfiguredModel }` (strict, max `MODEL_TEST_BODY_MAX_BYTES`). The client MUST strip app-only fields (`lastTest`) before sending; an extra key is `request_invalid`.
+- Request body: `ModelTestRequest` = `{ model: ConfiguredModel, input?: ModelCallInput }` (strict, max `MODEL_TEST_BODY_MAX_BYTES`). The client MUST strip app-only fields (`lastTest`) before sending; an extra key is `request_invalid`. With no `input` the host runs the fixed Test of the model's kind (`modelCallDefault(kind)`); with one it runs that composed request (section 9). An input of the other kind than the record's is `{ code: "invalid", field: "protocol" }`.
 - 200 body for BOTH outcomes: `ModelTestResult`
-  - pass: `{ ok: true, latencyMs: number, sample: string }` (`sample` = `scrubModelSample(text, secretValue)`, may be `""`; an empty sample is still a pass)
+  - pass: `{ ok: true, latencyMs: number, sample: string, output: ModelCallOutput }` (`sample` = `modelCallSample(output, secretValue)`: the generated words scrubbed and cut, or the first answer as `true 0.97`; may be `""`; an empty sample is still a pass). `output` is optional on the wire for an older host and carried by both hosts today.
   - fail: `{ ok: false, latencyMs: number, failure: ModelTestFailure, fault: PlueFault }`; build it ONLY with `failedModelTest(failure, latencyMs, host)`.
 - Non-200 only for a refusal to run the test: `request_invalid`, body-size codes, `sign_in_required`, `account_not_allowlisted`, the turn limit. Worker: `requireTurnSession` then one `loginBudget` turn. Local: no sign-in (R8).
 - Host procedure, identical on both hosts:
@@ -68,7 +68,7 @@ Both hosts answer both routes themselves. Neither is proxied: no `PLATFORM_PROXY
 | deadline ran out | `{ code: "timeout", deadlineMs: MODEL_TEST_DEADLINE_MS }` |
 | 2xx that does not decode as the protocol; a protocol this host cannot speak (Worker: `anthropic-messages`, `openai-responses`) | `{ code: "invalid", field: "protocol" }` |
 
-  - Generation prompt: `MODEL_TEST_PROMPT`, max tokens `MODEL_TEST_MAX_TOKENS`. Decision question: `MODEL_TEST_DECISION`; sample = `` `${probability >= 0.5} ${probability.toFixed(2)}` ``.
+  - Fixed generation prompt: `MODEL_TEST_PROMPT`, max tokens `MODEL_TEST_MAX_TOKENS`. Fixed decision question: `MODEL_TEST_DECISION`; sample = `` `${probability >= 0.5} ${probability.toFixed(2)}` ``. A composed request replaces exactly these: system + prompt + `maxTokens` (+ `temperature`) on the generation wire, `modelStateOf(state)` + `questions` on the evaluation wire.
   - `egress: false` when the Bun host runs `cloudMode: "offline"`; otherwise omit.
 
 ## 3. `packages/rpc/src/ConfiguredModel.ts` exports (exact)
@@ -211,14 +211,14 @@ Seat labels on screen come from `modelSeat(id).label`.
 ### Test: request, result, typed failure, fault
 ```ts
 export const MODEL_TEST_DEADLINE_MS = 15_000
-export const MODEL_TEST_BODY_MAX_BYTES = 8 * 1024
+export const MODEL_TEST_BODY_MAX_BYTES = 64 * 1024              // a 32 KiB state plus its questions
 export const MODEL_TEST_MAX_TOKENS = 32
 export const MODEL_TEST_SAMPLE_MAX = 80
 export const MODEL_TEST_PROMPT = "Reply with the single word: ok"
 export const MODEL_TEST_DECISION = { state: { text: "The sky is blue." }, questions: { ok: { type: "boolean", instructions: "Does the text mention a color?" } } } as const
 
-export const ModelTestRequestSchema   // z.strictObject({ model: ConfiguredModelSchema })
-export type ModelTestRequest = { model: ConfiguredModel }
+export const ModelTestRequestSchema   // z.strictObject({ model: ConfiguredModelSchema, input: ModelCallInputSchema.optional() })
+export type ModelTestRequest = { model: ConfiguredModel; input?: ModelCallInput }
 
 export const MODEL_INVALID_FIELDS = ["model", "protocol", "baseUrl", "path", "modelId", "credential"] as const
 export type ModelInvalidField = (typeof MODEL_INVALID_FIELDS)[number]
@@ -246,7 +246,7 @@ export const modelFailureRefusalCode: (failure: ModelTestFailure) => WorkerFailu
 
 export const ModelTestResultSchema   // z.discriminatedUnion("ok", strict branches)
 export type ModelTestResult =
-  | { ok: true; latencyMs: number; sample: string }     // sample max 80 chars
+  | { ok: true; latencyMs: number; sample: string; output?: ModelCallOutput }     // sample max 80 chars; output: section 9
   | { ok: false; latencyMs: number; failure: ModelTestFailure; fault: PlueFault }
 export const failedModelTest: (failure: ModelTestFailure, latencyMs: number, host: ModelHost) => ModelTestResult
 export const hostRefusedModelTest: (
@@ -299,6 +299,7 @@ export type ModelsCardPayload = {
 ## 4. `packages/rpc/src/Cards.ts`
 
 - New card kind: `{ ...cardBaseShape, kind: "models", payload: ModelsCardPayloadSchema }`. `Extract<Card, { kind: "models" }>` works.
+- Second card kind: `{ ...cardBaseShape, kind: "model-call", payload: ModelCallCardPayloadSchema }`, one per model, id `` `model-call-${id}` `` (`modelCallCardId`, app-owned in `state/controller/modelCall.ts`). Section 9.
 - `FORM_OPTION_PROVIDERS` gained, in this order after `"files"`: `"models"`, `"credentials"`, `"seats"`.
   apps/app `flows/FlowForms.ts` `OPTION_PROVIDERS` and the exhaustive `optionsFor` switch in `state/controller/forms.ts` MUST add the same three or apps/app stops compiling.
   - `models`: `app-models` rows; when `draft.seat` is a `SeatId`, only rows where `seatAccepts(seat, row.protocol)`, preceded by `{ value: MODEL_SEAT_DEFAULT, label: "Default" }`.
@@ -319,6 +320,14 @@ export type ModelsCardPayload = {
 | `model.remove` | `<name>` | `{ id: string }` | confirm |
 | `model.test` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; NOT `requires: ["signed-in"]` (R8) |
 | `model.assign` | `<seat> <name\|default>` | `{ seat: string, recordId: string }` | `recordId === MODEL_SEAT_DEFAULT` deletes the seat's row |
+| `model.compose` | `<name>` | `{ id: string }` | opens the model's composer at the tail; a new one is prefilled from the last recorded Test (section 9); from the maximized Models pane a user's compose returns the card to the transcript, like `model.new` (a `smithers` compose does not) |
+| `model.ask` | `<name>` | `{ id: string }` | returns `{ value: "Requested" }` before the fetch; refuses a request with a problem as `modelCallProblemLine` |
+| `model.recall` | `<name>` | `{ id: string }` | the composer back to the fixed request and the last recorded Test's answer; refused with no test; an ask still out stays out, and its answer lands stale against the recalled request |
+| `model.fixture` | `<name>` | `{ id: string }` | writes and answers the `Evaluator.layerScripted` fixture of the last decision answer |
+| `model.prompt` | `<JSON>` | `{ id, system?, prompt?, maxTokens?, temperature?: string }` | hidden, disclosed to the agent; a blank temperature clears it; a text past `MODEL_CALL_TEXT_MAX`, a non-integer `maxTokens` or a temperature outside 0–2 is `invalid · <field> · <limit>` and nothing is written |
+| `model.state` | `<JSON>` | `{ id, key?, kind?, value?, was?, remove? }` | hidden, disclosed; no `key` adds `field<n>`; `was` renames, `remove` drops; a value past `MODEL_CALL_STATE_MAX_BYTES * 4` characters is `invalid · value · 128 KiB` |
+| `model.question` | `<JSON>` | `{ id, question?, type?, instructions?, criteria?, was?, remove? }` | hidden, disclosed; no `question` adds one and answers its id `q<n>`; `was` renames: an id that fails `MODEL_FIELD_KEY` or collides is `invalid · question`; a `type` change converts the criteria; an id that is no own key of the request (an `Object.prototype` name) is `There is no question <id>.`; text past `MODEL_CALL_TEXT_MAX` is `invalid · question · 16 KiB` / `invalid · criteria · 16 KiB` |
+| `model.option` | `<JSON>` | `{ id, question, option?, about?, was?, remove? }` | hidden, disclosed; an option of a choice or a rung of a score; no `option` adds `option<n>` / `rung<n>`, named by the controller so two quick adds never collide; a name past `MODEL_CALL_NAME_MAX` is `invalid · option · 128`, an `about` past `MODEL_CALL_TEXT_MAX` is `invalid · about · 16 KiB` |
 
 Form fields (testids `flow-form-<field>`, submit `flow-form-submit`): `name`, `protocol` (select over `MODEL_PROTOCOLS`),
 `baseUrl`, `path`, `modelId`, `credential` (select from `credentials`; a text input only when the host listed none),
@@ -475,3 +484,46 @@ A failed mutation draws `credential-failure` with its name, code and Retry.
 The pre-implementation design and explicit limitations are in ENROLLMENT.md.
 The initial external CONTRACT path was read-only under this run's workspace
 constraint; this complete copy is its requested update.
+
+## 9. Composed calls (2026-09-19)
+
+The model-call card composes a REQUEST and the model generates the RESPONSE. Nothing on the card edits an answer; "change outputs" (an operator override recorded as `decidedBy: human`) is NOT built: the seam is `ModelCallCardPayload.response`, which today holds only what a host answered.
+
+`ConfiguredModel.ts` adds these contracts:
+
+```ts
+MODEL_QUESTION_TYPES = ["boolean", "choice", "score"]; ModelQuestionTypeSchema; type ModelQuestionType
+MODEL_QUESTION_OPTIONS_MIN = 2; MODEL_QUESTION_OPTIONS_MAX = 255; MODEL_SCORE_RUNGS_MIN = 2
+MODEL_CALL_STATE_MAX_BYTES = 32 * 1024; MODEL_CALL_TEXT_MAX = 16 * 1024; MODEL_CALL_MAX_TOKENS_MAX = 4096; MODEL_CALL_NAME_MAX = 128
+ModelQuestionSchema   // the three shapes of @smthrs/model Evaluator.Question, as plain objects
+MODEL_FIELD_KINDS = ["text", "code", "path", "diff", "terminal", "boolean", "number", "json"]; ModelFieldKindSchema; type ModelFieldKind
+MODEL_FIELD_KEY = /^(?!__proto__$)[A-Za-z_][A-Za-z0-9_.-]{0,63}$/   // a state field's key and a question's id; never the key a plain object takes as its prototype
+ModelStateFieldSchema // { key, kind, value: string }   the value is always text; the kind decides the JSON it becomes
+ModelCallDraftSchema  // discriminatedUnion("kind"): decision { state: ModelStateField[] (max 64), questions: Record<id, ModelQuestion> } | generation { system, prompt, maxTokens, temperature? }
+ModelCallInputSchema  // the draft with no problem (below); the wire form
+type ModelCallDraft; type ModelCallInput
+type ModelCallProblem // no_questions | question_empty·question | options_count·question·count | rungs_count·question·count | rungs_distinct·question | field_invalid·key·kind | field_duplicate·key | state_size·bytes·max | prompt_empty | max_tokens·max
+modelCallProblemOf(draft)      // PURE; the ONE statement of the limits the question classes enforce; the wire schema refuses through it and the card disables Ask on it
+modelStateOf(fields)           // the one JSON object the model reads (no prototype): boolean/number/json fields decoded, the rest text
+modelStateFieldsOf(state)      // a recorded JSON state back as fields, one per top-level key
+modelCallDefault(kind)         // the fixed Test as a request: MODEL_TEST_PROMPT/MODEL_TEST_MAX_TOKENS, or MODEL_TEST_DECISION as fields + its one boolean question
+ModelAnswerSchema     // boolean { value, probability } | choice { value, probabilities, confidence } | score { value, label, probabilities, confidence }
+ModelCallOutputSchema // decision { answers: Record<id, ModelAnswer> } | generation { text (max MODEL_CALL_TEXT_MAX, credential cut) }
+decodeModelAnswers(questions, raw)   // the Worker's decoder; apps/app/src/bun/ModelAnswers.test.ts holds it to Classifier.decodeAnswers on every shape and refusal
+modelCallSample(output, secret)      // the row's sample of an output (section 2)
+ModelCallCardPayloadSchema // { model, request: ModelCallDraft, response?: { askedAt, request, result: ModelTestResult }, asking?: boolean, fixture?: string }
+```
+
+Hosts: the Bun host builds `Evaluator.Question` instances from the wire questions and decodes with the real `Classifier.decodeAnswers`; the Worker asks `jevEvaluate` and decodes with `decodeModelAnswers`. Both answer `output` on every pass, fixed or composed, and `{ code: "invalid", field: "protocol" }` for an answer that does not fit its questions.
+
+App: `state/controller/modelCall.ts`. The card's request is edited through the flows in section 5 and rewritten as a whole on each edit; a rewrite `ModelCallDraftSchema` would refuse is refused inline first, as `invalid · <control> · <limit>`, and the card's controls carry the same bounds as `maxLength`, so the screen never disagrees with the card. The answer is kept with the request it answered, so `stale = canonical(response.request) !== canonical(request)`; a stale answer is drawn struck and dimmed, never removed. `model.ask` toast key `` `model.ask:${id}` ``, deduplicated by model, request and account epoch; `asking: true` survives a reload and is launched again after identity loads (`resumeModelCalls`); a departed account's answer clears `asking` and writes nothing else. Record key order does not survive the store, so question ids and choice options are drawn and written in `byName` order (numeric-aware).
+
+Prefill: a new composer, and `model.recall`, take the model's `lastTest`: the fixed request of its kind and the recorded `result`. A run trace journals no model request (`control.agent.model-settled` carries the answer text and usage only), so prefilling from a trace step has no record to read today; that door is not built.
+
+DOM: `.smithers-card[data-kind="model-call"]` > `[data-testid="model-call"][data-model="<id>"][data-kind="decision|generation"][data-stale="true|false"][data-asking?="true"]`.
+State field: `[data-field="<key>"][data-field-kind="<kind>"]` with inputs labelled `Key`, `Kind`, and the value by the key; `model-call-field-add`.
+Question: `[data-question="<id>"][data-question-type="<type>"]`, `<input aria-label="Id">` (renames on blur through `model.question` with `was`), `<select aria-label="<id> kind">`, `<textarea aria-label="<id> question" placeholder="Question">`, options `[data-option="<name>"]` (`Option`/`Rung`, `About <name>` with `placeholder="About"`), `model-call-option-add`, `model-call-question-add`; the answer `model-call-answer` reads `yes · 0.97`, `a · 0.97`, `high · 2`.
+Generation: `model-call-system`, `model-call-prompt`, `model-call-max-tokens`, `model-call-temperature`, the words in `model-call-text`.
+Footer: `model-call-problem` (`role="alert"`, `data-problem="<code>"`, text `modelCallProblemLine`), `model-call-ask` (`Ask` | `Ask again`, disabled on a problem or while asking), `model-call-recall` (`Last test`, only while the model's record holds a `lastTest`, read live from `app-models` so a Test after compose shows it with no card rewrite), `model-call-fixture` (decision answers only), `model-call-result` (`data-ok`, `<latency> ms` or the failure line), `model-call-fixture-text` with a `Copy fixture` button through `chat.copy-message`.
+Models row and detail: a fourth act `Compose` (`data-flow="model.compose"`) after `Test`; a builtin row has `Test` and `Compose`. From the maximized pane, Compose returns the card to the transcript, like New and Edit (a `smithers` compose does not).
+

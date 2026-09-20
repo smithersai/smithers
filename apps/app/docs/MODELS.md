@@ -176,3 +176,54 @@ The exact amended contract is [models/CONTRACT.md](models/CONTRACT.md); the
 pre-implementation design is [models/ENROLLMENT.md](models/ENROLLMENT.md). This
 supersedes R2's route-count limit and R4's environment-only enrollment. It keeps
 R4's immutable pins, R6's consumers, R7's background semantics and R8's gates.
+
+## R12. The composer: the request is edited, the response is generated
+
+Will: "we should be able to debug a call via having a UI for composing a
+request and response that we can click on for a single step and have it
+prefilled with that steps inputs/outputs and ability to rerun it or change
+outputs", and "why am I able to edit the response? I would expect to be
+editing the request and then generating a response".
+
+One `model-call` card per configured model, opened by Compose on its row or
+`/model.compose <name>`. A decision request is one JSON state and a map of
+typed questions; a generation request is a system prompt, a prompt, max tokens
+and temperature. The state is authored as typed FIELDS (text, code, path,
+diff, terminal, boolean, number, json), each drawn by its kind, so it never
+renders as raw JSON; the fields become one JSON object at the host
+(`modelStateOf`). A question is added, renamed, retyped among boolean / choice
+/ score, worded, given options or rungs, and removed, through controls that
+are flows:
+`model.question`, `model.option`, `model.state`, `model.prompt`. Every limit
+the `@smthrs/model` question classes enforce (2 to 255 options, at least 2
+distinct rungs, a non-empty question, a 32 KiB state) is stated once in the
+contract (`modelCallProblemOf`), refused by the host's schema through it,
+refused by `model.ask` before a request leaves, and shown inline as its code
+and numbers while Ask stays disabled. The text bounds the wire enforces (16 KiB
+texts, 128-character option names, 128 KiB field values, an integer max tokens,
+a temperature in 0–2) are refused by the edit itself as
+`invalid · <control> · <limit>`, and the controls stop at the same bounds.
+
+`POST /api/model/test` takes an optional typed `input`; with none it runs the
+fixed Test it always ran. Both hosts answer the typed `output` on every pass,
+so the composer prefills from the model's last recorded Test: its fixed
+request and the answer it got. `model.ask` is requested at once and runs under
+the shared toast stack like a Test, keyed by model, request and account epoch,
+relaunched after a reload. The answer is kept with the request it answered;
+an edit after it reads stale (struck, dimmed) until asked again. `model.recall`
+returns the composer to the last Test. `model.fixture` writes the last decision
+answer as the `Evaluator.layerScripted(...)` fixture every test in the repo
+scripts an evaluator with.
+
+The Bun host decodes answers with the real `Classifier.decodeAnswers`; the
+Worker cannot import the classifier and decodes with the contract's
+`decodeModelAnswers`, held to the classifier by a parity test over every shape
+and refusal. Four hidden, agent-disclosed edit flows instead of twelve, and
+shorter summaries across the namespace, because each catalog entry is paid for
+out of the agent's 16 KiB instructions.
+
+Not built, with the seam named: an operator override of an answer
+(`decidedBy: human`) would live on `ModelCallCardPayload.response`, which
+today holds only what a host answered; prefill from a run-trace step has no
+record to read, because `control.agent.model-settled` journals the answer text
+and usage and never the request.
