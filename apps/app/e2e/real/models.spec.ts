@@ -41,6 +41,15 @@ test("a model is created through its form and listed", scenario("models.create",
   await expect(modelDetail(page).getByTestId("model-credential")).toHaveAttribute("data-present", "true")
 })
 
+test("the bare /model door opens the models card", scenario("models.bare-door", {
+  capabilities: [],
+  coverage: ["action:model", "host:local", "path:success", "door:slash", "evidence:models-card-readback"]
+}), async ({ page }) => {
+  await boot(page)
+  const card = await listModels(page, "/model")
+  await expect(card.getByTestId("model-new")).toBeVisible()
+})
+
 test("a model saved past the embedded card's few rows is still the row in view", scenario("models.embedded-overflow", {
   capabilities: [],
   coverage: ["action:model.list", "action:model.save", "action:model.new", "action:form.submit", "host:local", "path:success", "door:slash", "door:button", "dimension:overflow", "evidence:models-card-readback"]

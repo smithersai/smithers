@@ -65,10 +65,10 @@ export const modelDetail = (page: Page): Locator => modelsCard(page).getByTestId
 export const seatSelect = (page: Page, seat: string): Locator => modelsCard(page).locator(`select[data-seat="${seat}"]`)
 const saveForm = (page: Page): Locator => page.locator('.flow-form[data-flow-name="model.save"]')
 
-/** `/model.list`, settled: the host's catalog has answered, so the form offers the host's credential names. */
-export const listModels = async (page: Page): Promise<Locator> => {
+/** `/model.list` (or the bare `/model` door), settled: the host's catalog has answered, so the form offers the host's credential names. */
+export const listModels = async (page: Page, door: "/model.list" | "/model" = "/model.list"): Promise<Locator> => {
   const catalog = page.waitForResponse((response) => new URL(response.url()).pathname === MODEL_CATALOG_PATH)
-  await command(page, "/model.list")
+  await command(page, door)
   await closeComposer(page)
   expect((await catalog).status()).toBe(200)
   const card = modelsCard(page)

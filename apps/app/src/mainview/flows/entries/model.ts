@@ -9,6 +9,7 @@ import { flag, line } from "../FlowForms"
 import { flow, NoPayload } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
+import { payloadFor } from "../SlashPayload"
 
 /** The `model` namespace row: the slash tree lists it in registry.ts NAMESPACES order. */
 export const namespace: Namespace = { id: "model", label: "Models", summary: "Models and the seats they answer for" }
@@ -70,6 +71,15 @@ export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "model.credential.remove", summary: "Remove credential", args: "<name>",
     input: Schema.Struct({ name: Schema.String }), confirm: payload => `remove credential ${String(payload["name"])}`,
     handler: input => actions.mutateModelCredential("remove", input)
+  }),
+  /* The bare door: `/model` is the namespace's top surface, the way `/issues` is its list. */
+  flow({
+    name: "model",
+    hidden: true,
+    grammar: args => payloadFor("model.list", args),
+    summary: "List the models and their seats",
+    input: NoPayload,
+    handler: () => actions.listModels()
   }),
   flow({
     name: "model.list",
