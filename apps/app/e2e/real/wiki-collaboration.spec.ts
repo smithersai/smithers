@@ -1,13 +1,15 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openApp, reloadApp, test } from "./support"
+import { awaitBoot, closeComposer, command, expect, openApp, reloadApp, test } from "./support"
 import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
 test.use({ actionTimeout: 20_000 })
 
 const boot = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
   await openApp(page)
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 

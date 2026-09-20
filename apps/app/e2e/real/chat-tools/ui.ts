@@ -1,5 +1,5 @@
 import type { Locator, Page, Response } from "@playwright/test"
-import { appEntryPath, expect } from "../support/test"
+import { appEntryPath, awaitBoot, expect } from "../support/test"
 
 import { assertTurnTrafficProtocol, inspectTurnTraffic } from "./traffic"
 import type { TurnFrame, TurnTrafficOptions } from "./traffic"
@@ -13,10 +13,11 @@ export const assistantMessages = (page: Page): Locator =>
 
 /** Enter the actual workbench. Tutorial completion is a separate UI feature. */
 export const bootWorkspace = async (page: Page, origin?: string): Promise<void> => {
+  const startedAt = performance.now()
   const entry = process.env.SMITHERS_REAL_E2E_HOST === "production" ? appEntryPath() : "/smithersai/smithers"
   await page.goto(origin ? new URL(entry, origin).toString() : entry, { waitUntil: "domcontentloaded" })
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await expect(transcript(page)).toBeVisible()
 }
 
 export const frameLocation = (page: Page): Promise<{ readonly workspaceId: string; readonly branchId: string; readonly frameId: string }> =>

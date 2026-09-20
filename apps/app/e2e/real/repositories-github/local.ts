@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page, TestInfo } from "@playwright/test"
 import {
+  awaitBoot,
   closeComposer,
   command,
   createOwnedLocalRepo,
@@ -10,9 +11,10 @@ import {
 } from "../support/test"
 
 export const bootRepositoryWorkbench = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
   await page.goto("/smithersai/smithers", { waitUntil: "domcontentloaded" })
   await expect(page).toHaveURL(/\/smithersai\/smithers$/)
-  await expect(page.getByTestId("transcript")).toBeVisible()
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 

@@ -1,9 +1,11 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openApp, test } from "./support"
+import { awaitBoot, closeComposer, command, expect, openApp, test } from "./support"
 
 const boot = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
   await openApp(page)
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 

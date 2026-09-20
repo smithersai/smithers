@@ -1,5 +1,5 @@
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openComposer, reloadApp, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, openComposer, reloadApp, test } from "./support/test"
 import {
   decodedFramePath,
   enterCanonicalRepositoryApp,
@@ -497,7 +497,9 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
   expect(await database.execute("SELECT value FROM smithers_metadata WHERE key = 'schema-version'"))
     .toEqual([{ value: olderVersion }])
 
+  const upgradedStartedAt = performance.now()
   await database.page.goto(database.appUrl)
+  await awaitBoot(database.page, "navigate", upgradedStartedAt)
   await expect(database.page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(database.page.getByTestId(WIKI_FORM_CARD_ID).getByTestId("flow-form-path")).toHaveValue(marker)
 
@@ -582,7 +584,10 @@ test("a future-schema physical OPFS database fails closed, exports exact rows, a
     }
   }
 
+  const recoveredStartedAt = performance.now()
   await database.page.goto(database.appUrl)
+  // The composer is hidden on a booted app, and on a boot skeleton too. Boot first.
+  await awaitBoot(database.page, "navigate", recoveredStartedAt)
   await expect(database.page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   await expect(database.page.getByTestId("composer-input")).toBeHidden()
   await expect(database.page.getByTestId(WIKI_FORM_CARD_ID).getByTestId("flow-form-path")).toHaveValue(marker)

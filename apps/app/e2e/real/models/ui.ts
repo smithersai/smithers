@@ -16,7 +16,7 @@ import {
 } from "@smthrs/rpc/ConfiguredModel"
 import { PROVIDER_PATHS, type ProviderJournalEntry } from "../support/model-provider-behaviors"
 import { runnerCredential } from "../support/model-provider-process"
-import { closeComposer, command, expect, openApp } from "../support"
+import { awaitBoot, closeComposer, command, expect, openApp } from "../support"
 
 /** The credential NAMES the runner declared. The second is a well-formed key the provider answers 401. */
 export const ACCEPTED_CREDENTIAL = "E2E_LOOPBACK"
@@ -53,7 +53,9 @@ export const credentialSha256 = (name: RunnerCredentialName): string =>
 export const uniqueName = (label: string): string => `${label}-${Date.now().toString(36)}`
 
 export const boot = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
   await openApp(page)
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 

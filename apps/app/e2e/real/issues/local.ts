@@ -1,5 +1,5 @@
 import type { Locator, Page, TestInfo } from "@playwright/test"
-import { closeComposer, expect, openApp } from "../support/test"
+import { awaitBoot, closeComposer, expect, openApp } from "../support/test"
 
 export const PRACTICE_REPO = "practice:smithersai/hello-server"
 
@@ -11,9 +11,11 @@ export const attachJson = async (testInfo: TestInfo, name: string, value: unknow
 }
 
 export const bootPracticeIssues = async (page: Page, state: "open" | "closed" | "all" = "open"): Promise<Locator> => {
+  const startedAt = performance.now()
   // Practice is bundled; use the public production entry without a login.
   if (process.env.SMITHERS_REAL_E2E_HOST === "production") await page.goto("/smithersai/smithers")
   else await openApp(page)
+  await awaitBoot(page, "navigate", startedAt)
   await runSlash(page, `/issues.list ${state} ${PRACTICE_REPO}`)
   const card = page.getByTestId("card-practice-issues")
   await expect(card).toHaveAttribute("data-kind", "issue-list")
@@ -42,9 +44,14 @@ export const practiceIssueCommentCount = async (card: Locator, number = 3): Prom
 
 export const runSlash = async (page: Page, text: string): Promise<void> => {
   const input = page.getByTestId("composer-input")
+  const chat = page.getByRole("button", { name: "Chat", exact: true })
+  // `isVisible` answers from the document as it stands, so a composer the app
+  // has not rendered yet reads as closed. Require the chrome first: every
+  // caller runs on an app that has already booted, so this resolves at once,
+  // and chrome that really went missing still fails inside its own budget
+  // rather than spending the boot's.
+  await expect(chat).toBeVisible()
   if (!(await input.isVisible())) {
-    const chat = page.getByRole("button", { name: "Chat", exact: true })
-    await expect(chat).toBeVisible()
     await chat.click()
     await expect(input).toBeVisible()
   }

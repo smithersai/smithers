@@ -1,7 +1,7 @@
 import { fixtureInputText } from "./support/values"
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, reloadApp, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, reloadApp, test } from "./support/test"
 import { attachProductionJson, bootProductionRepository, enableProductionVerbose } from "./repositories-github/production"
 import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
 import {
@@ -20,9 +20,10 @@ workflowTest.use({ actionTimeout: 30_000 })
 const transcript = (page: Page): Locator => page.getByTestId("transcript")
 
 const bootLocal = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
   await page.goto("/smithersai/smithers")
+  await awaitBoot(page, "navigate", startedAt)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  await expect(transcript(page)).toBeVisible()
 }
 
 const runSignedOutCommand = async (page: Page, text: string, refusal: string): Promise<void> => {
