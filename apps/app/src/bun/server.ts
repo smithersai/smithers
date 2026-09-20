@@ -919,7 +919,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     const body = ModelTestRequestSchema.safeParse(parsed.body)
     if (!body.success) return refuse("request_invalid", "Body must be { model }.")
     // Both outcomes are a 200: a failed test is an answer, typed, with no provider text in it.
-    return json(await modelProbe.test(body.data.model))
+    return json(await modelProbe.test(body.data.model, body.data.input))
   })
 
   /*

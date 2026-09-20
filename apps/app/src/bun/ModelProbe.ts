@@ -2,34 +2,41 @@
  * POST /api/model/test on the local host: ONE real request against a
  * configured model, on the real @smthrs/model stack. Generation goes through
  * the record's Route over a RequestExecutor built with no retries; a decision
- * model answers one boolean question through the real Evaluator. One deadline
- * covers the whole call and is echoed in the timeout it produces.
+ * model answers its questions through the real Evaluator and the answers are
+ * decoded by the real Classifier. The request is the fixed Test unless the
+ * caller composed one (the model-call card). One deadline covers the whole
+ * call and is echoed in the timeout it produces.
  *
- * `test` never throws and never returns provider text, except the sample with
- * the credential cut out of it.
+ * `test` never throws and never returns provider text, except the generated
+ * words with the credential cut out of them.
  */
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { ModelRequest } from "@smthrs/model/ModelRequest"
+import { ModelRequest, SystemPart } from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import {
   bindingOf,
+  cutModelCredential,
   failedModelTest,
+  MODEL_CALL_TEXT_MAX,
   MODEL_TEST_DEADLINE_MS,
-  MODEL_TEST_DECISION,
-  MODEL_TEST_MAX_TOKENS,
-  MODEL_TEST_PROMPT,
-  scrubModelSample
+  modelCallDefault,
+  modelCallSample,
+  modelStateOf
 } from "@smthrs/rpc/ConfiguredModel"
 import type {
   ConfiguredModel,
+  ModelAnswer,
+  ModelCallInput,
+  ModelCallOutput,
   ModelCatalog,
   ModelCredentialEnv,
   ModelPlanOptions,
   ModelTestFailure,
   ModelTestResult
 } from "@smthrs/rpc/ConfiguredModel"
-import { Effect, Exit, Redacted, Stream } from "effect"
+import { Effect, Exit, Redacted, Schema, Stream } from "effect"
 import { localModelCatalog, manualRedirects, modelFailureOf, planOnLocal } from "./ConfiguredModelHost"
 import type { LocalPlanned } from "./ConfiguredModelHost"
 import { toEvaluatorLayer, toModel } from "./ConfiguredModelRoute"
@@ -50,15 +57,37 @@ export interface ModelProbeOptions {
 
 export interface ModelProbe {
   readonly catalog: () => ModelCatalog
-  readonly test: (model: ConfiguredModel) => Promise<ModelTestResult>
+  /** One call. With no input, the fixed Test of the model's kind. */
+  readonly test: (model: ConfiguredModel, input?: ModelCallInput) => Promise<ModelTestResult>
 }
 
-type Outcome = { readonly sample: string } | { readonly failure: ModelTestFailure }
+type Outcome = { readonly output: ModelCallOutput } | { readonly failure: ModelTestFailure }
 
 const invalidProtocol: Outcome = { failure: { code: "invalid", field: "protocol" } }
 
+const decodeQuestion = Schema.decodeUnknownEffect(Evaluator.Question)
+
+/**
+ * The classifier's answers in the contract's shape: the classifier reads the
+ * type off the question, the wire states it on the answer.
+ */
+export const modelAnswersOf = (
+  questions: Readonly<Record<string, Evaluator.Question>>,
+  answers: Readonly<Record<string, Classifier.Answer>>
+): Record<string, ModelAnswer> =>
+  Object.fromEntries(Object.entries(answers).map(([id, answer]) => {
+    const type = questions[id]?.type
+    return [id, type === "boolean" && "probability" in answer ? { type, value: answer.value, probability: answer.probability }
+      : type === "choice" && "confidence" in answer && typeof answer.value === "string"
+      ? { type, value: answer.value, probabilities: answer.probabilities, confidence: answer.confidence }
+      : type === "score" && "label" in answer
+      ? { type, value: answer.value, label: answer.label, probabilities: answer.probabilities, confidence: answer.confidence }
+      : answer as never] as const
+  }))
+
 const generation = (
-  planned: Extract<LocalPlanned, { ok: true }>
+  planned: Extract<LocalPlanned, { ok: true }>,
+  input: Extract<ModelCallInput, { kind: "generation" }>
 ): Effect.Effect<Outcome, unknown, KernelHttpClient.HttpClient> =>
   Effect.gen(function*() {
     const http = yield* KernelHttpClient.HttpClient
@@ -69,31 +98,35 @@ const generation = (
     const events = Array.from(
       yield* Stream.runCollect(model.stream(ModelRequest.make({
         modelId: planned.plan.modelId,
-        system: [],
-        messages: [{ role: "user", content: [{ type: "text", text: MODEL_TEST_PROMPT }] }],
+        system: input.system.trim() === "" ? [] : [SystemPart.make({ text: input.system })],
+        messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
         tools: [],
-        params: { maxTokens: MODEL_TEST_MAX_TOKENS }
+        params: { maxTokens: input.maxTokens, ...(input.temperature === undefined ? {} : { temperature: input.temperature }) }
       })))
     )
     // Reaching `settle` is the pass: a reasoning model may spend every token thinking and say nothing.
     if (!events.some((event) => event.type === "settle")) return invalidProtocol
     const text = events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
-    return { sample: scrubModelSample(text, Redacted.value(planned.apiKey)) }
+    const output: ModelCallOutput = { kind: "generation", text: cutModelCredential(text, Redacted.value(planned.apiKey)).slice(0, MODEL_CALL_TEXT_MAX) }
+    return { output }
   })
 
 const decision = (
   planned: Extract<LocalPlanned, { ok: true }>,
-  deadlineMs: number
+  deadlineMs: number,
+  input: Extract<ModelCallInput, { kind: "decision" }>
 ): Effect.Effect<Outcome, unknown, KernelHttpClient.HttpClient> =>
   Effect.gen(function*() {
+    // The questions become the classes every host builds, so their construction limits hold here too.
+    const questions = Object.fromEntries(
+      yield* Effect.forEach(Object.entries(input.questions), ([id, question]) => Effect.map(decodeQuestion(question), (typed) => [id, typed] as const))
+    )
     const evaluator = yield* Evaluator.Evaluator
-    const answer = yield* evaluator.evaluate({
-      state: MODEL_TEST_DECISION.state,
-      questions: { ok: new Evaluator.BooleanQuestion({ instructions: MODEL_TEST_DECISION.questions.ok.instructions }) }
-    })
-    const ok = answer.answers["ok"]
-    if (ok === undefined || ok.type !== "boolean") return invalidProtocol
-    return { sample: `${ok.probability >= 0.5} ${ok.probability.toFixed(2)}` }
+    const answer = yield* evaluator.evaluate({ state: modelStateOf(input.state), questions })
+    const decoded = yield* Effect.result(Classifier.decodeAnswers(questions, answer.answers))
+    if (decoded._tag !== "Success") return invalidProtocol
+    const output: ModelCallOutput = { kind: "decision", answers: modelAnswersOf(questions, decoded.success) }
+    return { output }
   }).pipe(Effect.provide(toEvaluatorLayer(planned.plan, planned.apiKey, deadlineMs)))
 
 export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
@@ -101,16 +134,19 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
   /** One rule for what is listed and what is tested, so the catalog offers no row a Test would refuse to dial. */
   const planOptions: ModelPlanOptions = options.egress ? {} : { egress: false }
 
-  const test = async (model: ConfiguredModel): Promise<ModelTestResult> => {
+  const test = async (model: ConfiguredModel, input?: ModelCallInput): Promise<ModelTestResult> => {
     const started = performance.now()
     const failed = (failure: ModelTestFailure): ModelTestResult =>
       failedModelTest(failure, performance.now() - started, "local")
     await options.credentials?.refresh()
     const planned = planOnLocal(bindingOf(model), options.env, planOptions, options.credentials)
     if (!planned.ok) return failed(planned.failure)
+    const request = input ?? modelCallDefault(planned.plan.kind)
+    // A prompt for a decision model, or questions for a generation model, fit no wire the record speaks.
+    if (request.kind !== planned.plan.kind) return failed({ code: "invalid", field: "protocol" })
     const http = manualRedirects(options.fetch)
     const exit = await Effect.runPromiseExit(
-      (planned.plan.kind === "decision" ? decision(planned, deadlineMs) : generation(planned)).pipe(
+      (request.kind === "decision" ? decision(planned, deadlineMs, request) : generation(planned, request)).pipe(
         Effect.catch((error) => Effect.succeed<Outcome>({ failure: modelFailureOf(error, deadlineMs) })),
         Effect.timeoutOrElse({
           duration: deadlineMs,
@@ -123,9 +159,9 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
     if (redirected !== undefined) return failed({ code: "refused", status: redirected })
     // A defect is a bug in this host, and its cause may hold a signed request: dropped, never logged or returned.
     if (!Exit.isSuccess(exit)) return failed({ code: "unreachable" })
-    return "failure" in exit.value
-      ? failed(exit.value.failure)
-      : { ok: true, latencyMs: Math.max(0, Math.round(performance.now() - started)), sample: exit.value.sample }
+    if ("failure" in exit.value) return failed(exit.value.failure)
+    const { output } = exit.value
+    return { ok: true, latencyMs: Math.max(0, Math.round(performance.now() - started)), sample: modelCallSample(output, Redacted.value(planned.apiKey)), output }
   }
 
   return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test }
