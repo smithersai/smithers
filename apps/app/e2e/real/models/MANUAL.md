@@ -12,7 +12,7 @@ macOS app; it stays in the host keychain. Model records carry only the name.
 ```sh
 df -h /System/Volumes/Data      # Avail must read at least 2Gi
 lsof -nP -iTCP:47400 -iTCP:47500 -sTCP:LISTEN   # must print nothing
-cd /Users/williamcory/smithers-models/apps/app
+cd ~/smithers/apps/app
 pnpm build:web
 ```
 
@@ -21,7 +21,7 @@ See: `✓ built in …`. The build writes about 20 MB to `dist/`.
 ## 1. Terminal A: the loopback provider
 
 ```sh
-cd /Users/williamcory/smithers-models/apps/app
+cd ~/smithers/apps/app
 SMITHERS_MODEL_PROVIDER_KEY=sk-loopback-will-0123456789abcdef \
 SMITHERS_MODEL_PROVIDER_PORT=47500 \
 SMITHERS_MODEL_PROVIDER_SLOW_MS=30000 \
@@ -42,7 +42,7 @@ See: `401`
 ## 2. Terminal B: the app, without model environment keys
 
 ```sh
-cd /Users/williamcory/smithers-models/apps/app
+cd ~/smithers/apps/app
 SMITHERS_LOCAL_PORT=47400 SMITHERS_LOCAL_MODE=hybrid \
 SMITHERS_LOCAL_STATE_DIR=/tmp/smithers-models-manual \
 bun src/bun/serve.ts
@@ -363,7 +363,7 @@ loopback origin, so the vendor never sees it.
 ## 14. The automated receipt
 
 ```sh
-cd /Users/williamcory/smithers-models/apps/app
+cd ~/smithers/apps/app
 lsof -nP -iTCP:47321 -sTCP:LISTEN     # must print nothing
 SMITHERS_REAL_PORT=47401 SMITHERS_CHAT_STUB=0 pnpm run test:e2e:real --grep models --trace off
 ```

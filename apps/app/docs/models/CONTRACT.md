@@ -6,7 +6,7 @@ contract; the externally supplied original remains untouched.
 
 Authoritative. Code against THIS file and `RULINGS.md`; where a seam design (`0-` to `3-`) spells
 something differently, this file wins. Every name below EXISTS in the workspace
-(`/Users/williamcory/smithers-models`) and is green under `packages/rpc` check, lint and test.
+(`the repository root`) and is green under `packages/rpc` check, lint and test.
 Use names VERBATIM. Never redefine one. If you need a shared name that is not here, report a blocker.
 
 Names from the seam designs that DO NOT EXIST: `@smthrs/rpc/ModelConfig`, `@smthrs/rpc/Models`,
