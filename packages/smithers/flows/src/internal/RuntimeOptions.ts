@@ -2,6 +2,7 @@
  * @since 1.0.0
  */
 import type * as EngineStore from "@smthrs/engine-store/EngineStore"
+import { Action } from "@smthrs/flow"
 import type { Ownership, RunStore } from "@smthrs/run-store"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -52,6 +53,51 @@ export interface Options {
   readonly requestResume?:
     | ((executionId: string, reason: EngineStore.RequestedResumeReason) => Effect.Effect<void>)
     | undefined
+  /**
+   * The complete runtime environment a sealed step's recorded result may be
+   * reused under, folded into every cross-run cache key.
+   *
+   * Absent by default, and absence is the safe answer, not a missing feature:
+   * `@smthrs/engine` `FlowEngine/ActionKey.actionKey` then scopes every sealed
+   * keyed dispatch to its own execution, so a result recorded by one run is
+   * addressed by an identity no later run can spell and nothing is ever
+   * reused across runs. Declaring it is what lets a second run address the
+   * first run's row.
+   *
+   * The engine cannot derive this value: it names the semantic runtime layers
+   * and the effective capability groups a result was computed under, and only
+   * the host knows both. It is complete or absent for that reason — a partial
+   * environment would justify hits it cannot account for — so a host that
+   * cannot enumerate its toolchain and its capability envelope leaves it out
+   * rather than inventing one. A host that declares an environment its
+   * machines do not actually share serves one machine's results to another.
+   */
+  readonly cacheEnvironment?: Action.CacheEnvironment | undefined
+  /**
+   * The revision of the tree this host read its flows out of.
+   *
+   * Every node record can carry where its action was declared, and a path
+   * with a line does not say which bytes were at that line: the tree moves
+   * under a long-lived host, and the same path after an edit or a branch
+   * switch is a different file. A host that can name the revision it loaded
+   * from declares it here, and every recorded graph page carries it, so a
+   * reader opens the declared file AT that revision rather than at whatever
+   * is on disk when they look.
+   *
+   * Absent by default, which is the honest answer for a host served out of
+   * no version control, or out of a tree no commit describes. A reader with
+   * nothing shows no code at all rather than code it cannot bind (D-068).
+   *
+   * A host that only learns the answer after this call declares a reader
+   * instead of a string, and it is asked once per recorded page. The native
+   * host is one: the modules whose sites those records carry are read during
+   * registration, which is the last startup phase, so the revision that
+   * describes them is not known while this runtime is being built. A reader's
+   * answer is not decoded here for the same reason it is not read here — it
+   * does not exist yet — so an answer that is not a revision records nothing
+   * rather than being refused after startup.
+   */
+  readonly sourceRevision?: string | (() => string | undefined) | undefined
 }
 
 /**
@@ -122,12 +168,30 @@ export const validate = (options: Options, label = "Runtime"): Options => {
   if (requestResume !== undefined && typeof requestResume !== "function") {
     throw invalidConfiguration("requestResume", `${label} requestResume must be a function when supplied`)
   }
+  // Decoded rather than trusted: this value is cache key material, and a
+  // malformed one would silently key every sealed result of this host.
+  const cacheEnvironment = options.cacheEnvironment === undefined ? undefined : decodeField(
+    "cacheEnvironment",
+    Action.CacheEnvironment,
+    options.cacheEnvironment,
+    "must name every runtime layer and capability group",
+    label
+  )
+  // A ref a reader cannot resolve is not a revision: a declared one is refused
+  // where it is written rather than recorded onto every page of every run. A
+  // reader is checked for its shape only; its answers are checked by the store
+  // that asks for them, because none of them exists yet.
+  const sourceRevision = options.sourceRevision === undefined || typeof options.sourceRevision === "function"
+    ? options.sourceRevision
+    : decodeField("sourceRevision", Schema.NonEmptyString, options.sourceRevision, nonEmpty, label)
   return Object.freeze({
     filename,
     workspaceRoot,
     owner: Object.freeze({ hostId }),
     isAlive,
     canExecute,
-    requestResume
+    requestResume,
+    cacheEnvironment,
+    sourceRevision
   })
 }

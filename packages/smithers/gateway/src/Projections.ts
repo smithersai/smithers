@@ -110,6 +110,19 @@ export const maxEventsScanned = 100_000
 export const maxEventsPerPage = 1_000
 
 /**
+ * The most terminal runs of one flow a duration fold measures.
+ *
+ * A prediction wants recent history, not all of it: an old run measured a
+ * different declaration on a different machine. The newest finished runs are
+ * the ones whose durations still describe what the flow does now, and the
+ * bound is what keeps a snapshot from reading every journal a flow ever wrote.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const maxDurationRuns = 20
+
+/**
  * The largest encoded event window or projected row set one run admits.
  *
  * The row budget is a refusal: rows go on the wire, and a frame larger than
@@ -332,6 +345,17 @@ const decodedEvent = (
   Effect.suspend(() => {
     try {
       const event = decodeEvent(candidate)
+      // Graph topology is a bounded contract. Refuse an oversized legacy page
+      // intact; clipping a node id or dependency would silently change the DAG.
+      const payload = event.payload
+      if (
+        event.kind === "control.engine.event" && typeof payload === "object" && payload !== null &&
+        "eventType" in payload && (payload.eventType === "flows.engine.plan-recorded" ||
+          payload.eventType === "flows.engine.subgraph-appended") &&
+        encodedSize(event) > maxEventBytes
+      ) {
+        return Effect.fail(resourceLimit(`One graph event exceeds ${maxEventBytes} encoded bytes`))
+      }
       return Number.isSafeInteger(event.sequence) && event.sequence >= 0
         ? Effect.succeed(event)
         : Effect.fail(unavailable(message, undefined))
@@ -487,6 +511,8 @@ const sameSelector = (
       const candidate = right as GatewaySchema.NodeOutputSelector
       return left.runId === candidate.runId && left.nodeId === candidate.nodeId
     }
+    case "flow-durations":
+      return left.flowId === (right as GatewaySchema.FlowDurationsSelector).flowId
     default:
       return left.runId === (right as GatewaySchema.RunSummarySelector).runId
   }
@@ -533,6 +559,13 @@ const rowsOfRun = (
       return GatewayProjection.approvals(source.events, source.run)
     case "node-output":
       return GatewayProjection.nodeOutput(source.events).filter((row) => row.nodeId === selector.nodeId)
+    case "flow-durations":
+      // One run contributes the executions it measured, never a percentile:
+      // a percentile over one run is that run, and the rows this selector
+      // serves are folded across every run the flow has finished. The carry
+      // travels with the window because the record that names this run's
+      // native root is the first one a bounded window drops.
+      return GatewayProjection.nodeDurations(source.events, source.carry)
   }
 }
 
@@ -575,14 +608,24 @@ const waitIdentity = (row: GatewayProjection.ApprovalRow): string | undefined =>
 /**
  * The rows a workspace selector projects across every run it read.
  *
- * The approvals inbox is the exception: a run card wants a run's decided gates
- * too, but an inbox wants only what a human still owes an answer to.
+ * Most of them are one run's rows, concatenated. Two are not. The approvals
+ * inbox wants only what a human still owes an answer to, where a run card
+ * wants that run's decided gates too. And `flow-durations` is a cross-run
+ * fold: every run contributes the executions it measured and the percentiles
+ * are ranked over all of them at once, so a run contributes a sample rather
+ * than a row.
  */
 const rowsOfWorkspace = (
   selector: GatewaySchema.ProjectionSelector,
   runs: ReadonlyArray<RunSource>,
   now: number
 ): ReadonlyArray<unknown> => {
+  if (selector._tag === "flow-durations") {
+    return GatewayProjection.flowDurations(
+      selector.flowId,
+      runs.flatMap((source) => rowsOfRun(selector, source, now)) as ReadonlyArray<GatewayProjection.NodeDuration>
+    )
+  }
   if (selector._tag !== "approvals") return runs.flatMap((source) => rowsOfRun(selector, source, now))
   const seen = new Set<string>()
   const rows: Array<GatewayProjection.ApprovalRow> = []
@@ -772,10 +815,16 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   }
 
   const runsMatching = (
-    filters: { readonly runId?: string; readonly status?: ControlSchema.RunStatus }
+    filters: {
+      readonly runId?: string
+      readonly flowId?: string
+      readonly status?: ControlSchema.RunStatus
+      readonly terminal?: boolean
+    },
+    newest?: number
   ): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> => {
     const singleRun = filters.runId !== undefined
-    const ceiling = singleRun ? 1 : maxWorkspaceRuns
+    const ceiling = singleRun ? 1 : newest ?? maxWorkspaceRuns
     const page = (
       accumulated: ReadonlyArray<ControlSchema.RunSummary>,
       seen: Set<string>,
@@ -786,6 +835,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         _tag: "runs",
         filters,
         limit: remaining,
+        ...(newest === undefined ? {} : { order: "newest" as const }),
         ...(cursor === undefined ? {} : { cursor })
       }).pipe(
         Effect.tapError((cause) => logReadFailure("list-runs", cause)),
@@ -849,14 +899,21 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   const runSourceOf = (runId: string, compactHealth = true): Effect.Effect<RunSource, GatewayError> =>
     Effect.flatMap(runOf(runId), (run) => consistentRunSource(run, 8, compactHealth))
 
+  /** Newest terminal runs, filtered and limited by the control query itself. */
+  const durationRunsOf = (flowId: string): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> =>
+    runsMatching({ flowId, terminal: true }, maxDurationRuns)
+
   /** Every run a workspace selector folds, and each one's journal. */
   const workspaceSourceOf = (
     selector: GatewaySchema.ProjectionSelector
   ): Effect.Effect<ReadonlyArray<RunSource>, GatewayError> =>
     Effect.flatMap(
       // The inbox asks the control plane which runs are parked rather than
-      // reading every run's journal to find out.
-      runsMatching(selector._tag === "approvals" ? { status: "waiting-approval" } : {}),
+      // reading every run's journal to find out, and a duration fold asks it
+      // for one flow's runs rather than for the workspace's.
+      selector._tag === "flow-durations"
+        ? durationRunsOf(selector.flowId)
+        : runsMatching(selector._tag === "approvals" ? { status: "waiting-approval" } : {}),
       (runs) =>
         Effect.map(
           Effect.forEach(runs, (run) => consistentRunSource(run), { concurrency: 8 }),
@@ -1312,10 +1369,16 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     selector: GatewaySchema.ProjectionSelector,
     source: Source,
     from: CursorPosition
-  ): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError> =>
-    source._tag === "workspace"
+  ): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError> => {
+    // A duration row is ranked over the runs a flow has ALREADY finished, so
+    // no event of a live run changes one, and the run that would change one
+    // is not in the window until it settles. The honest delta is another
+    // snapshot, which is what a client takes.
+    if (selector._tag === "flow-durations") return Stream.empty
+    return source._tag === "workspace"
       ? workspaceDeltaFrames(selector, source.runs)
       : runDeltaFrames(selector, source.run, from)
+  }
 
   /**
    * The keepalive channel. `Stream.tick` emits immediately and then on the

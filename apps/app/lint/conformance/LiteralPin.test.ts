@@ -105,6 +105,21 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "Native gateway call facts exercise the harness wire format outside the app vocabulary, including cursor positions before duplicate telemetry."
   },
   {
+    literal: "data-id",
+    file: "e2e/graph/flow-graph.spec.ts",
+    reason: "React Flow writes each edge's `from->to` into its own `data-id`; the app renders the edge, not the attribute, and it is the only per-edge identity in the DOM"
+  },
+  {
+    literal: "data-id",
+    file: "e2e/graph/flow-graph-a11y.spec.ts",
+    reason: "React Flow writes each NODE's id into its own `data-id` on the wrapper it focuses; the a11y spec reads that wrapper, because it is the element a keyboard reaches and the one the accessible name sits on"
+  },
+  {
+    literal: "smthrs-flow-graph-",
+    file: "scripts/flow-graph-e2e-gateway.test.ts",
+    reason: "the scratch directory `BridgedEngineRun` mkdtemps its two SQLite files into, which this suite counts under its own TMPDIR and asserts removed when the host stops; a directory prefix, never a card id"
+  },
+  {
     literal: "retired-",
     file: "e2e/packaged/FixtureRun.ts",
     reason: "A temporary fixture-directory prefix used for atomic cleanup, not a persisted card id."
@@ -208,8 +223,24 @@ const vocabularies: Vocabularies = {
 // framework calls and synthetic coverage evidence, not application actions.
 // Actual real-E2E scenarios, helpers and coverage declarations remain scanned.
 const sourceParserFiles = new Set(["e2e/real/coverage/gate.ts", "e2e/real/coverage/gate.test.ts"])
+/*
+ * The fixture graph's own node addresses are not app vocabulary.
+ *
+ * `e2e/graph/workspace.ts` writes down the eleven ids the engine derives from
+ * the fixture flow's structure, so the Chromium tier can read them back off
+ * the drawn graph rather than recompute them from the builder the app reads
+ * them through. They are dotted, they are data, and no product source spells
+ * one — which is the rule's whole premise, so the rule cannot judge them. Only
+ * `dotted-identifier` is lifted here: a flow id, a card kind or a `data-*`
+ * selector in that file still rots the same way every other suite's does.
+ */
+const engineDerivedIds = new Set(["e2e/graph/workspace.ts"])
 const literals = literalsUnder(TREES).filter(literal => !sourceParserFiles.has(shortPath(literal.file)))
-const violations = literals.flatMap((literal) => [...violationsOf(literal, vocabularies)])
+const violations = literals
+  .flatMap((literal) => [...violationsOf(literal, vocabularies)])
+  .filter((violation) =>
+    violation.rule !== "dotted-identifier" || !engineDerivedIds.has(shortPath(violation.file))
+  )
 
 describe("the vocabularies are derived from the app and are never empty", () => {
   /*
@@ -350,6 +381,22 @@ describe("every literal the suites assert against still resolves", () => {
   test("every allowlist entry carries a reason", () => {
     const reasonless = ALLOWLIST.filter((entry) => entry.reason.trim().length < 20)
     expect(reasonless.map((entry) => `${entry.file}: ${entry.literal}`)).toEqual([])
+  })
+
+  test("no literal is excused twice", () => {
+    /*
+     * One (literal, file) pair, one entry. A second entry for the same pair is
+     * a spare licence: the staleness test above is satisfied by whichever of
+     * the two still matches, so the extra one can never expire and the next
+     * literal to land on that name inherits it in silence. A merge put a
+     * second `smthrs-flow-graph-` entry on this list and nothing failed.
+     */
+    const seen = new Map<string, number>()
+    for (const entry of ALLOWLIST) {
+      const pair = `${entry.file}: ${entry.literal}`
+      seen.set(pair, (seen.get(pair) ?? 0) + 1)
+    }
+    expect([...seen].filter(([, count]) => count > 1).map(([pair]) => pair)).toEqual([])
   })
 
   test("no allowlist entry outlives the literal it excuses", () => {

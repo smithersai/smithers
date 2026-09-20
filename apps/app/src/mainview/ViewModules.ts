@@ -8,6 +8,8 @@ function viewModule<T extends ComponentType<any>>(load: () => Promise<{ default:
 
 export const MarkdownEditorSurface = viewModule(() => import("./MarkdownEditorSurface").then(m => ({ default: m.MarkdownEditorSurface })))
 export const KnowledgeGraphSurface = viewModule(() => import("./KnowledgeGraphSurface").then(m => ({ default: m.KnowledgeGraphSurface })))
+export const FlowGraphSurface = viewModule(() => import("./cards/FlowGraphSurface").then(m => ({ default: m.FlowGraphSurface })))
+export const FlowRunGraphSurface = viewModule(() => import("./cards/FlowRunGraphSurface").then(m => ({ default: m.FlowRunGraphSurface })))
 export const CodeSurface = viewModule(() => import("./cards/CodeSurface").then(m => ({ default: m.CodeSurface })))
 export const DiffSurface = viewModule(() => import("./cards/DiffSurface").then(m => ({ default: m.DiffSurface })).catch(() => ({ default: ({ patch }: { path: string; oldPath?: string; patch: string }) => createElement("pre", { className: "world-card-path" }, patch) })))
 

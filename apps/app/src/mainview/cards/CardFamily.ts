@@ -12,7 +12,7 @@
 import type { ReactNode } from "react"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { FlowName } from "../flows/FlowName"
-import type { Card, WorldDocument } from "../state/AppState"
+import type { Card, FlowDurationsRow, WorldDocument } from "../state/AppState"
 import type { AppStore } from "../state/AppStore"
 
 /**
@@ -51,6 +51,8 @@ export interface CardActions {
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
   readonly experimental?: boolean
+  /** The flow builder's doors render only under its flag (docs/flow-builder). */
+  readonly flowBuilder?: boolean
   /** Read authority for derived decorations; absent only in isolated static previews. */
   readonly projectionStore?: CardProjectionAuthority
   /** Structured answers carry what the human wrote, already shaped for the question. */
@@ -81,6 +83,12 @@ export interface CardActions {
   readonly debugVerbose?: boolean
   /** Existing source-qualified catalog cards; never a second availability store. */
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
+  /** Existing dispatcher listings, so a plan card names the schedules that fire it without a second read of the box. */
+  readonly triggerCatalogs?: ReadonlyArray<Extract<Card, { kind: "trigger-list" }>>
+  /** What the gateway measured for each flow's action tags; a card reads its own flow's rows. */
+  readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
+  /** The files already read into this conversation; a graph card's Code tab renders one inline. */
+  readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
   /*
    * The identity seam's definitive signed-out answer. A card that is a public
    * read (the mythical history) renders its write doors only for a session

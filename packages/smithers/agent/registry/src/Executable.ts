@@ -61,11 +61,14 @@ import * as PlanNode from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import * as Descriptor from "./Descriptor.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
@@ -429,6 +432,48 @@ export const fileSpecifier = (path: string): string => {
   return normalized.startsWith("/") ? `file://${escaped}` : `file:///${escaped}`
 }
 
+/**
+ * Distinguishes one load's private sibling from another's within a process.
+ *
+ * Nothing rests on it. The exclusive create below is what makes the file this
+ * load's own, and a name already taken is answered by trying the next one.
+ * This only keeps two concurrent loads of the same bytes from spending their
+ * attempts colliding with each other.
+ */
+let loadSequence = 0
+
+/**
+ * Reserves a private sibling of the source file, created exclusively.
+ *
+ * `makeTempDirectory` is not available here. The capability kernel's guarded
+ * filesystem — the one every agent-reachable host composes — implements the
+ * `makeTemp*` family only over a wholly isolated host filesystem, and a
+ * descriptor-relative POSIX adapter is not one, so on a real native host every
+ * `makeTempDirectoryScoped` is refused with "host does not provide
+ * descriptor-relative, no-follow filesystem isolation". A loader that reserved
+ * its name that way could therefore never load a project's own module flow on
+ * the hosts this loader exists for.
+ *
+ * The exclusive create is the whole reservation. `wx` fails when anything
+ * already occupies the name, INCLUDING a symlink, and the kernel performs it
+ * relative to a pinned parent descriptor without following one, so a name an
+ * attacker pre-creates costs this load an attempt and reaches nothing.
+ */
+const reserveSibling = (
+  fs: FileSystem.FileSystem,
+  prefix: string,
+  extension: string,
+  attempts = 8
+): Effect.Effect<string, unknown> =>
+  Effect.suspend(() => {
+    loadSequence += 1
+    const candidate = `${prefix}${loadSequence.toString(36)}-${Date.now().toString(36)}${extension}`
+    return fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
+      Effect.as(candidate),
+      Effect.catch((cause) => attempts > 1 ? reserveSibling(fs, prefix, extension, attempts - 1) : Effect.fail(cause))
+    )
+  })
+
 const importModule = (
   path: string,
   source: { readonly bytes: Uint8Array; readonly contentDigest: string }
@@ -437,16 +482,17 @@ const importModule = (
     const fs = yield* FileSystem.FileSystem
     const platformPath = yield* Path.Path
     const sourcePath = path.startsWith("file:") ? yield* platformPath.fromFileUrl(new URL(path)) : path
-    // Reserve a unique name using the host filesystem. The module is a sibling
-    // of this directory, so relative imports retain the source's base directory.
-    const reservation = yield* fs.makeTempDirectoryScoped({
-      directory: platformPath.dirname(sourcePath),
-      prefix: `.smithers-${source.contentDigest}-`
-    })
-    const modulePath = `${reservation}${platformPath.extname(sourcePath) || ".mjs"}`
-    yield* Effect.acquireRelease(
-      fs.writeFile(modulePath, new Uint8Array(0), { flag: "wx", mode: 0o600 }),
-      () => fs.remove(modulePath).pipe(Effect.orDie)
+    // The module is a sibling of the source file, so relative imports retain
+    // the source's base directory, and its name carries the content digest, so
+    // two different revisions of one file are two module specifiers and the
+    // ESM cache cannot answer a later load with the earlier body.
+    const prefix = platformPath.join(
+      platformPath.dirname(sourcePath),
+      `.smithers-${source.contentDigest}-`
+    )
+    const modulePath = yield* Effect.acquireRelease(
+      reserveSibling(fs, prefix, platformPath.extname(sourcePath) || ".mjs"),
+      (reserved) => fs.remove(reserved).pipe(Effect.orDie)
     )
     yield* fs.writeFile(modulePath, source.bytes)
     return yield* Effect.tryPromise({
@@ -1175,7 +1221,59 @@ export const catalog = (
   })
 
 /**
- * Registers every runnable discovered flow with the runtime.
+ * What rebuilding one catalog entry did.
+ *
+ * Four answers, because a caller that cannot tell them apart cannot say
+ * anything honest about the flow afterwards: it is runnable now, this host
+ * refuses it and why, discovery no longer finds it at all, or this host holds
+ * that entry fixed and left the catalog alone
+ * ({@link RefreshOptions.refreshable}).
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Refreshed =
+  | { readonly _tag: "Registered"; readonly executable: Executable }
+  | { readonly _tag: "Refused"; readonly error: ExecutableError }
+  | { readonly _tag: "Removed" }
+  | { readonly _tag: "Fixed" }
+
+/**
+ * Rebuilding one entry of a catalog a host is already serving from.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Refresh {
+  /**
+   * Rescans discovery, rebuilds this one flow's executable from the bytes now
+   * on disk, registers its body with the runtime, and swaps it into the
+   * catalog. Serialized: two refreshes of the same host never interleave.
+   *
+   * `Removed` and `Refused` take the entry out of the catalog and close the
+   * scope of a body THIS seam registered. A body registered while the host
+   * started lives in the layer's own scope, which nothing here owns, so it
+   * stays registered with the runtime after its catalog entry is gone. The
+   * catalog is what planning and `ls` read, so the flow is no longer
+   * reachable; the runtime simply still answers its tag.
+   */
+  readonly flow: (name: string) => Effect.Effect<Refreshed, RegistryError | DiscoveryError>
+}
+
+/**
+ * Service tag for rebuilding one catalog entry after startup.
+ *
+ * Provided by {@link layer} beside the {@link Catalog} it builds, so every
+ * host that registers discovered flows can also rebuild one of them.
+ *
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export const Refresh: Context.Service<Refresh, Refresh> = Context.Service("flows/registry/CatalogRefresh")
+
+/**
+ * Registers every runnable discovered flow with the runtime, and keeps one
+ * entry rebuildable while the host serves.
  *
  * This is the layer a host passes as the durable runtime's registration phase:
  * once it has been built, `Control.run` on a discovered flow reaches a
@@ -1187,26 +1285,187 @@ export const catalog = (
  * refusals rather than let an operator discover them from `up <flow>` failing
  * inside the runtime.
  *
+ * The catalog it provides is not frozen. It used to be, and that was wrong for
+ * a host whose own runs write into its `flows/` directory: an agent that
+ * authors `flows/<id>/flow.ts` produced a file nothing on the host could plan
+ * or execute, because the descriptor existed and the executable behind it did
+ * not, and only a restart closed the gap. {@link Refresh} is the one operation
+ * that closes it instead. Two properties make it safe to call on a serving
+ * host:
+ *
+ * - the `Catalog` service object never changes identity. `AgentSession`,
+ *   admission and the plan hook each read the catalog they were handed while
+ *   the host was composed, so a refresh swaps the SNAPSHOT those readers see
+ *   rather than the service they hold. The swap is one assignment: a reader
+ *   observes the entry list before it or after it, never a half-built one;
+ * - the new body is registered with the runtime BEFORE the previous body's
+ *   scope is closed. `@smthrs/flow` keys registrations by flow tag and a
+ *   scope release removes only the registration it still owns, so an
+ *   execution dispatched across the swap reaches one body or the other and
+ *   never an unregistered tag.
+ *
+ * Re-importing is not a problem the caller has to solve: the default loader
+ * writes the verified bytes to a private sibling named by their content
+ * digest and imports THAT, so new bytes are a new module specifier and the
+ * ESM cache cannot answer with the previous body.
+ *
  * @category layers
  * @since 1.0.0-rc.0
  */
 export const layer = (
-  options: Options
+  options: RefreshOptions
 ): Layer.Layer<
-  Catalog,
+  Catalog | Refresh,
   RegistryError | DiscoveryError,
   Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
 > =>
   Layer.unwrap(
-    Effect.map(
-      catalog(options),
-      (built) =>
-        Layer.mergeAll(
-          Layer.succeed(Catalog)(built),
-          ...built.executables.map((executable) => executable.layer)
-        )
-    )
+    Effect.map(catalog(options), (built) =>
+      Layer.mergeAll(
+        layerRefreshable(built, options),
+        ...built.executables.map((executable) => executable.layer)
+      ))
   )
+
+/**
+ * How much of a catalog a host is willing to rebuild.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface RefreshOptions extends Options {
+  /**
+   * Which discovered flows this host rebuilds. Every one, by default.
+   *
+   * A host that serves some of its catalog out of its own measured bundle
+   * answers `false` for those: their bytes are the image the host was shipped
+   * as, they cannot change under it, and rebuilding one from the working tree
+   * would replace an admitted declaration with whatever is on disk.
+   */
+  readonly refreshable?: ((descriptor: Descriptor.FlowDescriptor) => boolean) | undefined
+}
+
+/**
+ * Serves a catalog a host already built, and keeps one entry rebuildable.
+ *
+ * {@link layer} is this plus the initial registrations, and is what a host
+ * that has no catalog of its own wants. Reach for this one when the host
+ * assembles the catalog itself — several sources, or a loader per source —
+ * and registers the result its own way: this adds the live `Catalog` service
+ * and the {@link Refresh} beside it without registering anything twice.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerRefreshable = (
+  built: Catalog,
+  options: RefreshOptions
+): Layer.Layer<
+  Catalog | Refresh,
+  never,
+  Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
+> =>
+  Layer.unwrap(Effect.sync(() => {
+    let snapshot: Catalog = built
+    const live: Catalog = {
+      get executables() {
+        return snapshot.executables
+      },
+      get refused() {
+        return snapshot.refused
+      }
+    }
+    return Layer.merge(
+      Layer.succeed(Catalog)(live),
+      Layer.effect(Refresh)(makeRefresh(options, () => snapshot, (next) => {
+        snapshot = next
+      }))
+    )
+  }))
+
+/** The refresh operation, closed over the host's registration context and scope. */
+const makeRefresh = (
+  options: RefreshOptions,
+  read: () => Catalog,
+  swap: (next: Catalog) => void
+): Effect.Effect<
+  Refresh,
+  never,
+  Scope.Scope | Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
+> =>
+  Effect.gen(function*() {
+    const host = yield* Effect.scope
+    // The refresh runs later, from whatever called it. Everything it needs to
+    // load a body and register one is captured here, where the host composed
+    // it, rather than demanded of a caller that has no reason to hold it.
+    const services = yield* Effect.context<
+      Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
+    >()
+    const gate = yield* Semaphore.make(1)
+    const held = new Map<string, Scope.Closeable>()
+    const release = (name: string) => {
+      const previous = held.get(name)
+      held.delete(name)
+      return previous === undefined ? Effect.void : Scope.close(previous, Exit.void)
+    }
+    const put = (name: string, executable: Executable | undefined, failure: ExecutableError | undefined): void => {
+      const current = read()
+      const executables = executable === undefined
+        ? current.executables.filter((entry) => entry.descriptor.name !== name)
+        : current.executables.some((entry) => entry.descriptor.name === name)
+        ? current.executables.map((entry) => entry.descriptor.name === name ? executable : entry)
+        : [...current.executables, executable]
+      const without = current.refused.filter((entry) => entry.flow !== name)
+      swap({ executables, refused: failure === undefined ? without : [...without, failure] })
+    }
+    const flow = (name: string): Effect.Effect<Refreshed, RegistryError | DiscoveryError> =>
+      gate.withPermits(1)(Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        yield* registry.refresh()
+        const found = yield* registry.getOption(name)
+        if (Option.isNone(found)) {
+          put(name, undefined, undefined)
+          yield* release(name)
+          return { _tag: "Removed" } as const
+        }
+        if (options.refreshable !== undefined && !options.refreshable(found.value)) {
+          return { _tag: "Fixed" } as const
+        }
+        const result = yield* Effect.result(fromDescriptor(found.value, options))
+        if (result._tag === "Failure") {
+          put(name, undefined, result.failure)
+          yield* release(name)
+          yield* Effect.logWarning("refreshed flow is not runnable on this host", {
+            flow: result.failure.flow,
+            path: result.failure.path,
+            code: result.failure.code,
+            delegate: result.failure.delegate,
+            available: result.failure.available,
+            reason: result.failure.message
+          })
+          return { _tag: "Refused", error: result.failure } as const
+        }
+        const scope = yield* Scope.fork(host)
+        // A registration that dies takes its scope with it. Without this the
+        // host keeps a forked scope nothing will ever close until it shuts
+        // down, one per failed refresh.
+        yield* Layer.build(result.success.layer).pipe(
+          Effect.provideService(Scope.Scope, scope),
+          Effect.onError(() => Scope.close(scope, Exit.void))
+        )
+        // Uninterruptible as one step. An interrupt landing between the
+        // build and `held.set` — `release` is where one can — would leave a
+        // registered body in a scope nothing holds and nothing can close
+        // until the host shuts down.
+        yield* Effect.uninterruptible(Effect.gen(function*() {
+          put(name, result.success, undefined)
+          yield* release(name)
+          held.set(name, scope)
+        }))
+        return { _tag: "Registered", executable: result.success } as const
+      })).pipe(Effect.provideContext(services))
+    return Refresh.of({ flow })
+  })
 
 /**
  * Compatibility alias for the project registry options, retained for one release candidate.

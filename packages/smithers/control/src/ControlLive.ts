@@ -881,7 +881,11 @@ export const layer: Layer.Layer<
           filters?.flowId ?? null,
           filters?.status ?? null,
           filters?.parentRunId ?? null,
-          filters?.lineageId ?? null
+          filters?.lineageId ?? null,
+          // Keep legacy cursor fingerprints byte-identical unless opting in.
+          ...(filters?.terminal === undefined && request.order === undefined
+            ? []
+            : [filters?.terminal ?? null, request.order ?? null])
         ])
         const cursor = request.cursor === undefined ? undefined : yield* Schema.decodeUnknownEffect(runCursor)(
           request.cursor
@@ -898,6 +902,7 @@ export const layer: Layer.Layer<
           )
           if (filters.flowId !== undefined) runs = runs.filter((run) => run.flowId === filters.flowId)
           if (filters.status !== undefined) runs = runs.filter((run) => run.status === filters.status)
+          if (filters.terminal !== undefined) runs = runs.filter((run) => terminal(run.status) === filters.terminal)
           if (filters.parentRunId !== undefined) runs = runs.filter((run) => run.parentRunId === filters.parentRunId)
           if (filters.lineageId !== undefined) runs = runs.filter((run) => run.lineageId === filters.lineageId)
           return { _tag: "runs", items: yield* withSteering(runs) }
@@ -917,9 +922,9 @@ export const layer: Layer.Layer<
         // needed so a page never over-delivers rows its cursor has passed. A
         // filter the source cannot evaluate costs a walk, which is why the
         // walk stops at a full page or at the end of the runs.
-        const postFiltered = observing && filters?.status !== undefined
-        const sourceFilters = postFiltered && filters !== undefined
-          ? Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "status"))
+        const postFiltered = observing && (filters?.status !== undefined || filters?.terminal !== undefined)
+        const sourceFilters = postFiltered
+          ? Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "status" && key !== "terminal"))
           : filters
         const collected: Array<RunSummary> = []
         let sourceCursor = cursor
@@ -932,12 +937,17 @@ export const layer: Layer.Layer<
         while (true) {
           const result = yield* runtime.queryRuns({
             filters: sourceFilters,
+            order: request.order,
             cursor: sourceCursor,
             limit: bounds.size - collected.length
           })
           const observed = yield* Effect.forEach(result.items, observe)
           for (const run of observed) {
-            if (!postFiltered || run.status === filters?.status) collected.push(run)
+            if (
+              !postFiltered ||
+              (filters?.status === undefined || run.status === filters.status) &&
+                (filters?.terminal === undefined || terminal(run.status) === filters.terminal)
+            ) collected.push(run)
           }
           sourceNext = result.nextCursor
           if (!postFiltered || sourceNext === undefined || collected.length >= bounds.size) break

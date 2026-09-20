@@ -1004,3 +1004,217 @@ describe("GatewayProjection.transcript", () => {
     expect(rows.every((row) => !/[\r\n]/.test(row.text))).toBe(true)
   })
 })
+
+describe("GatewayProjection.nodeDurations", () => {
+  /** One engine node record, as the host's journal bridge copies it. */
+  const record = (eventType: string, payload: unknown, emittedAtMs: number, executionId = "native") =>
+    event("control.engine.event", {
+      version: 1,
+      executionId,
+      generation: 0,
+      sequence: 0,
+      eventId: `${eventType}:${emittedAtMs}`,
+      sourceId: `node-journal/${eventType}`,
+      sourceSequence: 0,
+      emittedAtMs,
+      eventType,
+      payload
+    })
+
+  const scheduled = (
+    nodeId: string,
+    emittedAtMs: number,
+    options: { readonly attempt?: number; readonly executionId?: string } = {}
+  ) =>
+    record(
+      "flows.engine.node-scheduled",
+      { nodeId, kind: "step", attempt: options.attempt ?? 1, action: "build" },
+      emittedAtMs,
+      options.executionId
+    )
+
+  const settled = (
+    nodeId: string,
+    emittedAtMs: number,
+    options: {
+      readonly outcome?: string
+      readonly action?: string | undefined
+      readonly attempts?: number
+      readonly executionId?: string
+    } = {}
+  ) =>
+    record(
+      "flows.engine.node-settled",
+      {
+        nodeId,
+        outcome: options.outcome ?? "built",
+        attempts: options.attempts ?? 1,
+        ...("action" in options ? options.action === undefined ? {} : { action: options.action } : { action: "build" })
+      },
+      emittedAtMs,
+      options.executionId
+    )
+
+  it("measures a built node from the schedule that started it", () => {
+    expect(GatewayProjection.nodeDurations([scheduled("compile", 100), settled("compile", 340)]))
+      .toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+
+  it("measures a retried node from its last schedule", () => {
+    const events = [
+      scheduled("compile", 100),
+      scheduled("compile", 300, { attempt: 2 }),
+      settled("compile", 340, { attempts: 2 })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([{ actionTag: "build", durationMs: 40 }])
+  })
+
+  it("keeps two executions of one node id apart", () => {
+    const events = [
+      scheduled("compile", 100, { executionId: "native" }),
+      scheduled("compile", 200, { executionId: "child" }),
+      settled("compile", 260, { executionId: "child" }),
+      settled("compile", 500, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([
+      { actionTag: "build", durationMs: 60 },
+      { actionTag: "build", durationMs: 400 }
+    ])
+  })
+
+  it("counts only work the executor ran", () => {
+    for (const outcome of ["clean", "failed", "skipped", "deferred"]) {
+      expect(GatewayProjection.nodeDurations([scheduled("compile", 100), settled("compile", 340, { outcome })]))
+        .toEqual([])
+    }
+  })
+
+  it("measures nothing for a record that names no action", () => {
+    expect(GatewayProjection.nodeDurations([scheduled("compile", 100), settled("compile", 340, { action: undefined })]))
+      .toEqual([])
+  })
+
+  it("measures nothing for a settlement no schedule opened", () => {
+    expect(GatewayProjection.nodeDurations([settled("compile", 340)])).toEqual([])
+    expect(
+      GatewayProjection.nodeDurations([scheduled("compile", 100), settled("compile", 340), settled("compile", 900)])
+    )
+      .toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+
+  it("drops a delta a backward clock produced", () => {
+    expect(GatewayProjection.nodeDurations([scheduled("compile", 400), settled("compile", 340)])).toEqual([])
+  })
+
+  /** The record the host writes when it takes ownership of a native root. */
+  const bound = (executionId: string) =>
+    event("control.engine.bound", { version: 1, controlRunId: "run-1", executionId })
+
+  it("measures a called flow once, on the caller's node rather than on the callee's root", () => {
+    // What the engine records for one `FlowCall`: the caller admits and
+    // settles the node that made the call, and the callee's own execution
+    // admits and settles its `root` over the same span.
+    const events = [
+      bound("native"),
+      scheduled("root.flow", 100, { executionId: "native" }),
+      scheduled("root", 110, { executionId: "child" }),
+      settled("root", 330, { executionId: "child" }),
+      settled("root.flow", 340, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+
+  it("measures the bound root, which is the one root no caller measured", () => {
+    const events = [
+      bound("native"),
+      scheduled("root", 100, { executionId: "native" }),
+      settled("root", 340, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+
+  it("keeps every root when no host bound a native execution", () => {
+    const events = [
+      scheduled("root", 100, { executionId: "native" }),
+      scheduled("root", 110, { executionId: "child" }),
+      settled("root", 330, { executionId: "child" }),
+      settled("root", 340, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([
+      { actionTag: "build", durationMs: 220 },
+      { actionTag: "build", durationMs: 240 }
+    ])
+  })
+
+  it("reads a binding the window evicted from the carried digest", () => {
+    // The binding is written once, when the host takes the root up, so a run
+    // long enough to outgrow the window is exactly the run whose binding is
+    // only in the carry. Reading it there keeps one call one sample instead of
+    // letting a long run count every flow twice.
+    const events = [
+      scheduled("root.flow", 100, { executionId: "native" }),
+      scheduled("root", 110, { executionId: "child" }),
+      settled("root", 330, { executionId: "child" }),
+      settled("root.flow", 340, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events, Diagnosis.digest([bound("native")]))).toEqual([
+      { actionTag: "build", durationMs: 240 }
+    ])
+  })
+
+  it("keeps every root when two bindings disagree about which one is native", () => {
+    const events = [
+      bound("native"),
+      bound("other"),
+      scheduled("root", 100, { executionId: "native" }),
+      settled("root", 340, { executionId: "native" })
+    ]
+    expect(GatewayProjection.nodeDurations(events)).toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+
+  it("ignores every envelope that is not a decodable node record", () => {
+    const decodable = record("flows.engine.node-scheduled", { nodeId: "compile", kind: "step", attempt: 1 }, 100)
+    const malformed = [
+      event("control.agent.turn-opened", { seat: "opus" }),
+      event("control.engine.event", "not an envelope"),
+      event("control.engine.event", null),
+      { ...decodable, payload: { ...decodable.payload as object, version: 2 } },
+      { ...decodable, payload: { ...decodable.payload as object, executionId: 7 } },
+      { ...decodable, payload: { ...decodable.payload as object, emittedAtMs: "soon" } },
+      { ...decodable, payload: { ...decodable.payload as object, emittedAtMs: Number.NaN } },
+      { ...decodable, payload: { ...decodable.payload as object, eventType: "flows.engine.node-reconciled" } },
+      { ...decodable, payload: { ...decodable.payload as object, payload: { kind: "step", attempt: 1 } } },
+      record("flows.engine.node-settled", { nodeId: "compile", outcome: "invented", attempts: 1 }, 340)
+    ] as ReadonlyArray<ControlSchema.ControlEvent>
+
+    expect(GatewayProjection.nodeDurations(malformed)).toEqual([])
+    expect(GatewayProjection.nodeDurations([...malformed, decodable, settled("compile", 340)]))
+      .toEqual([{ actionTag: "build", durationMs: 240 }])
+  })
+})
+
+describe("GatewayProjection.flowDurations", () => {
+  const samples = (actionTag: string, ...durations: ReadonlyArray<number>) =>
+    durations.map((durationMs) => ({ actionTag, durationMs }))
+
+  it("answers nothing for a flow that never ran", () => {
+    expect(GatewayProjection.flowDurations("deploy", [])).toEqual([])
+  })
+
+  it("ranks each tag's samples nearest-rank, one row per tag", () => {
+    const rows = GatewayProjection.flowDurations("deploy", [
+      ...samples("build", 400, 100, 300, 200),
+      ...samples("assay", 50)
+    ])
+
+    expect(rows).toEqual([
+      { flowId: "deploy", actionTag: "assay", samples: 1, p50Ms: 50, p90Ms: 50 },
+      { flowId: "deploy", actionTag: "build", samples: 4, p50Ms: 200, p90Ms: 400 }
+    ])
+  })
+
+  it("ranks ten samples at the exact nearest-rank positions", () => {
+    const rows = GatewayProjection.flowDurations("deploy", samples("build", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+    expect(rows).toEqual([{ flowId: "deploy", actionTag: "build", samples: 10, p50Ms: 5, p90Ms: 9 }])
+  })
+})

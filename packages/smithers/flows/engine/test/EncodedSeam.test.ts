@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Flow } from "@smthrs/flow"
+import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import type { FlowEngine } from "../src/index.ts"
+import { scriptedEngine } from "./ScriptedEngine.ts"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 const source = read("../src/FlowEngine/Encoded.ts")
@@ -43,5 +45,44 @@ describe("FlowEngine.Encoded seam", () => {
     const named = [...members.keys()].filter((name) => header.includes(`\`${name}\``))
     const carrying = rows.filter((row) => row.value !== "None.").map((row) => row.name)
     expect(named.sort()).toEqual(carrying.sort())
+  })
+
+  it("forwards the journal byte measurement without inventing one for a silent store", () => {
+    expect("nodeRecordBytes" in scriptedEngine({})).toBe(false)
+    const measured = scriptedEngine({ nodeRecordBytes: () => Effect.succeed(4096) })
+    expect(measured.nodeRecordBytes).toBeTypeOf("function")
+    expect(Effect.runSync(measured.nodeRecordBytes!({
+      _tag: "PlanRecorded",
+      sourceId: "plan/0/0",
+      flow: "test",
+      generation: 0,
+      page: 0,
+      pages: 1,
+      nodeCount: 0,
+      nodes: [],
+      edges: []
+    }) as Effect.Effect<number>)).toBe(4096)
+  })
+
+  it("forwards a store's node recorder, and leaves the port without one when the store has none", () => {
+    // The typed port's `recordNode` is what the interpreter reads to decide
+    // whether to build records at all, so a store that keeps no history must
+    // leave the property ABSENT rather than present and inert.
+    const silent = scriptedEngine({})
+    expect("recordNode" in silent).toBe(false)
+    const recorded: Array<string> = []
+    const recording = scriptedEngine({
+      recordNode: (record) => Effect.sync(() => recorded.push(record.sourceId))
+    })
+    Effect.runSync(
+      recording.recordNode!({
+        _tag: "NodeScheduled",
+        sourceId: "node/read/1",
+        nodeId: "read",
+        kind: "ActionCall",
+        attempt: 1
+      }) as Effect.Effect<void>
+    )
+    expect(recorded).toEqual(["node/read/1"])
   })
 })

@@ -86,6 +86,43 @@ implementation table a bridged dispatch resolves through, and the `Crypto` the
 bridge derives a child execution id with. `Executable.Registration` is that
 requirement as one type.
 
+## Rebuild one entry while serving
+
+A flow written or edited after the host started is a descriptor with no
+executable: the catalog it would come from was built once. `Executable.layer`
+also provides `Executable.Refresh`, which rebuilds one entry in place.
+
+```ts
+import * as Effect from "effect/Effect"
+
+const rebuild = Effect.gen(function*() {
+  const refresh = yield* Executable.Refresh
+  const outcome = yield* refresh.flow("authored")
+  // "Registered" | "Refused" | "Removed" | "Fixed"
+  return outcome._tag
+})
+```
+
+It rescans discovery, loads that flow's body from the bytes now on disk,
+registers it, and swaps it into the catalog. The `Catalog` service object does
+not change, so readers that took it at startup see the new entry. The previous
+body stays registered until the new one is, and refreshes are serialized.
+
+A host that serves part of its catalog out of its own measured bundle passes
+`refreshable` to hold those entries fixed:
+
+```ts
+const registration = Executable.layer({
+  delegates: [Agent, Shell],
+  refreshable: (descriptor) => descriptor.provenance.pack === undefined
+})
+```
+
+`refresh.flow` answers `Fixed` for those and leaves the catalog alone. A host
+that assembles its catalog itself — several sources, or a loader per source —
+uses `Executable.layerRefreshable(built, options)` instead, which adds the
+live `Catalog` and the `Refresh` without registering anything twice.
+
 ## Hand the registry to a Node host
 
 `Registry.layerProject({ root, packs })` is the registry a Node host

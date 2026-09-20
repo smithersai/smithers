@@ -163,7 +163,13 @@ const filesBackend = () => {
       if (url.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
       requests.push({ method: "GET", url })
       if (url.includes("net.txt")) throw new Error("socket hang up")
-      const route = routes[url]
+      /*
+       * Addressed by path: a read AT a revision asks the same route with
+       * `?ref=`, and this double holds one repository whose files do not
+       * differ between revisions. Which revision was ASKED for is what the
+       * recorded url above proves.
+       */
+      const route = routes[new URL(url, "https://app.test").pathname]
       if (route !== undefined) return route()
       // The platform 404s the whole namespace of a repo it never imported.
       return json(404, { code: "not_found", message: "repository not found" })
@@ -757,5 +763,57 @@ describe("files seam — the line anchor", () => {
     expect(outcome.status === "executed" ? outcome.value : undefined).toBe(`README.md in will/flows:\n${README_TEXT}`)
     expect(requests.map((request) => request.url)).toEqual(["/api/repos/will/flows/contents/README.md"])
     expect(fileCard(store, "file-will/flows-README.md")?.payload).toMatchObject({ path: "README.md", line: 1 })
+  })
+})
+
+/*
+ * D-068: a read AT a revision. A path says where a file is; only a revision
+ * says which bytes were there, and the graph drawer's Code tab is the reader
+ * that needs both. The Cloud contents route takes the revision as `ref`; a
+ * local checkout serves its own working copy and says so rather than handing
+ * back bytes nobody recorded.
+ */
+const REVISION = "b".repeat(40)
+
+describe("files seam — reading at a revision", () => {
+  test("asks the contents route for that revision, and keeps it on its own card", async () => {
+    const { store, controller, requests } = await freshController()
+    await ready(store)
+    const outcome = await controller.readFile("README.md", "will/flows", undefined, REVISION)
+
+    expect(typeof outcome === "string" ? outcome : undefined).toBeUndefined()
+    expect(requests.map((request) => request.url))
+      .toEqual([`/api/repos/will/flows/contents/README.md?ref=${REVISION}`])
+    const card = fileCard(store, `file-will/flows-README.md@${REVISION}`)
+    expect(card?.payload).toEqual({
+      repo: "will/flows",
+      path: "README.md",
+      content: README_TEXT,
+      truncated: false,
+      address: "/will/flows/README.md",
+      ref: REVISION
+    })
+    /*
+     * `readAt` is the position a plain read is taken at — the repository head
+     * this session last saw. This read asked for something else, so the card
+     * states the revision it asked for and claims no head.
+     */
+    expect(card?.payload.readAt).toBeUndefined()
+    expect(CardSchema.safeParse(card).success).toBe(true)
+
+    /* And a plain read of the same path is its own card, at its own address. */
+    await controller.commands.run("files.read", "README.md will/flows")
+    expect(fileCard(store, "file-will/flows-README.md")?.payload.ref).toBeUndefined()
+    expect(fileCard(store, `file-will/flows-README.md@${REVISION}`)?.payload.ref).toBe(REVISION)
+  })
+
+  test("a local checkout refuses a revision instead of answering with its working copy", async () => {
+    const { controller, requests } = await localController([SMITHERS])
+    const outcome = await controller.readFile("README.md", undefined, undefined, REVISION)
+
+    expect(outcome).toBe(
+      `README.md in smithersai/smithers cannot be read at ${REVISION}: this machine serves its working copy, not a revision.`
+    )
+    expect(requests.filter((request) => request.url === "/api/repo/files")).toEqual([])
   })
 })

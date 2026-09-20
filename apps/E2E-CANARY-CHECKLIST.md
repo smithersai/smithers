@@ -243,6 +243,20 @@ Nothing in this group exists. The packaged binary is the shipped alpha artifact.
 | E13.4 | Every consumed house token defined in both `:root` and `[data-theme="dark"]` — no violet/zinc leak | PART    | `Palette.test.ts` unit   |
 | E13.5 | **`prefers-reduced-motion` honored**                                                               | **GAP** | —                        |
 
+The flow graph is behind `flowBuilder`, so the rows below are asserted by the
+flow-graph tier (`playwright.graph.config.ts`, real control plane and real
+engine) and by the unit pins beside the cards. They cover the graph surface
+only; E13.2 to E13.5 remain open for the rest of the app.
+
+|        | Test                                                                                        | Status  | Where                                                    |
+| ------ | ------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------- |
+| E13.6  | Every graph node is a focusable button named `<tag> <id> <state word>`                      | PASS    | `e2e/graph/flow-graph-a11y.spec.ts`                        |
+| E13.7  | The drawer is a labelled group; its strip is one tab stop and the arrows walk it            | PASS    | same spec, `cards/FlowGraphHardening.test.tsx`             |
+| E13.8  | Nine palettes x light and dark: words clear 4.5:1, edges 3:1, each cell photographed        | PASS    | same spec (18 cells), `styles/paletteTokens.ts`            |
+| E13.9  | `prefers-reduced-motion` leaves nothing on the canvas animating, and the words still say it | PASS    | same spec                                                  |
+| E13.10 | `@xyflow/react` and `dagre` reach no chunk until a graph is opened                          | PASS    | same spec, `cards/FlowGraphHardening.test.tsx`             |
+| E13.11 | **An `axe-core` sweep over the graph**                                                      | **GAP** | no axe dependency in the lockfile; the spec writes the rules out |
+
 ## E14. Client resilience
 
 |       | Test                                                                  | Status           |

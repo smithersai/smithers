@@ -20,6 +20,7 @@ import * as Flow from "../Flow/index.ts"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import { lowerDeclarations } from "../internal/Declarations.ts"
+import * as DeclarationSite from "../internal/DeclarationSite.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Action, Declared, IdempotencyKey, Requirement, Tier } from "./Action.ts"
 import { CurrentAttempt } from "./Context.ts"
@@ -234,6 +235,11 @@ const makeDeclared = <
   const requirement = Context.Service<Requirement<Tag>, Implementation>(
     `@smthrs/flow/Action/Requirement/${tag}`
   )
+  // Provenance, captured at the declaration rather than derived later: this is
+  // the only moment a stack still names the author's file. It rides on the
+  // value as a non-enumerable property (`internal/DeclarationSite.ts`), so it
+  // is invisible to canonical serialization and cannot re-key a step.
+  const site = DeclarationSite.capture()
   const self: Declared<Tag, PayloadSchema, Success, Error> = {
     [TypeId]: TypeId,
     name: tag,
@@ -353,7 +359,7 @@ const makeDeclared = <
       )
     }
   }
-  return self
+  return DeclarationSite.annotate(self, site)
 }
 
 /**

@@ -133,6 +133,12 @@ every installed pack, under one refreshable first-found registry.
 refusal, and provides the whole `Catalog` as a service, so a host can print what
 it declined instead of letting an operator find out from `smthrs up <flow>`.
 
+It also provides `Executable.Refresh`. A flow written or edited after the host
+started has a descriptor and no executable, and `refresh.flow(name)` rebuilds
+that one entry in place — no restart, same `Catalog` service, and the previous
+body stays registered until the new one is. `RefreshOptions.refreshable` holds
+entries a host serves out of its own measured bundle `Fixed`.
+
 Every delegate receives the same serializable `Invocation` envelope: the flow's
 name, the caller's input, the rendered prompt, the declared seat, the lowered
 placement, the declared capabilities, and the declared collaborator flows. One

@@ -14,6 +14,7 @@
  * boundary contains an argument check.
  */
 import { isTraceFilter,TRACE_FILTER_IDS } from "../cards/RunTrace"
+import { isGraphDrawerTab, unknownTabRefusal } from "../state/controller/graph"
 import type { KnownRepositories } from "../state/RepoContext"
 import { REPO_TOKEN,splitTrailingRepo } from "../state/RepoContext"
 import { isAgentProvider } from "../state/seams/AgentSessionSeam"
@@ -43,6 +44,19 @@ const setupObject = (args: string | undefined): Parsed => {
     return typeof value === "object" && value !== null && !Array.isArray(value)
       ? ok(value as Record<string, unknown>) : no("Setup input must be a JSON object")
   } catch { return no("Setup input must be a JSON object") }
+}
+
+/** Structured graph doors preserve engine IDs verbatim, including whitespace. */
+const graphObject = (args: string | undefined, target: "runId" | "cardId", value: "nodeId" | "tab"): Parsed | undefined => {
+  if (!args?.trim().startsWith("{")) return undefined
+  let parsed: unknown
+  try { parsed = JSON.parse(args) } catch { return no("Graph input must be a JSON object") }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return no("Graph input must be a JSON object")
+  const fields = parsed as Record<string, unknown>
+  if (Object.keys(fields).some(key => key !== target && key !== value) || typeof fields[target] !== "string" || fields[target] === "") return no(`Graph input needs ${target}`)
+  if (fields[value] !== undefined && (typeof fields[value] !== "string" || fields[value] === "")) return no(`Graph input needs ${value}`)
+  if (value === "tab" && (typeof fields.tab !== "string" || !isGraphDrawerTab(fields.tab))) return no("Choose a graph tab")
+  return ok(fields)
 }
 
 /** The empty payload every no-argument flow takes. */
@@ -110,6 +124,55 @@ export const flowRunParts = (args: string | undefined): { name?: string; repo?: 
   const parts = flowRunBody(source.args)
   return source.sourceCard === undefined ? parts : { ...parts, sourceCard: source.sourceCard }
 }
+/**
+ * `against=<runId>`, the plan door's one extra token.
+ *
+ * It leads, because a flow's input is free-form JSON and a trailing token
+ * beside it is not unambiguous. `payloadFor` has already taken `sourceCard=`
+ * off the front, so this reads the next token and hands the rest to the
+ * launch's own grammar.
+ */
+const AGAINST_TOKEN = /^\s*against=(\S+)(?:\s+([\s\S]*))?$/
+
+export const splitPlanAgainst = (
+  args: string | undefined
+): { readonly args: string | undefined; readonly against?: string } => {
+  const match = AGAINST_TOKEN.exec(args ?? "")
+  return match === null ? { args } : { args: match[2], against: match[1]! }
+}
+
+/** `[sourceCard=id] [against=runId] <name> [owner/repo] [JSON object]`, as a half-typed form keeps it. */
+export const flowPlanParts = (
+  args: string | undefined
+): { name?: string; repo?: string; input?: string; sourceCard?: string; against?: string } => {
+  const source = splitRunSource(args)
+  const preview = splitPlanAgainst(source.args)
+  return {
+    ...flowRunParts(preview.args),
+    ...(source.sourceCard === undefined ? {} : { sourceCard: source.sourceCard }),
+    ...(preview.against === undefined ? {} : { against: preview.against })
+  }
+}
+
+/**
+ * `<name> [owner/repo] [JSON object]`: what a launch and its plan both take.
+ *
+ * One parser for both, because the plan door is the launch's address stopped
+ * at the plan: a grammar that drifted between them would make the graph a
+ * card drew a different flow from the one its Run button starts.
+ */
+const flowTarget = (flow: string, args: string | undefined): Parsed => {
+  const { name, repo, input } = flowRunParts(args)
+  if (name === undefined) return no(`${flow} needs a flow name`)
+  const target = { name, ...(repo === undefined ? {} : { repo }) }
+  if (input === undefined) return ok(target)
+  try {
+    const value: unknown = JSON.parse(input)
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return no("Flow input must be a JSON object.")
+    return ok({ ...target, input: value })
+  } catch { return no("Flow input is not valid JSON. Fix the JSON object before running it.") }
+}
+
 const flowRunBody = (args: string | undefined): { name?: string; repo?: string; input?: string } => {
   const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed(args))
   if (match === null) return {}
@@ -420,9 +483,51 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "runs.trace.view": (args) => {
     const [runId, view, ...rest] = tokensOf(args)
     if (runId === undefined) return no("runs.trace.view needs a run id")
-    if (view !== "turns" && view !== "timeline") return no("runs.trace.view needs turns or timeline")
+    if (view !== "turns" && view !== "timeline" && view !== "graph") return no("runs.trace.view needs turns, timeline or graph")
     if (rest.length > 0) return no("runs.trace.view takes a run id and one view")
     return ok({ runId, view })
+  },
+  "runs.graph.follow": (args) => {
+    const [runId, follow, ...rest] = tokensOf(args)
+    if (runId === undefined) return no("runs.graph.follow needs a run id")
+    if (follow !== "on" && follow !== "off") return no("runs.graph.follow needs on or off")
+    if (rest.length > 0) return no("runs.graph.follow takes a run id and on or off")
+    return ok({ runId, follow })
+  },
+  /* The graph's drill-in (L5): a node to open, or nothing at all to close the one that is open. */
+  "runs.graph.select": (args) => {
+    const structured = graphObject(args, "runId", "nodeId")
+    if (structured !== undefined) return structured
+    const [runId, nodeId, ...rest] = tokensOf(args)
+    if (runId === undefined) return no("runs.graph.select needs a run id")
+    if (rest.length > 0) return no("runs.graph.select takes a run id and at most one node")
+    return ok(nodeId === undefined ? { runId } : { runId, nodeId })
+  },
+  "runs.graph.tab": (args) => {
+    const structured = graphObject(args, "runId", "tab")
+    if (structured !== undefined) return structured
+    const [runId, tab, ...rest] = tokensOf(args)
+    if (runId === undefined) return no("runs.graph.tab needs a run id")
+    if (tab === undefined || !isGraphDrawerTab(tab)) return no(unknownTabRefusal("runs.graph.tab"))
+    if (rest.length > 0) return no("runs.graph.tab takes a run id and one tab")
+    return ok({ runId, tab })
+  },
+  "flow.plan.select": (args) => {
+    const structured = graphObject(args, "cardId", "nodeId")
+    if (structured !== undefined) return structured
+    const [cardId, nodeId, ...rest] = tokensOf(args)
+    if (cardId === undefined) return no("flow.plan.select needs the plan card it draws on")
+    if (rest.length > 0) return no("flow.plan.select takes a plan card and at most one node")
+    return ok(nodeId === undefined ? { cardId } : { cardId, nodeId })
+  },
+  "flow.plan.tab": (args) => {
+    const structured = graphObject(args, "cardId", "tab")
+    if (structured !== undefined) return structured
+    const [cardId, tab, ...rest] = tokensOf(args)
+    if (cardId === undefined) return no("flow.plan.tab needs the plan card it draws on")
+    if (tab === undefined || !isGraphDrawerTab(tab)) return no(unknownTabRefusal("flow.plan.tab"))
+    if (rest.length > 0) return no("flow.plan.tab takes a plan card and one tab")
+    return ok({ cardId, tab })
   },
   "runs.steps": (args) => required("runId", args, "runs.steps needs a run id"),
   "approvals.list": (args) => repoOnly("approvals.list", args),
@@ -432,16 +537,19 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "triggers.list": (args) => repoOnly("triggers.list", args),
   "triggers.register": (args) => triggerRegistration(args),
   "triggers.run": (args, known) => triggerRun(args, known),
-  "flow.run": (args) => {
-    const { name, repo, input } = flowRunParts(args)
-    if (name === undefined) return no("flow.run needs a flow name")
-    const target = { name, ...(repo === undefined ? {} : { repo }) }
-    if (input === undefined) return ok(target)
-    try {
-      const value: unknown = JSON.parse(input)
-      if (value === null || typeof value !== "object" || Array.isArray(value)) return no("Flow input must be a JSON object.")
-      return ok({ ...target, input: value })
-    } catch { return no("Flow input is not valid JSON. Fix the JSON object before running it.") }
+  "flow.run": (args) => flowTarget("flow.run", args),
+  /*
+   * The plan door takes the launch's own line, because it is the launch's own
+   * address stopped at the plan. Without this entry the grammar answered
+   * nothing and every plan door — the row's button and the slash alike —
+   * raised an empty form instead of planning the flow it was handed.
+   */
+  "flow.plan": (args) => {
+    /* `against=<runId>` asks for the re-key preview: the same plan, compared
+     * with the plan that run was approved on (L7, D-030). */
+    const preview = splitPlanAgainst(args)
+    const parsed = flowTarget("flow.plan", preview.args)
+    return preview.against === undefined || "error" in parsed ? parsed : ok({ ...parsed.payload, against: preview.against })
   },
   "card.history.back": (args) => required("cardId", args, "Choose a frame to go back"),
   "card.history.forward": (args) => required("cardId", args, "Choose a frame to go forward"),

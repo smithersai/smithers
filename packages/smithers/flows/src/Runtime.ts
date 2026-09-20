@@ -24,6 +24,7 @@ import {
   type WorkspaceSandbox
 } from "@smthrs/engine-store"
 import * as Migrations from "@smthrs/engine-store/Migrations"
+import { Action } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as Workspace from "@smthrs/kernel/Workspace"
@@ -112,8 +113,24 @@ export const layer = <
     journalSource: `${validated.owner.hostId}-engine`,
     isAlive: validated.isAlive,
     canExecute: validated.canExecute,
-    requestResume: validated.requestResume
-  }).pipe(Layer.provideMerge(execution))
+    requestResume: validated.requestResume,
+    // What this host says about the tree it read its flows out of; every
+    // recorded graph page carries it, and a host that says nothing records
+    // nothing (D-068).
+    sourceRevision: validated.sourceRevision
+  }).pipe(
+    Layer.provideMerge(execution),
+    // Under the engine, not beside it: `@smthrs/engine`
+    // `FlowEngine/Dispatch` reads this reference off the context the engine
+    // captures for an action dispatch, and a sibling layer is not in it.
+    // Undeclared it stays absent, which is what every sealed key in this repo
+    // is derived without today.
+    Layer.provideMerge(
+      validated.cacheEnvironment === undefined
+        ? Layer.empty
+        : Action.layerCacheEnvironment(validated.cacheEnvironment)
+    )
+  )
   // The registry is built BETWEEN the engine and the registration phase, so a
   // registration that reads a catalog off it — `@smthrs/registry`'s
   // `Executable.layer`, which turns every discovered descriptor into a

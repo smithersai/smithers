@@ -85,6 +85,8 @@ mainTab,
 parseRepoSelection,
 repoIdFromRemote,
 repoKeyOf,
+flowDurationRowId,
+FlowDurationsRowSchema,
 repoTreeRowId,
 rootFrameId
 } from "./AppState"
@@ -161,6 +163,7 @@ export const APP_PROJECTION_SCHEMAS = {
   githubAppStatuses: GitHubAppStatusRowSchema,
   repoTree: RepoTreeRowSchema,
   repositoryFlows: RepositoryFlowsRowSchema,
+  flowDurations: FlowDurationsRowSchema,
 } as const
 export type AppProjectionCollectionName = keyof typeof APP_PROJECTION_SCHEMAS
 export const APP_PROJECTION_COLLECTION_NAMES = Object.keys(APP_PROJECTION_SCHEMAS) as AppProjectionCollectionName[]
@@ -304,6 +307,7 @@ export const APP_TRANSITION_TYPES = {
   "repository.entry.changed": true,
   "repository.command.changed": true,
   "repository-flows.loaded": true,
+  "flow-durations.loaded": true,
   "repo-tree.toggled": true,
   "repo-tree.loading": true,
   "repo-tree.loaded": true,
@@ -707,7 +711,8 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       collections.changes,
       collections.githubAppStatuses,
       collections.repoTree,
-      collections.repositoryFlows
+      collections.repositoryFlows,
+      collections.flowDurations
     ]
   ) {
     const keys = [...(collection as { keys: () => Iterable<string> }).keys()]
@@ -859,6 +864,8 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
   // missing gateway lifecycle events, cursors, or server approval timestamps.
   for (const card of [...collections.cards.values()].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     if (card.kind !== "run-trace" || card.runtimeView?.revision !== undefined || card.payload.repo.startsWith("practice:") || card.payload.input?.liveTutorial) continue
+    // An authoring launch intent is not a gateway run until its receipt names one.
+    if (card.payload.authoring !== undefined && card.payload.runId === "") continue
     const id = runtimeRunKey(card.payload)
     if (collections.runtimeRuns.has(id)) continue
     collections.runtimeRuns.insert({ id, scope: runtimeScopeOf(card)!, events: [], steps: [], baseline: card.payload, observedAt: createdAt, revision: 0 })
@@ -890,7 +897,7 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
     if (readVersion !== row.readVersion) collections.repositoryNotifications.update(row.id, draft => { draft.readVersion = readVersion })
   }
   // These observations belong to one host lifetime; a recorded boot expires them.
-  for (const name of ["repoTree", "repositoryFlows"] as const) {
+  for (const name of ["repoTree", "repositoryFlows", "flowDurations"] as const) {
     const keys = [...collections[name].keys()]
     if (keys.length > 0) collections[name].delete(keys)
   }
@@ -3282,6 +3289,43 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               draft.flows = [...transition.flows]
               draft.loadedAt = createdAt
             })
+          }
+          break
+        }
+        case "flow-durations.loaded": {
+          /*
+           * One flow's rows, replaced whole: the projection is a snapshot of
+           * the whole history, so a re-read keeps nothing of an older one and
+           * a tag that stopped being measured stops having a row. A tag the
+           * re-read still measures is UPDATED in place, never deleted and
+           * re-inserted, which one transaction refuses (ListReload.test.ts).
+           */
+          const wanted = new Map(transition.rows.map((row) =>
+            [flowDurationRowId(transition.repo, transition.flowId, row.actionTag), row]))
+          for (const row of collections.flowDurations.values()) {
+            if (row.repo !== transition.repo || row.flowId !== transition.flowId) continue
+            if (!wanted.has(row.id)) collections.flowDurations.delete(row.id)
+          }
+          for (const [id, row] of wanted) {
+            if (collections.flowDurations.get(id) === undefined) {
+              collections.flowDurations.insert({
+                id,
+                repo: transition.repo,
+                flowId: transition.flowId,
+                actionTag: row.actionTag,
+                samples: row.samples,
+                p50Ms: row.p50Ms,
+                p90Ms: row.p90Ms,
+                loadedAt: createdAt
+              })
+            } else {
+              collections.flowDurations.update(id, (draft) => {
+                draft.samples = row.samples
+                draft.p50Ms = row.p50Ms
+                draft.p90Ms = row.p90Ms
+                draft.loadedAt = createdAt
+              })
+            }
           }
           break
         }

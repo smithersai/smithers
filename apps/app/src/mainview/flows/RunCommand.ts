@@ -7,7 +7,8 @@ export const splitRunSource = (args: string | undefined): { readonly args: strin
 }
 
 export const takesRunSource = (name: string): boolean =>
-  (name.startsWith("runs.") && name !== "runs.list") || name === "approvals.open" || name === "flow.run.stop-all" || name === "flow.run" || name === "flow.list"
+  (name.startsWith("runs.") && name !== "runs.list") || name === "approvals.open" || name === "flow.run.stop-all" || name === "flow.run" || name === "flow.plan" ||
+  name === "flow.list"
 
 /** Search references are opaque; retain the recorded card alongside the unchanged backend ID. */
 export const runSearchRef = (runId: string, sourceCard: string): string => `run:${JSON.stringify([runId, sourceCard])}`

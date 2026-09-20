@@ -350,6 +350,43 @@ export class PlanScheduler extends Context.Service<PlanScheduler, Service>()("@s
  *
  * @private
  */
+/**
+ * The tag a plan node dispatches, when its material names one.
+ *
+ * A material body is opaque to the compiler by design, so this reads it
+ * defensively and answers nothing rather than guessing: a merge node, a body
+ * an elaborator shaped differently, and a node whose tag is not a string all
+ * carry no tag at all. @private
+ */
+const actionOf = (node: Plan.PlanNode): string | undefined => {
+  const body = node.material.body
+  if (typeof body !== "object" || body === null) return undefined
+  const fields = body as Record<string, unknown>
+  const named = typeof fields["action"] === "string" ? fields["action"] : fields["flow"]
+  return typeof named === "string" && named !== "" ? named : undefined
+}
+
+/**
+ * One node of a plan, as a journal record carries it.
+ *
+ * The same shape the interpreter writes, so a reader folds both executors
+ * with one decoder. `effects` and `key` are the plan's own; there is no
+ * declaration site here, because a plan node is compiled from a draft and the
+ * draft's author frame is not something the compiler keeps. @private
+ */
+const nodeSummary = (node: Plan.PlanNode) => {
+  const action = actionOf(node)
+  return {
+    id: node.id,
+    kind: node.kind,
+    dependsOn: node.dependsOn,
+    tier: node.material.kind,
+    key: node.key,
+    generation: node.generation,
+    ...(action === undefined ? {} : { action })
+  }
+}
+
 const unmeasured = "unmeasured"
 
 /** @private */
@@ -510,7 +547,12 @@ export const make = (options: Options): Service => {
             baseDigest: plan.baseDigest,
             generation: plan.generation,
             nodes: plan.nodes.length,
-            outcome: recorded._tag
+            outcome: recorded._tag,
+            // The graph itself, beside the count it has always carried. A
+            // reader that only knows how MANY nodes ran cannot show which
+            // ones, and the count stays because the CLI's run progress reads
+            // it as a number.
+            graph: { nodes: plan.nodes.map(nodeSummary) }
           }))
           return recorded
         })
@@ -539,7 +581,8 @@ export const make = (options: Options): Service => {
             digest: plan.digest,
             baseDigest: plan.baseDigest,
             generation: plan.generation,
-            nodeIds: Plan.generationNodes(plan).map((node) => node.id)
+            nodeIds: Plan.generationNodes(plan).map((node) => node.id),
+            graph: { nodes: Plan.generationNodes(plan).map(nodeSummary) }
           }))
         })
       )
@@ -964,6 +1007,7 @@ export const make = (options: Options): Service => {
       const emitSettlement = (node: Plan.PlanNode, sourceSeq?: number) =>
         Effect.gen(function*() {
           const state = stateOf(node)
+          const action = actionOf(node)
           yield* emit(JournalRecords.nodeSettled({ ...source(`node/${node.id}/settled`), sourceSeq }, {
             planId: plan.planId,
             nodeId: node.id,
@@ -971,7 +1015,8 @@ export const make = (options: Options): Service => {
             dispatchKey: state.dispatchKey,
             outcome: state.outcome,
             attempts: state.attempts,
-            rebases: state.rebases
+            rebases: state.rebases,
+            ...(action === undefined ? {} : { action })
           }))
           yield* Metric.update(EngineStoreMetrics.node[state.outcome], 1)
         })
@@ -1046,6 +1091,7 @@ export const make = (options: Options): Service => {
             dispatchKey = measuredKey
             attempts = attempts + 1
             yield* Effect.annotateCurrentSpan({ dispatchKey, attempt: attempts })
+            const action = actionOf(node)
             yield* emit(JournalRecords.nodeScheduled(source(`node/${node.id}/${attempts}`), {
               planId: plan.planId,
               nodeId: node.id,
@@ -1054,7 +1100,8 @@ export const make = (options: Options): Service => {
               dispatchKey,
               attempt: attempts,
               priority: node.priority,
-              waited: start.waited
+              waited: start.waited,
+              ...(action === undefined ? {} : { action })
             }))
             const dispatchDigest = yield* Effect.orDie(digestOf(dispatchKey))
             yield* Queue.offer(events, { _tag: "AttemptKeyed", nodeId: node.id, digest: dispatchDigest })

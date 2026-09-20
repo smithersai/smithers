@@ -88,11 +88,15 @@ export const CardView = memo(function CardView({
   onRunCommand,
   debugVerbose,
   workflowCatalogs,
+  triggerCatalogs,
+  flowDurations,
+  fileCards,
   projectionStore,
   pluginLibrary,
   wiki,
   mythicalHistory,
   experimental,
+  flowBuilder,
   signedOut,
   presentation
 }: CardViewProps) {
@@ -289,7 +293,11 @@ export const CardView = memo(function CardView({
             onRunCommand,
             debugVerbose,
             workflowCatalogs,
+            triggerCatalogs,
+            flowDurations,
+            fileCards,
             projectionStore,
+            flowBuilder,
             signedOut,
             presentation: presentation ?? (maximized ? "maximized" : "embedded")
           })}

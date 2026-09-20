@@ -723,6 +723,25 @@ const declaredCachePolicy = (action: unknown): CacheEnvironment.CachePolicy | un
  * @category constructors
  */
 export const make = (deps: Dependencies) => {
+  /**
+   * Runs one action body, and tells whoever drove this dispatch that it ran.
+   *
+   * The report is the only way a node above this knows the difference between
+   * work and replay. Every execution path funnels through here, so a body
+   * that starts says so exactly once; a path that returns a durable record
+   * instead reports `replayed` at its own return. A dispatch that reports
+   * nothing is read as work, which is the safe reading: a node never claims
+   * it rebuilt nothing when it might have rebuilt something.
+   *
+   * The digest travels with the report because it is what joins the two
+   * halves of a node's evidence: the attempt records this dispatch writes are
+   * keyed by it, and the node record above has no other way to name them.
+   */
+  const execute = (input: ActionInput, stepKeyDigest: string) =>
+    Effect.andThen(
+      Action.reportDispatch({ outcome: "executed", stepKeyDigest, attempt: input.attempt }),
+      deps.execute(input)
+    )
   const admission = deps.admission ?? AttemptAdmission.makeUnsafe()
   const recordedAgeVerdict = deps.cacheAgeVerdict ?? CacheAgeVerdicts.make(deps.runId)
   // The lineage every record this executor writes addresses itself to.
@@ -1473,6 +1492,14 @@ export const make = (deps: Dependencies) => {
                     // returned. A dispatch that dies mid-decision records no
                     // decision; its exit lands in `flows_engine_dispatches`.
                     yield* Metric.update(EngineStoreMetrics.stepCacheDecision.VerifiedHit, 1)
+                    // Served from a record: the body never ran, and the node
+                    // above this dispatch is told so rather than left to
+                    // report work nobody did.
+                    yield* Action.reportDispatch({
+                      outcome: "replayed",
+                      stepKeyDigest,
+                      attempt: input.attempt
+                    })
                     return cached.value.result
                   }
                   // Evidence the host cannot re-materialize — a transient
@@ -1802,6 +1829,8 @@ export const make = (deps: Dependencies) => {
               // Upgrade an older durable controller record without rerunning
               // its handler; current records collapse to the original receipt.
               yield* emitCallSettled(row.outcome)
+              // A durable attempt row answered the dispatch, so nothing ran.
+              yield* Action.reportDispatch({ outcome: "replayed", stepKeyDigest, attempt: input.attempt })
               return row.outcome
             }
             if (row.state === "failed") {
@@ -2136,7 +2165,7 @@ export const make = (deps: Dependencies) => {
             : yield* SandboxedExecution.execute({
               sandbox,
               descriptor: input.metadata,
-              workflow: deps.execute(input)
+              workflow: execute(input, stepKeyDigest)
             }).pipe(Effect.exit)
           // The settlement is the isolated execution's whole story; the
           // attempt's outcome is only its `result`, so the ordinary failure
@@ -2240,11 +2269,11 @@ export const make = (deps: Dependencies) => {
                 recorded ? Effect.void : Effect.interrupt
             )
           const dispatch = effect === undefined
-            ? deps.execute(input)
+            ? execute(input, stepKeyDigest)
             : Effect.uninterruptibleMask((restore) =>
               Effect.gen(function*() {
                 yield* recordCrossing("intended", {}, EffectRecords.boundary(effect, "intended"))
-                const exit = yield* Effect.exit(restore(deps.execute(input)))
+                const exit = yield* Effect.exit(restore(execute(input, stepKeyDigest)))
                 yield* Exit.isSuccess(exit)
                   ? recordCrossing(
                     "succeeded",

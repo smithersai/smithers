@@ -167,6 +167,39 @@ describe("private engine journal projection", () => {
         .toEqual(first.entries)
     }))))
 
+  it("calls the record hook before that record is readable in the control journal", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* emit(f.engineJournal, "native-root", { step: "first" }, "first")
+      yield* emit(f.engineJournal, "native-root", { step: "second" }, "second")
+      // What the control journal already held each time the hook ran. The
+      // order is the whole guarantee: a client that acts on a copied record
+      // is acting on something this host has already acted on, so a receipt
+      // naming `flows/<id>/flow.ts` is readable only once the rebuild behind
+      // it is done.
+      const seen: Array<{ readonly sequence: number; readonly copied: ReadonlyArray<unknown> }> = []
+      const projector = yield* Projection.make({
+        ...f.options,
+        onRecord: (entry) =>
+          rows(f.controlJournal).pipe(
+            Effect.map((entries) =>
+              void seen.push({ sequence: entry.seq, copied: entries.map((row) => record(row).payload) })
+            ),
+            Effect.orDie
+          )
+      })
+      yield* projector.catchUp
+
+      expect(seen).toEqual([
+        { sequence: 0, copied: [] },
+        { sequence: 1, copied: [{ step: "first" }] }
+      ])
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).payload)).toEqual([
+        { step: "first" },
+        { step: "second" }
+      ])
+    }))))
+
   it("does not invent missing evidence from native sequence reservations abandoned on rollback", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const f = yield* setup

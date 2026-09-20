@@ -14,6 +14,7 @@ import { sqliteRecoveryCopyId } from "./RecoveryCopy"
 import { readSqliteRecovery, StorageRecoveryError } from "./StorageRecovery"
 import type { RecoveryTable } from "./StorageRecovery"
 import { decodeStoredRow } from "./StoredRowDecoder"
+import { storageRowKey } from "./StorageRowKey"
 import { eraseSqliteRecoveryCopies } from "./SqlitePrivacyRetirement"
 import { permittedRows, type PermittedStorageRows } from "./PrivacyRetirement"
 import {
@@ -352,6 +353,7 @@ export const openSqliteRowStorage = async (
     const presentRows = new Set<string>()
     const invalid: Array<{ readonly collectionId: string; readonly rowKey: string; readonly raw: string }> = []
     const normalized: Array<{ readonly collectionId: string; readonly rowKey: string; readonly versionKey: string; readonly raw: string; readonly encoded: string }> = []
+    const repairedKeys: Array<{ readonly rid: number; readonly key: string }> = []
     const admitted: Array<{ readonly rid: number; readonly size: number; readonly collectionId: string; readonly rowKey: string; readonly versionKey: string }> = []
     let cursor: number | null = null
     for (;;) {
@@ -445,7 +447,18 @@ export const openSqliteRowStorage = async (
           continue
         }
         const rows = byCollection.get(expected.collectionId) ?? new Map<string, StoredItem>()
-        rows.set(expected.rowKey, { versionKey: expected.versionKey, data: decoded.data, encoded: decoded.changed ? decoded.encoded : value })
+        let key = expected.rowKey
+        // Old Code notifications stored a NUL in the key. wa-sqlite truncated
+        // the physical key, but JSON retained the full id. Repair only that
+        // known shape, under this write lock; the journal/payload is unchanged.
+        const toast = decoded.data as { readonly id?: unknown }
+        if (expected.collectionId === "app-toasts" && typeof toast.id === "string" &&
+          toast.id.startsWith("toast-files.read:") && toast.id.includes("\u0000") &&
+          (key === `s:${toast.id}` || key === `s:${toast.id.split("\u0000")[0]}`)) {
+          key = storageRowKey(toast.id)
+          repairedKeys.push({ rid: expected.rid, key })
+        }
+        rows.set(key, { versionKey: expected.versionKey, data: decoded.data, encoded: decoded.changed ? decoded.encoded : value })
         byCollection.set(expected.collectionId, rows)
         if (decoded.changed) normalized.push({ collectionId: expected.collectionId, rowKey: expected.rowKey, versionKey: expected.versionKey, raw: value, encoded: decoded.encoded })
       }
@@ -489,6 +502,9 @@ export const openSqliteRowStorage = async (
         `UPDATE ${ROW_TABLE_NAME} SET value = ? WHERE collection_id = ? AND row_key = ?`,
         [row.encoded, row.collectionId, row.rowKey]
       )
+    }
+    for (const row of repairedKeys) {
+      await database.execute(`UPDATE ${ROW_TABLE_NAME} SET row_key = ? WHERE rowid = ?`, [row.key, row.rid])
     }
     await database.execute(
       `INSERT INTO ${METADATA_TABLE_NAME} (key, value) VALUES (?, ?)

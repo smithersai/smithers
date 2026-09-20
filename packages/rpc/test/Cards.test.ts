@@ -529,6 +529,64 @@ describe("env card persistence", () => {
   })
 })
 
+describe("the run trace card's graph view", () => {
+  const trace = (payload: Record<string, unknown>) =>
+    CardSchema.safeParse({
+      ...base,
+      kind: "run-trace",
+      payload: {
+        repo: "smithersai/smithers",
+        runId: "run-1",
+        workflow: "review",
+        phase: "running",
+        steps: [],
+        result: null,
+        lastSeq: 0,
+        ...payload
+      }
+    })
+
+  test("a row persisted before the graph view still parses, and gains nothing", () => {
+    const before = trace({ traceView: "timeline", filter: "failed" })
+    expect(before.success).toBe(true)
+    expect(Object.keys(before.data?.payload ?? {})).not.toContain("plan")
+    expect(Object.keys(before.data?.payload ?? {})).not.toContain("graph")
+  })
+
+  test("the plan a launch snapshotted and the camera flag round-trip", () => {
+    const node = {
+      id: "root.flow.then.map.all.steady",
+      kind: "step",
+      key: "key1_1d19f029117886d2",
+      dependsOn: ["root.flow.andThen"],
+      tier: "sealed",
+      action: "gateway/graph/Steady",
+      status: "run"
+    }
+    const parsed = trace({
+      traceView: "graph",
+      plan: { planId: "plan-1", digest: "d1", nodes: [node] },
+      graph: { follow: true }
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.payload).toMatchObject({
+      traceView: "graph",
+      plan: { planId: "plan-1", digest: "d1", nodes: [node] },
+      graph: { follow: true }
+    })
+    // The plan carries the node's address, its key, its edges, its tier and
+    // what it dispatches. A node's key MATERIAL is tens of kilobytes of JSON
+    // schema and a card payload is written to disk, so a caller that hands the
+    // whole plan node over persists the drawn part and nothing else.
+    const whole = trace({
+      plan: { planId: "plan-1", digest: "d1", nodes: [{ ...node, material: { kind: "sealed", body: {} } }] }
+    })
+    expect((whole.data?.payload as { plan: { nodes: ReadonlyArray<unknown> } }).plan.nodes).toEqual([node])
+    expect(trace({ traceView: "canvas" }).success).toBe(false)
+    expect(trace({ plan: { planId: "plan-1", nodes: [] } }).success).toBe(false)
+  })
+})
+
 /*
  * The persistence contract, kind by kind. Cards.ts states that "everything in
  * a card payload is written to disk", and apps/app's FrameSnapshotSchema reads
@@ -822,6 +880,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       lastSeq: 0
     },
     full: {
+      authoring: { requestId: "author-request-1", owner: "will", launchError: "offline" },
       statusRollup: statusRollup("run:run-1", "running", "working"),
       repo: "smithersai/smithers",
       workspaceId: gatewayWorkspaceId,
@@ -848,7 +907,37 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       cursorSeq: 41,
       filter: "failed",
       liveTail: false,
-      traceView: "timeline",
+      traceView: "graph",
+      plan: {
+        planId: "plan-1",
+        digest: "8d6fcaa8b2922fa83791714f8e688b495e4dbd7aebf63e4e4114af660e3fbd98",
+        nodes: [{
+          id: "root.flow.then.map.all.steady",
+          kind: "step",
+          key: "key1_1d19f029117886d2",
+          dependsOn: ["root.flow.andThen"],
+          tier: "sealed",
+          action: "gateway/graph/Steady",
+          status: "run"
+        }],
+        graph: {
+          edges: [{ from: "root.flow.andThen", to: "root.flow.then.map.all.steady", reason: "value" }],
+          nodes: [{
+            id: "root.flow.then.map.all.steady",
+            declaredAt: { path: "flows/graph-fixture/flow.ts", line: 42 }
+          }],
+          sourceRevision: "a03f5f1ea03f5f1ea03f5f1ea03f5f1ea03f5f1e"
+        }
+      },
+      graph: {
+        follow: true,
+        node: "root.flow.then.map.all.steady",
+        tab: "events",
+        codeError: {
+          path: "flows/graph-fixture/flow.ts",
+          message: "Path not found: flows/graph-fixture/flow.ts in smithersai/smithers"
+        }
+      },
       codingChangeId: "qupxosqw"
     }
   },
@@ -868,6 +957,62 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       research: "Reproduced the missing-name case."
     }
   },
+  "flow-plan": {
+    minimal: { repo: "smithersai/smithers", flowId: "review", status: "pending" },
+    full: {
+      previousPlan: { planId: "plan-0", digest: "b".repeat(64), nodes: [] },
+      sourceReceipt: { runCardId: "author-run-1", receipt: "copy:1:event" },
+      repo: "smithersai/smithers",
+      workspaceId: gatewayWorkspaceId,
+      flowId: "review",
+      input: { pr: 4821 },
+      // A re-plan that was refused keeps the graph it last drew, so the card
+      // states the refusal without blanking what the person was reading.
+      status: "failed",
+      error: "The workspace has no flow called review.",
+      planId: "plan-1",
+      digest: "d".repeat(64),
+      nodes: [
+        {
+          id: "root.read",
+          kind: "step",
+          key: `key1_${"0".repeat(64)}`,
+          dependsOn: [],
+          tier: "sealed",
+          action: "files/read",
+          status: "run"
+        },
+        {
+          id: "root.review",
+          kind: "agent",
+          key: `key1_${"1".repeat(64)}`,
+          dependsOn: ["root.read"],
+          tier: "compensable",
+          status: "run"
+        }
+      ],
+      graph: {
+        edges: [{ from: "root.read", to: "root.review", reason: "value" }],
+        nodes: [
+          { id: "root.read", declaredAt: { path: "flows/review/flow.ts", line: 12 } },
+          { id: "root.review" }
+        ],
+        // The revision those sites were read at: what the Code tab reads AT.
+        sourceRevision: "a03f5f1ea03f5f1ea03f5f1ea03f5f1ea03f5f1e"
+      },
+      // The re-key preview against a run that really did settle a node clean.
+      against: "run-1",
+      rekey: { rerun: 3, total: 11, etaMs: 24, wasMs: 1_182, cleanSettlements: 1 },
+      view: {
+        node: "root.read",
+        tab: "declaration",
+        codeError: {
+          path: "flows/review/flow.ts",
+          message: "Path not found: flows/review/flow.ts in smithersai/smithers"
+        }
+      }
+    }
+  },
   "trigger-list": {
     minimal: { repo: "smithersai/smithers", triggers: [] },
     full: {
@@ -883,7 +1028,20 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         enabled: true,
         lastFiredAt: 1_757_000_000_000,
         nextFireAt: 1_757_003_600_000,
-        activeRunId: "run-1"
+        activeRunId: "run-1",
+        nextFiresAt: [1_757_003_600_000, 1_757_007_200_000],
+        overlap: "buffer-one",
+        catchUp: "one",
+        maxCatchUp: 3,
+        pendingAt: 1_757_003_600_000,
+        schedulerLastTickAt: 1_757_000_500_000,
+        fires: [{
+          occurrenceAt: 1_757_000_000_000,
+          outcome: "launched",
+          runId: "run-1",
+          error: "",
+          waiting: "approval"
+        }]
       }],
       webhooks: [{ name: "github", flowId: "ci" }]
     }
@@ -1321,6 +1479,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       binary: false,
       address: "/smithersai/smithers/README.md",
       readAt: { changeId: "qupxosqw", commitId: "a03f5f1e", seq: 5, source: "head" },
+      ref: "a03f5f1ea03f5f1ea03f5f1ea03f5f1ea03f5f1e",
       line: 317,
       column: 62,
       digest: "sha256-9f1c",
@@ -2260,6 +2419,10 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
   "plugin-library": {
     minimal: { tutorial: false },
     full: { tutorial: true }
+  },
+  experimental: {
+    minimal: { pane: "flow-graph" },
+    full: { pane: "flow-graph", props: { runId: "run_1" } }
   }
 }
 
@@ -2531,5 +2694,87 @@ describe("removed presentation compatibility", () => {
     expect(result.kind).toBe("workspace")
     expect(result.payload).toMatchObject({ facet: "terminal", snapshot: true, workspaceId: "ws-1" })
     expect(result.payload).not.toHaveProperty("snapshots")
+  })
+})
+
+/*
+ * The dispatcher's rows carry the rest of the box's TriggerSummary (L6 step
+ * 2): both policies and their bound, every upcoming fire rather than the
+ * first alone, the claimed occurrence, the scheduler's heartbeat, and the
+ * fire ledger of the trigger a panel is showing. Every one is optional,
+ * because a card persisted before the pass-through holds none of them, and a
+ * Plue registration serves none of them at all.
+ */
+describe("the dispatcher card's trigger rows", () => {
+  const dispatcher = (triggers: ReadonlyArray<unknown>): unknown =>
+    card("trigger-list", { repo: "smithersai/smithers", live: true, triggers })
+
+  const parsed = (triggers: ReadonlyArray<unknown>): ReadonlyArray<unknown> => {
+    const read = CardSchema.parse(dispatcher(triggers))
+    if (read.kind !== "trigger-list") throw new Error("expected the dispatcher card")
+    return read.payload.triggers
+  }
+
+  const OLD_ROW = {
+    id: "trg-1",
+    slug: "nightly",
+    flowId: "ci",
+    cron: "0 * * * *",
+    timezone: "UTC",
+    enabled: true,
+    lastFiredAt: 1_757_000_000_000,
+    nextFireAt: 1_757_003_600_000,
+    activeRunId: "run-1"
+  }
+
+  test("a row persisted before the pass-through parses and gains nothing", () => {
+    expect(parsed([OLD_ROW])).toEqual([OLD_ROW])
+    expect(parsed([{ id: "trg-1", flowId: "ci", cron: "0 * * * *", enabled: true }])).toEqual([
+      { id: "trg-1", flowId: "ci", cron: "0 * * * *", enabled: true }
+    ])
+  })
+
+  test("the policies, every upcoming fire, the claim and the scheduler's heartbeat round-trip", () => {
+    const row = {
+      ...OLD_ROW,
+      nextFiresAt: [1_757_003_600_000, 1_757_007_200_000, 1_757_010_800_000, 1_757_014_400_000, 1_757_018_000_000],
+      overlap: "buffer-one",
+      catchUp: "one",
+      maxCatchUp: 3,
+      pendingAt: 1_757_003_600_000,
+      schedulerLastTickAt: 1_757_000_500_000
+    }
+    expect(parsed([row])).toEqual([row])
+  })
+
+  test("a policy word the trigger store never writes is refused rather than read as one of its own", () => {
+    expect(CardSchema.safeParse(dispatcher([{ ...OLD_ROW, overlap: "queue" }])).success).toBe(false)
+    expect(CardSchema.safeParse(dispatcher([{ ...OLD_ROW, catchUp: "some" }])).success).toBe(false)
+  })
+
+  test("the shown trigger's fire ledger round-trips, including an occurrence with no outcome yet", () => {
+    const row = {
+      ...OLD_ROW,
+      fires: [
+        { occurrenceAt: 1_757_000_000_000, outcome: null },
+        { occurrenceAt: 1_756_996_400_000, outcome: "launched", runId: "run-1", waiting: "approval" },
+        { occurrenceAt: 1_756_992_800_000, outcome: "failed", error: "the flow refused the input" },
+        { occurrenceAt: 1_756_989_200_000, outcome: "skipped" },
+        { occurrenceAt: 1_756_985_600_000, outcome: "buffered" },
+        { occurrenceAt: 1_756_982_000_000, outcome: "superseded" },
+        { occurrenceAt: 1_756_978_400_000, outcome: "completed", runId: "run-0" }
+      ]
+    }
+    expect(parsed([row])).toEqual([row])
+  })
+
+  test("an outcome the ledger never records is refused, and so is a wait it never parks on", () => {
+    expect(CardSchema.safeParse(dispatcher([{ ...OLD_ROW, fires: [{ occurrenceAt: 1, outcome: "fired" }] }])).success)
+      .toBe(false)
+    expect(
+      CardSchema.safeParse(dispatcher([{ ...OLD_ROW, fires: [{ occurrenceAt: 1, outcome: null, waiting: "review" }] }]))
+        .success
+    ).toBe(false)
+    expect(CardSchema.safeParse(dispatcher([{ ...OLD_ROW, fires: [{ outcome: null }] }])).success).toBe(false)
   })
 })

@@ -375,7 +375,10 @@ export const makeNative = (platform: NativePlatform) => {
       {
         owner: validated.owner,
         journalSource: `${validated.owner.hostId}-engine`,
-        isAlive: validated.isAlive
+        isAlive: validated.isAlive,
+        // The same declaration `Runtime.layer` passes: the tree this host
+        // read its flows out of, or nothing (D-068).
+        sourceRevision: validated.sourceRevision
       },
       privilegedJj
     ).pipe(Layer.provideMerge(guarded))

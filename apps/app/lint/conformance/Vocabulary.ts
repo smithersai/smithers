@@ -148,7 +148,10 @@ export const cardObjectFields = (): ReadonlySet<string> => {
  * superset a suite driving an admin session may legitimately assert against.
  */
 const declarationStub = (): CommandActions => new Proxy({}, {
-  get: (_, key) => key === "snapshot" ? () => ({ wiki: true, mythicalHistory: true, pluginLibrary: true }) : () => undefined
+  get: (_, key) =>
+    key === "snapshot"
+      ? () => ({ wiki: true, mythicalHistory: true, pluginLibrary: true, flowBuilder: true })
+      : () => undefined
 }) as unknown as CommandActions
 
 export const declaredFlowNames = (): ReadonlySet<string> =>

@@ -67,6 +67,67 @@ can move backwards, so completion timestamps need not exceed start time.
 Suspended executions require at least one typed wait; completed executions
 require a result. Ownership and cancellation remain separate facts.
 
+## Node and plan records
+
+Two executors drive a graph: the plan scheduler and the flow interpreter. Both
+write the same six records, and `EngineEvent` publishes a schema for each so a
+reader decodes one shape rather than guessing per writer.
+
+| Event type                       | Typed payload                                                    |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `flows.engine.plan-recorded`     | `PlanRecordedPayload`: the flow, the generation, the node count. |
+| `flows.engine.subgraph-appended` | `SubgraphAppendedPayload`: the ids a generation or a page added. |
+| `flows.engine.node-scheduled`    | `NodeScheduledPayload`: the node, its kind, attempt and tag.     |
+| `flows.engine.node-settled`      | `NodeSettledPayload`: the outcome, the attempts, the join.       |
+| `flows.engine.node-invalidated`  | `NodeInvalidatedPayload`: the re-keying and the reason for it.   |
+| `flows.engine.node-reconciled`   | `NodeReconciledPayload`: the verdict for one deviation.          |
+
+`nodes` on a plan record is the node COUNT it has always been. The node list
+rides beside it as `graph`, optional and paged, because a journal entry has a
+byte bound and a record that clipped its list would lose nodes silently.
+`graph.edges` is optional for the same reason a fact is optional anywhere here:
+a plan names its edges through each node's `dependsOn` and knows no reason for
+them, while an interpreted graph knows the reason it drew each one.
+
+A node's `declaredAt` is where its action was written. It is repo-relative by
+contract and the schema refuses an absolute path: a journal is read on machines
+that did not write it, so an absolute path is at best noise and at worst an
+operator's home directory published into a run's history. A writer that cannot
+make a path relative omits the field. `EngineEvent.relativePath(root, path)` is
+how a writer obeys that rule: it answers the path relative to the root, or
+nothing at all for a path outside the root, for no root, and for a root that
+names the whole filesystem. Every writer of a declaration site uses it, the
+engine's node records and a control plan card alike.
+
+The five settlement words are `built`, `clean`, `failed`, `skipped` and
+`deferred`. `clean` means a recorded result served the node and no executor
+ran, which covers same-run durable replay as well as a cross-run cache hit.
+
+A settlement's `attempts` is the executor's own count. For the plan scheduler
+it is the node's; for the interpreter it is the highest durable attempt any of
+the node's dispatches ran as, because the interpreter settles each node once
+and a retry happens underneath it inside one dispatch.
+
+`stepKeyDigests` is the join. An attempt record carries a step key digest and
+no node id, so before it an attempt belonged to no node and "attempt 2" could
+not be attributed. A settlement now names the distinct step keys its node
+dispatched under, and an attempt record belongs to the node of the same
+execution whose settlement claims its digest. A retried dispatch keeps ONE
+digest, because the attempt is folded into no key, so the list counts
+dispatches and not attempts. A node that dispatched nothing records an empty
+list, which is a different statement from a writer that derives no digests and
+omits the field.
+
+`result` is what the node settled with: the success value for `built` and
+`clean`, the typed failure for `failed`. It is a bounded, redacted `preview`
+of the value's JSON, the `bytes` of the encoding that preview was cut from,
+and a `truncated` flag that is also the warning that the text is a prefix of
+JSON and no longer parses. The writer redacts before it truncates, because
+cutting first can split a credential across the boundary and the textual rules
+would no longer recognise what is left; a value too large to redact at all is
+named by the size of its own encoding, with an empty preview. A writer that
+kept no summary omits the field.
+
 ## Additive cutover and retained history
 
 Current engine writers are unchanged. `decodeCurrentAttempt` validates their

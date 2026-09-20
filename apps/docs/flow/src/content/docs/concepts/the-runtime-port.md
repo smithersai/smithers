@@ -36,6 +36,7 @@ without touching a declaration.
 | `actionExecute`                                           | Dispatches one action attempt and records its exit.                                             |
 | `deferredResult`, `deferredDone`, `deferredDoneIfWaiting` | Reads and writes durable deferred completions.                                                  |
 | `scheduleClock`                                           | Arms a durable timer.                                                                           |
+| `recordNode`                                              | Optional. Records the graph a run was driven from, and how each node settled.                   |
 
 Every method takes a flow whatever its requirement channel says and demands none
 of it. The channel is a compile-time statement about which action implementations
@@ -48,6 +49,16 @@ requirements are collected.
 `Existing`, or `NotWaiting`. It exists so a completion can be admitted as one
 mutation only while its run is actually parked on that wait, which is what stops
 a guessed or stale token from pre-answering a run.
+
+`recordNode` is the one optional method, and optional in the strong sense: a
+runtime that keeps no history leaves it absent and the walk is unchanged, so no
+interpreter behavior may depend on whether one is there. An engine with a
+journal implements it by writing the record. Each record carries its own
+replay-stable `sourceId`, and an implementation must use that as the record's
+producer identity rather than minting one per observation: that is what makes a
+resumed walk collapse onto the rows the first walk wrote instead of recording
+every node twice. It is separate from `actionExecute` because a node is not an
+action, and three of the four records describe nodes no action ever dispatched.
 
 ## The per-execution instance
 

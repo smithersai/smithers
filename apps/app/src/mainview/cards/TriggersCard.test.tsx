@@ -48,13 +48,27 @@ const DECLARED: NonNullable<Payload["declared"]> = [
   { event: "schedule:0 9 * * 1-5", flow: "review", description: "Weekday morning review of main" }
 ]
 
-const render = (card: TriggerListCard, onRunCommand: (name: string, args?: string) => void = () => {}): HTMLElement => {
+const render = (
+  card: TriggerListCard,
+  onRunCommand: (name: string, args?: string) => void = () => {},
+  flowBuilder = false
+): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   flushSync(() => {
-    createRoot(host).render(<TriggerListCardBody card={card} onRunCommand={onRunCommand} />)
+    createRoot(host).render(<TriggerListCardBody card={card} onRunCommand={onRunCommand} flowBuilder={flowBuilder} />)
   })
   return host
+}
+
+/** The two rows every button test draws: one Smithers Cloud named, one only the trigger store holds. */
+const TWO_ROWS: Partial<Payload> = {
+  declared: [],
+  live: true,
+  triggers: [
+    { id: "registration-nightly", slug: "nightly", flowId: "nightly-lint", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true },
+    { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
+  ]
 }
 
 describe("the event a trigger waits for, in words", () => {
@@ -241,5 +255,47 @@ describe("the dispatcher card", () => {
     expect(calls).toEqual([["triggers.run", `nightly ${REPO}`], ["triggers.run", `nightly ${REPO}`]])
     /* A trigger-store row Smithers Cloud never named holds no schedule to fire. */
     expect(host.querySelector("[data-testid='trigger-run-sweep']")).toBeNull()
+  })
+
+  /*
+   * Pause had no button on any card, so the only way to stop a schedule was
+   * the slash path — which fills the form and then answers with the grammar's
+   * own refusal, "triggers.pause takes the values its button carries"
+   * (CHAT.md B1). The button carries them, so it never meets that sentence.
+   */
+  test("Pause is the button door of triggers.pause, carrying its values as the object the grammar reads", () => {
+    const calls: Array<[string, string | undefined]> = []
+    const host = render(triggerCard(TWO_ROWS), (name, args) => calls.push([name, args]), true)
+    const pause = host.querySelector<HTMLButtonElement>("[data-testid='trigger-pause-nightly']")
+    expect(pause?.dataset.flow).toBe("triggers.pause")
+    expect(pause?.textContent).toBe("Pause")
+    pause?.click()
+    expect(calls).toEqual([["triggers.pause", JSON.stringify({ slug: "nightly", repo: REPO })]])
+    /* Pause is a Plue route keyed by slug; a trigger-store row carries none, and no Control procedure pauses one. */
+    expect(host.querySelector("[data-testid='trigger-pause-sweep']")).toBeNull()
+  })
+
+  /*
+   * D-050: with the flow builder off this card is the card that shipped
+   * before the builder, byte for byte. Pause is the builder's button, so the
+   * flag-off render carries the two doors the card always had and the flag-on
+   * render differs from it by exactly that one button and nothing else.
+   */
+  test("with the flow builder off the card is the pre-builder card, byte for byte", () => {
+    const calls: Array<[string, string | undefined]> = []
+    const off = render(triggerCard(TWO_ROWS), (name, args) => calls.push([name, args]))
+    expect([...off.querySelectorAll("[data-flow]")].map((node) => [node.getAttribute("data-flow"), node.textContent]))
+      .toEqual([["triggers.run", "Run now"], ["triggers.register", "Register a rule"]])
+    expect(off.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
+    expect(off.innerHTML).not.toContain("Pause")
+    expect(off.innerHTML).not.toContain("triggers.pause")
+    /* Run now still runs: the flag withholds a button, it does not disarm the card. */
+    off.querySelector<HTMLButtonElement>("[data-testid='trigger-run-nightly']")?.click()
+    expect(calls).toEqual([["triggers.run", `nightly ${REPO}`]])
+
+    const on = render(triggerCard(TWO_ROWS), () => {}, true)
+    const pause = on.querySelector<HTMLButtonElement>("[data-testid='trigger-pause-nightly']")
+    expect(pause).not.toBeNull()
+    expect(on.innerHTML.replace(pause?.outerHTML ?? "", "")).toBe(off.innerHTML)
   })
 })

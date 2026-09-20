@@ -29,6 +29,7 @@ import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 /**
@@ -58,6 +59,62 @@ const Invocation = Schema.Struct({
 export class DispatchSite extends Context.Service<DispatchSite, string>()(
   "@smthrs/flow/Action/DispatchSite"
 ) {}
+
+/**
+ * What one dispatch tells the node that drove it.
+ *
+ * `outcome` is the fact the walk above cannot see on its own: whether the
+ * dispatch ran its body or was served from a durable record. `stepKeyDigest`
+ * is the identity the rest of the engine addresses that dispatch by — the
+ * digest `flows.engine.attempt-started` carries and `flows_attempts` is keyed
+ * on — and `attempt` is the durable attempt it ran as. Both are optional
+ * because a runtime that keeps no attempt rows has neither, and a node with
+ * no digest says so rather than inventing one.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface DispatchOutcome {
+  readonly outcome: "executed" | "replayed"
+  readonly stepKeyDigest?: string | undefined
+  readonly attempt?: number | undefined
+}
+
+/**
+ * Where the dispatches of one interpreter node report what happened to them.
+ *
+ * An engine knows facts the walk above it cannot see: whether a dispatch ran
+ * its body or was served from a durable record, which step key it ran under,
+ * and which durable attempt it was. Without the first a node that replayed
+ * every one of its dispatches is indistinguishable from one that did the work
+ * again. Without the other two a node's evidence cannot be joined to the
+ * attempt records the engine wrote, because an attempt record carries a step
+ * key digest and no node id while a node record carried no digest at all. The
+ * interpreter installs one of these per node and reads the report back when
+ * the node settles.
+ *
+ * Absent by default. A dispatch outside an interpreted graph — a handler
+ * calling an action directly — reports to nobody, and reporting stays a
+ * side channel rather than a change to what `actionExecute` returns.
+ *
+ * @since 1.0.0
+ * @category services
+ */
+export class DispatchReport extends Context.Service<DispatchReport, {
+  readonly dispatched: (dispatch: DispatchOutcome) => Effect.Effect<void>
+}>()("@smthrs/flow/Action/DispatchReport") {}
+
+/**
+ * Reports one dispatch to the node that drove it, when a node drove it.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const reportDispatch = (dispatch: DispatchOutcome): Effect.Effect<void> =>
+  Effect.flatMap(
+    Effect.serviceOption(DispatchReport),
+    (report) => Option.isNone(report) ? Effect.void : report.value.dispatched(dispatch)
+  )
 
 /**
  * The declaration material an allocation scope is derived from.

@@ -7,7 +7,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import { registryError } from "@smthrs/registry/RegistryError"
-import { Effect, FileSystem, Option, Path, Schema } from "effect"
+import { Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 import { FLOW_AUTHORING_PACK } from "../../packages/rpc/src/FlowAuthoring.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
@@ -137,6 +137,40 @@ export const repositoryCatalog = (options: Executable.Options, load: NonNullable
   const builtins = yield* Executable.catalog({ ...options, load }).pipe(Effect.provideService(Registry.Registry, selected(true)))
   return { executables: [...project.executables, ...builtins.executables], refused: [...project.refused, ...builtins.refused] }
 })
+
+/**
+ * The registration layer this host serves its catalog through.
+ *
+ * Everything the catalog holds is registered, and the catalog itself is served
+ * rebuildable one entry at a time so a run of this host can author
+ * `flows/<id>/flow.ts` and have the next plan draw it. `refreshableEntry`
+ * decides which half may be rebuilt.
+ *
+ * It is one function rather than a composition spelled out at the host's call
+ * site because the rule it encodes is the thing under test:
+ * `flows/test/coding-catalog-refresh.test.ts` builds THIS, so a change to what
+ * the host serves its catalog through is a change a test sees.
+ */
+export const repositoryRegistration = <ROut, E, RIn>(
+  options: Executable.Options,
+  built: Executable.Catalog,
+  leaves: Layer.Layer<ROut, E, RIn>
+) =>
+  Layer.mergeAll(leaves, ...built.executables.map(entry => entry.layer)).pipe(
+    Layer.provideMerge(Executable.layerRefreshable(built, { ...options, refreshable: refreshableEntry }))
+  )
+
+/**
+ * Which of this host's catalog entries may be rebuilt from the working tree.
+ *
+ * A run this host serves can write anything into that tree, so the reserved
+ * declarations that came from the measured bundle are never rebuilt out of it:
+ * their bytes are the image this host shipped as. Everything the repository
+ * owns is, which is what lets `create-flow` write `flows/<id>/flow.ts` and have
+ * the next plan draw it.
+ */
+export const refreshableEntry = (descriptor: Descriptor.FlowDescriptor): boolean =>
+  descriptor.provenance.source !== "repository-host"
 
 /** Reserved job declarations always come from the measured host bundle. */
 export const bindRepositoryRegistry = (base: Registry.Registry, builtins: Registry.Registry, policy: string): Registry.Registry => {

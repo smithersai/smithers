@@ -285,6 +285,26 @@ describe("PlanScheduler over a static graph", () => {
     expect(types).toContain("flows.engine.plan-recorded")
     expect(types).toContain("flows.engine.node-scheduled")
     expect(types.filter((type) => type === "flows.engine.node-settled").length).toBe(3)
+    // A record says which node it is ABOUT and which tag that node dispatches.
+    // Without the tag a reader can group a run's work by node and never by the
+    // thing the node does, and the two executors would describe one graph in
+    // two shapes.
+    const payloads = (eventType: string) =>
+      events.entries
+        .filter((entry) => entry.eventType === eventType)
+        .map((entry) => entry.payload as Record<string, unknown>)
+    for (const eventType of ["flows.engine.node-scheduled", "flows.engine.node-settled"]) {
+      expect(payloads(eventType).map((payload) => payload["action"]).sort())
+        .toEqual(["derived", "sibling", "source"])
+    }
+    // And the plan record carries the graph it recorded, not only its size.
+    const recordedPlan = payloads("flows.engine.plan-recorded")[0]!
+    const graph = recordedPlan["graph"] as { readonly nodes: ReadonlyArray<Record<string, unknown>> }
+    expect(graph.nodes.map((node) => node["id"]).sort()).toEqual(["derived", "sibling", "source"])
+    expect(graph.nodes.length).toBe(recordedPlan["nodes"])
+    expect(graph.nodes.map((node) => node["action"]).sort()).toEqual(["derived", "sibling", "source"])
+    expect(graph.nodes.every((node) => node["tier"] === "sealed" && node["key"] !== undefined)).toBe(true)
+    expect(graph.nodes.find((node) => node["id"] === "derived")!["dependsOn"]).toEqual(["source"])
   })
 
   it("hands an executor only projected Ref inputs, never ordering results", async () => {

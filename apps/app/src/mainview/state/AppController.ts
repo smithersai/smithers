@@ -69,6 +69,7 @@ import { createPresentationController } from "./controller/presentation"
 import type { RecommenderConfig } from "./controller/recommend"
 import { createRecommendController } from "./controller/recommend"
 import { createRepositoryUpdate } from "./controller/repositoryUpdate"
+import { createGraphController,type GraphController } from "./controller/graph"
 import { createRunsController,type RunsController } from "./controller/runs"
 import type { SidebarController } from "./controller/sidebar"
 import { createSidebarController } from "./controller/sidebar"
@@ -79,6 +80,7 @@ import { createTabsController } from "./controller/tabs"
 import { createTurnController, type TurnController } from "./controller/turns"
 import { createTutorialChangeController,type TutorialChangeController } from "./controller/tutorialChange"
 import { createTutorialRepositoryController,type TutorialRepositoryActions } from "./controller/tutorialRepository"
+import { createFlowDurationsReader } from "./controller/flowDurations"
 import { createWorkflowPumpController } from "./controller/workflow-pump"
 import { createWorkflowController,type WorkflowController } from "./controller/workflows"
 import type { WikiEditorHandle } from "./controller/world"
@@ -257,6 +259,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Ask 5: the Flows pane — the surface switch and the listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
+  /** What a flow WOULD run (flow.plan); behind the flowBuilder flag. */
+  readonly planFlow: WorkflowController["planFlow"]
   /* Wave 12 §2 — the answer to "which loaded repository?" (one act). */
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   /* Wave 12 §3 — the two acts a run that has gone quiet offers. */
@@ -282,6 +286,12 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly traceSelect: RunsController["traceSelect"]
   readonly selectCodingChange: RunsController["selectCodingChange"]
   readonly traceView: RunsController["traceView"]
+  readonly graphFollow: RunsController["graphFollow"]
+  /* The node drawer both graph cards open (see controller/graph.ts). */
+  readonly selectGraphNode: GraphController["selectGraphNode"]
+  readonly graphNodeTab: GraphController["graphNodeTab"]
+  readonly selectPlanNode: GraphController["selectPlanNode"]
+  readonly planNodeTab: GraphController["planNodeTab"]
   readonly traceLive: RunsController["traceLive"]
   readonly stopAllRuns: RunsController["stopAllRuns"]
   readonly listApprovals: RunsController["listApprovals"]
@@ -715,6 +725,8 @@ export interface AppFeatures {
   readonly suggestionPills?: boolean
   /** The hidden mock namespace (experimental/Manifest.ts). */
   readonly experimental?: boolean
+  /** The flow builder: the plan door, its card and its graph (docs/flow-builder). */
+  readonly flowBuilder?: boolean
 }
 
 /**
@@ -730,7 +742,8 @@ export const createAppController = (
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
     mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
-    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
+    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true",
+    flowBuilder: services.features?.flowBuilder ?? import.meta.env?.VITE_SMITHERS_FLOW_BUILDER === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
     ...services, features: { ...services.features, ...knowledge }
@@ -840,7 +853,8 @@ export const createAppController = (
   /* A registration is a launched flow run: it rides the app's own run watch and the shared toast stack. */
   const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context, {
     watchRun: (cardId) => pumpWorkflowRun(cardId),
-    withToast
+    withToast,
+    flowBuilder: features.flowBuilder
   }))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
@@ -1057,14 +1071,17 @@ export const createAppController = (
         withToast("code.diagnostics", `Asking the language server about ${path}…`, "Language server answered", () => seam.diagnostics(path, repo))
     }
   })
+  /* One reader for the whole controller, so a plan card opening and a run of
+   * the same flow settling cannot apply their two answers out of order. */
+  const readFlowDurations = createFlowDurationsReader(ctx)
   const {
     pumpWorkflowRun,
     stopWatchingRun,
     retryRunWatch: retryObservedRun,
     resumeWorkflowRuns
-  } = createWorkflowPumpController(ctx, store.nextOrdinal)
+  } = createWorkflowPumpController(ctx, store.nextOrdinal, readFlowDurations)
 
-  const workflowController: WorkflowController = actors.pair(ctx, (context, select) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun, select(renderFlowForm)))
+  const workflowController: WorkflowController = actors.pair(ctx, (context, select) => createWorkflowController(context, store.nextOrdinal, pumpWorkflowRun, select(renderFlowForm), readFlowDurations))
   const retryRunWatch = (cardId: string): string | void => {
     if (!workflowController.retryWorkflowRequest(cardId)) return retryObservedRun(cardId)
   }
@@ -1111,12 +1128,14 @@ export const createAppController = (
     listWorkspaceWorkflows,
     showFlows,
     runWorkflow,
+    planFlow,
     chooseWorkflowRepo,
     forwardApprovalDecision,
     forwardInboxApprovalDecision
   } = workflowController
   const { listTriggers, registerTrigger } = triggersSeam
   const runs = actors.pair(ctx, (context, select) => createRunsController(context, store.nextOrdinal, select(workflowController), select(renderFlowForm)))
+  const graph = actors.pair(ctx, (context, select) => createGraphController(context, select(filesSeam.readFile)))
   const librarianRuns = actors.pair(ctx, (context, select) => createLibrarianRunsController(context, select(workflowController)))
   void librarianRuns.recoverLaunches()
   /*
@@ -1590,6 +1609,7 @@ export const createAppController = (
     listTriggers,
     showFlows,
     runWorkflow,
+    planFlow,
     chooseWorkflowRepo,
     stopWatchingRun,
     retryRunWatch,
@@ -1613,6 +1633,11 @@ export const createAppController = (
     traceSelect: runs.traceSelect,
     selectCodingChange: runs.selectCodingChange,
     traceView: runs.traceView,
+    graphFollow: runs.graphFollow,
+    selectGraphNode: graph.selectGraphNode,
+    graphNodeTab: graph.graphNodeTab,
+    selectPlanNode: graph.selectPlanNode,
+    planNodeTab: graph.planNodeTab,
     traceLive: runs.traceLive,
     stopAllRuns: runs.stopAllRuns,
     listApprovals: runs.listApprovals,
@@ -1864,6 +1889,7 @@ export const createAppController = (
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
         experimental: features.experimental,
+        flowBuilder: features.flowBuilder,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",

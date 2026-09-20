@@ -7,6 +7,8 @@ import type { ControllerContext } from "./context"
 import { createGatewaySeam } from "./gateway"
 import { createWorkflowPumpController } from "./workflow-pump"
 import type { StatusRollup } from "@smthrs/rpc/Health"
+import { readFileSync } from "node:fs"
+import { runGraphOfCard } from "../../cards/FlowRunGraph"
 
 const event = (sequence: number) => ({ kind: "control.signal.delivered", sequence, occurredAt: sequence, payload: {} })
 const failed = (sequence: number, cause: string) => ({ kind: "control.run.failed", sequence, occurredAt: sequence, payload: { cause } })
@@ -265,4 +267,61 @@ test("run health uses the existing summary projection, expires old working and r
   const terminal = await poll([{ events: [], status: "failed", statusRollup: { ...statusRollup, state: "failed", health: "failing" } }])
   expect(terminal.card.payload.statusRollup?.health).toBe("failing")
   expect(terminal.card.payload.phase).toBe("failed")
+})
+
+/*
+ * The graph the run card draws is folded from the same journal this pump
+ * appends to, so a node's state moves when a page lands and not before. The
+ * rows are the recorded ones (cards/fixtures/GraphRunJournal.json), cut at the
+ * point the engine scheduled a node and again at the point it settled it.
+ */
+const RECORDED: {
+  readonly flow: string
+  readonly rows: ReadonlyArray<{ kind: string; sequence: number; occurredAt: number; payload: Record<string, unknown> }>
+} = JSON.parse(readFileSync(new URL("../../cards/fixtures/GraphRunJournal.json", import.meta.url), "utf8"))
+
+const FLOW = RECORDED.flow
+
+const NODE = "root.flow.then.map.all.steady"
+const engineRows = RECORDED.rows.map((row) => ({
+  kind: row.kind,
+  sequence: row.sequence,
+  occurredAt: row.occurredAt,
+  payload: row.payload
+}))
+const through = (eventType: string): ReturnType<typeof event>[] => {
+  const index = engineRows.findIndex((row) =>
+    row.kind === "control.engine.event" &&
+    (row.payload as { eventType?: string; payload?: { nodeId?: string } }).eventType === eventType &&
+    (row.payload as { payload?: { nodeId?: string } }).payload?.nodeId === NODE
+  )
+  if (index < 0) throw new Error(`the recording has no ${eventType} for ${NODE}`)
+  return engineRows.slice(0, index + 1) as unknown as ReturnType<typeof event>[]
+}
+
+test("two pump cycles move a recorded node from running to settled", async () => {
+  const scheduled = through("flows.engine.node-scheduled")
+  const settled = through("flows.engine.node-settled")
+  const first = await poll([{ events: scheduled, revision: scheduled.at(-1)!.sequence }], { flowId: FLOW })
+  expect(runGraphOfCard(first.card)?.status.get(NODE)).toMatchObject({ status: "running", attempts: 1 })
+
+  const second = await poll([
+    { events: scheduled, revision: scheduled.at(-1)!.sequence },
+    { events: settled, revision: settled.at(-1)!.sequence }
+  ], { flowId: FLOW })
+  expect(runGraphOfCard(second.card)?.status.get(NODE)).toMatchObject({ status: "settled", outcome: "built" })
+  // The second cycle asked for the suffix, not the whole journal again.
+  expect(second.journalRequests.at(-1)).toMatchObject({ value: scheduled.at(-1)!.sequence })
+})
+
+test("a page that repeats rows the card already holds changes no node's state", async () => {
+  const settled = through("flows.engine.node-settled")
+  const once = await poll([{ events: settled, revision: settled.at(-1)!.sequence }], { flowId: FLOW })
+  const twice = await poll([
+    { events: settled, revision: settled.at(-1)!.sequence },
+    { events: settled, revision: settled.at(-1)!.sequence }
+  ], { flowId: FLOW })
+  const stateOf = (card: typeof once.card) =>
+    [...runGraphOfCard(card)?.status ?? []].map(([id, run]) => [id, run.status, run.outcome])
+  expect(stateOf(twice.card)).toEqual(stateOf(once.card))
 })

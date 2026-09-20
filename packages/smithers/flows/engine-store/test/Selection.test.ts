@@ -537,7 +537,12 @@ describe("Selection.debt", () => {
         yield* journal.emitDurable(
           JournalRecords.nodeSettled(
             { runId: "run-debt-foreign", lineageId: "run-debt-foreign/root", sourceId: "scheduler/run-debt-foreign" },
-            { planKey: plan.nodes.find((node) => node.id === "lint-docs")!.key, outcome: "built" }
+            {
+              nodeId: "lint-docs",
+              planKey: plan.nodes.find((node) => node.id === "lint-docs")!.key,
+              outcome: "built",
+              attempts: 1
+            }
           ),
           owner
         )
@@ -566,7 +571,10 @@ describe("Selection.debt", () => {
           { discard: true }
         )
         yield* journal.emitDurable(JournalRecords.selectionDeferred(at("malformed/deferred"), {}), owner)
-        yield* journal.emitDurable(JournalRecords.nodeSettled(at("malformed/settled"), {}), owner)
+        // Stored history the engine's own writer cannot produce: the fold has
+        // to survive a record an older or foreign writer left behind, so the
+        // payload is cast past the writer's type rather than made well formed.
+        yield* journal.emitDurable(JournalRecords.nodeSettled(at("malformed/settled"), {} as never), owner)
         const service = PlanScheduler.make({
           runId: "run-debt-paged",
           owner,
@@ -602,8 +610,10 @@ describe("Selection.debt", () => {
         // A repaying run that only *skipped* the work has not repaid it.
         yield* journal.emitDurable(
           JournalRecords.nodeSettled(at("run-recert-skip", "scheduler/run-recert-skip"), {
+            nodeId: "lint-docs",
             planKey: lintKey,
-            outcome: "skipped"
+            outcome: "skipped",
+            attempts: 0
           }),
           owner
         )
@@ -621,8 +631,10 @@ describe("Selection.debt", () => {
         )
         yield* journal.emitDurable(
           JournalRecords.nodeSettled(at("run-recert-real", "scheduler/run-recert-real"), {
+            nodeId: "lint-docs",
             planKey: lintKey,
-            outcome: "built"
+            outcome: "built",
+            attempts: 1
           }),
           owner
         )

@@ -212,6 +212,38 @@ describe("the encoded projection rows", () => {
     }])
   })
 
+  it("freezes a duration row folded from the engine's own node records", () => {
+    const record = (eventType: string, payload: unknown, emittedAtMs: number, sequence: number) =>
+      event(sequence, "control.engine.event", {
+        version: 1,
+        executionId: "native",
+        generation: 0,
+        sequence,
+        emittedAtMs,
+        sourceSequence: 0,
+        sourceId: `engine/${eventType}`,
+        eventType,
+        payload
+      })
+    const events = [
+      record("flows.engine.node-scheduled", { nodeId: "compile", kind: "step", attempt: 1, action: "build" }, 100, 1),
+      record("flows.engine.node-settled", { nodeId: "compile", outcome: "built", attempts: 1, action: "build" }, 340, 2)
+    ]
+
+    expect(
+      encode(
+        Schema.Array(GatewayProjection.FlowDurationRow),
+        GatewayProjection.flowDurations(run.flowId, GatewayProjection.nodeDurations(events))
+      )
+    ).toEqual([{
+      flowId: "deploy",
+      actionTag: "build",
+      samples: 1,
+      p50Ms: 240,
+      p90Ms: 240
+    }])
+  })
+
   it("freezes an approval row, including the payload a client submits back", () => {
     const payload = {
       target: {

@@ -1,6 +1,6 @@
 ---
 title: "Projections"
-description: "Why the gateway serves folds over control events instead of database rows, what the seven projections answer, and how a node gets its id."
+description: "Why the gateway serves folds over control events instead of database rows, what the eight projections answer, and how a node gets its id."
 sidebar:
   order: 1
 ---
@@ -25,7 +25,7 @@ That is why a UI depends on this package and on `@smthrs/control`, and never on
 [`@smthrs/engine-store`](/api/engine-store). A projection is the contract; a
 store row is an implementation detail.
 
-## The seven projections
+## The eight projections
 
 `GatewaySchema.ProjectionName` is the authority for the list, and the set a
 release serves is the set the schema declares.
@@ -39,6 +39,7 @@ release serves is the set the schema declares.
 | `run-tree`       | `RunTreeSelector`       | the agent cell calls the run made, keyed `call-1`, `call-2`, and so on                          |
 | `approvals`      | `ApprovalsSelector`     | with a run, that run's gates including decided ones; without one, the workspace's pending gates |
 | `node-output`    | `NodeOutputSelector`    | the value one settled call produced                                                             |
+| `flow-durations` | `FlowDurationsSelector` | how long one flow's nodes take, per action tag, over its newest finished runs                   |
 
 `GatewaySchema.rowSchemaFor` maps a selector to the schema of the rows it
 answers with, so a client decodes a snapshot instead of casting it.
@@ -135,6 +136,44 @@ before advancing its ordinal would shift references to later nodes.
 
 A node that never settled stays `running`, which is how a live tree renders
 work in flight.
+
+## A duration is measured, never estimated
+
+`flow-durations` is the one projection that reads across runs. It lists the
+flow's runs through `Control.list`, keeps the newest `Projections.maxDurationRuns`
+that reached a terminal status, and folds each one's node records into samples.
+
+A sample is one node the engine really ran: the distance between the
+`flows.engine.node-scheduled` record that admitted it and the
+`flows.engine.node-settled` record that closed it, both copied into the control
+journal as `control.engine.event` envelopes by the host's engine bridge. Only
+the `built` outcome counts. `clean` was served from records rather than run,
+`failed` measures a collapse, `skipped` was never reached, and `deferred` is
+scheduling debt, so none of them describes how long the work takes.
+
+Samples are grouped by the node's action tag, because the tag is the part of a
+node's key material that survives a re-key: the same step keeps its tag when
+its input changes, and its plan key and dispatch key do not. Both percentiles
+are nearest-rank, so `p50Ms` and `p90Ms` are durations the flow really took.
+`samples` is on the wire beside them, because a percentile over one sample and
+a percentile over twenty are different claims.
+
+One call is one sample. The engine records a `FlowCall` twice: the caller
+admits and settles the node that made the call, and the callee's own execution
+admits and settles its `root` over the same span with the same tag. The fold
+keeps the caller's node and drops the callee's root, which it can tell apart
+because the host's `control.engine.bound` record names the native root the
+control run owns. A run with no such record, such as one no engine bridge
+wrote, keeps both: a fold that cannot name the root cannot name the echo
+either.
+
+A duration is wall time between two engine records, so a node that waits is
+measured through its wait. A flow tag whose flow parks on a `HumanTask`
+measures the park, and so does every flow tag above it. These rows answer how
+long the flow took, not how much compute it spent.
+
+A tag nothing has measured has no row, and a flow nothing has finished answers
+with no rows at all. There is no shape here for an unmeasured prediction.
 
 ## What is not in a projection
 

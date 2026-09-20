@@ -37,7 +37,7 @@ import { pathRepo } from "./RepoLink"
 import type { Card,Message,Suggestion as SuggestionBinding } from "./state/AppState"
 import { conversationTabIdOf,inConversation,MAIN_TAB_ID } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
-import { useCardRows,useWorkflowCatalogRows } from "./state/useCardRows"
+import { useCardRows,useFileCardRows,useFlowDurationRows,useTriggerListRows,useWorkflowCatalogRows } from "./state/useCardRows"
 import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
 import { ToastStack } from "./ToastStack"
@@ -108,6 +108,9 @@ function AppContent() {
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
+  const triggerCatalogs = useTriggerListRows(collections.cards)
+  const flowDurations = useFlowDurationRows(collections.flowDurations)
+  const fileCards = useFileCardRows(collections.cards)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: harnessRows } = useLiveQuery(collections.harnesses)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
@@ -574,6 +577,9 @@ function AppContent() {
                     signedOut={identity?.state === "signed-out"}
                     worldDocuments={worldDocuments}
                     workflowCatalogs={workflowCatalogs}
+                    triggerCatalogs={triggerCatalogs}
+                    flowDurations={flowDurations}
+                    fileCards={fileCards}
                     {...actions}
                   />
                 ) :

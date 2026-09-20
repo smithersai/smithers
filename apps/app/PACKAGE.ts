@@ -169,11 +169,16 @@ const conformance = Smithers.NodeTest({
   cwd
 })
 
-/** Runs pinned Playwright and Bun browser OAuth tests, with no live provider calls. */
+/**
+ * Runs pinned Playwright and Bun browser OAuth tests, with no live provider
+ * calls, and the flow-graph tier: the app over a real control plane and a real
+ * engine on localhost, with nothing intercepted (e2e/graph/README.md).
+ */
 const browserE2e = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("scripts/run-pr-e2e.mjs")),
   srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
-    Smithers.file("playwright.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+    Smithers.file("playwright.config.ts"), Smithers.file("playwright.graph.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
   deps: [],
   env: { SMITHERS_CHAT_STUB: "1" },
   cwd

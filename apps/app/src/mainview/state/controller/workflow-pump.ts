@@ -12,6 +12,7 @@ import { changedRuntimeRunObservation, RuntimeProjectionIntegrityError, runtimeR
 import type { RuntimeRun, RuntimeRunObservation } from "../RuntimeProjection"
 import { canonicalEventValue } from "../EventValue"
 import { pendingWorkflowLaunch } from "../WorkflowLaunch"
+import type { FlowDurationsReader } from "./flowDurations"
 
 export interface WorkflowPumpController {
   readonly pumpWorkflowRun: (cardId: string) => Promise<void>
@@ -58,7 +59,10 @@ const JOURNAL_PAGE_LOOKS_FULL = 256
 
 export const createWorkflowPumpController = (
   ctx: ControllerContext,
-  nextTranscriptOrdinal: () => number
+  nextTranscriptOrdinal: () => number,
+  /* A settled run added a sample to its flow's history; the prediction the
+   * next plan card draws is read once, here, and never inside this loop. */
+  readFlowDurations?: FlowDurationsReader
 ): WorkflowPumpController => {
   const { store, gateway, unref, workflowPollMs, services } = ctx
   /*
@@ -258,6 +262,7 @@ export const createWorkflowPumpController = (
         const card = store.collections.cards.get(cardId)
         if (ctx.disposed || card === undefined || card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
         if (pendingWorkflowLaunch(card)) return
+        if (card.payload.authoring !== undefined && card.payload.runId === "") return
         const alreadyTerminal = TERMINAL_PHASES.has(card.payload.phase)
         const projectionPending = engineProjectionPending(card.payload.events)
         if (
@@ -443,6 +448,7 @@ export const createWorkflowPumpController = (
         // Only a nonempty, prefix-matched suffix assigns events. A higher
         // offset at the same sequence is also actual observation progress.
         if (journalAdvanced) lastProgressAt = Date.now()
+        if (services.features?.flowBuilder === true && card.payload.authoring !== undefined) void ctx.observeFlowAuthoring(cardId)
 
         const phase = PHASE_OF_STATUS[row.status]
         if (TERMINAL_PHASES.has(phase)) {
@@ -461,6 +467,7 @@ export const createWorkflowPumpController = (
             await pokeableWait(cardId, RUN_POLL_MS)
             continue
           }
+          void readFlowDurations?.(repo, row.flowId, binding)
           return
         }
         // Movement uses recorded counters and appended events, never a successful
@@ -523,6 +530,10 @@ export const createWorkflowPumpController = (
   const retryRunWatch = (cardId: string): string | void => {
     const card = runCardFor(cardId)
     if (card === undefined) return "That isn't a run card."
+    if (card.payload.authoring !== undefined && card.payload.runId === "") {
+      ctx.resumeFlowAuthoring(cardId)
+      return
+    }
     store.dispatch({ type: "gateway.run.observer.changed", actor: "system", scope: runtimeScopeOf(card)!, observer: { state: "connected", action: "retry" } })
     void pumpWorkflowRun(cardId, true)
     return undefined
@@ -530,6 +541,7 @@ export const createWorkflowPumpController = (
 
   /** Boot reconciliation: a live run card's pump resumes. */
   const resumeWorkflowRuns = (): void => {
+    ctx.resumeFlowAuthoring()
     for (const card of liveRunCards()) void pumpWorkflowRun(card.id)
     // Inbox-only and already-settled runs may have no live pump. A previous
     // client could have committed the decision before its answer was lost.

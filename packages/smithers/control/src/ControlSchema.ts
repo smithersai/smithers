@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { ExecutionFact } from "@smthrs/journal"
+import { EngineEvent, ExecutionFact } from "@smthrs/journal"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import * as PersistedPlan from "@smthrs/plan/Plan"
 import { DiscoveryWarning } from "@smthrs/registry/Descriptor"
@@ -233,6 +233,129 @@ export const PlanNode = Schema.Struct({
 export type PlanNode = typeof PlanNode.Type
 
 /**
+ * Why one node of a plan waits for another.
+ *
+ * These are the reasons the two shipped graph builders already record.
+ * `value` consumes an upstream result and `continuation` is the sequencing
+ * edge of a builder or a branch arm, from both. `failure` is `@smthrs/flow`'s
+ * recovery arm; `conflict` is the ordering edge `@smthrs/core`'s
+ * write-conflict pass adds, and `lane-merge` orders laned writers with their
+ * merge. A host reports the vocabulary of the builder it graphs with.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export const PlanEdgeReason = Schema.Literals(["value", "continuation", "failure", "conflict", "lane-merge"])
+
+/**
+ * Why one node of a plan waits for another.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export type PlanEdgeReason = typeof PlanEdgeReason.Type
+
+/**
+ * One labelled edge of the graph a plan was built from.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export const PlanEdge = Schema.Struct({
+  from: Schema.NonEmptyString,
+  to: Schema.NonEmptyString,
+  reason: PlanEdgeReason
+})
+
+/**
+ * One labelled edge of the graph a plan was built from.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export type PlanEdge = typeof PlanEdge.Type
+
+/**
+ * One node of the built graph, as the reader of a plan drills into it.
+ *
+ * It carries the address and the declaration site, and nothing else: the
+ * keyed node beside it (`PlanNode`) already says what the node is and what it
+ * would do, and this is the one fact about it the key material deliberately
+ * does not hold. `declaredAt` is the journal's own schema, so a plan card and
+ * a run's records state a declaration site the same way and under the same
+ * refusal of an absolute path; a host that cannot make a path relative to its
+ * own root omits it.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export const PlanGraphNode = Schema.Struct({
+  id: Schema.NonEmptyString,
+  declaredAt: Schema.optionalKey(EngineEvent.DeclaredAt)
+})
+
+/**
+ * One node of the built graph, as the reader of a plan drills into it.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export type PlanGraphNode = typeof PlanGraphNode.Type
+
+/**
+ * The shape of the graph a plan was built from, for a reader that draws it.
+ *
+ * A `PlanNode` carries `dependsOn`, which is one unlabelled edge set: it
+ * cannot tell a value dependency from a `catch` arm or from an ordering edge
+ * a write conflict added. The graph builder knows which is which, so a host
+ * that graphs a flow reports the reasons here rather than making every reader
+ * guess them back.
+ *
+ * `nodes` is the same statement about provenance: the builder observed where
+ * each node was declared and the key material deliberately does not carry it,
+ * so it travels here, beside the edges and outside the digest. A host that
+ * reports none is a host whose reader cannot open the code, not a host whose
+ * plan is wrong.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export const PlanGraph = Schema.Struct({
+  edges: Schema.Array(PlanEdge),
+  nodes: Schema.optional(Schema.Array(PlanGraphNode)),
+  /**
+   * The revision of the workspace those declaration sites were read out of.
+   *
+   * A site is a path and a line, and neither says which bytes were there: a
+   * host's working tree moves, so the same path after an edit or a branch
+   * switch is a different file. This is the immutable name of the tree the
+   * host loaded the flow from — a jj working-copy commit id, or a git commit
+   * for a tree that still matches one — and a reader asks the content route
+   * for the file AT this revision rather than for whatever is on disk now.
+   *
+   * A host that cannot name one reports nothing, and a reader that has
+   * nothing shows no code at all rather than code it cannot bind (D-068).
+   */
+  sourceRevision: Schema.optional(Schema.NonEmptyString)
+})
+
+/**
+ * The shape of the graph a plan was built from, for a reader that draws it.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export type PlanGraph = typeof PlanGraph.Type
+
+/**
  * The reviewable, signed payload returned by planning and resubmitted to
  * approval without reconstructing authority client-side.
  *
@@ -258,6 +381,19 @@ export const PlanCard = Schema.Struct({
   executionDigest: Schema.optional(Schema.String),
   plan: Schema.optional(PersistedPlan.Plan),
   nodes: Schema.Array(PlanNode),
+  /**
+   * The labelled edges of the graph this plan was built from, and where its
+   * nodes were declared.
+   *
+   * Deliberately OUTSIDE the digest an approval binds to: the edges and the
+   * declaration sites describe the plan a reader draws, and nothing here
+   * changes what will run. The
+   * persisted plan's own digest already covers keys, edges, effects,
+   * conflicts, priorities and generations, so a host that starts reporting
+   * this field re-plans to the digest it planned to before and every parked
+   * approval still validates.
+   */
+  graph: Schema.optional(PlanGraph),
   approval: ApprovalPayload
 })
 
@@ -983,10 +1119,13 @@ export const ListRequest = Schema.Union([
       runId: Schema.optional(RunId),
       flowId: Schema.optional(FlowId),
       status: Schema.optional(RunStatus),
+      terminal: Schema.optional(Schema.Boolean),
       principalId: Schema.optional(Schema.String),
       parentRunId: Schema.optional(RunId),
       lineageId: Schema.optional(Schema.String)
     })),
+    /** Omitted preserves the historical listing order. */
+    order: Schema.optional(Schema.Literal("newest")),
     cursor: Schema.optional(Schema.String),
     limit: Schema.optional(PageLimit)
   }),

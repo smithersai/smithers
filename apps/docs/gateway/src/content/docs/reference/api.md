@@ -179,7 +179,7 @@ gateway mints, reads, or answers with each one.
 
 | Export                  | Shape                                    |
 | ----------------------- | ---------------------------------------- |
-| `ProjectionName`        | the seven served projection names        |
+| `ProjectionName`        | the eight served projection names        |
 | `WorkspaceRunsSelector` | `{ _tag: "workspace-runs" }`             |
 | `RunSummarySelector`    | `{ _tag: "run-summary", runId }`         |
 | `RunEventsSelector`     | `{ _tag: "run-events", runId }`          |
@@ -187,11 +187,17 @@ gateway mints, reads, or answers with each one.
 | `RunTreeSelector`       | `{ _tag: "run-tree", runId }`            |
 | `ApprovalsSelector`     | `{ _tag: "approvals", runId? }`          |
 | `NodeOutputSelector`    | `{ _tag: "node-output", runId, nodeId }` |
-| `ProjectionSelector`    | the union of the seven                   |
+| `FlowDurationsSelector` | `{ _tag: "flow-durations", flowId }`     |
+| `ProjectionSelector`    | the union of the eight                   |
 
 `ApprovalsSelector` without `runId` lists the workspace's pending gates, which
 is the approvals inbox. With one it lists that run's gates including the decided
 ones, which is what a run card renders.
+
+`FlowDurationsSelector` is the one selector scoped to a flow rather than to a
+run. It ranks the durations the flow's newest finished runs measured, so a
+client reads it once when it opens a card and again when a run finishes, never
+inside a poll loop.
 
 `rowSchemaFor<S extends ProjectionSelector>(selector: S)` answers the schema of
 the rows that selector projects, so a client decodes a snapshot instead of

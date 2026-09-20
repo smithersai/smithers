@@ -3,7 +3,7 @@ import { useMemo } from "react"
 import { cardActions } from "../cards/CardActions"
 import { CardView } from "../ChatCards"
 import { useController } from "../ControllerContext"
-import { useCardRows, useWorkflowCatalogRows } from "../state/useCardRows"
+import { useCardRows, useFileCardRows, useFlowDurationRows, useTriggerListRows, useWorkflowCatalogRows } from "../state/useCardRows"
 
 /*
  * A card tab's body (docs/LOCAL-APP.md "Cards"): the SAME card component
@@ -19,6 +19,9 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
   const { collections } = controller.store
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
+  const triggerCatalogs = useTriggerListRows(collections.cards)
+  const flowDurations = useFlowDurationRows(collections.flowDurations)
+  const fileCards = useFileCardRows(collections.cards)
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const { data: sessionRows } = useLiveQuery((q) =>
     q.from({ session: collections.sessions }).select(({ session }) => ({
@@ -45,6 +48,9 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
         debugVerbose={sessionRows[0]?.verbose === true}
         worldDocuments={worldDocuments}
         workflowCatalogs={workflowCatalogs}
+        triggerCatalogs={triggerCatalogs}
+        flowDurations={flowDurations}
+        fileCards={fileCards}
         {...cardActions(controller)}
       />
     </div>

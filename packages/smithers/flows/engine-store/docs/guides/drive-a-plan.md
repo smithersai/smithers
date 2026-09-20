@@ -67,6 +67,11 @@ interface Service {
 the newest generation and journals `subgraph-appended`. `run` walks the graph
 and returns a `Report`.
 
+Both plan records carry the graph itself under `graph.nodes`, beside the node
+count `nodes` has always been, and each node names the tag it dispatches. They
+carry no edges: a plan names its edges through each node's `dependsOn`, and the
+reason for an edge is something only an interpreted graph knows.
+
 The runtime requirements include `PlanInputStore.layer` and `PlanMergeStore.layer`. Compose them over the
 same database and durable writer as the other stores, with `Crypto`, after
 `Migrations.layer` has installed the schema. `TestStores.layer` and `layerAt`

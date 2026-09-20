@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { CommandActions } from "./Flows"
 import { adminFlows, baseFlows } from "./Flows"
 import { nameOf } from "./registry"
-import { hasGrammar, payloadFor } from "./SlashPayload"
+import { flowPlanParts, hasGrammar, payloadFor } from "./SlashPayload"
 
 /*
  * The composer boundary refuses what it cannot parse exactly. `files.list`
@@ -33,6 +33,34 @@ describe("slash payload argument counts", () => {
     expect(payloadFor("flow.run", "")).toEqual({
       error: "flow.run needs a flow name"
     })
+  })
+
+  test("flow.plan takes the launch's own line, and the run to compare it against", () => {
+    expect(payloadFor("flow.plan", "review")).toEqual({ payload: { name: "review" } })
+    expect(payloadFor("flow.plan", "against=run-9 review will/flows")).toEqual({
+      payload: { name: "review", repo: "will/flows", against: "run-9" }
+    })
+    expect(payloadFor("flow.plan", 'sourceCard=card-1 against=run-9 review {"pr":4}')).toEqual({
+      payload: { name: "review", input: { pr: 4 }, against: "run-9", sourceCard: "card-1" }
+    })
+  })
+
+  test("flow.run takes no run to compare against: only the plan door previews", () => {
+    // A launch reads the token as the flow it was asked to run, which is what
+    // the launch grammar has always done with a leading word.
+    expect(payloadFor("flow.run", "against=run-9 review")).toEqual({
+      payload: { name: "against=run-9", repo: "review" }
+    })
+  })
+
+  test("flowPlanParts keeps the tokens a half-typed plan line already carries", () => {
+    expect(flowPlanParts("sourceCard=card-1 against=run-9 review will/flows")).toEqual({
+      name: "review",
+      repo: "will/flows",
+      sourceCard: "card-1",
+      against: "run-9"
+    })
+    expect(flowPlanParts("review")).toEqual({ name: "review" })
   })
 
   test("admin.grant refuses a third token instead of dropping it", () => {
@@ -143,6 +171,39 @@ describe("the runs grammar", () => {
       error: "runs.trace.select's seq is a journal sequence number"
     })
     expect(payloadFor("runs.trace.select", "")).toEqual({ error: "runs.trace.select needs a run id" })
+  })
+
+  /*
+   * The graph's drill-in (L5): a select takes a node or nothing at all, and a
+   * tab takes one of the four words the drawer answers to.
+   */
+  test("the graph drill-ins take a node to open, or nothing to close the one that is open", () => {
+    expect(payloadFor("runs.graph.select", "run-1 root.flow")).toEqual({ payload: { runId: "run-1", nodeId: "root.flow" } })
+    expect(payloadFor("runs.graph.select", "run-1")).toEqual({ payload: { runId: "run-1" } })
+    expect(payloadFor("runs.graph.select", "")).toEqual({ error: "runs.graph.select needs a run id" })
+    expect(payloadFor("runs.graph.select", "run-1 root.flow extra")).toEqual({
+      error: "runs.graph.select takes a run id and at most one node"
+    })
+    expect(payloadFor("runs.graph.tab", "run-1 code")).toEqual({ payload: { runId: "run-1", tab: "code" } })
+    expect(payloadFor("runs.graph.tab", "run-1 frames")).toEqual({
+      error: "runs.graph.tab needs one of declaration, code, output, events, attempts"
+    })
+    expect(payloadFor("runs.graph.tab", "run-1")).toEqual({
+      error: "runs.graph.tab needs one of declaration, code, output, events, attempts"
+    })
+    expect(payloadFor("flow.plan.select", "flow-plan-1 gate")).toEqual({ payload: { cardId: "flow-plan-1", nodeId: "gate" } })
+    expect(payloadFor("flow.plan.select", "flow-plan-1")).toEqual({ payload: { cardId: "flow-plan-1" } })
+    expect(payloadFor("flow.plan.select", "")).toEqual({ error: "flow.plan.select needs the plan card it draws on" })
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 declaration")).toEqual({
+      payload: { cardId: "flow-plan-1", tab: "declaration" }
+    })
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 output")).toEqual({
+      payload: { cardId: "flow-plan-1", tab: "output" }
+    })
+    /* A word the drawer has no tab for is refused by name (the mock's `input` is not one the engine can fill). */
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 input")).toEqual({
+      error: "flow.plan.tab needs one of declaration, code, output, events, attempts"
+    })
   })
 
   test("approvals.list takes just an owner/repo", () => {

@@ -72,6 +72,23 @@ export interface Config {
   readonly remote?: string | undefined
   readonly credential?: string | undefined
   /**
+   * Whether this host imports a flow file its own runs write, while it serves.
+   *
+   * OFF by default, and that default is a trust statement. The host's module
+   * loader is a plain `import()` in the serving process: top-level code in an
+   * agent-written `flows/<id>/flow.ts` runs with the host's own credentials,
+   * its filesystem and its network, and nothing approves that import. With
+   * this off, a flow a run authored is discovered the next time the host
+   * starts — which is an operator's decision — and until then the plan door
+   * answers `FlowNotFound`, the refusal it has always answered with for a
+   * flow this host does not hold.
+   *
+   * Turn it on for a host whose runs you would let run arbitrary code anyway:
+   * a fixture, a disposable box, a sandbox. Do not turn it on for a host that
+   * holds credentials a run must not reach.
+   */
+  readonly rebuildAuthoredFlows?: boolean | undefined
+  /**
    * MCP servers the local executor connects at startup, each projected into
    * the run's flow catalog by `@smthrs/mcp/McpFlows`. Empty by default, and
    * meaningless when `remote` is set — a remote composition's executor is not

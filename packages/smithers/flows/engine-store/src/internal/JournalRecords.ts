@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
+import type { EngineEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import { EventTypes } from "../EventTypes.ts"
 
@@ -40,6 +41,17 @@ export interface EventOptions {
    * re-deriving it.
    */
   readonly cacheKey?: string | undefined
+  /**
+   * What a re-emission of this producer identity means.
+   *
+   * The default, `content`, is the strict reading: the identity names one set
+   * of bytes. `identity` is for a record whose sequence is derived from the
+   * event itself, where a collision IS the same event observed twice and the
+   * bytes that differ are metadata about the observation — a node settled
+   * `built` by the walk that ran it and `clean` by the resumed walk that
+   * replayed it is one node settling once, seen twice.
+   */
+  readonly dedupe?: JournalEvent.Dedupe | undefined
 }
 
 /**
@@ -58,6 +70,7 @@ const event = (options: EventOptions, eventType: string, payload: unknown): Jour
     runId: options.runId as JournalEvent.RunId,
     sourceId: options.sourceId as JournalEvent.SourceId,
     ...(options.sourceSeq === undefined ? {} : { sourceSeq: options.sourceSeq as JournalEvent.SourceSeq }),
+    ...(options.dedupe === undefined ? {} : { dedupe: options.dedupe }),
     eventType,
     payload,
     meta: meta(options)
@@ -187,7 +200,7 @@ export const copyBackSettled = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const planRecorded = (options: EventOptions, payload: unknown) =>
+export const planRecorded = (options: EventOptions, payload: EngineEvent.PlanRecordedPayload) =>
   event(options, EventTypes.planRecorded, payload)
 /**
  * An elaboration appended a pre-keyed subgraph to the SAME plan. The plan
@@ -197,7 +210,7 @@ export const planRecorded = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const subgraphAppended = (options: EventOptions, payload: unknown) =>
+export const subgraphAppended = (options: EventOptions, payload: EngineEvent.SubgraphAppendedPayload) =>
   event(options, EventTypes.subgraphAppended, payload)
 /**
  * A plan node was admitted to the scheduler: its caps and seats allowed it,
@@ -208,7 +221,7 @@ export const subgraphAppended = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const nodeScheduled = (options: EventOptions, payload: unknown) =>
+export const nodeScheduled = (options: EventOptions, payload: EngineEvent.NodeScheduledPayload) =>
   event(options, "flows.engine.node-scheduled", payload)
 /**
  * A plan node reached an evaluation outcome. Skyframe's
@@ -224,7 +237,7 @@ export const nodeScheduled = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const nodeSettled = (options: EventOptions, payload: unknown) =>
+export const nodeSettled = (options: EventOptions, payload: EngineEvent.NodeSettledPayload) =>
   event(options, "flows.engine.node-settled", payload)
 /**
  * A scheduled node's dispatch identity was invalidated: its measured inputs no
@@ -235,7 +248,7 @@ export const nodeSettled = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const nodeInvalidated = (options: EventOptions, payload: unknown) =>
+export const nodeInvalidated = (options: EventOptions, payload: EngineEvent.NodeInvalidatedPayload) =>
   event(options, "flows.engine.node-invalidated", payload)
 /**
  * The reconciliation seam returned a verdict for a deviation or an unabsorbed
@@ -244,7 +257,7 @@ export const nodeInvalidated = (options: EventOptions, payload: unknown) =>
  * @since 0.1.0
  * @category events
  */
-export const nodeReconciled = (options: EventOptions, payload: unknown) =>
+export const nodeReconciled = (options: EventOptions, payload: EngineEvent.NodeReconciledPayload) =>
   event(options, "flows.engine.node-reconciled", payload)
 /**
  * A selection guess postponed a sink node: it did not execute, wrote no cache

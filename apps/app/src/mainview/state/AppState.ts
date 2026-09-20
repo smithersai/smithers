@@ -140,6 +140,31 @@ export type RepoTreeRow = z.infer<typeof RepoTreeRowSchema>
 export const repoTreeRowId = (copyId: string, path: string): string => `${copyId}#${path}`
 
 /*
+ * How long one flow's nodes take, per action tag (D-030): the gateway's
+ * `flow-durations` projection, one row per tag it has measured. Server state,
+ * re-read per session and NEVER persisted, because a workspace's history
+ * moves between launches and a stale prediction is a lie with a number in it.
+ * A tag nothing has measured has no row; there is no shape here for an
+ * unmeasured prediction.
+ */
+export const FlowDurationsRowSchema = z.object({
+  /** `flowDurationRowId(repo, flowId, actionTag)`. */
+  id: z.string(),
+  repo: z.string(),
+  flowId: z.string(),
+  /** The action or flow the measured nodes dispatched. */
+  actionTag: z.string(),
+  /** How many measured executions the two percentiles were folded from. */
+  samples: z.number(),
+  p50Ms: z.number(),
+  p90Ms: z.number(),
+  loadedAt: z.number()
+})
+export type FlowDurationsRow = z.infer<typeof FlowDurationsRowSchema>
+export const flowDurationRowId = (repo: string, flowId: string, actionTag: string): string =>
+  `${repo}:${flowId}:${actionTag}`
+
+/*
  * A target this user starred (target.star): the targets card's Featured
  * view leads with the repository's manifest-featured labels plus these.
  * Keyed by the repo's pin key and the label so a star survives the server's
@@ -1720,6 +1745,8 @@ export type AppTransition =
   | { type: "repo-tree.failed"; actor: "system"; copyId: string; path: string; error: string }
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
   | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow> }
+  /* The whole of one flow's measured history, replacing whatever was read before. */
+  | { type: "flow-durations.loaded"; actor: "system"; repo: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
   /* The workspace heading: its name, and the inline editor the pencil opens. */
   | { type: "workspace.renamed"; actor: Actor; name: string }
   | { type: "workspace.rename.toggled"; actor: "user"; open: boolean }

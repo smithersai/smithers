@@ -84,9 +84,17 @@ const SnapshotPayload = Schema.Struct({
   carried: Schema.optionalKey(Schema.Boolean)
 })
 
+/**
+ * `digest` is optional because not every graph a run is driven from has one.
+ * The plan scheduler names a digest an approval binds to; an interpreted flow
+ * records the graph it built and has no plan id and no digest to name. A
+ * record that names none puts none in force, and the lineage keeps the digest
+ * its last naming record put there -- an anchor stamped with a digest the
+ * record never claimed would be worse than an anchor with none.
+ */
 const PlanPayload = Schema.Struct({
   version: Schema.optionalKey(Schema.Literal(1)),
-  digest: Schema.NonEmptyString
+  digest: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -122,7 +130,10 @@ export const step = (
       return {
         state: {
           ...state,
-          lineages: { ...state.lineages, [lineageId]: { ...lineage, planDigest: plan.digest } }
+          lineages: {
+            ...state.lineages,
+            [lineageId]: plan.digest === undefined ? lineage : { ...lineage, planDigest: plan.digest }
+          }
         },
         anchor: undefined
       }

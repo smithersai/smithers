@@ -26,7 +26,13 @@ it("reports invalid JavaScript configuration before constructing injected servic
     [{ owner: undefined }, "owner.hostId"],
     [{ isAlive: undefined }, "isAlive"],
     [{ canExecute: "yes" }, "canExecute"],
-    [{ requestResume: "yes" }, "requestResume"]
+    [{ requestResume: "yes" }, "requestResume"],
+    // Cache key material, so an incomplete declaration is refused where it is
+    // written rather than folded into every sealed key this host derives.
+    [{ cacheEnvironment: { layers: [""], capabilities: {} } }, "cacheEnvironment"],
+    [{ cacheEnvironment: { layers: [] } }, "cacheEnvironment"],
+    // A ref a reader could not resolve is not a revision (D-068).
+    [{ sourceRevision: "" }, "sourceRevision"]
   ] as const
   for (const [patch, field] of invalid) {
     const parameters = [

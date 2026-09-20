@@ -96,7 +96,18 @@ schema constant and a type of the same name unless noted.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PlanNodeStatus` | `"cached" \| "run"`. The two outcomes a step key already decides: reuse the cached result, or run the step. A card reports nothing else.                                             |
 | `PlanNode`       | The persisted plan node's fields plus `status`. `key` is the step key [`@smthrs/plan`](https://plan.smithers.sh/reference/api/) compiled, so a node named here and a node in the persisted plan are the same node. |
-| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.      |
+| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, graph?, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.      |
+| `PlanEdgeReason` | `"value" \| "continuation" \| "failure" \| "conflict" \| "lane-merge"`. Why one node waits for another, in the vocabulary of whichever graph builder the host planned with. |
+| `PlanEdge`       | `{ from, to, reason: PlanEdgeReason }`. One labelled edge of the graph the plan was built from. |
+| `PlanGraphNode`  | `{ id, declaredAt?: { path, line } }`. Where one node was declared, repo-relative under `@smthrs/journal`'s own rule, which refuses an absolute path. A host that cannot make a path relative to its root omits it. |
+| `PlanGraph`      | `{ edges: PlanEdge[], nodes?: PlanGraphNode[], sourceRevision?: string }`. A `PlanNode` carries `dependsOn`, one unlabelled edge set that cannot tell a value dependency from a recovery arm or from an ordering edge a write conflict added; a host that graphs a flow reports the reasons here instead, and the declaration sites the key material deliberately does not carry. `sourceRevision` is the immutable name of the tree those sites were read out of — a jj working-copy commit id, or a git commit for a tree that still matches one — so a reader can ask for the file AT that revision instead of whatever is on disk now. A host that cannot name one omits it. |
+
+`graph` sits deliberately OUTSIDE the digest an approval binds to. The edges
+and the declaration sites describe the plan a reader draws, and nothing in
+them changes what will run,
+so a host that starts reporting them re-plans to the digest it planned to
+before and every parked approval still validates. A host that graphs nothing
+omits the field, and a card stored before the field existed still decodes.
 
 `executionDigest` binds a discovery-based host's measured source and metadata
 to the approved card digest. It is optional for generic control-plane hosts,
@@ -386,7 +397,7 @@ requested while one is being taken up is not lost with it.
 | `PlanOutcome`    | `{ card: PlanCard; created: boolean }`. `created` is what lets `plan` journal one creation per plan rather than one per retry.                                                                                                   |
 | `MutationRecord` | `{ fingerprint: string; receipt: Receipt }`                                                                                                                                                                                      |
 | `PendingResume`  | `{ runId: RunId; sequence: number; requestedAtMs: number }`                                                                                                                                                                      |
-| `MemoryFlow`     | `{ flowId; description; deployClass; envelope; executionDigest?; decode?; plan? }`. The optional execution identity is included in the approved card; `decode` validates input and `plan` projects it into the keyed node graph. |
+| `MemoryFlow`     | `{ flowId; description; deployClass; envelope; executionDigest?; decode?; plan? }`. The optional execution identity is included in the approved card; `decode` validates input and `plan` projects it into the keyed node graph, answering `{ plan, statuses?, graph? }`. |
 | `MemoryOptions`  | `{ flows?: MemoryFlow[]; now?: () => number; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }`                                                                                          |
 
 `layerMemory` models the production fence and approval ordering seams but keeps

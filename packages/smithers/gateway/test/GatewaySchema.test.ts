@@ -55,7 +55,11 @@ const cases = [
   [{ _tag: "transcript", runId: "run-1" }, GatewayProjection.transcript([accepted])[0]],
   [{ _tag: "run-tree", runId: "run-1" }, GatewayProjection.runTree(run, [started])[0]],
   [{ _tag: "approvals", runId: "run-1" }, GatewayProjection.approvals([approval])[0]],
-  [{ _tag: "node-output", runId: "run-1", nodeId: "call-1" }, GatewayProjection.nodeOutput([started, settled])[0]]
+  [{ _tag: "node-output", runId: "run-1", nodeId: "call-1" }, GatewayProjection.nodeOutput([started, settled])[0]],
+  [
+    { _tag: "flow-durations", flowId: "deploy" },
+    GatewayProjection.flowDurations("deploy", [{ actionTag: "build", durationMs: 240 }])[0]
+  ]
 ] as const satisfies ReadonlyArray<readonly [GatewaySchema.ProjectionSelector, unknown]>
 
 describe("GatewaySchema.rowSchemaFor", () => {

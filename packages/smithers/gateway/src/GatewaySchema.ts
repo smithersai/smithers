@@ -151,6 +151,28 @@ export const NodeOutputSelector = Schema.TaggedStruct("node-output", {
  */
 export type NodeOutputSelector = typeof NodeOutputSelector.Type
 
+/**
+ * A selector for one flow's measured node durations.
+ *
+ * This is the one projection that is neither a workspace listing nor scoped
+ * to a run: it folds the history of one flow across the runs that executed
+ * it, which is what makes it a prediction rather than a report.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export const FlowDurationsSelector = Schema.TaggedStruct("flow-durations", {
+  flowId: Schema.String
+})
+
+/**
+ * A selector for one flow's measured node durations.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type FlowDurationsSelector = typeof FlowDurationsSelector.Type
+
 /** A schema for a tagged selector, whose tag names its projection. */
 interface SelectorSchema extends Schema.Top {
   readonly Type: { readonly _tag: string }
@@ -175,7 +197,8 @@ const served = [
   [TranscriptSelector, GatewayProjection.TranscriptRow],
   [RunTreeSelector, GatewayProjection.RunTreeRow],
   [ApprovalsSelector, GatewayProjection.ApprovalRow],
-  [NodeOutputSelector, GatewayProjection.NodeOutputRow]
+  [NodeOutputSelector, GatewayProjection.NodeOutputRow],
+  [FlowDurationsSelector, GatewayProjection.FlowDurationRow]
 ] as const satisfies ServedTable
 
 /** The served table as the type every derivation below maps over. */

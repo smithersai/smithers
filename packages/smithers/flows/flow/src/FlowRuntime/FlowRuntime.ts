@@ -37,6 +37,7 @@ import type { CancelRequestFailed } from "./CancelRequestFailed.ts"
 import type { FlowCycleDetected } from "./FlowCycleDetected.ts"
 import type { FlowExecutionNotFound } from "./FlowExecutionNotFound.ts"
 import type { FlowInstance } from "./FlowInstance.ts"
+import type * as NodeRecord from "./NodeRecord.ts"
 
 /**
  * Result of atomically completing a deferred only while its run is parked.
@@ -260,6 +261,34 @@ export class FlowRuntime extends Context.Service<
       never,
       Success["EncodingServices"] | Error["EncodingServices"]
     >
+
+    /**
+     * Records what a driven graph is and how its nodes settled.
+     *
+     * OPTIONAL, and optional in the strong sense: a runtime that keeps no
+     * history has nothing to record, and the interpreter skips journal preflight when none does. An engine with a journal implements it by
+     * writing the record; an in-memory or test runtime leaves it absent and
+     * the walk is unchanged. That is also why it is not `void`-returning
+     * bookkeeping bolted onto `actionExecute`: a node is not an action, and
+     * three of the four records describe nodes no action ever dispatched.
+     *
+     * The record carries its own replay-stable `sourceId`. An implementation
+     * MUST use it as the record's producer identity rather than minting one,
+     * because that is what makes a resumed walk collapse onto the rows the
+     * first walk wrote instead of doubling every node.
+     */
+    readonly recordNode?:
+      | ((record: NodeRecord.NodeRecord) => Effect.Effect<void, never, FlowInstance>)
+      | undefined
+
+    /**
+     * Upper bound on UTF-8 bytes for a node record's persisted journal entry,
+     * including the writer's envelope. Used to page a plan before any writes.
+     * Must be deterministic for the execution so resume keeps page identities.
+     */
+    readonly nodeRecordBytes?:
+      | ((record: NodeRecord.NodeRecord) => Effect.Effect<number, never, FlowInstance>)
+      | undefined
 
     /**
      * Schedule a wake up for a DurableClock

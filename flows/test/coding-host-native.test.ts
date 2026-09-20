@@ -200,6 +200,10 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   t.diagnostic(`Completion brake refuses: ${JSON.stringify(refused)}`)
   assert.equal(CompletionClaim.unrecorded(stands!), false, JSON.stringify(stands))
   assert.equal(CompletionClaim.unrecorded(refused!), true, JSON.stringify(refused))
-  assert.match(CompletionClaim.unproven(refused!, true, inventedClaim).message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
+  const failure = CompletionClaim.unproven(refused!, true, inventedClaim)
+  assert.match(failure.message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
+  // The failure quotes the completion it refused, so a reader of the run sees
+  // the sentence rather than only a probability.
+  assert.match(failure.message, /I ran `node verify\.mjs` and every check passed\./)
   passed = true
 })

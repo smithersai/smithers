@@ -12,6 +12,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Cause, Deferred, Duration, Effect, Fiber, Option, Schema, Scope, Semaphore } from "effect"
+import * as AuthoredSources from "./AuthoredSources.ts"
 import * as Projection from "./EngineJournalProjection.ts"
 
 /**
@@ -27,6 +28,20 @@ export interface Options {
   readonly control: Pick<ControlRuntime.Service, "getRun" | "listRuns">
   /** Overrides {@link orderingGrace}; a suite with no follower to wait for shortens it. */
   readonly orderingGrace?: Duration.Duration | undefined
+  /**
+   * Called with each discovered flow whose registry entry file a settled
+   * copy-back applied, as the observation copies that record across.
+   *
+   * This is the host's one notice that its own `flows/` directory changed
+   * under it. A native host's executable catalog is built once at startup, so
+   * without it a flow an agent authors mid-run has a descriptor and no
+   * executable: `flow.plan` answers `FlowNotFound` or a plan with no nodes
+   * until the host is restarted. The observer already reads every native
+   * record for the projection, so nothing new is opened to see this.
+   *
+   * A capture alone never fires it: see {@link module:AuthoredSources}.
+   */
+  readonly onSourceApplied?: ((flowId: string) => Effect.Effect<void>) | undefined
 }
 
 /**
@@ -257,11 +272,20 @@ export const make = (options: Options) =>
           }
           yield* Effect.sleep("1 second")
         }
+        // One matcher per observation: a bundle captured under an attempt can
+        // only settle under that same attempt, and a recovered observation
+        // rereads both halves from the journal rather than inheriting them.
+        const applied = AuthoredSources.make()
+        const onSourceApplied = options.onSourceApplied
         const projection = yield* Projection.make({
           ...options,
           runLineage: options.runs.lineage,
           controlRunId: id,
-          executionId: id
+          executionId: id,
+          ...(onSourceApplied === undefined ? {} : {
+            onRecord: (entry, generation) =>
+              Effect.forEach(applied.observe(entry, generation), onSourceApplied, { discard: true })
+          })
         })
         for (;;) {
           const before = yield* root(id)

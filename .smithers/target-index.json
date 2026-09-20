@@ -625,6 +625,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/app/playwright.graph.config.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/app/package.json"
       },
       {

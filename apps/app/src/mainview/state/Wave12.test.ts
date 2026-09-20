@@ -40,6 +40,7 @@ const relay = (options: {
   const calls: Array<{ path: string; method: string; body: unknown }> = []
   const state = {
     runStatus: "running" as string,
+    revision: 1,
     turns: 0,
     calls: 0,
     launched: [] as Array<{ workflow: string; input: unknown; repo: string }>
@@ -78,6 +79,7 @@ const relay = (options: {
         return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: "run-w12" } })
       case "Cancel":
         state.runStatus = "cancelled"
+        state.revision += 1
         return json(200, { ok: true, payload: { _tag: "Accepted", receiptId: "c", runId: "run-w12" } })
       case "Approval.Submit":
         return json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "a" } } })
@@ -89,13 +91,13 @@ const relay = (options: {
         return json(200, {
           ok: true,
           payload: {
-            cursor: { projection: "run-summary", runId: "run-w12", value: 1 },
+            cursor: { projection: "run-summary", runId: "run-w12", value: state.revision },
             rows: [{
               runId: "run-w12",
               flowId: state.launched.at(-1)?.workflow ?? "review-pr",
               status: state.runStatus,
               createdAt: 1,
-              updatedAt: 2 + state.turns + state.calls,
+              updatedAt: 1 + state.revision + state.turns + state.calls,
               turns: state.turns,
               calls: state.calls,
               callsFailed: 0,

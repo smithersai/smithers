@@ -90,6 +90,8 @@ export interface ControllerContext {
   /** Late-bound by AppController: verifies a settled change run's receipt (controller/tutorialChange.ts). */
   finishTutorialChange: (cardId: string) => Promise<void>
   resumeWorkflowRuns: () => void
+  observeFlowAuthoring: (cardId: string) => Promise<void>
+  resumeFlowAuthoring: (retryCardId?: string) => void
   resumeDeferredCommand: () => void
   /**
    * Late-bound by AppController: make the first-run target choice for the
@@ -186,6 +188,8 @@ export const createControllerContext = (
     loadSession: async () => {},
     finishTutorialChange: async () => {},
     resumeWorkflowRuns: () => {},
+    observeFlowAuthoring: async () => {},
+    resumeFlowAuthoring: () => {},
     resumeDeferredCommand: () => {},
     settleFirstRunTarget: () => {},
     stopWorkflowPumps: () => {},

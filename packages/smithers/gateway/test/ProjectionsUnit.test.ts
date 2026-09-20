@@ -426,6 +426,22 @@ describe("Projections resource bounds", () => {
       expect(second.cursor.value).toBe(2)
     }))
 
+  it.effect("refuses oversized native graph pages at the event byte limit without clipping topology", () =>
+    Effect.gen(function*() {
+      for (const eventType of ["flows.engine.plan-recorded", "flows.engine.subgraph-appended"]) {
+        const projections = make(control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: () =>
+            Stream.succeed(event(1, "control.engine.event", {
+              eventType,
+              payload: { graph: { nodes: [{ id: "界".repeat(Projections.maxEventBytes / 2) }], edges: [] } }
+            }))
+        }))
+        expect((yield* Effect.flip(projections.snapshot({ _tag: "run-events", runId: run.runId }))).code)
+          .toBe("resource_limit")
+      }
+    }))
+
   it.effect("refuses a native event too large for a page instead of corrupting its contract", () =>
     Effect.gen(function*() {
       const projections = make(control({

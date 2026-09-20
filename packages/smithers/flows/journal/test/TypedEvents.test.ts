@@ -329,3 +329,180 @@ describe("versioned engine event boundary", () => {
       }
     }))
 })
+
+describe("node and plan records", () => {
+  // Copied from the shapes `PlanScheduler` emits today (PlanScheduler.ts:505,
+  // :536, :1036, :1048, :966, :987). These schemas describe stored history, so
+  // a change that stops decoding one of these is a migration, not a fix.
+  const scheduled = {
+    planId: "plan",
+    nodeId: "compile",
+    kind: "step",
+    planKey: "key",
+    dispatchKey: "dispatch",
+    attempt: 1,
+    priority: 0,
+    waited: 12
+  }
+  const settled = {
+    planId: "plan",
+    nodeId: "compile",
+    planKey: "key",
+    dispatchKey: "dispatch",
+    outcome: "built",
+    attempts: 1,
+    rebases: 0
+  }
+  const recorded = { planId: "plan", flow: "build", digest: "d", baseDigest: "b", generation: 0, nodes: 2 }
+  const appended = { planId: "plan", digest: "d", baseDigest: "b", generation: 1, nodeIds: ["link"] }
+
+  it("decodes what the plan scheduler writes today", () => {
+    const strict = { onExcessProperty: "error" } as const
+    expect(Schema.decodeUnknownSync(EngineEvent.NodeScheduledPayload, strict)(scheduled)).toEqual(scheduled)
+    expect(Schema.decodeUnknownSync(EngineEvent.NodeSettledPayload, strict)(settled)).toEqual(settled)
+    expect(Schema.decodeUnknownSync(EngineEvent.PlanRecordedPayload, strict)({ ...recorded, outcome: "Recorded" }))
+      .toEqual({ ...recorded, outcome: "Recorded" })
+    expect(Schema.decodeUnknownSync(EngineEvent.SubgraphAppendedPayload, strict)(appended)).toEqual(appended)
+    expect(
+      Schema.decodeUnknownSync(EngineEvent.NodeInvalidatedPayload, strict)({
+        planId: "plan",
+        nodeId: "compile",
+        planKey: "key",
+        from: "a",
+        to: "b",
+        reason: "measured-inputs-changed"
+      }).reason
+    ).toBe("measured-inputs-changed")
+    expect(
+      Schema.decodeUnknownSync(EngineEvent.NodeReconciledPayload, strict)({
+        planId: "plan",
+        nodeId: "compile",
+        trigger: "deviation",
+        verdict: { _tag: "Accept" }
+      }).nodeId
+    ).toBe("compile")
+  })
+
+  it("decodes what an interpreter writes, which knows no plan id and no dispatch key", () => {
+    const decode = Schema.decodeUnknownSync(EngineEvent.PlanRecordedPayload, { onExcessProperty: "error" })
+    const graph = {
+      nodes: [{
+        id: "read",
+        kind: "ActionCall",
+        dependsOn: [],
+        tier: "sealed",
+        action: "fs/read",
+        declaredAt: { path: "src/Build.ts", line: 12 }
+      }],
+      edges: [{ from: "read", to: "double", reason: "value" }]
+    }
+    const interpreted = { flow: "build", generation: 0, nodes: 1, page: 0, pages: 1, graph }
+    expect(decode(interpreted)).toEqual(interpreted)
+    expect(
+      Schema.decodeUnknownSync(EngineEvent.NodeScheduledPayload, { onExcessProperty: "error" })({
+        nodeId: "read",
+        kind: "ActionCall",
+        attempt: 1
+      }).planId
+    ).toBeUndefined()
+    for (const outcome of ["built", "clean", "failed", "skipped", "deferred"]) {
+      expect(
+        Schema.decodeUnknownSync(EngineEvent.NodeSettledPayload)({ nodeId: "read", outcome, attempts: 0 }).outcome
+      ).toBe(outcome)
+    }
+    expect(() =>
+      Schema.decodeUnknownSync(EngineEvent.NodeSettledPayload)({ nodeId: "read", outcome: "cached", attempts: 0 })
+    )
+      .toThrow()
+  })
+
+  /*
+   * D-068: a recorded site says where a node was declared and never which
+   * bytes were there. A writer that knows the revision its sources were read
+   * at states it on the page those sites ride on; one that does not says
+   * nothing, and a reader with nothing opens no code at all.
+   */
+  it("carries the revision the recorded sites were read at, when the writer knew one", () => {
+    const decode = Schema.decodeUnknownSync(EngineEvent.PlanRecordedPayload, { onExcessProperty: "error" })
+    const graph = {
+      nodes: [{
+        id: "read",
+        kind: "ActionCall",
+        dependsOn: [],
+        tier: "sealed",
+        declaredAt: { path: "src/Build.ts", line: 12 }
+      }],
+      edges: [],
+      sourceRevision: "b".repeat(40)
+    }
+    const page = { flow: "build", generation: 0, nodes: 1, page: 0, pages: 1, graph }
+    expect(decode(page).graph?.sourceRevision).toBe("b".repeat(40))
+    const { sourceRevision: _named, ...unnamed } = graph
+    expect(decode({ ...page, graph: unnamed }).graph?.sourceRevision).toBeUndefined()
+    /* An empty string is not a revision: a ref nothing can resolve. */
+    expect(() => decode({ ...page, graph: { ...graph, sourceRevision: "" } })).toThrow()
+    expect(
+      Schema.decodeUnknownSync(EngineEvent.SubgraphAppendedPayload, { onExcessProperty: "error" })({
+        flow: "build",
+        generation: 0,
+        nodeIds: ["read"],
+        graph
+      }).graph?.sourceRevision
+    ).toBe("b".repeat(40))
+  })
+
+  it("refuses a declaration path that would publish the machine it was written on", () => {
+    const decode = Schema.decodeUnknownSync(EngineEvent.DeclaredAt)
+    expect(decode({ path: "packages/build/src/Build.ts", line: 12 })).toEqual({
+      path: "packages/build/src/Build.ts",
+      line: 12
+    })
+    expect(decode({ path: "src/Build.ts", line: 0 }).line).toBe(0)
+    for (
+      const invalid of [
+        { path: "/Users/someone/repo/src/Build.ts", line: 12 },
+        { path: "", line: 12 },
+        { path: "src/Build.ts", line: -1 }
+      ]
+    ) expect(() => decode(invalid)).toThrow()
+  })
+
+  it("strips the root off a declaration path, and answers nothing where it cannot", () => {
+    // The writer's one job beside the schema above: obey the refusal of an
+    // absolute path by stripping the root, and say nothing rather than
+    // record a path the refusal would reject or a reader could not resolve.
+    expect(EngineEvent.relativePath("/repo", "/repo/src/Build.ts")).toBe("src/Build.ts")
+    // A trailing slash on the root is the same root.
+    expect(EngineEvent.relativePath("/repo/", "/repo/src/Build.ts")).toBe("src/Build.ts")
+
+    // A host that declares no root strips nothing, so it records nothing.
+    expect(EngineEvent.relativePath(undefined, "/repo/src/Build.ts")).toBeUndefined()
+    // A root that IS the filesystem strips one leading slash and leaves an
+    // operator's home directory in a run's permanent history, so it is read
+    // as no root at all. The empty string and a Windows drive root say the
+    // same thing.
+    for (const root of ["", "/", "C:", "C:\\", "c:/"]) {
+      expect(EngineEvent.relativePath(root, "/repo/src/Build.ts")).toBeUndefined()
+    }
+    // Nothing to place.
+    expect(EngineEvent.relativePath("/repo", "")).toBeUndefined()
+    // Outside the root: omitted rather than recorded with `..` segments, which
+    // only a reader who knew the root could resolve.
+    expect(EngineEvent.relativePath("/repo", "/elsewhere/src/Build.ts")).toBeUndefined()
+    // A sibling whose name merely starts with the root's is outside it.
+    expect(EngineEvent.relativePath("/repo", "/repository/src/Build.ts")).toBeUndefined()
+    // The root itself is not a file under it.
+    expect(EngineEvent.relativePath("/repo", "/repo/")).toBeUndefined()
+  })
+
+  it("names one event type per record, and does not rename a stored one", () => {
+    expect(EngineEvent.nodeEventTypes).toEqual({
+      planRecorded: "flows.engine.plan-recorded",
+      subgraphAppended: "flows.engine.subgraph-appended",
+      nodeScheduled: "flows.engine.node-scheduled",
+      nodeSettled: "flows.engine.node-settled",
+      nodeInvalidated: "flows.engine.node-invalidated",
+      nodeReconciled: "flows.engine.node-reconciled"
+    })
+  })
+})

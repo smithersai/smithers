@@ -78,6 +78,17 @@ const setup = Effect.gen(function*() {
         )
         yield* sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = ${id}`
       })),
+    /** One native record of a given kind, as the engine would journal it. */
+    native: (eventType: string, payload: unknown, sourceId: string, id = "root") =>
+      engineJournal.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId: id as JournalEvent.RunId,
+          sourceId: sourceId as JournalEvent.SourceId,
+          sourceSeq: 0 as JournalEvent.SourceSeq,
+          eventType,
+          payload
+        })
+      ),
     rows: (id = "root") =>
       controlJournal.entries({ runId: id as JournalEvent.RunId, limit: 1000 }).pipe(
         Effect.map((page) => page.entries.filter((entry) => entry.eventType !== "control.engine.bound"))
@@ -125,6 +136,48 @@ describe("private native journal supervision", () => {
         expect(controlReads[0]).toBe(true)
         expect(controlReads.slice(1).every((inside) => !inside)).toBe(true)
         expect(nativeReads.every((inside) => !inside)).toBe(true)
+      }))),
+    30_000
+  )
+
+  it(
+    "rebuilds a flow whose entry file a run applied, and none whose bundle only proposed one",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        yield* f.create()
+        const bundle = (identity: string, overrides: Record<string, unknown> = {}) => ({
+          runId: "root",
+          stepKeyDigest: "digest-1",
+          attempt: 1,
+          bundleIdentity: identity,
+          ...overrides
+        })
+        // One bundle that touched a registry entry and reached the host.
+        yield* f.native(
+          "flows.engine.diff-bundle-captured",
+          bundle("applied", { changedPaths: ["flows/authored/flow.ts"] }),
+          "captured-applied"
+        )
+        yield* f.native("flows.engine.copy-back-settled", bundle("applied", { rebases: 0 }), "settled-applied")
+        // One that proposed the same kind of change and never settled: an
+        // attempt that failed, or a bundle that lost its rebase. Acting on it
+        // would rebuild a catalog from bytes no run ever applied.
+        yield* f.native(
+          "flows.engine.diff-bundle-captured",
+          bundle("proposed", { changedPaths: ["flows/proposed/flow.ts"] }),
+          "captured-proposed"
+        )
+        yield* f.finish()
+
+        const rebuilt: Array<string> = []
+        const supervisor = yield* f.make({
+          onSourceApplied: (flowId) => Effect.sync(() => void rebuilt.push(flowId))
+        })
+        yield* f.controlJournal.transact(supervisor.start("root"))
+        yield* until(f.rows(), isSettled)
+
+        expect(rebuilt).toEqual(["authored"])
       }))),
     30_000
   )

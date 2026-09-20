@@ -1309,6 +1309,42 @@ describe("the assembled gateway over a real loopback bind", () => {
       expect(incremental.exit.value.cursor).toEqual(journal.cursor)
     }).pipe(Effect.provide(served())))
 
+  test("answers an unreadable selector as a defect, not as a refusal", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      // What a box older than a selector does with it. `flow-durationz` takes
+      // the decode path `flow-durations` takes on a box that predates it, and
+      // the answer is not a `GatewayError`: the request decoder dies before a
+      // procedure runs, so the frame carries a `Die` and no code at all. A
+      // client that branches on `error.code` to learn whether the box knows a
+      // selector reads nothing here, and has to read the defect instead.
+      const response = yield* Effect.promise(() =>
+        fetch(`${url}/projections`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: `${
+            JSON.stringify({
+              _tag: "Request",
+              id: 1,
+              tag: "Projection.Snapshot",
+              payload: { selector: { _tag: "flow-durationz", flowId: "deploy" } },
+              headers: []
+            })
+          }\n`
+        })
+      )
+      const text = yield* Effect.promise(() => response.text())
+      const frame = JSON.parse(text.split("\n")[0] ?? "{}") as {
+        readonly exit: { readonly _tag: string; readonly cause: ReadonlyArray<Record<string, unknown>> }
+      }
+
+      expect(response.status).toBe(200)
+      expect(frame.exit._tag).toBe("Failure")
+      expect(frame.exit.cause.map((reason) => reason._tag)).toEqual(["Die"])
+      expect(frame.exit.cause[0]?.defect).toContain("[\"selector\"]")
+      expect(frame.exit.cause[0]?.code).toBeUndefined()
+    }).pipe(Effect.provide(served())))
+
   test("serves a sync read over POST /sync", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl

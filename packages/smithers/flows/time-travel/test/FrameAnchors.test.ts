@@ -160,6 +160,32 @@ describe("the snapshot projector", () => {
       ])
     }))
 
+  it.effect("anchors a graph recorded with no digest, and keeps the digest a naming record put in force", () =>
+    Effect.gen(function*() {
+      // An interpreted flow records the graph it was driven from and has no
+      // plan id and no digest to name. Refusing that record left the run with
+      // no anchor at all, so a rewind to a real snapshot reported that the
+      // frame had no jj pointer.
+      const result = yield* projectInto([
+        { seq: 0, eventType: "flows.engine.plan-recorded", payload: { flow: "build", generation: 0, nodes: 3 } },
+        { seq: 1, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "change-1" } },
+        { seq: 2, eventType: "flows.engine.plan-recorded", payload: { digest: "plan-a" } },
+        // A later record that names none puts none in force; it does not
+        // clear the digest the naming record put there.
+        { seq: 3, eventType: "flows.engine.subgraph-appended", payload: { generation: 1, nodeIds: ["a"] } },
+        { seq: 4, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "change-2" } }
+      ])
+
+      expect(result.state).toEqual({
+        lineages: { [lineageId]: { changeId: "change-2", planDigest: "plan-a" } },
+        anchors: 2
+      })
+      expect(result.snapshots).toEqual([
+        { runId: "run", frame: { lineageId, seq: 1 }, changeId: "change-1" },
+        { runId: "run", frame: { lineageId, seq: 4 }, changeId: "change-2", planDigest: "plan-a" }
+      ])
+    }))
+
   it.effect("ignores unrelated events but fails closed on malformed known events", () =>
     Effect.gen(function*() {
       const unrelated = yield* projectInto([

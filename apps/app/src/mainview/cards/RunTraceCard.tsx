@@ -9,11 +9,12 @@ import { Markdown, StatusPill } from "@smthrs/ui"
 import { PhaseStrip } from "./RunTracePhaseStrip"
 export { phasePins } from "./RunTracePhaseStrip"
 import { codingEvidenceOf } from "./CodingPlan"
+import { FlowRunGraph, runGraphOfCard } from "./FlowRunGraph"
 import { CodingPlanBody } from "./CodingPlanCard"
 import { RunTraceSummary } from "./RunTraceSummary"
 import { CodingPocBody } from "./CodingPocCard"
 import { CodingVibeBody } from "./CodingVibeCard"
-import type { Card } from "../state/AppState"
+import type { Card, FlowDurationsRow } from "../state/AppState"
 import { timeLabel } from "../Timestamps"
 import type { RunCommand } from "./CardFamily"
 import {
@@ -153,11 +154,25 @@ export const selectedSpan = (card: RunTraceCard, model: TraceModel): TraceSpan =
 export const RunTraceBody = ({
   card,
   onRunCommand: sendRunCommand,
-  workflowCatalogs
+  workflowCatalogs,
+  flowBuilder = false,
+  flowDurations,
+  fileCards
 }: {
   readonly card: RunTraceCard
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
   readonly onRunCommand: RunCommand
+  /*
+   * The graph renders only where the flow builder does (D-038). The engine
+   * writes its node records whatever this flag says (D-046), so a production
+   * run card holds everything the graph needs: without the gate the door and
+   * the view would ship with the flag off.
+   */
+  readonly flowBuilder?: boolean
+  /** Every measured row the session holds, for the graph's own predictions. */
+  readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
+  /** The files already read into this conversation; the graph's Code tab renders the declared one. */
+  readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { runId, phase, kind, steps, result } = card.payload
@@ -168,6 +183,8 @@ export const RunTraceBody = ({
   const model = traceOf(card)
   const whole = wholeTraceOf(card)
   const view = card.payload.traceView ?? "turns"
+  /* One binding gates all three: the door, the bar it hangs in, and the view. */
+  const runGraph = flowBuilder ? runGraphOfCard(card) : undefined
   const filters = traceFiltersFor(kind)
   const filter: TraceFilter = filters.some(([id]) => id === card.payload.filter) ? card.payload.filter ?? "all" : "all"
   const selected = selectedSpan(card, model)
@@ -249,9 +266,17 @@ export const RunTraceBody = ({
           {steps.map((step, index) => <li key={`${index}:${step}`}>{step}</li>)}
         </ol>
       )}
-      {planOnly ? null : view === "turns" ? (
+      {planOnly ? null : view === "graph" && runGraph !== undefined ? (
+        <FlowRunGraph
+          card={card}
+          view={runGraph}
+          onRunCommand={onRunCommand}
+          flowDurations={flowDurations}
+          fileCards={fileCards}
+        />
+      ) : view === "turns" || view === "graph" ? (
         <>
-          {turns.length > 0 || native.length > 0 || scrub !== null ? (
+          {turns.length > 0 || native.length > 0 || scrub !== null || runGraph !== undefined ? (
             <div className="run-trace-bar" data-view="turns" role="group" aria-label="Trace presentation">
               <span className="run-trace-bar-title">Timeline</span>
               {scrub}
@@ -263,6 +288,16 @@ export const RunTraceBody = ({
               >
                 Details
               </button>
+              {runGraph === undefined ? null : (
+                <button
+                  type="button"
+                  className="run-trace-filter run-trace-view"
+                  aria-pressed={false}
+                  {...flowAction(onRunCommand, "runs.trace.view", `${runId} graph`)}
+                >
+                  Graph
+                </button>
+              )}
             </div>
           ) : null}
           <PhaseStrip model={whole} records={card.payload.events ?? []} runId={runId} cursorSeq={card.payload.cursorSeq} onRunCommand={onRunCommand} />

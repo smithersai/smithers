@@ -14,8 +14,10 @@ import { flowAction } from "../flows/FlowAction"
  * placeholder for one. With nothing declared and no box answering, the card
  * is exactly one sentence. Register is the button door of triggers.register,
  * whose requirement makes sign-in the door; a registration Smithers Cloud
- * named carries Run now, the button door of triggers.run, and a trigger-store
- * row with no registration name carries none.
+ * named carries Run now, the button door of triggers.run, and behind the flow
+ * builder's flag Pause beside it, the button door of triggers.pause. A
+ * trigger-store row with no registration name carries neither: both are Plue
+ * routes keyed by that name.
  */
 import { ruleFlows } from "@smthrs/rpc/FactoryProjection"
 import { Button } from "@smthrs/ui"
@@ -31,6 +33,11 @@ type TriggerListCard = Extract<Card, { kind: "trigger-list" }>
 
 export interface TriggerListCardActions {
   readonly onRunCommand: RunCommand
+  /**
+   * The flow builder's flag. Pause is the builder's own button (D-050), so
+   * with the flag off this card draws what it drew before the builder.
+   */
+  readonly flowBuilder?: boolean
 }
 
 /** The live state of one registered trigger, in words: only what the box stated. */
@@ -46,7 +53,8 @@ export const triggerStateLabel = (trigger: TriggerListCard["payload"]["triggers"
 
 export const TriggerListCardBody = ({
   card,
-  onRunCommand
+  onRunCommand,
+  flowBuilder = false
 }: {
   readonly card: TriggerListCard
 } & TriggerListCardActions) => {
@@ -89,14 +97,26 @@ export const TriggerListCardBody = ({
                   <span data-testid={`trigger-state-${trigger.id}`}>{triggerStateLabel(trigger)}</span>
                 </span>
                 {trigger.slug === undefined ? null : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    data-testid={`trigger-run-${trigger.slug}`}
-                    {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug: trigger.slug, repo }))}
-                  >
-                    Run now
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid={`trigger-run-${trigger.slug}`}
+                      {...flowAction(onRunCommand, "triggers.run", flowArgs("triggers.run", { slug: trigger.slug, repo }))}
+                    >
+                      Run now
+                    </Button>
+                    {flowBuilder ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-testid={`trigger-pause-${trigger.slug}`}
+                        {...flowAction(onRunCommand, "triggers.pause", flowArgs("triggers.pause", { slug: trigger.slug, repo }))}
+                      >
+                        Pause
+                      </Button>
+                    ) : null}
+                  </>
                 )}
               </li>
             ))}
@@ -124,7 +144,7 @@ export const TriggerListCardBody = ({
 
 export const triggersCardFamily: CardFamily<"trigger-list"> = {
   "trigger-list": {
-    render: (card, actions) => <TriggerListCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <TriggerListCardBody card={card} onRunCommand={actions.onRunCommand} flowBuilder={actions.flowBuilder} />,
     pill: settledPill
   }
 }

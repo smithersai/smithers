@@ -7,6 +7,7 @@ import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
+import { planCardSnapshot } from "../../cards/PlanNodes"
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
 type Refusal = { readonly message: string; readonly code?: string; readonly retryAfterSeconds?: number }
@@ -81,7 +82,9 @@ export const createWorkflowLaunchController = (
             if (!current()) return TOAST_SUPERSEDED
             if (result.status === "ok") {
               request = { ...request, runId: result.value.runId, retryAt: undefined, error: undefined }
-              await publish(request, { runId: result.value.runId, phase: "running", error: undefined })
+              const plan = ctx.services.features?.flowBuilder === true ? planCardSnapshot(result.value) : undefined
+              await publish(request, { runId: result.value.runId, phase: "running", error: undefined,
+                ...(plan === undefined ? {} : { plan }) })
               break
             }
             if (result.code === "workspace_starting") {

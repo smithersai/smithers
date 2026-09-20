@@ -56,10 +56,18 @@ const vocabularies: Vocabularies = {
  * tests cannot agree with the derivation by construction: they fail against a
  * corpus that discovers tests, which is what the corpus did until this change.
  */
+// The immutable corpus is parsed once. Re-parsing every test file for each
+// literal form made the second assertion exceed its budget under shared load.
+const parsedLiterals = new Map<string, ReturnType<typeof extractLiterals>>()
 const literalsOf = (files: ReadonlyArray<string>, form: "string" | "template-head"): ReadonlySet<string> => {
   const found = new Set<string>()
   for (const file of files) {
-    for (const literal of extractLiterals(file, readFileSync(file, "utf8"))) {
+    let literals = parsedLiterals.get(file)
+    if (literals === undefined) {
+      literals = extractLiterals(file, readFileSync(file, "utf8"))
+      parsedLiterals.set(file, literals)
+    }
+    for (const literal of literals) {
       if (literal.form === form) found.add(literal.value)
     }
   }
@@ -77,6 +85,14 @@ const appFiles = [UI_SRC, SHARED_SRC]
   .filter((file) => !assertsAgainstTheApp(file) && !underTest(file))
 const dottedAppFiles = [...appFiles, ...sourceFiles(GATEWAY_LIBRARY).filter((file) => !assertsAgainstTheApp(file))]
 const testFiles = sourceFiles(UI_SRC).filter((file) => assertsAgainstTheApp(file) && !underTest(file))
+
+// Discover this independent oracle with the corpus above, before assertions.
+// Assertion budgets must not depend on how long a loaded machine takes to
+// parse the entire repository. Both forms share the same parsed files.
+const appStrings = literalsOf(dottedAppFiles, "string")
+const testStrings = literalsOf(testFiles, "string")
+const appHeads = literalsOf(appFiles, "template-head")
+const testHeads = literalsOf(testFiles, "template-head")
 
 const at = (value: string, form: "string" | "template-head", leadingArgumentOf?: string) => ({
   value,
@@ -109,9 +125,8 @@ describe("the product vocabulary is derived from the app alone", () => {
      * composes it out of a head and a word it does own — and every other
      * one has to fail.
      */
-    const spelledByApp = literalsOf(dottedAppFiles, "string")
-    const retired = [...literalsOf(testFiles, "string")]
-      .filter((value) => DOTTED_IDENTIFIER.test(value) && !spelledByApp.has(value) && !FILE_NAME.test(value))
+    const retired = [...testStrings]
+      .filter((value) => DOTTED_IDENTIFIER.test(value) && !appStrings.has(value) && !FILE_NAME.test(value))
       .filter((value) =>
         ![...vocabularies.composedDottedHeads].some((head) =>
           value.startsWith(head) && vocabularies.productStringLiterals.has(value.slice(head.length))
@@ -133,9 +148,8 @@ describe("the product vocabulary is derived from the app alone", () => {
      * passes on an empty list. A prefix the app composes out of two of its
      * own still resolves, which is why the rule is asked rather than the set.
      */
-    const builtByApp = literalsOf(appFiles, "template-head")
-    const retired = [...literalsOf(testFiles, "template-head")]
-      .filter((value) => ID_PREFIX.test(value) && !builtByApp.has(value))
+    const retired = [...testHeads]
+      .filter((value) => ID_PREFIX.test(value) && !appHeads.has(value))
     expect(retired.length).toBeGreaterThan(0)
     expect(retired.filter((value) => vocabularies.cardIdPrefixes.has(value))).toEqual([])
     const rejected = retired.filter((value) =>

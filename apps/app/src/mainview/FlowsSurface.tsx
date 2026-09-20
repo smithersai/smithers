@@ -71,8 +71,8 @@ export function FlowsSurface({ cards }: { readonly cards: ReadonlyArray<Card> })
           null}
       </SurfaceHeader>
       <div className="flows-content">
-        {pending?.loading ? <ViewSkeleton /> : pending?.status === "error" ? <p>{pending.body}</p> : flowsCard === undefined ? null : <WorkflowListCardBody card={flowsCard} onRunCommand={runCommand} />}
-        {triggersCard === undefined ? null : <TriggerListCardBody card={triggersCard} onRunCommand={runCommand} />}
+        {pending?.loading ? <ViewSkeleton /> : pending?.status === "error" ? <p>{pending.body}</p> : flowsCard === undefined ? null : <WorkflowListCardBody card={flowsCard} onRunCommand={runCommand} flowBuilder={controller.features?.flowBuilder ?? false} />}
+        {triggersCard === undefined ? null : <TriggerListCardBody card={triggersCard} onRunCommand={runCommand} flowBuilder={controller.features?.flowBuilder ?? false} />}
       </div>
     </section>
   )

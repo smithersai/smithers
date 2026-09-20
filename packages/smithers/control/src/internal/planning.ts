@@ -13,7 +13,7 @@ import { Sha256 } from "@smthrs/crypto"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
 import { Effect, Schema } from "effect"
 import type { ApprovalTarget } from "../Control.ts"
-import type { Envelope, FlowId, IdempotencyKey, PlanCard, PlanNode, Receipt, RunId } from "../ControlSchema.ts"
+import type { Envelope, FlowId, IdempotencyKey, PlanCard, PlanGraph, PlanNode, Receipt, RunId } from "../ControlSchema.ts"
 
 /**
  * The envelope a flow with no declared capabilities carries.
@@ -106,6 +106,7 @@ export interface PlanSource {
   readonly handoff?: {
     readonly plan: PersistedPlan.Plan
     readonly statuses?: Readonly<Record<string, PlanNode["status"]>> | undefined
+    readonly graph?: PlanGraph | undefined
   } | undefined
   readonly idempotencyKey?: IdempotencyKey | undefined
 }
@@ -153,6 +154,10 @@ export const planCard = (source: PlanSource) =>
       ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
       ...(plan === undefined ? {} : { plan }),
       nodes,
+      // Outside `digest` above on purpose: the edges are how a reader draws
+      // the plan, not what the plan will do, so gaining them must not
+      // invalidate an approval taken before the host reported them.
+      ...(source.handoff?.graph === undefined ? {} : { graph: source.handoff.graph }),
       approval: {
         target,
         scope: "run" as const,

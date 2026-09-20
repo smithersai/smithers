@@ -32,6 +32,7 @@ import * as AttemptProbe from "./internal/AttemptProbe.ts"
 import * as CacheAgeVerdicts from "./internal/CacheAgeVerdicts.ts"
 import * as DeferredPersistence from "./internal/DeferredPersistence.ts"
 import * as EngineJj from "./internal/EngineJj.ts"
+import * as NodeJournal from "./internal/NodeJournal.ts"
 import * as RunDriver from "./internal/RunDriver.ts"
 import * as OwnerIdentity from "./OwnerIdentity.ts"
 import * as StepBoundary from "./StepBoundary.ts"
@@ -59,6 +60,42 @@ export interface Options {
     readonly hostId: string
   }
   readonly journalSource: string
+  /**
+   * The directory a declaration path is recorded relative to.
+   *
+   * A node record can carry where its action was declared, and the path the
+   * runtime reports is absolute. A journal is read on machines that did not
+   * write it, so the absolute form is at best noise and at worst an
+   * operator's home directory published into a run's history: the writer
+   * strips this prefix, and omits the path entirely when it cannot.
+   *
+   * Defaults to the process working directory where there is one. A host
+   * without a filesystem identity — a worker, a browser — passes nothing and
+   * records no declaration paths at all, which is the honest answer.
+   */
+  readonly declarationRoot?: string | undefined
+  /**
+   * The revision of the tree this host read its flows out of.
+   *
+   * A node record can carry where its action was declared, and a path with a
+   * line does not say which bytes were at that line: the tree moves, and the
+   * same path after an edit is a different file. A host that can name the
+   * revision it loaded from declares it here, and every recorded graph page
+   * carries it, so a reader can open that file AT that revision.
+   *
+   * Absent by default, which is the honest answer for a host served out of
+   * no version control or one that cannot name a revision holding what it
+   * loaded. A reader with nothing shows no code rather than code it cannot
+   * bind (D-068).
+   *
+   * A host that only learns the answer AFTER this store is built declares a
+   * reader instead of a string, and it is asked once per recorded page. The
+   * native host is one: the modules whose sites these records carry are read
+   * during registration, which runs after this layer, so the revision that
+   * describes them is not known when the store is composed. An answer that
+   * is not a non-empty string records nothing, exactly as `undefined` does.
+   */
+  readonly sourceRevision?: string | (() => string | undefined) | undefined
   /**
    * Liveness arbitration consulted before this store steals a run whose lease
    * has expired. Answering `true` refuses the takeover.
@@ -156,6 +193,18 @@ const makeWithEngineJj = (
     const attemptStore = yield* AttemptStore.AttemptStore
     const cacheStore = yield* CacheStore.CacheStore
     const journal = yield* Journal.Journal
+    const declarationRoot = NodeJournal.hostRoot(options.declarationRoot)
+    /*
+     * Stated by the host or not at all; nothing here derives a revision. A
+     * reader is asked where the record is written rather than here, because a
+     * host that learns its revision after this layer builds would otherwise
+     * be captured before it knows the answer.
+     */
+    const declaredRevision = options.sourceRevision
+    const sourceRevision = (): string | undefined => {
+      const answer = typeof declaredRevision === "function" ? declaredRevision() : declaredRevision
+      return typeof answer === "string" && answer.length > 0 ? answer : undefined
+    }
     const actionJj = yield* Jj.Jj
     const engineJj = yield* EngineJj.EngineJj
     const runStore = yield* RunStore.RunStore
@@ -325,6 +374,43 @@ const makeWithEngineJj = (
       interruptUnsafe: driver.interruptUnsafe,
       resume: driver.resume,
       actionExecute,
+      /**
+       * The graph a walk drove, and how each of its nodes settled.
+       *
+       * Addressed by the record's own `sourceId` rather than a minted one, so
+       * a resumed walk writes the identities the first walk used and the
+       * journal's `(run, source, sequence)` uniqueness holds one row per node
+       * instead of one per observation. A `Duplicate` receipt is that
+       * collapse happening, and it is the expected answer on a resume.
+       *
+       * On the durable, owner-fenced channel, like every other engine record:
+       * a writer that lost the run self-interrupts rather than narrating a
+       * walk it no longer owns.
+       */
+      nodeRecordBytes: (record) =>
+        Effect.map(FlowRuntime.FlowInstance, (parent) =>
+          NodeJournal.encodedBytes({
+            runId: parent.executionId,
+            sourceId: options.journalSource,
+            lineageId: FlowEngine.Lineage.root(parent.executionId),
+            root: declarationRoot,
+            sourceRevision: sourceRevision()
+          }, record)),
+      recordNode: (record) =>
+        Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
+          journal.emitDurable(
+            NodeJournal.entry({
+              runId: parent.executionId,
+              sourceId: options.journalSource,
+              lineageId: FlowEngine.Lineage.root(parent.executionId),
+              root: declarationRoot,
+              sourceRevision: sourceRevision()
+            }, record),
+            owner
+          ).pipe(
+            Effect.catch((error) => error.code === "fence_lost" ? Effect.interrupt : Effect.die(error)),
+            Effect.asVoid
+          )),
       // The durable schedule-to-close origin (issue #45): the first
       // attempt's persisted `startedAtMs` for the action key. It lives in
       // the same `flows_attempts` rows that already restore the attempt

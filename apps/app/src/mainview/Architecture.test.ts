@@ -5,7 +5,7 @@ const productionComponents = async (): Promise<ReadonlyArray<{ readonly path: st
   const files: Array<{ readonly path: string; readonly source: string }> = []
   const glob = new Bun.Glob("**/*.tsx")
   for await (const path of glob.scan({ cwd: import.meta.dir, absolute: true })) {
-    if (path.endsWith(".test.tsx")) continue
+    if (path.endsWith(".test.tsx") || path.includes("/fixtures/")) continue
     files.push({ path, source: await readFile(path, "utf8") })
   }
   return files

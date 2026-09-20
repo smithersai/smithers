@@ -13,7 +13,7 @@ import { runSourceCommand } from "../flows/RunCommand"
 import { Button, Markdown } from "@smthrs/ui"
 import { useState } from "react"
 import type { KeyboardEvent } from "react"
-import type { Card } from "../state/AppState"
+import type { Card, FlowDurationsRow } from "../state/AppState"
 import { timeLabel as clockLabel } from "../Timestamps"
 import { rovingKeyDown } from "../RovingKeyDown"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -36,7 +36,10 @@ export const WorkflowRunCardBody = ({
   onRetryRun,
   onRunCommand: sendRunCommand,
   debugVerbose = false,
-  workflowCatalogs
+  workflowCatalogs,
+  flowBuilder = false,
+  flowDurations,
+  fileCards
 }: {
   readonly card: Extract<Card, { kind: "run-trace" }>
   readonly onStopRun: (cardId: string) => void
@@ -44,6 +47,12 @@ export const WorkflowRunCardBody = ({
   readonly onRunCommand: RunCommand
   readonly debugVerbose?: boolean
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
+  /** The run's graph renders only where the flow builder does. */
+  readonly flowBuilder?: boolean
+  /** Every measured row the session holds, for the graph's own predictions. */
+  readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
+  /** The files already read into this conversation; the graph's Code tab renders the declared one. */
+  readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
@@ -75,7 +84,14 @@ export const WorkflowRunCardBody = ({
         <p className="smithers-card-note">steering pending · delivered at the next turn</p> :
         null}
       {/* The run as a trace (spec 06): the card's body for every run kind. Its rows dispatch runs.trace.*. */}
-      <RunTraceBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
+      <RunTraceBody
+        card={card}
+        onRunCommand={onRunCommand}
+        workflowCatalogs={workflowCatalogs}
+        flowBuilder={flowBuilder}
+        flowDurations={flowDurations}
+        fileCards={fileCards}
+      />
       {facet === "transcript" ?
         card.payload.transcriptRows === undefined || card.payload.transcriptRows.length === 0 ?
           <p className="smithers-card-note">The transcript is empty so far.</p> :
@@ -405,10 +421,13 @@ const WorkflowRepoCardBody = ({
  */
 export const WorkflowListCardBody = ({
   card,
-  onRunCommand: sendRunCommand
+  onRunCommand: sendRunCommand,
+  flowBuilder = false
 }: {
   readonly card: Extract<Card, { kind: "workflow-list" }>
   readonly onRunCommand: RunCommand
+  /** The plan door renders only where the flow builder does. */
+  readonly flowBuilder?: boolean
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { workflows, issueContext, research, repo } = card.payload
@@ -427,6 +446,9 @@ export const WorkflowListCardBody = ({
             {issueContext && (workflow.key === "issue.repro" || workflow.key === "issue/repro") ?
               <Button size="sm" variant="outline" {...flowProps("issue.repro")} onClick={() => sendRunCommand("issue.repro", flowArgs("issue.repro", { number: issueContext.number, repo }))}>Run repro</Button> :
               <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", { name: workflow.key, input: issueContext ? { args: JSON.stringify({ issue: issueContext }) } : undefined }))}>Run</Button>}
+            {flowBuilder
+              ? <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "flow.plan", flowArgs("flow.plan", { name: workflow.key }))}>Plan</Button>
+              : null}
           </li>
         ))}
       </ul>
@@ -446,6 +468,9 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
         onRunCommand={actions.onRunCommand}
         debugVerbose={actions.debugVerbose}
         workflowCatalogs={actions.workflowCatalogs}
+        flowBuilder={actions.flowBuilder}
+        flowDurations={actions.flowDurations}
+        fileCards={actions.fileCards}
       />
     ),
     pill: (card) => {
@@ -476,7 +501,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
     pill: defaultPill
   },
   "workflow-list": {
-    render: (card, actions) => <WorkflowListCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <WorkflowListCardBody card={card} onRunCommand={actions.onRunCommand} flowBuilder={actions.flowBuilder} />,
     pill: settledPill
   }
 }

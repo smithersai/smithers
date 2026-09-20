@@ -17,22 +17,22 @@ export default defineConfig({
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-registry-coverage-${process.pid}`),
       include: ["src/**"],
-      // Everything reachable is covered. The remainder is three defensive
-      // guards in `ModuleMetadata` that no input can reach: the `?? ""`
-      // fallbacks in `skipTrivia` and `nextToken` (both sit behind an
-      // `index < source.length` check, so the indexed read is always a
-      // string), and the unmatched-brace return in `objectProperties` (every
-      // property value is sliced out of an already brace-balanced
-      // declaration).
+      // Every function is covered, and the two misses are guards no input can
+      // reach. The statement is `ModuleMetadata`'s unmatched-brace return in
+      // `objectProperties`, whose every property value is sliced out of an
+      // already brace-balanced declaration. The branch is the tie arm of
+      // `ModuleClosure`'s closure sort: it orders the values of a Map KEYED BY
+      // the very `path` it compares, so two entries can never carry the same
+      // one and the comparator never answers 0.
       //
       // The floors are the measured coverage, so a regression fails here
       // rather than draining silently. Raise them when a guard is proven
       // reachable and covered; never lower them to make a run pass.
       thresholds: {
-        branches: 99.77,
+        branches: 99.9,
         functions: 100,
-        lines: 99.91,
-        statements: 99.91
+        lines: 99.93,
+        statements: 99.93
       }
     }
   }

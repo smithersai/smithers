@@ -5,7 +5,7 @@
  * the allowlisted procedures fails here, not in a browser.
  */
 import { describe, expect, test } from "bun:test"
-import { createGatewaySeam, INVALID_PROJECTION_CODE } from "./gateway"
+import { createGatewaySeam, INVALID_PLAN_CODE, INVALID_PROJECTION_CODE } from "./gateway"
 
 interface RecordedCall {
   readonly repo: string
@@ -304,7 +304,10 @@ describe("owning workspace binding", () => {
       },
       errorMessageOf: async (_response, fallback) => fallback
     })
-    expect(await seam.launch("o/r", "coding", { plan: {} })).toEqual({ status: "ok", value: { runId: "run", workspaceId: first } })
+    // The plan's identity comes back with the run: a run card snapshots the
+    // plan it was approved on so its graph draws before any event arrives.
+    expect(await seam.launch("o/r", "coding", { plan: {} }))
+      .toEqual({ status: "ok", value: { runId: "run", planId: "plan", digest: "digest", workspaceId: first } })
     expect(calls.map((call) => call.workspaceId)).toEqual([first, first, first])
     expect(calls.map((call) => call.procedure)).toEqual(["Plan", "Approval.Submit", "Run"])
   })
@@ -382,4 +385,144 @@ test("a resuming snapshot stops when its session changes", async () => {
   })
   expect(await seam.approvalsInbox("o/r")).toMatchObject({ status: "error" })
   expect(calls).toBe(1)
+})
+
+/*
+ * The plan door: what a flow WOULD run, before anything runs. The card is the
+ * control plane's own signed value, so the seam decodes it against
+ * @smthrs/control's schema rather than reading fields off a bare record, and
+ * the signed envelope never comes back out of here into a card payload
+ * (payloads are written to disk).
+ */
+const planNode = (id: string, dependsOn: ReadonlyArray<string> = []) => ({
+  id,
+  kind: "step",
+  key: `key1_${"0".repeat(64)}`,
+  material: { version: "flows/key-material/v2", kind: "sealed", body: { action: "shell" }, inputs: [], layers: [], capabilities: [] },
+  effects: { reads: [], writes: [], boundaryMode: "hard" },
+  dependsOn,
+  conflicts: [],
+  strategy: "serialize",
+  runtime: "delay-rebase",
+  priority: 0,
+  generation: 0,
+  status: "run"
+})
+
+const planCard = (nodes: ReadonlyArray<unknown>, extra: Record<string, unknown> = {}) => ({
+  ok: true,
+  payload: {
+    planId: "plan-1",
+    flowId: "review",
+    digest: "d".repeat(64),
+    inputSummary: "{}",
+    envelope: { capabilities: [], flows: [], budget: {} },
+    deployClass: false,
+    nodes,
+    approval: {
+      target: { _tag: "Plan", planId: "plan-1", digest: "d".repeat(64), envelope: { capabilities: [], flows: [], budget: {} } },
+      scope: "run",
+      idempotencyKey: "approve:plan-1"
+    },
+    ...extra
+  }
+})
+
+describe("planning a flow", () => {
+  test("decodes the card's keyed nodes and sends the gateway's own Plan payload", async () => {
+    const { calls, seam } = relay({ Plan: planCard([planNode("a"), planNode("b", ["a"])]) })
+    const planned = await seam.plan("o/r", "review", { pr: 1 })
+    expect(planned.status).toBe("ok")
+    if (planned.status !== "ok") return
+    expect(planned.value.planId).toBe("plan-1")
+    expect(planned.value.digest).toBe("d".repeat(64))
+    expect(planned.value.flowId).toBe("review")
+    expect(planned.value.nodes.map((node) => [node.id, [...node.dependsOn]])).toEqual([["a", []], ["b", ["a"]]])
+    expect(calls).toEqual([{ repo: "o/r", procedure: "Plan", payload: { flowId: "review", input: { pr: 1 } } }])
+  })
+
+  test("carries the labelled edges when the workspace reports them", async () => {
+    const { seam } = relay({
+      Plan: planCard([planNode("a"), planNode("b", ["a"])], { graph: { edges: [{ from: "a", to: "b", reason: "continuation" }] } })
+    })
+    const planned = await seam.plan("o/r", "review", {})
+    expect(planned.status === "ok" && planned.value.graph?.edges).toEqual([{ from: "a", to: "b", reason: "continuation" }])
+  })
+
+  test("a workspace that graphs nothing plans an empty graph, not a refusal", async () => {
+    const { seam } = relay({ Plan: planCard([]) })
+    const planned = await seam.plan("o/r", "review", {})
+    expect(planned.status).toBe("ok")
+    expect(planned.status === "ok" && planned.value.nodes).toEqual([])
+    expect(planned.status === "ok" && planned.value.graph).toBeUndefined()
+  })
+
+  test("a card the control schema rejects is a coded refusal, never an empty plan", async () => {
+    const { seam } = relay({ Plan: { ok: true, payload: { planId: "plan-1" } } })
+    const planned = await seam.plan("o/r", "review", {})
+    expect(planned.status).toBe("error")
+    expect(planned.status === "error" && planned.code).toBe(INVALID_PLAN_CODE)
+  })
+
+  test("the signed envelope never leaves the seam", async () => {
+    const { seam } = relay({ Plan: planCard([planNode("a")]) })
+    const planned = await seam.plan("o/r", "review", {})
+    expect(planned.status === "ok" && Object.keys(planned.value).includes("envelope")).toBe(false)
+    expect(JSON.stringify(planned)).not.toContain("approval")
+  })
+
+  test("launch reuses the plan and hands its nodes back with the run", async () => {
+    const { calls, seam } = relay({
+      Plan: planCard([planNode("a"), planNode("b", ["a"])]),
+      Run: { ok: true, payload: { runId: "run-9" } }
+    })
+    const launched = await seam.launch("o/r", "review", {})
+    expect(launched.status === "ok" && launched.value.runId).toBe("run-9")
+    expect(launched.status === "ok" && launched.value.nodes?.map((node) => node.id)).toEqual(["a", "b"])
+    expect(calls.map((call) => call.procedure)).toEqual(["Plan", "Approval.Submit", "Run"])
+  })
+})
+
+describe("a flow's measured durations", () => {
+  const durationRow = (actionTag: string, extra: Record<string, unknown> = {}) => ({
+    flowId: "review",
+    actionTag,
+    samples: 4,
+    p50Ms: 1_200,
+    p90Ms: 3_000,
+    ...extra
+  })
+
+  test("asks for the flow's own projection and decodes the rows it serves", async () => {
+    const { calls, seam } = relay({ "Projection.Snapshot": rowsAnswer([durationRow("acme/Build"), durationRow("acme/Test")]) })
+    const durations = await seam.flowDurations("o/r", "review")
+    expect(durations.status).toBe("ok")
+    expect(durations.status === "ok" && durations.value.map((row) => row.actionTag)).toEqual(["acme/Build", "acme/Test"])
+    expect(calls).toEqual([{
+      repo: "o/r",
+      procedure: "Projection.Snapshot",
+      payload: { selector: { _tag: "flow-durations", flowId: "review" } }
+    }])
+  })
+
+  test("a flow nothing has measured has no rows, which is not a refusal", async () => {
+    const { seam } = relay({ "Projection.Snapshot": rowsAnswer([]) })
+    const durations = await seam.flowDurations("o/r", "review")
+    expect(durations.status === "ok" && durations.value).toEqual([])
+  })
+
+  test("a row the served schema rejects is a coded refusal, never a prediction", async () => {
+    const { seam } = relay({ "Projection.Snapshot": rowsAnswer([{ flowId: "review", actionTag: "acme/Build" }]) })
+    const durations = await seam.flowDurations("o/r", "review")
+    expect(durations.status === "error" && durations.code).toBe(INVALID_PROJECTION_CODE)
+  })
+
+  test("a box whose selector union has no such projection refuses, and no row is invented", async () => {
+    const { seam } = relay({
+      "Projection.Snapshot": { ok: false, error: { message: "Unknown selector", detail: [{ _tag: "Fail", error: { _tag: "ParseError" } }] } }
+    })
+    const durations = await seam.flowDurations("o/r", "review")
+    expect(durations.status).toBe("error")
+    expect(durations.status === "error" && durations.message).toBe("Unknown selector")
+  })
 })

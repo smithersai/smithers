@@ -30,15 +30,22 @@
  * resumes the run. The relay counts every procedure it forwards, so a second
  * `Resume` would be visible here and fails the proof.
  *
- * Run it with: bun apps/app/scripts/gateway-run-proof.ts
+ * And the plan: `Plan` answers with the keyed nodes the flow will run, which
+ * is what the flow graph draws.
+ *
+ * Run it with: pnpm --filter smithers-app proof:gateway (tsx, not bun: the
+ * script loads the workspace's TypeScript sources through tsx's loader).
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { Control } from "@smthrs/control/Control"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalTarget } from "@smthrs/control/ControlSchema"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
+import { plannable } from "@smthrs/control/SystemFlows"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
@@ -53,7 +60,11 @@ import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as SyncAuth from "@smthrs/sync/SyncAuth"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
-import { Effect, Layer } from "effect"
+import { Action, Flow } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
+import { Node } from "@smthrs/plan"
+import * as PersistedPlan from "@smthrs/plan/Plan"
+import { Effect, Layer, Schema } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
@@ -68,6 +79,54 @@ import { createGatewaySeam } from "../src/mainview/state/controller/gateway"
 
 const CREDENTIAL = "proof-bearer-credential"
 const REPO = "codeplanesmithers/smithers-demo"
+const PLANNED = "proof/planned"
+
+/*
+ * A workspace flow with a plan hook, the shape the native host registers
+ * (`NativeControl.ts`): graph the flow, key it, hand over the compiled plan
+ * and the labelled edges. Two dependent steps, so `dependsOn` and the edges
+ * carry something a graph can draw.
+ */
+const Probe = Action.make("proof/Probe", {
+  payload: { value: Schema.String },
+  success: Schema.String,
+  error: Schema.Unknown
+})
+
+const PlannedFlow = Flow.make(PLANNED, {
+  payload: Schema.Struct({ value: Schema.String }),
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ value }) => Probe.call({ value }).pipe(Node.andThen(Probe.call({ value: `${value}/second` })))
+})
+
+const plannedFlow: DurableFlow = {
+  flowId: PLANNED,
+  description: "A flow whose plan names its own nodes.",
+  deployClass: false,
+  envelope: { capabilities: [], flows: [], budget: {} },
+  plan: (input, planId) => {
+    const graph = Graph.build(PlannedFlow, input)
+    return PersistedPlan.compile({ planId, flow: PLANNED, nodes: Graph.drafts(graph) }).pipe(
+      Effect.map((plan) => ({ plan, graph: { edges: Graph.edges(graph) } })),
+      Effect.orDie,
+      // The keyer hashes, so the compiler asks for Crypto; the hook's type has
+      // no requirements, so the host discharges it here (NativeControl.ts:479).
+      Effect.provide(NodeCrypto.layer)
+    )
+  }
+}
+
+/** The reserved catalog the runtime configures by default, plus the planned flow. */
+const flows: ReadonlyArray<DurableFlow> = [
+  ...plannable.map((entry): DurableFlow => ({
+    flowId: entry.flowId,
+    description: `Reserved ${entry.verb} system flow`,
+    deployClass: entry.deployClass,
+    envelope: { capabilities: [], flows: [], budget: {} }
+  })),
+  plannedFlow
+]
 
 const check = (condition: boolean, what: string): void => {
   if (!condition) throw new Error(`FAILED: ${what}`)
@@ -91,7 +150,17 @@ const workspace = Layer.mergeAll(GatewayProjections.layer, SyncServer.layer, Syn
   Layer.provideMerge(ControlLive.layer),
   Layer.provideMerge(
     Layer.mergeAll(
-      SqlControlRuntime.layer({}).pipe(Layer.orDie),
+      // The gateway attributes every relayed call to its bearer identity, and
+      // `launch` submits the plan approval through it. Without this
+      // delegation the proof's own workspace refuses its own approval, which
+      // is what a workspace serving a credential does when nobody configured
+      // one: NativeControl.ts makes the same delegation for the same reason.
+      SqlControlRuntime.layer({
+        flows,
+        approvalAuthority: Effect.runSync(ApprovalAuthority.make([
+          { principal: NodeGateway.bearerPrincipal, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
+        ]))
+      }).pipe(Layer.orDie),
       NotificationQueue.layer,
       ControlExecutor.layer(ControlExecutor.makeNoop()),
       Registry.layerNoop()
@@ -115,31 +184,38 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => voi
       const chunks: Array<Buffer> = []
       request.on("data", (chunk: Buffer) => chunks.push(chunk))
       request.on("end", () => {
+        const answer = (status: number, body: unknown): void => {
+          response.writeHead(status, { "content-type": "application/json" })
+          response.end(JSON.stringify(body))
+        }
+        // Every rejection is answered. A malformed body or a refused upstream
+        // fetch is an unhandled rejection otherwise, and Node takes the whole
+        // proof down with it rather than failing the one call.
         void (async () => {
-          const answer = (status: number, body: unknown): void => {
-            response.writeHead(status, { "content-type": "application/json" })
-            response.end(JSON.stringify(body))
+          try {
+            const url = new URL(request.url ?? "/", "http://relay.local")
+            if (url.pathname === "/api/workflow/provision") return answer(200, { status: "ready", repo: REPO })
+            if (url.pathname !== "/api/workflow/rpc") return answer(404, { status: "error", message: "no route" })
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+              repo: string
+              procedure: string
+              payload?: unknown
+            }
+            const mount = GATEWAY_PROCEDURE_MOUNTS[body.procedure]
+            if (mount === undefined) {
+              return answer(400, { status: "error", message: `The workflow seam does not relay ${body.procedure}.` })
+            }
+            relayed.push(body.procedure)
+            const upstream = await fetch(`${gatewayUrl}${mount}`, {
+              method: "POST",
+              // The credential the browser can never hold.
+              headers: { authorization: `Bearer ${CREDENTIAL}`, "content-type": "application/json" },
+              body: encodeGatewayRequest(body.procedure, body.payload)
+            })
+            answer(200, decodeGatewayResponse(await upstream.text()))
+          } catch (error) {
+            answer(502, { status: "error", message: String(error) })
           }
-          const url = new URL(request.url ?? "/", "http://relay.local")
-          if (url.pathname === "/api/workflow/provision") return answer(200, { status: "ready", repo: REPO })
-          if (url.pathname !== "/api/workflow/rpc") return answer(404, { status: "error", message: "no route" })
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-            repo: string
-            procedure: string
-            payload?: unknown
-          }
-          const mount = GATEWAY_PROCEDURE_MOUNTS[body.procedure]
-          if (mount === undefined) {
-            return answer(400, { status: "error", message: `The workflow seam does not relay ${body.procedure}.` })
-          }
-          relayed.push(body.procedure)
-          const upstream = await fetch(`${gatewayUrl}${mount}`, {
-            method: "POST",
-            // The credential the browser can never hold.
-            headers: { authorization: `Bearer ${CREDENTIAL}`, "content-type": "application/json" },
-            body: encodeGatewayRequest(body.procedure, body.payload)
-          })
-          answer(200, decodeGatewayResponse(await upstream.text()))
         })()
       })
     })
@@ -174,10 +250,30 @@ const program = Effect.gen(function*() {
 
   console.log("\n2. launch")
   const launched = yield* Effect.promise(() => seam.launch(REPO, "system/test", { proof: true }))
-  check(launched.status === "ok", "the seam launched a run")
+  // `launch` is three calls; naming the one that refused is the difference
+  // between a diagnosable proof and a bare red line.
+  check(launched.status === "ok", `the seam launched a run${launched.status === "ok" ? "" : `: ${launched.message}`}`)
   if (launched.status !== "ok") return
   const runId = launched.value.runId
   check(runId.length > 0, `the run is named: ${runId}`)
+
+  console.log("\n2b. plan: the nodes a run would execute")
+  const planned = yield* Effect.promise(() => seam.plan(REPO, PLANNED, { value: "proof" }))
+  check(planned.status === "ok", `the seam planned a flow${planned.status === "ok" ? "" : `: ${planned.message}`}`)
+  if (planned.status !== "ok") return
+  check(planned.value.nodes.length > 0, `the plan names ${planned.value.nodes.length} nodes`)
+  check(
+    planned.value.nodes.some((node) => node.dependsOn.length > 0),
+    "the nodes carry the edges between them"
+  )
+  check(
+    planned.value.nodes.every((node) => node.key.length > 0 && node.status === "run"),
+    "every node is keyed and claims no cache hit"
+  )
+  check(
+    !Object.prototype.hasOwnProperty.call(planned.value, "envelope"),
+    "the signed envelope never leaves the seam"
+  )
 
   console.log("\n3. watch")
   const watched = yield* Effect.promise(() => seam.run(REPO, runId))
@@ -243,8 +339,14 @@ const program = Effect.gen(function*() {
   check(relayed.length === before + 1, "the decision was ONE relayed call")
   check(relayed.at(-1) === "Approval.Submit", "that call was Approval.Submit")
   check(!relayed.includes("Resume"), "no second manual resume was ever issued")
-  const answer = decided.status === "ok" ? decided.value as { resume?: unknown } : undefined
-  check(answer?.resume !== undefined, "the gateway resumed the run on the caller's behalf")
+  // The receipt names the run the decision landed on. `Approval.Submit` is a
+  // transport adapter over `Control.approve`, which takes the decision and the
+  // durable resume in one transaction, so the accepted receipt beside the
+  // absence of a relayed `Resume` above is the whole claim.
+  check(
+    decided.status === "ok" && decided.value.decision._tag === "Accepted",
+    "the workspace accepted the decision and named the run it resumed"
+  )
 
   console.log("\n6. node output")
   // The emitter names no node, so the projection keys a call by the ordinal it

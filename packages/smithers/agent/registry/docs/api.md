@@ -1013,19 +1013,87 @@ rebuilding the catalog and hoping the two agree.
 ### Executable.layer
 
 ```ts
-const layer: (options: Options) => Layer.Layer<
-  Catalog,
+const layer: (options: RefreshOptions) => Layer.Layer<
+  Catalog | Refresh,
   RegistryError | DiscoveryError,
   Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
 >
 ```
 
-Registers every runnable discovered flow with the runtime. This is the layer a
-host passes as the durable runtime's registration phase.
+Registers every runnable discovered flow with the runtime, and provides the
+[`Refresh`](#executablerefresh-executablerefreshed-and-executablerefreshoptions)
+that rebuilds one of them later. This is the layer a host passes as the durable
+runtime's registration phase.
 
 A refusal is never silent: each one is logged as a warning naming the flow, the
 code, the delegate it wanted, and what is registered instead, and the whole
 `Catalog` is provided as a service.
+
+The `Catalog` service object never changes identity. A reader that took it
+while the host was composed keeps reading it after a rebuild, because a
+rebuild swaps the snapshot behind the service rather than the service.
+
+### Executable.Refresh, Executable.Refreshed and Executable.RefreshOptions
+
+```ts
+interface Refresh {
+  readonly flow: (name: string) => Effect.Effect<Refreshed, RegistryError | DiscoveryError>
+}
+
+const Refresh: Context.Service<Refresh, Refresh>
+
+type Refreshed =
+  | { readonly _tag: "Registered"; readonly executable: Executable }
+  | { readonly _tag: "Refused"; readonly error: ExecutableError }
+  | { readonly _tag: "Removed" }
+  | { readonly _tag: "Fixed" }
+
+interface RefreshOptions extends Options {
+  readonly refreshable?: ((descriptor: Descriptor.FlowDescriptor) => boolean) | undefined
+}
+```
+
+Rebuilds one entry of a catalog the host is already serving from: rescan
+discovery, load that flow's body from the bytes now on disk, register it with
+the runtime, and swap it into the snapshot. No restart, and the previous body
+stays registered until the new one is, so an execution dispatched across the
+swap reaches one of them and never an unregistered tag. Refreshes are
+serialized, so two rebuilds of one name cannot interleave.
+
+`Refreshed` has four cases because a caller that cannot tell them apart cannot
+say anything honest about the flow afterwards: `Registered` (runnable now),
+`Refused` (this host will not run it, with the code and the delegate it
+wanted), `Removed` (discovery no longer finds it), and `Fixed` (this host
+holds that entry and left the catalog alone).
+
+`refreshable` is what answers `Fixed`. A host serving part of its catalog out
+of its own measured bundle answers `false` for those entries: their bytes are
+the image it was shipped as, and rebuilding one from the working tree would
+replace an admitted declaration with whatever is on disk. Every flow is
+refreshable by default.
+
+The default loader writes the verified bytes to a private sibling of the
+source file, named by their content digest, and imports that — so new bytes
+are a new module specifier and the ESM cache cannot answer with the previous
+body. The sibling is created exclusively, so a name another writer already
+holds costs the load one attempt and is never written through.
+
+### Executable.layerRefreshable
+
+```ts
+const layerRefreshable: (built: Catalog, options: RefreshOptions) => Layer.Layer<
+  Catalog | Refresh,
+  never,
+  Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
+>
+```
+
+Serves a catalog the host already built, and keeps one entry rebuildable.
+`layer` is this plus the initial registrations, and is what a host with no
+catalog of its own wants. Reach for this one when the host assembles the
+catalog itself — several sources, or a loader per source — and registers the
+result its own way: it adds the live `Catalog` and the `Refresh` beside it
+without registering anything twice.
 
 ### Executable.Registration
 

@@ -43,7 +43,7 @@ import { jobFlows, failureLayer, modelLayers, modelNames } from "../repository/j
 import { executionLayers } from "../repository/execution.ts"
 import { evaluationLayers, ScoreCase } from "../repository/evaluation.ts"
 import { setupLayers, RunJob, RunSetup, SuggestSetup } from "../repository/setup.ts"
-import { bindRepositoryRegistry, provisionBuiltins, runningRepositoryPolicy, repositoryCatalog } from "../repository/registry.ts"
+import { bindRepositoryRegistry, provisionBuiltins, repositoryRegistration, runningRepositoryPolicy, repositoryCatalog } from "../repository/registry.ts"
 import type { RepositoryRemote } from "../repository/remote.ts"
 import { activationLayers } from "../repository/activation.ts"
 import { RunTrigger, triggerLayers } from "../repository/triggers.ts"
@@ -198,13 +198,18 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // Loading verified declaration bytes reserves a sibling temporary module.
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
-    const catalog = Layer.unwrap(repositoryCatalog({ delegates: [RunPlan, RunDispatch, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
+    const executableOptions = { delegates: [RunPlan, RunDispatch, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
       ...(options.planning === undefined ? [] : [RunRequest]), ...(wikiEnabled ? [wikiCheckDelegate] : []),
-      ...(options.landing === undefined || options.planning === undefined ? [] : [RunVibe])] }, builtins.load).pipe(
+      ...(options.landing === undefined || options.planning === undefined ? [] : [RunVibe])] }
+    const catalog = Layer.unwrap(repositoryCatalog(executableOptions, builtins.load).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
-      Effect.map(built => Layer.mergeAll(leaves, ...built.executables.map(entry => entry.layer)).pipe(
-        Layer.provideMerge(Layer.succeed(Executable.Catalog, built))
-      ))
+      // The catalog this host serves is rebuildable one entry at a time, which
+      // is what lets a run of this host author `flows/<id>/flow.ts` and have
+      // the next plan draw it. A reserved job declaration is held fixed: its
+      // bytes are the measured bundle this host shipped as, and rebuilding one
+      // from the working tree would replace an admitted declaration with
+      // whatever is on disk.
+      Effect.map(built => repositoryRegistration(executableOptions, built, leaves))
     )).pipe(Layer.orDie)
     const modules = registration.pipe(Layer.provideMerge(catalog), Layer.tap(context => Effect.gen(function*() {
       const built = Context.get(context, Executable.Catalog)

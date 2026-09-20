@@ -20,6 +20,10 @@ import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
   readonly "experimental.set": { readonly cardId: string; readonly key: string; readonly value: string }
+  readonly "runs.graph.select": { readonly runId: string; readonly nodeId?: string }
+  readonly "flow.plan.select": { readonly cardId: string; readonly nodeId?: string }
+  readonly "runs.graph.tab": { readonly runId: string; readonly tab: "declaration" | "code" | "output" | "events" | "attempts" }
+  readonly "flow.plan.tab": { readonly cardId: string; readonly tab: "declaration" | "code" | "output" | "events" | "attempts" }
   readonly "issues.list": { readonly filter?: "open" | "closed" | "all"; readonly repo?: string }
   readonly "setup.configure": { readonly cardId: string; readonly field: string; readonly value: unknown }
   readonly "setup.view": { readonly cardId: string; readonly view: "flows" | "prompts" | "checks" | "evals" | "test" | "work"; readonly step?: string }
@@ -27,6 +31,8 @@ export interface FlowInput {
   readonly "setup.run": { readonly cardId: string; readonly operation: "inspect" | "evaluate" | "trial" | "apply" | "pause" | "run"; readonly manual?: SetupManualRequest }
   /** `<name> [owner/repo]` — a schedule's name holds no whitespace, so the repository trails it. */
   readonly "triggers.run": { readonly slug: string; readonly repo?: string }
+  /** Carried as JSON: `triggers.pause` declares `grammar: carried(...)`, which reads one object and refuses a positional line. */
+  readonly "triggers.pause": { readonly slug: string; readonly repo?: string }
   readonly "wiki.heading": { readonly line: string; readonly cardId?: string }
   readonly "workspace.desktop.open": { readonly bookmark?: string; readonly repo: string }
   readonly "billing.upgrade": { readonly plan: string }
@@ -51,6 +57,14 @@ export interface FlowInput {
     readonly name: string
     readonly repo?: string
     readonly sourceCard?: string
+    readonly input?: Readonly<Record<string, unknown>>
+  }
+  /** The same address as a launch, stopping at the plan. */
+  readonly "flow.plan": {
+    readonly name: string
+    readonly repo?: string
+    readonly sourceCard?: string
+    readonly against?: string
     readonly input?: Readonly<Record<string, unknown>>
   }
   /** `<changeId> [from] [to] [path]` — the path is the rest of the line, so it may hold a space. */
@@ -106,6 +120,13 @@ const keyed = (payload: Payload, key: string): string | undefined => {
 const line = (...parts: ReadonlyArray<string | undefined>): string =>
   parts.filter((part): part is string => part !== undefined && part !== "").join(" ")
 
+/** Keep the human shorthand where lossless; JSON carries arbitrary engine IDs. */
+const graphLine = (payload: Payload, target: string, value: string): string => {
+  const parts = [payload[target], payload[value]].filter((part): part is string => typeof part === "string")
+  return parts.some(part => /\s|["{}]/.test(part) || part.length === 0)
+    ? JSON.stringify(payload) : parts.join(" ")
+}
+
 /**
  * One encoder per flow, in the shape its grammar reads. A tail that may hold
  * whitespace (a path, a label, a message, a template name) is always LAST, or
@@ -114,6 +135,10 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
   "experimental.set": payload => JSON.stringify(payload),
+  "runs.graph.select": payload => graphLine(payload, "runId", "nodeId"),
+  "flow.plan.select": payload => graphLine(payload, "cardId", "nodeId"),
+  "runs.graph.tab": payload => graphLine(payload, "runId", "tab"),
+  "flow.plan.tab": payload => graphLine(payload, "cardId", "tab"),
   "issues.list": (payload) => line(token(payload, "filter") ?? "open", token(payload, "repo")),
   "setup.configure": payload => JSON.stringify(payload),
   "setup.view": payload => JSON.stringify(payload),
@@ -137,6 +162,8 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "issue.add-flow": (payload) => JSON.stringify(payload),
   "flow.run": (payload) => line(keyed(payload, "sourceCard"), token(payload, "name"), token(payload, "repo"),
     payload.input === undefined ? undefined : JSON.stringify(payload.input)),
+  "flow.plan": (payload) => line(keyed(payload, "sourceCard"), keyed(payload, "against"), token(payload, "name"), token(payload, "repo"),
+    payload.input === undefined ? undefined : JSON.stringify(payload.input)),
   "change.diff": (payload) => line(token(payload, "changeId"), token(payload, "from"), token(payload, "to"), token(payload, "path")),
   "change.pins": (payload) => line(token(payload, "changeId"), token(payload, "from"), token(payload, "to")),
   "change.facet": (payload) => line(token(payload, "changeId"), token(payload, "facet")),
@@ -149,6 +176,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "model.question": (payload) => JSON.stringify(payload),
   "model.option": (payload) => JSON.stringify(payload),
   "triggers.run": (payload) => line(token(payload, "slug"), token(payload, "repo")),
+  "triggers.pause": (payload) => JSON.stringify(payload),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),
   "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),
 
@@ -164,3 +192,13 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
  */
 export const flowArgs = <N extends FlowWithInput>(name: N, input: FlowInput[N]): string =>
   ENCODERS[name]({ ...input } as Payload)
+
+export const graphSelectArgs = (doors: { readonly select: "runs.graph.select" | "flow.plan.select"; readonly target: string }, nodeId?: string): string =>
+  doors.select === "runs.graph.select"
+    ? flowArgs(doors.select, { runId: doors.target, ...(nodeId === undefined ? {} : { nodeId }) })
+    : flowArgs(doors.select, { cardId: doors.target, ...(nodeId === undefined ? {} : { nodeId }) })
+
+export const graphTabArgs = (doors: { readonly tab: "runs.graph.tab" | "flow.plan.tab"; readonly target: string }, tab: FlowInput["flow.plan.tab"]["tab"]): string =>
+  doors.tab === "runs.graph.tab"
+    ? flowArgs(doors.tab, { runId: doors.target, tab })
+    : flowArgs(doors.tab, { cardId: doors.target, tab })

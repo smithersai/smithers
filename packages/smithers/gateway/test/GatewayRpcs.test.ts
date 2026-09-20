@@ -40,6 +40,28 @@ const approvalOf = (card: PlanCard): ApprovalPayload => ({
   idempotencyKey: `approve:${card.planId}`
 })
 
+/** One node the engine ran, as the journal bridge writes it into the control journal. */
+const measured = (runId: string, nodeId: string, action: string, startedAt: number, durationMs: number) => {
+  const bridged = (eventType: string, payload: unknown, emittedAtMs: number) =>
+    emit(runId, "control.engine.event", {
+      version: 1,
+      executionId: `native-${runId}`,
+      generation: 0,
+      sequence: emittedAtMs,
+      eventId: `${runId}:${eventType}:${emittedAtMs}`,
+      sourceId: `engine/${eventType}`,
+      sourceSequence: 0,
+      emittedAtMs,
+      eventType,
+      payload
+    })
+  return Effect.flatMap(
+    bridged("flows.engine.node-scheduled", { nodeId, kind: "step", attempt: 1, action }, startedAt),
+    () =>
+      bridged("flows.engine.node-settled", { nodeId, outcome: "built", attempts: 1, action }, startedAt + durationMs)
+  )
+}
+
 const launch = Effect.gen(function*() {
   const control = yield* Control
   const card = yield* control.plan({ flowId: "system/test", input: {} })
@@ -480,6 +502,27 @@ describe("Projection.Snapshot and Projection.Subscribe", () => {
 
       expect(frames.map((frame) => frame._tag)).toEqual(["delta"])
       expect(frames[0]?._tag === "delta" && frames[0].cursor.value).toBeGreaterThan(snapshot.cursor.value)
+    }).pipe(Effect.provide(served)))
+
+  test("ends a flow-durations subscription with its snapshot, so a client's stream completes", () =>
+    Effect.gen(function*() {
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const runtime = yield* ControlRuntime
+      const runId = yield* launch
+      yield* measured(runId, "compile", "build", 1_000, 200)
+      const fence = yield* driverFence(runId)
+      yield* runtime.writeStatus(runId, fence, "completed")
+      yield* emit(runId, "control.run.completed", { runId, status: "completed" })
+
+      // No `Stream.take` here, on purpose: collecting the whole stream returns
+      // only because the gateway ends it. A client reading this selector
+      // reaches the end of the stream rather than a keepalive channel that
+      // never closes, so ending is what it has to handle, not a dropped
+      // connection to reconnect after.
+      const frames = yield* Stream.runCollect(
+        rpc["Projection.Subscribe"]({ selector: { _tag: "flow-durations", flowId: "system/test" } })
+      )
+      expect(frames.map((frame) => frame._tag)).toEqual(["snapshot-start", "row", "snapshot-end"])
     }).pipe(Effect.provide(served)))
 
   test("refuses a projection of an unknown run with a typed gateway error", () =>

@@ -250,6 +250,12 @@ const sweep = async (): Promise<ReadonlyArray<Row>> => {
         }
       }
     } finally {
+      // Compaction FIRST: a sweep of every form otherwise retains thousands of
+      // optimistic journal preparations, and a store is not released by being
+      // dropped while its live queries still reference its collections — the
+      // whole suite slows to a crawl without this. Then dispose, which closes
+      // the owner a compaction writes through, so the other order throws.
+      await store.compactEvents()
       await controller.dispose()
     }
   }
@@ -316,6 +322,10 @@ const DECLARED: ReadonlyArray<DeclaredMove> = [
   {
     flow: "issue.add-flow", kind: "card", rows: 1,
     because: "The same skip over the optional repository that leads the add-flow input, so the second token reaches the description the form is there to collect."
+  },
+  {
+    flow: "runs.trace.view", kind: "sentence", rows: 13,
+    because: "The graph IS the third view of a run, so the line that refuses a bad one has to name it: main@origin says `runs.trace.view needs turns or timeline` and this branch says `runs.trace.view needs turns, timeline or graph` (SlashPayload.ts). Every swept line whose second token is not a view reads the new sentence; no card moves."
   },
   {
     flow: "triggers.register", kind: "sentence", rows: 6,

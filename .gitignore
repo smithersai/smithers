@@ -117,6 +117,12 @@ apps/observability/data/
 **/.smithers/runs/
 **/.smithers/executions/
 **/.smithers/cache/
+# Project roots `packages/smithers/test/FlowCatalogRefresh.test.ts` builds and
+# then imports out of. They sit inside the package so this process loads their
+# registration file as its own module, and the test removes each one; a killed
+# run must not leave the checkout dirty with one.
+packages/smithers/test/fixtures/.catalog-refresh/
+
 # Scratch trees test lanes leave behind; never source.
 /tmp/
 smithers.db

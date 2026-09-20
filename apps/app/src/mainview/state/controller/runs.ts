@@ -20,7 +20,7 @@ import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
 import { questionOf } from "../../cards/ApprovalQuestion"
 import { codingPlanOf } from "../../cards/CodingPlan"
 import { runHandoff } from "../../cards/RunHandoff"
-import type { TraceFilter,TraceView } from "../../cards/RunTrace"
+import type { TraceFilter } from "../../cards/RunTrace"
 import { traceFromJournal } from "../../cards/RunTrace"
 import type { CommandResult } from "../../flows/Flows"
 import { framePath } from "../../runtime/FrameHistory"
@@ -38,6 +38,15 @@ import { TOAST_SUPERSEDED } from "./failures"
 import type { FormsController } from "./forms"
 import type { ApprovalRow, RunSummaryRow } from "./gateway"
 import type { WorkflowController } from "./workflows"
+
+/**
+ * Which of the run card's three views is showing.
+ *
+ * The wire is the authority: `RunTrace.ts` folds turns and the timeline and
+ * knows nothing about the graph, which is a separate fold over the same
+ * journal (FlowGraphStatus.ts).
+ */
+export type TraceView = NonNullable<Extract<Card, { kind: "run-trace" }>["payload"]["traceView"]>
 
 export interface RunsController {
   readonly prepareRunHandoff: (runId: string, sourceCard?: string) => CommandResult
@@ -71,6 +80,8 @@ export interface RunsController {
   /** `runs.trace.select <runId> <nodeId> [seq]`: the trace's selection and scrub cursor; leaves live tail. */
   readonly traceSelect: (runId: string, nodeId: string, seq?: number, sourceCard?: string) => Promise<CommandResult>
   readonly traceView: (runId: string, view: TraceView, sourceCard?: string) => Promise<CommandResult>
+  /** `runs.graph.follow <runId> <on|off>`: whether the graph's camera follows the running node. */
+  readonly graphFollow: (runId: string, follow: boolean, sourceCard?: string) => CommandResult
   readonly traceLive: (runId: string, sourceCard?: string) => Promise<CommandResult>
   readonly selectCodingChange: (runId: string, changeId: string, sourceCard?: string) => CommandResult
   readonly stopAllRuns: (repo?: string, sourceCard?: string) => Promise<CommandResult>
@@ -541,6 +552,11 @@ export const createRunsController = (
   }
 
   const traceView = async (runId: string, view: TraceView, sourceCard?: string): Promise<CommandResult> => {
+    /*
+     * The graph is the flow builder's (D-038). The other two views are the
+     * ones the run card always had, so only the new word is refused here.
+     */
+    if (view === "graph" && ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
@@ -552,6 +568,27 @@ export const createRunsController = (
       patch: { payload: { ...card.payload, traceView: view } }
     }).isPersisted.promise
     return { value: `trace-view run=${runId} view=${view}` }
+  }
+
+  const graphFollow = (runId: string, follow: boolean, sourceCard?: string): CommandResult => {
+    if (ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
+    const target = resolveRun(runId, sourceCard)
+    if ("error" in target) return target.error
+    const card = runCardFor(target)
+    if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
+    const { graph: _graph, ...payload } = card.payload
+    // The camera and the open node are different reader gestures on one field,
+    // so neither clears the other (controller/graph.ts).
+    const { follow: _follow, ...held } = card.payload.graph ?? {}
+    const graph = { ...held, follow }
+    // Follow defaults on. Persist an explicit false so reload preserves the
+    // reader's choice, independently of drawer selection.
+    store.dispatch({
+      type: "card.upsert",
+      actor: ctx.commandActor,
+      card: { ...card, payload: { ...payload, graph } }
+    })
+    return { value: `graph-follow run=${runId} follow=${follow ? "on" : "off"}` }
   }
 
   const traceLive = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
@@ -897,6 +934,7 @@ export const createRunsController = (
     traceSelect,
     selectCodingChange,
     traceView,
+    graphFollow,
     traceLive,
     stopAllRuns,
     listApprovals,

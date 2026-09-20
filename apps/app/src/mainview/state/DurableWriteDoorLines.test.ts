@@ -56,7 +56,20 @@ import { recordingAgent, unavailableRepositories } from "./TestFixtures"
  * (`setup.configure`, `runs.open`) through the real card and a real refused
  * write, in RepositorySetupRunMode.test.tsx. Two, not seventy-eight.
  */
-const createAppController = scopedControllers({ wiki: true, mythicalHistory: true, pluginLibrary: true })
+/*
+ * Every feature flag on, because the inventory reads SOURCE and the roll call
+ * reads a controller. A door declared behind a flag is in the inventory either
+ * way, so a controller that leaves its flag off cannot register it, and the
+ * roll call names it "not registered in this controller" — a hole in the claim
+ * rather than a door that fails. `flowBuilder` gates three of them
+ * (`runs.graph.follow`, `runs.graph.select`, `flow.plan.select`).
+ */
+const createAppController = scopedControllers({
+  wiki: true,
+  mythicalHistory: true,
+  pluginLibrary: true,
+  flowBuilder: true
+})
 
 const STORAGE_FULL =
   "This browser has no room left for Smithers' saved data, so that change was not saved. Free space for this site in your browser settings, then make the change again."

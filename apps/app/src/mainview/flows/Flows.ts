@@ -54,6 +54,7 @@ import { filesAddFlows, filesFlows } from "./entries/files"
 import { findingsFlows } from "./entries/findings"
 import { flowFlows, flowRunStopAllFlows, flowsSurfaceFlows } from "./entries/flow"
 import { formFlows } from "./entries/form"
+import { graphFlows } from "./entries/graph"
 import { frameFlows } from "./entries/frame"
 import { githubFlows } from "./entries/github"
 import { issuesFlows } from "./entries/issues"
@@ -129,6 +130,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...flowFlows(actions),
   ...triggersFlows(actions),
   ...runsFlows(actions),
+  ...graphFlows(actions),
   ...flowRunStopAllFlows(actions),
   ...approvalsFlows(actions),
   ...cardFlows(actions),

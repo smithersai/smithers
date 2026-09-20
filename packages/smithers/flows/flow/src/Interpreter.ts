@@ -59,7 +59,7 @@ import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { type Implementation, Implementations, layerImplementations } from "./Action/Implementations.ts"
-import { DispatchSite } from "./Action/StepIdentity.ts"
+import { DispatchReport, DispatchSite } from "./Action/StepIdentity.ts"
 import type { Any as AnyFlow, AnyStructSchema, AnyWithProps, Flow } from "./Flow/Flow.ts"
 import * as Outcome from "./Flow/Outcome.ts"
 import { Handoff } from "./Flow/Result.ts"
@@ -67,6 +67,7 @@ import { suspend } from "./Flow/Runtime.ts"
 import { TypeId as FlowTypeId } from "./Flow/TypeId.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
+import type * as NodeRecord from "./FlowRuntime/NodeRecord.ts"
 import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.ts"
 import * as Graph from "./Graph.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
@@ -96,7 +97,8 @@ export class InterpreterError extends Schema.TaggedError<InterpreterError>()(
       "missing_implementation_version",
       "unresolved_reference",
       "unsupported_call",
-      "missing_operation"
+      "missing_operation",
+      "node_record_too_large"
     ]),
     flow: Schema.String,
     node: Schema.String,
@@ -176,6 +178,125 @@ export const childExecutionId = (
   })
 
 /**
+ * The largest encoded page of a recorded plan.
+ *
+ * A journal entry has a byte bound and a projection clips an oversized one, so
+ * a graph is PAGED rather than truncated: whatever does not fit in the plan
+ * record follows as appended subgraph pages. The budget is deliberately well
+ * under the 16 KiB gateway limit on graph events. The runtime measures the
+ * encoded journal envelope; absent that hook, the complete node record is
+ * measured in UTF-8. A node too large for one page is a typed preflight refusal.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maximumPageBytes = 12_000
+
+/**
+ * How many distinct step key digests one node's settlement names.
+ *
+ * A journal entry has a byte bound and a digest is 64 characters, so the list
+ * is capped rather than left to grow with whatever a node dispatched. The
+ * cap is far above what any node reaches today — an action node drives one
+ * dispatch and keeps one step key however many times it is retried — and a
+ * node past it names the dispatches it started with rather than none.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maximumDispatchDigests = 16
+
+/** The declared tag a node dispatches, if it dispatches one. @private */
+const actionTag = (ast: Node.Ast): string | undefined =>
+  ast._tag === "ActionCall" ? ast.action : ast._tag === "FlowCall" ? ast.flow : undefined
+
+/** What one node of a driven graph tells a monitor about itself. @private */
+const summarize = (node: Graph.GraphNode): NodeRecord.NodeSummary => {
+  const action = actionTag(node.ast)
+  return {
+    id: node.id,
+    kind: node.kind,
+    dependsOn: KeyMaterial.dependencies(node.draft.material),
+    tier: node.draft.material.kind,
+    effects: node.draft.effects,
+    ...(action === undefined ? {} : { action }),
+    ...(node.declaredAt === undefined ? {} : { declaredAt: node.declaredAt })
+  }
+}
+
+/**
+ * The graph, as the pages a journal can hold.
+ *
+ * Each page carries its nodes and the edges that END on them, so an assembled
+ * set of pages is the whole graph and a page on its own never names an edge
+ * whose destination is missing.
+ *
+ * @private
+ */
+const planPages = (
+  flow: string,
+  graph: Graph.Graph,
+  measure: (record: NodeRecord.NodeRecord) => Effect.Effect<number, never, FlowInstance>
+): Effect.Effect<
+  ReadonlyArray<NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended>,
+  InterpreterError,
+  FlowInstance
+> =>
+  Effect.gen(function*() {
+    const incoming = new Map<string, Array<NodeRecord.EdgeSummary>>()
+    for (const edge of Graph.edges(graph)) {
+      const summary = { from: edge.from, to: edge.to, reason: edge.reason }
+      const existing = incoming.get(edge.to)
+      if (existing === undefined) incoming.set(edge.to, [summary])
+      else existing.push(summary)
+    }
+    type Page = { nodes: Array<NodeRecord.NodeSummary>; edges: Array<NodeRecord.EdgeSummary> }
+    const graphNodes = Graph.nodes(graph)
+    const pages: Array<Page> = []
+    let current: Page = { nodes: [], edges: [] }
+    const record = (
+      page: Page,
+      index: number,
+      count: number
+    ): NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended => ({
+      ...(index === 0
+        ? { _tag: "PlanRecorded" as const, nodeCount: graphNodes.length }
+        : { _tag: "SubgraphAppended" as const }),
+      sourceId: `plan/0/${index}`,
+      flow,
+      generation: 0,
+      page: index,
+      pages: count,
+      ...page
+    })
+    // The page count is at most the node count. Reserve that many digits so
+    // replacing it with the final count can never grow an encoded envelope.
+    const fits = (page: Page) =>
+      Effect.map(measure(record(page, pages.length, graphNodes.length)), (bytes) => bytes <= maximumPageBytes)
+    for (const node of graphNodes) {
+      const summary = summarize(node)
+      const arriving = incoming.get(node.id) ?? []
+      const next = { nodes: [...current.nodes, summary], edges: [...current.edges, ...arriving] }
+      if (yield* fits(next)) {
+        current = next
+        continue
+      }
+      if (current.nodes.length > 0) pages.push(current)
+      current = { nodes: [summary], edges: arriving }
+      if (!(yield* fits(current))) {
+        return yield* new InterpreterError({
+          code: "node_record_too_large",
+          flow,
+          node: node.id,
+          message: `Node topology and its encoded envelope exceed ${maximumPageBytes} bytes`
+        })
+      }
+    }
+    pages.push(current)
+    return pages.map((page, index) => record(page, index, pages.length))
+  })
+
+/**
  * Interprets a flow body, or a bare node, against real values.
  *
  * The graph is built first and in full — planning is a pure function of the
@@ -249,6 +370,29 @@ const interpretWithPolicy = (
         fatal.node,
         `Graph of "${name}" is missing topology and cannot be driven: ${fatal.message}`
       )
+    }
+
+    /**
+     * The node records this walk writes, if the runtime keeps any.
+     *
+     * A runtime without the seam costs a comparison per node and nothing else:
+     * the record is built by the thunk only when something will hold it.
+     */
+    const runtime = yield* FlowRuntime
+    const recordNode = runtime.recordNode
+    const record = recordNode === undefined
+      ? (_: () => NodeRecord.NodeRecord) => Effect.void as Effect.Effect<void, never, FlowInstance>
+      : (make: () => NodeRecord.NodeRecord) => recordNode(make())
+    // The whole graph, before the first node runs. Planning is pure, so this
+    // is the complete declared ceiling of the round rather than a prefix of
+    // what happened to run, and a monitor can draw the round it is watching
+    // from the first record it receives.
+    if (recordNode !== undefined) {
+      const measure = runtime.nodeRecordBytes ??
+        ((record: NodeRecord.NodeRecord) => Effect.succeed(new TextEncoder().encode(JSON.stringify(record)).byteLength))
+      // Validate every page before writing the first or dispatching any action.
+      const pages = yield* planPages(name, graph, measure)
+      yield* Effect.forEach(pages, (page) => recordNode(page), { discard: true })
     }
 
     // Everything the walk needs that the built graph can be asked for before it
@@ -453,6 +597,14 @@ const interpretWithPolicy = (
      */
     const inFlight = new Map<string, Deferred.Deferred<unknown, unknown>>()
     const nodes = yield* Scope.make()
+    /**
+     * The nodes this walk has already settled a record for.
+     *
+     * Everything else is what the walk never reached, which is exactly the
+     * `skipped` set reported below — an untaken branch arm, or a dependent of
+     * something that failed.
+     */
+    const reported = new Set<string>()
 
     const settleNode = (id: string): Effect.Effect<unknown, unknown, Services> =>
       Effect.suspend(() => {
@@ -462,16 +614,77 @@ const interpretWithPolicy = (
         if (waiting !== undefined) return Deferred.await(waiting)
         const deferred = Deferred.makeUnsafe<unknown, unknown>()
         inFlight.set(id, deferred)
-        const execution = compute(byId.get(id)!).pipe(
+        const node = byId.get(id)!
+        const action = actionTag(node.ast)
+        // What this node's dispatches did, reported by the engine underneath
+        // it: a node whose dispatches were ALL served from durable records
+        // rebuilt nothing, and says so. The digests name those dispatches, so
+        // the attempt rows the engine wrote under them belong to THIS node,
+        // and the highest attempt reported is the node's real attempt count.
+        // A `Set` keeps the digests unrepeated in report order: one dispatch
+        // retried three times keeps one step key and reports it three times.
+        const dispatches = { executed: 0, replayed: 0, attempts: 1, digests: new Set<string>() }
+        const settleRecord =
+          (outcome: NodeRecord.NodeOutcome, settlement: { readonly value: unknown }) => (): NodeRecord.NodeRecord => ({
+            _tag: "NodeSettled",
+            sourceId: `node/${id}/1/settled`,
+            nodeId: id,
+            outcome,
+            attempts: dispatches.attempts,
+            stepKeyDigests: [...dispatches.digests],
+            value: settlement.value,
+            ...(action === undefined ? {} : { action })
+          })
+        const execution = record(() => ({
+          _tag: "NodeScheduled",
+          sourceId: `node/${id}/1`,
+          nodeId: id,
+          kind: node.kind,
+          attempt: 1,
+          ...(action === undefined ? {} : { action })
+        })).pipe(
+          Effect.andThen(
+            compute(node).pipe(
+              Effect.provideService(
+                DispatchReport,
+                DispatchReport.of({
+                  dispatched: (dispatch) =>
+                    Effect.sync(() => {
+                      if (dispatch.outcome === "executed") dispatches.executed = dispatches.executed + 1
+                      else dispatches.replayed = dispatches.replayed + 1
+                      // Bounded where it is COLLECTED, not where it is
+                      // written: a cap applied at the end still holds every
+                      // digest in memory until then, and the point of the cap
+                      // is that one node cannot grow without bound.
+                      if (
+                        dispatch.stepKeyDigest !== undefined &&
+                        dispatches.digests.size < maximumDispatchDigests
+                      ) {
+                        dispatches.digests.add(dispatch.stepKeyDigest)
+                      }
+                      if (dispatch.attempt !== undefined && dispatch.attempt > dispatches.attempts) {
+                        dispatches.attempts = dispatch.attempt
+                      }
+                    })
+                })
+              )
+            )
+          ),
           Effect.tap((value) =>
             Effect.sync(() => {
               settled.set(id, value)
-            })
+              reported.add(id)
+            }).pipe(
+              Effect.andThen(record(
+                settleRecord(dispatches.executed === 0 && dispatches.replayed > 0 ? "clean" : "built", { value })
+              ))
+            )
           ),
           Effect.tapError((error) =>
             Effect.sync(() => {
               failed.set(id, error)
-            })
+              reported.add(id)
+            }).pipe(Effect.andThen(record(settleRecord("failed", { value: error }))))
           ),
           Effect.onExit((exit) => {
             // An interrupted execution is evicted, not memoized: current
@@ -671,8 +884,39 @@ const interpretWithPolicy = (
     // ownership model: whatever is still running when the walk ends is
     // interrupted before the interpretation reports, so no execution
     // outlives it.
+    /**
+     * Everything the walk never reached, recorded once the walk is over.
+     *
+     * Only a walk that ENDED reports this. An interrupted one is a run that
+     * parked or was cancelled, and its nodes are not skipped — the resumed
+     * walk settles them, and recording them as skipped first would leave the
+     * journal claiming a node never ran that later did. A typed failure is
+     * terminal for the round, so its stranded nodes are skipped exactly as a
+     * completed walk's untaken branch arm is.
+     */
+    const recordSkipped = (exit: Exit.Exit<unknown, unknown>) =>
+      Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? Effect.void : Effect.forEach(
+        graphNodes.filter((node) => !reported.has(node.id)),
+        (node) => {
+          const action = actionTag(node.ast)
+          return record(() => ({
+            _tag: "NodeSettled",
+            sourceId: `node/${node.id}/1/settled`,
+            nodeId: node.id,
+            outcome: "skipped",
+            attempts: 0,
+            // A node the walk never reached dispatched nothing, so it claims
+            // no step key and there is no value it settled with.
+            stepKeyDigests: [],
+            ...(action === undefined ? {} : { action })
+          }))
+        },
+        { discard: true }
+      )
+
     const value = yield* settleNode(options.root ?? "root").pipe(
-      Effect.onExit((exit) => Scope.close(nodes, exit))
+      Effect.onExit((exit) => Scope.close(nodes, exit)),
+      Effect.onExit(recordSkipped)
     )
     return {
       value,

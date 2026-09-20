@@ -1,0 +1,185 @@
+import { canonical, digest } from "@smthrs/core/Digest"
+import { FLOW_AUTHORING_ENTRY, flowAuthoringUnavailable } from "@smthrs/rpc/FlowAuthoring"
+import type { Card } from "../AppState"
+import { authoredSources, type AuthoredSource } from "../FlowAuthoringReceipts"
+import { runtimeRunKey } from "../RuntimeProjection"
+import { engineProjectionPending } from "../../cards/EngineTrace"
+import { flowArgs } from "../../flows/FlowArgs"
+import type { ControllerContext } from "./context"
+import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
+import { TOAST_SUPERSEDED } from "./failures"
+
+type Run = Extract<Card, { kind: "run-trace" }>
+type Plan = Extract<Card, { kind: "flow-plan" }>
+
+/** The durable request, launch and journal observer share one background lifetime. */
+export const createFlowAuthoringController = (
+  ctx: ControllerContext,
+  nextOrdinal: () => number,
+  provision: (repo: string, binding: GatewayWorkspaceBinding) => Promise<true | string>,
+  pump: (cardId: string) => Promise<void>
+) => {
+  const { store } = ctx
+  const pending = new Map<string, Promise<unknown>>()
+  const persisting = new Map<string, Promise<unknown>>()
+  const refreshing = new Map<string, Promise<void>>()
+  const read = (id: string): Run | undefined => {
+    const card = store.collections.cards.get(id)
+    return card?.kind === "run-trace" ? card : undefined
+  }
+  const current = (card: Run) => !ctx.disposed && card.payload.authoring?.owner === store.collections.identitySessions.get("identity")?.login
+  const upsert = (card: Card) => store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+
+  // Subscription waits on persisted collection state, not a second polling loop.
+  const until = (done: () => boolean): Promise<void> => new Promise(resolve => {
+    const subscriptions: Array<{ unsubscribe(): void }> = []
+    let finished = false
+    const check = () => {
+      if (finished || !ctx.disposed && !done()) return
+      finished = true
+      for (const subscription of subscriptions) subscription.unsubscribe()
+      resolve()
+    }
+    for (const collection of [store.collections.cards, store.collections.runtimeRuns, store.collections.identitySessions]) subscriptions.push(collection.subscribeChanges(check))
+    ctx.onDispose(check)
+    check()
+  })
+
+  const observe = (id: string): Promise<void> => {
+    if (ctx.services.features?.flowBuilder !== true) return Promise.resolve()
+    const active = refreshing.get(id)
+    if (active) return active
+    const work = (async () => {
+      for (;;) {
+        const card = read(id)
+        if (!card || card.payload.workflow !== FLOW_AUTHORING_ENTRY || !current(card)) return
+        // Reconnecting an older completed author must never replay its source
+        // receipt over a later edit. Compare the journal's recorded times
+        // across this workspace's authors; untimed legacy rows cannot establish
+        // which source update is newest and do not trigger automatic planning.
+        const heads = new Map<string, { source: AuthoredSource; runCardId: string; ordinal: number }>()
+        for (const author of store.collections.cards.values()) {
+          if (author.kind !== "run-trace" || author.payload.workflow !== FLOW_AUTHORING_ENTRY || !current(author) ||
+            author.payload.repo !== card.payload.repo || author.payload.workspaceId !== card.payload.workspaceId) continue
+          for (const source of authoredSources(store.committedRuntimeRun(runtimeRunKey(author.payload))?.events ?? [])) {
+            if (source.occurredAt === undefined) continue
+            const held = heads.get(source.flowId)
+            if (!held || source.occurredAt > held.source.occurredAt! ||
+              source.occurredAt === held.source.occurredAt && author.ordinal >= held.ordinal) {
+              heads.set(source.flowId, { source, runCardId: author.id, ordinal: author.ordinal })
+            }
+          }
+        }
+        const latest = [...heads.values()].filter(head => head.runCardId === id).map(head => head.source)
+        const plans = Array.from<Card>(store.collections.cards.values()).filter((candidate): candidate is Plan => candidate.kind === "flow-plan" &&
+          candidate.payload.repo === card.payload.repo && candidate.payload.workspaceId === card.payload.workspaceId)
+        const planFor = (flowId: string) => plans.find(candidate => candidate.payload.flowId === flowId && candidate.payload.sourceReceipt?.runCardId === id)
+          ?? plans.find(candidate => candidate.payload.flowId === flowId && candidate.payload.sourceReceipt !== undefined)
+          ?? plans.find(candidate => candidate.payload.flowId === flowId && candidate.payload.against === undefined)
+        const next = latest.find(source => {
+          const plan = planFor(source.flowId)
+          return plan?.payload.sourceReceipt?.receipt !== source.receipt || plan.payload.status === "pending"
+        })
+        if (!next) return
+        const previous = planFor(next.flowId)
+        // Same registered Plan door as slash, button and agent. No second compiler.
+        const outcome = await ctx.commands.run("flow.plan", flowArgs("flow.plan", {
+          name: next.flowId, repo: card.payload.repo, sourceCard: id,
+          ...(previous?.payload.planId === undefined ? {} : { against: previous.payload.planId }),
+          ...(previous?.payload.input === undefined ? {} : { input: previous.payload.input })
+        }), "automatic")
+        if (outcome.status !== "executed") return
+        // The command dispatcher can coalesce a newer receipt before it opens
+        // the Plan door. Wait for that flow's settled card, then re-read the
+        // journal; waiting for the superseded receipt would never finish.
+        await until(() => !current(card) || [...store.collections.cards.values()].some(candidate => candidate.kind === "flow-plan" &&
+          candidate.payload.flowId === next.flowId && candidate.payload.sourceReceipt?.runCardId === id && candidate.payload.status !== "pending"))
+        if (!current(card)) return
+      }
+    })().finally(() => refreshing.delete(id))
+    refreshing.set(id, work)
+    return work
+  }
+
+  const send = (id: string): Promise<unknown> => {
+    const active = pending.get(id)
+    if (active) return active
+    const initial = read(id)
+    if (!initial?.payload.authoring || !current(initial)) return Promise.resolve()
+    const work = ctx.withToast(`flow.author:${id}`, "Creating a flow", "Authoring finished", async () => {
+      try {
+        let card = read(id)!
+        if (card.payload.runId === "") {
+          const binding = { workspaceId: card.payload.workspaceId }
+          const ready = await provision(card.payload.repo, binding)
+          if (!current(card)) return TOAST_SUPERSEDED
+          if (ready !== true) throw Error(ready)
+          const launched = await ctx.gateway.launch(card.payload.repo, FLOW_AUTHORING_ENTRY, { args: card.payload.input?.args }, binding, card.payload.authoring!.requestId)
+          if (!current(card)) return TOAST_SUPERSEDED
+          if (launched.status !== "ok") throw Error(isFlowNotFound(launched.code) ? flowAuthoringUnavailable(card.payload.repo) : launched.message)
+          card = read(id)!
+          await upsert({ ...card, status: "active", payload: { ...card.payload, runId: launched.value.runId,
+            phase: "running", observationError: undefined, follow: true,
+            authoring: { ...card.payload.authoring!, launchError: undefined } } })
+        }
+        void pump(id)
+        await until(() => {
+          const live = read(id)
+          if (!live || !current(live)) return true
+          const run = store.committedRuntimeRun(runtimeRunKey(live.payload))
+          return run?.observer?.error !== undefined || run?.summary !== undefined &&
+            ["completed", "failed", "cancelled"].includes(run.summary.status) && !engineProjectionPending(run.events)
+        })
+        card = read(id)!
+        if (!card || !current(card)) return TOAST_SUPERSEDED
+        await observe(id)
+        const run = store.committedRuntimeRun(runtimeRunKey(card.payload))
+        return run?.observer?.error ?? (run?.summary?.status === "completed" ? true : run?.summary?.verdict ?? "The run could not be observed.")
+      } catch (error) {
+        const card = read(id)
+        if (!card || !current(card)) return TOAST_SUPERSEDED
+        const message = error instanceof Error ? error.message : String(error)
+        await upsert({ ...card, status: "error", payload: { ...card.payload, observationError: message,
+          authoring: { ...card.payload.authoring!, launchError: message } } })
+        return message
+      }
+    }).finally(() => pending.delete(id))
+    pending.set(id, work)
+    return work
+  }
+
+  const request = async (description: string, repo: string, binding: GatewayWorkspaceBinding, actor: ControllerContext["commandActor"]) => {
+    const owner = store.collections.identitySessions.get("identity")?.login ?? ""
+    const id = `flow-author-${digest(canonical([owner, repo, binding.workspaceId ?? null, description])).slice(0, 24)}`
+    const existing = read(id)
+    if (existing && pending.has(id)) return { value: `flow-requested repo=${repo}` }
+    const completed = existing && store.committedRuntimeRun(runtimeRunKey(existing.payload))?.summary?.status === "completed"
+    if (completed) return { value: `run-started workflow=${FLOW_AUTHORING_ENTRY} run=${existing.payload.runId} repo=${repo}` }
+    let saved = persisting.get(id)
+    if (!existing && !saved) {
+      // Reserve the preceding slot for the graph. Later chat cannot take it,
+      // and moving an existing plan here never ties its order with the run.
+      const ordinal = nextOrdinal() + 1
+      saved = store.dispatch({ type: "card.upsert", actor, card: {
+        id, kind: "run-trace", title: "Creating a flow", status: "active", ordinal, createdAt: Date.now(),
+        payload: { repo, ...binding, gatewayBindingVersion: 1, runId: "", workflow: FLOW_AUTHORING_ENTRY, phase: "launching", steps: [], result: null, lastSeq: 0,
+          input: { args: description }, authoring: { requestId: crypto.randomUUID(), owner } }
+      } }).isPersisted.promise
+      persisting.set(id, saved)
+    }
+    if (saved) { await saved; persisting.delete(id) }
+    void send(id)
+    return { value: `flow-requested repo=${repo}` }
+  }
+  const resume = (retryCardId?: string) => {
+    if (ctx.services.features?.flowBuilder !== true) return
+    for (const card of store.collections.cards.values()) {
+      if (card.kind !== "run-trace" || !card.payload.authoring || !current(card)) continue
+      if (retryCardId === card.id && card.payload.authoring.launchError !== undefined) {
+        void upsert({ ...card, payload: { ...card.payload, authoring: { ...card.payload.authoring, launchError: undefined }, observationError: undefined } }).then(() => send(card.id))
+      } else if (card.payload.authoring.launchError === undefined) void send(card.id)
+      void observe(card.id)
+    }
+  }
+  return { request, observe, resume }
+}

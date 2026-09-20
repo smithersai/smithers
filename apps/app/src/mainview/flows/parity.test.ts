@@ -362,7 +362,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * watching, launch Retry, Stop, Run again, the steer row's send, the
        * repository chooser's row and the workflow list's Run.
        */
-      "../cards/WorkflowCards.tsx": 14,
+      "../cards/WorkflowCards.tsx": 15,
       "../DevtoolsPanel.tsx": 1,
       "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
@@ -410,7 +410,7 @@ describe("launch-law parity: every affordance is a command", () => {
       /* The trace owns selection, views, filters and child navigation.
        * The extracted strip selects recorded sequences; summary actions reuse
        * approvals.open and runs.resume; goals reuse runs.coding.select. */
-      "../cards/RunTraceCard.tsx": 10,
+      "../cards/RunTraceCard.tsx": 11, // Includes the graph view door.
       "../cards/RunTracePhaseStrip.tsx": 3,
       "../cards/RunTraceSummary.tsx": 2,
       "../cards/RunTraceGoals.tsx": 1,
@@ -427,6 +427,24 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/AnonymousCeilingCard.tsx": 1,
       // THE FORM LAW (flow-forms.md): the generic form's Cancel (card.dismiss) and Submit (form.submit); fields commit on blur/change.
       "../cards/FlowFormCards.tsx": 2,
+      // The plan card's one door, in its two states: Run once a plan exists, Plan again once one was refused.
+      "../cards/FlowPlanCard.tsx": 2,
+      // The run graph's bar: back to the turns, and the camera switch.
+      "../cards/FlowRunGraph.tsx": 2,
+      /*
+       * The trigger panel (L6): the run in flight and a ledger row each open
+       * their run, and a Plue registration carries Run now and Pause. The
+       * trigger store's own rows carry no door, because no Control procedure
+       * addresses one.
+       */
+      "../cards/FlowGraphTrigger.tsx": 4,
+      /*
+       * The node a graph has open (L5): its close, the tab strip's one
+       * handler, one per dependency the node waits on, the Code tab's
+       * `Open file`, and the trigger drawer's own close. Every one is a
+       * `flowAction` door on the card the drawer belongs to.
+       */
+      "../cards/FlowGraphDrawer.tsx": 5,
       /*
        * The repository welcome and its three answers (controller/onboarding.ts):
        * every door (the welcome's three, the maintainer's reads, the
@@ -475,9 +493,10 @@ describe("launch-law parity: every affordance is a command", () => {
       /*
        * The dispatcher card's Register door, the button door of
        * triggers.register (factory mock 2; sign-in is the door), and each
-       * registered schedule's Run now, the button door of triggers.run.
+       * registered schedule's Run now and Pause, the button doors of
+       * triggers.run and triggers.pause.
        */
-      "../cards/TriggersCard.tsx": 2,
+      "../cards/TriggersCard.tsx": 3,
       /* Librarian L5: the rail card's Open and note rows (wiki.open) and the graph card's Refresh (wiki.graph). */
       "../cards/WikiCards.tsx": 3,
       /*

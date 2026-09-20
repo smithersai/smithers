@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { localOnlyCollectionOptions } from "@tanstack/db"
 import type { InferSchemaOutput, StorageApi } from "@tanstack/db"
+import { normalizeStorageRowKey, storageRowKey as rowKey } from "./StorageRowKey"
 
 interface StoredItem {
   readonly versionKey: string
@@ -61,7 +62,6 @@ export interface CollectionPersistence {
 }
 
 const storageKey = (id: string): string => `smithers-mvp.${id}`
-const rowKey = (key: string | number): string => typeof key === "number" ? `n:${key}` : `s:${key}`
 
 const comparableJson = (value: unknown): string | undefined => JSON.stringify(value, (_key, nested: unknown) =>
   typeof nested === "object" && nested !== null && !Array.isArray(nested)
@@ -83,7 +83,7 @@ export class DurableStorageConflictError extends Error {
   }
 }
 
-const normalizedRowKey = (key: string): string => key.startsWith("s:") || key.startsWith("n:") ? key : rowKey(key)
+const normalizedRowKey = normalizeStorageRowKey
 
 const readStringRows = (storage: StorageApi, id: string, raw = storage.getItem(storageKey(id))): Map<string, StoredItem> => {
   if (raw === null) return new Map()

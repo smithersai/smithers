@@ -129,14 +129,16 @@ that path. Keeping the database outside a served checkout prevents engine
 writes from changing the working-copy tree. `workspaceRoot` still confines
 flow file actions; the database path is trusted host configuration.
 
-| Field           | Type                                               | Meaning                                                                                                                                                                                                                                      |
-| --------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`      | `string`                                           | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                             |
-| `workspaceRoot` | `string`                                           | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                     |
-| `owner`         | `{ hostId: string }`                               | Stable identity of this engine host.                                                                                                                                                                                                         |
-| `isAlive`       | `Ownership.LivenessCheck`                          | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.   |
+| Field              | Type                                    | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`         | `string`                                | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                                                                                                                                                                                                                      |
+| `workspaceRoot`    | `string`                                | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                                                                                                                                                                                                              |
+| `owner`            | `{ hostId: string }`                    | Stable identity of this engine host.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `isAlive`          | `Ownership.LivenessCheck`               | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.                                                                                                                                                                                            |
 | `canExecute`    | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                               |
 | `requestResume` | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
+| `cacheEnvironment` | `Action.CacheEnvironment`               | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
+| `sourceRevision`   | `string \| (() => string \| undefined)` | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 
 `Ownership.sameHostPidProbe` from [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/) probes
 the process table only for the claim context's host (`context.claimant.hostId`).
@@ -147,6 +149,29 @@ from [`@smthrs/platform-node`](https://platform-node.smithers.sh/reference/api/)
 foreign hosts, or supply a distributed liveness check. `HostLiveness.isAlive`
 is the `layerHost` default and refuses foreign-host takeover even after lease
 expiry. A multi-process deployment answers from its supervisor or lease system.
+
+#### Cross-run step cache reuse
+
+A sealed action that declares an idempotency key, an implementation version and
+a `hard` `fileBoundary` publishes its result to the step cache. Whether a later
+run can read that result back is decided by `cacheEnvironment`.
+
+While it is absent the engine folds the execution id into the step key, so each
+run records its result under an address no other run can spell and nothing is
+reused across runs. This is the default because the engine cannot derive the
+value: it names the semantic runtime layers and the effective capability groups
+a result was computed under, and only the host knows both. Declare it and a
+second run addresses the first run's row, replays the recorded outputs, and
+never enters the body again.
+
+Declare it only when every machine that shares this database would have
+produced the same bytes under the layers named. The engine still re-measures a
+step's declared read set before serving a hit and refuses one whose declaration
+no longer matches the host, but it cannot check a claim about a toolchain, a
+model route, or a code version that the layers failed to name. A host that
+cannot enumerate its environment leaves the field out. An incomplete value is
+refused with `RuntimeConfigurationError` at construction, because it is cache
+key material.
 
 ### `RuntimeConfigurationError`
 

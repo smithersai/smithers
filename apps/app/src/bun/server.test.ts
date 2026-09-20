@@ -315,13 +315,25 @@ describe("the local origin", () => {
 describe("the Smithers Cloud seam", () => {
   test("the bootstrap this host serves is one the client's own schema admits", async () => {
     // The SPA refuses to start on a bootstrap its schema rejects ("Runtime
-    // bootstrap broke its contract"), so a field the client requires is part of
-    // this route's contract: a host with no sandbox says `sandbox: null`, the
-    // way the Worker does, and never omits the key.
+    // bootstrap broke its contract"), so a field the client requires is part
+    // of this route's contract and the key is never omitted.
+    //
+    // It is a DESCRIPTOR and not `null`, which is the Worker's answer:
+    // `runtime/Runtime.ts` reads `host === "local" && sandbox === null` as
+    // "this origin has no repositories at all" and gives the app no
+    // repositories backend, so a local host that said `null` booted without
+    // one. This host wraps no child process — the seatbelt and bubblewrap
+    // mechanisms live in `@smthrs/build` `ExecSandbox` and nothing here
+    // selects one — so it says `unavailable` and `unenforced` rather than
+    // claiming an enforcement it does not perform.
     const body: unknown = await (await apiFetch(APP_BOOTSTRAP_PATH)).json()
     const parsed = AppBootstrapSchema.safeParse(body)
     expect(parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)).toEqual([])
-    expect((body as { readonly sandbox?: unknown }).sandbox).toBeNull()
+    expect((body as { readonly sandbox?: unknown }).sandbox).toEqual({
+      platform: process.platform,
+      mode: "unavailable",
+      policies: { loader: "unenforced", targetRun: "unenforced" }
+    })
   })
 
   test("offline answers 501 like the identity stub, and the session is honestly signed-out", async () => {

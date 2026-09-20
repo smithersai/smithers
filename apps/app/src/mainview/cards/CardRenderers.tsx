@@ -28,6 +28,7 @@ import { envCardFamily } from "./EnvCard"
 import { experimentalCardFamily } from "./ExperimentalCard"
 import { fileCardFamily } from "./FileCards"
 import { flowFormCardFamily } from "./FlowFormCards"
+import { flowPlanCardFamily } from "./FlowPlanCard"
 import { historyCardFamily } from "./HistoryCard"
 import { issueCardFamily } from "./IssueCards"
 import { landingCardFamily } from "./LandingCards"
@@ -89,6 +90,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   adminCardFamily,
   conversationCardFamily,
   workflowCardFamily,
+  flowPlanCardFamily,
   triggersCardFamily,
   runsCardFamily,
   issueCardFamily,
@@ -131,6 +133,7 @@ export const CARD_RENDERERS: CardFamily<Card["kind"]> = {
   ...adminCardFamily,
   ...conversationCardFamily,
   ...workflowCardFamily,
+  ...flowPlanCardFamily,
   ...triggersCardFamily,
   ...runsCardFamily,
   ...issueCardFamily,

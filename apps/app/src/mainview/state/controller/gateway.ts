@@ -13,8 +13,8 @@
  * this app's typecheck AND a row the gateway never served fails here instead
  * of reaching a user as an undefined field.
  */
-import { ControlEvent, type SteerMessage } from "@smthrs/control/ControlSchema"
-import { ApprovalRow, NodeOutputRow, RunSummaryRow, TranscriptRow } from "@smthrs/gateway/GatewayProjection"
+import { ControlEvent, PlanCard, type PlanEdge, type PlanGraphNode, type PlanNode, type SteerMessage } from "@smthrs/control/ControlSchema"
+import { ApprovalRow, FlowDurationRow, NodeOutputRow, RunSummaryRow, TranscriptRow } from "@smthrs/gateway/GatewayProjection"
 import { ProjectionCursor } from "@smthrs/gateway/GatewaySchema"
 import { SubmitApprovalOutput } from "@smthrs/gateway/GatewayRpcs"
 import { WORKFLOW_RPC_PATH } from "@smthrs/rpc/AgentApiRoutes"
@@ -42,6 +42,43 @@ export const isFlowNotFound = (code: string | undefined): boolean =>
 /** This seam's own refusal: a projection snapshot it could not read as the rows it asked for. */
 export const INVALID_PROJECTION_CODE = "invalid_projection"
 
+/** This seam's own refusal: a `Plan` answer it could not read as a plan card. */
+export const INVALID_PLAN_CODE = "invalid_plan"
+
+/**
+ * What a flow would run, as the plan door answers it.
+ *
+ * The signed `envelope` and the `approval` payload are deliberately absent.
+ * They are authority, and everything a card payload holds is written to disk
+ * by the persistence backend, so they stay inside this module: `launch`
+ * carries them straight from the answer into the two calls that need them.
+ */
+export interface PlannedFlow {
+  readonly planId: string
+  readonly digest: string
+  readonly flowId: string
+  readonly nodes: ReadonlyArray<PlanNode>
+  /**
+   * The labelled edges, when the workspace reported them (`dependsOn`
+   * otherwise), and where it says each node was declared.
+   */
+  readonly graph?: {
+    readonly edges: ReadonlyArray<PlanEdge>
+    readonly nodes?: ReadonlyArray<PlanGraphNode> | undefined
+  }
+}
+
+const decodePlanCard = Schema.decodeUnknownOption(PlanCard)
+
+/** The card, minus the authority a reader must never persist. */
+const plannedOf = (card: PlanCard): PlannedFlow => ({
+  planId: card.planId,
+  digest: card.digest,
+  flowId: card.flowId,
+  nodes: card.nodes,
+  ...(card.graph === undefined ? {} : { graph: card.graph })
+})
+
 /** The rc.0 run statuses a card may render. */
 export type RunStatus = RunSummaryRow["status"]
 
@@ -52,7 +89,7 @@ export interface FlowSummary {
   readonly inputSchema?: unknown
 }
 
-export type { ApprovalRow, ControlEvent, NodeOutputRow, RunSummaryRow, TranscriptRow }
+export type { ApprovalRow, ControlEvent, FlowDurationRow, NodeOutputRow, RunSummaryRow, TranscriptRow }
 
 /** The owning Plue workspace; omission addresses the legacy repo gateway. */
 export interface GatewayWorkspaceBinding {
@@ -115,6 +152,7 @@ const decodeApprovalRows = rowsDecoder(Schema.decodeUnknownOption(snapshotOf(App
 const decodeNodeOutputRow = firstRowDecoder(rowsDecoder(Schema.decodeUnknownOption(snapshotOf(NodeOutputRow))))
 const decodeTranscriptRows = rowsDecoder(Schema.decodeUnknownOption(snapshotOf(TranscriptRow)))
 const decodeControlEventRows = rowsDecoder(Schema.decodeUnknownOption(snapshotOf(ControlEvent)))
+const decodeFlowDurationRows = rowsDecoder(Schema.decodeUnknownOption(snapshotOf(FlowDurationRow)))
 
 /**
  * The typed error's code in a relayed failure's `detail` (the gateway's
@@ -231,6 +269,31 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       }),
 
     /**
+     * What a flow WOULD run: its keyed nodes and the edges between them,
+     * before anything runs.
+     *
+     * The answer is the control plane's own signed plan card, so it is decoded
+     * against `@smthrs/control`'s schema rather than read field by field off a
+     * record: a workspace that answers a shape the schema rejects is a refusal
+     * here, never a plan that silently reports no nodes.
+     */
+    plan: async (
+      repo: string,
+      flowId: string,
+      input: Record<string, unknown>,
+      requestedBinding?: GatewayWorkspaceBinding
+    ): Promise<GatewayResult<PlannedFlow>> => {
+      const binding = requestedBinding ?? transport.bindingFor?.(repo) ?? {}
+      if ("error" in binding) return { status: "error", message: binding.error }
+      const planned = await call(repo, "Plan", { flowId, input }, binding)
+      if (planned.status !== "ok") return planned
+      const card = decodePlanCard(planned.value)
+      return Option.isNone(card)
+        ? { status: "error", code: INVALID_PLAN_CODE, message: "The workspace planned the flow but answered with a plan I couldn't read." }
+        : { status: "ok", value: plannedOf(card.value) }
+    },
+
+    /**
      * Start a flow: plan it, approve the plan, and run it.
      *
      * Three calls because they are three decisions, and the middle one is the
@@ -242,15 +305,26 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       flowId: string,
       input: Record<string, unknown>,
       requestedBinding?: GatewayWorkspaceBinding,
-      request?: { readonly idempotencyKey: string; readonly stillCurrent: () => boolean }
-    ): Promise<GatewayResult<{ readonly runId: string; readonly workspaceId?: string }>> => {
+      request?: string | { readonly idempotencyKey: string; readonly stillCurrent: () => boolean }
+    ): Promise<GatewayResult<{
+      readonly runId: string
+      readonly workspaceId?: string
+      /** The plan the run was approved on, so the run card can draw it before any event arrives. */
+      readonly planId?: string
+      readonly digest?: string
+      readonly nodes?: ReadonlyArray<PlanNode>
+      /** The labelled edges and declaration sites that answer carried; a plan that reported none has none. */
+      readonly graph?: PlannedFlow["graph"]
+    }>> => {
       const binding = requestedBinding ?? transport.bindingFor?.(repo) ?? {}
       if ("error" in binding) return { status: "error", message: binding.error }
       const owned = transport.observationGuard?.() ?? (() => true)
-      const current = () => owned() && (request?.stillCurrent() ?? true)
+      const current = () => owned() && (typeof request === "string" ? true : request?.stillCurrent() ?? true)
       const superseded = { status: "error" as const, code: "request_superseded", message: "This launch belongs to a previous session." }
+      // Preserve persisted authoring keys and the background launch controller's keys.
+      const requestKey = typeof request === "string" ? `author:${request}` : request === undefined ? undefined : `plan:${request.idempotencyKey}`
       if (!current()) return superseded
-      const planned = await call(repo, "Plan", { flowId, input, ...(request ? { idempotencyKey: `plan:${request.idempotencyKey}` } : {}) }, binding)
+      const planned = await call(repo, "Plan", { flowId, input, ...(requestKey === undefined ? {} : { idempotencyKey: requestKey }) }, binding)
       if (!current()) return superseded
       if (planned.status !== "ok") return planned
       const card = asRecord(planned.value)
@@ -259,6 +333,10 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       if (planId === undefined || digest === undefined) {
         return { status: "error", message: "The workspace planned the run but didn't name the plan." }
       }
+      // The same answer the plan door decodes. A workspace whose card this
+      // schema rejects still launches — the launch needs the plan id and the
+      // digest, which are here — it simply hands the run no nodes to draw.
+      const decoded = decodePlanCard(planned.value)
       const approved = await call(repo, "Approval.Submit", {
         target: { _tag: "Plan", planId, digest, envelope: card.envelope },
         scope: "run",
@@ -278,7 +356,21 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
       if (started.status !== "ok") return started
       const runId = asRecord(started.value).runId
       return typeof runId === "string"
-        ? { status: "ok", value: { runId, ...binding } }
+        ? {
+          status: "ok",
+          value: {
+            runId,
+            planId,
+            digest,
+            ...binding,
+            ...(Option.isNone(decoded)
+              ? {}
+              : {
+                nodes: decoded.value.nodes,
+                ...(decoded.value.graph === undefined ? {} : { graph: decoded.value.graph })
+              })
+          }
+        }
         : { status: "error", message: "The run started but the workspace didn't name it — ask me to check." }
     },
 
@@ -426,6 +518,25 @@ export const createGatewaySeam = (transport: GatewayTransport) => {
     /** One run's turn-by-turn transcript. */
     transcript: async (repo: string, runId: string, binding?: GatewayWorkspaceBinding): Promise<GatewayResult<ReadonlyArray<TranscriptRow>>> =>
       decodeTranscriptRows(await projection(repo, { _tag: "transcript", runId }, binding)),
+
+    /**
+     * How long one flow's nodes have taken, per action tag, folded across
+     * every run of it the workspace has finished (D-030).
+     *
+     * This is the one projection that is neither a run's nor a workspace
+     * listing, and it is the newest: a box whose selector union predates it
+     * refuses the call at its own RPC boundary, with a payload-decode failure
+     * that carries no ControlError code. There is therefore nothing here to
+     * tell that refusal from any other, so the caller treats EVERY refusal of
+     * this projection as no rows and says nothing about it: a prediction
+     * nobody asked for must never become an error somebody has to read.
+     */
+    flowDurations: async (
+      repo: string,
+      flowId: string,
+      binding?: GatewayWorkspaceBinding
+    ): Promise<GatewayResult<ReadonlyArray<FlowDurationRow>>> =>
+      decodeFlowDurationRows(await projection(repo, { _tag: "flow-durations", flowId }, binding)),
 
     /** Journal rows after a cursor; omit it for full historical inspection. */
     runEvents: async (

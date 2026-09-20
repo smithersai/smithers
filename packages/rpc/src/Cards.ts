@@ -663,6 +663,96 @@ const CommitSummarySchema = z.object({
 })
 
 /**
+ * One plan node as a card carries it: the flow-plan card's row, and the
+ * snapshot a launch writes onto the run it started.
+ *
+ * Only the part a graph draws is kept. A plan node's full key material carries
+ * the call's own payload and its JSON schemas, and everything in a card
+ * payload is written to disk by the persistence backend, so the card holds the
+ * node's address, its key, its edges, its tier and the action it dispatches,
+ * and nothing else.
+ */
+const PlanCardNodeSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["step", "agent", "merge"]),
+  key: z.string(),
+  dependsOn: z.array(z.string()),
+  /** The key material's own tier: what the node may do to the world. */
+  tier: z.enum(["sealed", "compensable", "irreversible"]),
+  /** The action or flow the node dispatches; a merge node dispatches neither. */
+  action: z.string().optional(),
+  status: z.enum(["cached", "run"])
+})
+
+/**
+ * The graph a plan was built from, as a card carries it: the labelled edges,
+ * and where the graph builder saw each node declared.
+ *
+ * A `PlanCardNode` carries `dependsOn`, which is ONE unlabelled edge set: it
+ * cannot tell a value dependency from a `catch` arm or from an ordering edge
+ * a write conflict added, and the declaration site is deliberately not part
+ * of the key material a node is addressed by. Both are the workspace's own
+ * observations, so both ride here, and a host that reported neither leaves
+ * this absent rather than making its reader guess them back.
+ *
+ * The plan door's card and the snapshot a launch writes onto the run it
+ * started carry the same shape, because it is the same answer.
+ */
+const PlanCardGraphSchema = z.object({
+  edges: z.array(
+    z.object({
+      from: z.string(),
+      to: z.string(),
+      reason: z.enum(["value", "continuation", "failure", "conflict", "lane-merge"])
+    })
+  ),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      declaredAt: z.object({ path: z.string(), line: z.number().int().nonnegative() }).optional()
+    })
+  ).optional(),
+  /**
+   * The revision of the tree those declaration sites were read out of.
+   *
+   * A site is a path and a line, and neither says which bytes were at that
+   * line: the workspace moves, so the same path after an edit or a branch
+   * switch is a different file. The drawer's Code tab reads the file AT this
+   * revision, and a card that carries none shows no code at all rather than
+   * code it cannot bind to what ran (D-068).
+   */
+  sourceRevision: z.string().min(1).optional()
+})
+
+/**
+ * Which of a selected node's tabs a graph card is showing.
+ *
+ * Each word names evidence the engine actually records, and a tab whose
+ * evidence this node has none of is absent rather than empty (D-035). The
+ * enum is the vocabulary, never a promise that every node has all of it.
+ */
+const GraphDrawerTabSchema = z.enum(["declaration", "code", "output", "events", "attempts"])
+
+/**
+ * Which node of a graph a card has open, and which of its tabs.
+ *
+ * Reader state lives on the card like every other view state, so a reload
+ * restores the drawer a person left open and no component owns it.
+ */
+const GraphDrawerSchema = z.object({
+  node: z.string().optional(),
+  tab: GraphDrawerTabSchema.optional(),
+  /*
+   * A refused read of the file a node was declared in: the path it was for
+   * and the refusal in the seam's own words. The Code tab renders the file
+   * card the read writes, so a read that wrote none has to say so somewhere
+   * a reader can see it, and the card is that place. Absent is the normal
+   * case, including "not read yet".
+   */
+  codeError: z.object({ path: z.string(), message: z.string() }).optional()
+})
+
+/**
  * Validates card values at the RPC boundary.
  *
  * @since 1.0.0
@@ -1060,10 +1150,43 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       filter: z.enum(["all", "running", "failed", "model", "flow", "forks", "messages"]).optional(),
       /** Whether the trace follows the newest frame (factory spec 06 §2); true when absent. A select turns it off. */
       liveTail: z.boolean().optional(),
-      /** Progressive inspection uses one card: a cheap turn list by default, the full timeline on demand. */
-      traceView: z.enum(["turns", "timeline"]).optional(),
+      /**
+       * Progressive inspection uses one card: a cheap turn list by default,
+       * the full timeline or the run's graph on demand.
+       */
+      traceView: z.enum(["turns", "timeline", "graph"]).optional(),
+      /**
+       * The plan the launch was approved on, snapshotted when the run started.
+       *
+       * The graph view draws these nodes and folds the engine's own node
+       * records onto them (FlowGraphStatus.ts). It is absent for a run this
+       * client did not launch, and the graph then draws the nodes the engine
+       * recorded instead.
+       */
+      plan: z.object({
+        planId: z.string(),
+        digest: z.string(),
+        nodes: z.array(PlanCardNodeSchema),
+        /**
+         * The labelled edges and declaration sites the same answer carried.
+         * Without them a graph drawn before the first event has only
+         * `dependsOn`, and an unlabelled edge is what it draws.
+         */
+        graph: PlanCardGraphSchema.optional()
+      }).optional(),
+      /**
+       * The graph view's own reader state: `follow` keeps the camera on the
+       * running node, and `node` with `tab` is the drawer a reader opened.
+       */
+      graph: z.object({ follow: z.boolean().optional(), ...GraphDrawerSchema.shape }).optional(),
       /** The predicted Change inspected within the recorded coding plan. */
-      codingChangeId: z.string().optional()
+      codingChangeId: z.string().optional(),
+      /** Local launch intent, retained until the authoring run's real receipt arrives. */
+      authoring: z.object({
+        requestId: z.string(),
+        owner: z.string(),
+        launchError: z.string().optional()
+      }).optional()
     })
   }),
   /* The workspace's workflows as an embedded card (flow.list). */
@@ -1086,6 +1209,64 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           inputSchema: z.unknown().optional()
         })
       )
+    })
+  }),
+  /*
+   * What a flow WOULD run (flow.plan): the keyed nodes the control plane
+   * answered with before anything runs, and the labelled edges between them.
+   *
+   * Only the part a graph draws is kept. A plan node's full key material
+   * carries the call's own payload, and everything in a card payload is
+   * written to disk by the persistence backend, so the card holds the node's
+   * address, its key, its edges, its tier and the action it dispatches, and
+   * nothing else. `graph` is present only when the workspace reported the
+   * labelled edges; `dependsOn` is the unlabelled edge set every host carries.
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("flow-plan"),
+    payload: z.object({
+      repo: z.string(),
+      /** The gateway that answered the plan. */
+      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      flowId: z.string(),
+      /** The input the plan was taken on, so the Run door launches the same thing. */
+      input: z.record(z.string(), z.unknown()).optional(),
+      status: z.enum(["pending", "done", "failed"]),
+      /** The workspace's own sentence when the plan was refused. */
+      error: z.string().optional(),
+      planId: z.string().optional(),
+      digest: z.string().optional(),
+      nodes: z.array(PlanCardNodeSchema).optional(),
+      /** The labelled edges and declaration sites the workspace reported (@see PlanCardGraphSchema). */
+      graph: PlanCardGraphSchema.optional(),
+      /** The run this plan was asked to be compared against (`flow.plan against=<runId>`). */
+      against: z.string().optional(),
+      /** The previous engine plan, retained when authoring redraws this same card. */
+      previousPlan: z.object({ planId: z.string(), digest: z.string(), nodes: z.array(PlanCardNodeSchema) }).optional(),
+      /** Applied source receipt that requested this plan; completion is the card's status. */
+      sourceReceipt: z.object({ runCardId: z.string(), receipt: z.string() }).optional(),
+      /*
+       * The re-key preview: this plan against the plan that run was approved
+       * on. Numbers only, and each one is something the engine or the journal
+       * stated. There is no predicted cache-hit count: on this host nothing
+       * settles `clean` (D-044) and a plan key is not a dispatch key, so the
+       * only cache figure is the one the compared run actually recorded.
+       */
+      rekey: z.object({
+        /** Nodes the second run would execute: added plus re-keyed. */
+        rerun: z.number().int().nonnegative(),
+        /** Nodes in this plan. */
+        total: z.number().int().nonnegative(),
+        /** The critical path over the work; absent when one node of it was never measured. */
+        etaMs: z.number().nonnegative().optional(),
+        /** What the compared run really took, its first journal row to its last. */
+        wasMs: z.number().nonnegative().optional(),
+        /** How many nodes that run settled `clean`; absent where it settled none. */
+        cleanSettlements: z.number().int().positive().optional()
+      }).optional(),
+      /** The graph's own reader state: the node whose drawer is open, and its tab. */
+      view: GraphDrawerSchema.optional()
     })
   }),
   /*
@@ -1118,7 +1299,43 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           enabled: z.boolean(),
           lastFiredAt: z.number().optional(),
           nextFireAt: z.number().optional(),
-          activeRunId: z.string().optional()
+          activeRunId: z.string().optional(),
+          /*
+           * The rest of the box's TriggerSummary. Each one is optional for
+           * two reasons: a card persisted before the route passed it through
+           * holds none of them, and a Plue registration serves none of them
+           * ever. What the row does not state, the body does not show.
+           */
+          /** Every upcoming fire the box computed on the read, in time order; `nextFireAt` is the first of them. */
+          nextFiresAt: z.array(z.number()).optional(),
+          /** How a fire that meets a run still in flight is decided. */
+          overlap: z.enum(["skip", "buffer-one", "supersede"]).optional(),
+          /** What a schedule owes for the fires it missed. */
+          catchUp: z.enum(["none", "one", "all"]).optional(),
+          /** The bound on how many missed fires one catch-up may owe. */
+          maxCatchUp: z.number().optional(),
+          /** The occurrence the trigger has claimed and not yet launched. */
+          pendingAt: z.number().optional(),
+          /** The scheduler's last poll on the box; absent means no scheduler has ticked, so an enabled trigger is not going to fire. */
+          schedulerLastTickAt: z.number().optional(),
+          /*
+           * This trigger's fire ledger, newest first, as the box answered
+           * `List { _tag: "fires" }` for it. It rides on the row it belongs
+           * to, so no second field has to say which trigger it is about, and
+           * it is present only for the trigger a panel asked for: a row with
+           * no ledger read is a row with no `fires`, never an empty one.
+           */
+          fires: z.array(
+            z.object({
+              occurrenceAt: z.number(),
+              /** Null while the occurrence is claimed and not yet reported, which is the window between the claim and its result. */
+              outcome: z.enum(["launched", "completed", "skipped", "buffered", "superseded", "failed"]).nullable(),
+              runId: z.string().optional(),
+              error: z.string().optional(),
+              /** What a launched run is parked on, when the ledger can see it. */
+              waiting: z.literal("approval").optional()
+            })
+          ).optional()
         })
       ),
       /** Optional for cards persisted before webhooks joined the listing. */
@@ -1812,6 +2029,16 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * project these; the seams write them through `card.updated`. All
        * optional so cards persisted before the lane parse and state none.
        */
+      /**
+       * The revision this file was read AT, when the read asked for one.
+       *
+       * A read with no ref answers the working tree, which moves; a read
+       * with one answers bytes that cannot change. The graph drawer's Code
+       * tab only renders a card whose ref is the revision its node's sites
+       * were recorded at, so an unbound read of the same path is never
+       * shown as the code that ran (D-068).
+       */
+      ref: z.string().min(1).optional(),
       /** The anchored line and column (`files.read <path>:<line>[:<col>]`), 1-based: scrolled to and marked. */
       line: z.number().int().min(1).optional(),
       column: z.number().int().min(1).optional(),

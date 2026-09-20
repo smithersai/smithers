@@ -17,6 +17,8 @@ import { ExecutionFact } from "@smthrs/journal"
 import { Schema } from "effect"
 import * as Diagnosis from "./Diagnosis.ts"
 import { callScope, openCallIndex, uniqueCallEvents } from "./internal/callEvents.ts"
+import * as NativeResolution from "./internal/nativeResolution.ts"
+import * as NodeEvents from "./internal/nodeEvents.ts"
 
 /**
  * One run, everything a run card displays, and the diagnosis of what happened
@@ -168,6 +170,48 @@ export const NodeOutputRow = Schema.Struct({
  * @category models
  */
 export type NodeOutputRow = typeof NodeOutputRow.Type
+
+/**
+ * How long one flow's nodes take, per action tag.
+ *
+ * `samples` is the number of measured executions behind the two percentiles,
+ * and it is on the wire because a percentile over one sample and a percentile
+ * over twenty are different claims. A tag with no measured execution has no
+ * row at all: there is no shape here for an unmeasured prediction.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const FlowDurationRow = Schema.Struct({
+  flowId: Schema.String,
+  actionTag: Schema.String,
+  samples: Schema.Number,
+  p50Ms: Schema.Number,
+  p90Ms: Schema.Number
+})
+
+/**
+ * How long one flow's nodes take, per action tag.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type FlowDurationRow = typeof FlowDurationRow.Type
+
+/**
+ * One measured execution of one node, as a duration fold's sample.
+ *
+ * The action tag is the only part of a node's key material that survives a
+ * re-key, which is why history is grouped by it rather than by node id or by
+ * dispatch key.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface NodeDuration {
+  readonly actionTag: string
+  readonly durationMs: number
+}
 
 /**
  * One line of a run's turn-by-turn transcript.
@@ -430,12 +474,15 @@ const treeStatus = (settlement: CallSettlement | undefined): RunTreeRow["status"
  * callId retain same-name FIFO pairing, restricted to other legacy records
  * (including a newly identified settlement of an old parked call).
  *
- * The durable engine's own `flows.engine.*` records are not folded here, and
- * cannot be: a host keeps the control plane and the engine in two databases
- * with two journals (`@smthrs/cli` `NodeControl.databasePath` and
- * `executionDatabasePath`), and `Control.watch` reads one run's partition of
- * the control journal alone (`@smthrs/control` `ControlLive.streamForRun`).
- * What an engine step did reaches a client as the agent call that made it.
+ * The durable engine's own `flows.engine.*` records are not folded here, but
+ * that is a choice rather than a limit. A host keeps the control plane and the
+ * engine in two databases with two journals (`@smthrs/cli`
+ * `NodeControl.databasePath` and `executionDatabasePath`), and
+ * `EngineJournalProjection` copies every engine entry of the run into the
+ * control journal as a `control.engine.event` envelope, which is how
+ * {@link nodeDurations} reads the node records. A tree row is an agent cell
+ * call, so what an engine step did reaches this projection as the call that
+ * made it.
  *
  * A node that never settled stays `running`, which is how a live tree renders
  * work in flight.
@@ -619,6 +666,152 @@ export const nodeOutput = (
   // A tree reads in the order calls opened; outputs read in the order they
   // settled, which is the order a client watched them arrive.
   return settled.sort((left, right) => left.order - right.order).map((entry) => entry.row)
+}
+
+/** The node id every execution gives the flow it was started to run. */
+const rootNodeId = "root"
+
+/**
+ * The native execution the host bound this control run to, when one is known.
+ *
+ * Only the host's own binding record names the root, and two records that
+ * disagree name nothing: an ambiguous binding cannot tell a callee's
+ * execution apart from the root's, so it authorizes no skip.
+ *
+ * The binding is written once, when the host takes the root up, so a window
+ * bounded to a run's newest events is the one window it falls out of. The
+ * carried digest keeps it across that eviction, and reading from the carry is
+ * what keeps a long run's calls counted the same as a short run's.
+ */
+const boundExecution = (
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  carry: Diagnosis.Digest | undefined
+): string | undefined => {
+  let resolution = carry?.nativeResolution
+  for (const event of events) resolution = NativeResolution.combine(resolution, NativeResolution.fromEvent(event))
+  return resolution === undefined || resolution.conflict === true ? undefined : resolution.binding?.executionId
+}
+
+/**
+ * A callee's own view of a call its caller already measured.
+ *
+ * Every execution below the bound root was started by a `FlowCall` node in
+ * the execution above it, and that node carries the same action tag over the
+ * same span. The caller's node is the one kept, because it is the node a plan
+ * carries and the one a graph can join a prediction onto.
+ *
+ * With no binding nothing is echoed: a fold that cannot name the root cannot
+ * tell which `root` record belongs to it, and dropping samples on a guess
+ * would answer a smaller history than the flow ran.
+ */
+const echoedRoot = (bound: string | undefined, executionId: string, nodeId: string): boolean =>
+  bound !== undefined && nodeId === rootNodeId && executionId !== bound
+
+/**
+ * Folds one run's events into the executions it measured.
+ *
+ * A node's work starts when the engine recorded it scheduled and ends when it
+ * recorded it settled, so a duration is the distance between those two native
+ * stamps. Four of the five outcomes contribute nothing: `clean` was served
+ * from records rather than run, `failed` measures a collapse, `skipped` was
+ * never reached, and `deferred` is scheduling debt. Only `built` ran.
+ *
+ * A settlement pairs with the LAST schedule of the same execution and node,
+ * which is what makes a retried node measure its final attempt rather than
+ * the span across every attempt. Two executions of one node id stay apart
+ * because the pairing key carries the execution, and a settlement no schedule
+ * opened measures nothing rather than measuring from zero.
+ *
+ * A record that names no action tag contributes nothing either: history is
+ * grouped by tag, and a sample with no tag has nowhere honest to go.
+ *
+ * A called flow is measured once. The engine records one call twice: the
+ * caller admits and settles the node that made it, and the callee's own
+ * execution admits and settles its `root` over the same span with the same
+ * action tag. {@link echoedRoot} drops the callee's copy, so one invocation
+ * is one sample rather than two, and `samples` stays the count of executions
+ * the flow performed.
+ *
+ * @param events the run's ordered control events
+ * @param carry the digest of the events a bounded window dropped, when it dropped any
+ * @since 1.0.0
+ * @category projections
+ */
+export const nodeDurations = (
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  carry?: Diagnosis.Digest | undefined
+): ReadonlyArray<NodeDuration> => {
+  const bound = boundExecution(events, carry)
+  const started = new Map<string, number>()
+  const measured: Array<NodeDuration> = []
+  for (const event of events) {
+    const schedule = NodeEvents.nodeScheduled(event)
+    if (schedule !== undefined) {
+      if (echoedRoot(bound, schedule.executionId, schedule.payload.nodeId)) continue
+      started.set(`${schedule.executionId}\u0000${schedule.payload.nodeId}`, schedule.emittedAtMs)
+      continue
+    }
+    const settlement = NodeEvents.nodeSettled(event)
+    if (settlement === undefined) continue
+    if (echoedRoot(bound, settlement.executionId, settlement.payload.nodeId)) continue
+    if (settlement.payload.outcome !== "built") continue
+    const actionTag = settlement.payload.action
+    if (actionTag === undefined) continue
+    const key = `${settlement.executionId}\u0000${settlement.payload.nodeId}`
+    const startedAt = started.get(key)
+    if (startedAt === undefined) continue
+    started.delete(key)
+    const durationMs = settlement.emittedAtMs - startedAt
+    // Wall clocks can move backwards, and a completion that predates its own
+    // start is a clock fact rather than a duration.
+    if (durationMs < 0) continue
+    measured.push({ actionTag, durationMs })
+  }
+  return measured
+}
+
+/** The nearest-rank percentile of an ascending sample, which is one observed value. */
+const nearestRank = (ascending: ReadonlyArray<number>, percentile: number): number =>
+  ascending[Math.ceil((percentile / 100) * ascending.length) - 1]!
+
+/**
+ * Folds every measured execution of one flow into one row per action tag.
+ *
+ * Both percentiles are nearest-rank, so each answer is a duration the flow
+ * really took rather than an interpolation between two it did not. Rows are
+ * ordered by tag, so two reads of the same history answer in the same order.
+ *
+ * A tag reaches this function only by having been measured, so every row
+ * carries at least one sample, and a flow nothing has measured answers with
+ * no rows at all.
+ *
+ * @param flowId the flow whose history was read
+ * @param samples every measured execution of that flow's runs
+ * @since 1.0.0
+ * @category projections
+ */
+export const flowDurations = (
+  flowId: string,
+  samples: ReadonlyArray<NodeDuration>
+): ReadonlyArray<FlowDurationRow> => {
+  const byTag = new Map<string, Array<number>>()
+  for (const sample of samples) {
+    const held = byTag.get(sample.actionTag)
+    if (held === undefined) byTag.set(sample.actionTag, [sample.durationMs])
+    else held.push(sample.durationMs)
+  }
+  return [...byTag.entries()]
+    .sort(([left], [right]) => left < right ? -1 : 1)
+    .map(([actionTag, observed]) => {
+      const ascending = [...observed].sort((left, right) => left - right)
+      return {
+        flowId,
+        actionTag,
+        samples: ascending.length,
+        p50Ms: nearestRank(ascending, 50),
+        p90Ms: nearestRank(ascending, 90)
+      }
+    })
 }
 
 /** Events the transcript reports verbatim rather than as agent activity. */

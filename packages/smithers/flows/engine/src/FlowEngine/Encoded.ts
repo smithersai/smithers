@@ -264,4 +264,22 @@ export interface Encoded {
       readonly clock: DurableClock.DurableClock
     }
   ) => Effect.Effect<void>
+  /**
+   * Records what a driven graph is and how its nodes settled.
+   *
+   * Optional, and `makeUnsafe` forwards it only when a store supplies one, so
+   * the typed port stays absent on a store that keeps no history and the
+   * interpreter's walk is unchanged. A store that supplies one MUST address
+   * the record by the `sourceId` the record carries rather than minting its
+   * own: a resumed walk re-derives the same ids, and that is what makes the
+   * journal hold one row per node across a resume instead of one per
+   * observation.
+   */
+  readonly recordNode?:
+    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<void, never, FlowRuntime.FlowInstance>)
+    | undefined
+  /** Deterministic UTF-8 upper bound including the store's journal envelope. */
+  readonly nodeRecordBytes?:
+    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<number, never, FlowRuntime.FlowInstance>)
+    | undefined
 }

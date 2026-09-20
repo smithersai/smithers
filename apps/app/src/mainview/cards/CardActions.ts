@@ -19,7 +19,10 @@ import type { CardViewProps } from "../ChatCards"
 import type { AppController } from "../state/AppController"
 
 /** The CardView props a controller alone decides: the flow bindings. */
-type CardBindings = Omit<CardViewProps, "card" | "maximized" | "worldDocuments" | "debugVerbose" | "signedOut" | "workflowCatalogs">
+type CardBindings = Omit<
+  CardViewProps,
+  "card" | "maximized" | "worldDocuments" | "debugVerbose" | "signedOut" | "workflowCatalogs" | "triggerCatalogs" | "fileCards"
+>
 
 const bound = new WeakMap<AppController, CardBindings>()
 
@@ -33,6 +36,7 @@ export const cardActions = (controller: AppController): CardBindings => {
     wiki: controller.features?.wiki ?? false,
     mythicalHistory: controller.features?.mythicalHistory ?? false,
     experimental: controller.features?.experimental ?? false,
+    flowBuilder: controller.features?.flowBuilder ?? false,
     onDecideApproval: (id, decision, answer, question) =>
       // Structured human answers keep their value shape through the controller.
       answer === undefined

@@ -207,9 +207,14 @@ describe("GET /api/workflow/triggers", () => {
             enabled: true,
             lastFiredAt: 1_700_000_000_000,
             nextFireAt: 1_700_086_400_000,
-            activeRunId: "run-8f21"
+            activeRunId: "run-8f21",
+            nextFiresAt: [1_700_086_400_000, 1_700_172_800_000],
+            overlap: "skip",
+            catchUp: "none",
+            input: {},
+            revision: 3
           },
-          { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
+          { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false, nextFiresAt: [], overlap: "skip", catchUp: "none", input: {}, revision: 1 }
         ])
         /* The relay carried exactly the List frame for the triggers page to the box's /rpc mount. */
         expect(relayed).toHaveLength(1)
@@ -272,5 +277,100 @@ describe("the box's page as rows", () => {
     expect(workflowTriggersFromFrame(REPO, { ok: true, payload: "nonsense" })).toEqual(noLiveTriggers(REPO))
     const empty = workflowTriggersFromFrame(REPO, { ok: true, payload: { _tag: "triggers", items: [] } })
     expect(empty).toEqual({ status: "ok", repo: REPO, live: true, triggers: [], webhooks: [] })
+  })
+})
+
+/*
+ * The whole TriggerSummary reaches the client. The route used to keep the
+ * first upcoming fire and drop the rest of the box's answer, so the panel had
+ * no policies, no ledger clock and no liveness. The pass-through is additive:
+ * the fields the route already carried keep their names, their values and
+ * their order, so a client written against the old body reads the new one
+ * byte for byte the same.
+ */
+describe("the whole TriggerSummary, passed through", () => {
+  /** One schedule as the box reports it in full: five upcoming fires, both policies, a bound, a pending claim and the scheduler's heartbeat. */
+  const POLICY_PAGE = {
+    _tag: "triggers",
+    items: [
+      {
+        triggerId: "nightly",
+        flowId: "review",
+        input: { label: "nightly" },
+        cron: "0 9 * * 1-5",
+        timezone: "America/New_York",
+        overlap: "buffer-one",
+        catchUp: "one",
+        maxCatchUp: 3,
+        enabled: true,
+        revision: 7,
+        lastFiredAtMs: 1_700_000_000_000,
+        pendingAtMs: 1_700_086_400_000,
+        activeRunId: "run-8f21",
+        nextOccurrencesMs: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
+        schedulerLastTickMs: 1_700_000_500_000
+      }
+    ]
+  }
+
+  test("a page with five occurrences and both policies carries all of them, not the first fire alone", () => {
+    const body = workflowTriggersFromFrame(REPO, { ok: true, payload: POLICY_PAGE })
+    expect(body.live).toBe(true)
+    expect(body.triggers).toEqual([
+      {
+        id: "nightly",
+        flowId: "review",
+        cron: "0 9 * * 1-5",
+        timezone: "America/New_York",
+        enabled: true,
+        lastFiredAt: 1_700_000_000_000,
+        nextFireAt: 1_700_086_400_000,
+        activeRunId: "run-8f21",
+        nextFiresAt: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
+        overlap: "buffer-one",
+        catchUp: "one",
+        maxCatchUp: 3,
+        input: { label: "nightly" },
+        revision: 7,
+        pendingAt: 1_700_086_400_000,
+        schedulerLastTickAt: 1_700_000_500_000
+      }
+    ])
+  })
+
+  test("a policy word the box never writes is not carried as one, and the row still stands", () => {
+    const body = workflowTriggersFromFrame(REPO, {
+      ok: true,
+      payload: {
+        _tag: "triggers",
+        items: [{ triggerId: "odd", flowId: "review", cron: "* * * * *", enabled: true, overlap: "queue", catchUp: 3, maxCatchUp: "many", nextOccurrencesMs: [1, "soon", 2] }]
+      }
+    })
+    expect(body.triggers).toEqual([{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, nextFireAt: 1, nextFiresAt: [1, 2] }])
+  })
+
+  /** Exactly the row fields the route carried before the pass-through. */
+  const OLD_ROW_FIELDS = ["id", "flowId", "cron", "timezone", "enabled", "lastFiredAt", "nextFireAt", "activeRunId"] as const
+
+  /** The body as a client built against those fields reads it: every field added since dropped, the rest untouched. */
+  const asOldClient = (body: WorkflowTriggersBody): unknown => ({
+    ...body,
+    triggers: body.triggers.map((row) =>
+      Object.fromEntries(OLD_ROW_FIELDS.filter((field) => field in row).map((field) => [field, row[field]]))
+    )
+  })
+
+  /** What this route answered for TRIGGER_PAGE before the pass-through, captured byte for byte. */
+  const OLD_BODY =
+    '{"status":"ok","repo":"smithersai/smithers","live":true,"triggers":[{"id":"nightly","flowId":"review","cron":"0 9 * * 1-5","timezone":"UTC","enabled":true,"lastFiredAt":1700000000000,"nextFireAt":1700086400000,"activeRunId":"run-8f21"},{"id":"sweep","flowId":"issue","cron":"*/15 * * * *","enabled":false}],"webhooks":[]}'
+
+  test("a client that reads only the fields the route already carried sees the same answer byte for byte", () => {
+    const body = workflowTriggersFromFrame(REPO, { ok: true, payload: TRIGGER_PAGE })
+    expect(JSON.stringify(asOldClient(body))).toBe(OLD_BODY)
+  })
+
+  test("a refusal still answers no live triggers, with no field added to say why", () => {
+    const refused = workflowTriggersFromFrame(REPO, { ok: false, error: { message: "this host serves no trigger store" } })
+    expect(JSON.stringify(refused)).toBe(JSON.stringify(noLiveTriggers(REPO)))
   })
 })

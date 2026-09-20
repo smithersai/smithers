@@ -35,7 +35,16 @@ import { practiceReadFile } from "./tutorial2-file_open"
  */
 export interface FilesSeam {
   readonly listFiles: ViewAction<[path: string, repo?: string]>
-  readonly readFile: ViewAction<[path: string, repo?: string, anchor?: FileAnchor]>
+  /**
+   * `ref` is the revision to read AT.
+   *
+   * Without one the answer is the working tree, which moves. With one the
+   * answer is bytes that cannot change, the card records which revision it
+   * holds, and a reader can bind what it shows to what ran (D-068). Only the
+   * Cloud contents route serves a revision; a local checkout answers its own
+   * working copy and says so rather than passing off the wrong bytes.
+   */
+  readonly readFile: ViewAction<[path: string, repo?: string, anchor?: FileAnchor, ref?: string]>
 }
 
 /**
@@ -323,10 +332,12 @@ export const requestLocalFiles = async (
 }
 
 export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
-  const contentsUrl = (repo: string, path: string): string => {
+  const contentsUrl = (repo: string, path: string, ref?: string): string => {
     const [owner = "", name = ""] = repo.split("/")
     const base = `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents`
-    return path === "" ? base : `${base}/${encodeRepoPath(path)}`
+    const addressed = path === "" ? base : `${base}/${encodeRepoPath(path)}`
+    /* The route's own parameter: the revision to answer at, not the head. */
+    return ref === undefined ? addressed : `${addressed}?ref=${encodeURIComponent(ref)}`
   }
 
 
@@ -414,7 +425,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     return { card, value: fileValue(repo.name, normalized, payload) }
   }
 
-  const readers: { listFiles: (path: string, repo?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor) => Promise<ViewResult> } = {
+  const readers: { listFiles: (path: string, repo?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => Promise<ViewResult> } = {
     listFiles: async (pathArg, explicitRepoArg) => {
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
@@ -476,21 +487,36 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       return { card, value: listingValue(repo, normalized, entries) }
     },
 
-    readFile: async (pathArg, explicitRepoArg, anchor) => {
+    readFile: async (pathArg, explicitRepoArg, anchor, ref) => {
       const target = resolveFileTarget(ctx.store, pathArg, explicitRepoArg)
       if ("error" in target) return target.error
-      if (target.kind === "local") return readLocal(target.repo, target.path, anchor)
+      /*
+       * A local checkout is served by the local route, which answers the
+       * working copy and takes no revision. Asked for one it refuses: the
+       * bytes on disk are not the bytes at that revision, and answering with
+       * them would label a file as code it is not (D-068).
+       */
+      if (target.kind === "local") {
+        return ref === undefined
+          ? readLocal(target.repo, target.path, anchor)
+          : `${target.path} in ${target.repo.name} cannot be read at ${ref}: this machine serves its working copy, not a revision.`
+      }
       const { repo, path: normalized } = target
       if (normalized === "") return "files.read needs a file path"
+      if (ref !== undefined && isPracticeRepo(repo)) {
+        return `${normalized} in ${repo} cannot be read at ${ref}: the practice repository has no revisions.`
+      }
 
       let response: Response
       try {
-        response = await ctx.http(contentsUrl(repo, normalized))
+        response = await ctx.http(contentsUrl(repo, normalized, ref))
       } catch (error) {
         return unreachableSentence(`the backend to read ${normalized} in ${repo}`, error)
       }
       if (response.status === 404) {
-        return explain404(response, repo, `Path not found: ${normalized} in ${repo}`)
+        return ref === undefined
+          ? explain404(response, repo, `Path not found: ${normalized} in ${repo}`)
+          : `Path not found: ${normalized} in ${repo} at ${ref}`
       }
       if (!response.ok) {
         return readErrorMessage(
@@ -520,15 +546,26 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
        * Plain UTF-8 text (including word and hash lists) cannot have more
        * characters than bytes, so it keeps its declared encoding.
        */
+      /*
+       * A revision read is its own card, and it is not addressed at the head.
+       * `cloudAddressing` states the position a plain read was taken at —
+       * the repository's head as this session last saw it — which is exactly
+       * what this read did NOT ask for, so a revision read carries the
+       * revision it asked for instead.
+       */
+      const revisionFields = ref === undefined
+        ? cloudAddressing(ctx.store, repo, normalized)
+        : { address: `/${repo}/${normalized}`, ref }
+      const cardId = ref === undefined ? `file-${repo}-${normalized}` : `file-${repo}-${normalized}@${ref}`
       const binaryCard = async (): Promise<ViewResult> => {
         const card: Card = {
-          id: `file-${repo}-${normalized}`,
+          id: cardId,
           kind: "file",
           title: `File · ${repo} · ${normalized}`,
           status: "active",
           createdAt: Date.now(),
           ordinal: ctx.nextOrdinal(),
-          payload: { repo, path: normalized, content: "", truncated: false, binary: true, ...cloudAddressing(ctx.store, repo, normalized) }
+          payload: { repo, path: normalized, content: "", truncated: false, binary: true, ...revisionFields }
         }
         return { card, value: fileValue(repo, normalized, { content: "", truncated: false, binary: true }) }
       }
@@ -551,11 +588,11 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         path: normalized,
         content: truncated ? content.slice(0, CARD_CONTENT_CAP) : content,
         truncated,
-        ...cloudAddressing(ctx.store, repo, normalized),
+        ...revisionFields,
         ...anchored(anchor)
       }
       const card: Card = {
-        id: `file-${repo}-${normalized}`,
+        id: cardId,
         kind: "file",
         title: `File · ${repo} · ${normalized}`,
         status: "active",
@@ -566,22 +603,25 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       return { card, value: fileValue(repo, normalized, payload) }
     }
   }
-  const plan = (kind: "file" | "files", path: string, repo?: string, anchor?: FileAnchor) => {
+  const plan = (kind: "file" | "files", path: string, repo?: string, anchor?: FileAnchor, ref?: string) => {
     const target = resolveFileTarget(ctx.store, path, repo)
     if ("error" in target) return target.error
-    if (kind === "file" && target.kind === "cloud" && isPracticeRepo(target.repo)) return { run: () => practiceReadFile(ctx, target.path, anchor) }
+    if (kind === "file" && target.kind === "cloud" && isPracticeRepo(target.repo) && ref === undefined) {
+      return { run: () => practiceReadFile(ctx, target.path, anchor) }
+    }
     if (kind === "file" && !target.path) return "files.read needs a file path"
     const repoId = target.kind === "local" ? target.repo.id : target.repo
     const label = target.kind === "local" ? target.repo.name : target.repo
-    const id = `${kind}-${repoId}-${target.path || "/"}`
+    /* The revision is part of the address: one path at two revisions is two files. */
+    const id = `${kind}-${repoId}-${target.path || "/"}${ref === undefined ? "" : `@${ref}`}`
     return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]),
-      read: () => kind === "file" ? readers.readFile(path, repo, anchor) : readers.listFiles(path, repo),
+      read: () => kind === "file" ? readers.readFile(path, repo, anchor, ref) : readers.listFiles(path, repo),
       after: kind === "file" ? async () => {
       } : undefined,
     }
   }
   return {
     listFiles: preparedView(ctx, (path: string, repo?: string) => plan("files", path, repo)),
-    readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor) => plan("file", path, repo, anchor)),
+    readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => plan("file", path, repo, anchor, ref)),
   }
 }

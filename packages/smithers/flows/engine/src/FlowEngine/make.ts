@@ -221,6 +221,12 @@ export const makeUnsafe = (options: Encoded): FlowRuntime.FlowRuntime["Service"]
         }),
         { captureStackTrace: false }
       )
-    )
+    ),
+    // Forwarded only when the store keeps history. Left absent the property
+    // is absent on the typed port too, which is what the interpreter reads to
+    // decide whether to build records at all: a store with no journal must
+    // not pay for a graph summary nobody will store.
+    ...(options.recordNode === undefined ? {} : { recordNode: options.recordNode }),
+    ...(options.nodeRecordBytes === undefined ? {} : { nodeRecordBytes: options.nodeRecordBytes })
   })
 }

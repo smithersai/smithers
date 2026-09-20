@@ -102,10 +102,25 @@ type ExecutionState = {
 export interface MemoryState {
   readonly actions: Map<string, Exit.Exit<Flow.Result<unknown, unknown>>>
   readonly deferredResults: Map<string, Exit.Exit<unknown, unknown>>
+  /**
+   * Every node record the runtime was handed, in the order it was handed
+   * them, with the execution that produced it.
+   *
+   * Deliberately NOT deduplicated. A real journal collapses two records that
+   * share a producer identity onto one row; keeping the raw sequence here is
+   * what lets a case assert the property that makes that collapse work — that
+   * a resumed walk re-derives the same identities — rather than assert the
+   * collapse of a fixture that was written to collapse.
+   */
+  readonly nodeRecords: Array<{ readonly runId: string; readonly record: FlowRuntime.NodeRecord }>
 }
 
 /** An empty durable record, as a fresh database would be. */
-export const makeMemoryState = (): MemoryState => ({ actions: new Map(), deferredResults: new Map() })
+export const makeMemoryState = (): MemoryState => ({
+  actions: new Map(),
+  deferredResults: new Map(),
+  nodeRecords: []
+})
 
 const makeRuntime = (durable: MemoryState) =>
   Effect.gen(function*() {
@@ -287,6 +302,12 @@ const makeRuntime = (durable: MemoryState) =>
         const id = JSON.stringify([dispatch, attempt])
         const memo = actions.get(id)
         if (memo && !(memo._tag === "Success" && memo.value._tag === "Suspended")) {
+          // The fact only the runtime knows: this dispatch was served from the
+          // durable record rather than run. The real engine reports it from
+          // the same place, around `ActionPersistence`. No step key digest
+          // travels with it: this runtime writes no attempt rows, so there is
+          // nothing for a digest to join a node to.
+          yield* Action.reportDispatch({ outcome: "replayed", attempt })
           const replayed = yield* memo
           if (replayed._tag !== "Complete") return replayed
           return new Flow.Complete({
@@ -307,6 +328,7 @@ const makeRuntime = (durable: MemoryState) =>
         // body declared alone — seeded here, copied back below.
         const waitingBefore = instance.waiting
         actionInstance.waiting = waitingBefore
+        yield* Action.reportDispatch({ outcome: "executed", attempt })
         const result = (yield* (action.executeEncoded.pipe(
           Flow.intoResult,
           Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
@@ -376,6 +398,11 @@ const makeRuntime = (durable: MemoryState) =>
           if (execution !== undefined) yield* drive(options.executionId)
           return outcome
         })) as any,
+      recordNode: (record) =>
+        Effect.flatMap(FlowRuntime.FlowInstance, (instance) =>
+          Effect.sync(() => {
+            durable.nodeRecords.push({ runId: instance.executionId, record })
+          })),
       scheduleClock: (flow, options) =>
         runtime.deferredDone(options.clock.deferred as any, {
           flowName: flow._tag,

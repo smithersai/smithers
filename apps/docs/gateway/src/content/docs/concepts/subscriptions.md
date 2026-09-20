@@ -44,6 +44,12 @@ The client appends it to the rows it already holds.
 | `run-events` | the one event that arrived                        |
 | `transcript` | the rows that event contributed, usually one line |
 
+One projection sends no delta at all. `flow-durations` ranks the runs a flow
+has already finished, so no event of a live run changes a row, and the run that
+would change one is outside the window until it settles. Subscribing to it
+answers the snapshot and ends; a client that wants newer rows takes another
+snapshot.
+
 `run-events` rows _are_ the immutable ordered events. `transcript` normally
 adds a row with the same turn counter a full fold would give it. A later native
 call fact can supersede earlier identified telemetry; then the follower sends

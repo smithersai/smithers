@@ -9,6 +9,7 @@ import type { PlaywrightTestConfig } from "@playwright/test"
 import playwright from "../../playwright.config"
 import playwrightSite from "../../playwright.site.config"
 import playwrightReal from "../../playwright.real.config"
+import playwrightGraph from "../../playwright.graph.config"
 
 const app = fileURLToPath(new URL("../../", import.meta.url))
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -67,6 +68,29 @@ const invokesRealPlaywright = (source: string): boolean => {
   return found
 }
 const realRunner = invokesRealPlaywright(read("scripts/run-real-e2e.ts"))
+
+/*
+ * The flow-graph tier is a step of the PR browser runner rather than a
+ * package.json alias, and the flow builder's build-time flag makes it two
+ * steps. Admit only an actual argv array, never a comment or a config mention,
+ * for the reason the real lane gives above.
+ */
+const invokesGraphPlaywright = (source: string): boolean => {
+  const parsed = ts.createSourceFile("run-pr-e2e.mjs", source, ts.ScriptTarget.Latest, true)
+  const wanted = ["exec", "playwright", "test", "--config", "playwright.graph.config.ts"]
+  let found = false
+  const visit = (node: ts.Node) => {
+    if (ts.isArrayLiteralExpression(node)) {
+      const args = node.elements
+      found ||= wanted.every((value, index) =>
+        args[index] !== undefined && ts.isStringLiteral(args[index]) && args[index].text === value)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(parsed)
+  return found
+}
+const graphRunner = invokesGraphPlaywright(read("scripts/run-pr-e2e.mjs"))
 const matches = (path: string, patterns: string | RegExp | readonly (string | RegExp)[]): boolean =>
   (Array.isArray(patterns) ? patterns : [patterns]).some((pattern) =>
     typeof pattern === "string" ? new Bun.Glob(pattern).match(path) : pattern.test(path))
@@ -86,6 +110,7 @@ const owners = (path: string): string[] => {
   if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
   if (realRunner && playwrightOwns(path, playwrightReal)) result.push("Playwright real")
+  if (graphRunner && playwrightOwns(path, playwrightGraph)) result.push("Playwright graph")
   return result
 }
 

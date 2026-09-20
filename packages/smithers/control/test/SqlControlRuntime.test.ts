@@ -125,6 +125,35 @@ it("reads only the selected durable run page", async () => {
   )
 })
 
+it("selects terminal runs newest-first before decoding and paginates ties", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (let index = 0; index < 505; index++) {
+        const runId = `history-${String(index).padStart(3, "0")}`
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, ${index === 504 ? "suspended" : "completed"}, ${Math.floor(index / 2)},
+          ${JSON.stringify({ version: 1, flowName: "page/test", payload: {} })})`
+      }
+      const request = {
+        _tag: "runs" as const,
+        filters: { flowId: "page/test", terminal: true },
+        order: "newest" as const,
+        limit: 2
+      }
+      const first = yield* control.list(request)
+      expect(first.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-503", "history-502"])
+      const second = yield* control.list({ ...request, cursor: first.nextCursor })
+      expect(second.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-501", "history-500"])
+      const active = yield* control.list({ ...request, filters: { flowId: "page/test", terminal: false } })
+      expect(active.items.map((row) => "runId" in row ? row.runId : "")).toEqual(["history-504"])
+      expect(yield* Effect.flip(control.list({ _tag: "runs", filters: request.filters, cursor: first.nextCursor })))
+        .toHaveProperty("code", "invalid_input")
+    }).pipe(Effect.provide(durable()), Effect.scoped)
+  )
+})
+
 it("continues a run cursor after deletion without decoding later rows", async () => {
   await Effect.runPromise(
     Effect.gen(function*() {

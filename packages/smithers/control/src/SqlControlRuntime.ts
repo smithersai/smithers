@@ -1176,11 +1176,20 @@ const makeRuntime = (
       const conditions = [sql`1 = 1`]
       if (filters?.flowId !== undefined) conditions.push(sql`${flowId} = ${filters.flowId}`)
       if (filters?.status !== undefined) conditions.push(sql`${status} = ${filters.status}`)
+      if (filters?.terminal !== undefined) {
+        const isTerminal = sql`${status} IN ('completed', 'failed', 'cancelled')`
+        conditions.push(filters.terminal ? isTerminal : sql`NOT (${isTerminal})`)
+      }
       if (filters?.parentRunId !== undefined) conditions.push(sql`${parent} = ${filters.parentRunId}`)
       if (filters?.lineageId !== undefined) conditions.push(sql`${lineage} = ${filters.lineageId}`)
       if (after !== undefined) {
-        conditions.push(sql`(${source}, ${sequence}, runs.created_at_ms, runs.run_id) >
-          (${after.source}, ${after.sequence}, ${after.createdAt}, ${after.runId})`)
+        conditions.push(
+          request.order === "newest"
+            ? sql`(runs.created_at_ms, ${source}, ${sequence}, runs.run_id) <
+              (${after.createdAt}, ${after.source}, ${after.sequence}, ${after.runId})`
+            : sql`(${source}, ${sequence}, runs.created_at_ms, runs.run_id) >
+              (${after.source}, ${after.sequence}, ${after.createdAt}, ${after.runId})`
+        )
       }
       // Computed once for the whole page rather than per row: the set of runs
       // with an open human wait at or below them, climbed from the few parked
@@ -1203,7 +1212,11 @@ const makeRuntime = (
                runs.created_at_ms AS "createdAt"
         FROM flows_runs AS runs LEFT JOIN control_runs AS indexed ON indexed.run_id = runs.run_id
         WHERE ${sql.and(conditions)}
-        ORDER BY ${source}, ${sequence}, runs.created_at_ms, runs.run_id
+        ORDER BY ${
+        request.order === "newest"
+          ? sql`runs.created_at_ms DESC, ${source} DESC, ${sequence} DESC, runs.run_id DESC`
+          : sql`${source}, ${sequence}, runs.created_at_ms, runs.run_id`
+      }
         LIMIT ${request.limit + 1}
       `.pipe(
         Effect.catchIf(

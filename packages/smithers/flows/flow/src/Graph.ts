@@ -69,6 +69,7 @@ import { TypeId as ActionTypeId } from "./Action/TypeId.ts"
 import * as Annotations from "./Flow/Annotations.ts"
 import type * as Flow from "./Flow/Flow.ts"
 import { TypeId as FlowTypeId } from "./Flow/TypeId.ts"
+import * as DeclarationSite from "./internal/DeclarationSite.ts"
 import { OutcomeNodeTypeId, OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 
 type OutcomeTag = "Done" | "To" | "Park"
@@ -133,6 +134,17 @@ export interface GraphNode {
    * which passes nothing of its own.
    */
   readonly payload: unknown
+  /**
+   * Where the declaration this node was observed at was written, when the
+   * runtime's stack format says so.
+   *
+   * Provenance, never identity: it is carried on the declaration as a
+   * non-enumerable property, so it is outside key material and a node keyed
+   * with it is byte-identical to the same node keyed without it. A node with
+   * no declaration to read — a map, a combination, an untagged succeed — has
+   * none, and so does a declaration made inside the framework itself.
+   */
+  readonly declaredAt?: DeclarationSite.DeclaredAt | undefined
 }
 
 /**
@@ -950,6 +962,7 @@ export const build = (
     readonly inputs: ReadonlyArray<KeyMaterial.InputRef>
     readonly ast: Node.Ast
     readonly payload: unknown
+    readonly declaredAt?: DeclarationSite.DeclaredAt | undefined
   }): void => {
     if (observedIds.has(entry.id)) {
       throw new GraphBuildError({
@@ -997,7 +1010,8 @@ export const build = (
         ...(entry.priority === undefined ? {} : { priority: entry.priority })
       },
       ast: entry.ast,
-      payload: entry.payload
+      payload: entry.payload,
+      ...(entry.declaredAt === undefined ? {} : { declaredAt: entry.declaredAt })
     })
   }
 
@@ -1144,7 +1158,8 @@ export const build = (
         },
         inputs,
         ast: call.ast,
-        payload: call.payload
+        payload: call.payload,
+        declaredAt: DeclarationSite.declaredAt(call.declaration)
       })
     }
     if (target === undefined) {
@@ -1344,7 +1359,8 @@ export const build = (
           },
           inputs: [...payloadInputs(payload, id), ...inputs],
           ast,
-          payload
+          payload,
+          declaredAt: DeclarationSite.declaredAt(declared)
         })
         return
       }

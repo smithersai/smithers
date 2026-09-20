@@ -11,7 +11,8 @@ import { Schema } from "effect"
 import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { readFile } from "node:fs/promises"
 import { flowArgs } from "../../flows/FlowArgs"
-import { LIMIT_SHAPE, limitsRefusal, NO_RULES_SENTENCE, otherLimitSentence, overBoundFlowSentence, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
+import { LIMIT_SHAPE, limitsRefusal, NO_RULES_SENTENCE, otherLimitSentence, overBoundFlowSentence, readTriggerFires, registerUnavailableSentence, unboundedFlowSentence } from "./TriggersSeam"
+import type { SeamContext } from "./SeamContext"
 
 const createAppController = scopedControllers()
 
@@ -109,10 +110,23 @@ const reposChosen = async (store: AppStore): Promise<void> => {
   await settled()
 }
 
-/** A controller watching exactly will/flows over the given backend, signed out unless asked. */
-const ready = async (services: AppServices, options: { signedIn?: boolean; store?: AppStore } = {}) => {
+/**
+ * A controller watching exactly will/flows over the given backend, signed out
+ * unless asked and with the flow builder off unless asked.
+ *
+ * The flag is always stated, never left to the build: the flag-off half of
+ * D-050 is an assertion about what this seam does NOT do, and a default that
+ * read `import.meta.env` would make it an assertion about the runner.
+ */
+const ready = async (
+  services: AppServices,
+  options: { signedIn?: boolean; store?: AppStore; flowBuilder?: boolean } = {}
+) => {
   const store = options.store ?? await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    ...services,
+    features: { ...services.features, flowBuilder: options.flowBuilder === true }
+  })
   if (options.signedIn === true) await signedIn(store)
   else await signedOut(store)
   await reposChosen(store)
@@ -238,7 +252,7 @@ describe("triggers seam: the box, signed in", () => {
           webhooks: [{ name: "github-push", flowId: "review" }, { flowId: "nameless" }]
         })
       }, seen),
-      { signedIn: true }
+      { signedIn: true, flowBuilder: true }
     )
     const outcome = await controller.commands.run("triggers.list")
     expect(outcome.status).toBe("executed")
@@ -256,11 +270,153 @@ describe("triggers seam: the box, signed in", () => {
       { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
     ])
     expect(card.payload.webhooks).toEqual([{ name: "github-push", flowId: "review" }])
-    /* Two live sources now: the box's own store and the repository's Smithers Cloud registrations. */
+    /* Two live sources now: the box's own store and the repository's Smithers Cloud registrations, plus one ledger read per box row. */
     expect(seen.filter((path) => path !== PROJECTION).sort()).toEqual(
-      [`${LIVE}?repo=will%2Fflows`, `/api/workflow/trigger-registrations?repo=will%2Fflows`].sort()
+      [`${LIVE}?repo=will%2Fflows`, `/api/workflow/trigger-registrations?repo=will%2Fflows`, RPC, RPC].sort()
     )
     expect(seen).toContain(PROJECTION)
+  })
+
+  test("the box's policies, its whole list of upcoming fires, the claim it holds and the scheduler's heartbeat reach the card", async () => {
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [LIVE]: json(200, {
+          status: "ok",
+          repo: "will/flows",
+          live: true,
+          triggers: [{
+            id: "nightly",
+            flowId: "review",
+            cron: "0 9 * * 1-5",
+            timezone: "America/New_York",
+            enabled: true,
+            nextFireAt: 1_700_086_400_000,
+            nextFiresAt: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
+            overlap: "buffer-one",
+            catchUp: "one",
+            maxCatchUp: 3,
+            pendingAt: 1_700_086_400_000,
+            schedulerLastTickAt: 1_700_000_500_000,
+            /* The route carries these two; the card has no field for either, so the seam drops them rather than smuggling them onto a row. */
+            input: { label: "nightly" },
+            revision: 7
+          }],
+          webhooks: []
+        })
+      }),
+      { signedIn: true, flowBuilder: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(triggerCard(store).payload.triggers).toEqual([{
+      id: "nightly",
+      flowId: "review",
+      cron: "0 9 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      nextFireAt: 1_700_086_400_000,
+      nextFiresAt: [1_700_086_400_000, 1_700_172_800_000, 1_700_259_200_000, 1_700_345_600_000, 1_700_432_000_000],
+      overlap: "buffer-one",
+      catchUp: "one",
+      maxCatchUp: 3,
+      pendingAt: 1_700_086_400_000,
+      schedulerLastTickAt: 1_700_000_500_000
+    }])
+  })
+
+  /*
+   * The other half of D-050. The policies, the whole list of upcoming fires,
+   * the claim and the scheduler's heartbeat are the flow builder's own
+   * fields: its trigger panel is the only surface that reads one. With the
+   * flag off the row the card holds is the row it held before the builder,
+   * field for field, off the very same answer.
+   */
+  const BOX_WITH_POLICIES = {
+    status: "ok",
+    repo: "will/flows",
+    live: true,
+    triggers: [{
+      id: "nightly",
+      flowId: "review",
+      cron: "0 9 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      lastFiredAt: 1_700_000_000_000,
+      nextFireAt: 1_700_086_400_000,
+      activeRunId: "run-8f21",
+      nextFiresAt: [1_700_086_400_000, 1_700_172_800_000],
+      overlap: "buffer-one",
+      catchUp: "one",
+      maxCatchUp: 3,
+      pendingAt: 1_700_086_400_000,
+      schedulerLastTickAt: 1_700_000_500_000
+    }],
+    webhooks: []
+  }
+
+  test("with the flag off a box row is the row the card held before the builder, and the policies stay on the wire", async () => {
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: json(200, BOX_WITH_POLICIES) }),
+      { signedIn: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(triggerCard(store).payload.triggers).toEqual([{
+      id: "nightly",
+      flowId: "review",
+      cron: "0 9 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      lastFiredAt: 1_700_000_000_000,
+      nextFireAt: 1_700_086_400_000,
+      activeRunId: "run-8f21"
+    }])
+  })
+
+  test("the same answer with the flag on carries every field the builder's panel reads", async () => {
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: json(200, BOX_WITH_POLICIES), [RPC]: json(200, { ok: true, payload: { _tag: "fires", items: [] } }) }),
+      { signedIn: true, flowBuilder: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(triggerCard(store).payload.triggers).toEqual([{
+      id: "nightly",
+      flowId: "review",
+      cron: "0 9 * * 1-5",
+      timezone: "America/New_York",
+      enabled: true,
+      lastFiredAt: 1_700_000_000_000,
+      nextFireAt: 1_700_086_400_000,
+      activeRunId: "run-8f21",
+      nextFiresAt: [1_700_086_400_000, 1_700_172_800_000],
+      overlap: "buffer-one",
+      catchUp: "one",
+      maxCatchUp: 3,
+      pendingAt: 1_700_086_400_000,
+      schedulerLastTickAt: 1_700_000_500_000,
+      fires: []
+    }])
+  })
+
+  test("a policy word the trigger store never writes never reaches a row, and the row still stands", async () => {
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [LIVE]: json(200, {
+          status: "ok",
+          repo: "will/flows",
+          live: true,
+          triggers: [{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, overlap: "queue", catchUp: 3, maxCatchUp: "many", nextFiresAt: [1, "soon", 2] }],
+          webhooks: []
+        })
+      }),
+      { signedIn: true, flowBuilder: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(triggerCard(store).payload.triggers).toEqual([{ id: "odd", flowId: "review", cron: "* * * * *", enabled: true, nextFiresAt: [1, 2] }])
   })
 
   test("signed in with no box answering, the card is the declaration alone with live false", async () => {
@@ -1529,5 +1685,202 @@ describe("triggers seam: running a registered schedule now", () => {
     const form = await controller.commands.run("triggers.run")
     expect(form.status).toBe("form")
     if (form.status === "form") expect(form.fields).toEqual(["slug"])
+  })
+})
+
+/*
+ * A trigger's fire ledger, through the same `/api/workflow/rpc` relay every
+ * other call in this seam uses. `List` is already relayed, so the read adds
+ * no seam and no route.
+ *
+ * The call names no workspace on purpose. The rows it is a ledger for come
+ * from the Worker's triggers route, which asks the repository's own gateway
+ * (apps/server workflows.ts `handleWorkflowTriggers` passes no workspaceId),
+ * so the fires of those trigger ids live in that box's store. A call that
+ * named the reviewed jobs' workspace would read a different store and answer
+ * for a different ledger.
+ */
+describe("triggers seam: a trigger's fire ledger", () => {
+  const LEDGER = {
+    _tag: "fires",
+    items: [
+      { triggerId: "nightly", occurrenceAtMs: 1_700_000_000_000, outcome: null },
+      { triggerId: "nightly", occurrenceAtMs: 1_699_996_400_000, outcome: "launched", runId: "run-9", waiting: "approval" },
+      { triggerId: "nightly", occurrenceAtMs: 1_699_992_800_000, outcome: "failed", error: "the flow refused the input" }
+    ]
+  }
+
+  /** A seam context over one stubbed relay, on a repository whose reviewed jobs already name a workspace. */
+  const ledger = async (calls: Array<RelayCall>, answer: (payload: Record<string, unknown>) => unknown) => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await jobSetUp(store)
+    const ctx: SeamContext = {
+      store,
+      dispatch: store.dispatch,
+      baseUrl: "",
+      actor: () => "user",
+      nextOrdinal: store.nextOrdinal,
+      http: async (input, init) => {
+        const url = new URL(input, "https://app.test")
+        if (url.pathname !== RPC) return json(404, { status: "error", message: `no stub for ${url.pathname}` })
+        const frame = JSON.parse(String(init?.body ?? "{}")) as { procedure: string; payload: Record<string, unknown>; workspaceId?: string }
+        calls.push({ procedure: frame.procedure, payload: frame.payload, ...(frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId }) })
+        return json(200, answer(frame.payload))
+      }
+    }
+    return ctx
+  }
+
+  test("a relayed page becomes the trigger's ledger, read from the box its rows came from", async () => {
+    const calls: Array<RelayCall> = []
+    const ctx = await ledger(calls, () => okFrame(LEDGER))
+    expect(await readTriggerFires(ctx, "will/flows", "nightly")).toEqual({
+      ok: true,
+      fires: [
+        { occurrenceAt: 1_700_000_000_000, outcome: null },
+        { occurrenceAt: 1_699_996_400_000, outcome: "launched", runId: "run-9", waiting: "approval" },
+        { occurrenceAt: 1_699_992_800_000, outcome: "failed", error: "the flow refused the input" }
+      ]
+    })
+    expect(calls).toEqual([{ procedure: "List", payload: { _tag: "fires", filters: { triggerId: "nightly" }, limit: 20 } }])
+  })
+
+  test("a relay failure is the refusing party's own sentence and no rows", async () => {
+    const calls: Array<RelayCall> = []
+    const ctx = await ledger(calls, () => refusedFrame("this host serves no trigger store"))
+    expect(await readTriggerFires(ctx, "will/flows", "nightly")).toEqual({ ok: false, message: "this host serves no trigger store" })
+  })
+
+  test("a page of another tag, or a shapeless answer, is a visible error rather than an empty ledger", async () => {
+    const shapeless = await ledger([], () => okFrame({ _tag: "triggers", items: [] }))
+    const wrongTag = await readTriggerFires(shapeless, "will/flows", "nightly")
+    expect(wrongTag.ok).toBe(false)
+    if (!wrongTag.ok) expect(wrongTag.message).toBe("The workspace answered in a shape I didn't understand.")
+    const nonsense = await ledger([], () => okFrame({ _tag: "fires", items: "none" }))
+    expect((await readTriggerFires(nonsense, "will/flows", "nightly")).ok).toBe(false)
+  })
+
+  test("the seam invents no row: a fire with no occurrence, an outcome the ledger never records, and another trigger's fire are all left out", async () => {
+    const ctx = await ledger([], () => okFrame({
+      _tag: "fires",
+      items: [
+        { triggerId: "nightly", occurrenceAtMs: 1_700_000_000_000, outcome: "completed", runId: "run-9" },
+        { triggerId: "nightly", outcome: "completed" },
+        { triggerId: "nightly", occurrenceAtMs: 1, outcome: "fired" },
+        { triggerId: "nightly", occurrenceAtMs: 2 },
+        { triggerId: "sweep", occurrenceAtMs: 3, outcome: "completed" },
+        "not a fire"
+      ]
+    }))
+    expect(await readTriggerFires(ctx, "will/flows", "nightly")).toEqual({
+      ok: true,
+      fires: [{ occurrenceAt: 1_700_000_000_000, outcome: "completed", runId: "run-9" }]
+    })
+  })
+
+  /*
+   * The ledger reaches the card through the one act that builds it, the list.
+   * There is no second act and no effect: whoever presses Dispatcher, or
+   * types the slash, gets the box's rows with their history already on them.
+   */
+  const TWO_BOX_ROWS = json(200, {
+    status: "ok",
+    repo: "will/flows",
+    live: true,
+    triggers: [
+      { id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true },
+      { id: "sweep", flowId: "issue", cron: "*/15 * * * *", enabled: false }
+    ],
+    webhooks: []
+  })
+
+  const ONE_PLUE_ROW = json(200, {
+    status: "ok",
+    repo: "will/flows",
+    rows: [{ registrationId: "reg-1", slug: "nightly", flowId: "review", schedule: "0 9 * * 1-5", enabled: true, nextFireAt: "2026-09-21T16:00:00.000Z" }]
+  })
+
+  /** The relay as the list path meets it: every call recorded, each answered for the trigger it named. */
+  const firesRoute = (calls: Array<RelayCall>, answer: (triggerId: string) => unknown): Route =>
+  async (request) => {
+    const frame = await request.json() as { procedure: string; payload: { filters?: { triggerId?: string } } & Record<string, unknown>; workspaceId?: string }
+    calls.push({ procedure: frame.procedure, payload: frame.payload, ...(frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId }) })
+    return json(200, answer(frame.payload.filters?.triggerId ?? ""))
+  }
+
+  const listedRows = async (rpc: Route, seen: Array<string> = []) => {
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: TWO_BOX_ROWS, [REGISTRATIONS]: ONE_PLUE_ROW, [RPC]: rpc }, seen),
+      { signedIn: true, flowBuilder: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    return triggerCard(store).payload.triggers
+  }
+
+  test("the list puts each box row's own ledger on that row, and asks the repository's own gateway for it", async () => {
+    const calls: Array<RelayCall> = []
+    const rows = await listedRows(
+      firesRoute(calls, (triggerId) => okFrame({ _tag: "fires", items: [{ triggerId, occurrenceAtMs: 1_700_000_000_000, outcome: "completed", runId: `run-${triggerId}` }] }))
+    )
+    expect(rows[0]?.fires).toEqual([{ occurrenceAt: 1_700_000_000_000, outcome: "completed", runId: "run-nightly" }])
+    expect(rows[1]?.fires).toEqual([{ occurrenceAt: 1_700_000_000_000, outcome: "completed", runId: "run-sweep" }])
+    /* One `List` per box row, none naming a workspace, and none for the Plue registration: its registry serves no fires page. */
+    expect(calls).toEqual([
+      { procedure: "List", payload: { _tag: "fires", filters: { triggerId: "nightly" }, limit: 20 } },
+      { procedure: "List", payload: { _tag: "fires", filters: { triggerId: "sweep" }, limit: 20 } }
+    ])
+  })
+
+  test("a Plue registration is never asked for a ledger, and carries none", async () => {
+    const calls: Array<RelayCall> = []
+    const rows = await listedRows(firesRoute(calls, () => okFrame({ _tag: "fires", items: [] })))
+    const plue = rows.find((row) => row.slug === "nightly")
+    expect(plue?.id).toBe("reg-1")
+    expect(plue?.fires).toBeUndefined()
+    expect(calls.map((call) => call.payload.filters)).toEqual([{ triggerId: "nightly" }, { triggerId: "sweep" }])
+  })
+
+  test("a box that refused the ledger leaves the row without one, because unread history is not an empty history", async () => {
+    const rows = await listedRows(firesRoute([], () => refusedFrame("this host serves no trigger store")))
+    expect(rows[0]?.id).toBe("nightly")
+    expect(rows[0]?.fires).toBeUndefined()
+    expect(rows[1]?.fires).toBeUndefined()
+    expect(JSON.stringify(rows)).not.toContain("fires")
+  })
+
+  test("a box that read a ledger with nothing in it says so: an empty ledger is an answer", async () => {
+    const rows = await listedRows(firesRoute([], () => okFrame({ _tag: "fires", items: [] })))
+    expect(rows[0]?.fires).toEqual([])
+  })
+
+  /*
+   * D-050: with the flow builder off this seam is the seam that shipped
+   * before the builder. The ledger is the builder's own read, so the flag-off
+   * list asks the two routes it always asked, in the same number of calls,
+   * and puts no history on a row that never had one.
+   */
+  test("with the flag off the list reads no ledger at all: no relay call, and no row carries fires", async () => {
+    const calls: Array<RelayCall> = []
+    const seen: Array<string> = []
+    const { store, controller } = await ready(
+      backend({
+        [PROJECTION]: projectionDocument(DAY_ONE),
+        [LIVE]: TWO_BOX_ROWS,
+        [REGISTRATIONS]: ONE_PLUE_ROW,
+        [RPC]: firesRoute(calls, (triggerId) => okFrame({ _tag: "fires", items: [{ triggerId, occurrenceAtMs: 1_700_000_000_000, outcome: "completed" }] }))
+      }, seen),
+      { signedIn: true }
+    )
+    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
+    await settled()
+    expect(calls).toEqual([])
+    expect(seen.filter((path) => path !== PROJECTION).sort()).toEqual(
+      [`${LIVE}?repo=will%2Fflows`, `${REGISTRATIONS}?repo=will%2Fflows`].sort()
+    )
+    const rows = triggerCard(store).payload.triggers
+    expect(rows.map((row) => row.id)).toEqual(["nightly", "sweep", "reg-1"])
+    expect(JSON.stringify(rows)).not.toContain("fires")
   })
 })

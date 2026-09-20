@@ -33,6 +33,7 @@ import type {
   GrantScope,
   IdempotencyKey,
   PlanCard,
+  PlanGraph,
   PlanNode,
   Principal,
   Receipt,
@@ -77,9 +78,12 @@ export interface RunQuery {
   readonly filters?: {
     readonly flowId?: FlowId | undefined
     readonly status?: RunStatus | undefined
+    readonly terminal?: boolean | undefined
     readonly parentRunId?: RunId | undefined
     readonly lineageId?: string | undefined
   } | undefined
+  /** Newest creation time first; ties use the durable sequence. */
+  readonly order?: "newest" | undefined
   readonly cursor?: RunCursor | undefined
   readonly limit: number
 }
@@ -316,6 +320,8 @@ export interface MemoryFlow {
     ) => Effect.Effect<{
       readonly plan: PersistedPlan.Plan
       readonly statuses?: Readonly<Record<string, PlanNode["status"]>> | undefined
+      /** The built graph's labelled edges and declaration sites, reported outside the approval digest. */
+      readonly graph?: PlanGraph | undefined
     }, InvalidInput>)
     | undefined
 }
@@ -986,14 +992,27 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
           const selected: Array<MutableRun> = []
           const filters = request.filters
-          for (const run of runs.values()) {
+          const newest = request.order === "newest"
+          const candidates = newest
+            ? Array.from(runs.values()).sort((a, b) =>
+              b.summary.createdAt - a.summary.createdAt || b.sequence - a.sequence
+            )
+            : runs.values()
+          for (const run of candidates) {
+            const after = request.cursor
             if (
-              request.cursor !== undefined &&
-              (request.cursor.source !== 0 || run.sequence <= request.cursor.sequence)
+              after !== undefined && (after.source !== 0 || (newest
+                ? run.summary.createdAt > after.createdAt ||
+                  (run.summary.createdAt === after.createdAt && run.sequence >= after.sequence)
+                : run.sequence <= after.sequence))
             ) continue
             const summary = run.summary
             if (filters?.flowId !== undefined && summary.flowId !== filters.flowId) continue
             if (filters?.status !== undefined && summary.status !== filters.status) continue
+            if (
+              filters?.terminal !== undefined &&
+              ["completed", "failed", "cancelled"].includes(summary.status) !== filters.terminal
+            ) continue
             if (filters?.parentRunId !== undefined && summary.parentRunId !== filters.parentRunId) continue
             if (filters?.lineageId !== undefined && summary.lineageId !== filters.lineageId) continue
             selected.push(run)

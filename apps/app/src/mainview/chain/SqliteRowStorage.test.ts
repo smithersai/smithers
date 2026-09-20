@@ -43,6 +43,24 @@ const wire = (rows: Record<string, { readonly versionKey: string; readonly data:
   JSON.stringify(rows)
 
 describe("normalized SQLite row storage", () => {
+  test("repairs old truncated Code toast keys before boot dismisses their full ids", async () => {
+    const db = database()
+    const spec = [{ id: "app-toasts", schema: z.object({ id: z.string(), title: z.string() }) }]
+    await openSqliteRowStorage(db.host, { collections: spec, schemaVersion: 9 })
+    const id = "toast-files.read:owner/repo\u0000flows/a.ts"
+    const data = { id, title: "Reading flows/a.ts" }
+    // wa-sqlite bind_text uses a NUL-terminated C string: this is the row it wrote.
+    db.sqlite.run(`INSERT INTO ${ROW_TABLE_NAME} VALUES (?, ?, ?, ?)`,
+      ["app-toasts", "s:" + id.split("\u0000")[0], "old", JSON.stringify(data)])
+    const reopened = await openSqliteRowStorage(db.host, { collections: spec, schemaVersion: 9 })
+    const { createCollectionPersistence } = await import("./DurableCollection")
+    const persistence = createCollectionPersistence({ storage: reopened.storage, rows: reopened, batch: reopened, flush: reopened.flush })
+    expect(persistence.register("app-toasts")).toEqual([data])
+    await persistence.persist({ mutations: [{ collection: { id: "app-toasts" }, key: id, type: "delete", original: data, modified: undefined }] })
+    expect(db.sqlite.query(`SELECT * FROM ${ROW_TABLE_NAME}`).all()).toEqual([])
+    await reopened.close()
+  })
+
   /*
    * The defect this bounds: a profile with 890415370 bytes of OPFS SQLite
    * could not boot at all, because loading meant serializing a collection into

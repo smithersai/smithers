@@ -221,13 +221,32 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   }),
   flow({
     name: "runs.trace.view",
-    summary: "Show a run's turn explanations or full execution timeline in its embedded card",
+    summary: "Show a run's turn explanations, full execution timeline or graph in its embedded card",
     runtimeAny: ["cloud", "practice"],
     hidden: true,
-    args: "[sourceCard=id] <runId> <turns|timeline>",
-    input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline"]) }),
+    args: "[sourceCard=id] <runId> <turns|timeline|graph>",
+    input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline", "graph"]) }),
     handler: ({ runId, view, sourceCard }) => actions.traceView(runId, view, sourceCard)
   }),
+  /*
+   * The camera exists only where the flow builder does (D-038, entries/flow.ts
+   * `flow.plan`): with the flag off there is no leaf, no catalog row and no
+   * act, so the run card is the card it was before the lane.
+   */
+  ...(actions.snapshot?.()?.flowBuilder === true
+    ? [
+      flow({
+        /* Pan and zoom stay userOnly gestures (AGENTS.md:35); which node the camera chases is a fact on the card. */
+        name: "runs.graph.follow",
+        summary: "Keep a run graph's camera on the running node, or let it be",
+        runtimeAny: ["cloud", "practice"],
+        hidden: true,
+        args: "[sourceCard=id] <runId> <on|off>",
+        input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, follow: Schema.Literals(["on", "off"]) }),
+        handler: ({ runId, follow, sourceCard }) => actions.graphFollow(runId, follow === "on", sourceCard)
+      })
+    ]
+    : []),
   flow({
     name: "runs.trace.live",
     summary: "Return a run's trace to its latest recorded turn",

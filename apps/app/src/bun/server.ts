@@ -721,9 +721,20 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         browser: remoteEnabled
       }),
       authFlow: identityUpstream === null ? "none" : "both",
-      // This host wraps nothing. The client's schema requires the key, and an
-      // omitted one stops the SPA at "Runtime bootstrap broke its contract".
-      sandbox: null
+      // Required by `AppBootstrapSchema`, and omitting it stopped the app
+      // booting against its own origin: the client validates the bootstrap and
+      // a missing `sandbox` is a contract break, not a default. This host
+      // wraps no child process — the seatbelt and bubblewrap mechanisms live
+      // in `@smthrs/build` `ExecSandbox` and nothing here selects one — so it
+      // says so rather than claiming an enforcement it does not perform. The
+      // descriptor is present rather than `null` because `null` is the CLOUD
+      // host's answer, and `Runtime.createRuntime` reads a local host's `null`
+      // as "this origin has no repositories at all".
+      sandbox: {
+        platform: process.platform,
+        mode: "unavailable",
+        policies: { loader: "unenforced", targetRun: "unenforced" }
+      }
     }))
 
   router.add("GET", HEALTH_PATH, () =>

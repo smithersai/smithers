@@ -18,9 +18,10 @@ import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalPayload, ApprovalTarget, PlanCard } from "@smthrs/control/ControlSchema"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { Deferred, Effect, Fiber, Schema, type Scope, Stream } from "effect"
+import * as SqlClient from "effect/unstable/sql/SqlClient"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
-import { make, Projections } from "../src/Projections.ts"
+import { make, maxDurationRuns, Projections } from "../src/Projections.ts"
 import { defaultCadenceStack, driverFence, emit, stack } from "./GatewayStack.ts"
 
 const approvalOf = (card: PlanCard): ApprovalPayload => ({
@@ -81,6 +82,58 @@ const parkOnApproval = (runId: string, requestId: string, question: string) =>
 
 const test = <E>(title: string, body: () => Effect.Effect<void, E, Scope.Scope>) =>
   it(title, () => Effect.runPromise(Effect.scoped(body())))
+
+/**
+ * One engine node record, in the envelope a host's journal bridge writes.
+ *
+ * `@smthrs/smithers` `EngineJournalProjection` copies an engine journal entry
+ * into the control journal under `control.engine.event` with these exact
+ * coordinates, and the entry inside it is the one
+ * `@smthrs/engine-store` `NodeJournal.entry` builds. A payload that drifts
+ * from the schemas `@smthrs/journal` publishes decodes to nothing, so the
+ * duration rows disappear rather than being folded from a shape no engine
+ * writes.
+ */
+const bridged = (runId: string, eventType: string, payload: unknown, emittedAtMs: number) =>
+  emit(runId, "control.engine.event", {
+    version: 1,
+    executionId: `native-${runId}`,
+    generation: 0,
+    sequence: emittedAtMs,
+    eventId: `${runId}:${eventType}:${emittedAtMs}`,
+    sourceId: `engine/${eventType}`,
+    sourceSequence: 0,
+    emittedAtMs,
+    eventType,
+    payload
+  })
+
+/** One node the engine scheduled, ran, and settled, with the tag it dispatched. */
+const executed = (
+  runId: string,
+  nodeId: string,
+  action: string,
+  startedAt: number,
+  durationMs: number
+) =>
+  Effect.gen(function*() {
+    yield* bridged(runId, "flows.engine.node-scheduled", { nodeId, kind: "step", attempt: 1, action }, startedAt)
+    yield* bridged(
+      runId,
+      "flows.engine.node-settled",
+      { nodeId, outcome: "built", attempts: 1, action },
+      startedAt + durationMs
+    )
+  })
+
+/** Finishes a launched run the way a driver does, so a duration fold can read it. */
+const finish = (runId: string) =>
+  Effect.gen(function*() {
+    const runtime = yield* ControlRuntime
+    const fence = yield* driverFence(runId)
+    yield* runtime.writeStatus(runId, fence, "completed")
+    yield* emit(runId, "control.run.completed", { runId, status: "completed" })
+  })
 
 const runScopedSelectors = (runId: string): ReadonlyArray<GatewaySchema.ProjectionSelector> => [
   { _tag: "run-summary", runId },
@@ -350,6 +403,10 @@ describe("gateway projections over a real SQLite control plane", () => {
         question: "Ship it?",
         payload: askPayload(runId, "gate-schema")
       })
+      // `flow-durations` reads the runs a flow has FINISHED, so the one run
+      // this case builds has to finish and has to have measured something.
+      yield* executed(runId, "compile", "build", 1_000, 240)
+      yield* finish(runId)
       const selectorFor = {
         "workspace-runs": { _tag: "workspace-runs" },
         "run-summary": { _tag: "run-summary", runId },
@@ -357,7 +414,8 @@ describe("gateway projections over a real SQLite control plane", () => {
         transcript: { _tag: "transcript", runId },
         "run-tree": { _tag: "run-tree", runId },
         approvals: { _tag: "approvals", runId },
-        "node-output": { _tag: "node-output", runId, nodeId: "call-1" }
+        "node-output": { _tag: "node-output", runId, nodeId: "call-1" },
+        "flow-durations": { _tag: "flow-durations", flowId: "system/test" }
       } as const satisfies Record<GatewaySchema.ProjectionName, GatewaySchema.ProjectionSelector>
 
       // The declared decoder used to be tested only against rows assembled by
@@ -501,5 +559,131 @@ describe("incremental journal snapshots", () => {
       const ahead = yield* projections.snapshot(selector, future)
       expect(ahead.rows).toEqual([])
       expect(ahead.cursor.value).toBe(future.value)
+    }).pipe(Effect.provide(stack())))
+})
+
+describe("the flow-durations projection", () => {
+  test("ranks the tags two finished runs of one flow measured", () =>
+    Effect.gen(function*() {
+      const projections = yield* Projections
+      const selector = { _tag: "flow-durations" as const, flowId: "system/test" }
+
+      // A flow nothing has finished predicts nothing. There is no zero row
+      // and no "not measured" row to render.
+      expect((yield* projections.snapshot(selector)).rows).toEqual([])
+
+      const first = yield* launch
+      yield* executed(first, "compile", "build", 1_000, 200)
+      yield* executed(first, "publish", "ship", 1_400, 900)
+      yield* finish(first)
+
+      // A run still going contributes nothing: its nodes have not settled and
+      // the run is not in the window a prediction is ranked over.
+      const running = yield* launch
+      yield* executed(running, "compile", "build", 1_000, 50_000)
+
+      const second = yield* launch
+      yield* executed(second, "compile", "build", 2_000, 400)
+      yield* executed(second, "publish", "ship", 2_500, 900)
+      yield* finish(second)
+
+      const rows = (yield* projections.snapshot(selector)).rows as ReadonlyArray<GatewayProjection.FlowDurationRow>
+      expect(rows).toEqual([
+        { flowId: "system/test", actionTag: "build", samples: 2, p50Ms: 200, p90Ms: 400 },
+        { flowId: "system/test", actionTag: "ship", samples: 2, p50Ms: 900, p90Ms: 900 }
+      ])
+
+      // Another flow's history is another flow's. The selector names one.
+      expect((yield* projections.snapshot({ _tag: "flow-durations", flowId: "system/other" })).rows).toEqual([])
+    }).pipe(Effect.provide(stack())))
+
+  test("ranks the newest runs the window admits, and no run older than it", () =>
+    Effect.gen(function*() {
+      const projections = yield* Projections
+      const selector = { _tag: "flow-durations" as const, flowId: "system/test" }
+
+      // The oldest run is the one the window drops. It is the only run that
+      // measures `retire` at all, and the only one that measures `build` at
+      // anything but 100 ms, so a window that keeps it is visible twice over.
+      const oldest = yield* launch
+      yield* executed(oldest, "compile", "build", 1_000, 99_000)
+      yield* executed(oldest, "retire", "retire", 1_000, 10)
+      yield* finish(oldest)
+
+      for (let index = 0; index < maxDurationRuns; index++) {
+        const runId = yield* launch
+        yield* executed(runId, "compile", "build", 1_000, 100)
+        yield* finish(runId)
+      }
+
+      expect((yield* projections.snapshot(selector)).rows).toEqual([
+        { flowId: "system/test", actionTag: "build", samples: maxDurationRuns, p50Ms: 100, p90Ms: 100 }
+      ])
+    }).pipe(Effect.provide(stack())))
+
+  test("keeps advancing beyond 500 runs and excludes newer unfinished runs", () =>
+    Effect.gen(function*() {
+      const projections = yield* Projections
+      const sql = yield* SqlClient.SqlClient
+      // Real persisted run rows: the last twenty terminal runs are beyond the
+      // generic listing ceiling and interleaved with unfinished executions.
+      for (let index = 0; index < 541; index++) {
+        const runId = `history-${String(index).padStart(3, "0")}`
+        const status = index > 500 && index % 2 === 0 ?
+          "suspended"
+          : (["completed", "failed", "cancelled"] as const)[index % 3]!
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+          VALUES (${runId}, ${status}, ${index}, ${
+          JSON.stringify({ version: 1, flowName: "system/test", payload: {} })
+        })`
+        yield* executed(runId, "compile", "build", 1_000, index > 500 ? 100 : 99_000)
+      }
+      const selector = { _tag: "flow-durations" as const, flowId: "system/test" }
+      expect((yield* projections.snapshot(selector)).rows).toEqual([
+        { flowId: "system/test", actionTag: "build", samples: 20, p50Ms: 100, p90Ms: 100 }
+      ])
+      // A newer terminal execution enters immediately; a history stuck at the
+      // first 500 rows would keep answering the old durations forever.
+      yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES ('history-new', 'completed', 542, ${
+        JSON.stringify({ version: 1, flowName: "system/test", payload: {} })
+      })`
+      yield* executed("history-new", "publish", "ship", 1_000, 321)
+      expect((yield* projections.snapshot(selector)).rows).toEqual([
+        { flowId: "system/test", actionTag: "build", samples: 19, p50Ms: 100, p90Ms: 100 },
+        { flowId: "system/test", actionTag: "ship", samples: 1, p50Ms: 321, p90Ms: 321 }
+      ])
+    }).pipe(Effect.provide(stack())))
+
+  test("answers one snapshot and no delta, and resumes no cursor", () =>
+    Effect.gen(function*() {
+      const projections = yield* Projections
+      const selector = { _tag: "flow-durations" as const, flowId: "system/test" }
+      const runId = yield* launch
+      yield* executed(runId, "compile", "build", 1_000, 200)
+      yield* finish(runId)
+
+      const snapshot = yield* projections.snapshot(selector)
+      expect(snapshot.rows).toHaveLength(1)
+
+      // Subscribing answers the snapshot and stops. A duration row is ranked
+      // over runs that have already finished, so no live event changes one.
+      const frames = yield* Stream.runCollect(projections.subscribe(selector))
+      expect(frames.map((frame) => frame._tag)).toEqual(["snapshot-start", "row", "snapshot-end"])
+
+      // A snapshot takes no cursor, and a subscription resumes none.
+      expect((yield* Effect.flip(projections.snapshot(selector, snapshot.cursor))).message)
+        .toContain("Only run-events snapshots accept an after cursor")
+      const refused = yield* Effect.flip(Stream.runCollect(projections.subscribe(selector, snapshot.cursor)))
+      expect(refused.message).toContain("has no resumable cursor")
+
+      // And a cursor another flow issued resumes nothing here either, because
+      // a selector with the same tag is not the same selector.
+      const foreign = {
+        ...snapshot.cursor,
+        selector: { _tag: "flow-durations" as const, flowId: "system/other" }
+      }
+      const mismatched = yield* Effect.flip(Stream.runCollect(projections.subscribe(selector, foreign)))
+      expect(mismatched.message).toContain("only the exact selector that issued it")
     }).pipe(Effect.provide(stack())))
 })

@@ -182,4 +182,39 @@ describe("CardRenderers", () => {
     expect(shell).toContain("data-kind=\"service-log\"")
     expect(shell).toContain("<div class=\"smithers-card-body\"></div>")
   })
+
+  /*
+   * CardView destructures a FIXED prop list, so a binding added to CardActions
+   * and not to that list reaches no card and fails silently. This holds the
+   * two ends together for the dispatcher listings a plan card reads its
+   * schedules from.
+   */
+  test("a binding the shell was given reaches the body: the plan card sees the dispatcher listings", () => {
+    const plan: Card = {
+      ...base,
+      kind: "flow-plan",
+      status: "active",
+      payload: {
+        repo: "o/r",
+        flowId: "review",
+        status: "done",
+        nodes: [{ id: "a", kind: "step", key: `key1_${"0".repeat(64)}`, dependsOn: [], tier: "sealed", status: "run" }]
+      }
+    }
+    const dispatcher: Extract<Card, { kind: "trigger-list" }> = {
+      ...base,
+      id: "trigger-list-o/r",
+      kind: "trigger-list",
+      status: "acted",
+      payload: {
+        repo: "o/r",
+        live: true,
+        triggers: [{ id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true }],
+        webhooks: []
+      }
+    }
+    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} triggerCatalogs={[dispatcher]} />))
+      .toContain("data-trigger=\"nightly\"")
+    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} />)).not.toContain("data-trigger=")
+  })
 })

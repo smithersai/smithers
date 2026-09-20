@@ -1,6 +1,6 @@
 ---
 title: "Read a projection over HTTP"
-description: "Call Projection.Snapshot for each of the seven selectors, decode the rows with the schema the selector names, and keep the cursor the snapshot answers with."
+description: "Call Projection.Snapshot for each of the eight selectors, decode the rows with the schema the selector names, and keep the cursor the snapshot answers with."
 sidebar:
   order: 2
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/gateway/docs/guides/read-a-projection.md"
@@ -26,6 +26,7 @@ const itsCalls: GatewaySchema.ProjectionSelector = { _tag: "run-tree", runId }
 const itsGates: GatewaySchema.ProjectionSelector = { _tag: "approvals", runId }
 const theInbox: GatewaySchema.ProjectionSelector = { _tag: "approvals" }
 const oneOutput: GatewaySchema.ProjectionSelector = { _tag: "node-output", runId, nodeId: "call-1" }
+const itsDurations: GatewaySchema.ProjectionSelector = { _tag: "flow-durations", flowId }
 ```
 
 `approvals` is the one selector whose `runId` is optional, and the two forms
@@ -96,14 +97,15 @@ const decodeRows = (selector: GatewaySchema.ProjectionSelector, rows: unknown) =
   Schema.decodeUnknownSync(Schema.Array(GatewaySchema.rowSchemaFor(selector)))(rows)
 ```
 
-| Selector                        | Row schema                        |
-| ------------------------------- | --------------------------------- |
-| `workspace-runs`, `run-summary` | `GatewayProjection.RunSummaryRow` |
-| `run-events`                    | `ControlSchema.ControlEvent`      |
-| `transcript`                    | `GatewayProjection.TranscriptRow` |
-| `run-tree`                      | `GatewayProjection.RunTreeRow`    |
-| `approvals`                     | `GatewayProjection.ApprovalRow`   |
-| `node-output`                   | `GatewayProjection.NodeOutputRow` |
+| Selector                        | Row schema                          |
+| ------------------------------- | ----------------------------------- |
+| `workspace-runs`, `run-summary` | `GatewayProjection.RunSummaryRow`   |
+| `run-events`                    | `ControlSchema.ControlEvent`        |
+| `transcript`                    | `GatewayProjection.TranscriptRow`   |
+| `run-tree`                      | `GatewayProjection.RunTreeRow`      |
+| `approvals`                     | `GatewayProjection.ApprovalRow`     |
+| `node-output`                   | `GatewayProjection.NodeOutputRow`   |
+| `flow-durations`                | `GatewayProjection.FlowDurationRow` |
 
 `GatewaySchema.ProjectionSnapshot` decodes the whole answer, selector and
 cursor included, and it is a union correlated on the selector: a snapshot whose

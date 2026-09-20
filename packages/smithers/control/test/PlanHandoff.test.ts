@@ -5,12 +5,12 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Core from "@smthrs/core"
 import * as PersistedPlan from "@smthrs/plan/Plan"
-import { Effect, Result } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput } from "../src/ControlError.ts"
 import type { MemoryFlow } from "../src/ControlRuntime.ts"
-import type { PlanNodeStatus } from "../src/ControlSchema.ts"
+import { PlanCard, PlanGraph, type PlanNodeStatus } from "../src/ControlSchema.ts"
 import * as TestControl from "../src/test/TestControl.ts"
 
 const declaration = (writes: ReadonlyArray<string> = []) =>
@@ -139,5 +139,190 @@ describe("the persisted plan handoff", () => {
     expect(card.plan).toBeUndefined()
     expect(card.nodes).toEqual([])
     expect(card.digest).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
+
+/*
+ * D-037: the typed edges `Graph.build` already knows travel beside the plan,
+ * outside the digest an approval binds to. A host that gains them re-plans to
+ * the digest it planned to before, so every parked approval still validates.
+ */
+const withGraph = (value: Core.Graph.Graph): MemoryFlow => ({
+  ...flow(value),
+  plan: (_input, planId) =>
+    compile(value, planId).pipe(Effect.map((plan) => ({
+      plan,
+      graph: { edges: Core.Graph.edges(value) }
+    })))
+})
+
+const plannedBy = (memoryFlow: MemoryFlow) =>
+  Effect.gen(function*() {
+    const control = yield* Control
+    return yield* control.plan({ flowId: "review/pull-request", input: { pr: 4821 } })
+  }).pipe(
+    Effect.provide(TestControl.layer({ flows: [memoryFlow] })),
+    Effect.scoped,
+    Effect.runPromise
+  )
+
+describe("the typed edges beside the plan", () => {
+  it("reports each edge's reason from the built graph", async () => {
+    const card = await plannedBy(withGraph(graph()))
+
+    expect(card.graph?.edges).toEqual(Core.Graph.edges(graph()))
+    expect(new Set(card.graph?.edges.map((edge) => edge.reason))).toEqual(new Set(["value"]))
+    expect(card.graph?.edges.map((edge) => edge.to)).toEqual(
+      card.graph?.edges.map((edge) => edge.to).filter((id) => card.nodes.some((node) => node.id === id))
+    )
+  })
+
+  it("leaves the approval digest exactly where it was without the edges", async () => {
+    const withEdges = await plannedBy(withGraph(graph()))
+    const without = await plannedBy(flow(graph()))
+
+    expect(withEdges.digest).toBe(without.digest)
+    expect(withEdges.approval.target.digest).toBe(without.approval.target.digest)
+  })
+
+  it("decodes a card stored before the field existed", () => {
+    const stored = {
+      planId: "plan-1",
+      flowId: "review/pull-request",
+      digest: "a".repeat(64),
+      inputSummary: "{}",
+      envelope: { capabilities: [], flows: [], budget: {} },
+      deployClass: false,
+      nodes: [],
+      approval: {
+        target: {
+          _tag: "Plan",
+          planId: "plan-1",
+          digest: "a".repeat(64),
+          envelope: { capabilities: [], flows: [], budget: {} }
+        },
+        scope: "run",
+        idempotencyKey: "approve:plan-1"
+      }
+    }
+
+    expect(Schema.decodeUnknownSync(PlanCard)(stored).graph).toBeUndefined()
+    expect(
+      Schema.decodeUnknownSync(PlanCard)({
+        ...stored,
+        graph: { edges: [{ from: "a", to: "b", reason: "continuation" }] }
+      }).graph?.edges
+    )
+      .toEqual([{ from: "a", to: "b", reason: "continuation" }])
+  })
+})
+
+/*
+ * D-054: the declaration sites the graph builder already knows travel beside
+ * the plan, in the same place and under the same rule as the edges. A reader
+ * of a plan card can open the node's code; an approval still binds to the
+ * digest it bound to before.
+ */
+const declaredAt = { path: "flows/review/pull-request.ts", line: 12 } as const
+
+const withDeclarations = (value: Core.Graph.Graph): MemoryFlow => ({
+  ...flow(value),
+  plan: (_input, planId) =>
+    compile(value, planId).pipe(Effect.map((plan) => ({
+      plan,
+      graph: {
+        edges: Core.Graph.edges(value),
+        nodes: Core.Graph.nodes(value).map((node) => ({ id: node.id, declaredAt }))
+      }
+    })))
+})
+
+describe("the declaration sites beside the plan", () => {
+  it("names where each node of the plan was declared", async () => {
+    const card = await plannedBy(withDeclarations(graph()))
+
+    /* The join a drawer makes: every keyed node the card reports has a site. */
+    const sites = new Map((card.graph?.nodes ?? []).map((node) => [node.id, node.declaredAt]))
+    expect(card.nodes.length).toBeGreaterThan(0)
+    expect(card.nodes.every((node) => sites.get(node.id)?.path === declaredAt.path)).toBe(true)
+    expect(card.nodes.every((node) => sites.get(node.id)?.line === declaredAt.line)).toBe(true)
+  })
+
+  it("leaves the approval digest exactly where it was without them", async () => {
+    const withSites = await plannedBy(withDeclarations(graph()))
+    const without = await plannedBy(withGraph(graph()))
+
+    expect(withSites.digest).toBe(without.digest)
+    expect(withSites.approval.target.digest).toBe(without.approval.target.digest)
+  })
+
+  it("refuses an absolute path, so an operator's home directory never reaches a card", () => {
+    const absolute = {
+      edges: [],
+      nodes: [{ id: "root.all.read", declaredAt: { path: "/Users/operator/project/flow.ts", line: 12 } }]
+    }
+
+    expect(() => Schema.decodeUnknownSync(PlanGraph)(absolute)).toThrow()
+    expect(
+      Schema.decodeUnknownSync(PlanGraph)({ edges: [], nodes: [{ id: "root.all.read", declaredAt }] }).nodes?.[0]
+        ?.declaredAt
+    )
+      .toEqual(declaredAt)
+  })
+
+  it("reads a graph recorded before the field existed", () => {
+    expect(Schema.decodeUnknownSync(PlanGraph)({ edges: [{ from: "a", to: "b", reason: "value" }] }).nodes)
+      .toBeUndefined()
+  })
+})
+
+/*
+ * D-068: the declaration sites above say WHERE a node was declared and never
+ * which bytes were there. The revision the host read its flows out of travels
+ * beside them, in the same place and under the same rule: outside the digest
+ * an approval binds to, because it describes the source a reader opens and
+ * not what the plan will do.
+ */
+const REVISION = "9".repeat(40)
+
+const withRevision = (value: Core.Graph.Graph): MemoryFlow => ({
+  ...flow(value),
+  plan: (_input, planId) =>
+    compile(value, planId).pipe(Effect.map((plan) => ({
+      plan,
+      graph: {
+        edges: Core.Graph.edges(value),
+        nodes: Core.Graph.nodes(value).map((node) => ({ id: node.id, declaredAt })),
+        sourceRevision: REVISION
+      }
+    })))
+})
+
+describe("the source revision beside the plan", () => {
+  it("names the revision the host read those declaration sites out of", async () => {
+    const card = await plannedBy(withRevision(graph()))
+
+    /*
+     * Through the schema, which is how a client receives it: a field the card
+     * shape does not declare is dropped on the way out, so reading it off the
+     * in-process value alone would prove nothing about what a reader gets.
+     */
+    const served = Schema.decodeUnknownSync(PlanCard)(Schema.encodeUnknownSync(PlanCard)(card))
+    expect(served.graph?.sourceRevision).toBe(REVISION)
+    expect(served.graph?.nodes?.length).toBe(card.graph?.nodes?.length)
+  })
+
+  it("leaves the approval digest exactly where it was without it", async () => {
+    const withIt = await plannedBy(withRevision(graph()))
+    const without = await plannedBy(withDeclarations(graph()))
+
+    expect(withIt.digest).toBe(without.digest)
+    expect(withIt.approval.target.digest).toBe(without.approval.target.digest)
+  })
+
+  it("reads a graph recorded before the field existed, and refuses an empty one", () => {
+    expect(Schema.decodeUnknownSync(PlanGraph)({ edges: [] }).sourceRevision).toBeUndefined()
+    expect(Schema.decodeUnknownSync(PlanGraph)({ edges: [], sourceRevision: REVISION }).sourceRevision).toBe(REVISION)
+    expect(() => Schema.decodeUnknownSync(PlanGraph)({ edges: [], sourceRevision: "" })).toThrow()
   })
 })

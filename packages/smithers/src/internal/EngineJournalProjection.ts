@@ -22,6 +22,24 @@ export interface Options {
   readonly engineState: Pick<DurableEngineState.Service, "runChildren">
   /** Native trampoline membership, separate from spawn edges. Legacy adapters may omit it. */
   readonly runLineage?: RunStore.Service["lineage"] | undefined
+  /**
+   * Called with each native record BEFORE that record is copied into the
+   * control journal.
+   *
+   * The order is the guarantee: a client reading the copied record can act on
+   * what it says, because the host already has. A copy-back receipt naming
+   * `flows/<id>/flow.ts` is the case that needs it — the host rebuilds that
+   * flow's executable first, so the plan a client asks for on seeing the
+   * receipt is a plan this host can answer.
+   *
+   * It fires again for the same record when an interrupted observation is
+   * recovered, since recovery rereads its pages. Handlers are therefore
+   * expected to be repeatable. Failures here are the caller's to absorb; the
+   * projection's own progress does not depend on them.
+   */
+  readonly onRecord?:
+    | ((entry: JournalEvent.Entry, generation: number) => Effect.Effect<void>)
+    | undefined
 }
 
 interface Position {
@@ -170,6 +188,9 @@ export const make = (options: Options) =>
                 })
               )
             }
+            // Before the copy, so a reader of the copied record can act on
+            // what it says: the host already has.
+            if (options.onRecord !== undefined) yield* options.onRecord(entry, generation.generation)
             // Seq is ordered, not contiguous: SqlJournal deliberately leaves
             // reservations unused after rollback. Only the owning journal's
             // compaction/rewind/refusal evidence can establish an omission.

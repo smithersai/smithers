@@ -20,12 +20,14 @@ import {
   SqlControlRuntime,
   SystemFlows
 } from "@smthrs/control"
+import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, FlowRuntime } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
 import type * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
 import type * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import type * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
@@ -34,7 +36,7 @@ import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import type { JjError } from "@smthrs/jj"
-import { SqlJournal } from "@smthrs/journal"
+import { EngineEvent, SqlJournal } from "@smthrs/journal"
 import * as Journal from "@smthrs/journal/Journal"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -50,6 +52,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import type { NotificationQueue } from "@smthrs/notifications"
+import * as PersistedPlan from "@smthrs/plan/Plan"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
@@ -63,7 +66,7 @@ import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as SyncAuth from "@smthrs/sync/SyncAuth"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
-import { Cause, Clock, Context, Effect, Fiber, FileSystem, Layer } from "effect"
+import { Cause, Clock, Context, Effect, Fiber, FileSystem, Layer, Option } from "effect"
 import type { Crypto, Path, Scope } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/unstable/sql/SqlClient"
@@ -73,6 +76,7 @@ import { join, resolve } from "node:path"
 import type * as Application from "../Application.ts"
 import * as CliError from "../CliError.ts"
 import * as Serve from "../Serve.ts"
+import * as AuthoredRebuild from "./AuthoredRebuild.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as EngineJournalSupervisor from "./EngineJournalSupervisor.ts"
 import * as ExecutionDatabasePath from "./ExecutionDatabasePath.ts"
@@ -81,6 +85,7 @@ import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
 import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
+import * as SourceRevision from "./SourceRevision.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 /** Captured durable control services shared by native consumers.
@@ -150,6 +155,12 @@ export interface ExecutorOptions {
    * every registered handler restores its owning approved control envelope.
    */
   readonly modules?: ModuleRegistration | undefined
+  /**
+   * Whether this executor imports a flow file its own runs write, while it
+   * serves. Off by default; `Application.Config.rebuildAuthoredFlows` states
+   * what turning it on means.
+   */
+  readonly rebuildAuthoredFlows?: boolean | undefined
 }
 
 /** Existing service implementations selected by the executable boundary.
@@ -452,6 +463,155 @@ export const make = (
   }))
 
   /**
+   * The executable catalog this host's executor built, or `undefined` when it
+   * has not built one.
+   *
+   * Planning a discovered flow needs the Executable behind its descriptor,
+   * and the catalog is constructed by the executor layer, after the control
+   * runtime it must answer. A plain reference rather than an awaited
+   * `Deferred` is deliberate: a composition WITHOUT modules (a gateway host,
+   * a bare `engineDurable`) never builds a catalog at all, and a plan that
+   * awaited one would hang the command instead of answering it.
+   */
+  let hostCatalog: Executable.Catalog | undefined
+
+  /**
+   * The workspace revision the catalog above was read out of, or `undefined`
+   * when this host cannot name one.
+   *
+   * It is set with `hostCatalog` and for the same reason: a declaration site
+   * is a path and a line, and the plans this host builds are built from the
+   * modules that catalog holds, which were read off one tree at startup. A
+   * reader that has this can ask for the file AT that revision rather than
+   * for whatever is on disk when they open the tab, and a host that cannot
+   * name one reports nothing rather than binding code to a moving tree
+   * (D-068).
+   *
+   * It holds a revision only when a reading taken before the catalog was read
+   * and a reading taken after it agree. A host is not alone on its tree, and
+   * a write landing while the catalog is loading would otherwise be recorded
+   * as a revision that does not describe the bytes the catalog holds.
+   *
+   * The engine reads it too, through the function its store is given: this
+   * binding is filled during registration, which runs after the engine layer
+   * is composed, so the engine asks for the answer instead of being handed
+   * one that did not exist yet.
+   */
+  let hostRevision: string | undefined
+
+  /**
+   * One node's address and the declaration site behind it, as a plan card may
+   * carry it.
+   *
+   * The path is made relative to the project root with `@smthrs/journal`'s own
+   * rule, the one the engine's node records are written under: a plan card is
+   * read on machines that did not plan it, so an absolute path is at best
+   * noise and at worst an operator's home directory published into a card.
+   * A site this host cannot make relative is omitted, never guessed at.
+   */
+  const declarationOf = (root: string, node: Graph.GraphNode): ControlSchema.PlanGraphNode => {
+    const path = node.declaredAt === undefined ? undefined : EngineEvent.relativePath(root, node.declaredAt.path)
+    return {
+      id: node.id,
+      ...(path === undefined ? {} : { declaredAt: { path, line: node.declaredAt!.line } })
+    }
+  }
+
+  /**
+   * One discovered flow's keyed node graph, built at plan time.
+   *
+   * `Graph.build` walks the registered flow, which evaluates the DELEGATE's
+   * body: the registry wraps every descriptor in a flow that calls its
+   * delegate once, and the delegate's own topology — its fan-out, its
+   * priorities, its waits — is what a person approving a plan needs to see.
+   *
+   * Planning performs no I/O, so the walk happens here in process. A body the
+   * planner cannot walk still plans, with no nodes: discovery already
+   * admitted the flow, and refusing here would take away the run door a
+   * person has today over a graph they never asked to see.
+   */
+  const buildPlanGraph = (
+    executable: Executable.Executable,
+    input: unknown,
+    root: string
+  ):
+    | { readonly drafts: ReadonlyArray<PersistedPlan.NodeDraft>; readonly graph: ControlSchema.PlanGraph }
+    | { readonly unwalkable: string } =>
+  {
+    try {
+      const graph = Graph.build(executable.flow, { input: input as never })
+      // `drafts` throws the first fatal refusal rather than compiling partial
+      // topology into a plan that looks whole.
+      return {
+        drafts: Graph.drafts(graph),
+        graph: {
+          edges: Graph.edges(graph),
+          nodes: Graph.nodes(graph).map((node) => declarationOf(root, node)),
+          /*
+           * The tree those sites were read out of, when this host could name
+           * one. It is the catalog's revision rather than a fresh read: the
+           * module this graph was walked from is the one the catalog holds,
+           * and a read taken now would name a tree the walk never saw.
+           */
+          ...(hostRevision === undefined ? {} : { sourceRevision: hostRevision })
+        }
+      }
+    } catch (cause) {
+      // The refusal is carried out, not swallowed: a plan with no nodes and no
+      // reason is a plan nobody can diagnose.
+      return { unwalkable: String(cause) }
+    }
+  }
+
+  /**
+   * The plan hook one discovered flow registers.
+   *
+   * No cache is probed, so every node reports `run`: this host cannot say a
+   * key would hit, and a `cached` verdict it has not checked would be a claim
+   * about work that has not been looked for.
+   */
+  const planExecutable =
+    (executable: Executable.Executable, root: string) =>
+    (input: unknown, planId: string): Effect.Effect<{
+      readonly plan: PersistedPlan.Plan
+      readonly graph?: ControlSchema.PlanGraph | undefined
+    }, ControlError.InvalidInput> =>
+      Effect.suspend(() => {
+        const built = buildPlanGraph(executable, input, root)
+        const walked = "unwalkable" in built ? undefined : built
+        const noted = "unwalkable" in built
+          ? Effect.logWarning("Planning this flow could not walk its body", {
+            flowId: executable.descriptor.name,
+            cause: built.unwalkable
+          })
+          : Effect.void
+        return Effect.andThen(
+          noted,
+          PersistedPlan.compile({
+            planId,
+            flow: executable.descriptor.name,
+            nodes: walked?.drafts ?? []
+          }).pipe(
+            Effect.map((plan) => walked === undefined ? { plan } : { plan, graph: walked.graph }),
+            Effect.tapError((cause) =>
+              Effect.logWarning("Planning this flow produced no graph", {
+                flowId: executable.descriptor.name,
+                cause: String(cause)
+              })
+            ),
+            // A flow whose graph the compiler refuses still plans, with no nodes.
+            Effect.catch(() =>
+              PersistedPlan.compile({ planId, flow: executable.descriptor.name, nodes: [] }).pipe(
+                Effect.map((plan) => ({ plan })),
+                Effect.mapError((cause) => new ControlError.InvalidInput({ issue: String(cause) }))
+              )
+            ),
+            Effect.provide(native.crypto)
+          )
+        )
+      })
+
+  /**
    * Projects one discovered flow into the durable runtime's flow shape.
    *
    * The budget travels with the capabilities because it is enforced the same way
@@ -462,17 +622,24 @@ export const make = (
    * the undeclared case with `budgetUnbounded`, so a flow that names no ceiling
    * still runs and a flow that names one is held to it.
    */
-  const durableFlow = (descriptor: Descriptor.FlowDescriptor): ControlRuntime.MemoryFlow => ({
-    flowId: descriptor.name,
-    description: descriptor.description,
-    deployClass: false,
-    executionDigest: Descriptor.executionDigest(descriptor),
-    envelope: {
-      capabilities: descriptor.capabilities,
-      flows: descriptor.flows,
-      budget: Descriptor.budgetOf(descriptor)
+  const durableFlow = (descriptor: Descriptor.FlowDescriptor, root: string): ControlRuntime.MemoryFlow => {
+    // Read at LIST time, which the control runtime performs per plan: a host
+    // that has since built its catalog offers the hook, and one that never
+    // builds a catalog keeps planning exactly as it did, with no nodes.
+    const executable = hostCatalog?.executables.find((entry) => entry.descriptor.name === descriptor.name)
+    return {
+      flowId: descriptor.name,
+      description: descriptor.description,
+      deployClass: false,
+      executionDigest: Descriptor.executionDigest(descriptor),
+      envelope: {
+        capabilities: descriptor.capabilities,
+        flows: descriptor.flows,
+        budget: Descriptor.budgetOf(descriptor)
+      },
+      ...(executable === undefined ? {} : { plan: planExecutable(executable, root) })
     }
-  })
+  }
 
   // Configuring the CLI's gateway token delegates the local operator's supported
   // decisions to that gateway's authenticated identity. This is a host policy,
@@ -545,7 +712,37 @@ export const make = (
             owner,
             loadFlows: () =>
               registryService.list().pipe(
-                Effect.map((discovered) => [...systemFlows, ...discovered.map(durableFlow)])
+                Effect.map((discovered) => {
+                  // A catalog entry this host rebuilt after startup is a flow
+                  // it can plan and run now. The control plane materializes
+                  // its own build of the registry layer, so that snapshot can
+                  // still be the one taken before the file existed — or, for a
+                  // flow a run EDITED, the one taken before the new bytes were
+                  // written. A rebuilt entry therefore wins on a name it
+                  // shares with discovery: the executor holds the body that
+                  // will run, so its descriptor is what honestly describes it.
+                  //
+                  // Answering from the stale descriptor is not a cosmetic
+                  // error. `durableFlow` reads the plan hook off the rebuilt
+                  // executable and everything else — description, capabilities,
+                  // delegated flows, budget, execution digest — off whichever
+                  // descriptor is passed here, so a stale one publishes an
+                  // approval card for one body beside a plan of another, and
+                  // the run it authorizes is then refused `execution_changed`
+                  // against the file on disk. Every replacement plan carries
+                  // the same stale digest, so the refusal never clears.
+                  const rebuilt = new Map(
+                    (hostCatalog?.executables ?? []).map((entry) => [entry.descriptor.name, entry.descriptor] as const)
+                  )
+                  const named = new Set(discovered.map((flow) => flow.name))
+                  return [
+                    ...systemFlows,
+                    ...[
+                      ...discovered.map((flow) => rebuilt.get(flow.name) ?? flow),
+                      ...[...rebuilt.values()].filter((descriptor) => !named.has(descriptor.name))
+                    ].map((flow) => durableFlow(flow, root))
+                  ]
+                })
               )
           })
         })
@@ -601,6 +798,17 @@ export const make = (
     // and the project root otherwise. `root` still names the project: its
     // databases, its routing table, and the mount a container knows it by.
     const workspaceRoot = resolve(options.executionRoot ?? root)
+    /*
+     * The first half of this host's revision reading. The catalog below is a
+     * startup snapshot of the modules on this tree and the engine drives those
+     * same modules, so one revision describes what both of them hold — but only
+     * if the tree held still while they were read. Registration reads the tree
+     * again once the catalog is built and records a revision only when the two
+     * readings agree, because a write landing in between (a peer agent's, an
+     * editor's) would otherwise leave this host naming a tree the catalog does
+     * not hold. A workspace under no version control names nothing (D-068).
+     */
+    const revisionBefore = SourceRevision.read(workspaceRoot)
     // Startup sweepers may ask before final registration captures the native SQL
     // client. They refuse until that existing final phase installs the reader.
     let admission: ((runId: string) => Effect.Effect<boolean>) | undefined
@@ -724,7 +932,7 @@ export const make = (
         const authority = modules === undefined
           ? undefined
           : yield* ModuleAuthority.make(Deferred.await(catalogReady), actionHost)
-        const catalog = modules === undefined ? undefined : Context.get(
+        const registrations = modules === undefined ? undefined : (
           yield* Layer.build(modules.pipe(
             // No approved card exists at registration. ModuleAuthority installs
             // the shared, journal-backed approved Budget at each handler entry.
@@ -736,10 +944,44 @@ export const make = (
             Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
             Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
             Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
-          )),
-          Executable.Catalog
+          ))
         )
+        const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
         if (catalog !== undefined) yield* Deferred.succeed(catalogReady, catalog)
+        // Planning reads this reference; see `hostCatalog`. The value is the
+        // catalog service itself, which answers with whatever snapshot the
+        // registration layer currently holds, so a rebuilt entry reaches
+        // planning without this reference being written again.
+        hostCatalog = catalog
+        /*
+         * And the tree it was read out of, so a plan's sites can be opened at
+         * the revision they describe. A host with no catalog builds no graph,
+         * so it records no revision either — and neither does a host whose tree
+         * moved while the catalog above was being read, because the revision
+         * taken before that read then names bytes the catalog may not hold. A
+         * tree that moved during startup names nothing, exactly as a dirty git
+         * checkout does.
+         */
+        const revisionAfter = SourceRevision.read(workspaceRoot)
+        hostRevision = catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
+          ? undefined
+          : revisionBefore
+        // Optional, and read rather than required, because a host may build
+        // its catalog itself: `flows/coding/host.ts` assembles a project
+        // catalog and a bundled one with different loaders and provides the
+        // merged value directly. Such a host keeps the startup snapshot it
+        // always had until it offers a rebuild of its own; one composed from
+        // `Executable.layer` gets it for nothing.
+        // Rebuilding on authoring is an EXPLICIT host decision, off unless the
+        // composition asked for it. The seam itself is only a rebuild; what it
+        // costs is the import, which runs an agent's top-level code in this
+        // process with this host's credentials the moment copy-back settles,
+        // with nothing between the write and the import. A host that holds
+        // credentials keeps the startup snapshot, and a flow a run authored
+        // becomes plannable the next time an operator starts it.
+        const catalogRefresh = registrations === undefined || options.rebuildAuthoredFlows !== true
+          ? undefined
+          : Option.getOrUndefined(Context.getOption(Executable.Refresh)(registrations))
         const engineSql = yield* SqlClient
         const controlSql = yield* SqlClient.pipe(Effect.provide(engine.stores))
         const routing = yield* WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
@@ -816,7 +1058,19 @@ export const make = (
           controlJournal,
           engineState: yield* DurableEngineState.DurableEngineState,
           runs: yield* RunStore.RunStore,
-          control: yield* ControlRuntime.ControlRuntime
+          control: yield* ControlRuntime.ControlRuntime,
+          // A run of this host may write this host's own `flows/` directory.
+          // Until the catalog entry behind the file it wrote is rebuilt, the
+          // flow has a descriptor and no executable, so `plan` answers
+          // `FlowNotFound` or a plan with no nodes however many times it is
+          // asked. Rebuilding here, before the receipt is copied across, is
+          // what makes the next plan a client asks for answerable.
+          //
+          // A failed rebuild is said out loud and dropped: the observation is
+          // how a client learns a run's nodes settled, and losing that because
+          // a flow file does not compile would take the whole run's evidence
+          // with it. The catalog keeps the refusal, so `ls` still names it.
+          ...(catalogRefresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(catalogRefresh) })
         })
         const session = AgentSession.make({
           requestNativeCancel,
@@ -882,7 +1136,15 @@ export const make = (
         // another host is left to the lease, which `RunStore.steal` verifies.
         isAlive: Ownership.sameHostPidProbe,
         canExecute: (row) => canExecute(row.runId),
-        requestResume
+        requestResume,
+        // The same revision the plans carry, asked for rather than handed over:
+        // the engine drives the modules this host loaded at startup, so the
+        // sites its journal records describe that tree and say which one — but
+        // this layer is composed BEFORE registration reads the catalog, so the
+        // verified answer does not exist yet. The store asks once per recorded
+        // page, which is always after registration, and records nothing while
+        // there is nothing to record (D-068).
+        sourceRevision: () => hostRevision
       },
       StepBoundary.layer,
       WorkspaceSandbox.layerFileSystem(),
@@ -950,6 +1212,7 @@ export const make = (
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
+        ...(config.rebuildAuthoredFlows === undefined ? {} : { rebuildAuthoredFlows: config.rebuildAuthoredFlows }),
         modules
       }),
       decorateNotifications,

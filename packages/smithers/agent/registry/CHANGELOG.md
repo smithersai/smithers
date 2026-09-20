@@ -1,5 +1,25 @@
 # @smthrs/registry
 
+## [Unreleased]
+
+### Added
+
+- `Executable.Refresh` rebuilds one entry of a catalog the host is already
+  serving from: rescan discovery, load that flow's body from the bytes now on
+  disk, register it, and swap it into the snapshot. No restart, and the
+  previous body stays registered until the new one is. `Executable.Refreshed`
+  is its four-case answer — `Registered`, `Refused`, `Removed`, `Fixed`.
+- `Executable.RefreshOptions.refreshable` decides which discovered flows a
+  host rebuilds. A host serving part of its catalog out of its own measured
+  bundle answers `false` for those entries and `refresh.flow` leaves them
+  `Fixed`. Every flow is refreshable by default.
+- `Executable.layerRefreshable(built, options)` serves a catalog the host
+  assembled itself and keeps one entry rebuildable, without registering
+  anything twice.
+- `Executable.layer` now takes `RefreshOptions` and provides `Refresh` beside
+  `Catalog`. Both changes are source compatible: the new option is optional
+  and the layer's output only widened.
+
 ## [1.0.0-rc.0] - 2026-08-31
 
 ### Added

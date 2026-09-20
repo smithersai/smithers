@@ -53,7 +53,7 @@ The package index re-exports fourteen namespaces:
 
 ## Action
 
-`Action` exports 43 symbols. Its models and schemas are listed in one table, and constructors, combinators, layers, context references, services, and errors get their own entries:
+`Action` exports 45 symbols. Its models and schemas are listed in one table, and constructors, combinators, layers, context references, services, and errors get their own entries:
 
 | Name                 | Kind            | Summary                                                                                                                                                                                                                                                                                             |
 | -------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -273,6 +273,27 @@ Retries an effect with `Effect.retry` while updating `CurrentAttempt` on each at
 - **Since:** `0.1.0`
 
 The interpreter graph site the running dispatch is scoped to. Distinct graph sites refine the allocation scope, so they do not contend for one ordinal counter.
+
+### `Action.DispatchOutcome`
+
+- **Type:** `interface DispatchOutcome { readonly outcome: "executed" | "replayed"; readonly stepKeyDigest?: string | undefined; readonly attempt?: number | undefined }`
+- **Since:** `1.0.0`
+
+What one dispatch tells the node that drove it. `outcome` says whether the body ran or a durable record answered. `stepKeyDigest` is the identity the rest of the engine addresses that dispatch by, the digest `flows.engine.attempt-started` carries, and `attempt` is the durable attempt it ran as. Both are optional, because a runtime that keeps no attempt rows has neither.
+
+### `Action.DispatchReport`
+
+- **Type:** `Context.Service<DispatchReport, { readonly dispatched: (dispatch: DispatchOutcome) => Effect.Effect<void> }>` keyed `"@smthrs/flow/Action/DispatchReport"`
+- **Since:** `1.0.0`
+
+Where the dispatches of one interpreter node report what happened to them. The interpreter installs one per node and reads the report back when the node settles: it is how a replayed node is told apart from one that did the work again, how a node names the step keys its attempt records were written under, and how a node's real attempt count reaches its settlement. Absent by default: a dispatch outside an interpreted graph reports to nobody, and reporting stays a side channel rather than a change to what `actionExecute` returns.
+
+### `Action.reportDispatch`
+
+- **Signature:** `reportDispatch(dispatch: DispatchOutcome): Effect.Effect<void>`
+- **Since:** `1.0.0`
+
+Reports one dispatch to the node that drove it, and does nothing where no node did.
 
 ### `Action.allocationScope`
 
@@ -791,7 +812,37 @@ The result of atomically completing a deferred only while its run is parked.
 - **Type:** `Context.Service` keyed `"@smthrs/flow/FlowRuntime"`
 - **Since:** `0.1.0`
 
-The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, and `scheduleClock`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
+The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, `scheduleClock`, and the optional `recordNode` and `nodeRecordBytes`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
+
+`recordNode(record: NodeRecord): Effect.Effect<void, never, FlowInstance>` is optional in the strong sense: a runtime that keeps no history leaves it absent and skips journal preflight. A recording runtime can refuse oversized node topology before the walk starts. An implementation must write the record under the record's own `sourceId` rather than minting an identity per observation, because that is what makes a resumed walk collapse onto the rows the first walk wrote instead of doubling every node.
+
+### `FlowRuntime.NodeRecord`
+
+- **Type:** `PlanRecorded | SubgraphAppended | NodeScheduled | NodeSettled`
+- **Since:** `1.0.0`
+
+What a driven graph tells its runtime about itself, and the only thing this package says about where the records go. Every record carries its own replay-stable `sourceId`, which is its producer identity. `PlanRecorded` carries `flow`, `generation`, `page`, `pages`, the whole graph's `nodeCount`, and this page's `nodes` and `edges`. `SubgraphAppended` is one further page of the same graph and carries everything but `nodeCount`. `NodeScheduled` carries `nodeId`, `kind`, `attempt`, and the optional `action`; no step key digest rides there, because the engine allocates a dispatch's ordinal when the dispatch happens, which is after the record is written. `NodeSettled` carries `nodeId`, `outcome`, `attempts`, `stepKeyDigests`, the optional `action`, and the `value` the node settled with. `attempts` is the highest durable attempt any of the node's dispatches ran as, so a node whose action was retried says two; `stepKeyDigests` names the distinct dispatches it drove, which is what joins `flows.engine.attempt-started` back to a plan node; `value` is handed over whole and unbounded, and bounding and redacting it belongs to the writer that knows where it is going. A large graph is paged rather than truncated, because a journal entry has a byte bound and a projection that clipped one would lose nodes silently.
+
+### `FlowRuntime.NodeSummary`
+
+- **Type:** `interface NodeSummary { readonly id: string; readonly kind: string; readonly dependsOn: ReadonlyArray<string>; readonly tier: "sealed" | "compensable" | "irreversible"; readonly action?: string | undefined; readonly effects?: Plan.NodeEffects | undefined; readonly declaredAt?: { readonly path: string; readonly line: number } | undefined }`
+- **Since:** `1.0.0`
+
+One node of the graph a run was driven from. `tier` and `effects` are the declaration's own and `dependsOn` is the material dependency set the plan compiles edges from. `action` is the tag the node dispatches, absent on every node that dispatches nothing. `declaredAt` is provenance and never identity: it is outside key material by construction, so a node recorded with it is keyed exactly as the same node without it.
+
+### `FlowRuntime.EdgeSummary`
+
+- **Type:** `interface EdgeSummary { readonly from: string; readonly to: string; readonly reason: "value" | "continuation" | "failure" }`
+- **Since:** `1.0.0`
+
+One edge of the recorded graph, with the reason the builder drew it. A page carries the edges that END on its nodes, so an assembled set of pages is the whole graph and no page names an edge whose destination is missing.
+
+### `FlowRuntime.NodeOutcome`
+
+- **Type:** `"built" | "clean" | "failed" | "skipped"`
+- **Since:** `1.0.0`
+
+How a node left the walk. `built` ran, `clean` was served entirely from durable records, `failed` raised, and `skipped` is a node the walk never reached: an untaken branch arm, or a dependent of something that failed.
 
 ### `FlowRuntime.WaitingAnnotation`
 
@@ -828,10 +879,10 @@ A dependency edge, pointing from the node that produces to the node that consume
 
 ### `Graph.GraphNode`
 
-- **Type:** `interface GraphNode` with `id`, `kind`, `dependencies`, `capabilities`, `placement`, `draft`, and the authoring node it was observed at
+- **Type:** `interface GraphNode` with `id`, `kind`, `dependencies`, `capabilities`, `placement`, `draft`, the authoring node it was observed at, and `declaredAt?: { readonly path: string; readonly line: number } | undefined`
 - **Since:** `0.1.0`
 
-One observed node: its structural address, the authoring variant it came from, and the `Plan.NodeDraft` the plan is compiled from. `kind` is the authoring variant, not the plan's node kind. Every draft a graph produces is a plan `step`.
+One observed node: its structural address, the authoring variant it came from, and the `Plan.NodeDraft` the plan is compiled from. `kind` is the authoring variant, not the plan's node kind. Every draft a graph produces is a plan `step`. `declaredAt` is where the declaration this node was observed at was written, when the runtime's stack format says so: it is provenance outside `KeyMaterial`, so a node carrying it is byte-identical to the same node without it, and it is absent for a node with no declaration to read and for a declaration the framework itself made.
 
 ### `Graph.LayerRequest`
 
@@ -1117,7 +1168,7 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, or `missing_operation`.
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, or `node_record_too_large`.
 
 ### `Interpreter.Interpretation`
 
@@ -1133,12 +1184,29 @@ What one interpretation produced: the root's value, every node that settled with
 
 The execution id a `child` boundary runs its child under, derived from the parent execution id, the node id, the callee tag, and the payload digest.
 
+### `Interpreter.maximumPageBytes`
+
+- **Type:** `number`
+- **Default:** `12_000`
+- **Since:** `1.0.0`
+
+The largest UTF-8 encoded plan page, including its envelope. The runtime's
+optional `nodeRecordBytes` hook measures a conservative complete journal entry;
+without a writer hook the interpreter measures the whole node record. Pages
+keep nodes and their incoming edges together. If one node cannot fit alone,
+`node_record_too_large` refuses the graph before any page or action is written.
+Every page has a deterministic source id across resume. The gateway refuses a
+bridged graph event exceeding 16 KiB including its control envelope; it never
+clips topology.
+
 ### `Interpreter.interpret`
 
 - **Signature:** `interpret(flowOrNode: Flow.Any | Node.Any, payload?: unknown, options: Graph.BuildOptions = {}): Effect.Effect<Interpretation, unknown, Services>`
 - **Since:** `0.1.0`
 
 Builds and walks the graph of a flow body, or of a bare node, against real values. The walk is demand-driven from the root rather than a sweep over the node list, because dependency order puts both branch arms before the branch that chooses between them.
+
+One call is one interpretation of one execution. A runtime that implements `recordNode` addresses the records of a call by the graph's own ids under the current execution, so calling `interpret` twice inside a single execution would address the second graph's records exactly as the first graph's, and a journal that dedupes on identity would keep the first. `Interpreter.layer` gives every trampoline round its own execution id and never does this; a direct caller that wants two graphs recorded separately runs them under separate executions.
 
 ### `Interpreter.layer`
 
@@ -1402,6 +1470,27 @@ The sleep implementation: arm the durable clock, park under `timer`, wake. Provi
 - **Since:** `0.1.0`
 
 The interpreter graph site the running dispatch is scoped to.
+
+### `StepIdentity.DispatchOutcome`
+
+- **Type:** `interface DispatchOutcome { readonly outcome: "executed" | "replayed"; readonly stepKeyDigest?: string | undefined; readonly attempt?: number | undefined }`
+- **Since:** `1.0.0`
+
+What one dispatch tells the node that drove it: whether the body ran, the step key digest it ran under, and the durable attempt it was.
+
+### `StepIdentity.DispatchReport`
+
+- **Type:** `Context.Service<DispatchReport, { readonly dispatched: (dispatch: DispatchOutcome) => Effect.Effect<void> }>` keyed `"@smthrs/flow/Action/DispatchReport"`
+- **Since:** `1.0.0`
+
+Where the dispatches of one interpreter node report what happened to them.
+
+### `StepIdentity.reportDispatch`
+
+- **Signature:** `reportDispatch(dispatch: DispatchOutcome): Effect.Effect<void>`
+- **Since:** `1.0.0`
+
+Reports one dispatch to the node that drove it, and does nothing where no node did.
 
 ### `StepIdentity.AllocationIdentity`
 

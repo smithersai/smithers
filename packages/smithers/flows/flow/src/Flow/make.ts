@@ -15,6 +15,7 @@ import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import { lowerDeclarations } from "../internal/Declarations.ts"
+import * as DeclarationSite from "../internal/DeclarationSite.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import { CurrentExecutionIds } from "./ExecutionIds.ts"
 import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, Flow } from "./Flow.ts"
@@ -320,20 +321,27 @@ export const make = <
   ) {
     throw new RangeError(`Flow.make: "${tag}" maxRounds must be a positive safe integer`)
   }
-  return makeProto<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>({
-    _tag: tag,
-    description: options.description,
-    payloadSchema: (Schema.isSchema(options.payload)
-      ? options.payload
-      : Schema.Struct(options.payload as any)) as PayloadSchemaOf<Payload>,
-    successSchema: options.success ?? (Schema.Void as any),
-    errorSchema: options.error ?? (Schema.Never as any),
-    annotations: lowerDeclarations(options),
-    body: options.body as (
-      payload: PayloadSchemaOf<Payload>["Type"]
-    ) => Node.Node<BodySuccess<Success["Type"]>, Error["Type"], Requires>,
-    idempotencyKey: options.idempotencyKey as any,
-    suspendedRetryPolicy: options.suspendedRetryPolicy,
-    maxRounds: options.maxRounds
-  })
+  // Captured here, where the stack still names the author's file, and carried
+  // as a non-enumerable property so no digest can see it
+  // (`internal/DeclarationSite.ts`).
+  const site = DeclarationSite.capture()
+  return DeclarationSite.annotate(
+    makeProto<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>({
+      _tag: tag,
+      description: options.description,
+      payloadSchema: (Schema.isSchema(options.payload)
+        ? options.payload
+        : Schema.Struct(options.payload as any)) as PayloadSchemaOf<Payload>,
+      successSchema: options.success ?? (Schema.Void as any),
+      errorSchema: options.error ?? (Schema.Never as any),
+      annotations: lowerDeclarations(options),
+      body: options.body as (
+        payload: PayloadSchemaOf<Payload>["Type"]
+      ) => Node.Node<BodySuccess<Success["Type"]>, Error["Type"], Requires>,
+      idempotencyKey: options.idempotencyKey as any,
+      suspendedRetryPolicy: options.suspendedRetryPolicy,
+      maxRounds: options.maxRounds
+    }),
+    site
+  )
 }

@@ -358,6 +358,8 @@ export interface CommandState {
   readonly experimental?: boolean
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
+  /** The flow builder's doors exist only under its flag (docs/flow-builder). */
+  readonly flowBuilder?: boolean
   readonly plugins?: ReadonlyArray<string>
   /** The validated session carries admin:true; the admin plugin registers only then. */
   readonly admin: boolean

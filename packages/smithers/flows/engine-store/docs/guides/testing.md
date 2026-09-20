@@ -98,8 +98,14 @@ The journal is the record, so most assertions read it back:
 - A refused cache hit writes `cache-provenance` with
   `action: "stale_read_set"`; a withheld shared entry writes the same record
   with `action: "unpublished"` and the stage that refused.
-- The scheduler writes `plan-recorded`, `subgraph-appended`, `node-settled`,
-  `node-invalidated`, and `selection-deferred`.
+- The scheduler writes `plan-recorded`, `subgraph-appended`, `node-scheduled`,
+  `node-settled`, `node-invalidated`, and `selection-deferred`. A node record
+  names the tag its node dispatches under `action`, and a plan record carries
+  the graph under `graph.nodes`.
+- An interpreted flow writes the same records through `FlowRuntime.recordNode`,
+  addressed by a replay-stable `sourceId`, so a resumed walk holds one row per
+  node instead of one per observation. `@smthrs/journal`'s `EngineEvent` module
+  publishes the payload schema for every one of them.
 - A workspace transaction writes `diff-bundle-captured` and
   `copy-back-settled`.
 

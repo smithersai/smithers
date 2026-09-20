@@ -4,6 +4,9 @@ import type { FlowInput, FlowWithInput } from "./FlowArgs"
 import { FLOW_NAMES } from "./FlowName"
 import type { FlowName } from "./FlowName"
 import { payloadFor } from "./SlashPayload"
+import { triggersFlows } from "./entries/triggers"
+import type { CommandActions } from "./Flows"
+import { nameOf } from "./registry"
 
 /*
  * The button door's contract: what a card hands over comes back out of the
@@ -26,6 +29,15 @@ describe("flowArgs — one serialisation, and the grammar gives the values back"
       roundTrip("runs.trace.select", input, `sourceCard=flow-run-source run-1 frame-2${seq === undefined ? "" : ` ${seq}`}`, input)
     }
     roundTrip("runs.trace.select", { runId: "run-1", nodeId: "frame-2", seq: 17 }, "run-1 frame-2 17", { runId: "run-1", nodeId: "frame-2", seq: 17 })
+  })
+
+  test("graph selection round-trips node addresses including spaces and slashes", () => {
+    for (const nodeId of ["root.flow.all.hello world", "root.flow.all.a/b", 'root.flow.all. \"quoted\" ']) {
+      for (const [name, input] of [
+        ["runs.graph.select", { runId: "run-1", nodeId }],
+        ["flow.plan.select", { cardId: "plan-1", nodeId }]
+      ] as const) expect(payloadFor(name, flowArgs(name, input))).toEqual({ payload: input })
+    }
   })
 
   test("runs.steer carries a message that holds spaces", () => {
@@ -127,6 +139,26 @@ describe("FlowName — the seam's names are the registry's names", () => {
   })
 })
 
+/*
+ * The plan door is the flow row's second button, and it hands over the same
+ * values the Run door does. Without a grammar of its own the line came back as
+ * nothing and the door raised an empty form instead of planning the flow it
+ * names.
+ */
+test("the plan door's line carries the flow, its workspace and its input", () => {
+  roundTrip("flow.plan", { name: "review", sourceCard: "author-run", repo: "o/r", against: "old-plan", input: {} },
+    "sourceCard=author-run against=old-plan review o/r {}",
+    { name: "review", sourceCard: "author-run", repo: "o/r", against: "old-plan", input: {} })
+  roundTrip("flow.plan", { name: "gateway/GraphFixture", repo: "codeplanesmithers/smithers-demo", input: { label: "e2e" } },
+    `gateway/GraphFixture codeplanesmithers/smithers-demo ${JSON.stringify({ label: "e2e" })}`,
+    { name: "gateway/GraphFixture", repo: "codeplanesmithers/smithers-demo", input: { label: "e2e" } })
+  // The row's own button names no workspace: the source card is what says
+  // which one, exactly as the Run door beside it does.
+  roundTrip("flow.plan", { name: "gateway/GraphFixture", sourceCard: "workflow-list-card" },
+    "sourceCard=workflow-list-card gateway/GraphFixture",
+    { name: "gateway/GraphFixture", sourceCard: "workflow-list-card" })
+})
+
 test("source-qualified flow input preserves arbitrary JSON", () => {
   const input = { requestExecutionId: "native  id", message: "sourceCard=literal  spaces" }
   roundTrip("flow.run", { name: "coding/vibe", sourceCard: "source-card", input },
@@ -172,4 +204,20 @@ test("manual setup work preserves source identity and multiline instructions acr
   roundTrip("setup.run", work, JSON.stringify(work), work)
   const edit = { cardId: work.cardId, stepId: "fix", field: "prompt", value: work.manual.prompt } as const
   roundTrip("setup.work", edit, JSON.stringify(edit), edit)
+})
+
+/*
+ * The Pause door (CHAT.md B1). `triggers.pause` declares `grammar: carried(...)`,
+ * which reads ONE JSON object and refuses a positional line — the canary
+ * walk's slash path filled the form's Slug field and was answered with
+ * "triggers.pause takes the values its button carries". A button never meets
+ * that refusal, because it carries the object the grammar reads.
+ */
+test("the Pause button's values are what triggers.pause's own grammar reads back", () => {
+  const entry = triggersFlows({} as unknown as CommandActions).find((flow) => nameOf(flow) === "triggers.pause")
+  const line = flowArgs("triggers.pause", { slug: "nightly", repo: "will/flows" })
+  expect(line).toBe(JSON.stringify({ slug: "nightly", repo: "will/flows" }))
+  expect(payloadFor("triggers.pause", line, entry?.metadata.grammar)).toEqual({ payload: { slug: "nightly", repo: "will/flows" } })
+  expect(payloadFor("triggers.pause", "nightly will/flows", entry?.metadata.grammar))
+    .toEqual({ error: "triggers.pause takes the values its button carries" })
 })

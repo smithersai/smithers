@@ -1,0 +1,714 @@
+/*
+ * The plan graph (cards/FlowPlanCard.tsx, cards/FlowGraphSurface.tsx) and the
+ * run graph (cards/FlowRunGraph.tsx, cards/FlowRunGraphSurface.tsx).
+ *
+ * The node box is 228x88 and the ranks run top to bottom (D-034), so the
+ * canvas is the only thing here that needs a height: everything else is the
+ * @smthrs/ui canvas anatomy, dressed.
+ *
+ * A node's state is a WORD before it is a colour (D-026), so every rule below
+ * that tints a node also has the word beside it in the markup; a screenshot
+ * and a screen reader read the same thing.
+ *
+ * WHICH TOKEN A WORD TAKES. Every word here is read at caption size, so it
+ * comes off the NEUTRAL ramp, which clears 4.5:1 on a node in all nine
+ * palettes and both themes. The semantic hues do not: `--danger` is 2.81:1 in
+ * solarized dark and `--brand` 3.05:1 in solarized light, and a word that is
+ * the carrier of a state (D-026) has to be legible in every cell. A hue is
+ * used only where it repeats something a word already said — a node's border,
+ * a trigger's tick, the open tab's underline — so no reader depends on one.
+ * cards/FlowGraphHardening.test.tsx holds both floors.
+ *
+ * MOTION IS OPT-IN. Every animation below sits inside a
+ * `prefers-reduced-motion: no-preference` block, so a reader who asked for
+ * less motion is handed none at all. There is no camera tween to disable:
+ * React Flow's `fitView` moves in one frame unless it is given a `duration`,
+ * and neither canvas gives it one.
+ */
+
+.flow-plan-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+}
+
+.flow-plan-head {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-plan-count {
+	font-size: var(--fs-md);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.flow-plan-error {
+	margin: 0;
+	font-size: var(--fs-small);
+}
+
+/*
+ * The canvas is as tall as this card says, which is what puts a followed node
+ * in frame.
+ *
+ * `@smthrs/ui` injects `.sui-canvas` at runtime (useInjectUiCss), so its
+ * `height: 100%; min-height: 240px` lands in a later sheet than this one and
+ * won at one class each: the canvas stood 240 tall while React Flow framed
+ * the graph for 420, and the node the camera was following was drawn below
+ * the box that draws it. Two classes settle it in the cascade.
+ */
+.sui-canvas.flow-plan-canvas {
+	height: clamp(560px, 65vh, 900px);
+}
+
+.flow-plan-canvas {
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+}
+
+.flow-graph-node {
+	position: relative;
+	width: 228px;
+	height: 88px;
+}
+
+.flow-graph-node[data-tier="irreversible"] {
+	border-color: var(--warning-border);
+}
+
+.flow-graph-node-foot {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.flow-graph-node-word {
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+/*
+ * The ring a keyboard reader steers by.
+ *
+ * React Flow owns the element that takes focus — the node card inside it is
+ * never the focus target — so the ring is drawn from that wrapper onto the
+ * box a reader can see (flowGraph/NodeAria.ts).
+ */
+.react-flow__node:focus-visible {
+	outline: none;
+}
+
+.react-flow__node:focus-visible .flow-graph-node {
+	outline: 2px solid var(--brand);
+	outline-offset: 2px;
+}
+
+.flow-graph-handle {
+	opacity: 0;
+}
+
+/*
+ * An edge is what makes the picture a graph rather than a list, so it is a
+ * graphical object a reader needs (WCAG 1.4.11) and it clears 3:1 against the
+ * canvas. Unset, it keeps React Flow's own `--xy-edge-stroke-default`, which
+ * is the same grey in all eighteen cells.
+ *
+ * The rules land on the PATH, not on the `<g>` the class sits on: React Flow
+ * sets `stroke` and `stroke-width` on `.react-flow__edge-path` itself, so a
+ * declaration on the group never reaches the line a reader sees.
+ */
+.flow-graph-edge .react-flow__edge-path {
+	stroke: var(--text-faint);
+	stroke-width: 1.6;
+}
+
+/* The run graph: the plan node id under the action tag (D-040). */
+.flow-run-node-id {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-run-node-attempt {
+	font-size: var(--fs-caption);
+	color: var(--text);
+}
+
+/*
+ * A node that is doing something, failed at it, or cannot say: the word is
+ * the product's full-strength ink instead of the quiet grey the settled ones
+ * wear, which is a difference a reader sees with the colours off.
+ *
+ * The ink is the whole of it: a settled node is never FADED. `opacity`
+ * composites the box and the word inside it over the canvas together, which
+ * drops `--text-muted` to 3.07:1 in solarized light and `--text-faint` to
+ * 2.89:1 in gruvbox light, under the floor at the top of this file. A
+ * `pending` node is painted at full strength and says `pending`.
+ */
+.flow-graph-node-word[data-state="running"],
+.flow-graph-node-word[data-state="failed"],
+.flow-graph-node-word[data-state="unproven"] {
+	color: var(--text);
+}
+
+.flow-graph-node[data-state="running"] {
+	border-color: var(--brand);
+}
+
+.flow-graph-node[data-state="failed"] {
+	border-color: var(--danger);
+}
+
+.flow-graph-edge-failure .react-flow__edge-path {
+	stroke-dasharray: 4 3;
+}
+
+/*
+ * The schedules that fire the plan (cards/FlowGraphTrigger.tsx).
+ *
+ * Each pane is a small stack: the schedule in words with its state, the
+ * chips it is registered under, the occurrences ahead of it, and the ledger
+ * behind it. Times are tabular so five of them line up as a column.
+ */
+
+.flow-trigger-panel {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.flow-trigger {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+
+.flow-trigger-head {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-trigger-word {
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-trigger-tick {
+	width: 8px;
+	height: 8px;
+	border-radius: var(--r-full);
+	background: var(--text-faint);
+}
+
+.flow-trigger-tick[data-live="true"] {
+	background: var(--success);
+}
+
+.flow-trigger-policy,
+.flow-trigger-doors {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--sp-1);
+}
+
+.flow-trigger-chip {
+	padding: 0 var(--sp-1);
+	border: 1px solid var(--border);
+	border-radius: var(--r-full);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-trigger-fires,
+.flow-trigger-ledger {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.flow-trigger-fires li,
+.flow-trigger-ledger li {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-trigger-pending {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-trigger-pending,
+.flow-trigger-zoned,
+.flow-trigger-utc {
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+}
+
+.flow-trigger-utc {
+	color: var(--text-muted);
+}
+
+.flow-trigger-outcome {
+	font-size: var(--fs-caption);
+}
+
+.flow-trigger-error {
+	font-size: var(--fs-caption);
+	color: var(--text);
+}
+
+/*
+ * What a node's history says it costs (D-030). It sits beside the state word
+ * and is absent whenever nothing measured that action tag: MINIMAL TEXT, so
+ * a node with no history carries no row saying it has none.
+ */
+.flow-graph-node-eta {
+	margin-left: var(--sp-2);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.flow-plan-eta {
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+/*
+ * The re-key preview: the work a second run would do, the estimate over it,
+ * and what the run it was compared against really took (D-030, L7).
+ */
+.flow-plan-rekey {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-plan-rerun,
+.flow-plan-rekey-eta,
+.flow-plan-was,
+.flow-plan-clean {
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.flow-plan-rerun {
+	color: var(--text);
+}
+
+/*
+ * A running node against its own p50: the bar fills with what has elapsed,
+ * by the engine's own clock. Past the p90 there is no bar, because the
+ * prediction has been overtaken and the node states the elapsed time alone.
+ *
+ * It anchors to the node box rather than to the canvas: `.flow-graph-node`
+ * is positioned below for exactly that, because the only other positioned
+ * ancestor is React Flow's own `.react-flow__node` wrapper, whose rule this
+ * file does not own.
+ */
+.flow-run-node-bar {
+	position: absolute;
+	inset-inline: 0;
+	bottom: 0;
+	height: 2px;
+	background: var(--border);
+}
+
+.flow-run-node-bar::after {
+	content: "";
+	display: block;
+	height: 100%;
+	width: calc(var(--flow-run-fill) * 100%);
+	background: var(--brand);
+}
+
+/*
+ * The node a graph has open (cards/FlowGraphDrawer.tsx).
+ *
+ * The mock's drawer is a 420px right-hand column; a card here is already a
+ * column in a transcript, so the drawer is the row under the canvas it
+ * belongs to and keeps the same anatomy: a head that names the node, a tab
+ * strip, and one scrolling body. Every value in it is engine data, so the
+ * body is monospaced and tabular and the labels are not.
+ */
+
+.flow-graph-drawer {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+
+.flow-graph-drawer-head {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+.flow-graph-drawer-tag {
+	font-weight: 600;
+}
+
+.flow-graph-drawer-id {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-graph-drawer-word {
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-graph-drawer-word[data-state="running"],
+.flow-graph-drawer-word[data-state="fired"],
+.flow-graph-drawer-word[data-state="failed"] {
+	color: var(--text);
+}
+
+.flow-graph-drawer-close {
+	margin-left: auto;
+	border: 0;
+	background: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.flow-graph-drawer-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-2);
+	border-bottom: 1px solid var(--border);
+}
+
+.flow-graph-drawer-tab {
+	padding: 0 0 var(--sp-1);
+	border: 0;
+	border-bottom: 2px solid transparent;
+	background: none;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	cursor: pointer;
+}
+
+.flow-graph-drawer-close:focus-visible,
+.flow-graph-drawer-tab:focus-visible,
+.flow-graph-depends-node:focus-visible,
+.flow-graph-code-open:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 2px;
+}
+
+.flow-graph-drawer-tab[aria-selected="true"] {
+	border-bottom-color: var(--brand);
+	color: var(--text);
+}
+
+.flow-graph-drawer-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	max-height: 320px;
+	overflow-y: auto;
+}
+
+.flow-graph-declaration {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: var(--sp-1) var(--sp-2);
+	margin: 0;
+}
+
+.flow-graph-declaration dt {
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-graph-declaration dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+.flow-graph-depends {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-1);
+}
+
+.flow-graph-depends-node,
+.flow-graph-code-open {
+	padding: 0 var(--sp-1);
+	border: 1px solid var(--border);
+	border-radius: var(--r-full);
+	background: none;
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	cursor: pointer;
+}
+
+.flow-graph-code {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	min-width: 0;
+}
+
+.flow-graph-code-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+/* The declared file itself, in the app's one code viewer (CodeSurface.tsx). */
+.flow-graph-code-file {
+	max-height: 24rem;
+	overflow: auto;
+	min-width: 0;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+
+.flow-graph-code-path {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+.flow-graph-code-crumbs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-graph-code-crumbs li + li::before {
+	content: "›";
+	padding-right: var(--sp-1);
+}
+
+.flow-graph-code-open {
+	font-family: inherit;
+}
+
+.flow-graph-events,
+.flow-graph-attempts {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.flow-graph-events li,
+.flow-graph-attempts li {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	font-size: var(--fs-caption);
+}
+
+.flow-graph-event-seq {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+.flow-graph-event-type {
+	font-family: var(--font-mono);
+}
+
+.flow-graph-event-word {
+	margin-left: auto;
+	color: var(--text-muted);
+}
+
+/* A schedule starts the plan, so its node is rounded on the leading edge (D-031). */
+.flow-graph-trigger-node {
+	border-radius: var(--r-4) var(--r-4) var(--r-sm) var(--r-sm);
+	border-style: dashed;
+}
+
+.flow-graph-trigger-node[data-trigger-state="fired"] {
+	border-color: var(--brand);
+}
+
+/*
+ * The two things that move, and only for a reader who has not asked for less.
+ *
+ * A running node breathes at its border, and a failure edge's dashes travel
+ * along it: the same two the mock animates (mockups/source/src/styles/canvas.css).
+ * Neither carries any state of its own — the word says `running`, and the
+ * edge is dashed whether it moves or not — so a reader who never sees the
+ * motion is told exactly the same thing.
+ */
+@media (prefers-reduced-motion: no-preference) {
+	.flow-graph-node[data-state="running"] {
+		animation: flow-graph-breathe 2.2s var(--ease-current) infinite;
+	}
+
+	.flow-graph-edge-failure .react-flow__edge-path {
+		animation: flow-graph-dash 620ms linear infinite;
+	}
+
+	@keyframes flow-graph-breathe {
+		0%,
+		100% {
+			border-color: var(--brand);
+		}
+
+		50% {
+			border-color: var(--border);
+		}
+	}
+
+	@keyframes flow-graph-dash {
+		to {
+			stroke-dashoffset: -14;
+		}
+	}
+}
+
+/* What this node's history says it costs: the number, then the evidence. */
+.flow-graph-drawer-duration {
+	display: inline-flex;
+	align-items: baseline;
+	gap: var(--sp-1);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.flow-graph-duration-samples {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+/*
+ * One row per attempt: the ordinal, how it ended, what it took.
+ *
+ * How it ended is a WORD, and the word is read at caption size, so it takes
+ * the neutral ramp like every other word here: the failed one wears the
+ * product's full-strength ink and the settled one the quiet grey. A hue at
+ * this size is under the 4.5:1 floor at the top of this file.
+ */
+.flow-graph-attempt-state {
+	color: var(--text-muted);
+}
+
+.flow-graph-attempts li[data-state="failed"] .flow-graph-attempt-state {
+	color: var(--text);
+}
+
+.flow-graph-attempt-n {
+	min-width: 1.25rem;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+.flow-graph-attempt-took {
+	margin-left: auto;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+/* The bounded, redacted preview of what a node settled with (D-052). */
+.flow-graph-output {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+}
+
+.flow-graph-output-preview {
+	max-height: 16rem;
+	overflow: auto;
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/*
+ * A typed failure's preview. The drawer's head already says `failed` in a
+ * word, so the hue only repeats it and is carried on the rule beside the
+ * text rather than in the text, which keeps the preview itself on the ink
+ * that clears 4.5:1 in all eighteen cells.
+ */
+.flow-graph-output[data-state="failed"] .flow-graph-output-preview {
+	border-left: 2px solid var(--danger);
+	padding-left: var(--sp-2);
+}
+
+.flow-graph-output-bytes,
+.flow-graph-output-truncated {
+	font-size: var(--fs-caption);
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/*
+ * A read the repository refused, where the file would have been. The
+ * sentence is the whole of the message, so it is read on the full-strength
+ * ink and the hue sits on the rule beside it (see the floor at the top).
+ */
+.flow-graph-code-error {
+	margin: 0;
+	padding-left: var(--sp-2);
+	border-left: 2px solid var(--danger);
+	font-size: var(--fs-caption);
+	color: var(--text);
+}
+
+/* The engine's own attempt count, on the tab that lists them. */
+.flow-graph-tab-count {
+	margin-left: var(--sp-1);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+/* Graphs remain interactive after planning or settlement. Older persisted
+   acted cards get the same presentation without rewriting their history. */
+.smithers-card[data-status="acted"]:has(.flow-plan-canvas) {
+	opacity: 1;
+}
+
+.smithers-card[data-maximized="true"] .sui-canvas.flow-plan-canvas {
+	height: calc(100dvh - 180px);
+	min-height: 560px;
+}

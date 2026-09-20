@@ -76,6 +76,7 @@ CloudSessionRowSchema,
 CloudWorkspaceRowSchema,
 ConnectorOperationSchema,
 DEFAULT_PALETTE,
+FlowDurationsRowSchema,
 FrameSchema,
 GitHubAppStatusRowSchema,
 HarnessSchema,
@@ -880,6 +881,15 @@ const COLLECTION_DEFINITIONS = {
     persisted: false as const,
     create: (_persistence: CollectionPersistence) => createCollection(localOnlyCollectionOptions({
       id: "app-repository-flows", schema: RepositoryFlowsRowSchema, getKey: byId,
+      onInsert: refuseDirectMutation, onUpdate: refuseDirectMutation, onDelete: refuseDirectMutation
+    }))
+  },
+  /* One flow's measured node durations, re-read per session: a prediction
+   * carried across launches would be made from a history that has moved. */
+  flowDurations: {
+    persisted: false as const,
+    create: (_persistence: CollectionPersistence) => createCollection(localOnlyCollectionOptions({
+      id: "app-flow-durations", schema: FlowDurationsRowSchema, getKey: byId,
       onInsert: refuseDirectMutation, onUpdate: refuseDirectMutation, onDelete: refuseDirectMutation
     }))
   }

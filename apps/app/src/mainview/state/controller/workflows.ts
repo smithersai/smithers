@@ -20,6 +20,16 @@ import { flowArgs } from "../../flows/FlowArgs"
 import { projectRuntimeCard, runtimeApprovalIdOf, runtimeApprovalKey } from "../RuntimeProjection"
 import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 import { createWorkflowLaunchController } from "./workflow-launch"
+import { canonical, digest } from "@smthrs/core/Digest"
+import { planCardGraph, planCardNode, planCardSnapshot } from "../../cards/PlanNodes"
+import type { FlowDurationsReader } from "./flowDurations"
+import { foldRunGraph, runGraphOf } from "../../cards/FlowGraphStatus"
+import { rekeySummary, type PreviewNode, type RekeySummary } from "../../cards/flowGraph/Rekey"
+import { runtimeRunKey } from "../RuntimeProjection"
+import { isTriggerNodeId } from "../../cards/FlowGraphTriggerNode"
+import { actorSharedState } from "../ActorBindings"
+import { authoredSources } from "../FlowAuthoringReceipts"
+import { createFlowAuthoringController } from "./flowAuthoring"
 
 /**
  * A launch the workspace refused, in the wire's own words and shape: the
@@ -41,6 +51,8 @@ export interface WorkflowController {
   /** The Flows pane: the surface switch, and the same listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
+  /** What a flow WOULD run: the plan card, filled in the background. */
+  readonly planFlow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string, against?: string) => Promise<string | void | { readonly value: string }>
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
@@ -91,7 +103,10 @@ export const createWorkflowController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
   pumpWorkflowRun: (cardId: string) => Promise<void>,
-  renderFlowForm?: FormsController["renderFlowForm"]
+  renderFlowForm?: FormsController["renderFlowForm"],
+  /* A plan card draws a graph, so the graph's predictions are read once, as
+   * the card opens (controller/flowDurations.ts). */
+  readFlowDurations?: FlowDurationsReader
 ): WorkflowController => {
   const { store, baseUrl, boundedFetch, gateway, unref, workflowPollMs, withToast } = ctx
   const RUN_POLL_MS = workflowPollMs
@@ -252,6 +267,10 @@ export const createWorkflowController = (
 
   const requests = createWorkflowLaunchController(ctx, nextTranscriptOrdinal, pumpWorkflowRun, provisionWorkspaceImpl)
 
+  const authoring = actorSharedState(ctx, "flow-authoring", () => createFlowAuthoringController(ctx, nextTranscriptOrdinal, provisionWorkspace, pumpWorkflowRun))
+  ctx.observeFlowAuthoring = authoring.observe
+  ctx.resumeFlowAuthoring = authoring.resume
+
   const upsertRunCard = (args: {
     readonly runId: string
     readonly repo: string
@@ -261,6 +280,8 @@ export const createWorkflowController = (
     readonly workspaceId?: string
     readonly input?: Record<string, unknown>
     readonly kind?: string
+    /** The plan the launch was approved on; absent for a run this client did not start. */
+    readonly plan?: NonNullable<Extract<Card, { kind: "run-trace" }>["payload"]["plan"]>
   }): string => {
     const cardId = runCardIdFor(store, args)
     const existing = store.collections.cards.get(cardId)
@@ -286,6 +307,8 @@ export const createWorkflowController = (
         ...(held?.error === undefined ? {} : { error: held.error }),
         ...(args.input === undefined ? held?.input === undefined ? {} : { input: held.input } : { input: args.input }),
         ...(args.kind === undefined ? {} : { kind: args.kind }),
+        /* The launch's own plan snapshot; a re-open keeps the one already held. */
+        ...(args.plan === undefined ? held?.plan === undefined ? {} : { plan: held.plan } : { plan: args.plan }),
         /*
          * The reader's view of the trace (spec 06 §5) survives a re-open: a
          * card already in hand keeps its tab, filter, selection, cursor and
@@ -298,6 +321,7 @@ export const createWorkflowController = (
             ...(held.facet === undefined ? {} : { facet: held.facet }),
             ...(held.filter === undefined ? {} : { filter: held.filter }),
             ...(held.traceView === undefined ? {} : { traceView: held.traceView }),
+            ...(held.graph === undefined ? {} : { graph: held.graph }),
             ...(held.codingChangeId === undefined ? {} : { codingChangeId: held.codingChangeId }),
             ...(held.events === undefined ? {} : { events: held.events }),
             ...(held.selection === undefined ? {} : { selection: held.selection }),
@@ -309,6 +333,207 @@ export const createWorkflowController = (
     store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
     void pumpWorkflowRun(cardId)
     return cardId
+  }
+
+  /*
+   * One card per (repo, flow, input), so a repeated ask moves the card it
+   * already has.
+   *
+   * The input goes in as a digest of its RFC 8785 canonical bytes, not as its
+   * JSON: the id reaches the DOM as an attribute and the toast as
+   * `toast-flow.plan:<id>`, and `JSON.stringify` is key-order sensitive, so
+   * the same input typed twice in another order would grow a second card.
+   */
+  const planCardId = (repo: string, name: string, input: Record<string, unknown>, against?: string): string =>
+    `flow-plan-${repo}-${name}-${Object.keys(input).length === 0 ? "" : digest(canonical(input)).slice(0, 16)}${
+      against === undefined ? "" : `-vs-${against}`}`
+
+  /** The plan requests this controller has in flight, by card id. */
+  const planning = new Set<string>()
+  /** The newest ask per card, so an older answer that lands late writes nothing. */
+  const planAttempts = new Map<string, number>()
+
+  /*
+   * A plan the reload outlived.
+   *
+   * Both maps above are this controller's memory, so a `pending` plan card
+   * read back from storage has nothing behind it: no request is in flight,
+   * nothing will ever settle it, and the body offers Run over a graph it
+   * never drew. Planning is cheap and idempotent, but a silent re-issue would
+   * also be a launch nobody asked for on this visit, so the card settles to
+   * the failure it already is and keeps the Plan door that asks again.
+   */
+  for (const card of store.collections.cards.values()) {
+    if (card.kind !== "flow-plan" || card.payload.status !== "pending") continue
+    if (card.payload.sourceReceipt !== undefined) continue
+    store.dispatch({
+      type: "card.upsert",
+      actor: "system",
+      card: {
+        ...card,
+        status: "acted",
+        payload: { ...card.payload, status: "failed", error: "The app restarted before this plan came back." }
+      }
+    })
+  }
+
+  /**
+   * Fill one plan card from the workspace, in the background.
+   *
+   * A refusal stays on the card with the plan door beside it: the toast that
+   * carried the progress is gone four seconds later, and a person who asked
+   * for a graph and got nothing has to be able to see why and ask again.
+   */
+  /**
+   * The re-key preview: a fresh plan against the plan a run was approved on.
+   *
+   * Every number comes off evidence this session already holds — that run's
+   * plan snapshot, its journal, and the flow's measured history — so the
+   * preview costs one `Plan` call and nothing else. It answers nothing when
+   * the run it names is not one this client launched: without the plan that
+   * run was approved on there is no previous key to compare against, and a
+   * comparison with a plan taken now would say every node is unchanged.
+   */
+  const previewRekey = (
+    repo: string,
+    flowId: string,
+    against: string,
+    nextNodes: ReadonlyArray<PreviewNode>
+  ): RekeySummary | undefined => {
+    const card = [...store.collections.cards.values()].find((candidate) =>
+      candidate.kind === "run-trace" && candidate.payload.runId === against && candidate.payload.repo === repo)
+    if (card?.kind !== "run-trace" || card.payload.plan === undefined) return undefined
+    const events = store.committedRuntimeRun(runtimeRunKey({
+      repo,
+      runId: against,
+      ...(card.payload.workspaceId === undefined ? {} : { workspaceId: card.payload.workspaceId })
+    }))?.events ?? []
+    const previousNodes = card.payload.plan.nodes
+    const durations = [...store.collections.flowDurations.values()]
+      .filter((row) => row.repo === repo && row.flowId === flowId)
+    return rekeySummary({
+      flowId,
+      previousNodes,
+      nextNodes,
+      events,
+      status: runGraphOf(foldRunGraph(events), { planNodeIds: previousNodes.map((node) => node.id), flow: card.payload.workflow })?.status
+        ?? new Map(),
+      durations
+    })
+  }
+
+  const fillPlanCard = async (args: {
+    readonly id: string
+    readonly repo: string
+    readonly binding: GatewayWorkspaceBinding
+    readonly name: string
+    readonly input: Record<string, unknown>
+    readonly attempt: number
+    /** The run this plan was asked to be compared against (the re-key preview). */
+    readonly against?: string
+    readonly previousPlan?: Extract<Card, { kind: "flow-plan" }>["payload"]["previousPlan"]
+    readonly sourceReceipt?: Extract<Card, { kind: "flow-plan" }>["payload"]["sourceReceipt"]
+  }): Promise<void> => {
+    const settle = (patch: Extract<Card, { kind: "flow-plan" }>["payload"]): string | void => {
+      // An answer to an older ask, or to a controller that has since closed,
+      // writes nothing: the card belongs to whatever was asked last.
+      if (ctx.disposed || planAttempts.get(args.id) !== args.attempt) return
+      const card = store.collections.cards.get(args.id)
+      if (card?.kind !== "flow-plan") return
+      /*
+       * The reader's open drawer is theirs, not the answer's, so a re-plan
+       * keeps it while the graph still draws that node: a drawer pointed at a
+       * node this plan no longer has would be open over nothing
+       * (controller/graph.ts). A schedule is drawn beside the plan and is
+       * never in `nodes`, so a re-plan cannot take it away.
+       */
+      const held = card.payload.view
+      const drawn = (node: string): boolean =>
+        isTriggerNodeId(node) || (patch.nodes ?? []).some((candidate) => candidate.id === node)
+      const kept = held?.node !== undefined && drawn(held.node) ? held : undefined
+      store.dispatch({
+        type: "card.upsert",
+        actor: ctx.commandActor,
+        card: {
+          ...card,
+          status: patch.status === "failed" ? "error" : "active",
+          payload: kept === undefined ? patch : { ...patch, view: kept }
+        }
+      })
+      return patch.status === "failed" ? patch.error : undefined
+    }
+    try {
+      await withToast(`flow.plan:${args.id}`, `Planning ${args.name}`, `Planned ${args.name}`, async () => {
+        const provisioned = await provisionWorkspace(args.repo, args.binding)
+        if (provisioned !== true) return settle(refusedPlan(args, provisioned)) ?? provisioned
+        const planned = await gateway.plan(args.repo, args.name, args.input, args.binding)
+        if (planned.status !== "ok") return settle(refusedPlan(args, planned.message)) ?? planned.message
+        const nodes = planned.value.nodes.map(planCardNode)
+        /*
+         * A comparison reads the flow's measured history BEFORE it is
+         * computed. The estimate is a number off that history, and a read
+         * fired beside the preview would answer after the card had already
+         * frozen, so the first ask of a session would ship counts with no
+         * estimate while the gateway held every row. The reader swallows
+         * every refusal (controller/flowDurations.ts), so a box that will not
+         * serve the projection costs the preview its estimate and nothing
+         * else.
+         */
+        if (args.against !== undefined) await readFlowDurations?.(args.repo, args.name, args.binding)
+        /* The comparison is over evidence already on the card and in the
+         * collections, so it happens here, with the fresh plan in hand. */
+        const rekey = args.against === undefined ? undefined : previewRekey(args.repo, args.name, args.against, nodes)
+        settle({
+          repo: args.repo,
+          flowId: args.name,
+          status: "done",
+          ...(args.binding.workspaceId === undefined ? {} : { workspaceId: args.binding.workspaceId }),
+          ...(Object.keys(args.input).length === 0 ? {} : { input: args.input }),
+          planId: planned.value.planId,
+          digest: planned.value.digest,
+          nodes,
+          /*
+           * The labelled edges, where each node was declared, and the
+           * revision those sites were read at — the same reduction the
+           * launch path writes onto a run (cards/PlanNodes.ts), so a plan
+           * card and a run's plan snapshot carry one shape.
+           */
+          ...(planned.value.graph === undefined ? {} : { graph: planCardGraph(planned.value.graph) }),
+          ...(args.against === undefined ? {} : { against: args.against }),
+          ...(args.previousPlan === undefined ? {} : { previousPlan: args.previousPlan }),
+          ...(args.sourceReceipt === undefined ? {} : { sourceReceipt: args.sourceReceipt }),
+          ...(rekey === undefined ? {} : { rekey })
+        })
+        // The graph is drawn, so its predictions are worth reading: one
+        // call, off the toast's path, whose refusal shows as no numbers. A
+        // comparison has already read them, above.
+        if (args.against === undefined) void readFlowDurations?.(args.repo, args.name, args.binding)
+        // Not a string: `withToast` reads a string outcome as the honest
+        // failure line, so a drawn graph that answered with one would resolve
+        // its own toast as a failure. The card is the claim surface anyway.
+        return true
+      })
+    } finally {
+      planning.delete(args.id)
+    }
+  }
+
+  /** The plan card's payload for a refusal, keeping whatever graph it already drew. */
+  const refusedPlan = (
+    args: { readonly id: string; readonly repo: string; readonly binding: GatewayWorkspaceBinding; readonly name: string; readonly input: Record<string, unknown> },
+    message: string
+  ): Extract<Card, { kind: "flow-plan" }>["payload"] => {
+    const card = store.collections.cards.get(args.id)
+    const held = card?.kind === "flow-plan" ? card.payload : undefined
+    return {
+      ...(held ?? { repo: args.repo, flowId: args.name }),
+      repo: args.repo,
+      flowId: args.name,
+      status: "failed",
+      error: message,
+      ...(args.binding.workspaceId === undefined ? {} : { workspaceId: args.binding.workspaceId }),
+      ...(Object.keys(args.input).length === 0 ? {} : { input: args.input })
+    }
   }
 
   const launchWorkflow = async (args: {
@@ -323,6 +548,22 @@ export const createWorkflowController = (
     const launch = await gateway.launch(args.repo, args.workflow, args.input, args.binding)
     if (launch.status !== "ok") return { message: launch.message, ...(launch.code === undefined ? {} : { code: launch.code }) }
     const { runId } = launch.value
+    /*
+     * The plan snapshot the graph view draws before the first event arrives.
+     * It is written only where the flow builder is on (D-038: the engine
+     * records the nodes whatever the app flag says, and a launch with the
+     * flag off must persist exactly what it persisted before the lane), and
+     * only when the workspace named the plan AND answered with nodes: a plan
+     * with no nodes is a workspace that serves no graph, and an empty node
+     * list on the card would read as a flow that does nothing.
+     *
+     * The labelled edges and declaration sites ride with it when that same
+     * answer carried them. Dropping them here left the card with `dependsOn`
+     * alone, which says WHICH nodes wait and never WHY, and the reader of a
+     * just-launched run got an unlabelled graph the plan door had already
+     * been told the reasons for.
+     */
+    const planned = ctx.services.features?.flowBuilder === true ? planCardSnapshot(launch.value) : undefined
     upsertRunCard({
       runId,
       repo: args.repo,
@@ -331,7 +572,8 @@ export const createWorkflowController = (
       firstStep: `Started ${args.workflow} on ${args.repo} (run ${runId}).`,
       ...(launch.value.workspaceId === undefined ? {} : { workspaceId: launch.value.workspaceId }),
       input: args.input,
-      ...(args.kind === undefined ? {} : { kind: args.kind })
+      ...(args.kind === undefined ? {} : { kind: args.kind }),
+      ...(planned === undefined ? {} : { plan: planned })
     })
     return { runId }
   }
@@ -452,6 +694,7 @@ export const createWorkflowController = (
     const repo = target.repo
     const binding = flowAuthoringBinding(repo)
     if ("error" in binding) return refuseCreate(binding.error)
+    if (ctx.services.features?.flowBuilder === true) return authoring.request(description, repo, binding, ctx.commandActor)
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return refuseCreate(provisioned)
     /*
@@ -503,7 +746,7 @@ export const createWorkflowController = (
     { readonly repo: string; readonly binding: GatewayWorkspaceBinding } | { readonly error: string } => {
     if (sourceCard !== undefined) {
       const card = store.collections.cards.get(sourceCard)
-      if (card?.kind !== "run-trace" && card?.kind !== "workflow-list") return { error: "The source run or catalog card is unavailable." }
+      if (card?.kind !== "run-trace" && card?.kind !== "workflow-list" && card?.kind !== "flow-plan") return { error: "The source run or catalog card is unavailable." }
       if (repoArg !== undefined && repoArg !== card.payload.repo) return { error: "The source card belongs to another repository." }
       if (card.kind === "workflow-list" && card.payload.gatewayBindingVersion !== 1) {
         return { error: "This catalog has no recorded gateway. Refresh the flows from a source run first." }
@@ -600,6 +843,76 @@ export const createWorkflowController = (
       return `The inputs do not match ${name}'s declared schema.`
     }
     return requests.start({ repo, binding, workflow: name, input, actor: ctx.commandActor })
+  }
+
+  /**
+   * Plan a flow: what it WOULD run, before anything runs.
+   *
+   * The command returns as soon as the card exists. Planning crosses the
+   * relay to a workspace that may still be provisioning, and a chat that sat
+   * behind it would be a chat that stops answering because somebody asked to
+   * see a graph. The card is the claim surface; the toast carries the
+   * progress; the answer fills the card when it lands.
+   */
+  const planFlow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string, against?: string): Promise<string | void | { readonly value: string }> => {
+    if (ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
+    const guard = workflowIdentityGuard()
+    if (guard !== undefined) return guard
+    const target = workflowScope(repoArg, sourceCard)
+    if ("error" in target) return target.error
+    const { repo, binding } = target
+    const input = inputArg ?? {}
+    // One card per (repo, flow, input): asking twice for the same plan moves
+    // the card rather than growing a second one, and a second ask while the
+    // first is in flight is the same request, not a second durable Plan.
+    /* A preview is its own card: it states numbers about one run, and a
+     * plain re-plan of the same flow must not silently drop them. */
+    const previousCard = against === undefined ? undefined : [...store.collections.cards.values()].find((card) =>
+      card.kind === "flow-plan" && card.payload.repo === repo && card.payload.workspaceId === binding.workspaceId && card.payload.flowId === name && card.payload.planId === against)
+    const prior = previousCard?.kind === "flow-plan" ? previousCard.payload : undefined
+    const previousPlan = prior?.planId === undefined || prior.digest === undefined || prior.nodes === undefined ? undefined
+      : { planId: prior.planId, digest: prior.digest, nodes: prior.nodes }
+    const id = previousCard?.id ?? planCardId(repo, name, input, against)
+    if (planning.has(id)) return { value: `plan-requested flow=${name} repo=${repo}` }
+    const attempt = (planAttempts.get(id) ?? 0) + 1
+    planAttempts.set(id, attempt)
+    planning.add(id)
+    const existing = store.collections.cards.get(id)
+    const held = existing?.kind === "flow-plan" ? existing.payload : undefined
+    const source = sourceCard === undefined ? undefined : store.collections.cards.get(sourceCard)
+    const receipt = source?.kind === "run-trace" && source.payload.workflow === FLOW_AUTHORING_ENTRY
+      ? authoredSources(store.committedRuntimeRun(runtimeRunKey(source.payload))?.events ?? []).filter(receipt => receipt.flowId === name).at(-1)
+      : undefined
+    const sourceReceipt = receipt === undefined || source === undefined ? held?.sourceReceipt : { runCardId: source.id, receipt: receipt.receipt }
+    store.dispatch({
+      type: "card.upsert",
+      actor: ctx.commandActor,
+      card: {
+        id,
+        kind: "flow-plan",
+        title: `${name} — ${repo}`,
+        status: "active",
+        createdAt: existing?.createdAt ?? Date.now(),
+        ordinal: sourceReceipt !== undefined && source?.kind === "run-trace" ? Math.max(0, source.ordinal - 1) : existing?.ordinal ?? nextTranscriptOrdinal(),
+        payload: {
+          repo,
+          flowId: name,
+          status: "pending",
+          ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }),
+          ...(Object.keys(input).length === 0 ? {} : { input }),
+          // A re-plan keeps the graph it last drew, and the drawer the reader
+          // has open on it, until a new one lands.
+          ...(held?.nodes === undefined ? {} : { nodes: held.nodes }),
+          ...(held?.graph === undefined ? {} : { graph: held.graph }),
+          ...(held?.view === undefined ? {} : { view: held.view }),
+          ...(against === undefined ? {} : { against }),
+          ...(previousPlan === undefined ? held?.previousPlan === undefined ? {} : { previousPlan: held.previousPlan } : { previousPlan }),
+          ...(sourceReceipt === undefined ? {} : { sourceReceipt })
+        }
+      }
+    })
+    void fillPlanCard({ id, repo, binding, name, input, attempt, previousPlan: previousPlan ?? held?.previousPlan, sourceReceipt, ...(against === undefined ? {} : { against }) })
+    return { value: `plan-requested flow=${name} repo=${repo}` }
   }
 
   /**
@@ -784,6 +1097,7 @@ export const createWorkflowController = (
     listWorkspaceWorkflows,
     showFlows,
     runWorkflow,
+    planFlow,
     chooseWorkflowRepo,
     forwardApprovalDecision,
     workflowIdentityGuard,

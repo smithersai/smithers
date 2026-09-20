@@ -1,6 +1,6 @@
 ---
 title: "Find runs and page through them"
-description: "List the flows a host can plan and the runs it knows about: the five run filters, the page bounds a listing enforces, the cursor contract, and the two refusals a listing answers instead of guessing."
+description: "List the flows a host can plan and the runs it knows about: the run filters, the page bounds a listing enforces, the cursor contract, and the two refusals a listing answers instead of guessing."
 sidebar:
   order: 2
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/control/docs/guides/list-runs.md"
@@ -30,19 +30,33 @@ const listed = yield * control.list({ _tag: "runs", filters: { status: "parked" 
 const runs = listed._tag === "runs" ? listed.items : []
 ```
 
-Five filters are supported, and they combine:
+Six filters are supported, and they combine:
 
-| Filter        | Selects                                             |
-| ------------- | --------------------------------------------------- |
-| `runId`       | Exactly one run, read directly rather than scanned. |
-| `flowId`      | Runs of one flow.                                   |
-| `status`      | Runs in one of the seven `RunStatus` values.        |
-| `parentRunId` | The runs one run spawned, forked, or handed off to. |
-| `lineageId`   | Every round of one trampoline lineage.              |
+| Filter        | Selects                                                      |
+| ------------- | ------------------------------------------------------------ |
+| `runId`       | Exactly one run, read directly rather than scanned.          |
+| `flowId`      | Runs of one flow.                                            |
+| `status`      | Runs in one of the seven `RunStatus` values.                 |
+| `terminal`    | `true`: completed, failed or cancelled; `false`: unfinished. |
+| `parentRunId` | The runs one run spawned, forked, or handed off to.          |
+| `lineageId`   | Every round of one trampoline lineage.                       |
 
-Filtering on `runId` is one read. Everything else projects every row, so prefer
-`runId` when you already know it: a monitor pays the wide read once a beat, and
-so does every `smthrs status <run>`.
+Filtering on `runId` is one read. Other queries filter before decoding the
+selected page. An executor that supplies observed status is post-filtered to
+keep the returned status consistent.
+
+Use `order: "newest"` to order by creation time descending, with stable
+sequence/id tie breakers. Omission preserves the historical order. A cursor
+is bound to both its filters and order. For example, duration history asks:
+
+```ts
+const recent = yield * control.list({
+  _tag: "runs",
+  filters: { flowId: "ops/Deploy", terminal: true },
+  order: "newest",
+  limit: 20
+})
+```
 
 `filters.principalId` is on the wire and is refused rather than removed.
 Version 1.0.0-rc.0 records no launch principal on a run summary, so there is
