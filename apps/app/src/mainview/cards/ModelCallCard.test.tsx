@@ -2,7 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEXT_MAX, ModelCallCardPayloadSchema } from "@smthrs/rpc/ConfiguredModel"
+import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEMPERATURE_TEXT_MAX, MODEL_CALL_TEXT_MAX, ModelCallCardPayloadSchema } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelCallCardPayload, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
 import type { Card } from "../state/AppState"
 import { modelAnswerLine, ModelCallCardBody, modelCallPill } from "./ModelCallCard"
@@ -45,7 +45,10 @@ const answered: ModelTestResult = {
     q2: { type: "score", value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
   } }
 }
-const generation: ModelCallCardPayload["request"] = { kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64, temperature: 0.2 }
+const generation: ModelCallCardPayload["request"] = { kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64, temperature: "0.2" }
+/** An ask that is out: the snapshot the card holds while it is. */
+const out = (request: ModelCallCardPayload["request"]): NonNullable<ModelCallCardPayload["pending"]> =>
+  ({ requestId: "ask-0001", request, binding: { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" }, owner: null })
 
 /** A payload the wire accepts: a fixture the schema refuses would prove nothing about the card. */
 const card = (payload: ModelCallCardPayload): ModelCallCard => ({
@@ -191,9 +194,14 @@ describe("the composer, a decision request", () => {
     expect([ask.disabled, ask.textContent, ask.getAttribute("data-flow"), ask.getAttribute("data-flow-args")]).toEqual([false, "Ask", "model.ask", "judge"])
     ask.click()
     expect(ready.calls).toEqual([["model.ask", "judge"]])
-    const asking = render({ model: "judge", request: decision, asking: true })
+    const asking = render({ model: "judge", request: decision, pending: out(decision) })
     expect(asking.root.querySelector<HTMLButtonElement>('[data-testid="model-call-ask"]')?.disabled).toBe(true)
     expect(asking.root.getAttribute("data-asking")).toBe("true")
+    // A rung named as an object's prototype is on screen as typed, beside why it cannot be asked.
+    const reserved = render({ model: "judge", request: { ...decision, questions: { q2: { type: "score", instructions: "How sure?", criteria: ["__proto__", "high"] } } } })
+    expect(input(reserved.root, '[data-option="__proto__"] input').value).toBe("__proto__")
+    expect(reserved.root.querySelector('[data-testid="model-call-problem"]')?.textContent).toBe("name_reserved · q2 · __proto__")
+    expect(reserved.root.querySelector<HTMLButtonElement>('[data-testid="model-call-ask"]')?.disabled).toBe(true)
   })
 
   test("the answer stands beside each question as its value and number, and reads stale once the request moves on", () => {
@@ -220,7 +228,7 @@ describe("the composer, a decision request", () => {
     expect([result?.textContent, result?.getAttribute("data-ok"), result?.getAttribute("role")]).toEqual(["refused · 429", "false", "alert"])
     expect(root.querySelector('[data-testid="model-call-fixture"]')).toBeNull()
     expect(modelCallPill(card({ model: "judge", request: decision, response: { askedAt: 1, request: decision, result: refused } }))).toBe("failed")
-    expect(modelCallPill(card({ model: "judge", request: decision, asking: true }))).toBe("running")
+    expect(modelCallPill(card({ model: "judge", request: decision, pending: out(decision) }))).toBe("running")
     expect(modelCallPill(card({ model: "judge", request: decision }))).toBe("done")
   })
 
@@ -260,6 +268,40 @@ describe("the composer, a generation request", () => {
     expect(root.querySelector('[data-testid="model-call-fixture"]')).toBeNull()
     expect(input(root, '[data-testid="model-call-system"]').getAttribute("maxlength")).toBe(String(MODEL_CALL_TEXT_MAX))
     expect(input(root, '[data-testid="model-call-prompt"]').getAttribute("maxlength")).toBe(String(MODEL_CALL_TEXT_MAX))
+  })
+
+  test("a Max tokens the draft cannot hold commits as 0, like any text that is no whole number, so the box never shows a number the ask would not send", () => {
+    const { root, calls, args, rerender } = render({ model: "writer", request: generation })
+    const box = () => input(root, '[data-testid="model-call-max-tokens"]')
+    const unheld = ["99999999999999999999", "9007199254740993", "64.0000000000000001", "1e3", "1.5", "-5", ""]
+    for (const typed of unheld) type(box(), typed)
+    expect(calls.map(args)).toEqual(unheld.map(() => ({ id: "writer", maxTokens: 0 })))
+    type(box(), "128")
+    expect(args(calls.at(-1)!)).toEqual({ id: "writer", maxTokens: 128 })
+    rerender({ model: "writer", request: { ...generation, maxTokens: 0 } })
+    const problem = root.querySelector('[data-testid="model-call-problem"]')
+    expect([problem?.textContent, problem?.getAttribute("data-problem")]).toEqual(["max_tokens · 1–4096", "max_tokens"])
+    expect((root.querySelector('[data-testid="model-call-ask"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  test("the temperature on screen is the temperature that would be asked: what is typed is committed as typed, and one that is no number from 0 to 2 waits beside its reason", () => {
+    const { root, calls, args, rerender } = render({ model: "writer", request: generation })
+    const temperature = () => input(root, '[data-testid="model-call-temperature"]')
+    // Free text: a number box hands back nothing for text it cannot read, and the draft would then say something the screen does not.
+    expect([temperature().getAttribute("type"), temperature().getAttribute("inputmode"), temperature().getAttribute("maxlength")]).toEqual(["text", "decimal", String(MODEL_CALL_TEMPERATURE_TEXT_MAX)])
+    for (const typed of ["3", "-", "warm"]) type(temperature(), typed)
+    expect(calls.map(args)).toEqual([{ id: "writer", temperature: "3" }, { id: "writer", temperature: "-" }, { id: "writer", temperature: "warm" }])
+    rerender({ model: "writer", request: { ...generation, temperature: "3" } })
+    expect(temperature().value).toBe("3")
+    expect(temperature().getAttribute("aria-invalid")).toBe("true")
+    const problem = root.querySelector('[data-testid="model-call-problem"]')
+    expect([problem?.textContent, problem?.getAttribute("data-problem"), problem?.getAttribute("role")]).toEqual(["temperature · 0–2", "temperature", "alert"])
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="model-call-ask"]')?.disabled).toBe(true)
+    rerender({ model: "writer", request: { ...generation, temperature: "1.5" } })
+    expect(temperature().value).toBe("1.5")
+    expect(temperature().getAttribute("aria-invalid")).toBeNull()
+    expect(root.querySelector('[data-testid="model-call-problem"]')).toBeNull()
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="model-call-ask"]')?.disabled).toBe(false)
   })
 
   test("an answer reads as its value and its number", () => {

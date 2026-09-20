@@ -6,12 +6,14 @@
  * request is a system prompt, a prompt and two knobs. Every control commits
  * through a flow (state/controller/modelCall.ts), as the flow form does, so
  * the draft is on disk at every keystroke and the agent composes through the
- * same doors. The answer stands beside the question it answered; once the
- * request no longer matches the request it answered, it reads as stale.
+ * same doors. What is on screen is what Ask reads: a value the request
+ * cannot carry stays in its box beside the reason, and Ask waits. The answer
+ * stands beside the question it answered; once the request no longer matches
+ * the request it answered, it reads as stale.
  */
 import { Button } from "@smthrs/ui"
-import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEXT_MAX, MODEL_FIELD_KINDS, MODEL_QUESTION_TYPES, modelCallProblemOf } from "@smthrs/rpc/ConfiguredModel"
-import type { ModelAnswer, ModelCallDraft, ModelQuestion, ModelStateField } from "@smthrs/rpc/ConfiguredModel"
+import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEMPERATURE_TEXT_MAX, MODEL_CALL_TEXT_MAX, MODEL_FIELD_KINDS, MODEL_QUESTION_TYPES, modelCallProblemOf } from "@smthrs/rpc/ConfiguredModel"
+import type { ModelAnswer, ModelCallDraft, ModelCallProblem, ModelQuestion, ModelStateField } from "@smthrs/rpc/ConfiguredModel"
 import { flowAction } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import type { Card } from "../state/AppState"
@@ -33,6 +35,9 @@ const sync = (text: string) => (node: HTMLInputElement | HTMLTextAreaElement | n
   if (node === null || node.value === text || node.ownerDocument.activeElement === node) return
   node.value = text
 }
+
+/** The whole number a box shows, or 0, which no bound admits: text that is not digits alone, and digits past what a number holds exactly, would go on showing while the ask sent something else. */
+const wholeNumberOf = (text: string): number => /^\d+$/.test(text.trim()) && Number.isSafeInteger(Number(text)) ? Number(text) : 0
 
 /** An answer as its value and its number. No sentence. */
 export const modelAnswerLine = (answer: ModelAnswer): string => {
@@ -147,7 +152,9 @@ const DecisionBody = ({ id, request, answers, onRunCommand }: { readonly id: str
   )
 }
 
-const GenerationBody = ({ id, request, text, onRunCommand }: { readonly id: string; readonly request: Generation; readonly text: string | undefined; readonly onRunCommand: RunCommand }) => {
+const GenerationBody = ({ id, request, text, problem, onRunCommand }: { readonly id: string; readonly request: Generation; readonly text: string | undefined; readonly problem: ModelCallProblem | undefined; readonly onRunCommand: RunCommand }) => {
+  // The draft keeps the temperature as typed, so the box shows exactly what an Ask would read.
+  const temperature = request.temperature === undefined ? "" : String(request.temperature)
   const set = (patch: Partial<Pick<Generation, "system" | "prompt" | "maxTokens">> & { temperature?: string }) =>
     onRunCommand("model.prompt", flowArgs("model.prompt", { id, ...patch }))
   return (
@@ -161,11 +168,12 @@ const GenerationBody = ({ id, request, text, onRunCommand }: { readonly id: stri
       <div className="model-call-knobs">
         <label className="model-call-row"><span>Max tokens</span>
           <input type="number" aria-label="Max tokens" data-testid="model-call-max-tokens" min={1} step={1} defaultValue={String(request.maxTokens)} ref={sync(String(request.maxTokens))}
-            onInput={(event) => set({ maxTokens: Number.isInteger(Number(event.currentTarget.value)) && event.currentTarget.value.trim() !== "" ? Number(event.currentTarget.value) : 0 })} />
+            onInput={(event) => set({ maxTokens: wholeNumberOf(event.currentTarget.value) })} />
         </label>
         <label className="model-call-row"><span>Temperature</span>
-          <input type="number" aria-label="Temperature" data-testid="model-call-temperature" min={0} max={2} step={0.1} defaultValue={request.temperature === undefined ? "" : String(request.temperature)}
-            ref={sync(request.temperature === undefined ? "" : String(request.temperature))}
+          {/* Text, not a number box: that one reports "" for whatever it cannot read, and the draft would then differ from the screen. */}
+          <input type="text" inputMode="decimal" aria-label="Temperature" data-testid="model-call-temperature" maxLength={MODEL_CALL_TEMPERATURE_TEXT_MAX} defaultValue={temperature} ref={sync(temperature)} spellCheck={false}
+            aria-invalid={problem?.code === "temperature" ? true : undefined}
             onInput={(event) => set({ temperature: event.currentTarget.value })} />
         </label>
       </div>
@@ -176,20 +184,20 @@ const GenerationBody = ({ id, request, text, onRunCommand }: { readonly id: stri
 
 /** `recall`: the model has a recorded Test to go back to. It is read from the model's live record, never from the card, so a Test after compose shows it without a rewrite. */
 export const ModelCallCardBody = ({ card, recall, onRunCommand }: { readonly card: ModelCallCard; readonly recall: boolean; readonly onRunCommand: RunCommand }) => {
-  const { model: id, request, response, asking, fixture } = card.payload
+  const { model: id, request, response, pending, fixture } = card.payload
   const problem = modelCallProblemOf(request)
   const stale = response !== undefined && canonicalStoredJsonValue(response.request) !== canonicalStoredJsonValue(request)
   const output = response?.result.ok === true ? response.result.output : undefined
   const answers = output?.kind === "decision" ? output.answers : undefined
   return (
-    <div className="model-call" data-testid="model-call" data-model={id} data-kind={request.kind} data-stale={stale ? "true" : "false"} data-asking={asking === true ? "true" : undefined}>
+    <div className="model-call" data-testid="model-call" data-model={id} data-kind={request.kind} data-stale={stale ? "true" : "false"} data-asking={pending === undefined ? undefined : "true"}>
       {request.kind === "decision" ?
         <DecisionBody id={id} request={request} answers={answers} onRunCommand={onRunCommand} /> :
-        <GenerationBody id={id} request={request} text={output?.kind === "generation" ? output.text : undefined} onRunCommand={onRunCommand} />}
+        <GenerationBody id={id} request={request} text={output?.kind === "generation" ? output.text : undefined} problem={problem} onRunCommand={onRunCommand} />}
       {problem === undefined ? null : <p className="sui-approval-error model-call-problem" role="alert" data-testid="model-call-problem" data-problem={problem.code}>{modelCallProblemLine(problem)}</p>}
       <div className="model-call-foot">
         <div className="flow-run-actions">
-          <Button size="sm" data-testid="model-call-ask" disabled={problem !== undefined || asking === true} {...flowAction(onRunCommand, "model.ask", id)}>{response === undefined ? "Ask" : "Ask again"}</Button>
+          <Button size="sm" data-testid="model-call-ask" disabled={problem !== undefined || pending !== undefined} {...flowAction(onRunCommand, "model.ask", id)}>{response === undefined ? "Ask" : "Ask again"}</Button>
           {recall ? <Button size="sm" variant="ghost" data-testid="model-call-recall" {...flowAction(onRunCommand, "model.recall", id)}>Last test</Button> : null}
           {answers === undefined ? null : <Button size="sm" variant="ghost" data-testid="model-call-fixture" {...flowAction(onRunCommand, "model.fixture", id)}>Fixture</Button>}
         </div>
@@ -212,4 +220,4 @@ export const ModelCallCardBody = ({ card, recall, onRunCommand }: { readonly car
 
 /** Running while an ask is out; failed while the last answer is a failure; settled otherwise. */
 export const modelCallPill = (card: ModelCallCard): string =>
-  card.payload.asking === true ? "running" : card.payload.response?.result.ok === false ? "failed" : "done"
+  card.payload.pending !== undefined ? "running" : card.payload.response?.result.ok === false ? "failed" : "done"

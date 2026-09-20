@@ -1,8 +1,11 @@
+import * as Classifier from "@smthrs/model/Classifier"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import { MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import type { ConfiguredModel, ModelCallInput, ModelCatalog, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
-import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEXT_MAX, MODEL_TEST_DECISION, MODEL_TEST_MAX_TOKENS, MODEL_TEST_PROMPT, modelCallDefault } from "@smthrs/rpc/ConfiguredModel"
+import type { ConfiguredModel, ModelCallDraft, ModelCallInput, ModelCallOutput, ModelCatalog, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
+import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEXT_MAX, MODEL_TEST_DECISION, MODEL_TEST_MAX_TOKENS, MODEL_TEST_PROMPT, bindingOf, modelCallDefault, modelStateOf } from "@smthrs/rpc/ConfiguredModel"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, expect, test } from "bun:test"
+import { Effect, type Layer, Schema } from "effect"
 import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
 import { memoryStorage } from "../TestFixtures"
@@ -87,7 +90,7 @@ test("compose opens the model's composer prefilled from the fixed Test and its l
   await tested(t, "judge", yes)
   expect(await t.composer.composeModel("judge")).toBeUndefined()
   const composed = t.card()!
-  expect(composed.payload).toEqual({ model: "judge", request: modelCallDefault("decision"), response: { askedAt: 5, request: modelCallDefault("decision"), result: yes } })
+  expect(composed.payload).toEqual({ model: "judge", request: modelCallDefault("decision"), response: { askedAt: 5, request: modelCallDefault("decision"), binding: bindingOf(judge), result: yes } })
   expect(composed.payload.request.kind === "decision" && composed.payload.request.state).toEqual([{ key: "text", kind: "text", value: MODEL_TEST_DECISION.state.text }])
   // A model never tested opens with the fixed request and nothing answered.
   await t.composer.composeModel("writer")
@@ -138,7 +141,8 @@ test("ask is requested before the host answers, carries the composed request, an
   await t.composer.setModelQuestion({ id: "judge", question: "q1", instructions: "Which one?" })
   const result = await Promise.race([t.composer.askModel("judge"), tick(100).then(() => "blocked")])
   expect(result).toEqual({ value: "Requested" })
-  expect(t.card()?.payload.asking).toBe(true)
+  // The ask on the card is the accepted request, the binding it goes to, who asked and its own identity.
+  expect(t.card()?.payload.pending).toEqual({ requestId: expect.any(String), request: t.card()!.payload.request, binding: bindingOf(judge), owner: null })
   await tick()
   expect(t.toast("judge")?.status).toBe("running")
   await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "still typing" }).isPersisted.promise
@@ -154,8 +158,8 @@ test("ask is requested before the host answers, carries the composed request, an
   expect(t.asks()).toHaveLength(1)
   host.releases[0]!(Response.json(answered))
   await t.settled()
-  expect(t.card()?.payload.asking).toBeUndefined()
-  expect(t.card()?.payload).toMatchObject({ response: { request: sent, result: answered } })
+  expect(t.card()?.payload.pending).toBeUndefined()
+  expect(t.card()?.payload).toMatchObject({ response: { request: sent, binding: bindingOf(judge), result: answered } })
   expect(t.toast("judge")?.status).toBe("ok")
   // The answer belongs to the request it answered: an edit leaves it standing, and stale.
   await t.composer.setModelQuestion({ id: "judge", question: "q1", instructions: "Which one now?" })
@@ -182,11 +186,11 @@ test("an edited request asked while the first is out: the first answer writes no
   // The old request's answer is not evidence about the new one: the card stays asking, with nothing answered, and a reload in this window would still resume the ask.
   host.releases[0]!(Response.json(refused))
   await tick()
-  expect(t.card()?.payload.asking).toBe(true)
+  expect(t.card()?.payload.pending?.request).toEqual(t.card()!.payload.request)
   expect(t.card()?.payload.response).toBeUndefined()
   host.releases[1]!(Response.json(yes))
   await t.settled()
-  expect(t.card()?.payload.asking).toBeUndefined()
+  expect(t.card()?.payload.pending).toBeUndefined()
   expect(t.card()?.payload.response).toMatchObject({ request: t.card()!.payload.request, result: yes })
   expect(t.toast("judge")?.status).toBe("ok")
 })
@@ -280,6 +284,28 @@ test("a question id that names an Object.prototype member is no question", async
   expect(t.card()?.payload.request).toEqual(modelCallDefault("decision"))
 })
 
+test("the name an object takes as its prototype is no option and no rung: a rung so named is kept and named, an option is refused", async () => {
+  const t = await setup(held().answer)
+  await save(t, judge)
+  await t.composer.composeModel("judge")
+  await t.composer.setModelQuestion({ id: "judge", type: "score", instructions: "How much?" })
+  await t.composer.setModelOption({ id: "judge", question: "q1", option: "__proto__" })
+  await t.composer.setModelOption({ id: "judge", question: "q1", option: "other" })
+  const questions = () => { const request = t.card()!.payload.request; return request.kind === "decision" ? request.questions : {} }
+  // A rung is an array entry: the card holds what was typed and says why it cannot be asked.
+  expect(questions().q1).toMatchObject({ criteria: ["__proto__", "other"] })
+  expect(await t.composer.askModel("judge")).toBe("name_reserved · q1 · __proto__")
+  // An option is a record key, which a record cannot hold: the edit is refused by the same name, from every door.
+  expect(await t.composer.setModelQuestion({ id: "judge", question: "q1", type: "choice" })).toBe("name_reserved · q1 · __proto__")
+  await t.composer.setModelOption({ id: "judge", question: "q1", option: "none", was: "__proto__" })
+  await t.composer.setModelQuestion({ id: "judge", question: "q1", type: "choice" })
+  expect(await t.composer.setModelOption({ id: "judge", question: "q1", option: "__proto__" })).toBe("name_reserved · q1 · __proto__")
+  expect(await t.composer.setModelOption({ id: "judge", question: "q1", option: "__proto__", was: "none" })).toBe("name_reserved · q1 · __proto__")
+  expect(await t.composer.setModelQuestion({ id: "judge", question: "q1", criteria: JSON.parse("{\"__proto__\":\"\",\"b\":\"\"}") })).toBe("name_reserved · q1 · __proto__")
+  expect(questions().q1).toEqual({ type: "choice", instructions: "How much?", criteria: { none: "", other: "" } })
+  expect(t.asks()).toHaveLength(0)
+})
+
 test("an edit past a limit the wire enforces is refused by its name and number, and the request stands", async () => {
   const t = await setup(held().answer)
   await save(t, judge)
@@ -292,7 +318,7 @@ test("an edit past a limit the wire enforces is refused by its name and number, 
   const long = "x".repeat(MODEL_CALL_TEXT_MAX + 1)
   expect(await t.composer.setModelPrompt({ id: "writer", prompt: long })).toBe("invalid · prompt · 16 KiB")
   expect(await t.composer.setModelPrompt({ id: "writer", system: long })).toBe("invalid · system · 16 KiB")
-  expect(await t.composer.setModelPrompt({ id: "writer", temperature: "3" })).toBe("invalid · temperature · 0–2")
+  expect(await t.composer.setModelPrompt({ id: "writer", temperature: "9".repeat(33) })).toBe("invalid · temperature · 32")
   expect(await t.composer.setModelPrompt({ id: "writer", maxTokens: 1.5 })).toBe("invalid · maxTokens · integer")
   expect(await t.composer.setModelQuestion({ id: "judge", question: "q1", instructions: long })).toBe("invalid · question · 16 KiB")
   expect(await t.composer.setModelQuestion({ id: "judge", question: "ok", criteria: { true: long, false: "" } })).toBe("invalid · criteria · 16 KiB")
@@ -354,8 +380,8 @@ test("a prompt is edited field by field, and asked with its parameters", async (
   await save(t, writer)
   await t.composer.composeModel("writer")
   await t.composer.setModelPrompt({ id: "writer", system: "Answer tersely." })
-  await t.composer.setModelPrompt({ id: "writer", prompt: "ping?", maxTokens: 64, temperature: "0.2" })
-  expect(t.card("writer")?.payload.request).toEqual({ kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64, temperature: 0.2 })
+  await t.composer.setModelPrompt({ id: "writer", prompt: "ping?", maxTokens: 64, temperature: " 0.2 " })
+  expect(t.card("writer")?.payload.request).toEqual({ kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64, temperature: "0.2" })
   await t.composer.setModelPrompt({ id: "writer", temperature: "" })
   expect(t.card("writer")?.payload.request).toEqual({ kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64 })
   await t.composer.setModelPrompt({ id: "writer", maxTokens: 0 })
@@ -364,12 +390,35 @@ test("a prompt is edited field by field, and asked with its parameters", async (
   expect(await t.composer.askModel("writer")).toBe("prompt_empty")
   await t.composer.setModelPrompt({ id: "writer", prompt: "ping?" })
   expect(await t.composer.setModelPrompt({ id: "judge", prompt: "x" })).toBeString()
-  expect(await t.composer.setModelPrompt({ id: "writer", temperature: "warm" })).toBe("invalid · temperature")
   await t.composer.askModel("writer")
   expect(t.asks()).toEqual([{ path: MODEL_TEST_PATH, body: { model: writer, input: { kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64 } } }])
   host.releases[0]!(Response.json(pong))
   await t.settled()
   expect(t.card("writer")?.payload.response?.result).toEqual(pong)
+})
+
+test("a temperature is kept as typed: one that is no number from 0 to 2 stays on the card and is never asked, and one that is goes out as that number", async () => {
+  const host = held()
+  const t = await setup(host.answer)
+  await save(t, writer)
+  await t.composer.composeModel("writer")
+  await t.composer.setModelPrompt({ id: "writer", temperature: "0.2" })
+  for (const typed of ["3", "warm", "-"]) {
+    // The edit is kept, so the card shows what was typed beside why it cannot be asked; the old 0.2 is gone, not sent in its place.
+    expect(await t.composer.setModelPrompt({ id: "writer", temperature: typed })).toBeUndefined()
+    expect(t.card("writer")?.payload.request).toMatchObject({ temperature: typed })
+    expect(await t.composer.askModel("writer")).toBe("temperature · 0–2")
+  }
+  expect(t.asks()).toHaveLength(0)
+  await t.composer.setModelPrompt({ id: "writer", temperature: "1.5" })
+  await t.composer.askModel("writer")
+  const asked = t.card("writer")!.payload.request
+  expect(asked).toMatchObject({ temperature: "1.5" })
+  expect(t.asks()).toEqual([{ path: MODEL_TEST_PATH, body: { model: writer, input: { ...asked, temperature: 1.5 } } }])
+  host.releases[0]!(Response.json(pong))
+  await t.settled()
+  // The answer is kept with the draft it answered, so it is not stale against the text still on screen.
+  expect(t.card("writer")?.payload.response?.request).toEqual(asked)
 })
 
 test("recall returns the composer to the last recorded Test, and the fixture scripts the last decision answer", async () => {
@@ -381,7 +430,7 @@ test("recall returns the composer to the last recorded Test, and the fixture scr
   await t.composer.setModelQuestion({ id: "judge" })
   await t.composer.setModelField({ id: "judge", key: "extra", value: "x" })
   expect(await t.composer.recallModel("judge")).toBeUndefined()
-  expect(t.card()?.payload).toEqual({ model: "judge", request: modelCallDefault("decision"), response: { askedAt: 5, request: modelCallDefault("decision"), result: answered } })
+  expect(t.card()?.payload).toEqual({ model: "judge", request: modelCallDefault("decision"), response: { askedAt: 5, request: modelCallDefault("decision"), binding: bindingOf(judge), result: answered } })
   const written = await t.composer.fixtureModel("judge")
   const fixture = t.card()?.payload.fixture
   const output = answered.ok ? answered.output : undefined
@@ -392,9 +441,9 @@ test("recall returns the composer to the last recorded Test, and the fixture scr
   expect(t.card()?.payload.fixture).toBe([
     "// judge · state {\"text\":\"The sky is blue.\"}",
     "Evaluator.layerScripted(() => ({",
-    "  ok: { probability: 0.97 },",
-    "  risk: { score: 2 },",
-    "  which: { choice: \"a\", probabilities: { \"a\": 0.97, \"b\": 0 } }",
+    "  [\"ok\"]: { probability: 0.97 },",
+    "  [\"risk\"]: { score: 2 },",
+    "  [\"which\"]: { choice: \"a\", probabilities: { [\"a\"]: 0.97, [\"b\"]: 0 } }",
     "}))"
   ].join("\n"))
   // An edit stales the fixture with the answer.
@@ -416,11 +465,12 @@ test("recall while an ask is out keeps the ask: the pill stays running, and the 
   await tick()
   const asked = t.card()!.payload.request
   expect(await t.composer.recallModel("judge")).toBeUndefined()
-  expect(t.card()?.payload.asking).toBe(true)
+  // Last test rewrote the draft alone: the ask that is out is still the request that was asked.
+  expect(t.card()?.payload.pending?.request).toEqual(asked)
   expect(t.toast("judge")?.status).toBe("running")
   host.releases[0]!(Response.json(answered))
   await t.settled()
-  expect(t.card()?.payload.asking).toBeUndefined()
+  expect(t.card()?.payload.pending).toBeUndefined()
   expect(t.card()?.payload).toMatchObject({ request: modelCallDefault("decision"), response: { request: asked, result: answered } })
 })
 
@@ -433,7 +483,7 @@ test("a failed answer is typed on the card and the toast offers Ask; a departed 
   await tick()
   host.releases[0]!(Response.json(refused))
   await t.settled()
-  expect(t.card()?.payload.asking).toBeUndefined()
+  expect(t.card()?.payload.pending).toBeUndefined()
   expect(t.card()?.payload).toMatchObject({ response: { result: refused } })
   expect(t.toast("judge")).toMatchObject({ status: "failed", detail: "refused · 429", action: { flow: "model.ask", args: "judge", label: "Ask" } })
   await t.composer.askModel("judge")
@@ -442,7 +492,7 @@ test("a failed answer is typed on the card and the toast offers Ask; a departed 
   host.releases[1]!(Response.json(yes))
   await t.settled()
   expect(t.card()?.payload.response?.result).toEqual(refused)
-  expect(t.card()?.payload.asking).toBeUndefined()
+  expect(t.card()?.payload.pending).toBeUndefined()
 })
 
 test("an ask requested before a reload is launched again, once", async () => {
@@ -458,8 +508,8 @@ test("an ask requested before a reload is launched again, once", async () => {
 
   const host = held()
   const after = await setup(host.answer, storage)
-  expect(after.card()?.payload.asking).toBe(true)
   const kept = after.card()!.payload.request
+  expect(after.card()?.payload.pending?.request).toEqual(kept)
   expect(kept).not.toEqual(modelCallDefault("decision"))
   after.composer.resumeModelCalls()
   after.composer.resumeModelCalls()
@@ -467,9 +517,259 @@ test("an ask requested before a reload is launched again, once", async () => {
   expect(after.asks()).toEqual([{ path: MODEL_TEST_PATH, body: { model: judge, input: kept } }])
   host.releases[0]!(Response.json(yes))
   await after.settled()
-  expect(after.card()?.payload.asking).toBeUndefined()
+  expect(after.card()?.payload.pending).toBeUndefined()
   // The answer is kept with the request it answered.
   expect(after.card()?.payload).toMatchObject({ response: { request: kept, result: yes } })
+})
+
+test("a reload resumes the request that was asked, never the draft edited while it was out", async () => {
+  const storage = memoryStorage()
+  const before = await setup(held().answer, storage)
+  await save(before, writer)
+  await tested(before, "writer", pong)
+  await before.composer.composeModel("writer")
+  await before.composer.setModelPrompt({ id: "writer", prompt: "A" })
+  await before.composer.askModel("writer")
+  await tick()
+  const asked = before.card("writer")!.payload.pending!
+  expect(before.asks()).toHaveLength(1)
+  // Nobody asked B, and nobody asked the fixed Test that Last test brings back.
+  await before.composer.setModelPrompt({ id: "writer", prompt: "B" })
+  expect(before.card("writer")?.payload).toMatchObject({ request: { prompt: "B" }, pending: asked })
+  await opened.pop()!()
+
+  const host = held()
+  const after = await setup(host.answer, storage)
+  after.composer.resumeModelCalls()
+  after.composer.resumeModelCalls()
+  await tick()
+  expect(after.asks()).toEqual([{ path: MODEL_TEST_PATH, body: { model: writer, input: { kind: "generation", system: "", prompt: "A", maxTokens: MODEL_TEST_MAX_TOKENS } } }])
+  await after.composer.recallModel("writer")
+  expect(after.card("writer")?.payload).toMatchObject({ request: modelCallDefault("generation"), pending: asked })
+  await after.composer.setModelPrompt({ id: "writer", prompt: "B" })
+  // A press on the ask that is out joins it; B is a different ask only once someone asks it.
+  host.releases[0]!(Response.json(pong))
+  await after.settled()
+  expect(after.asks()).toHaveLength(1)
+  expect(after.card("writer")?.payload.pending).toBeUndefined()
+  expect(after.card("writer")?.payload).toMatchObject({ request: { prompt: "B" }, response: { request: asked.request, binding: bindingOf(writer), result: pong } })
+})
+
+test("a resumed ask belongs to the account and the binding that asked: another account, a rebound model and a bare flag resume nothing", async () => {
+  const storage = memoryStorage()
+  const before = await setup(held().answer, storage)
+  await save(before, judge)
+  await save(before, writer)
+  await before.composer.composeModel("judge")
+  await before.composer.composeModel("writer")
+  await before.composer.askModel("judge")
+  await before.composer.askModel("writer")
+  await tick()
+  const judgeCard = before.card("judge")!
+  const writerCard = before.card("writer")!
+  // The ask was somebody else's; and a card written before the snapshot says only that something was out.
+  await before.store.dispatch({ type: "card.upsert", actor: "system", card: { ...judgeCard, payload: { ...judgeCard.payload, pending: { ...judgeCard.payload.pending!, owner: "someone-else" } } } }).isPersisted.promise
+  const { pending: _pending, ...bare } = writerCard.payload
+  await before.store.dispatch({ type: "card.upsert", actor: "system", card: { ...writerCard, payload: { ...bare, asking: true } } }).isPersisted.promise
+  await opened.pop()!()
+
+  const after = await setup(held().answer, storage)
+  after.composer.resumeModelCalls()
+  await tick()
+  await after.store.settled?.()
+  expect(after.asks()).toHaveLength(0)
+  expect(after.card("judge")?.payload).toEqual({ model: "judge", request: modelCallDefault("decision") })
+  expect(after.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+})
+
+test("an answer is evidence about the binding that gave it: a model edited or removed and recreated during an ask keeps none of it", async () => {
+  const host = held()
+  const t = await setup(host.answer)
+  await save(t, writer)
+  await t.composer.composeModel("writer")
+  await t.composer.askModel("writer")
+  await tick()
+  host.releases[0]!(Response.json(pong))
+  await t.settled()
+  expect(t.card("writer")?.payload.response).toMatchObject({ binding: bindingOf(writer), result: pong })
+  // Asked of alpha; the record is rebound to beta while alpha is still thinking.
+  await t.composer.askModel("writer")
+  await tick()
+  const beta = { ...writer, modelId: "beta" }
+  await save(t, beta)
+  // The rebind takes alpha's standing answer, its fixture and its ask off the card at once.
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+  host.releases[1]!(Response.json(pong))
+  await t.settled()
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+  expect(t.toast("writer")?.status).not.toBe("ok")
+  // A save that leaves the binding where it was keeps the evidence.
+  await t.composer.askModel("writer")
+  await tick()
+  expect(t.asks()[2]).toEqual({ path: MODEL_TEST_PATH, body: { model: beta, input: modelCallDefault("generation") } })
+  host.releases[2]!(Response.json(pong))
+  await t.settled()
+  await save(t, beta)
+  expect(t.card("writer")?.payload.response).toMatchObject({ binding: bindingOf(beta), result: pong })
+  // Removed and recreated under the same name and even the same binding: the ask was the removed record's.
+  await t.composer.askModel("writer")
+  await tick()
+  await t.store.dispatch({ type: "model.removed", actor: "user", id: "writer" }).isPersisted.promise
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+  await save(t, beta)
+  host.releases[3]!(Response.json(pong))
+  await t.settled()
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+})
+
+/** New conversation, and the archive notice's link back to the one that left. */
+const archive = (t: Awaited<ReturnType<typeof setup>>) =>
+  t.store.dispatch({ type: "conversation.cleared", actor: "user", branchId: `branch-${crypto.randomUUID()}`, notes: [] }).isPersisted.promise
+const back = (t: Awaited<ReturnType<typeof setup>>, location: { workspaceId: string; branchId: string; frameId: string }) =>
+  t.store.dispatch({ type: "frame.navigated", actor: "system", ...location }).isPersisted.promise
+const here = (t: Awaited<ReturnType<typeof setup>>) => {
+  const { activeWorkspaceId, activeBranchId, activeFrameId } = t.store.session()
+  return { workspaceId: activeWorkspaceId!, branchId: activeBranchId!, frameId: activeFrameId! }
+}
+
+test("a composer that comes back from an archived conversation keeps no answer and no ask of a binding the model has left", async () => {
+  const host = held()
+  const t = await setup(host.answer)
+  const beta = { ...writer, modelId: "beta" }
+  await save(t, writer)
+  await t.composer.composeModel("writer")
+  await t.composer.askModel("writer")
+  await tick()
+  host.releases[0]!(Response.json(pong))
+  await t.settled()
+  await t.composer.fixtureModel("writer")
+  expect(t.card("writer")?.payload.response).toMatchObject({ binding: bindingOf(writer), result: pong })
+  const first = here(t)
+  await archive(t)
+  expect(t.card("writer")).toBeUndefined()
+  await save(t, beta)
+  await back(t, first)
+  // Alpha answered; the record is beta's now, and the card that returns says nothing beta did not say.
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+  expect(await t.composer.fixtureModel("writer")).toBe("writer has no decision answer yet.")
+
+  // An ask that was out when the conversation left: rebound and answered while away, it is over on return and Ask is free.
+  await save(t, writer)
+  await t.composer.askModel("writer")
+  await tick()
+  expect(t.card("writer")?.payload.pending).toBeDefined()
+  const second = here(t)
+  await archive(t)
+  await save(t, beta)
+  host.releases[1]!(Response.json(pong))
+  await t.settled()
+  await back(t, second)
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+
+  // Removed and recreated under the same binding while archived: the answer was the removed record's.
+  await t.composer.askModel("writer")
+  await tick()
+  host.releases[2]!(Response.json(pong))
+  await t.settled()
+  expect(t.card("writer")?.payload.response).toMatchObject({ binding: bindingOf(beta) })
+  const third = here(t)
+  await archive(t)
+  await t.store.dispatch({ type: "model.removed", actor: "user", id: "writer" }).isPersisted.promise
+  await save(t, beta)
+  await back(t, third)
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+})
+
+test("an ask still out when its conversation is archived is over when the conversation returns, so Ask is never held by an answer that has nowhere to land", async () => {
+  const host = held()
+  const t = await setup(host.answer)
+  await save(t, writer)
+  await t.composer.composeModel("writer")
+  await t.composer.askModel("writer")
+  await tick()
+  const first = here(t)
+  await archive(t)
+  host.releases[0]!(Response.json(pong))
+  await t.settled()
+  await back(t, first)
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request: modelCallDefault("generation") })
+  expect(await t.composer.askModel("writer")).toEqual({ value: "Requested" })
+  await tick()
+  expect(t.asks()).toHaveLength(2)
+  host.releases[1]!(Response.json(pong))
+  await t.settled()
+  expect(t.card("writer")?.payload.response).toMatchObject({ result: pong })
+})
+
+test("a recovered composer keeps its binding's answer and its ask, and none of a binding the model has left", async () => {
+  const t = await setup(held().answer)
+  await save(t, writer)
+  const request = modelCallDefault("generation")
+  const { workspaceId, branchId } = here(t)
+  const recovered = (binding: ReturnType<typeof bindingOf>) => t.store.dispatch({ type: "card.recovered", actor: "user", workspaceId, branchId, id: modelCallCardId("writer"), card: {
+    id: modelCallCardId("writer"), kind: "model-call", title: "writer", status: "active", createdAt: 1, ordinal: 1,
+    payload: { model: "writer", request, response: { askedAt: 1, request, binding, result: pong }, pending: { requestId: "11111111-1111-4111-8111-111111111111", request, binding, owner: null } }
+  } }).isPersisted.promise
+  await recovered(bindingOf({ ...writer, modelId: "alpha" }))
+  expect(t.card("writer")?.payload).toEqual({ model: "writer", request })
+  await recovered(bindingOf(writer))
+  expect(t.card("writer")?.payload).toMatchObject({ response: { result: pong }, pending: { binding: bindingOf(writer) } })
+})
+
+test("a card that reaches the composer holding another binding's answer or ask is acted on as if it held none", async () => {
+  const t = await setup(held().answer)
+  await save(t, judge)
+  const other = bindingOf({ ...judge, modelId: "typesafe-ai/other" })
+  const request = modelCallDefault("decision")
+  await t.store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: modelCallCardId("judge"), kind: "model-call", title: "judge", status: "active", createdAt: 1, ordinal: t.store.nextOrdinal(),
+    payload: { model: "judge", request, response: { askedAt: 1, request, binding: other, result: yes }, pending: { requestId: crypto.randomUUID(), request, binding: other, owner: null }, fixture: "stale" }
+  } }).isPersisted.promise
+  expect(await t.composer.fixtureModel("judge")).toBe("judge has no decision answer yet.")
+  // The next write is the card's as the composer reads it: the draft, and nothing of the other binding.
+  await t.composer.setModelField({ id: "judge", key: "text", value: "again" })
+  expect(t.card()?.payload as unknown).toEqual({ model: "judge", request: { ...request, state: [{ key: "text", kind: "text", value: "again" }] } })
+})
+
+const decodeQuestion = Schema.decodeUnknownSync(Evaluator.Question)
+/** A generated fixture, executed as the JavaScript it is and replayed through the real scripted evaluator and the real classifier. */
+const replay = async (request: Extract<ModelCallDraft, { kind: "decision" }>, output: ModelCallOutput) => {
+  const fixture = scriptedFixtureOf("judge", request, output)
+  const layer = new Function("Evaluator", `return (\n${fixture}\n)`)(Evaluator) as Layer.Layer<Evaluator.Evaluator>
+  const questions = Object.fromEntries(Object.entries(request.questions).map(([id, question]) => [id, decodeQuestion(question)]))
+  return Effect.runPromise(Effect.gen(function*() {
+    const evaluator = yield* Evaluator.Evaluator
+    const raw = yield* evaluator.evaluate({ state: modelStateOf(request.state), questions })
+    return yield* Classifier.decodeAnswers(questions, raw.answers)
+  }).pipe(Effect.provide(layer)))
+}
+
+test("a fixture replays the recorded decision exactly: every value, every distribution and every confidence, under ids no bare key could spell", async () => {
+  const request: Extract<ModelCallDraft, { kind: "decision" }> = {
+    kind: "decision",
+    state: [{ key: "text", kind: "text", value: "line\u2028break */ ` ${x}" }],
+    questions: {
+      "is-safe": { type: "boolean", instructions: "Safe?" },
+      "a.b": { type: "choice", instructions: "Which?", criteria: { "src/a.ts": "", "it's": "" } },
+      risk: { type: "score", instructions: "How risky?", criteria: ["low", "mid", "high"] },
+      digits: { type: "score", instructions: "Numeric labels", criteria: ["1", "0"] }
+    }
+  }
+  const output: ModelCallOutput = { kind: "decision", answers: {
+    "is-safe": { type: "boolean", value: false, probability: 0.2 },
+    "a.b": { type: "choice", value: "it's", probabilities: { "src/a.ts": 0.25, "it's": 0.75 }, confidence: 0.75 },
+    risk: { type: "score", value: 1.4, label: "mid", probabilities: { low: 0.1, mid: 0.6, high: 0.3 }, confidence: 0.6 },
+    digits: { type: "score", value: 1, label: "0", probabilities: { "1": 0.3, "0": 0.7 }, confidence: 0.7 }
+  } }
+  const replayed = await replay(request, output)
+  expect(Object.keys(replayed).sort()).toEqual(Object.keys(output.answers).sort())
+  for (const [id, recorded] of Object.entries(output.answers)) {
+    const { type: _type, ...answer } = recorded
+    expect({ ...replayed[id] }).toEqual({ ...answer, ...("probabilities" in answer ? { probabilities: { ...answer.probabilities } } : {}) })
+    expect(Classifier.confidence(replayed[id]!)).toBe(recorded.type === "boolean" ? Math.abs(recorded.probability - 0.5) * 2 : recorded.confidence)
+  }
+  // A gate at 0.65 takes the branch the recording took: the score is not sure, where a one-hot replay would have been.
+  expect(Classifier.confidence(replayed.risk!)).toBe(0.6)
 })
 
 test("a problem reads as its code and its numbers, never a sentence", () => {
@@ -483,7 +783,9 @@ test("a problem reads as its code and its numbers, never a sentence", () => {
     modelCallProblemLine({ code: "field_duplicate", key: "text" }),
     modelCallProblemLine({ code: "state_size", bytes: 34_304, max: 32_768 }),
     modelCallProblemLine({ code: "prompt_empty" }),
-    modelCallProblemLine({ code: "max_tokens", max: 4096 })
+    modelCallProblemLine({ code: "max_tokens", max: 4096 }),
+    modelCallProblemLine({ code: "temperature", max: 2 }),
+    modelCallProblemLine({ code: "name_reserved", question: "risk", name: "__proto__" })
   ]).toEqual(["no_questions", "question_empty · q1", "options_count · which · 256", "rungs_count · risk · 1", "rungs_distinct · risk",
-    "field_invalid · n · number", "field_duplicate · text", "state_size · 33.5 KiB / 32 KiB", "prompt_empty", "max_tokens · 1–4096"])
+    "field_invalid · n · number", "field_duplicate · text", "state_size · 33.5 KiB / 32 KiB", "prompt_empty", "max_tokens · 1–4096", "temperature · 0–2", "name_reserved · risk · __proto__"])
 })

@@ -5,19 +5,24 @@
  * request is one JSON state authored as typed fields plus a map of typed
  * questions; a generation request is a prompt and a few parameters. Every
  * edit is a flow that rewrites the card, so the draft survives a reload and
- * the agent composes through the same doors. The answer is kept with the
- * request it answered, so an edit after it is visibly stale. Ask is requested
- * at once and runs under the shared toast stack, like a Test.
+ * the agent composes through the same doors. Ask snapshots the request, the
+ * binding, the account and an identity onto the card before it dispatches;
+ * from then on the draft is only a draft, and a reload resumes the snapshot.
+ * The answer is kept with the request and the binding it answered, so an
+ * edit after it is visibly stale and a rebound model keeps none of it (the
+ * projection drops it with the record's last Test). Ask is requested at once
+ * and runs under the shared toast stack, like a Test.
  *
  * The limits are the question classes' own (`@smthrs/model` Evaluator), stated
  * once in the contract (`modelCallProblemOf`): a request with a problem is
  * refused here before it leaves, and the card disables Ask on the same rule.
  */
-import type { ConfiguredModel, ModelCallDraft, ModelCallInput, ModelCallOutput, ModelCallProblem, ModelFieldKind, ModelKind, ModelQuestion, ModelQuestionType, ModelStateField, ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
-import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEXT_MAX, MODEL_FIELD_KEY, MODEL_QUESTION_TYPES, ModelCallDraftSchema, ModelFieldKindSchema, modelCallDefault, modelCallProblemOf, modelKindOf, modelStateOf } from "@smthrs/rpc/ConfiguredModel"
+import type { ModelCallDraft, ModelCallOutput, ModelCallPending, ModelCallProblem, ModelFieldKind, ModelQuestion, ModelQuestionType, ModelStateField } from "@smthrs/rpc/ConfiguredModel"
+import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEMPERATURE_TEXT_MAX, MODEL_CALL_TEXT_MAX, MODEL_FIELD_KEY, MODEL_NAME_RESERVED, MODEL_QUESTION_TYPES, ModelCallDraftSchema, ModelFieldKindSchema, bindingOf, modelCallDefault, modelCallInputOf, modelCallProblemOf, modelKindOf, modelStateOf } from "@smthrs/rpc/ConfiguredModel"
 import type { CommandResult } from "../../flows/entries/Declare"
 import { actorSharedState } from "../ActorBindings"
 import type { Card, StoredModel } from "../AppState"
+import { canonicalEventValue } from "../EventValue"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
 import { MODELS_CARD_ID, callModelTest, modelFailureLine } from "./models"
@@ -98,21 +103,41 @@ export const modelCallProblemLine = (problem: ModelCallProblem): string => {
     case "prompt_empty": return problem.code
     case "question_empty":
     case "rungs_distinct": return `${problem.code} · ${problem.question}`
+    case "name_reserved": return `${problem.code} · ${problem.question} · ${problem.name}`
     case "options_count":
     case "rungs_count": return `${problem.code} · ${problem.question} · ${problem.count}`
     case "field_invalid": return `${problem.code} · ${problem.key} · ${problem.kind}`
     case "field_duplicate": return `${problem.code} · ${problem.key}`
     case "state_size": return `${problem.code} · ${(problem.bytes / 1024).toFixed(1)} KiB / ${problem.max / 1024} KiB`
     case "max_tokens": return `${problem.code} · 1–${problem.max}`
+    case "temperature": return `${problem.code} · 0–${problem.max}`
   }
 }
 
-/** The answer's raw shape, as `Evaluator.layerScripted` scripts it: the probability, the choice and its distribution, the score. */
-const scriptedAnswer = (answer: Extract<ModelCallOutput, { kind: "decision" }>["answers"][string]): string => {
+/** A key as fixture source: computed, so an id no bare key could spell is still one, and none is ever read as the object's prototype. */
+const scriptedKey = (name: string): string => `[${JSON.stringify(name)}]`
+const scriptedDistribution = (entries: ReadonlyArray<readonly [string, number]>): string =>
+  `{ ${entries.map(([name, p]) => `${scriptedKey(name)}: ${p}`).join(", ")} }`
+
+/**
+ * The answer's raw shape, as `Evaluator.layerScripted` scripts it: the
+ * probability, the choice and its distribution, the score and its
+ * distribution. A score's is keyed by rung index, from the rungs the recorded
+ * request ordered: a rung may itself be named like an index, and the
+ * classifier reads index keys first. Without it the replay would be one-hot,
+ * and sure where the recording was not.
+ */
+const scriptedAnswer = (answer: Extract<ModelCallOutput, { kind: "decision" }>["answers"][string], question: ModelQuestion | undefined): string => {
   switch (answer.type) {
     case "boolean": return `{ probability: ${answer.probability} }`
-    case "choice": return `{ choice: ${JSON.stringify(answer.value)}, probabilities: { ${Object.entries(answer.probabilities).map(([option, p]) => `${JSON.stringify(option)}: ${p}`).join(", ")} } }`
-    case "score": return `{ score: ${answer.value} }`
+    case "choice": return `{ choice: ${JSON.stringify(answer.value)}, probabilities: ${scriptedDistribution(Object.entries(answer.probabilities))} }`
+    case "score": {
+      const rungs = question?.type === "score" ? question.criteria : []
+      const recorded = rungs.every((rung) => Object.hasOwn(answer.probabilities, rung))
+      return recorded && rungs.length > 0
+        ? `{ score: ${answer.value}, probabilities: ${scriptedDistribution(rungs.map((rung, index) => [String(index), answer.probabilities[rung]!]))} }`
+        : `{ score: ${answer.value} }`
+    }
   }
 }
 
@@ -125,12 +150,13 @@ export const byName = (left: string, right: string): number => left.localeCompar
 /** A decision request and its answer as the fixture every test in the repo scripts an evaluator with. */
 export const scriptedFixtureOf = (id: string, request: ModelCallDraft, output: ModelCallOutput): string => {
   if (request.kind !== "decision" || output.kind !== "decision") return ""
-  const state = JSON.stringify(modelStateOf(request.state))
+  // JSON leaves U+2028 and U+2029 bare, and either one ends a line comment.
+  const state = JSON.stringify(modelStateOf(request.state)).replace(/[\u2028\u2029]/g, (separator) => `\\u${separator.charCodeAt(0).toString(16)}`)
   const ids = Object.keys(output.answers).sort(byName)
   return [
     `// ${id} · state ${state}`,
     "Evaluator.layerScripted(() => ({",
-    ...ids.map((question, index) => `  ${question}: ${scriptedAnswer(output.answers[question]!)}${index === ids.length - 1 ? "" : ","}`),
+    ...ids.map((question, index) => `  ${scriptedKey(question)}: ${scriptedAnswer(output.answers[question]!, Object.hasOwn(request.questions, question) ? request.questions[question] : undefined)}${index === ids.length - 1 ? "" : ","}`),
     "}))"
   ].join("\n")
 }
@@ -187,9 +213,12 @@ const nextName = (stem: string, taken: ReadonlyArray<string>): string => {
   for (let n = 1;; n += 1) if (!taken.includes(`${stem}${n}`)) return `${stem}${n}`
 }
 
-/** The response the last recorded Test is: the fixed request of the model's kind, answered by what the row recorded. */
-const recalled = (kind: ModelKind, test: ModelTestRecord | undefined): Payload["response"] =>
-  test === undefined ? undefined : { askedAt: test.testedAt, request: modelCallDefault(kind), result: test.result }
+/** The response the last recorded Test is: the fixed request of the model's kind, answered by what the row recorded. A rebind clears the row's Test, so the one it holds is its binding's. */
+const recalled = (record: StoredModel): Payload["response"] =>
+  record.lastTest === undefined ? undefined : { askedAt: record.lastTest.testedAt, request: modelCallDefault(modelKindOf(record.protocol)), binding: bindingOf(record), result: record.lastTest.result }
+
+/** Two snapshots that say the same thing, whatever order their keys were written in. */
+const same = (left: unknown, right: unknown): boolean => canonicalEventValue(left) === canonicalEventValue(right)
 
 const kib = (max: number): string => `${max / 1024} KiB`
 
@@ -204,12 +233,14 @@ const limitLine = (request: ModelCallDraft, issue: { readonly code: string; read
     case "system":
     case "prompt": return `invalid · ${head} · ${kib(MODEL_CALL_TEXT_MAX)}`
     case "maxTokens": return "invalid · maxTokens · integer"
-    case "temperature": return "invalid · temperature · 0–2"
+    case "temperature": return `invalid · temperature · ${MODEL_CALL_TEMPERATURE_TEXT_MAX}`
     case "state": return part === "key" ? "invalid · key" : `invalid · value · ${kib(MODEL_CALL_STATE_MAX_BYTES * 4)}`
     case "questions": {
       if (part === undefined) return "invalid · question"
       if (part === "instructions") return `invalid · question · ${kib(MODEL_CALL_TEXT_MAX)}`
       const question = request.kind === "decision" && typeof id === "string" && Object.hasOwn(request.questions, id) ? request.questions[id] : undefined
+      // A record cannot hold the reserved name, so the wire refuses an option so named; a rung is an array entry, kept and named as the request's problem.
+      if (question?.type === "choice" && typeof id === "string" && Object.hasOwn(question.criteria, MODEL_NAME_RESERVED)) return modelCallProblemLine({ code: "name_reserved", question: id, name: MODEL_NAME_RESERVED })
       // A criteria issue is the name of an option or rung, a boolean's two texts, or a choice's description.
       if (question?.type === "boolean") return `invalid · criteria · ${kib(MODEL_CALL_TEXT_MAX)}`
       if (question?.type === "score" || typeof name === "number" || issue.code === "invalid_key") return `invalid · option · ${MODEL_CALL_NAME_MAX}`
@@ -219,8 +250,8 @@ const limitLine = (request: ModelCallDraft, issue: { readonly code: string; read
   }
 }
 
-/** An ask in flight, for one account and one request; only the current one may write. */
-interface Flight { readonly request: string; readonly epoch: number }
+/** An ask in flight in this session, by the identity its card holds; only the one the card still names may write. */
+interface Flight { readonly requestId: string; readonly epoch: number }
 
 export const createModelCallController = (ctx: ControllerContext, deps: ModelCallControllerDependencies): ModelCallController => {
   const { store } = ctx
@@ -233,6 +264,11 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
     return row?.kind === "model-call" ? row : undefined
   }
   const missing = (id: string): string => `There is no model ${id}.`
+  /** Whose ask it is: the login, or null for a visitor and for a session not identified yet. */
+  const owner = (): string | null => {
+    const identity = collections.identitySessions.get("identity")
+    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
+  }
 
   /** The card written, at the tail when it is new or someone asked for it, in place otherwise. */
   const write = (id: string, payload: Payload, toTail: boolean, actor: "user" | "smithers" | "system" = ctx.commandActor): Promise<unknown> => {
@@ -258,8 +294,14 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
     if (record === undefined) return missing(id)
     const kind = modelKindOf(record.protocol)
     const existing = card(id)?.payload
-    if (existing !== undefined && existing.request.kind === kind) return { record, payload: existing, fresh: false }
-    const response = recalled(kind, record.lastTest)
+    if (existing !== undefined && existing.request.kind === kind) {
+      // Whatever way the card came to hold them, an answer and an ask of another binding are not this record's: no door acts on either.
+      const { response, pending, fixture, ...rest } = existing
+      const answered = response?.binding !== undefined && same(response.binding, bindingOf(record))
+      const out = pending !== undefined && same(pending.binding, bindingOf(record))
+      return { record, fresh: false, payload: { ...rest, ...(answered ? { response, ...(fixture === undefined ? {} : { fixture }) } : {}), ...(out ? { pending } : {}) } }
+    }
+    const response = recalled(record)
     return { record, payload: { model: id, request: modelCallDefault(kind), ...(response === undefined ? {} : { response }) }, fresh: true }
   }
 
@@ -287,40 +329,41 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
     if (ctx.commandActor !== "smithers" && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard()
   }
 
-  /** Recall is a request rewrite like any edit: an ask still out stays out, and its answer lands stale against the recalled request. */
+  /** Recall rewrites the draft like any edit: an ask still out stays out, and its answer lands stale against the recalled request. */
   const recallModel: ModelCallController["recallModel"] = async (id) => {
     const opened = open(id)
     if (typeof opened === "string") return opened
-    const kind = modelKindOf(opened.record.protocol)
-    const response = recalled(kind, opened.record.lastTest)
+    const response = recalled(opened.record)
     if (response === undefined) return `${id} has no test yet.`
     const { fixture: _fixture, ...rest } = opened.payload
-    await write(id, { ...rest, request: modelCallDefault(kind), response }, false)
+    await write(id, { ...rest, request: response.request, response }, false)
   }
 
-  /** The background half. Never awaited by the command that asked for it. */
-  const launch = (record: StoredModel, request: ModelCallInput): void => {
+  /** The background half, over the snapshot alone: the draft is never read here. Never awaited by the command that asked for it. */
+  const launch = (record: StoredModel, pending: ModelCallPending): void => {
     const { id } = record
-    const flight: Flight = { request: JSON.stringify([record.protocol, record.baseUrl, record.path, record.modelId, record.credential, request]), epoch: ctx.accountEpoch }
+    const input = modelCallInputOf(pending.request)
+    if (input === undefined) return
+    const flight: Flight = { requestId: pending.requestId, epoch: ctx.accountEpoch }
     shared.flights.set(id, flight)
     const key = `model.ask:${id}`
-    const model: ConfiguredModel = { id, protocol: record.protocol, modelId: record.modelId, credential: record.credential,
-      ...(record.baseUrl === undefined ? {} : { baseUrl: record.baseUrl }), ...(record.path === undefined ? {} : { path: record.path }), ...(record.builtin === true ? { builtin: true } : {}) }
     void ctx.withToast(key, `Asking ${id}…`, `Asked ${id}`, async () => {
-      const result = await callModelTest(ctx, model, request)
+      const result = await callModelTest(ctx, { id, ...pending.binding, ...(record.builtin === true ? { builtin: true } : {}) }, input)
       // A newer ask owns the card now; this answer is about a request that is gone.
       if (shared.flights.get(id) !== flight) return TOAST_SUPERSEDED
       shared.flights.delete(id)
       if (ctx.disposed) return TOAST_SUPERSEDED
       const current = card(id)
-      if (current === undefined) return TOAST_SUPERSEDED
-      const { asking: _asking, fixture: _fixture, ...rest } = current.payload
-      // The departed account's answer is not evidence for the one that arrived: the ask is over, and nothing is written from it.
-      if (ctx.accountEpoch !== flight.epoch) {
+      // The card no longer names this ask: the model was rebound or removed while it was out, and that took the ask with it.
+      if (current?.payload.pending?.requestId !== pending.requestId) return TOAST_SUPERSEDED
+      const { pending: _pending, fixture: _fixture, ...rest } = current.payload
+      const bound = collections.models.get(id)
+      // Neither a departed account's answer nor a replaced binding's is evidence here: the ask is over, and nothing is written from it.
+      if (ctx.accountEpoch !== flight.epoch || owner() !== pending.owner || bound === undefined || !same(bindingOf(bound), pending.binding)) {
         await write(id, rest, false, "system")
         return TOAST_SUPERSEDED
       }
-      await write(id, { ...rest, response: { askedAt: Date.now(), request, result } }, false, "system")
+      await write(id, { ...rest, response: { askedAt: Date.now(), request: pending.request, binding: pending.binding, result } }, false, "system")
       return result.ok ? true : modelFailureLine(result.failure)
     }).then((outcome) => {
       if (typeof outcome !== "string" || ctx.disposed || shared.flights.has(id)) return
@@ -333,15 +376,20 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
     if (typeof opened === "string") return opened
     const problem = modelCallProblemOf(opened.payload.request)
     if (problem !== undefined) return modelCallProblemLine(problem)
-    const request = opened.payload.request
     const { record } = opened
-    const current = shared.flights.get(id)
-    const route = JSON.stringify([record.protocol, record.baseUrl, record.path, record.modelId, record.credential, request])
+    const out = opened.payload.pending
+    const flight = shared.flights.get(id)
+    const asked = { request: opened.payload.request, binding: bindingOf(record), owner: owner() }
     // Duplicate input joins the ask already out; an edited request, or another account's ask, is a different ask.
-    if (current?.request !== route || current.epoch !== ctx.accountEpoch) {
-      launch(record, request)
-      // The request is on the card, and so on disk, before any answer can be.
-      await write(id, { ...opened.payload, asking: true }, opened.fresh)
+    const joins = out !== undefined && flight?.requestId === out.requestId && flight.epoch === ctx.accountEpoch &&
+      same({ request: out.request, binding: out.binding, owner: out.owner }, asked)
+    if (!joins) {
+      const pending: ModelCallPending = { requestId: crypto.randomUUID(), ...asked }
+      const { asking: _asking, ...rest } = opened.payload
+      // The snapshot is on the card, and so on its way to disk, before the request leaves; the answer is written behind it.
+      const written = write(id, { ...rest, pending }, opened.fresh)
+      launch(record, pending)
+      await written
     }
     return { value: "Requested" }
   }
@@ -349,9 +397,9 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
   const setModelPrompt: ModelCallController["setModelPrompt"] = (input) =>
     generationEdit(input.id, (request) => {
       const { temperature: _temperature, ...rest } = request
+      // The text as typed, whatever it says: the card shows it and names what is wrong with it (`modelCallProblemOf`). Blank clears it.
       const typed = input.temperature?.trim()
-      if (typed !== undefined && typed !== "" && !Number.isFinite(Number(typed))) return "invalid · temperature"
-      const temperature = typed === undefined ? request.temperature : typed === "" ? undefined : Number(typed)
+      const temperature = typed === undefined ? request.temperature : typed === "" ? undefined : typed
       return {
         ...rest,
         ...(input.system === undefined ? {} : { system: input.system }),
@@ -445,15 +493,16 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
 
   const resumeModelCalls: ModelCallController["resumeModelCalls"] = () => {
     for (const row of [...collections.cards.values()]) {
-      if (row.kind !== "model-call" || row.payload.asking !== true) continue
+      if (row.kind !== "model-call" || (row.payload.pending === undefined && row.payload.asking === undefined)) continue
+      const { pending, asking: _asking, ...rest } = row.payload
       const record = collections.models.get(row.payload.model)
-      // An ask is idempotent, so a persisted request is launched again rather than forgotten; one whose model is gone leaves the card.
-      if (record === undefined || modelCallProblemOf(row.payload.request) !== undefined) {
-        const { asking: _asking, ...rest } = row.payload
+      // An ask is idempotent, so the snapshot is launched again rather than forgotten. One that is not this account's ask of this binding leaves the card, as does a flag that names no request.
+      if (pending === undefined || record === undefined || pending.owner !== owner() || !same(bindingOf(record), pending.binding) || modelCallInputOf(pending.request) === undefined) {
         void write(row.payload.model, rest, false, "system")
         continue
       }
-      if (shared.flights.get(record.id)?.epoch !== ctx.accountEpoch) launch(record, row.payload.request)
+      const flight = shared.flights.get(record.id)
+      if (flight?.requestId !== pending.requestId || flight.epoch !== ctx.accountEpoch) launch(record, pending)
     }
   }
 

@@ -506,7 +506,9 @@ test("a decision request is composed with a question of each kind, asked, answer
   // The fixture is the answer as every test in the repo scripts an evaluator, under the ids the person chose.
   await composer.getByTestId("model-call-fixture").click()
   await expect(composer.getByTestId("model-call-fixture-text")).toContainText("Evaluator.layerScripted")
-  await expect(composer.getByTestId("model-call-fixture-text")).toContainText(`pick: { choice: "option1"`)
+  await expect(composer.getByTestId("model-call-fixture-text")).toContainText(`["pick"]: { choice: "option1"`)
+  // A score carries its distribution by rung index, so a replay is as sure as this answer was and no surer.
+  await expect(composer.getByTestId("model-call-fixture-text")).toContainText(`["q2"]: { score: 1, probabilities: { ["0"]: 0, ["1"]: 1 } }`)
   await page.reload()
   await boot(page)
   const kept = composerCard(page, name)
@@ -532,10 +534,26 @@ test("a generation request is composed and asked, and an edit after the answer r
   await expect(composer.getByTestId("model-call-recall")).toHaveCount(0)
   await composer.getByTestId("model-call-system").fill("Answer tersely.")
   await composer.getByTestId("model-call-prompt").fill("ping?")
+  // Digits past what a number holds exactly are no Max tokens: the box keeps them beside the reason, Ask waits, and nothing leaves.
+  await composer.getByTestId("model-call-max-tokens").fill("99999999999999999999")
+  await expect(composer.getByTestId("model-call-problem")).toHaveAttribute("data-problem", "max_tokens")
+  await expect(composer.getByTestId("model-call-ask")).toBeDisabled()
   await composer.getByTestId("model-call-max-tokens").fill("64")
-  await composer.getByTestId("model-call-temperature").fill("0.2")
+  await expect(composer.getByTestId("model-call-problem")).toHaveCount(0)
+  // What is on screen is what Ask reads: a temperature the request cannot carry stays in its box beside the reason, Ask waits, and nothing leaves.
+  const temperature = composer.getByTestId("model-call-temperature")
+  await temperature.fill("0.2")
+  await temperature.fill("3")
+  await expect(composer.getByTestId("model-call-problem")).toHaveAttribute("data-problem", "temperature")
+  await expect(temperature).toHaveValue("3")
+  await expect(temperature).toHaveAttribute("aria-invalid", "true")
+  await expect(composer.getByTestId("model-call-ask")).toBeDisabled()
+  expect((await providerJournal()).slice(before)).toHaveLength(0)
+  await temperature.fill("0.2")
+  await expect(composer.getByTestId("model-call-problem")).toHaveCount(0)
   const first = await askModel(page, composer)
   expect(first).toMatchObject({ ok: true, text: PROVIDER_REPLY.join("") })
+  await expect(temperature).toHaveValue("0.2")
   await expect(body).toHaveAttribute("data-stale", "false")
   await expect(composer.getByTestId("model-call-ask")).toHaveText("Ask again")
   // The answer belongs to the request it answered: edit the request and it stands, struck.
@@ -548,6 +566,37 @@ test("a generation request is composed and asked, and an edit after the answer r
   const journal = (await providerJournal()).slice(before)
   expect(journal).toHaveLength(2)
   expect(journal[0]).toMatchObject({ protocol: "openai-chat", status: 200, authorized: true, system: true, maxTokens: 64, temperature: 0.2 })
+})
+
+test("an answer archived with its conversation is gone when the conversation returns to a model rebound meanwhile", scenario("models.compose-archive-rebind", {
+  capabilities: [],
+  coverage: ["action:model.new", "action:model.compose", "action:model.ask", "action:chat.clear", "action:model.edit", "action:form.submit", "host:local", "path:success", "door:button", "door:slash", "dimension:archive-restore", "dimension:rebound-binding", "evidence:provider-request-journal"]
+}), async ({ page }) => {
+  await boot(page)
+  const before = (await providerJournal()).length
+  const name = uniqueName("e2e-archived")
+  const row = await createModel(page, chat(name))
+  const composer = await composeModel(page, row, name)
+  expect(await askModel(page, composer)).toMatchObject({ ok: true, text: PROVIDER_REPLY.join("") })
+  await command(page, "/chat.clear")
+  const back = page.getByRole("link", { name: "Open the archived conversation" })
+  await expect(back).toBeVisible()
+  await closeComposer(page)
+  await expect(composer).toHaveCount(0)
+  // Rebound from the new conversation, where the composer is not a live card.
+  await listModels(page)
+  await modelRow(page, name).getByRole("button", { name: "Edit", exact: true }).click()
+  await fillModelForm(page, { modelId: PROVIDER_MODEL.echoes })
+  await expect(page.locator('.flow-form[data-flow-name="model.save"]').getByTestId("flow-form-submit")).toHaveCount(0)
+  await back.click()
+  await expect(composer).toBeVisible()
+  // The first binding's words are not the second's: the card returns with its request and no answer.
+  await expect(composer.getByTestId("model-call-result")).toHaveCount(0)
+  await expect(composer.getByTestId("model-call-text")).toHaveCount(0)
+  await expect(composer.getByTestId("model-call-ask")).toHaveText("Ask")
+  await expect(composer.getByTestId("model-call-ask")).toBeEnabled()
+  expect((await askModel(page, composer)).ok).toBe(true)
+  expect((await providerJournal()).slice(before).map((entry) => entry.modelId)).toEqual([PROVIDER_MODEL.answers, PROVIDER_MODEL.echoes])
 })
 
 test("the composer prefills from the model's last Test, and Last test brings it back to ask again", scenario("models.compose-recall", {

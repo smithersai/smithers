@@ -64,6 +64,38 @@ const cases: ReadonlyArray<readonly [string, unknown]> = [
 ]
 
 describe("the contract's answer decoder agrees with the classifier", () => {
+  test("a rung or an option named as an object's prototype keeps its mass on both hosts", () => {
+    // The wire refuses the name (modelCallProblemOf); the decoders still agree on it, so no host is one refusal away from a different confidence.
+    // JSON.parse, as a provider's body is read: there the name is an own key, where an object literal would take it as its prototype.
+    const reserved = JSON.parse(`{
+      "risk": { "type": "score", "instructions": "How risky?", "criteria": ["__proto__", "other"] },
+      "which": { "type": "choice", "instructions": "Which?", "criteria": { "__proto__": "the first", "other": "the second" } }
+    }`) as Record<string, ModelQuestion>
+    const questions = { risk: decodeQuestion(reserved.risk), which: decodeQuestion(reserved.which) }
+    const which = `"which": { "type": "choice", "choice": "__proto__" }`
+    const raws = [
+      `{ "risk": { "type": "score", "score": 0 }, ${which} }`,
+      `{ "risk": { "type": "score", "score": 0.4, "probabilities": { "0": 0.6, "1": 0.4 } }, ${which} }`,
+      `{ "risk": { "type": "score", "score": 0, "probabilities": { "__proto__": 0.6, "other": 0.4 } }, ${which} }`,
+      `{ "risk": { "type": "score", "score": 0 }, "which": { "type": "choice", "choice": "__proto__", "probabilities": { "__proto__": 0.6, "other": 0.4 } } }`
+    ].map((body) => JSON.parse(body) as unknown)
+    for (const raw of raws) {
+      const exit = Effect.runSyncExit(Classifier.decodeAnswers(questions, raw as Evaluator.RawAnswers))
+      if (!Exit.isSuccess(exit)) throw new Error("the classifier refused the answer")
+      const local = modelAnswersOf(questions, exit.value)
+      const worker = decodeModelAnswers(reserved, raw)
+      if (!worker.ok) throw new Error("the contract refused the answer")
+      for (const id of ["risk", "which"]) {
+        const [here, there] = [worker.answers[id], local[id]]
+        if (here === undefined || there === undefined || here.type === "boolean" || there.type === "boolean") throw new Error("the answer holds no distribution")
+        expect(Object.entries(here.probabilities)).toEqual(Object.entries(there.probabilities))
+        expect(Object.hasOwn(here.probabilities, "__proto__")).toBe(true)
+        expect([here.value, here.confidence]).toEqual([there.value, there.confidence])
+        expect(there.confidence).toBeGreaterThan(0.5)
+      }
+    }
+  })
+
   for (const [name, raw] of cases) {
     test(name, () => {
       expect(decodeModelAnswers(questions, raw)).toEqual(classifier(raw))

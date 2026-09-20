@@ -239,6 +239,8 @@ describe("POST /api/model/test", () => {
         { kind: "decision", state, questions: { which: { type: "choice", instructions: "?", criteria: { only: "" } } } },
         { kind: "decision", state, questions: { risk: { type: "score", instructions: "?", criteria: ["same", "same"] } } },
         { kind: "decision", state: [{ key: "big", kind: "text", value: "x".repeat(MODEL_CALL_STATE_MAX_BYTES) }], questions: { ok: { type: "boolean", instructions: "?" } } },
+        // A record parse drops this id without a word; the request is refused whole, never run with a question missing.
+        { kind: "decision", state, questions: { ok: { type: "boolean", instructions: "?" }, ["__proto__"]: { type: "boolean", instructions: "?" } } },
         { kind: "generation", system: "", prompt: " ", maxTokens: 8 },
         { kind: "generation", system: "", prompt: "hi", maxTokens: 0 }
       ]) {

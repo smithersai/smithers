@@ -1,8 +1,9 @@
 # Models: manual test script
 
 Every step names what to do and what you must see. Anything else is a bug.
-The automated receipt is step 14. No paid key is needed before step 13.
-Step 12b composes a request and asks it.
+Run the steps in order: each one uses what the steps before it left behind.
+Step 13 composes a request and asks it. No paid key is needed before step 14.
+The automated receipt is step 15.
 
 A credential is a NAME pinned to an origin. Enroll its value in the local
 macOS keychain or the signed-in production account vault (PRODUCTION below). Model records carry only the name.
@@ -127,7 +128,7 @@ See: `"status":200`, `"authorized":true`, a `credentialSha256`, and no
    (`POST /api/model/test`).
    See: the payload holds `"credential":"LOOPBACK"`. Search the payload and the
    response for `sk-loopback`: no match. The response is
-   `{"ok":true,"latencyMs":…,"sample":…}`.
+   `{"ok":true,"latencyMs":…,"sample":"loopback pong","output":{"kind":"generation","text":"loopback pong"}}`.
 2. DevTools, Elements: press Cmd+F, search `sk-loopback`: no match.
 3. Open `GET /api/model/catalog` in Network.
    See: credential names, `present` flags and origins. No value.
@@ -137,11 +138,6 @@ See: `"status":200`, `"authorized":true`, a `credentialSha256`, and no
 Press Cmd+R. Press Cmd+K, type `/model.list`, press Enter.
 See: `loopback-chat` is there, with its last green result.
 
-To check a pending Test, create `slow` from step 7c, press Test, and reload
-while its dot is running. See: one resumed Test in Network, a running toast,
-then `timeout · 15000 ms` and a settled failure toast. The pending request is
-not silently discarded by the identity read during boot.
-
 ## 7. Failures. Each shows a typed code, and `Test` stays available
 
 After a failed test the card's pill reads `FAILED` and the card shrinks to the
@@ -149,6 +145,10 @@ failed row and one button. The button is `Edit` when the record is wrong (a,
 d, e, f, g below) and `Test` when it is not (b, c, h: a rate limit, a timeout,
 a provider that is down). The failed toast carries the same button.
 `/model.list` brings the list back.
+
+From here on there are more than four models, and the card in the transcript
+shows four. Find a row in the maximized card (`/model.list`, `Maximize card`),
+which lists every model. `Edit` and `Compose` return to the transcript.
 
 | # | Create this model (other fields as in step 3) | Click `Test`. See on the row | Journal |
 | --- | --- | --- | --- |
@@ -169,6 +169,12 @@ Click `Test` on `undeclared`. See: `credential_unknown · HOME`, and no new
 journal entry. `HOME` is set in the host's environment, and the host still
 refuses to read it: only `SMITHERS_MODEL_KEY_<NAME>` with its `_ORIGIN` is a
 credential.
+
+c, again, across a reload. Click `Test` on `slow` and reload while its dot is
+running. See: one resumed `test` request in Network, a running toast, then
+`timeout · 15000 ms` and a settled failure toast. The pending request is not
+silently discarded by the identity read during boot. The journal gains two
+entries: a Test is idempotent, so the resumed one dials again.
 
 h. Provider down. Press Ctrl+C in Terminal A. Run `/model.list`, click
 `Maximize card`, click `Test` on `loopback-chat`. See: `unreachable`. Start
@@ -200,6 +206,9 @@ Click `Test`. See: green with a latency. The journal's new entry reads
 Click `Edit`, set Credential `REVOKED`, `Save`, `Test`. See: `refused · 401`,
 and exactly one new journal entry, protocol `evaluation`. Nothing else was
 asked in its place.
+
+Click `Edit`, set Credential `LOOPBACK`, `Save`, `Test`. See: green. Step 13
+composes from this Test.
 
 ## 10. The card, maximized, and the seat
 
@@ -237,21 +246,24 @@ serves all three.
    `"protocol":"openai-chat"`, `"status":200`, `"authorized":true`.
 4. Reload. Run `/model.list`, maximize.
    See: `Explainer` still reads `loopback-chat`.
-5. Click `Remove` on `loopback-chat`. See: the row is gone and `Explainer`
-   reads `Default`. `/model.assign explainer default` hands a seat back
-   without removing the model.
-6. Run `/model.assign front-door loopback-jev`.
+5. Offline. Restart Terminal B with `SMITHERS_LOCAL_MODE=offline` and the same
+   state directory. Reload. `Test` on `loopback-chat`: green. Run
+   `/agent.explain the loopback provider`. See: `loopback pong`. In the
+   `Explainer` row pick `Default` and ask again. See: no new Explain card, and
+   `There is no agent on this host to explain with.` The offline host never
+   reaches a cloud agent. Restart Terminal B as in step 2 (`hybrid`) and reload.
+6. A provider that says the key back. On `garbled` (step 8), `Edit`, set Model
+   `e2e-echoes`, `Save`. Run `/model.assign explainer garbled`, then
+   `/agent.explain what the provider was sent`.
+   See: `your key is` with no key in the answer, response frames, DOM or stored
+   state. The provider sends nested credential fragments across three deltas;
+   the host sanitizes the complete answer before publishing it.
+7. Run `/model.list`, maximize. See: `Explainer` reads `garbled`. Click
+   `Remove` on `garbled`. See: the row is gone and `Explainer` reads
+   `Default`. `/model.assign explainer default` hands a seat back without
+   removing the model. `loopback-chat` is still listed; step 12 tests it.
+8. Run `/model.assign front-door loopback-jev`.
    See: `This host has no Front door seat.`
-
-Repeat steps 2–3 with Terminal B restarted using `SMITHERS_LOCAL_MODE=offline`
-and the same state directory. See: Test still passes and the assigned
-Explainer still answers `loopback pong`. Select Default and ask again: the
-explanation is unavailable. The offline host never reaches a cloud agent.
-
-Set a model's Model to `e2e-echoes`, assign it to Explainer, and ask again.
-See: `your key is` with no key in the answer, response frames, DOM or stored
-state. The provider sends nested credential fragments across three deltas;
-the host sanitizes the complete answer before publishing it.
 
 ### Front door and Recommendations (cloud host, signed in)
 
@@ -282,13 +294,17 @@ and the Worker's route tests.
 3. Add credential with Name LOOPBACK and Origin `https://example.com`.
    Submit any fixture key. See `exists`; the original pin and value still work.
 4. In the maximized Credentials section, Remove LOOPBACK. Its value is gone;
-   Test on a model using it reads `credential_missing · LOOPBACK`, without
+   Test on `loopback-chat` reads `credential_missing · LOOPBACK`, without
    contacting the provider. Reload: still removed. Its pin remains reserved;
-   Rotate restores a value on that same origin. Add cannot repin the name.
-5. For Ollama, Add credential: Name OLLAMA, Origin `http://127.0.0.1:11434`,
-   API key `anything-nonblank`. New model: Name `ollama-qwen`, Protocol
-   `openai-chat`, Base URL `http://127.0.0.1:11434`, Model one you have loaded,
-   Credential OLLAMA. Save, Test. No host environment edit or restart is needed.
+   Add cannot repin the name.
+5. Rotate LOOPBACK to the provider's accepted key once more: Rotate restores a
+   value on that same origin. Test `loopback-chat`: green. Step 13 asks through
+   this credential.
+6. Only with Ollama running. Add credential: Name OLLAMA, Origin
+   `http://127.0.0.1:11434`, API key `anything-nonblank`. New model: Name
+   `ollama-qwen`, Protocol `openai-chat`, Base URL `http://127.0.0.1:11434`,
+   Model one you have loaded, Credential OLLAMA. Save, Test. No host
+   environment edit or restart is needed.
 
 `http:` is allowed only for loopback. Other origins must use `https:`. Built-in
 credential names retain their predefined provider pins. Environment-declared
@@ -303,12 +319,12 @@ Reload while a submission is pending: a completed host receipt resolves it.
 If no receipt exists, see `interrupted`; Retry asks for the key again. It never
 replays a persisted key, and a duplicate press never rotates or repins anything.
 
-## 12b. Compose a request and ask
+## 13. Compose a request and ask
 
 The request is yours to edit; the answer is the model's. Nothing on the card
-edits an answer.
+edits an answer. What is on screen is what `Ask` sends.
 
-1. On `loopback-jev` (step 9, tested green), click `Compose`.
+1. On `loopback-jev` (tested green at the end of step 9), click `Compose`.
    See: a `loopback-jev` card with one state field `text` = `The sky is blue.`,
    one question `ok` of kind `boolean`, its answer `yes · 0.97`, and a green
    latency: the Test you ran, prefilled. Buttons: `Ask again`, `Last test`,
@@ -316,39 +332,60 @@ edits an answer.
 2. Click `Add question`. See: `q1`, kind `boolean`, an empty question, the
    line `question_empty · q1` and `Ask again` disabled. The answers above are
    struck: the request no longer matches what they answered.
-3. Set `q1`'s kind to `choice`. See: `options_count · q1 · 0`. Click
-   `Add option` twice, type `Which is it?` as the question, type `the sky`
-   beside `option1`. Set another question to `score` and add two rungs. See:
-   the line is gone and `Ask again` is enabled. Type `pick` over `q1` and
-   leave the box. See: the block reads `pick` with its kind, wording and
-   options kept.
-4. Click `Add field`, set its kind to `boolean`, tick it.
-5. Click `Ask again`. See at once: the card's pill reads running and chat still
+3. Set `q1`'s kind to `choice` and type `Which is it?` as its question. See:
+   `options_count · q1 · 0`. Click `Add option` twice and type `the sky`
+   beside `option1`.
+4. Click `Add question` again. See: `q2`. Set its kind to `score` and type
+   `How sure?` as its question. See: `rungs_count · q2 · 0`. Click `Add rung`
+   twice. See: `rung1`, `rung2`, the line is gone and `Ask again` is enabled.
+5. Type `pick` over `q1` and leave the box. See: the block reads `pick` with
+   its kind, wording and options kept.
+6. Click `Add field`, set its kind to `boolean`, tick it.
+7. Click `Ask again`. See at once: the card's pill reads running and chat still
    works. See within a second: per question, `ok` `yes · 0.97`, `pick`
    `option1 · 0.97`, `q2` `rung2 · 1`, and a latency. The journal's new entry
    carries `"questions":["ok","pick","q2"]` and the state as one JSON object
    with `"field1":true`.
-6. Edit any question. See: every answer struck and dimmed, nothing removed.
+8. Edit any question. See: every answer struck and dimmed, nothing removed.
    Click `Last test`. See: the fixed request and the Test's answer are back.
-7. Click `Fixture`. See: an `Evaluator.layerScripted(() => ({ ... }))` block
-   with one line per question, and `Copy`.
-8. On `loopback-chat`, click `Compose`. See: `System`, `Prompt` =
-   `Reply with the single word: ok`, `Max tokens` 32, `Temperature` empty,
-   and no `Last test`: it was never tested. Type a system prompt and `ping?`,
-   click `Ask`. See: `loopback pong` and a latency; the journal's entry reads
-   `"system":true`. Change the prompt. See: the words struck until you ask
-   again. Paste more than 16 KiB into `Prompt`. See: the box stops at 16 KiB
-   and the card keeps what it holds.
-9. Reload. See: the composer cards are still there with their requests and
-   answers.
-10. Run `/model.list`, click `Maximize card`, click `Compose` in the detail
-    pane. See: the pane closes and the composer is at the tail.
+9. Click `Fixture`. See: an `Evaluator.layerScripted(() => ({ ... }))` block
+   with one line per question, `["ok"]: { probability: 0.97 }`, and `Copy`.
+10. A generation model never tested. `New`: Name `loopback-fresh`, other
+    fields as in step 3. `Save`, then `Compose` on it. See: `System`,
+    `Prompt` = `Reply with the single word: ok`, `Max tokens` 32,
+    `Temperature` empty, `Ask`, and no `Last test`.
+11. Type a system prompt, the prompt `ping?` and Temperature `3`. See: `3`
+    stays in the box, the line `temperature · 0–2`, and `Ask` disabled. Type
+    `0.2` over it and click `Ask`. See: `loopback pong` and a latency; the
+    journal's entry reads `"system":true` and `"temperature":0.2`. Change the
+    prompt to `pong?`. See: the words struck until you ask again. Paste more
+    than 16 KiB into `Prompt`. See: the box stops at 16 KiB and the card keeps
+    what it holds. Set the prompt back to `pong?`.
+12. The ask that is out is the request you asked. `New`: Name `slow-fresh`,
+    Model `e2e-slow`, other fields as in step 3. `Save`, then `Compose` on it.
+    See: `Ask`, no answer and no `Last test`; it was never tested. Type the
+    prompt `A`, click `Ask`, and while the pill reads running change the
+    prompt to `B` and reload. See: one resumed `test` request in Network whose
+    `input.prompt` is `A`, the pill running again, while the box still reads
+    `B`; after 15 seconds `timeout · 15000 ms`, struck, because it answered
+    `A`.
+13. An answer belongs to the binding that gave it. On the `slow-fresh`
+    composer click `Ask again`, and while it runs `Edit` the model
+    `slow-fresh`: Model `e2e-answers`, `Save`. See at once: the composer is no
+    longer running, the `timeout` line is gone and the button reads `Ask`.
+    Wait 15 seconds. See: nothing lands; the old binding's answer is not
+    evidence about the new one.
+14. Reload. See: the composer cards are still there with their requests and
+    answers.
+15. Run `/model.list`, click `Maximize card`, click `loopback-jev`, click
+    `Compose` in the detail pane. See: the pane closes and the composer is at
+    the tail.
 
 Cmd+K doors for the same acts: `/model.compose loopback-jev`,
 `/model.ask loopback-jev`, `/model.recall loopback-jev`,
 `/model.fixture loopback-jev`.
 
-## 13. One real paid call
+## 14. One real paid call
 
 The loopback provider cannot prove a vendor accepts our bytes. With
 `CEREBRAS_API_KEY` exported in Terminal B's shell, run `/model.list`.
@@ -361,7 +398,7 @@ Then `New`: Name `cerebras-revoked`, Protocol `openai-chat`, Base URL
 `REVOKED`. `Test`. See: `endpoint_forbidden`. `REVOKED` is pinned to your
 loopback origin, so the vendor never sees it.
 
-## 13b. Production, signed out
+## 14b. Production, signed out
 
 Open https://smithers.sh in a private window and run `/model`.
 See: the deployment's own models listed, and the seats. Not `No models.`, and
@@ -370,20 +407,19 @@ no red line.
 Click `Test`. See: the sign-in step in the chat, and no `POST /api/model/test`
 in Network. Sign in, and the Test you asked for runs by itself.
 
-## 14. The automated receipt
+## 15. The automated receipt
 
 ```sh
 cd ~/smithers/apps/app
-lsof -nP -iTCP:47321 -sTCP:LISTEN     # must print nothing
+lsof -nP -iTCP:47401 -sTCP:LISTEN     # must print nothing
 SMITHERS_REAL_PORT=47401 SMITHERS_CHAT_STUB=0 pnpm run test:e2e:real --grep models --trace off
 ```
 
-If port 47321 is taken, leave its owner alone and add `SMITHERS_REAL_PORT=47391`
-in front of the command. `SMITHERS_MODEL_PROVIDER_PORT=<port>` fixes the
-loopback provider's port; unset, the runner takes a free one before the host
-boots.
+If port 47401 is taken, leave its owner alone and use another number in both
+lines. `SMITHERS_MODEL_PROVIDER_PORT=<port>` fixes the loopback provider's
+port; unset, the runner takes a free one before the host boots.
 
-See: `23 passed` in about a minute. The command then prints the quality gate.
+See: `24 passed` in about two minutes. The command then prints the quality gate.
 The gate's errors, if any, name other specs, never `models.spec.ts`.
 
 The enrollment scenario reads the actual OPFS SQLite tables after the UI steps,

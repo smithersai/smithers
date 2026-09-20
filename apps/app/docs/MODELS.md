@@ -221,20 +221,39 @@ distinct rungs, a non-empty question, a 32 KiB state) is stated once in the
 contract (`modelCallProblemOf`), refused by the host's schema through it,
 refused by `model.ask` before a request leaves, and shown inline as its code
 and numbers while Ask stays disabled. The text bounds the wire enforces (16 KiB
-texts, 128-character option names, 128 KiB field values, an integer max tokens,
-a temperature in 0–2) are refused by the edit itself as
-`invalid · <control> · <limit>`, and the controls stop at the same bounds.
+texts, 128-character option names, 128 KiB field values, an integer max tokens)
+are refused by the edit itself as `invalid · <control> · <limit>`, and the
+controls stop at the same bounds. A value the request cannot carry is kept as
+typed instead, as the request's problem, so the screen never shows one setting
+while Ask sends another: the temperature is drafted as text and becomes the
+wire's number only once it is one from 0 to 2 (`modelCallInputOf`), and a rung
+named `__proto__`, which a plain object would take as its prototype, is named
+`name_reserved` (an option or a question id so named cannot be a record key and
+is refused). Max tokens commits digits alone, and 0 for anything else or for
+digits past what a number holds exactly, so the box never shows a number the
+draft did not take.
 
 `POST /api/model/test` takes an optional typed `input`; with none it runs the
 fixed Test it always ran. Both hosts answer the typed `output` on every pass,
 so the composer prefills from the model's last recorded Test: its fixed
-request and the answer it got. `model.ask` is requested at once and runs under
-the shared toast stack like a Test, keyed by model, request and account epoch,
-relaunched after a reload. The answer is kept with the request it answered;
-an edit after it reads stale (struck, dimmed) until asked again. `model.recall`
-returns the composer to the last Test. `model.fixture` writes the last decision
-answer as the `Evaluator.layerScripted(...)` fixture every test in the repo
-scripts an evaluator with.
+request and the answer it got. `model.ask` snapshots the accepted request, the
+binding, the account and a request id onto the card (`pending`) before it
+dispatches, is requested at once, and runs under the shared toast stack like a
+Test. The draft is only a draft from then on: a reload resumes the snapshot,
+never an edit or a Last test made while it was out. The answer is kept with
+the request and the binding it answered; an edit after it reads stale (struck,
+dimmed) until asked again, and a model rebound or removed takes the answer,
+the fixture and the pending ask off its composer in the same commit, wherever
+the card is kept (the transcript, an archived conversation, a frame's snapshot,
+a card history), so a late answer from the old binding settles nothing. A
+composer that returns from a conversation that left, a history entry or a
+recovery is read against the record as it is: it keeps only an answer its
+binding gave, and an ask that was out when its conversation left is over. `model.recall` returns the
+composer to the last Test. `model.fixture` writes the last decision answer as
+the `Evaluator.layerScripted(...)` fixture every test in the repo scripts an
+evaluator with: keys are computed and JSON-quoted, so any question id is valid
+JavaScript, and a score carries its distribution by rung index, so a replay
+through the real evaluator and classifier has the recorded confidence.
 
 The Bun host decodes answers with the real `Classifier.decodeAnswers`; the
 Worker cannot import the classifier and decodes with the contract's
