@@ -773,20 +773,21 @@ const disciplineFold = (
         break
       }
       case "control.agent.claim-demanded": {
-        // Written on EVERY evaluation, and a reading with `demanded: false`
-        // cost the run nothing and changed nothing, so only a firing is a
-        // moment anyone would scrub to.
-        if (payload.demanded !== true) break
+        // Written on EVERY evaluation, and a reading that neither handed the
+        // completion back nor refused it cost the run nothing and changed
+        // nothing, so only those two are moments anyone would scrub to. A
+        // refusal is the larger of them: it ends the run and takes its answer.
+        if (payload.demanded !== true && payload.refused !== true) break
         const complete = asNumber(payload.complete)
         const overclaims = asNumber(payload.overclaims)
         const nextFrame = asNumber(payload.nextFrame)
-        note(seq, "bad", "claim", bodyOf(
+        note(seq, "bad", payload.refused === true ? "claim refused" : "claim", bodyOf(
           complete === undefined || overclaims === undefined
             ? undefined
             : `complete ${complete}, overclaims ${overclaims}.`,
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), [])
-        pin(seq, at, "claim", "bad")
+        pin(seq, at, payload.refused === true ? "claim refused" : "claim", "bad")
         break
       }
       /*

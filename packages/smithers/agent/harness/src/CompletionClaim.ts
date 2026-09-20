@@ -546,6 +546,36 @@ export const unjudged = (
   })
 
 /**
+ * The most of the refused completion the failure carries, in UTF-8 bytes.
+ *
+ * Two kibibytes, which is less than {@link proseBytes} because these bytes go
+ * somewhere else: the failure message is what a host puts on the run's own
+ * ending, and `smithers opencode` puts it on the assistant message a person
+ * reads in the app. A claim that is longer than this has its head kept, where
+ * a completion states what it did, and the run record still holds all of it.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const refusedBytes = 2048
+
+/**
+ * The refused completion as the failure quotes it, bounded by
+ * {@link refusedBytes}.
+ *
+ * A refusal that did not quote the sentence it refused left the only copy of
+ * a correct answer inside a `complete` transition in the run's journal: not in
+ * the transcript, not in the app, and unreachable by the person whose answer
+ * it was. The brake is right most of the time, which means it is wrong some of
+ * the time, and a person who loses an answer to it is owed the words.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const refused = (claim: string): string =>
+  elide.head(claim.trim(), refusedBytes, "the run record has the whole completion")
+
+/**
  * The failure an unrecorded claim ends the run with.
  *
  * One code, `claim_unproven`, raised where the brake read a claim reporting a
@@ -571,7 +601,7 @@ export const unjudged = (
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const unproven = (found: Probabilities, bounced: boolean): HarnessError =>
+export const unproven = (found: Probabilities, bounced: boolean, claim: string): HarnessError =>
   new HarnessError({
     code: "claim_unproven",
     message: `A completion reporting work this run never recorded: invented ${found.invented.toFixed(2)} (complete ${
@@ -580,7 +610,7 @@ export const unproven = (found: Probabilities, bounced: boolean): HarnessError =
       bounced
         ? "The claim was handed back for a frame and came back still unrecorded."
         : "There was no frame left to hand it back to."
-    }`
+    }\n\nThe completion this refused, word for word:\n\n${refused(claim)}`
   })
 
 /**

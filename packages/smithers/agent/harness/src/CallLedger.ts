@@ -68,13 +68,67 @@ export const bound = 30
 export const width = 120
 
 /**
- * How many members of a result object the digest may name.
+ * How many leaves of a result the digest may name.
  *
  * @category constants
  * @since 0.1.0
  * @slop
  */
 export const members = 6
+
+/**
+ * How many levels below a result's own the digest descends.
+ *
+ * Five, because that is where a batched judgement keeps its answers. A
+ * `classify` batch answers under `results[].answers.<question>.value`, which
+ * is five levels down, and a digest that stopped above it reported
+ * `results=[4]` about a call that had answered four questions. Measured on the
+ * live seat over the three refused completions this bound was raised for:
+ * with `results=[4]` the narrow question read `invented` 0.86, 0.87 and 0.86;
+ * with the leaves named it read 0.11, 0.11 and 0.10. Below five the same
+ * states read 0.24 to 0.49, because naming the first member of a batch says
+ * what one state answered and the claim is about all of them.
+ *
+ * It is a depth and not a size: {@link resultWidth} is what keeps the line
+ * bounded, and {@link members} is what keeps a wide result from taking it
+ * over.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const depth = 5
+
+/**
+ * How many distinct values one leaf may report before the rest are counted.
+ *
+ * A leaf folded across a batch takes one value per member, and what a reader
+ * needs from it is the spread: four states that all answered `true`, or three
+ * that answered `true` and one that did not. Three distinct values say that;
+ * a fourth says only that the leaf varies, which the count already said.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const distinct = 3
+
+/**
+ * How much of one call's result digest a line may quote.
+ *
+ * Wider than {@link width} because a digest is a list of leaves and a name is
+ * one term. It is the bound the brake's receipt is held to as well: the
+ * digest travels twice, once in the state section this module renders and
+ * once as `CompletionClaim.Evidence.callsRun`'s `resultSummary`, and both are
+ * the same string. Three hundred and twenty bytes holds the six leaves
+ * {@link members} allows at the path lengths {@link depth} produces, and caps
+ * the ledger's whole contribution to a frame at thirty lines of it.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const resultWidth = 320
 
 const clip = (text: string, limit: number): string => elide.head(text, limit, "clipped")
 
@@ -190,7 +244,34 @@ export type Ledger = typeof Ledger.Type
  * @since 0.1.0
  * @slop
  */
-export const subject = (input: Schema.Json): string => clip(target(input) ?? CanonicalJson.stringify(input), width)
+export const subject = (input: Schema.Json): string => clip(sole(input) ?? CanonicalJson.stringify(input), width)
+
+/**
+ * The one target an input names, or nothing when it names none or several.
+ *
+ * {@link target} takes the first, which is the right reading of a call about
+ * one thing and the wrong reading of a call about many. A `classify` batch
+ * over four files lexes four paths and was named by the first of them, so its
+ * line read `classify notes/n1.txt`: a call about four states, named after
+ * one of them, with the question it asked nowhere on the line. An input that
+ * names several targets is quoted whole instead, clipped, which is where the
+ * question is. Measured with the leaves of the result named either way, on
+ * the live seat over three refused completions: named after one state the
+ * narrow question read `invented` 0.73, 0.64 and 0.70; quoted whole it read
+ * 0.11, 0.11 and 0.10.
+ *
+ * Distinct, not total: a patch that names one path on every hunk header names
+ * one target, and it is the target.
+ *
+ * @category conversions
+ * @since 0.1.0
+ * @slop
+ */
+export const sole = (value: Schema.Json): string | undefined => {
+  const named = new Set(NarrowedCheck.lex(value).filter(NarrowedCheck.names))
+  const [only] = named
+  return named.size === 1 ? only : undefined
+}
 
 /**
  * The first term of a value that names a target, or nothing.
@@ -220,27 +301,92 @@ const scalar = (value: unknown): string => {
   return String(value)
 }
 
+const leafly = (value: unknown): boolean => value === null || typeof value !== "object"
+
+/** Whether a value reports itself whole: a scalar, or an array of them. */
+const counted = (value: unknown): boolean =>
+  leafly(value) || (Array.isArray(value) && (value.length === 0 || value.every(leafly)))
+
+/**
+ * Folds one result's leaves into the path each sits at and the values that
+ * path took, in the order the walk met them.
+ *
+ * An array is walked into one path rather than one path per index: the members
+ * of a batch answer the same question, so `results[].ok` is one leaf that took
+ * four values and not four leaves that took one each. That is what makes a
+ * four-state judgement fit a line.
+ */
+const leaves = (value: Schema.Json, path: string, into: Map<string, Array<string>>, left: number): void => {
+  const took = (rendered: string) => {
+    const seen = into.get(path)
+    if (seen === undefined) into.set(path, [rendered])
+    else seen.push(rendered)
+  }
+  if (counted(value) || left === 0) return took(scalar(value))
+  if (Array.isArray(value)) {
+    for (const item of value) leaves(item, `${path}[]`, into, left - 1)
+    return
+  }
+  const record = value as Readonly<Record<string, Schema.Json>>
+  const keys = Object.keys(record).sort()
+  // `{}` and not `{…}`: nothing was elided, the record is empty, and a reader
+  // that cannot tell those apart reads an empty result as a hidden one.
+  if (keys.length === 0) return took("{}")
+  for (const key of keys) leaves(record[key]!, path === "" ? key : `${path}.${key}`, into, left - 1)
+}
+
+/**
+ * What one leaf reported, across however many members it was folded over.
+ *
+ * Distinct values, each with how many members took it, capped at
+ * {@link distinct}. A leaf one member deep reports its value alone, which is
+ * what every unbatched result in this ledger reported before folding existed.
+ */
+const spread = (values: ReadonlyArray<string>): string => {
+  const tally = new Map<string, number>()
+  for (const value of values) tally.set(value, (tally.get(value) ?? 0) + 1)
+  const all = [...tally.entries()]
+  const named = all.slice(0, distinct).map(([value, count]) => count === 1 ? value : `${value}×${count}`)
+  const rest = all.length - named.length
+  return [...named, ...(rest > 0 ? [`+${rest} more`] : [])].join(" ")
+}
+
 /**
  * The one-line structural digest of what a call returned.
  *
- * Counts and statuses, never payloads: a member that is a string reports its
- * byte length, an array reports its length, a nested object reports that it is
- * one, and a number or boolean — an exit code, a truncation flag — reports
- * itself. Members are named in canonical key order and capped at
- * {@link members}, so the same result always renders the same line and a result
- * with fifty keys cannot take the frame over.
+ * Counts and statuses, never payloads: a leaf that is a string reports its
+ * byte length, an array of scalars reports its length, and a number or boolean
+ * (an exit code, a truncation flag, a judgement) reports itself. Leaves are
+ * named by their path in canonical key order and capped at {@link members}, so
+ * the same result always renders the same line and a result with fifty leaves
+ * cannot take the frame over.
+ *
+ * It descends {@link depth} levels, and an array of records folds into one
+ * path per leaf with the values its members took, because the alternative was
+ * measured and it was the defect. A `classify` batch returns its judgements
+ * under `results[].answers.<question>.value`; a digest that named only the
+ * result's own keys reported `results=[4]`, which records that four answers
+ * arrived and not one of them. The completion brake reads this string as its
+ * receipt for work that reports no exit status, so a run that judged four
+ * files and said so was refused for reporting a result nothing recorded. See
+ * {@link depth} for the readings either way.
  *
  * @category conversions
  * @since 0.1.0
  * @slop
  */
 export const digest = (value: Schema.Json): string => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return clip(scalar(value), width)
-  const record = new Map(Object.entries(value))
-  const keys = [...record.keys()].sort()
-  const named = keys.slice(0, members).map((key) => `${key}=${scalar(record.get(key))}`)
-  const rest = keys.length - named.length
-  return clip([...named, ...(rest > 0 ? [`+${rest} more`] : [])].join(" "), width)
+  if (counted(value)) return clip(scalar(value), resultWidth)
+  const found = new Map<string, Array<string>>()
+  leaves(value, "", found, depth)
+  const paths = [...found.keys()]
+  // The root has no name, so a result with nothing under it reports its own
+  // shape rather than an empty name bound to it.
+  const named = paths.slice(0, members).map((path) =>
+    path === "" ? spread(found.get(path)!) : `${path}=${spread(found.get(path)!)}`
+  )
+  const rest = paths.length - named.length
+  return clip([...named, ...(rest > 0 ? [`+${rest} more`] : [])].join(" "), resultWidth)
 }
 
 /**
@@ -312,8 +458,11 @@ export const entry = (ordinal: number, call: Settlement): Entry => {
     flow: clip(call.flow, width),
     // A write whose input names nothing is named by what came back, because a
     // patch carries its paths in its own text and hands them back as a list.
-    subject: mutates && target(call.input) === undefined && target(call.value) !== undefined
-      ? clip(target(call.value)!, width)
+    // A write is named by the first target it holds, wherever it holds it: a
+    // patch names one file per hunk header and every one of them is a target
+    // this write has, so {@link sole} would refuse a two-file patch a name.
+    subject: mutates
+      ? clip(target(call.input) ?? target(call.value) ?? CanonicalJson.stringify(call.input), width)
       : subject(call.input),
     ok: call.ok,
     digest: call.ok ? digest(call.value) : clip(call.message ?? "failed", width),

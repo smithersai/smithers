@@ -1291,8 +1291,10 @@ const demandCard = (
  * @category conversions
  * @since 1.0.0
  */
-export const claimTitle = (invented: number, complete: number, overclaims: number): string =>
-  `claim · invented ${invented.toFixed(2)} (complete ${complete.toFixed(2)}, overclaims ${overclaims.toFixed(2)})`
+export const claimTitle = (invented: number, complete: number, overclaims: number, refused = false): string =>
+  `claim · ${refused ? "refused, " : ""}invented ${invented.toFixed(2)} (complete ${complete.toFixed(2)}, overclaims ${
+    overclaims.toFixed(2)
+  })`
 
 /**
  * The body of that card: what the brake did, what the run has to do about it,
@@ -1317,6 +1319,31 @@ export const claimTitle = (invented: number, complete: number, overclaims: numbe
 export const claimText = (completion: string | undefined): string =>
   `Completion review: answer the current request directly and preserve its requested format. A purely conversational answer needs no file edit, command, or check. For actions or results you claim, use the recorded evidence and say plainly what remains unchecked.${
     completion === undefined ? "" : `\n\nThe completion this demand handed back:\n\n${completion}`
+  }`
+
+/**
+ * The body of the card a refusal writes, which is the last thing the run says.
+ *
+ * A refusal is not a review: nothing is being asked of the run, because the
+ * run is over. So this card carries no guidance and one thing instead, the
+ * answer the brake took away, which is the only copy of it a person can reach.
+ * A run whose completion was refused writes no assistant text, and a `complete`
+ * transition inside the journal is not somewhere anybody reads. The brake is
+ * arguable by design, and it cannot be argued with from a probability alone.
+ *
+ * A refusal with no completion to quote is a state the harness does not
+ * produce -- the reading exists because a claim did -- and it says so rather
+ * than rendering an empty card.
+ *
+ * @param completion the words the refused completion carried
+ * @category conversions
+ * @since 1.0.0
+ */
+export const refusedText = (completion: string | undefined): string =>
+  `The run was stopped here: Jev read this completion as reporting a command it never ran or a result it never got, and there was no review left to spend. Nothing was saved from this turn. Read the answer below and decide for yourself; re-prompt with the missing part, or allow the call the run needed.${
+    completion === undefined
+      ? "\n\nThe run recorded no completion to quote."
+      : `\n\nThe completion this refused, word for word:\n\n${completion}`
   }`
 
 /**
@@ -1916,17 +1943,18 @@ export const fold = (ctx: Context, state: State, event: AgentEvent.AgentEvent): 
       }
       // A reading that let the completion through is a journal line and not a
       // card: nothing was asked of the run, so a card would report a demand
-      // that never happened.
-      return event.demanded
-        ? demandCard(
-          demanded(read, "claim", event.nextFrame),
-          ctx,
-          event.nextFrame,
-          demandOrdinals.claim,
-          claimTitle(event.invented, event.complete, event.overclaims),
-          claimText(state.lastCompletion)
-        )
-        : { state: read, events: [] }
+      // that never happened. A reading that refused one is a card, and the
+      // most important one the brake writes: the run is over, its answer is
+      // gone, and this card is where the person reads what was taken and why.
+      if (!event.demanded && !event.refused) return { state: read, events: [] }
+      return demandCard(
+        demanded(read, "claim", event.nextFrame),
+        ctx,
+        event.nextFrame,
+        demandOrdinals.claim,
+        claimTitle(event.invented, event.complete, event.overclaims, event.refused),
+        event.refused ? refusedText(state.lastCompletion) : claimText(state.lastCompletion)
+      )
     }
     case "permission-required": {
       const request = event.request

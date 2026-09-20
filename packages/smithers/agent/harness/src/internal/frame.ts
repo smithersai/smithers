@@ -851,6 +851,12 @@ export const judgeCompletion = (
     // One bounce while the cap and a frame allow it; the verdict after that,
     // and only over the readings the verdict is about.
     const bounced = found !== undefined && room && state.claimDemands < state.claimCap
+    // The third way a reading comes out, stated on the event because nothing
+    // downstream can derive it: a reading that neither stands nor hands the
+    // frame back is the one that ends the run, and a projection that could not
+    // tell it from a reading that stood wrote no card for it. See
+    // `AgentEvent.ClaimDemanded.refused`.
+    const refused = found !== undefined && !bounced && CompletionClaim.unrecorded(found)
     const event = new AgentEvent.ClaimDemanded({
       eventType: eventType.claimDemanded,
       complete: reading.complete,
@@ -859,6 +865,7 @@ export const judgeCompletion = (
       latencyMs: reading.latencyMs,
       ...(reading.usage === undefined ? {} : { usage: reading.usage }),
       demanded: bounced,
+      refused,
       currentDigest: workspaceDigest,
       nextFrame
     })
@@ -876,8 +883,8 @@ export const judgeCompletion = (
     // Out of bounces. A claim the brake only found thin stands here: it was
     // handed back once, the run answered, and refusing the answer as well is
     // the price that destroyed honest runs. Only an unrecorded claim is refused.
-    return CompletionClaim.unrecorded(found)
-      ? { observed: event, demand: undefined, unproven: CompletionClaim.unproven(found, state.claimDemands > 0) }
+    return refused
+      ? { observed: event, demand: undefined, unproven: CompletionClaim.unproven(found, state.claimDemands > 0, claim) }
       : { observed: event, demand: undefined, unproven: undefined }
   })
 

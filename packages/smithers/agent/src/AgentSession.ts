@@ -301,7 +301,13 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["control.agent.narrow-only-demanded", new Set(["flow", "check", "targets", "currentDigest", "nextFrame"])],
   ["control.agent.read-only-demand-issued", new Set(["streak", "cap", "nextFrame"])],
   ["control.agent.steering-drained", new Set(["messages"])],
-  ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])]
+  ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])],
+  // `refused` separates the reading that ended a run from the one that let a
+  // claim stand, and it was added to an event type journals already carried.
+  // A pre-`refused` record has no such key, and the decoder fills it with
+  // `false`, so a resumed run would derive a new identity for every
+  // `claim-demanded` in its recorded prefix and publish the prefix twice.
+  ["control.agent.claim-demanded", new Set(["refused"])]
 ])
 
 /** The exclusion set for an event type that has never been enriched. */

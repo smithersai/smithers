@@ -897,6 +897,22 @@ describe("late payload fields", () => {
     expect(AgentSession.traceIdentity(4, 2, "sha256:other", type, payload)).not.toBe(base)
   })
 
+  it("keeps a pre-refused claim reading on the identity it was journaled under", () => {
+    // `claim-demanded` is not one of the five: it always carried a payload,
+    // and `refused` alone is late. So the whole payload still contributes and
+    // only that one key is dropped, which is what lets a resumed run find its
+    // recorded prefix and admit what comes after it.
+    const type = "control.agent.claim-demanded"
+    const before = { complete: 0.05, overclaims: 0.93, invented: 0.89, latencyMs: 380, demanded: false, nextFrame: 2 }
+    const base = AgentSession.traceIdentity(4, 2, cell.digest, type, before)
+
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, { ...before, refused: false })).toBe(base)
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, { ...before, refused: true })).toBe(base)
+    // Every other field still separates two readings, so the exclusion cannot
+    // collapse a bounce and a refusal that differ in what Jev answered.
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, { ...before, invented: 0.9 })).not.toBe(base)
+  })
+
   it("excludes only the fields the table names, and only for the type it names them under", () => {
     // A field the table does not list still contributes, so the mechanism
     // cannot quietly collapse two different events onto one key.

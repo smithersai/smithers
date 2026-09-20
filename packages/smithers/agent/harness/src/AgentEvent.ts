@@ -598,6 +598,21 @@ export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
   usage: Schema.optional(Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number })),
   /** Whether this reading handed the completion back. */
   demanded: Schema.Boolean,
+  /**
+   * Whether this reading ended the run instead of handing the completion back.
+   *
+   * The third of the three ways a reading comes out, and the one that had no
+   * field. `demanded` false meant both "the claim stands" and "the claim is
+   * refused and the run is over", which a projection cannot tell apart, so the
+   * refusal wrote no card and the sentence it refused was nowhere a person
+   * could read. Absent from older journal entries, where it decodes false: a
+   * journal written before this field carries its verdict in the run's
+   * failure, which is where it always was.
+   */
+  refused: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(false)),
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
   /** Workspace digest the completing frame closed on; empty when unmeasured. */
   currentDigest: Schema.String,
   /** The frame the demand was attached to, which is the one that must answer it. */

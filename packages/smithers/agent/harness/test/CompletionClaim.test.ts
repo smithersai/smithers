@@ -300,6 +300,34 @@ describe("the claim brake", () => {
     expect(judged.unproven?.message).toContain("complete 0.10")
     expect(judged.unproven?.message).toContain("overclaims 0.90")
     expect(judged.unproven?.message).toContain("neither of which decides this")
+    // The refusal quotes the sentence it refused. Without it the only copy of
+    // a correct answer the brake was wrong about lived in a `complete`
+    // transition inside the journal, where nobody reads.
+    expect(judged.unproven?.message).toContain(claim)
+    expect(judged.observed).toMatchObject({ _tag: "claim-demanded", refused: true })
+  })
+
+  it("says on the reading itself that it refused, so a projection can tell it from one that stood", async () => {
+    const stood = await settled({
+      layer: reading({ complete: 0.95, overclaims: 0.02, invented: 0.02 }).layer,
+      changes: { claimCap: 1, claimDemands: 1 }
+    })
+    const handed = await settled({ layer: reading({ invented: 0.6 }).layer })
+
+    // `demanded` false meant both of these and the refusal, which is why the
+    // refusal wrote no card and its sentence was nowhere a person could read.
+    expect(stood.observed).toMatchObject({ demanded: false, refused: false })
+    expect(handed.demand?.event).toMatchObject({ demanded: true, refused: false })
+  })
+
+  it("keeps the whole refused completion where it fits, and says what it dropped where it does not", () => {
+    const short = CompletionClaim.unproven({ complete: 0.1, overclaims: 0.9, invented: 0.95 }, true, "  short  ")
+    expect(short.message).toContain("\n\nshort")
+
+    const long = "x".repeat(CompletionClaim.refusedBytes + 100)
+    const clipped = CompletionClaim.unproven({ complete: 0.1, overclaims: 0.9, invented: 0.95 }, false, long)
+    expect(clipped.message).toContain("the run record has the whole completion")
+    expect(clipped.message).not.toContain(long)
   })
 
   it("lets a claim the run went and proved stand, cap spent or not", async () => {
@@ -424,7 +452,7 @@ describe("the claim brake", () => {
     ])
     expect(state["callsRun"]).toEqual([
       { flow: "bash", input: "{\"command\":\"grep -rn catch_all_view\"}", ok: true, resultSummary: "matches=2" },
-      { flow: "edit", input: "admin.py", ok: true, resultSummary: "" },
+      { flow: "edit", input: "admin.py", ok: true, resultSummary: "{}" },
       { flow: "bash", input: "tests/admin_views", ok: true, resultSummary: "exitCode=0 stdout=10b" }
     ])
     expect(Object.keys(state).sort()).toEqual(["callsRun", "checksRun", "claim", "lastCheck", "task", "treeMoved"])
@@ -529,7 +557,7 @@ describe("the claim brake", () => {
     })
 
     expect((jev.asked[0]?.state as Record<string, unknown>)["callsRun"]).toEqual([
-      { flow: "classify", input: classified.subject, ok: true, resultSummary: "latencyMs=20 results=[2]" },
+      { flow: "classify", input: classified.subject, ok: true, resultSummary: "latencyMs=20 results[].ok=true×2" },
       { flow: "read", input: "add.mjs", ok: true, resultSummary: "text=34b" },
       { flow: "read", input: "missing.mjs", ok: false, resultSummary: "missing path" }
     ])

@@ -51,6 +51,24 @@ describe("CallLedger.subject", () => {
     expect(CallLedger.subject({ globs: ["**/*.py"], path: "sphinx/util/rst.py" })).toBe("sphinx/util/rst.py")
   })
 
+  it("quotes the whole input when it names several targets, because one of them is not the subject", () => {
+    // A `classify` batch over four files: named after the first of them, the
+    // line said which file it had judged and never said what it asked. The
+    // question is in the input, so the input is the subject.
+    const batch = {
+      questions: { mentionsLine: { instructions: "Does this text contain the word line?", type: "boolean" } },
+      states: ["notes/n1.txt", "notes/n2.txt"].map((path) => ({ path, text: "this line matters" }))
+    }
+    expect(CallLedger.sole(batch)).toBeUndefined()
+    expect(CallLedger.subject(batch)).toContain("Does this text contain the word line?")
+    expect(CallLedger.subject(batch)).not.toBe("notes/n1.txt")
+  })
+
+  it("names the one target however often the input repeats it", () => {
+    // A patch names its file on every hunk header, and it is one target.
+    expect(CallLedger.sole({ patch: "*** Update File: a/b.py\n@@\n-x\n+y\n*** End a/b.py" })).toBe("a/b.py")
+  })
+
   it("clips a subject longer than the line allows, and says it clipped it", () => {
     const subject = CallLedger.subject({ command: "x".repeat(400) })
     expect(subject.startsWith(`{"command":"${"x".repeat(50)}`)).toBe(true)
@@ -64,8 +82,50 @@ describe("CallLedger.digest", () => {
       "exitCode=1 stdout=5b stdoutTruncated=false"
     )
     expect(CallLedger.digest({ matches: [1, 2, 3], truncated: true })).toBe("matches=[3] truncated=true")
-    expect(CallLedger.digest({ nested: { deep: 1 } })).toBe("nested={…}")
     expect(CallLedger.digest({ missing: null })).toBe("missing=null")
+  })
+
+  it("names a leaf by its path, because that is where a judgement sits", () => {
+    expect(CallLedger.digest({ nested: { deep: 1 } })).toBe("nested.deep=1")
+    expect(CallLedger.digest({ answers: { even: { type: "boolean", value: true, probability: 0.99 } } })).toBe(
+      "answers.even.probability=0.99 answers.even.type=7b answers.even.value=true"
+    )
+  })
+
+  it("folds an array of records into one leaf per path, with the values its members took", () => {
+    expect(
+      CallLedger.digest({
+        results: [
+          { ok: true, answers: { even: { value: false } } },
+          { ok: true, answers: { even: { value: true } } },
+          { ok: true, answers: { even: { value: false } } }
+        ]
+      })
+    ).toBe("results[].answers.even.value=false×2 true results[].ok=true×3")
+  })
+
+  it("counts an array of scalars rather than descending into it", () => {
+    expect(CallLedger.digest({ paths: ["a.ts", "b.ts"], empty: [] })).toBe("empty=[0] paths=[2]")
+  })
+
+  it("stops descending at the depth it declares", () => {
+    const deep = (left: number): Schema.Json => left === 0 ? { leaf: 1 } : { down: deep(left - 1) }
+    const path = Array.from({ length: CallLedger.depth }, () => "down").join(".")
+    expect(CallLedger.digest(deep(CallLedger.depth))).toBe(`${path}={…}`)
+    expect(CallLedger.digest(deep(CallLedger.depth - 1))).toBe(
+      `${Array.from({ length: CallLedger.depth - 1 }, () => "down").join(".")}.leaf=1`
+    )
+  })
+
+  it("caps how many distinct values one folded leaf names, and says how many it left out", () => {
+    expect(CallLedger.digest({ rows: Array.from({ length: 5 }, (_, index) => ({ n: index })) })).toBe(
+      "rows[].n=0 1 2 +2 more"
+    )
+  })
+
+  it("tells an empty record from a record it stopped short of", () => {
+    expect(CallLedger.digest({ usage: {} })).toBe("usage={}")
+    expect(CallLedger.digest({})).toBe("{}")
   })
 
   it("names members in a stable order however the result was built", () => {
@@ -90,9 +150,13 @@ describe("CallLedger.digest", () => {
     )
   })
 
-  it("clips a digest wider than the line allows", () => {
-    const line = CallLedger.digest({ verylongkeyname: "x".repeat(10), other: "y".repeat(10) })
-    expect(line.length).toBeLessThanOrEqual(CallLedger.width)
+  it("clips a digest wider than the result line allows, and says what it dropped", () => {
+    const line = CallLedger.digest(
+      Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`verylongkeyname${index}`.repeat(8), index]))
+    )
+    const [kept] = line.split("… [+")
+    expect(new TextEncoder().encode(kept).byteLength).toBe(CallLedger.resultWidth)
+    expect(line).toMatch(/… \[\+\d+b, clipped\]$/)
   })
 })
 
@@ -184,6 +248,16 @@ describe("CallLedger and the writes a run has already made", () => {
     expect(ledger[0]?.mutates).toBe(true)
     expect(ledger[0]?.payloadBytes).toBe(4_965)
     expect(CallLedger.render(ledger)).toContain("1. apply_patch sympy/stats/crv_types.py — WROTE 4965b, ok:")
+  })
+
+  it("names a write by its first target even when it touches several", () => {
+    // The sole-target rule is for reads: a write that names two files is still
+    // the write to the first of them, and a line that fell back to the patch's
+    // own bytes would say nothing the next line could be matched against.
+    const two = "*** Update File: a/one.py\n-x\n+y\n*** Update File: a/two.py\n-p\n+q"
+    const ledger = CallLedger.remember([], [wrote("apply_patch", { input: two }, { modified: ["a/one.py"] })])
+
+    expect(ledger[0]?.subject).toBe("a/one.py")
   })
 
   it("points a repeated write back at the write it repeats", () => {

@@ -1876,6 +1876,50 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(Projection.claimText(undefined)).not.toContain("handed back")
   })
 
+  it("writes a card for the reading that refused, because that one ends the run", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    const frame = Projection.fold(ctx, start.state, scriptEvents()[0]!)
+    const answer = "All 4 files mention the word line."
+    const completed = Projection.fold(
+      ctx,
+      frame.state,
+      new AgentEvents.TransitionApplied({
+        eventType: "flows.harness.transition-applied.v1",
+        transition: new Cell.Complete({ output: answer })
+      })
+    )
+    const refused = Projection.fold(
+      ctx,
+      completed.state,
+      new AgentEvents.ClaimDemanded({
+        eventType: "flows.harness.claim-demanded.v1",
+        complete: 0.05,
+        overclaims: 0.93,
+        invented: 0.89,
+        latencyMs: 380,
+        demanded: false,
+        refused: true,
+        currentDigest: "d",
+        nextFrame: 1
+      })
+    )
+    const card = refused.events[0]!.properties["part"] as Protocol.ToolPart
+    if (card.state.status !== "completed") throw new Error(`the refusal card is ${card.state.status}`)
+    // `demanded` false used to mean both "the claim stands" and "the claim is
+    // refused and the run is over", so three of five live refusals wrote no
+    // card and the sentence they refused was in neither the transcript nor the
+    // store. The title says which of the two this was.
+    expect(card.state.title).toBe("claim · refused, invented 0.89 (complete 0.05, overclaims 0.93)")
+    expect(card.state.output).toContain(answer)
+    expect(card.state.output).toContain("The run was stopped here")
+    // Nothing is being asked of the run, so the card carries no review.
+    expect(card.state.output).not.toContain("Completion review")
+    // A refusal the harness does not produce: a reading with no completion
+    // behind it. It says so rather than rendering an empty card.
+    expect(Projection.refusedText(undefined)).toContain("no completion to quote")
+  })
+
   it("keeps the color the run had when one health deadline is missed, and goes gray when three are", () => {
     const ctx = { directory, now: clock().now }
     const facts: Health.Facts = { ...Projection.open(ctx, opened()).state.facts, frame: 1 }

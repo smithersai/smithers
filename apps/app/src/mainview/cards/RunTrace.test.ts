@@ -635,7 +635,10 @@ describe("what the frame was doing", () => {
       // These two do carry fields, and only a firing is a moment.
       at(7, "control.agent.claim-demanded", { complete: 0.4, overclaims: 0.9, latencyMs: 300, demanded: false, currentDigest: "t1", nextFrame: 2 }, 1600),
       at(8, "control.agent.claim-demanded", { complete: 0.3, overclaims: 0.95, latencyMs: 310, demanded: true, currentDigest: "t1", nextFrame: 2 }, 1700),
-      at(9, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 2, nextAction: "write" }, 1800)
+      at(9, "control.agent.read-only-demanded", { streak: 7, cap: 7, nextFrame: 2, nextAction: "write" }, 1800),
+      // The third way a reading comes out: it refused, the run is over, and
+      // `demanded` is false. Reading only `demanded` skipped this one.
+      at(10, "control.agent.claim-demanded", { complete: 0.05, overclaims: 0.93, invented: 0.89, latencyMs: 380, demanded: false, refused: true, currentDigest: "t1", nextFrame: 2 }, 1900)
     ], CHECKS)
     // No steering moment at seq 4: the record does not say a message was delivered.
     expect(model.milestones).toEqual([
@@ -643,13 +646,15 @@ describe("what the frame was doing", () => {
       { seq: 3, at: 1200, label: "narrow-only", tone: "warn", spanId: "frame-1" },
       { seq: 5, at: 1400, label: "sufficiency", tone: "good", spanId: "frame-1" },
       { seq: 8, at: 1700, label: "claim", tone: "bad", spanId: "frame-1" },
-      { seq: 9, at: 1800, label: "read-only", tone: "warn", spanId: "frame-1" }
+      { seq: 9, at: 1800, label: "read-only", tone: "warn", spanId: "frame-1" },
+      { seq: 10, at: 1900, label: "claim refused", tone: "bad", spanId: "frame-1" }
     ])
     // A fieldless record has nothing to put in a note, so it writes none.
     expect(model.notes.map(({ seq, title, body }) => ({ seq, title, body }))).toEqual([
       { seq: 8, title: "claim", body: "complete 0.3, overclaims 0.95. Frame 2." },
       // 7, not a constant: a host arms its own read-only cap.
-      { seq: 9, title: "read-only", body: "7 of 7 frames changed nothing. Frame 2: write." }
+      { seq: 9, title: "read-only", body: "7 of 7 frames changed nothing. Frame 2: write." },
+      { seq: 10, title: "claim refused", body: "complete 0.05, overclaims 0.93. Frame 2." }
     ])
   })
 
