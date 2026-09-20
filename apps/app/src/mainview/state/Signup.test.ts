@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
-import { accountSlug, initialSignup, SIGNUP_QUESTIONS, signupActive, signupAfterIdentity, validAccountName } from "./Signup"
+import { accountSlug, initialSignup, SIGNUP_QUESTIONS, signupActive, signupAfterIdentity, signupOpening, validAccountName } from "./Signup"
 import { memoryStorage } from "./TestFixtures"
 
 describe("Signup", () => {
@@ -20,14 +20,25 @@ describe("Signup", () => {
     expect(signupActive({ ...initialSignup(), stage: "done" }, "signed-in")).toBe(false)
   })
 
+  test("before identity answers, a browser with no retained owner opens on the title alone, and a retained owner sees no signup", () => {
+    expect(signupOpening(undefined, "unknown", null)).toBe("title")
+    expect(signupOpening(undefined, undefined, undefined)).toBe("title")
+    expect(signupOpening(undefined, "unknown", "will")).toBe(false)
+    expect(signupOpening(undefined, "signed-out", null)).toBe("full")
+    expect(signupOpening(undefined, "signed-in", null)).toBe(false)
+    expect(signupOpening({ ...initialSignup(), stage: "poll" }, "unknown", "will")).toBe("full")
+  })
+
   test("a GitHub sign-in carries the doors to the account step with the login prefilled, and leaves a later stage alone", () => {
-    const moved = signupAfterIdentity(initialSignup(), "signed-in", "Ada-Park")
+    const moved = signupAfterIdentity(initialSignup(), "signed-in", "Ada-Park", null)
     expect(moved?.stage).toBe("account")
     expect(moved?.account).toBe("ada-park")
     expect(moved?.draft.account).toBe("ada-park")
     const poll = { ...initialSignup(), stage: "poll" as const, question: 3 }
-    expect(signupAfterIdentity(poll, "signed-in", "ada")).toBe(poll)
-    expect(signupAfterIdentity(undefined, "signed-in", "ada")).toBeUndefined()
+    expect(signupAfterIdentity(poll, "signed-in", "ada", null)).toBe(poll)
+    // No row yet: a browser that never held an owner starts at the account step; one that did is a returning person.
+    expect(signupAfterIdentity(undefined, "signed-in", "ada", null)?.stage).toBe("account")
+    expect(signupAfterIdentity(undefined, "signed-in", "ada", "ada")).toBeUndefined()
   })
 
   test("the poll asks the seven questions Will listed, in order", () => {

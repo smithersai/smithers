@@ -58,10 +58,13 @@ export function FirstRunActionsCard({ commands, state, repo, jobStates, onRunCom
     if (flow === "app.first-run.dismiss") return onDismiss()
     dispatchFlow(flow, args)
   }
-  return <section className="first-run-actions" data-testid="first-run-actions" aria-label="Recommended actions">
-    <header><h2>Recommended actions</h2><button type="button" aria-label="Dismiss recommended actions" {...flowAction(onRunCommand, "app.first-run.dismiss")}>×</button></header>
+  // A job with a recorded state is one the person has set up: it checks off (Will, 2026-09-20).
+  const done = (flow: string) => jobState(jobStates, flow) !== null
+  return <section className="first-run-actions" data-testid="first-run-actions" aria-label="Learn how to">
+    <header><h2>Learn how to</h2><button type="button" aria-label="Dismiss" {...flowAction(onRunCommand, "app.first-run.dismiss")}>×</button></header>
     {firstRunGroups(commands, state).map(group => <section key={group.namespace} aria-label="Repository jobs">
-      {group.flows.map(flow => <button type="button" key={flow.name} {...dynamicFlowAction(onRunCommand, flow.name, repo)}><JobPicture flow={flow.name} />{flow.summary}{jobState(jobStates, flow.name)}</button>)}
+      {group.flows.map(flow => <button type="button" key={flow.name} data-done={done(flow.name) || undefined} {...dynamicFlowAction(onRunCommand, flow.name, repo)}>
+        <JobPicture flow={flow.name} />{flow.summary}{jobState(jobStates, flow.name)}</button>)}
     </section>)}
   </section>
 }

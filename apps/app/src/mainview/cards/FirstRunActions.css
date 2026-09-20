@@ -11,6 +11,10 @@
 .first-run-actions button { color: var(--text); font: inherit; }
 .first-run-actions section > button { display: grid; gap: 8px; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); padding: 12px; text-align: left; overflow-wrap: anywhere; font-weight: 600; transition: transform var(--dur) var(--ease-current), border-color var(--dur), box-shadow var(--dur); }
 .first-run-actions section > button:hover, .first-run-actions section > button:focus-visible { transform: translateY(-2px); border-color: var(--g-accent); box-shadow: var(--shadow-2); }
+/* A set-up job checks off: the mark is drawn, never text, so the label stays the flow's own words. */
+.first-run-actions section > button { position: relative; }
+.first-run-actions section > button[data-done] { border-color: var(--success); }
+.first-run-actions section > button[data-done]::after { content: "✓"; position: absolute; top: 18px; right: 18px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--success); color: var(--inverse-text); font-size: 13px; line-height: 1; }
 .first-run-picture { display: block; width: 100%; aspect-ratio: 5 / 3; border-radius: 8px; background: var(--surface-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .first-run-picture .frp-ink { stroke: var(--text-muted); }
 .first-run-picture .frp-acc { stroke: var(--g-accent); }

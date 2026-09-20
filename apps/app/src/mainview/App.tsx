@@ -21,7 +21,7 @@ import { isPracticeRepo } from "./state/practice/PracticeRepository"
 import { FirstRunActions } from "./cards/FirstRunActions"
 import { SetupChecklist } from "./cards/SetupChecklist"
 import { SignupCards } from "./cards/SignupCards"
-import { signupActive } from "./state/Signup"
+import { signupOpening } from "./state/Signup"
 import { CardView } from "./ChatCards"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
@@ -236,7 +236,8 @@ function AppContent() {
     : null
   const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && cloudHost
   // The signup onboarding owns the transcript until its stage is done (state/Signup.ts).
-  const signingUp = cloudHost && signupActive(session.signup, identity?.state)
+  // A repository URL is a page about that repository; the signup meets the landing entry, or resumes wherever its row is.
+  const signingUp = cloudHost && (session.signup !== undefined || controller.repositoryApp === null) && signupOpening(session.signup, identity?.state, identity?.accountOwnerLogin) !== false
   const authMessage: Message | undefined = signingUp || isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
     ? bootPending ? undefined : bootUnavailable
       ? {

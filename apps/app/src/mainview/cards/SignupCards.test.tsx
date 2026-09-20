@@ -15,12 +15,12 @@ afterAll(async () => {
 const mounted: Array<() => void> = []
 afterEach(() => { for (const unmount of mounted.splice(0)) unmount() })
 
-const render = (signup: Signup, repos: ReadonlyArray<{ id: string }> = []) => {
+const render = (signup: Signup, repos: ReadonlyArray<{ id: string }> = [], doors = true) => {
   const calls: Array<[string, string | undefined]> = []
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  flushSync(() => { root.render(<SignupCardBody signup={signup} repos={repos} onRunCommand={(name, args) => { calls.push([name, args]) }} />) })
+  flushSync(() => { root.render(<SignupCardBody signup={signup} repos={repos} doors={doors} onRunCommand={(name, args) => { calls.push([name, args]) }} />) })
   mounted.push(() => { flushSync(() => root.unmount()); host.remove() })
   const flows = () => [...host.querySelectorAll<HTMLElement>("button[data-flow]")].map(b => [b.textContent?.trim(), b.dataset.flow, b.dataset.flowArgs])
   return { host, calls, flows }
@@ -33,6 +33,13 @@ describe("the signup cards", () => {
     expect(flows().map(row => row[1])).toEqual(["auth.sign-in", "signup.google"])
     host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
     expect(calls).toEqual([["signup.email", "ada@acme.dev"]])
+  })
+
+  test("before identity answers, a first visit paints the title alone: no door, no receipt", () => {
+    const { host, flows } = render(initialSignup(), [], false)
+    expect(host.querySelector("h1")?.textContent?.replace(/\s+/g, " ").trim()).toBe("Automate your codebase today")
+    expect(flows()).toEqual([])
+    expect(host.querySelector("form")).toBeNull()
   })
 
   test("the account step prefills the GitHub login under smithers.sh/ and submits through signup.account", () => {

@@ -11,10 +11,25 @@ const SHOTS = process.env.SIGNUP_SHOTS
 
 test("a signed-out visitor walks the signup in the transcript and a reload resumes it", async ({ page }) => {
   await signedOutVisitor(page)
-  await page.goto("/smithersai/smithers/")
+  // Identity answers late on a cold load: the title is the first paint, and nothing else shows before the doors.
+  let answerIdentity = () => {}
+  const identityAnswered = new Promise<void>(resolve => { answerIdentity = resolve })
+  await page.route("**/api/auth/session", async route => { await identityAnswered; await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "signed-out" }) }) })
+  // The landing entry (no repository in the URL) paints the app before identity answers.
+  await page.goto("/")
   const signup = page.getByTestId("signup")
   await expect(signup).toBeVisible()
   await expect(signup.locator("h1")).toHaveText(/Automate\s+your\s+codebase\s+today/)
+  await expect(page.getByTestId("setup-checklist")).toHaveCount(0)
+  await expect(page.getByTestId("first-run-actions")).toHaveCount(0)
+  await expect(page.getByTestId("signup-github")).toHaveCount(0)
+  answerIdentity()
+  await expect(page.getByTestId("signup-github")).toBeVisible()
+  // The four words keep their gaps: the title is four words, not one. Measured once the word reveal has settled.
+  await page.waitForTimeout(1500)
+  const words = await signup.locator(".signup-word").evaluateAll(spans => spans.map(span => span.getBoundingClientRect()))
+  expect(words[1]!.left - words[0]!.right).toBeGreaterThan(4)
+  expect(await page.getByTestId("signup-email-continue").evaluate(el => getComputedStyle(el).color)).not.toBe(await signup.locator("h1").evaluate(el => getComputedStyle(el).color))
   await expect(page.getByTestId("setup-checklist")).toHaveCount(0)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/1-hero.png` })
 
@@ -36,7 +51,7 @@ test("a signed-out visitor walks the signup in the transcript and a reload resum
 
   // Back from GitHub: the identity answer moves the signup to the account step with the login prefilled.
   await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-in", login: "adapark", allowlisted: true, admin: false } }))
-  await page.goto("/smithersai/smithers/")
+  await page.goto("/")
   await expect(page.getByTestId("signup-account")).toHaveValue("adapark")
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/3-account.png` })
   await page.getByTestId("signup-name").fill("Ada Park")

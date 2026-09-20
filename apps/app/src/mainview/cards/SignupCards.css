@@ -28,7 +28,8 @@
 .signup-primary, .signup-door, .signup-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); }
 .signup-door { width: 100%; }
 .signup-door:hover, .signup-ghost:hover { background: var(--hover-subtle); }
-.signup-primary { background: var(--g-accent); color: var(--inverse-text); border-color: transparent; font-weight: 500; }
+/* Scoped under .signup so the button reset above never outranks the ink on the accent fill. */
+.signup .signup-primary { background: var(--g-accent); color: var(--inverse-text); border-color: transparent; font-weight: 500; }
 .signup-primary:hover { filter: brightness(0.95); }
 .signup-primary:disabled { opacity: 0.45; cursor: default; }
 .signup-ghost { border-color: transparent; color: var(--text-muted); }
@@ -83,7 +84,7 @@
 @keyframes signup-draw { to { stroke-dashoffset: 0; } }
 .signup-url-line { font-family: var(--font-mono); color: var(--text-muted); }
 .signup-url-line b { color: var(--g-accent); }
-.signup-giant { width: 100%; min-height: 64px; margin-top: 8px; border-radius: 12px; border: 0; background: var(--g-accent); color: var(--inverse-text); font-size: 1.25rem; font-weight: 600; box-shadow: 0 3px 0 color-mix(in srgb, var(--g-accent) 78%, #011627), var(--shadow-2); transition: transform var(--dur) var(--ease-current); }
+.signup .signup-giant { width: 100%; min-height: 64px; margin-top: 8px; border-radius: 12px; border: 0; background: var(--g-accent); color: var(--inverse-text); font-size: 1.25rem; font-weight: 600; box-shadow: 0 3px 0 color-mix(in srgb, var(--g-accent) 78%, #011627), var(--shadow-2); transition: transform var(--dur) var(--ease-current); }
 .signup-giant:hover { transform: translateY(-1px); }
 .signup-giant:active { transform: translateY(2px); box-shadow: none; }
 .signup-video { width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--g-accent) 18%, var(--surface-2))); display: grid; place-items: center; }

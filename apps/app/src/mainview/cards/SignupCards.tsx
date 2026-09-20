@@ -10,7 +10,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import type { Signup } from "../state/Signup"
-import { accountSlug, initialSignup, SIGNUP_QUESTIONS, signupActive, validAccountName } from "../state/Signup"
+import { accountSlug, initialSignup, SIGNUP_QUESTIONS, signupOpening, validAccountName } from "../state/Signup"
 import type { RunCommand } from "./CardFamily"
 import "./SignupCards.css"
 
@@ -24,7 +24,8 @@ const Receipt = ({ text, you }: { text: string; you?: boolean }) => <div classNa
 
 const HERO_WORDS = ["Automate", "your", "codebase", "today"]
 
-export function SignupCardBody({ signup, repos, onRunCommand }: { signup: Signup; repos: ReadonlyArray<SignupRepo>; onRunCommand: RunCommand }) {
+/** `doors` false paints the title alone: identity has not answered, so no door is offered yet. */
+export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { signup: Signup; repos: ReadonlyArray<SignupRepo>; onRunCommand: RunCommand; doors?: boolean }) {
   const draft = signup.draft
   const set = (field: string) => (event: { currentTarget: { value: string } }) => onRunCommand("signup.set", `${field} ${event.currentTarget.value}`)
   const past = (stage: Signup["stage"]) => STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(signup.stage)
@@ -36,11 +37,11 @@ export function SignupCardBody({ signup, repos, onRunCommand }: { signup: Signup
   </>
   return <div className="signup" data-testid="signup" data-stage={signup.stage}>
     {signup.stage === "sign-in" && <section className="signup-hero" aria-label="Smithers">
-      <h1>{HERO_WORDS.map((word, i) => <span key={word} className="signup-word" data-accent={i === 3 || undefined} style={{ "--i": i } as React.CSSProperties}>{word} </span>)}</h1>
+      <h1>{HERO_WORDS.map((word, i) => <span key={word} className="signup-word" data-accent={i === 3 || undefined} style={{ "--i": i } as React.CSSProperties}>{word}</span>).flatMap((span, i) => i === 0 ? [span] : [" ", span])}</h1>
       <i className="signup-rule" aria-hidden="true" />
     </section>}
     {receipts}
-    {signup.stage === "sign-in" && <section className="signup-card signup-doors-card" aria-label="Sign in">
+    {signup.stage === "sign-in" && doors && <section className="signup-card signup-doors-card" aria-label="Sign in">
       <div className="signup-doors">
         <button type="button" className="signup-door" data-testid="signup-github" {...flowAction(onRunCommand, "auth.sign-in")}><GitHubMark />Continue with GitHub</button>
         <button type="button" className="signup-door" data-testid="signup-google" {...flowAction(onRunCommand, "signup.google")}><GoogleMark />Continue with Google</button>
@@ -133,6 +134,7 @@ export function SignupCards() {
   const { data: identities } = useLiveQuery(collections.identitySessions)
   const { data: repositories } = useLiveQuery(collections.repositories)
   const signup = sessions[0]?.signup ?? controller.store.session().signup
-  if (controller.bootstrap?.host !== "cloud" || !signupActive(signup, identities[0]?.state)) return null
-  return <SignupCardBody signup={signup ?? initialSignup()} repos={repositories.filter(row => row.catalog !== true).map(row => ({ id: row.id }))} onRunCommand={controller.runCommand} />
+  const opening = controller.bootstrap?.host === "cloud" && (signup !== undefined || controller.repositoryApp === null) ? signupOpening(signup, identities[0]?.state, identities[0]?.accountOwnerLogin) : false
+  if (opening === false) return null
+  return <SignupCardBody signup={signup ?? initialSignup()} doors={opening === "full"} repos={repositories.filter(row => row.catalog !== true).map(row => ({ id: row.id }))} onRunCommand={controller.runCommand} />
 }

@@ -54,14 +54,37 @@ export const ACCOUNT_NAME = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/
 export const accountSlug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 39)
 export const validAccountName = (value: string): boolean => ACCOUNT_NAME.test(value) && value.length >= 2
 
+type IdentityState = "unknown" | "signed-out" | "signed-in" | "unavailable" | undefined
+
 /** Whether the onboarding owns the transcript: a stage short of done, or a signed-out visitor who has not started. */
-export const signupActive = (signup: Signup | undefined, identity: "unknown" | "signed-out" | "signed-in" | "unavailable" | undefined): boolean =>
+export const signupActive = (signup: Signup | undefined, identity: IdentityState): boolean =>
   signup === undefined ? identity === "signed-out" : signup.stage !== "done"
 
-/** The stage a definitive identity answer moves an unfinished signup to. */
-export const signupAfterIdentity = (signup: Signup | undefined, state: "signed-in" | "signed-out", login: string | null): Signup | undefined => {
+/**
+ * What the transcript shows while identity has not answered yet. A browser
+ * that retains no account owner and no signup row is a first visit: the
+ * title paints at once and the doors wait for the definitive signed-out
+ * answer, so nothing else flashes first. A retained owner is a returning
+ * person, whose transcript is their own.
+ */
+export const signupOpening = (signup: Signup | undefined, identity: IdentityState, owner: string | null | undefined): "full" | "title" | false => {
+  if (signupActive(signup, identity)) return "full"
+  if (signup === undefined && (identity === undefined || identity === "unknown") && !owner) return "title"
+  return false
+}
+
+/**
+ * The stage a definitive identity answer moves an unfinished signup to. A
+ * browser with no row and no retained owner is meeting its first sign-in:
+ * the GitHub door is auth.sign-in's own redirect, so the row starts here, at
+ * the account step. A browser that retained an owner is a returning person.
+ */
+export const signupAfterIdentity = (signup: Signup | undefined, state: "signed-in" | "signed-out", login: string | null, previousOwner: string | null | undefined): Signup | undefined => {
   if (state !== "signed-in" || login === null) return signup
-  if (signup === undefined) return undefined
+  if (signup === undefined) {
+    if (previousOwner) return undefined
+    return { ...initialSignup(), stage: "account", door: "github", account: accountSlug(login), draft: { account: accountSlug(login) } }
+  }
   if (signup.stage !== "sign-in" && signup.stage !== "verify") return signup
   return { ...signup, stage: "account", door: signup.door ?? "github", account: signup.account ?? accountSlug(login), draft: { ...signup.draft, account: signup.draft.account ?? accountSlug(login) } }
 }

@@ -10,7 +10,7 @@ import { expect,test } from "@playwright/test"
  */
 
 
-import { signedOutVisitor } from "./identity"
+import { signedOutVisitor, skipSignup } from "./identity"
 
 const slash = async (page: import("@playwright/test").Page, command: string) => {
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
@@ -133,7 +133,8 @@ test("a bare issues.list during first-run identity resumes into the practice lis
   page.on("request", request => { if (/\/api\/.*issues/.test(request.url())) issueReads.push(request.url()) })
 
   await page.goto("/")
-  await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
+  await skipSignup(page)
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click()
   // /verbose states every flow outcome, so the deferral's own trace line is the
   // event that says the command has parked — no wall clock to wait out.
   await slash(page, "/debug.verbose")
@@ -186,7 +187,8 @@ test("a bare issues.list still reaches the practice list when identity answers i
   await signedOutVisitor(page)
   const release = await heldIdentity(page)
   await page.goto("/")
-  await page.getByRole("button", { name: "Dismiss recommended actions", exact: true }).click()
+  await skipSignup(page)
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click()
   await slash(page, "/issues.list")
   release()
   await expect(page.getByTestId("card-practice-issues")).toBeVisible()

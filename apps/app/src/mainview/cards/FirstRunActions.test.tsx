@@ -92,7 +92,7 @@ test("the live card names the actions and adds no sentence about choosing one", 
     flushSync(() => root.render(<ControllerContext value={{ store, dismissFirstRun: () => {}, dismissHint: () => {}, commands: { all: () => commands }, runCommand: () => {} } as unknown as AppController}><FirstRunActions /></ControllerContext>))
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(host.textContent).not.toContain("Choose an action to begin")
-    expect(host.querySelector('[data-testid="first-run-actions"]')?.getAttribute("aria-label")).toBe("Recommended actions")
+    expect(host.querySelector('[data-testid="first-run-actions"]')?.getAttribute("aria-label")).toBe("Learn how to")
     expect([...host.querySelectorAll<HTMLButtonElement>('section[aria-label="Repository jobs"] > button')].map(button => button.textContent)).toEqual(jobTitles)
   } finally {
     flushSync(() => root.unmount())
@@ -171,7 +171,7 @@ test("every job stays one button away after the first job exists; only the dismi
     await home.settle()
     expect(calls[1]).toEqual(["review.setup", "will/demo"])
     expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
-    home.host.querySelector<HTMLButtonElement>('[aria-label="Dismiss recommended actions"]')!.click()
+    home.host.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!.click()
     await home.settle()
     expect(home.host.querySelector('[data-testid="first-run-actions"]')).toBeNull()
     expect(calls.length).toBe(2)
