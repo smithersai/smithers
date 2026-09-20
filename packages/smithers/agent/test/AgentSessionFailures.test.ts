@@ -1796,6 +1796,60 @@ describe("the executor's terminal ordering", () => {
     expect(observed.events).toContain("control.run.completed")
   })
 
+  it("says so when the ordered write is refused, rather than losing it silently", async () => {
+    const record = recorder()
+    const attempted = Deferred.makeUnsafe<void>()
+
+    const observed = await withExecutor(record, {
+      journal: {
+        emitDurableUnfenced: (input) =>
+          input.eventType.startsWith("control.run.")
+            ? Effect.andThen(
+              Effect.sync(() => Deferred.doneUnsafe(attempted, Effect.void)),
+              Effect.fail(new Journal.JournalError({ code: "queue_overflow", message: "the journal is full" }))
+            )
+            : Effect.sync(() => {
+              record.journaled.push({ eventType: input.eventType, payload: input.payload })
+              return accepted
+            })
+      },
+      orderTerminalStatus: () => Effect.void
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        yield* Deferred.await(attempted).pipe(Effect.timeout(Duration.seconds(10)))
+        return { statuses: [...record.statuses] }
+      }))
+
+    // Nothing joins the detached fiber, so the refusal has to be recorded where
+    // it happens. The fenced transition still ran; only the record was refused.
+    expect(observed.statuses).toEqual(["completed"])
+  })
+
+  it("writes nothing on a fiber interrupted out from under the ordering", async () => {
+    const record = recorder()
+    const entered = Deferred.makeUnsafe<void>()
+
+    const observed = await withExecutor(record, {
+      orderTerminalStatus: () =>
+        Effect.andThen(
+          Effect.sync(() => Deferred.doneUnsafe(entered, Effect.void)),
+          Effect.interrupt
+        )
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        yield* Deferred.await(entered).pipe(Effect.timeout(Duration.seconds(10)))
+        yield* Effect.repeat(Effect.yieldNow, { times: 500 })
+        return { statuses: [...record.statuses] }
+      }))
+
+    // Only a closing scope interrupts this fiber, and the run's row is then
+    // reclaimable by the next process by design. Writing through the interrupt
+    // would be this composition answering for a host that has already gone.
+    expect(observed.statuses).toEqual([])
+  })
+
   it("writes the terminal status inline when no host orders it", async () => {
     const record = recorder()
 
