@@ -1,5 +1,5 @@
 import { NodeCrypto } from "@effect/platform-node"
-import { LaunchFailed, RunNotFound } from "@smthrs/control/ControlError"
+import { LaunchFailed, PersistenceError, RunNotFound } from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import type { Service as ControlRuntime, StoredPlan } from "@smthrs/control/ControlRuntime"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
@@ -330,6 +330,33 @@ describe("private native journal supervision", () => {
         // runs. Neither of these produced a run to observe, so neither may
         // leave a terminal write waiting out the grace for an observation that
         // is never going to start.
+        expect(
+          yield* Effect.raceFirst(
+            Effect.as(supervisor.awaitSettled("root"), "ordering-released"),
+            Effect.as(Effect.repeat(Effect.yieldNow, { times: 500 }), "ordering-held")
+          )
+        ).toBe("ordering-released")
+      }))),
+    30_000
+  )
+
+  it(
+    "does not create observations for resumes this executor does not take up",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        const supervisor = yield* f.make()
+        expect(yield* supervisor.wrap(ControlExecutor.makeNoop()).resumeRun({ runId: "root" })).toBe("unknown")
+        const refusal = new PersistenceError({ operation: "resumeRun", message: "the engine row could not be read" })
+        const rejected = yield* Effect.result(
+          supervisor.wrap(ControlExecutor.makeNoop({ resumeRun: () => Effect.fail(refusal) })).resumeRun({
+            runId: "root"
+          })
+        )
+        expect(rejected).toMatchObject({ _tag: "Failure", failure: refusal })
+        expect(yield* f.rows()).toEqual([])
+        // A resume holds the ordering from before the executor runs, for the
+        // launch's reason. Neither of these re-drives anything here.
         expect(
           yield* Effect.raceFirst(
             Effect.as(supervisor.awaitSettled("root"), "ordering-released"),

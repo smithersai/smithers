@@ -427,9 +427,20 @@ export const make = (options: Options) =>
           return acceptance
         }),
       resumeRun: (input) =>
-        executor.resumeRun(input).pipe(
-          Effect.tap((uptake) => uptake === "resuming" ? admit(input.runId, false) : Effect.void)
-        )
+        Effect.gen(function*() {
+          const id = input.runId
+          // The same window as a launch: `AgentSession.resumeRun` forks the
+          // re-drive before it answers `resuming`, so the resumed body can
+          // reach its terminal write before this admission registers anything.
+          // A run already under observation keeps that observation.
+          const pending = yield* hold(id)
+          const uptake = yield* executor.resumeRun(input).pipe(
+            Effect.onError(() => release(id, pending))
+          )
+          if (uptake !== "resuming") yield* release(id, pending)
+          else yield* Effect.asVoid(admit(id, false, pending))
+          return uptake
+        })
     })
     const recover = options.control.listRuns.pipe(
       // Native validation happens before paging history. This includes terminal

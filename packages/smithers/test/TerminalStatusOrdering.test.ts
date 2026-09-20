@@ -284,6 +284,57 @@ describe("a terminal control status ordered against the native projection", () =
   )
 
   it(
+    "holds a resumed run whose body finishes before its observation is registered",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        const lifetime = yield* Scope.Scope
+        yield* f.create
+        const supervisor = yield* f.make({ orderingGrace: Duration.minutes(5) })
+        yield* f.finish
+        const ordered = Deferred.makeUnsafe<string>()
+        const released = Deferred.makeUnsafe<void>()
+        const executor = ControlExecutor.makeNoop({
+          // `AgentSession.resumeRun` forks the re-drive before it answers
+          // `resuming`, so a resumed body reaches its terminal write from
+          // inside this call, exactly as a launched one does.
+          resumeRun: () =>
+            Effect.gen(function*() {
+              yield* Effect.forkIn(
+                Effect.andThen(
+                  supervisor.awaitSettled(runId),
+                  Effect.sync(() => Deferred.doneUnsafe(released, Effect.void))
+                ),
+                lifetime
+              )
+              const verdict = yield* Effect.raceFirst(
+                Effect.as(Deferred.await(released), "ordering-released"),
+                Effect.as(Effect.repeat(Effect.yieldNow, { times: 500 }), "ordering-held")
+              )
+              Deferred.doneUnsafe(ordered, Effect.succeed(verdict))
+              return "resuming" as const
+            })
+        })
+        yield* f.controlJournal.transact(supervisor.wrap(executor).resumeRun({ runId }))
+        expect(yield* Deferred.await(ordered)).toBe("ordering-held")
+
+        yield* Deferred.await(f.reached).pipe(Effect.timeout("10 seconds"))
+        yield* Deferred.succeed(f.release, void 0)
+        yield* Deferred.await(released).pipe(Effect.timeout("10 seconds"))
+        yield* f.complete
+        yield* until(f.rows, (rows) => rows.some((entry) => entry.eventType === settledKind))
+
+        const events = controlEvents(yield* f.rows)
+        expect(events.map((entry) => entry.kind)).not.toContain(Projection.gapKind)
+        for (let length = 1; length <= events.length; length++) {
+          const digest = Diagnosis.digest(events.slice(0, length))
+          if (digest.status === "completed") expect(Diagnosis.resolvedOutput(digest)).toBe(output)
+        }
+      }))),
+    30_000
+  )
+
+  it(
     "releases a hold whose host goes away before anything observes the run",
     () =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
