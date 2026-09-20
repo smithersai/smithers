@@ -48,6 +48,20 @@ const events = scenario === "interleaved" ? [
   stamp(7, "agent.unresolved-demanded", 1205),
   stamp(8, "agent.sufficiency-observed", 1206),
   stamp(9, "run.completed", 10000)
+] : scenario === "gap" ? [
+  // A wide band with nothing recorded inside it: the subject slept. The next
+  // record is the following band's own frame, so the position nearest the end
+  // of the wide band belongs to the band after it.
+  stamp(1, "agent.turn-opened", 1000),
+  stamp(2, "agent.cell-call-started", 1100, { flowName: "read", input: { path: "src/a.ts" } }),
+  stamp(3, "agent.cell-call-settled", 1200, { flowName: "read", outcome: "success", value: "one line" }),
+  stamp(4, "agent.turn-closed", 1300),
+  stamp(5, "agent.turn-opened", 2000),
+  stamp(6, "agent.turn-opened", 62100),
+  stamp(7, "agent.cell-call-started", 62200, { flowName: "write", input: { path: "src/a.ts", content: "x" } }),
+  stamp(8, "agent.cell-call-settled", 62300, { flowName: "write", outcome: "success" }),
+  stamp(9, "agent.turn-closed", 62400),
+  stamp(10, "run.completed", 62500)
 ] : scenario === "tail" || scenario === "tail-live" ? [
   // The journal's LAST record opens a frame, so the last band's seq is also
   // the last recorded position. A band door there asks for the latest

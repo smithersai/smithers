@@ -123,8 +123,28 @@ export const tracePositions = (records: ReadonlyArray<JournalRecord>, extent: Tr
   })
 }
 
-const nearestPosition = (positions: ReadonlyArray<TracePosition>, left: number): TracePosition | undefined =>
-  positions.reduce<TracePosition | undefined>((best, one) => best === undefined || Math.abs(one.left - left) < Math.abs(best.left - left) ? one : best, undefined)
+/**
+ * The position a release at `left` commits: the last one recorded at or before
+ * it, and the earliest when the release precedes every record.
+ *
+ * The log below the strip caps AT the cursor, so a release that committed the
+ * position NEAREST it could show the reader work that had not happened where
+ * they pointed: a band whose subject slept for a minute records nothing inside
+ * it, and its far end is nearest the next band's own opening frame. Every band
+ * opens on a recorded position, so reading the release downwards also keeps it
+ * inside the band it was made in, however long that band ran with nothing to
+ * record. Timestamps tie and regress, so this is a scan and not a search.
+ */
+const positionAt = (positions: ReadonlyArray<TracePosition>, left: number): TracePosition | undefined => {
+  const later = (one: TracePosition, than: TracePosition) => one.left > than.left || (one.left === than.left && one.seq > than.seq)
+  let reached: TracePosition | undefined
+  let earliest: TracePosition | undefined
+  for (const one of positions) {
+    if (earliest === undefined || later(earliest, one)) earliest = one
+    if (one.left <= left && (reached === undefined || later(one, reached))) reached = one
+  }
+  return reached ?? earliest
+}
 
 // In-flight pointer mechanics only. A settled gesture has no state here.
 const drags = new WeakMap<HTMLElement, { readonly x: number; readonly bandSeq?: number; moved: boolean }>()
@@ -152,7 +172,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
     const rect = event.currentTarget.getBoundingClientRect()
     const left = clamp((event.clientX - rect.left) / Math.max(rect.width, 1) * 100, 0, 100)
     event.currentTarget.style.setProperty("--scrub-preview", `${left}%`)
-    return nearestPosition(positions, left)
+    return positionAt(positions, left)
   }
   const cancel = (element: HTMLElement) => {
     drags.delete(element)

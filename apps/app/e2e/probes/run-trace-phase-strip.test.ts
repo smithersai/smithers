@@ -276,3 +276,23 @@ test("a band door still commits when its own band grows under the keypress", asy
   } finally { await page.close() }
 }, 30000)
 
+
+test("a pointer release inside a band commits a position inside that band, even where nothing was recorded", async () => {
+  const page = await open("gap")
+  try {
+    const seqs = await page.locator("button[data-phase-band]").evaluateAll((nodes) => nodes.map((node) => Number(node.getAttribute("data-seq"))))
+    expect(seqs).toEqual([1, 5, 6])
+    const band = page.locator('button[data-phase-band][data-seq="5"]')
+    const box = (await band.boundingBox())!
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + box.width * 0.15, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.9, y, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.runTraceBrowser.cursor !== "latest")
+    const parked = Number(await cursor(page))
+    // The band the pointer was released in runs from 5 up to the next band at 6.
+    expect(parked, "a release inside one band commits inside it").toBeGreaterThanOrEqual(5)
+    expect(parked, "a release inside one band commits inside it").toBeLessThan(6)
+  } finally { await page.close() }
+}, 30000)
