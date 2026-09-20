@@ -51,6 +51,32 @@
 
 ### Fixed
 
+- A SIGTERM no longer leaves a server that has closed its listener running.
+  `gracefulShutdownTimeout` bounds only the preemptive close inside the serve
+  scope. The finalizer that holds the process is node's `server.close`, which
+  calls back when the last connection is gone and which nothing bounded. Node
+  closes the connections that were idle when it was called and only those, so
+  a connection that was mid-request when the signal arrived was waited for,
+  and once its answer was written it was an idle keep-alive socket node no
+  longer looked at. `Serve.drain` closes the connections instead: the idle
+  ones at once and again as they fall idle, and whatever is still in flight
+  when `Serve.shutdownTimeout` expires. The timers are unref'd, so neither
+  keeps the process alive by existing. Measured over the spawned verb with
+  the scripted driver: one client that was mid-request on the synchronous
+  prompt and kept asking on the same connection held a process whose listener
+  had closed 152 ms after the signal alive for the whole 30 s the run waited,
+  leaving only when the client hung up; it now leaves in 116 ms. A held
+  synchronous prompt alone cost 5.0 s against 27 ms with nothing held, and now
+  costs 39 ms.
+
+- `POST /session/:id/message` is answered when the server stops instead of
+  held across its shutdown. The route waits on `Turns.settled` for the turn it
+  opened, and a turn parked on a permission nobody is going to answer waits
+  for good, which is a request in flight and so a connection the socket's own
+  close waits on. `Turns.settled` now gives up when the hub closes, which is
+  the server stopping, and the route answers 503 `UnavailableError` naming the
+  session. Nothing else about the route changes.
+
 - A store read that failed writes its cause to the log. `Routes.onStoreError`
   answered the person with the `StoreError`'s sentence and dropped its `cause`,
   so a one-off HTTP 500 on `GET /session/:id/message` left a log saying a read

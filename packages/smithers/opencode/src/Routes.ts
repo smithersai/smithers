@@ -231,6 +231,8 @@ const badRequest = (message: string) => json({ name: "BadRequestError", data: { 
 
 const failed = (message: string) => json({ name: "UnknownError", data: { message } }, 500)
 
+const unavailable = (message: string) => json({ name: "UnavailableError", data: { message } }, 503)
+
 const query = (request: HttpServerRequest.HttpServerRequest): URLSearchParams =>
   new URL(request.url, "http://localhost").searchParams
 
@@ -706,7 +708,9 @@ export const layer = (
       // as `prompt_async`, answered when the turn is over rather than when it
       // is accepted: the answer is the finished message and its parts, which
       // is what the TUI reads back. A turn the person never unparks holds the
-      // request, the way OpenCode's own server holds it.
+      // request, the way OpenCode's own server holds it, up to the moment the
+      // server stops: that answers 503 rather than holding the request, and
+      // so the connection, across the shutdown.
       yield* router.add(
         "POST",
         "/session/:id/message",
@@ -714,7 +718,12 @@ export const layer = (
           Effect.flatMap(sessionParam, (id) =>
             Effect.gen(function*() {
               yield* turns.prompt(promptOf(id, yield* body(request)))
-              yield* turns.settled(id)
+              // A server that stopped while the turn was open owes the
+              // client an answer now, not the connection held open across
+              // its own shutdown: the socket waits on a request in flight.
+              if (!(yield* turns.settled(id))) {
+                return unavailable(`Session ${id} is still running: the server is stopping.`)
+              }
               const messages = yield* store.listMessages(id)
               const answer = messages.filter((message) => message.info.role === "assistant").at(-1)
               return answer === undefined

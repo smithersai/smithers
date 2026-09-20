@@ -116,8 +116,13 @@ export interface Service {
    * the synchronous prompt route the TUI uses, answers with the finished
    * message, so it waits here for the turn it just opened. A session that
    * is already idle resolves at once.
+   *
+   * `false` when the server stopped while the turn was still open. The wait
+   * gives up there rather than holding the request: nothing is going to
+   * settle the turn now, and the socket cannot finish closing while a
+   * request is still in flight on it.
    */
-  readonly settled: (sessionID: string) => Effect.Effect<void>
+  readonly settled: (sessionID: string) => Effect.Effect<boolean>
 }
 
 /**
@@ -655,7 +660,11 @@ export const make = (
 
     const settled: Service["settled"] = (sessionID) =>
       Effect.gen(function*() {
-        while (states.has(sessionID)) yield* Effect.sleep(settleRetryDelay)
+        while (states.has(sessionID)) {
+          if (yield* hub.stopping) return false
+          yield* Effect.sleep(settleRetryDelay)
+        }
+        return true
       })
 
     const status: Service["status"] = () =>

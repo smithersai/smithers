@@ -18,11 +18,11 @@
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { type Duration, Effect, Layer, Schema } from "effect"
+import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
 import type { ServeError } from "effect/unstable/http/HttpServerError"
-import { createServer } from "node:http"
+import { createServer, type Server } from "node:http"
 import { resolve } from "node:path"
 import * as Auth from "./Auth.ts"
 import * as Cors from "./Cors.ts"
@@ -197,6 +197,55 @@ const assemble = (
 export const shutdownTimeout: Duration.Input = "2 seconds"
 
 /**
+ * How often the drain looks for a connection that has fallen idle.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const drainInterval: Duration.Input = "10 millis"
+
+/**
+ * Closes the socket's connections instead of waiting for them, and bounds
+ * the wait at `grace`.
+ *
+ * `gracefulShutdownTimeout` bounds only the preemptive close inside the
+ * serve scope. The finalizer that actually holds the process is node's
+ * `server.close`, which calls back when the last connection is gone and
+ * which nothing bounds. Node closes the connections that were idle when it
+ * was called, and only those: a connection that was mid-request when the
+ * signal arrived is waited for, and once its answer is written it is an idle
+ * keep-alive socket node no longer looks at, so the process waits out
+ * `keepAliveTimeout` on it. One ordinary client that keeps asking on that
+ * same connection is never idle at all, and then the wait has no end. Both
+ * were measured against this server: a held synchronous prompt cost 5.0 s
+ * against 27 ms with nothing held, and a client that kept asking held a
+ * process whose listener had closed 152 ms after the signal alive for as
+ * long as it was left running, leaving only when the client hung up.
+ *
+ * So the connections are closed here. The idle ones go at once and again as
+ * they fall idle, and whatever is still in flight when the grace expires is
+ * destroyed. Both timers are unref'd, so neither keeps the process alive by
+ * existing, and both are cleared when the socket closes.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const drain = (server: Server, grace: Duration.Input = shutdownTimeout): void => {
+  const falling = setInterval(() => server.closeIdleConnections(), Duration.toMillis(drainInterval))
+  const expiry = setTimeout(() => {
+    clearInterval(falling)
+    server.closeAllConnections()
+  }, Duration.toMillis(grace))
+  falling.unref()
+  expiry.unref()
+  server.once("close", () => {
+    clearInterval(falling)
+    clearTimeout(expiry)
+  })
+  server.closeIdleConnections()
+}
+
+/**
  * The server on a Node socket. Needs a driver and a store: the engine
  * driver brings its own store over the engine database, and the scripted
  * driver is paired with `Store.layerSqlite(databasePath(directory))`. The
@@ -204,7 +253,9 @@ export const shutdownTimeout: Duration.Input = "2 seconds"
  *
  * On shutdown the hub ends every event stream first, so the open
  * `/global/event` responses finish and the socket closes at once instead
- * of waiting its graceful timeout on clients that never disconnect.
+ * of waiting its graceful timeout on clients that never disconnect. What is
+ * left is then drained rather than waited for ({@link drain}), so the
+ * process leaves whatever its clients do with their connections.
  *
  * @category layers
  * @since 1.0.0
@@ -217,18 +268,25 @@ export const layer = (
       const refused = refusal(options.bind)
       if (refused !== undefined) return Effect.fail(new BindRefused({ message: refused }))
       const hub = hubOf(options)
+      // The socket is built here rather than by the layer so the drain has
+      // it: nothing else can reach the connections it is holding.
+      const socket = createServer()
       const served = HttpRouter.serve(assemble(options, hub), { disableListenLog: true, disableLogger: true }).pipe(
         Layer.provideMerge(
-          NodeHttpServer.layer(createServer, {
+          NodeHttpServer.layer(() => socket, {
             host: options.bind.hostname,
             port: options.bind.port,
             gracefulShutdownTimeout: shutdownTimeout
           })
         )
       )
-      // Built after the socket, so its finalizer runs before the socket's.
+      // Built after the socket, so its finalizer runs before the socket's:
+      // the streams end and the drain is armed while the socket's own
+      // finalizer is still to come, because that finalizer is the one that
+      // waits.
       const closing = Layer.effectDiscard(
-        Effect.flatMap(Events.Events, (events) => Effect.addFinalizer(() => events.close))
+        Effect.flatMap(Events.Events, (events) =>
+          Effect.addFinalizer(() => Effect.andThen(events.close, Effect.sync(() => drain(socket)))))
       ).pipe(Layer.provide(hub))
       return Effect.succeed(Layer.provideMerge(closing, served))
     })

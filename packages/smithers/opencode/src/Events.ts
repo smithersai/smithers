@@ -91,6 +91,14 @@ export interface Service {
    * instead of waiting on clients that never disconnect.
    */
   readonly close: Effect.Effect<void>
+  /**
+   * Whether {@link Service.close} has run, which is the server stopping.
+   * The hub is closed before the socket is, so a request waiting on
+   * something only a running turn can give it reads this and stops waiting:
+   * nothing is going to give it, and a request still in flight is a
+   * connection the socket's own close then waits on.
+   */
+  readonly stopping: Effect.Effect<boolean>
 }
 
 /**
@@ -233,7 +241,9 @@ export const make = (options: Options): Effect.Effect<Service> =>
       return Effect.forEach(subscribers, (queue) => Queue.end(queue), { discard: true })
     })
 
-    return { publish, replay, stream, close }
+    const stopping: Service["stopping"] = Effect.sync(() => closed)
+
+    return { publish, replay, stream, close, stopping }
   })
 
 /**
