@@ -287,3 +287,54 @@ describe("Cell.FlowProjection", () => {
     }
   })
 })
+
+describe("Cell.callOf and Cell.displayDescriptor", () => {
+  const declaration: FlowBinding.Declared = {
+    name: "read",
+    description: "Read one file.",
+    capabilities: [],
+    effects: undefined
+  }
+  const presentation = {
+    verb: { pending: "Reading", success: "Read", failure: "Could not read" },
+    subject: "path",
+    result: "read"
+  } as const
+  const identity = new Cell.CallIdentity({
+    session: "ses-1",
+    frame: 0,
+    cell: "cell-digest",
+    ordinal: 0,
+    declaration: "declaration-digest",
+    layers: []
+  })
+  const call = (options: {
+    readonly activity?: Descriptor.FlowActivity
+    readonly presentation?: Descriptor.CallPresentation
+  }): Cell.Call => Cell.callOf(FlowBinding.descriptorOf(declaration, options), { input: { path: "." }, identity })
+
+  it("copies the declaration's display fields onto the call it builds", () => {
+    const built = call({ activity: "reads", presentation })
+
+    expect(built.activity).toBe("reads")
+    expect(built.presentation).toEqual(presentation)
+  })
+
+  it("carries neither display field when the declaration claimed neither", () => {
+    const built = call({})
+
+    expect(built.activity).toBeUndefined()
+    expect(built.presentation).toBeUndefined()
+    expect(Cell.displayDescriptor(built)).toBeUndefined()
+  })
+
+  it("projects each claimed display field under the flow's own name", () => {
+    expect(Cell.displayDescriptor(call({ activity: "reads" }))).toEqual({ name: "read", activity: "reads" })
+    expect(Cell.displayDescriptor(call({ presentation }))).toEqual({ name: "read", presentation })
+    expect(Cell.displayDescriptor(call({ activity: "reads", presentation }))).toEqual({
+      name: "read",
+      activity: "reads",
+      presentation
+    })
+  })
+})
