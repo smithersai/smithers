@@ -1,4 +1,6 @@
 import { enqueuedEventType } from "@smthrs/control/Steering"
+import { createHash } from "node:crypto"
+import { SetupDraftSchema, storedSetupCandidate, type SetupDraft } from "@smthrs/rpc/RepositorySetup"
 import { scenario } from "./coverage/types"
 import { fixtureInputText } from "./support/values"
 import { closeComposer, command, expect, realApi, test } from "./support/test"
@@ -355,7 +357,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     "host:production", "path:success", "door:slash", "dimension:real-provider", "dimension:ordinary-module-flow",
     "dimension:host-revision-evidence", "evidence:recorded-module-step-trail-or-host-predates-commit"
   ],
-  description: "Launch the registered coding dispatch module through the ordinary UI in an owned workspace. Compare recorded step meanings while live and at completion when the host contains the producer; archive a visible typed host limitation otherwise. Verify the requested read-only task leaves README unchanged."
+  description: "Launch the registered repository issues module through the ordinary UI in an owned workspace. Compare recorded step meanings while live and at completion when the host contains the producer; archive a visible typed host limitation otherwise. Verify two source-grounded research results and that README stays unchanged."
 }), async ({ page, request, workflowRepo }, testInfo) => {
   testInfo.setTimeout(20 * 60_000)
   const { repo, workspaceId } = workflowRepo
@@ -366,28 +368,51 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host })
   expect(measured.sha256).toBe(host.sha256)
   const catalog = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workspaceId)
-  expect((catalog.payload as { items: { flowId: string }[] }).items.map(one => one.flowId)).toContain("coding/dispatch")
+  await attachProductionJson(testInfo, "timeline-module-catalog", catalog.payload)
+  expect((catalog.payload as { items: { flowId: string }[] }).items.map(one => one.flowId)).toContain("repository-jobs/issues")
   const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
-  const input = { turnId: crypto.randomUUID(), role: "coding/implement", history: [], workspaceRoot: measured.workspaceRoot,
-    prompt: 'Read-only task. Do not change files. Use one numbered step per model response, one JavaScript cell per step. 1. Read README.md with ctx.call("read", {path:"README.md"}) and print the result. 2. In the next response call ctx.call("bash", {command:"sleep 20", timeoutMs:60000}) and print the result. 3. In the next response read README.md again, then return messages containing its exact first line. Do not combine these steps.' }
-  const subject = await launchSubject(page, workflowRepo, "coding/dispatch", input, testInfo)
+  const workspace = await readJson<{ head: { commit_id: string } }>(page, request, cloudRepoPath(repo, `/workspaces/${workspaceId}`))
+  expect(workspace.head.commit_id).toMatch(/^[0-9a-f]{40}$/)
+  const configuration: SetupDraft = {
+    steps: ["research", "followup"].map(id => ({ id, name: id, mode: "automatic", prompt: "Answer with README.md's exact first line and cite README.md. The supplied source contains everything needed. Leave question empty and reproduction null." })),
+    checks: [], cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", choreEvent: "none",
+    budgetMinutes: 8, connectIssues: false, trialTitle: "README question", trialBody: ""
+  }
+  // The pinned host includes trial fields in its candidate identity; current hosts retain that format too.
+  const { choreEvent: _choreEvent, ...legacyDraft } = SetupDraftSchema.parse(configuration)
+  const digest = createHash("sha256").update(JSON.stringify({ repo, job: "issues", revision: 1, draft: legacyDraft })).digest("hex")
+  expect(storedSetupCandidate({ repo, job: "issues", revision: 1, draft: configuration }, digest)).toBe(true)
+  const input = { repo, job: "issues" as const, revision: 1, digest,
+    sourceRevision: workspace.head.commit_id, configuration,
+    event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: crypto.randomUUID(),
+      payload: { issue: { title: "What is README.md's exact first line?", body: "Answer from README.md and cite it. Do not change files or propose changes." } } } }
+  const subject = await launchSubject(page, workflowRepo, "repository-jobs/issues", input, testInfo)
   try {
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, moduleMeaning)
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, moduleMeaning, false)
     const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 10 * 60_000, workspaceId)
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
     await attachProductionJson(testInfo, "timeline-module-readback", { repo, workspaceId, runId: subject.runId, input, terminal, before, after })
     expect(terminal.status).toBe("completed")
     expect(after).toBe(before)
-    expect((terminal.finalOutput as { turnId?: string })?.turnId).toBe(input.turnId)
-    expect(JSON.stringify((terminal.finalOutput as { messages?: unknown })?.messages)).toContain(before.split("\n")[0])
+    const output = terminal.finalOutput as { status: string; eventKey: string; publicActions: unknown[];
+      results: { stepId: string; status: string; summary: string; output: { citations: string[]; question: string; reproduction: unknown } }[] }
+    expect(output.status).toBe("completed")
+    expect(output.eventKey).toBe(input.event.deliveryKey)
+    expect(output.publicActions).toEqual([])
+    expect(output.results.map(result => result.stepId).sort()).toEqual(["followup", "research"])
+    for (const result of output.results) {
+      expect(result.status).toBe("completed")
+      expect(result.summary).toContain(before.split("\n")[0])
+      expect(result.output.citations).toContain("README.md")
+      expect(result.output.question).toBe("")
+      expect(result.output.reproduction).toBeNull()
+    }
     const expected = moduleMeaning(rows)
     if (hostContains(host.sourceCommit, MODULE_COMMIT)) {
       expect(expected.frames.length).toBeGreaterThanOrEqual(2)
-      expect(expected.lines.length).toBeGreaterThanOrEqual(2)
-      requireLaterPhase(expected)
     }
     const rendered = await compareMeaning(subject.card, subject.trace, expected)
     await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal })

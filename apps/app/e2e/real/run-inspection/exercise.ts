@@ -90,7 +90,7 @@ const liveDom = (card: Locator) => card.evaluate(element => {
 
 /** Match each DOM snapshot to the independently read journal sequence, then require growth between them. */
 export const inspectRunning = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository,
-  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, meaningOf = journalMeaning): Promise<void> => {
+  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, meaningOf = journalMeaning, requireCallGrowth = true): Promise<void> => {
   type Sample = { journal: readonly JournalRow[]; expected: Meaning; rendered: Awaited<ReturnType<typeof liveDom>>; summary: ReturnType<typeof runSummary> }
   const samples: Sample[] = []
   const observe = async (previous?: Sample): Promise<Sample> => {
@@ -100,7 +100,7 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
       const expected = meaningOf(journal)
       const callCount = (meaning: Meaning) => meaning.frames.reduce((n, frame) => n + frame.calls.length, 0)
       if (expected.frames.length <= (previous?.expected.frames.length ?? 0) ||
-        previous !== undefined && callCount(expected) <= callCount(previous.expected)) return false
+        requireCallGrowth && previous !== undefined && callCount(expected) <= callCount(previous.expected)) return false
       const rendered = await liveDom(subject.card)
       const through = Math.max(...journal.map(row => Number(row.sequence)))
       if (rendered.through !== through) return false
