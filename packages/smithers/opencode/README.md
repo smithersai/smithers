@@ -48,7 +48,7 @@ import * as Serve from "@smthrs/opencode/Serve"
 import { Effect } from "effect"
 
 const directory = process.cwd()
-const seat = "cerebras:gpt-oss-120b"
+const seat = "cerebras:qwen-3.8-27b"
 const maxFrames = 100
 const program = Serve.host({ directory, bind: Serve.defaultBind, version: "1.0.0-rc.0", seat, maxFrames }).pipe(
   Effect.provide(EngineDriver.layer({ directory, seat, maxFrames, host }))

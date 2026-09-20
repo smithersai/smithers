@@ -278,7 +278,7 @@ describe("NodeControl.seatResolver OpenAI-compatible providers", () => {
         "GOOGLE_API_KEY",
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
       ],
-      ["cerebras", "cerebras:gpt-oss-120b", "CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions"]
+      ["cerebras", "cerebras:qwen-3.8-27b", "CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions"]
     ] as const
   )("routes a keyed %s seat through Chat Completions at its own endpoint", async (_provider, seat, variable, url) => {
     const resolved = await Effect.runPromise(resolve({ [variable]: "key" }, seat))

@@ -33,7 +33,7 @@ describe("the implement seat (RULINGS 42)", () => {
     expect(implementation.harness).toBe("codex")
 
     const fastModels = FAST_ROLE_IDS.map((id) => agentRole(id).model.id)
-    expect(fastModels).toEqual(["gpt-5.6-luna", "cerebras/gpt-oss-120b"])
+    expect(fastModels).toEqual(["gpt-5.6-luna", "cerebras/qwen-3.8-27b"])
     expect(fastModels).not.toContain(implementation.model.id)
   })
 

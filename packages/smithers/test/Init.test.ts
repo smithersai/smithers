@@ -215,7 +215,7 @@ describe("the seat the scaffold writes", () => {
 
   it("selects a compatible provider the production executor can route", () => {
     expect(Init.defaultSeat({ CEREBRAS_API_KEY: "k" })).toEqual({
-      seat: "cerebras:gpt-oss-120b",
+      seat: "cerebras:qwen-3.8-27b",
       variable: "CEREBRAS_API_KEY",
       resolved: true
     })

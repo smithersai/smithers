@@ -352,7 +352,7 @@ Cmd+K doors for the same acts: `/model.compose loopback-jev`,
 The loopback provider cannot prove a vendor accepts our bytes. With
 `CEREBRAS_API_KEY` exported in Terminal B's shell, run `/model.list`.
 See: a host row `cerebras`. Click `Test`. See: green with a real latency
-(228 ms when this script was written). Its detail reads Model `gpt-oss-120b`,
+(228 ms when this script was written). Its detail reads Model `qwen-3.8-27b`,
 URL `https://api.cerebras.ai`, Credential `CEREBRAS_API_KEY`.
 
 Then `New`: Name `cerebras-revoked`, Protocol `openai-chat`, Base URL

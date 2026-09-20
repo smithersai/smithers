@@ -78,7 +78,7 @@ export const OPENCODE_KIMI_MODEL = "kimi-for-coding/k3"
  * @category constants
  * @since 0.1.0
  */
-export const OPENCODE_CEREBRAS_MODEL = "cerebras/gpt-oss-120b"
+export const OPENCODE_CEREBRAS_MODEL = "cerebras/qwen-3.8-27b"
 
 const apiKey = (name: string): Signal => ({ status: "api-key", account: { label: name } })
 
@@ -257,7 +257,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
   /*
    * OpenCode on the Cerebras credential (the "fast-ui" role): `opencode
    * providers list` (1.18.22) names "Cerebras", read from CEREBRAS_API_KEY,
-   * and `opencode models cerebras` lists gpt-oss-120b and gemma-4-31b.
+   * and `opencode models cerebras` lists qwen-3.8-27b and gpt-oss-120b.
    */
   {
     id: "opencode-cerebras",
@@ -266,7 +266,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     launch: ["opencode", "--model", OPENCODE_CEREBRAS_MODEL],
     models: {
       flag: ["--model"],
-      suggestions: [OPENCODE_CEREBRAS_MODEL, "cerebras/gemma-4-31b"],
+      suggestions: [OPENCODE_CEREBRAS_MODEL, "cerebras/gpt-oss-120b"],
       list: ["opencode", "models", "cerebras"]
     },
     signal: (host) => {

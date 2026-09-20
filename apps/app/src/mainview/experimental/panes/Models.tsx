@@ -150,8 +150,8 @@ const SEATS = [
     kind: "role" as const,
     label: "Fast UI",
     purpose: "Fast, cheap UI iterations.",
-    modelId: "cerebras/gpt-oss-120b",
-    modelLabel: "Cerebras gpt-oss-120b",
+    modelId: "cerebras/qwen-3.8-27b",
+    modelLabel: "Cerebras Qwen 3.8 27B",
     harness: "opencode-cerebras",
     harnessState: "binary-only",
     floor: "—",
@@ -257,7 +257,7 @@ const MODELS = [
   { id: "gpt-5.6-sol", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
   { id: "gpt-5.6-luna", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
   { id: "kimi-for-coding/k3", provider: "kimi-for-coding", protocol: "openai-chat-completions", window: "128 000", seats: "2" },
-  { id: "cerebras/gpt-oss-120b", provider: "cerebras", protocol: "openai-chat-completions", window: "128 000", seats: "1" },
+  { id: "cerebras/qwen-3.8-27b", provider: "cerebras", protocol: "openai-chat-completions", window: "128 000", seats: "1" },
   { id: "typesafe-ai/jev", provider: "typesafe-ai", protocol: "evaluation-model", window: "—", seats: "3" }
 ]
 

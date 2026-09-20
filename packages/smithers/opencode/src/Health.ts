@@ -106,7 +106,7 @@ export const limitReason = (limit: Limit): string =>
  *
  * A usage limit is {@link Limit} and an account the operator fixes; this is
  * nothing anyone did. A dead network surfaced as a raw transport exception,
- * `UnknownError` carrying `transport from cerebras:gpt-oss-120b: HTTP
+ * `UnknownError` carrying `transport from cerebras:qwen-3.8-27b: HTTP
  * transport failed: TransportError: [ECONNREFUSED...]`, which names no fault
  * and no remedy and reads to the person as something they broke. The house
  * rule is that every failure is typed with a fault class and that an

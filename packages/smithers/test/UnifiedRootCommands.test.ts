@@ -431,7 +431,7 @@ describe("unified root command dispatch", () => {
     // An empty --seat and an empty SMITHERS_SEAT are both "not named", so the
     // first provider key the environment sets decides the seat.
     expect(opencode.seatOf({ seat: "" }, { SMITHERS_SEAT: "", CEREBRAS_API_KEY: "key" }))
-      .toBe("cerebras:gpt-oss-120b")
+      .toBe("cerebras:qwen-3.8-27b")
     expect(opencode.seatOf({ seat: undefined }, { SMITHERS_SEAT: "anthropic:claude-sonnet-4-5" }))
       .toBe("anthropic:claude-sonnet-4-5")
     expect(opencode.seatOf({ seat: "openai:gpt-5.6-sol" }, { SMITHERS_SEAT: "gemini:gemini-2.5-pro" }))

@@ -182,7 +182,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
     id: "fast-ui",
     label: "Fast UI",
     purpose: "Fast, cheap UI iterations.",
-    model: { provider: "cerebras", id: "cerebras/gpt-oss-120b", label: "Cerebras gpt-oss-120b" },
+    model: { provider: "cerebras", id: "cerebras/qwen-3.8-27b", label: "Cerebras Qwen 3.8 27B" },
     harness: "opencode-cerebras",
     delegates: false
   })
@@ -291,7 +291,7 @@ export const CLOUD_AGENT_ROLES: ReadonlyArray<CloudRole> = [
     purpose:
       "Answers questions about the Wiki and the repository facts in the runtime context, citing paths and pages, never inventing one.",
     seat: "cloud",
-    model: { provider: "cerebras", id: "gpt-oss-120b", label: "Cerebras gpt-oss-120b" },
+    model: { provider: "cerebras", id: "qwen-3.8-27b", label: "Cerebras Qwen 3.8 27B" },
     modelEnv: "CEREBRAS_MODEL_LIBRARIAN"
   },
   {

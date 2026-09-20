@@ -11,6 +11,7 @@ import type { ServerConfigShape } from "./Config"
 import { transportLayer } from "./Http"
 import {
   CLOUD_ROLE_MAX_TOKENS,
+  CLOUD_ROLE_REASONING_EFFORT,
   CLOUD_ROLE_TIMEOUT_MS,
   cloudRoleMessages,
   cloudRoleModel,
@@ -107,11 +108,11 @@ describe("the cloud role messages", () => {
   })
 
   test("the served model is the table default, or the role's configured override", () => {
-    expect(cloudRoleModel(cloudRole("librarian"), testConfig())).toBe("gpt-oss-120b")
+    expect(cloudRoleModel(cloudRole("librarian"), testConfig())).toBe("qwen-3.8-27b")
     expect(cloudRoleModel(cloudRole("flows"), testConfig())).toBe("qwen-3.8-27b")
-    expect(cloudRoleModel(cloudRole("flows"), testConfig({ cerebrasModelFlows: "gemma-4-31b" }))).toBe("gemma-4-31b")
-    expect(cloudRoleModel(cloudRole("librarian"), testConfig({ cerebrasModelFlows: "gemma-4-31b" }))).toBe("gpt-oss-120b")
-    expect(cloudRoleModel(cloudRole("librarian"), testConfig({ cerebrasModelLibrarian: "gemma-4-31b" }))).toBe("gemma-4-31b")
+    expect(cloudRoleModel(cloudRole("flows"), testConfig({ cerebrasModelFlows: "gpt-oss-120b" }))).toBe("gpt-oss-120b")
+    expect(cloudRoleModel(cloudRole("librarian"), testConfig({ cerebrasModelFlows: "gpt-oss-120b" }))).toBe("qwen-3.8-27b")
+    expect(cloudRoleModel(cloudRole("librarian"), testConfig({ cerebrasModelLibrarian: "gpt-oss-120b" }))).toBe("gpt-oss-120b")
   })
 })
 
@@ -134,12 +135,15 @@ describe("serving a cloud role turn", () => {
     const sent = (await network.calls[0]!.json()) as {
       model: string
       max_tokens: number
+      reasoning_effort?: string
       messages: Array<{ role: string; content: string }>
       response_format?: unknown
       tools?: unknown
     }
-    expect(sent.model).toBe("gpt-oss-120b")
+    expect(sent.model).toBe("qwen-3.8-27b")
     expect(sent.max_tokens).toBe(CLOUD_ROLE_MAX_TOKENS)
+    // Never the provider's own default, which on Cerebras is `high`.
+    expect(sent.reasoning_effort).toBe(CLOUD_ROLE_REASONING_EFFORT)
     expect(sent.response_format).toBeUndefined()
     expect(sent.tools).toBeUndefined()
     expect(sent.messages[0]).toEqual({ role: "system", content: "You are the Librarian." })
@@ -147,10 +151,10 @@ describe("serving a cloud role turn", () => {
 
   test("the flows role reads its own model, and the configured override wins", async () => {
     const network = recording(() => completion("Run /review."))
-    const response = await serve({ ...body, role: "flows", purpose: "flows" }, network, { ...KEY, cerebrasModelFlows: "gemma-4-31b" })
+    const response = await serve({ ...body, role: "flows", purpose: "flows" }, network, { ...KEY, cerebrasModelFlows: "gpt-oss-120b" })
     expect(response.status).toBe(200)
     await response.text()
-    expect(((await network.calls[0]!.json()) as { model: string }).model).toBe("gemma-4-31b")
+    expect(((await network.calls[0]!.json()) as { model: string }).model).toBe("gpt-oss-120b")
   })
 
   test("a body that names no cloud role is refused with 400", async () => {

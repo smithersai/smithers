@@ -3466,7 +3466,7 @@ describe("cloud roles on Cerebras", () => {
     expect(wire.calls.cerebras.length).toBe(1)
     expect(wire.calls.cerebras[0]!.headers.get("authorization")).toBe("Bearer csk-test")
     const sent = (await wire.calls.cerebras[0]!.json()) as { model: string; messages: Array<{ role: string; content: string }> }
-    expect(sent.model).toBe("gpt-oss-120b")
+    expect(sent.model).toBe("qwen-3.8-27b")
     expect(sent.messages).toEqual([
       { role: "system", content: "Be brief." },
       { role: "user", content: "Hello who are you" }
@@ -3476,12 +3476,12 @@ describe("cloud roles on Cerebras", () => {
   test("the deployment's CEREBRAS_MODEL_LIBRARIAN and CEREBRAS_MODEL_FLOWS override the served models", async () => {
     const wire = network(() => completion("ok"))
     await withMockedFetch(wire.handler, async () => {
-      const models = { ...env, CEREBRAS_MODEL_LIBRARIAN: "gemma-4-31b", CEREBRAS_MODEL_FLOWS: "gpt-oss-120b" }
+      const models = { ...env, CEREBRAS_MODEL_LIBRARIAN: "gpt-oss-120b", CEREBRAS_MODEL_FLOWS: "qwen-3-coder-480b" }
       await (await worker.fetch(post("/api/agent/turn", librarian), models)).text()
       await (await worker.fetch(post("/api/agent/turn", { ...librarian, runId: "run-flows", role: "flows", purpose: "flows" }), models)).text()
     })
     const sent = await Promise.all(wire.calls.cerebras.map(async (request) => ((await request.json()) as { model: string }).model))
-    expect(sent).toEqual(["gemma-4-31b", "gpt-oss-120b"])
+    expect(sent).toEqual(["gpt-oss-120b", "qwen-3-coder-480b"])
     expect(wire.calls.upstream.length).toBe(0)
   })
 

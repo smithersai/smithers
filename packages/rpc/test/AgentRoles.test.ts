@@ -57,7 +57,7 @@ describe("the agent role registry", () => {
     expect(agentRole("implementation")).toMatchObject({ model: { id: "gpt-5.6-sol" }, harness: "codex" })
     expect(agentRole("trivial-implementation")).toMatchObject({ model: { id: "gpt-5.6-luna" }, harness: "codex" })
     expect(agentRole("ui")).toMatchObject({ harness: "opencode-kimi", model: { id: "kimi-for-coding/k3" } })
-    expect(agentRole("fast-ui")).toMatchObject({ harness: "opencode-cerebras", model: { id: "cerebras/gpt-oss-120b" } })
+    expect(agentRole("fast-ui")).toMatchObject({ harness: "opencode-cerebras", model: { id: "cerebras/qwen-3.8-27b" } })
     expect(AGENT_ROLES.filter((role) => role.delegates).map((role) => role.id)).toEqual(["orchestrator"])
   })
 
@@ -154,7 +154,7 @@ describe("the cloud roles", () => {
       expect(AgentRoleSchema.safeParse(role).success).toBe(false)
     }
     expect(cloudRole("librarian")).toMatchObject({
-      model: { id: "gpt-oss-120b" },
+      model: { id: "qwen-3.8-27b" },
       modelEnv: "CEREBRAS_MODEL_LIBRARIAN"
     })
     expect(cloudRole("flows")).toMatchObject({ model: { id: "qwen-3.8-27b" }, modelEnv: "CEREBRAS_MODEL_FLOWS" })
@@ -165,11 +165,11 @@ describe("the cloud roles", () => {
 
   test("the served model is the env override when it is a model id, else the table default", () => {
     const librarian = cloudRole("librarian")
-    expect(cloudRoleModelId(librarian, {})).toBe("gpt-oss-120b")
-    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: " gemma-4-31b " })).toBe("gemma-4-31b")
-    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_FLOWS: "gemma-4-31b" })).toBe("gpt-oss-120b")
-    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "" })).toBe("gpt-oss-120b")
+    expect(cloudRoleModelId(librarian, {})).toBe("qwen-3.8-27b")
+    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: " gpt-oss-120b " })).toBe("gpt-oss-120b")
+    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_FLOWS: "gpt-oss-120b" })).toBe("qwen-3.8-27b")
+    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "" })).toBe("qwen-3.8-27b")
     // A flag-shaped override is ignored, exactly as roleLaunchArgv refuses one.
-    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "--model evil" })).toBe("gpt-oss-120b")
+    expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "--model evil" })).toBe("qwen-3.8-27b")
   })
 })

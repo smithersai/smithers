@@ -147,15 +147,15 @@ describe("agent roles — the orchestrator's instructions", () => {
         id: "fast-ui",
         label: "Fast UI",
         purpose: "Fast, cheap UI iterations.",
-        model: "Cerebras gpt-oss-120b",
+        model: "Cerebras Qwen 3.8 27B",
         available: false,
-        reason: "OpenCode · Cerebras has no credential for Cerebras gpt-oss-120b"
+        reason: "OpenCode · Cerebras has no credential for Cerebras Qwen 3.8 27B"
       }
     ])
     expect(prompt).toContain("You are the ORCHESTRATOR role")
     expect(prompt).toContain("agent.delegate <role> <task>")
     expect(prompt).toContain("- explainer (Kimi K3): Explains things very well.")
-    expect(prompt).toContain("- fast-ui (Cerebras gpt-oss-120b): Fast, cheap UI iterations. — NOT available: OpenCode · Cerebras has no credential")
+    expect(prompt).toContain("- fast-ui (Cerebras Qwen 3.8 27B): Fast, cheap UI iterations. — NOT available: OpenCode · Cerebras has no credential")
     // The orchestrator is not listed as something to delegate to.
     expect(prompt).not.toContain("- orchestrator (")
   })

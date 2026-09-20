@@ -59,7 +59,7 @@ forms take precedence), including after a transport pool rebuild. An unconfigure
 host retains its direct Undici agent. Workspace deployments can therefore use
 Plue's existing proxy-bound repository secrets: the guest holds a named
 placeholder while the egress proxy substitutes the credential only for the
-configured host/header. For example, `SMITHERS_CODING_IMPLEMENT_MODEL=cerebras:gpt-oss-120b`
+configured host/header. For example, `SMITHERS_CODING_IMPLEMENT_MODEL=cerebras:qwen-3.8-27b`
 uses `CEREBRAS_API_KEY`, bound to host `api.cerebras.ai` and header `authorization`.
 Assign that credential through the repository's agent-environment secret route;
 do not put its value in ordinary environment variables or the setup script.

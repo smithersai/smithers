@@ -36,7 +36,7 @@ describe("Providers.detect", () => {
       "openai:gpt-5.6-sol",
       "gemini:gemini-2.5-pro",
       "openrouter:openai/gpt-5.6-sol",
-      "cerebras:gpt-oss-120b"
+      "cerebras:qwen-3.8-27b"
     ])
     expect(detections.some((detection) => detection.seat.startsWith("anthropic"))).toBe(false)
   })
@@ -141,7 +141,7 @@ describe("Providers.chooseSeat", () => {
     expect(message).toContain("Kimi K3 (moonshot:kimi-k3): $MOONSHOT_API_KEY is not set")
     expect(message).toContain("OpenAI (openai:gpt-5.6-sol): $OPENAI_API_KEY exported but empty")
     expect(message).toContain("Gemini (gemini:gemini-2.5-pro): $GEMINI_API_KEY or $GOOGLE_API_KEY is not set")
-    expect(message).toContain("Cerebras (cerebras:gpt-oss-120b)")
+    expect(message).toContain("Cerebras (cerebras:qwen-3.8-27b)")
     expect(message).toContain("--seat <provider:model>")
   })
 

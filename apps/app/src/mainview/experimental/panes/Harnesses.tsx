@@ -98,7 +98,7 @@ const HARNESSES: ReadonlyArray<Harness> = [
     account: "kimi-for-coding, cerebras",
     launch: "opencode",
     signal: "~/.local/share/opencode/auth.json",
-    suggestions: ["kimi-for-coding/k3", "cerebras/gpt-oss-120b"],
+    suggestions: ["kimi-for-coding/k3", "cerebras/qwen-3.8-27b"],
     listable: true,
     modelFlag: true
   },
@@ -122,9 +122,9 @@ const HARNESSES: ReadonlyArray<Harness> = [
     version: "1.18.22",
     status: "signed-in",
     account: "cerebras",
-    launch: "opencode --model cerebras/gpt-oss-120b",
+    launch: "opencode --model cerebras/qwen-3.8-27b",
     signal: "~/.local/share/opencode/auth.json cerebras",
-    suggestions: ["cerebras/gpt-oss-120b", "cerebras/gemma-4-31b"],
+    suggestions: ["cerebras/qwen-3.8-27b", "cerebras/gpt-oss-120b"],
     listable: true,
     modelFlag: true
   },

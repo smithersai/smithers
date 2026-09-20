@@ -157,7 +157,7 @@ export const defaultSeat: Readonly<Record<Candidate, string>> = {
   openai: "openai:gpt-5.6-sol",
   gemini: "gemini:gemini-2.5-pro",
   openrouter: "openrouter:openai/gpt-5.6-sol",
-  cerebras: "cerebras:gpt-oss-120b"
+  cerebras: "cerebras:qwen-3.8-27b"
 }
 
 /**

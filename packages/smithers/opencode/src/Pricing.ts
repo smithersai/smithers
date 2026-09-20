@@ -20,6 +20,9 @@ const sonnet: Projection.Pricing = {
 
 /** Dollars per million tokens, by seat id, as the providers list them. */
 const table: Readonly<Record<string, Projection.Pricing>> = {
+  // Cerebras bills cached input at the full input rate, which is what
+  // `Projection.costOf` charges when the cache rates are absent.
+  "cerebras:qwen-3.8-27b": { inputPerMillion: 0.99, outputPerMillion: 1.49 },
   "cerebras:gpt-oss-120b": { inputPerMillion: 0.25, outputPerMillion: 0.69 },
   "anthropic:claude-sonnet-4-5": sonnet,
   "openrouter:anthropic/claude-sonnet-4.5": sonnet,

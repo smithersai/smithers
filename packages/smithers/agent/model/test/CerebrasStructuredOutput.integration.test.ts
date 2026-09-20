@@ -23,7 +23,7 @@ import * as Route from "../src/Route.ts"
 
 const apiKey = process.env["CEREBRAS_API_KEY"]
 const BASE_URL = "https://api.cerebras.ai/v1"
-const MODEL_ID = "gpt-oss-120b"
+const MODEL_ID = "qwen-3.8-27b"
 
 const executorLayer = Layer.provide(RequestExecutor.layer, FetchHttpClient.layer)
 

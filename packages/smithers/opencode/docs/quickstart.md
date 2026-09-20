@@ -9,7 +9,7 @@ description: "Serve a repository to the hosted OpenCode app with smithers openco
 cd my-repository
 export CEREBRAS_API_KEY=...       # the model seat
 export AI_GATEWAY_API_KEY=...     # Jev, which judges every completion
-smithers opencode --seat cerebras:gpt-oss-120b
+smithers opencode --seat cerebras:qwen-3.8-27b
 ```
 
 The server binds `http://127.0.0.1:4096` and prints the directory it serves.

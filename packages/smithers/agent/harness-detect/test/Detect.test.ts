@@ -172,7 +172,7 @@ describe("the table", () => {
     const all = await detectHarnessesWith(host({ binaries: ["/Users/u/.opencode/bin/opencode"] }))
     const byId = Object.fromEntries(all.map((harness) => [harness.id, harness]))
     expect(byId.opencode?.models).toEqual({
-      suggestions: ["kimi-for-coding/k3", "cerebras/gpt-oss-120b"],
+      suggestions: ["kimi-for-coding/k3", "cerebras/qwen-3.8-27b"],
       listable: true
     })
     expect(byId.codex?.models).toEqual({
@@ -346,7 +346,7 @@ describe("the table", () => {
     expect(withAuth.find((harness) => harness.id === "opencode-cerebras")).toMatchObject({
       status: "signed-in",
       account: { label: "cerebras" },
-      launch: { argv: ["opencode", "--model", "cerebras/gpt-oss-120b"] }
+      launch: { argv: ["opencode", "--model", "cerebras/qwen-3.8-27b"] }
     })
     const withEnv = await detectHarnessesWith(host({
       binaries: ["/Users/u/.opencode/bin/opencode"],
