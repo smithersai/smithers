@@ -204,13 +204,23 @@ describe("node records reaching the control journal", () => {
             Interpreter.maximumPageBytes + 4096
           )
         }
-        const ids = pages.flatMap((page) => {
-          const graph = page.payload["graph"] as { readonly nodes: ReadonlyArray<Record<string, unknown>> }
-          return graph.nodes.map((node) => node["id"] as string)
-        })
-        expect(ids).toEqual(
-          Graph.nodes(Graph.build(Wide as never, { planId: "supervised-plan" })).map((node) => node.id)
-        )
+        // Assembled in page order. A node wider than one page is seated and
+        // then continued, so the same id appears again carrying the next slice
+        // of its dependency list (D-061); the graph is the union.
+        const assembled = new Map<string, Array<string>>()
+        for (const page of pages) {
+          const graph = page.payload["graph"] as {
+            readonly nodes: ReadonlyArray<{ readonly id: string; readonly dependsOn: ReadonlyArray<string> }>
+          }
+          for (const node of graph.nodes) {
+            const held = assembled.get(node.id)
+            if (held === undefined) assembled.set(node.id, [...node.dependsOn])
+            else held.push(...node.dependsOn)
+          }
+        }
+        const planned = Graph.nodes(Graph.build(Wide as never, { planId: "supervised-plan" }))
+        expect([...assembled.keys()]).toEqual(planned.map((node) => node.id))
+        for (const node of planned) expect(assembled.get(node.id)).toEqual([...node.dependencies])
         expect(rows.filter((entry) => entry.eventType === Projection.gapKind)).toEqual([])
       }))),
     60_000
