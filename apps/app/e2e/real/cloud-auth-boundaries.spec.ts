@@ -1,5 +1,13 @@
+import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { command, expect, openApp, realApi, test } from "./support/test"
+import { awaitBoot, command, expect, openApp, realApi, test } from "./support/test"
+
+/** Enter the app and wait for the booted view before any keyboard chord is pressed. */
+const boot = async (page: Page): Promise<void> => {
+  const startedAt = performance.now()
+  await openApp(page)
+  await awaitBoot(page, "navigate", startedAt)
+}
 
 /**
  * Cloud PAT authentication belongs to the native/local host.  The real local
@@ -17,7 +25,7 @@ test("a real local browser sees an honest signed-out Cloud session", scenario("c
   ],
   description: "The local browser reads the real Cloud auth endpoint, observes the empty session, and cannot claim a credential by invoking sign-in or sign-out while the Cloud seam is unavailable."
 }), async ({ page, request }) => {
-  await openApp(page)
+  await boot(page)
 
   const before = await realApi(page, request, "GET", "/api/cloud-auth/session")
   expect(before.status()).toBe(200)
@@ -45,7 +53,7 @@ test("a real signed-out Cloud proxy refuses protected reads before any upstream 
   ],
   description: "A real anonymous browser cannot enumerate Cloud repositories; the proxy returns its explicit sign-in requirement and the UI preserves the Cloud sign-in boundary."
 }), async ({ page, request }) => {
-  await openApp(page)
+  await boot(page)
   await command(page, "/repo.list")
 
   const refusal = page.locator('.smithers-card, .smithers-toast').filter({ hasText: /Cloud|sign in|sign-in/i }).last()
