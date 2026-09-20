@@ -121,6 +121,46 @@ describe("the projection", () => {
     expect(nodes.at(-1)).toMatchObject({ nodeId: "result", outcome: "success", value: "done" })
   })
 
+  it("reserves `result` for the run's own resolution, not a step agent's", () => {
+    const step = {
+      stepId: "a".repeat(64),
+      executionId: "execution-1",
+      action: "repository/research",
+      attempt: 1,
+      ask: 0,
+      retry: 1,
+      scope: "execution-1/repository/research"
+    }
+    const nodes = NodeOutput.project([
+      event("control.engine.event", {
+        version: 1,
+        executionId: step.executionId,
+        generation: 0,
+        sequence: 1,
+        emittedAtMs: 1,
+        sourceId: `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`,
+        sourceSequence: 7,
+        eventType: "flows.harness.step-fact.v1",
+        payload: {
+          version: 1,
+          step,
+          generation: 0,
+          frame: 0,
+          ordinal: 0,
+          cell: "",
+          at: 1,
+          eventType: "control.agent.resolved",
+          sourceSequence: 7,
+          payload: { text: "the step's answer" }
+        }
+      })
+    ])
+
+    // A module run's steps each resolve with their own answer. The run's
+    // answer is the root's committed result, which this projection never saw.
+    expect(nodes.some((node) => node.nodeId === NodeOutput.resultNodeId)).toBe(false)
+  })
+
   it("names a call with no flow name rather than dropping it", () => {
     expect(NodeOutput.project([started(undefined as unknown as string)])[0]?.nodeId).toBe("?#1")
     expect(NodeOutput.project([event("control.agent.cell-call-started", [])])[0]?.nodeId).toBe("?#1")

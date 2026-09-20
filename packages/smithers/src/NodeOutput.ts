@@ -21,7 +21,7 @@
  * @since 1.0.0
  */
 import type { ControlSchema } from "@smthrs/control"
-import { asRecord, asString, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
+import { asRecord, asString, callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 
 /**
  * The reserved node id for the run's final output.
@@ -119,7 +119,11 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
       }
       continue
     }
-    if (event.kind === "control.agent.resolved") {
+    // `result` is THE run's answer, so only the run's own resolution may set
+    // it. `uniqueCallEvents` also normalizes a module run's step facts, and a
+    // step agent's answer is the step's, not the run's. A prompt run records
+    // one unscoped stream and reads exactly as it did.
+    if (event.kind === "control.agent.resolved" && callScope(event) === undefined) {
       finalOutput = asString(payload["text"])
       finalAt = event.occurredAt
       finalSequence = event.sequence
