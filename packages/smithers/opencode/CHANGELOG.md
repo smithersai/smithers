@@ -51,6 +51,25 @@
 
 ### Fixed
 
+- A crash the instant after a permission answer no longer strands the turn.
+  `Turns.permission` publishes the reply, which takes the card down, before it
+  forks the driver's answer, so a server lost in that window leaves a run row
+  annotated `waiting: approval` with no card in the store and, when the fork
+  never ran, no grant either. `resumeOnBoot` honored the annotation: it set the
+  turn parked and re-drove nothing, `GET /permission` listed nothing for the
+  app to answer, and the session stayed busy for good. A park is now honored
+  across a boot only while its card still stands unanswered. Otherwise the turn
+  is re-driven: a recorded `once` or `reject` grant carries the call through the
+  gate the person already passed, and a park whose answer was lost is asked
+  again under the same request id, which stands the card the app needs.
+  Requirement R11. Reproduced live on 2026-09-19 on `cerebras:gpt-oss-120b`
+  with a live gateway key, over a cell that ran `node marker.mjs` and then
+  `sleep 20`, with the server killed the instant the second card was answered:
+  the old code never finished the turn inside three minutes, and the new code
+  finished it twice, in 21.0 s and 20.9 s, each time with `replay.log` still
+  holding the marker's one line, one card per settled call, no part duplicated,
+  and no second assistant message.
+
 - A permission card can no longer outlive the turn that asked for it. A turn
   ends in two places and only one of them swept: the body's exit closed the
   projection through a `close` job that answered every card the person never

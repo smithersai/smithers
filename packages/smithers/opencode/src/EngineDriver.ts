@@ -1187,23 +1187,38 @@ export const layer = (options: Options) =>
               const sink = yield* Effect.orDie(open(turn))
               const running = yield* register(turn, sink)
               const waiting = yield* state.waiting(turn.messageID)
-              if (Option.isSome(waiting) && waiting.value.reason === "approval" && waiting.value.token !== null) {
-                // Parked on a permission: the pending request is in the store,
-                // and the person's answer re-drives it.
-                const token = waiting.value.token
+              const token = Option.isSome(waiting) && waiting.value.reason === "approval"
+                ? waiting.value.token
+                : null
+              if (token !== null) {
+                // An approval annotation outlives the question it was written
+                // for. `Turns` publishes the reply, which takes the card down,
+                // before the driver records the grant and re-drives, so a
+                // process that stops anywhere in that window leaves a run row
+                // asking for an approval the person already gave and no card
+                // to give it again: `/permission` lists nothing, the app shows
+                // nothing, and honoring the annotation left the session busy
+                // for good. So a park is honored only while its card stands
+                // unanswered. Otherwise the turn is re-driven: a recorded
+                // answer carries the call through the gate the person already
+                // passed, and a park with no answer asks again and stands the
+                // card the app needs to answer it.
                 const pending = yield* Effect.orDie(stored.listPermissions(turn.sessionID))
                 const request = pending.find((candidate) => candidate.id === token)
-                const flow = request?.permission ?? "bash"
-                const pattern = request?.always[0]
-                // No stored card means no pattern to generalise: an answer to
-                // this park covers the call it parked, and nothing else.
-                running.parked = {
-                  requestID: token,
-                  flow,
-                  subject: request?.patterns[0] ?? "*",
-                  always: pattern === undefined ? undefined : `${flow} ${pattern}`
+                const answered = grants.once.has(token) || grants.denied.has(token)
+                if (request !== undefined && !answered) {
+                  const flow = request.permission
+                  const pattern = request.always[0]
+                  // A card the store holds without a subject or a pattern is
+                  // answerable for the one call it parked and nothing wider.
+                  running.parked = {
+                    requestID: token,
+                    flow,
+                    subject: request.patterns[0] ?? "*",
+                    always: pattern === undefined ? undefined : `${flow} ${pattern}`
+                  }
+                  continue
                 }
-                continue
               }
               yield* Effect.forkIn(drive(running, "resume"), scope)
             }

@@ -910,8 +910,26 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     // rows say is all the engine has.
     const goneAgain = recorder()
     const closedAgain = recorder()
-    const result = await process_(directory, (driver) =>
+    const result = await process_(directory, (driver, store) =>
       Effect.gen(function*() {
+        // The cards the projection stored when each park was announced: a park
+        // is honored across a boot while its card stands.
+        for (
+          const [sessionID, messageID, events] of [
+            ["ses_g", "msg_g", gone.events],
+            ["ses_h", "msg_h", closed.events]
+          ] as const
+        ) {
+          yield* store.putPermission({
+            id: permissionOf(events),
+            sessionID,
+            permission: "bash",
+            patterns: ["echo gone"],
+            metadata: {},
+            always: ["echo *"],
+            tool: { messageID, callID: "c" }
+          })
+        }
         yield* driver.resumeOnBoot((turn) =>
           Effect.succeed(turn.sessionID === "ses_g" ? goneAgain.sink : closedAgain.sink)
         )
@@ -1012,8 +1030,10 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     const secondOther = recorder()
     const grants = await process_(directory, (driver, store) =>
       Effect.gen(function*() {
-        // The turns composition stores the card the app shows; a card that
-        // was never stored still resumes, under the flow the driver asks for.
+        // The turns composition stores the card the app shows, which is what
+        // a park is honored across a boot by. One of the two named no subject
+        // and offered no pattern to generalise, which is what its answer is
+        // measured by.
         yield* store.putPermission({
           id: request,
           sessionID: "ses_h",
@@ -1022,6 +1042,15 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
           metadata: {},
           always: ["echo *"],
           tool: { messageID: "msg_i", callID: "c" }
+        })
+        yield* store.putPermission({
+          id: otherRequest,
+          sessionID: "ses_o",
+          permission: "bash",
+          patterns: [],
+          metadata: {},
+          always: [],
+          tool: { messageID: "msg_o", callID: "c" }
         })
         yield* driver.resumeOnBoot((turn) =>
           Effect.succeed(turn.sessionID === "ses_h" ? second.sink : secondOther.sink)
@@ -1043,8 +1072,8 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(answer(second.events)).toBe("scripted")
     expect(secondOther.outcomes).toEqual([{ _tag: "completed" }])
     expect(answer(secondOther.events)).toBe("ran also")
-    // The card was never stored, so this park offered no pattern: the answer
-    // covers the call it parked and grants nothing wider than that.
+    // That card offered no pattern: the answer covers the call it parked and
+    // grants nothing wider than that.
     expect(grants).toEqual([{ sessionID: "ses_o", kind: "once", key: otherRequest }])
   })
 
@@ -1103,7 +1132,9 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     expect(settledCalls(fifth.events, "bash").length).toBe(1)
 
     // And once more with the shell behind a permission: the body the sweep
-    // re-drove parks with nobody to ask, and the next boot finds the park.
+    // re-drove parks with nobody to ask, so no card was ever stood, and the
+    // next boot re-drives the turn rather than honoring a park the app cannot
+    // show.
     const sixth = recorder()
     script.replies = [bashCell("echo asked")]
     await process_(directory, (driver) =>
@@ -1123,9 +1154,13 @@ describe("EngineDriver", { timeout: 90_000 }, () => {
     await process_(directory, (driver, store) =>
       Effect.gen(function*() {
         yield* driver.resumeOnBoot(() => Effect.succeed(seventh.sink))
+        // The re-drive asks the same question, under the same request id, of
+        // the host that has just opened a sink for the turn.
+        yield* wait(() => cards(seventh.events).length === 1)
+        expect(permissionOf(seventh.events)).toBe(engineRow(directory, "msg_l").token)
         yield* driver.permission({
           sessionID: "ses_i",
-          permissionID: engineRow(directory, "msg_l").token!,
+          permissionID: permissionOf(seventh.events),
           response: "once"
         })
         expect(yield* store.listTurns()).toEqual([])
@@ -1564,5 +1599,83 @@ ctx.done("Fixed src/hello.js: add now returns a + b, and node test.mjs passes.")
     // The file on disk, and the repository's own test, are the evidence.
     expect(readFileSync(join(directory, "src", "hello.js"), "utf8")).toContain("a + b")
     expect(exitOf(directory)).toBe(0)
+  })
+
+  it("re-drives a turn whose park the person answered just before the process stopped", async () => {
+    const directory = scratch()
+    const first = recorder()
+    script.replies = [bashCell("echo answered")]
+    await process_(directory, (driver) => driver.start(input("ses_win", "msg_win"), first.sink))
+    expect(first.outcomes).toEqual([{ _tag: "suspended" }])
+    const token = permissionOf(first.events)
+    // What a kill inside `Turns.permission` leaves behind: the reply is
+    // published first, so the card row is already down and the grant is
+    // recorded, but the engine never journaled the resume, so the run row
+    // still asks for approval. This is the state the live R11 drive died in.
+    await process_(directory, (_driver, store) => store.putGrant({ sessionID: "ses_win", kind: "once", key: token }))
+    expect(engineRow(directory, "msg_win")).toEqual({ status: "suspended", waiting: "approval", token })
+
+    // The boot re-drives the turn instead of parking on a question the person
+    // has answered and the app can no longer show: the restored grant carries
+    // the call through the gate, and the turn finishes on its own.
+    const second = recorder()
+    const left = await process_(directory, (driver, store) =>
+      Effect.gen(function*() {
+        yield* driver.resumeOnBoot(() => Effect.succeed(second.sink))
+        yield* wait(() => second.outcomes.length === 1)
+        return yield* store.listTurns()
+      }))
+    expect(second.outcomes).toEqual([{ _tag: "completed" }])
+    expect(answer(second.events)).toBe("ran answered")
+    expect(cards(second.events)).toEqual([])
+    expect(settledCalls(second.events, "bash").length).toBe(1)
+    expect(left).toEqual([])
+    expect(script.calls).toBe(1)
+  })
+
+  it("refuses the call of a park the person rejected just before the process stopped", async () => {
+    const directory = scratch()
+    const first = recorder()
+    script.replies = [bashCell("echo denied")]
+    await process_(directory, (driver) => driver.start(input("ses_no", "msg_no"), first.sink))
+    expect(first.outcomes).toEqual([{ _tag: "suspended" }])
+    const token = permissionOf(first.events)
+    // The same window, answered No. The refusal the turn reads is the grant's,
+    // and the call the person refused is never run.
+    await process_(directory, (_driver, store) => store.putGrant({ sessionID: "ses_no", kind: "reject", key: token }))
+    const second = recorder()
+    await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.resumeOnBoot(() => Effect.succeed(second.sink))
+        yield* wait(() => second.outcomes.length === 1)
+      }))
+    expect(second.outcomes).toEqual([{ _tag: "completed" }])
+    expect(answer(second.events)).toBe("refused capability_refused")
+    expect(cards(second.events)).toEqual([])
+    expect(script.calls).toBe(1)
+  })
+
+  it("asks again when the card of a park is gone and no answer was recorded", async () => {
+    const directory = scratch()
+    const first = recorder()
+    script.replies = [bashCell("echo again")]
+    await process_(directory, (driver) => driver.start(input("ses_gap", "msg_gap"), first.sink))
+    expect(first.outcomes).toEqual([{ _tag: "suspended" }])
+    const token = permissionOf(first.events)
+    // The narrower window: the reply took the card down and the process
+    // stopped before the grant was recorded. Nothing in the store answers the
+    // park and nothing can show it, so the boot re-drives and asks again.
+    const second = recorder()
+    await process_(directory, (driver) =>
+      Effect.gen(function*() {
+        yield* driver.resumeOnBoot(() => Effect.succeed(second.sink))
+        yield* wait(() => cards(second.events).length === 1)
+        expect(permissionOf(second.events)).toBe(token)
+        yield* driver.permission({ sessionID: "ses_gap", permissionID: token, response: "once" })
+        yield* wait(() => second.outcomes.some((outcome) => outcome._tag === "completed"))
+      }))
+    expect(answer(second.events)).toBe("ran again")
+    expect(settledCalls(second.events, "bash").length).toBe(1)
+    expect(script.calls).toBe(1)
   })
 })
