@@ -38,6 +38,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./AtomicFileSystem": "./src/AtomicFileSystem.ts",
+    "./EgressHttpClient": "./src/EgressHttpClient.ts",
     "./HostLiveness": "./src/HostLiveness.ts",
     "./NodeHost": "./src/NodeHost.ts",
     "./ProcessReaper": "./src/ProcessReaper.ts",
@@ -81,6 +82,16 @@
         "require": {
           "types": "./dist/cjs/AtomicFileSystem.d.ts",
           "default": "./dist/cjs/AtomicFileSystem.js"
+        }
+      },
+      "./EgressHttpClient": {
+        "import": {
+          "types": "./dist/esm/EgressHttpClient.d.ts",
+          "default": "./dist/esm/EgressHttpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EgressHttpClient.d.ts",
+          "default": "./dist/cjs/EgressHttpClient.js"
         }
       },
       "./HostLiveness": {

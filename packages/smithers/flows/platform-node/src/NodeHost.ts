@@ -34,6 +34,7 @@ import type { HttpClient } from "effect/unstable/http/HttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { isAbsolute } from "node:path"
 import * as AtomicFileSystem from "./AtomicFileSystem.ts"
+import * as EgressHttpClient from "./EgressHttpClient.ts"
 import * as ProcessReaper from "./ProcessReaper.ts"
 
 /**
@@ -50,7 +51,27 @@ import * as ProcessReaper from "./ProcessReaper.ts"
  * @category re-exports
  * @since 0.1.0
  */
-export { AtomicFileSystem, NodeChildProcessSpawner, NodeCrypto, NodeFileSystem, NodeHttpClient, ProcessReaper }
+export {
+  AtomicFileSystem,
+  EgressHttpClient,
+  NodeChildProcessSpawner,
+  NodeCrypto,
+  NodeFileSystem,
+  NodeHttpClient,
+  ProcessReaper
+}
+
+/**
+ * The `HttpClient` every bundle below installs: Undici through the egress
+ * proxy this process's environment names, and a direct Undici pool when it
+ * names none.
+ *
+ * `NodeHttpClient.layerUndici` is the direct pool unconditionally. It is still
+ * re-exported above for a program composing its own services, but a bundle
+ * that spans a whole host has to work inside a sandbox whose only way out is a
+ * proxy, so the bundles read the environment. See {@link EgressHttpClient}.
+ */
+const httpClient = EgressHttpClient.layer(process.env)
 
 /**
  * The union of host services provided by the Node host layer.
@@ -125,7 +146,7 @@ const reaping = (options?: ContainedOptions): ProcessReaper.Options => ({
 export const layer: Layer.Layer<NodeHost, JjError> = Layer.mergeAll(
   platform,
   Layer.provide(NodeChildProcessSpawner.layer, platform),
-  NodeHttpClient.layerUndici,
+  httpClient,
   NodeJj.layer
 )
 
@@ -139,7 +160,7 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, JjError> 
   Layer.mergeAll(
     platform,
     Layer.provide(NodeChildProcessSpawner.layer, platform),
-    NodeHttpClient.layerUndici,
+    httpClient,
     NodeJj.layerAt(absoluteRoot(repositoryRoot))
   )
 
@@ -178,7 +199,7 @@ export const layerContained = (
   )
   return Layer.mergeAll(
     platform,
-    NodeHttpClient.layerUndici,
+    httpClient,
     // jj goes through the CONTAINED spawner here, not around it. `NodeJj.layer`
     // spawns its own children, which is right for a host that has no spawner
     // to offer, but under containment it would mean a `jj` that leads no
@@ -205,7 +226,7 @@ export const layerContainedAt = (
   )
   return Layer.mergeAll(
     platform,
-    NodeHttpClient.layerUndici,
+    httpClient,
     Layer.provideMerge(NodeJj.layerSpawnerAt(absoluteRoot(repositoryRoot)), spawner)
   ).pipe(Layer.provideMerge(ProcessReaper.layer(reaping(options))))
 }

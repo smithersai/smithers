@@ -24,7 +24,6 @@
  * @since 1.0.0-rc.0
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
 import type * as AgentAction from "@smthrs/agent/AgentAction"
@@ -48,6 +47,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import type * as Brand from "effect/Brand"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -420,13 +420,14 @@ const hostFor = (
  */
 const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
 
-/** The judge, read from the same environment the seat resolver reads. */
+/** The judge, read from the same environment the seat resolver reads, and
+ * reached over the egress proxy that same environment names. */
 const evaluatorFor = (
   config: Pick<NodeConfig, "environment" | "evaluator">
 ): Layer.Layer<Evaluator.Evaluator, never, never> =>
   config.evaluator ??
     Evaluator.layerFromEnvironment(config.environment ?? {}, "smithers migrate").pipe(
-      Layer.provide(NodeHttpClient.layerUndici)
+      Layer.provide(EgressHttpClient.layer(config.environment ?? {}))
     )
 
 // The credentialed half answers to the same store as the filesystem and the
@@ -438,7 +439,7 @@ const evaluatorFor = (
 const executorFor = (config: ValidatedConfig): Layer.Layer<RequestExecutor.RequestExecutor, never, never> =>
   RequestExecutor.layer.pipe(
     Layer.provide(KernelHttpClient.layer),
-    Layer.provide([NodeHttpClient.layerUndici, grantsFor(config)])
+    Layer.provide([EgressHttpClient.layer(config.environment ?? {}), grantsFor(config)])
   )
 
 /**

@@ -1,8 +1,8 @@
 /** Jev answers a maintainer's rule one changed hunk at a time, and it is the
  * only model that answers it: there is no frontier seat behind it. */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer, Redacted, Result, Schema } from "effect"
 import { matchesGlob } from "node:path"
 import { CodingError } from "../coding/schema.ts"
@@ -230,9 +230,21 @@ export const jevSemanticCheck = (
     return jevVerdict(comparison, check, states, answers)
   })
 
-/** Select the repository host's judge before it opens resources. */
+/** Select the repository host's judge before it opens resources.
+ *
+ * This binds two things off the same `environment`: the key, and the transport
+ * that carries it. The coding host judges inside a microsandbox whose egress is
+ * default-deny behind an HTTP proxy the guest environment names, and that proxy
+ * is what substitutes the platform credential — the guest holds only the
+ * placeholder `AI_GATEWAY_API_KEY=AI_GATEWAY_API_KEY`, and iron-proxy swaps the
+ * real value into `authorization` on the way to `ai-gateway.vercel.sh`. A bare
+ * `NodeHttpClient.layerUndici` here ignores `HTTP_PROXY`/`HTTPS_PROXY` and dials
+ * the gateway directly, the firewall drops it, and every completion comes back
+ * `completion_unjudged`. `flows/test/repository-jev-egress.test.ts` holds the
+ * line: it asserts the proxy was asked to open the tunnel, not merely that the
+ * call succeeded. */
 export const evaluatorLayer = (
   environment: Readonly<Record<string, string | undefined>>,
   host = "smithers repository host"
 ): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(environment, host).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, host).pipe(Layer.provide(EgressHttpClient.layer(environment)))

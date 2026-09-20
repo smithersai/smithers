@@ -169,5 +169,22 @@ const wiki = Smithers.NodeTest({
   srcs: [sources, Smithers.file("//factory/wiki/catalog.ts")], deps: [], cwd
 })
 
+// The judge the coding host installs reaches the gateway through the proxy its
+// environment names. The host judges inside a default-deny microsandbox whose
+// only way out is that proxy, so a direct dial is dropped and every completion
+// comes back unjudged; the case asserts the proxy was asked to open the tunnel,
+// never merely that the call failed.
+//
+// On the pass path nothing leaves the loopback interface: the judge asks the
+// test's own proxy for a tunnel and the proxy refuses it. A regression is what
+// dials `ai-gateway.vercel.sh` for real, which is the behaviour being banned,
+// so the target is not hermetic on the failure path and must not be declared as
+// if it were.
+const egress = Smithers.NodeTest({
+  runtime: node,
+  runner: Smithers.testRunner([Smithers.file("//flows/test/repository-jev-egress.test.ts")]),
+  srcs: codingSources, deps: codingDependencies, cwd
+})
+
 export const Package = Smithers.Package({ targets: { coding, codingPolicy, codingRuntime, codingConfigBun,
-  codingNative, codingNativeBun, codingBundle, codingBundleBun, pack, check, suite, recording, provider, wiki } })
+  codingNative, codingNativeBun, codingBundle, codingBundleBun, egress, pack, check, suite, recording, provider, wiki } })

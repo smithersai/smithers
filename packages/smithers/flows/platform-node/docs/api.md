@@ -29,8 +29,11 @@ There is no shell service. Running a command is Effect's `ChildProcess` /
 `ChildProcessSpawner`; a wall-clock budget is `Effect.timeout` around the
 effect, and cancellation is fiber interruption, never an `AbortSignal`. There is
 no HTTP service either: an outgoing request is Effect's `HttpClient`, provided
-here as `NodeHttpClient.layerUndici`, which installs no redirect interceptor and
-so leaves every hop visible to [@smthrs/kernel](/api/kernel).
+here as `EgressHttpClient.layer(environment)` — Undici through the egress proxy
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` name, and the plain
+`NodeHttpClient.layerUndici` pool when they name none. Undici installs no
+redirect interceptor either way, so every hop stays visible to
+[@smthrs/kernel](/api/kernel).
 
 The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
 layer with one version probe; construction can fail with `JjError`, including

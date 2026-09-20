@@ -45,6 +45,7 @@
     "@smthrs/kernel": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/ui-styleguide": "workspace:*",
     "effect": "4.0.0-rc.115",

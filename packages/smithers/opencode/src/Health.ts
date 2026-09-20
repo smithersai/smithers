@@ -20,6 +20,7 @@ import type * as Undici from "@effect/platform-node/Undici"
 import type * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Clock, Duration, Effect, Layer, Redacted, Schema } from "effect"
 import type * as Scope from "effect/Scope"
 import * as HttpClient from "effect/unstable/http/HttpClient"
@@ -822,14 +823,19 @@ export const retrying = (
  * The next retry or completion acquires a fresh pool before closing the old
  * one, so a destroyed session cannot poison the rest of the server's life.
  *
- * @param environment where the key is read from
+ * Each pool is acquired through the egress proxy `environment` names. A bare
+ * Undici pool ignores `HTTP_PROXY`/`HTTPS_PROXY` and dials the origin
+ * directly, which a default-deny host drops: every completion would come
+ * back unjudged and the retry above would spend its three requests on it.
+ *
+ * @param environment where the key and the egress proxy are read from
  * @param dispatcher acquires each pool; tests may supply a scripted dispatcher
  * @category layers
  * @since 1.0.0
  */
 export const evaluatorLayer = (
   environment: Readonly<Record<string, string | undefined>>,
-  dispatcher: Effect.Effect<Undici.Dispatcher, never, Scope.Scope> = NodeHttpClient.makeDispatcher
+  dispatcher: Effect.Effect<Undici.Dispatcher, never, Scope.Scope> = EgressHttpClient.dispatcher(environment)
 ): Layer.Layer<Evaluator.Evaluator> => {
   const key = environment["AI_GATEWAY_API_KEY"]
   if (key === undefined || key === "") {

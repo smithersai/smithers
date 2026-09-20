@@ -22,6 +22,7 @@
     "@smthrs/migrate": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/targets": "workspace:*",

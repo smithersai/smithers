@@ -1,13 +1,14 @@
-import { NodeHttpClient, NodeServices } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { rebuildableTransport, seatResolver } from "@smthrs/cli/NodeControl"
+import { environmentDispatcher, rebuildableTransport, seatResolver } from "@smthrs/cli/NodeControl"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, type Scope } from "effect"
@@ -20,10 +21,12 @@ import * as Release from "../release/workflow.ts"
 import { actionLayers } from "./operations.ts"
 import { relativePath } from "./io.ts"
 
-/** Host composition only. Bun owns its fetch pool; Node owns replaceable Undici agents. */
+/** Host composition only. Bun owns its fetch pool; Node owns replaceable Undici
+ * agents, built from the egress proxy this process's environment names so a
+ * proxied host reaches the provider at all. */
 export const modelTransport: Effect.Effect<RequestExecutor.Transport, never, Scope.Scope> = Effect.suspend(() =>
   typeof (globalThis as { Bun?: unknown }).Bun === "undefined"
-    ? rebuildableTransport(NodeHttpClient.makeDispatcher)
+    ? rebuildableTransport(environmentDispatcher(process.env))
     : Effect.map(HttpClient.HttpClient, RequestExecutor.fixed).pipe(Effect.provide(
       FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit)({ redirect: "manual" })))
     )))
@@ -38,9 +41,11 @@ export const liveSeats = (model: string) => Layer.effect(SeatResolver.SeatResolv
   }))
 
 /** Select a real judge or refuse composition before opening host resources.
- * Offline hosts pass an evidence-based scripted evaluator explicitly. */
+ * Offline hosts pass an evidence-based scripted evaluator explicitly. The
+ * gateway is reached over the egress proxy this process's environment names,
+ * so the judge works inside a sandbox whose only way out is that proxy. */
 export const hostEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(process.env, "smithers release-support").pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(process.env, "smithers release-support").pipe(Layer.provide(EgressHttpClient.layer(process.env)))
 
 export const agentLayers = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,

@@ -368,6 +368,17 @@
         "require": "./dist/cjs/Classifiers.js"
       },
       "reason": "The three curated classifiers (triage/relevance, check/verdict, edit/risk) StandardFlows.classify binds by default."
+    },
+    {
+      "name": "@smthrs/platform-node",
+      "subpath": "./EgressHttpClient",
+      "development": "./src/EgressHttpClient.ts",
+      "published": {
+        "types": "./dist/esm/EgressHttpClient.d.ts",
+        "import": "./dist/esm/EgressHttpClient.js",
+        "require": "./dist/cjs/EgressHttpClient.js"
+      },
+      "reason": "The one constructor for the outbound Undici client a Node process should use: it routes through the egress proxy HTTP_PROXY/HTTPS_PROXY/NO_PROXY name and is the plain pool when they name none. Every host composition installs it instead of NodeHttpClient.layerUndici, whose bare Agent dials every origin directly and is dropped by a default-deny sandbox. A separate subpath keeps it reachable without importing the jj-bearing host bundle."
     }
   ],
   "removed": [

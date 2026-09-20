@@ -1,5 +1,4 @@
 /** Host composition reuses model routing and the existing runtime store. */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -7,6 +6,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, FileSystem, Layer } from "effect"
 import { checkCitations, unsupportedCitations } from "./jev-citations.ts"
@@ -15,9 +15,11 @@ import { WikiError } from "./schema.ts"
 import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Wiki, Write } from "./workflow.ts"
 
 /** Select a real judge or refuse composition before opening host resources.
- * Offline hosts pass an evidence-based scripted evaluator explicitly. */
+ * Offline hosts pass an evidence-based scripted evaluator explicitly. The
+ * gateway is reached over the egress proxy this process's environment names,
+ * so the judge works inside a sandbox whose only way out is that proxy. */
 export const hostEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(process.env, "smithers wiki").pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(process.env, "smithers wiki").pipe(Layer.provide(EgressHttpClient.layer(process.env)))
 
 export const agentLayers = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,

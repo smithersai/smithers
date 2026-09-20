@@ -1420,6 +1420,9 @@ importers:
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/plan
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/platform-node
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
@@ -1937,6 +1940,9 @@ importers:
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../packages/smithers/flows/plan
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../packages/smithers/flows/platform-node
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../packages/smithers/agent/registry
@@ -5990,6 +5996,9 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.0
         version: link:../flows/plan
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.0
+        version: link:../flows/platform-node
       '@smthrs/registry':
         specifier: 1.0.0-rc.0
         version: link:../agent/registry

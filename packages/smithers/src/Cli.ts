@@ -3,11 +3,11 @@
  * Command handlers acquire services only after parsing, keeping help/schema inert.
  * @since 1.0.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import { makeCli as makeBuildCli } from "@smthrs/build-cli/Cli"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer, Logger, Redacted } from "effect"
 import { Cli, z } from "incur"
 import { resolve } from "node:path"
@@ -52,12 +52,17 @@ const options = Bridge.connectionOptions
  * There is no third case and no fallback: without `AI_GATEWAY_API_KEY` the
  * decision below reports a transport it could not reach, rather than deciding
  * the question some other way.
+ *
+ * The gateway is reached through the egress proxy `environment` names, so the
+ * judge works from inside a sandbox whose only way out is that proxy.
  */
 const evaluator = (environment: Record<string, string | undefined>): Layer.Layer<Evaluator.Evaluator> => {
   const apiKey = environment["AI_GATEWAY_API_KEY"]
   return apiKey === undefined || apiKey === ""
     ? Evaluator.layerUnavailable()
-    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(apiKey) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
+    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(apiKey) }).pipe(
+      Layer.provide(EgressHttpClient.layer(environment))
+    )
 }
 
 /** The shared guard's inputs, read from the typed connection options. */

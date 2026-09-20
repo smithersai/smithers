@@ -110,6 +110,12 @@ const spawner = NodeHost.NodeChildProcessSpawner.layer.pipe(Layer.provide(platfo
 const hostWithoutJj = Layer.mergeAll(platform, spawner, NodeHost.NodeHttpClient.layerUndici)
 ```
 
+`NodeHost.NodeHttpClient.layerUndici` is the plain Undici pool, which dials
+every origin directly. A program that may run behind an egress proxy composes
+`NodeHost.EgressHttpClient.layer(process.env)` instead: it routes through the
+proxy `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` name, and is this same plain
+pool when they name none. The complete bundles above already use it.
+
 Provide `hostWithoutJj` to a program that needs these services, or provide only
 the individual layer it needs. The spawner requires both filesystem and path
 services, supplied by `platform` above. The filesystem still requires the

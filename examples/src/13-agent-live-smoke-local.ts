@@ -17,7 +17,6 @@
  * @since 0.1.0
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -33,6 +32,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 
@@ -47,7 +47,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -160,7 +160,7 @@ export const liveLayer = (baseUrl: string) =>
     // The completion brake judges every claim through Jev and never falls back
     // to the model. A local provider does not change that: without
     // `AI_GATEWAY_API_KEY` this host refuses composition before opening resources.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(EgressHttpClient.layer(process.env)))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

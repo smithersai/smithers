@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { NodeHttpClient, NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Control, ControlRpcs, type ControlRuntime, ControlServer } from "@smthrs/control"
 
 import type * as Journal from "@smthrs/journal/Journal"
@@ -40,7 +40,7 @@ import * as CliError from "./CliError.ts"
 
 import * as Environment_ from "./Environment.ts"
 
-import { native } from "./internal/NodeControlHost.ts"
+import { layerEgressHttpClient, native } from "./internal/NodeControlHost.ts"
 
 import type { EngineDurable, ModuleRegistration } from "./internal/NativeControl.ts"
 
@@ -238,6 +238,7 @@ export { checkpointStore, layerSeatResolver, seatResolver, testFlows, testRunner
 
 export {
   environmentDispatcher,
+  layerEgressHttpClient,
   layerRebuildableRequestExecutor,
   rebuildableTransport
 } from "./internal/NodeControlHost.ts"
@@ -420,7 +421,10 @@ const layerControlFromEngine = (
   const remote = applicationConfig.remote
   return Application.layer(applicationConfig, registry, engine).pipe(
     Layer.provide([
-      NodeHttpClient.layerUndici,
+      // A remote control plane is an origin like any other: reached through the
+      // egress proxy this process's environment names, or directly when it
+      // names none.
+      layerEgressHttpClient(process.env),
       websocketLayer(remote, applicationConfig.credential),
       RpcSerialization.layerNdjson
     ])

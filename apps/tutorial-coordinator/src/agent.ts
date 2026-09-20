@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentEventSink from "@smthrs/agent/EventSink"
 import { writeFile } from "node:fs/promises"
@@ -14,6 +13,7 @@ import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Jj } from "@smthrs/kernel"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import { layerEgressHttpClient } from "@smthrs/cli/NodeControl"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"
@@ -44,10 +44,11 @@ export const TutorialAgent = Flow.make("tutorial/agent-flow",{
   body:payload=>Task.call(payload),
 })
 
-const transport = (proxy:TutorialProxySettings) => Layer.effect(RequestExecutor.RequestExecutor)(RequestExecutor.make.pipe(Effect.map(executor=>throughProxy(executor,proxy)))).pipe(Layer.provide(KernelHttpClient.layer),Layer.provide(GrantStore.layerNoop),Layer.provide(NodeHttpClient.layerUndici))
-/** Select once at server startup, before its database and socket exist. */
+const transport = (proxy:TutorialProxySettings) => Layer.effect(RequestExecutor.RequestExecutor)(RequestExecutor.make.pipe(Effect.map(executor=>throughProxy(executor,proxy)))).pipe(Layer.provide(KernelHttpClient.layer),Layer.provide(GrantStore.layerNoop),Layer.provide(layerEgressHttpClient(process.env)))
+/** Select once at server startup, before its database and socket exist. The
+ * gateway is reached over the egress proxy `environment` names. */
 export const hostEvaluator = (environment: Readonly<Record<string, string | undefined>>) =>
-  Evaluator.layerFromEnvironment(environment, "tutorial-coordinator").pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, "tutorial-coordinator").pipe(Layer.provide(layerEgressHttpClient(environment)))
 export function agentLayer(filename:string,settings:TutorialModelSettings, suppliedSeats?:Layer.Layer<SeatResolver.SeatResolver>,proxy?:TutorialProxySettings,suppliedEvaluator?:Layer.Layer<Evaluator.Evaluator>) {
   if(!suppliedSeats&&!proxy)throw new Error("Live tutorial models require the Cloudflare provider proxy")
   const forbidden=()=>Effect.die(new Error("The tutorial model cannot mutate coordinator files; mutations belong to its isolated executor."))

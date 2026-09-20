@@ -290,6 +290,13 @@ const ci = Smithers.GithubCiGen({
         // The registry and migrate-detector checks over flows/. `//flows/...`
         // would also select the 45-minute codingNative/codingBundle gates.
         { name: "Repository flows", verb: Smithers.Verb.Test, pattern: "//flows:pack" },
+        // The one case that proves the coding host's judge tunnels through the
+        // egress proxy its environment names instead of dialling the gateway
+        // directly. `//flows:pack` does not reach it, and the repo-contract
+        // grep beside it bans identifiers, not behaviour: a composition that
+        // keeps the approved spelling and hands it an environment naming no
+        // proxy passes that gate and fails this one.
+        { name: "Judge egress", verb: Smithers.Verb.Test, pattern: "//flows:egress" },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },

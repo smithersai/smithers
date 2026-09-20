@@ -30,6 +30,9 @@
 /** The complete closed Host bundle for Node. */
 export * as NodeHost from "./NodeHost.ts"
 
+/** The outbound HTTP client a Node process should use, read off its environment. */
+export * as EgressHttpClient from "./EgressHttpClient.ts"
+
 /** Whether a recorded run owner is still alive on this host. */
 export * as HostLiveness from "./HostLiveness.ts"
 

@@ -10,7 +10,7 @@
  * bearer credential. Exact Host and Origin checks protect the loopback listener;
  * binding to loopback alone does not authenticate callers.
  */
-import { NodeHttpClient, NodeHttpServer, NodeSocket } from "@effect/platform-node"
+import { NodeHttpServer, NodeSocket } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
@@ -25,6 +25,7 @@ import { Action, Flow, type FlowRuntime, Interpreter, WaitFor } from "@smthrs/fl
 import { NotificationQueue } from "@smthrs/notifications"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -318,7 +319,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
           // The client: the same `Control` interface, over two transports.
           const client = ControlClient.layer({ url: `${url}/rpc`, credential }).pipe(
             Layer.provide([
-              NodeHttpClient.layerUndici,
+              EgressHttpClient.layer(process.env),
               // This Node client can put the credential on the upgrade request.
               // Browser WebSocket constructors cannot set Authorization headers.
               Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(

@@ -79,11 +79,15 @@ if (parsed.values.version) {
     ])
     runtime.runMain(run(platform, http.layer))
   } else {
-    const [{ platform, environmentDispatcher }, runtime, http] = await Promise.all([
-      import("../../packages/smithers/src/internal/NodeControlHost.ts"), import("@effect/platform-node/NodeRuntime"), import("@effect/platform-node/NodeHttpClient")
+    // One constructor owns "the Undici client this process should use": it
+    // routes through the egress proxy the environment names and is the plain
+    // pool when it names none. `platform.httpClient` is built from the same
+    // one, so the client handed to landing and the remote here and the client
+    // the judge dials through cannot drift apart.
+    const [{ platform }, runtime, egress] = await Promise.all([
+      import("../../packages/smithers/src/internal/NodeControlHost.ts"), import("@effect/platform-node/NodeRuntime"),
+      import("@smthrs/platform-node/EgressHttpClient")
     ])
-    runtime.runMain(run(platform, http.layerUndiciNoDispatcher.pipe(
-      Layer.provide(Layer.effect(http.Dispatcher)(environmentDispatcher(process.env)))
-    )))
+    runtime.runMain(run(platform, egress.layer(process.env)))
   }
 }

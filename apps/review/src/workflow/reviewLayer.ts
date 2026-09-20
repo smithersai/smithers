@@ -10,7 +10,6 @@
  */
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -21,6 +20,7 @@ import { Action, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
@@ -146,10 +146,11 @@ const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbou
  *
  * The brake never falls back, so a claim nothing could judge fails the run
  * rather than standing. Without `AI_GATEWAY_API_KEY` this is
- * a startup refusal before a database, socket or child process opens.
+ * a startup refusal before a database, socket or child process opens. The
+ * gateway is reached over the egress proxy `environment` names.
  */
 const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
-  Evaluator.layerFromEnvironment(environment, "smithers-review").pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, "smithers-review").pipe(Layer.provide(EgressHttpClient.layer(environment)))
 
 /**
  * The judge an offline case binds: a reading of recorded commands, so a

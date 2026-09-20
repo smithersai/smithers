@@ -18,7 +18,6 @@
  * @since 1.0.0-rc.0
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -40,6 +39,7 @@ import type * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -272,11 +272,14 @@ const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = Layer.su
  * The brake never falls back: a claim nothing could judge fails the run
  * instead of standing. Without `AI_GATEWAY_API_KEY` this is
  * a synchronous startup refusal. Offline hosts script their own judge.
+ *
+ * The gateway is reached through the egress proxy `environment` names; a bare
+ * Undici pool would dial it directly and a default-deny host would drop that.
  */
 const evaluatorFrom = (
   environment: Readonly<Record<string, string | undefined>>
 ): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(environment, "smithers suggest").pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, "smithers suggest").pipe(Layer.provide(EgressHttpClient.layer(environment)))
 
 const composed = (
   root: string,
@@ -324,7 +327,7 @@ export const layerNode = (config: NodeConfig) => {
     if (!isAbsolute(config.root)) return yield* Effect.fail(new RelativeRoot(config.root))
     const executor = RequestExecutor.layer.pipe(
       Layer.provide(KernelHttpClient.layer),
-      Layer.provide([NodeHttpClient.layerUndici, grantsFor(config.root)])
+      Layer.provide([EgressHttpClient.layer(config.environment), grantsFor(config.root)])
     )
     const seats = Layer.effect(
       SeatResolver.SeatResolver,

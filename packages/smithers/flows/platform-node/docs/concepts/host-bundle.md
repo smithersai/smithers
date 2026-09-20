@@ -34,18 +34,25 @@ mostly assembly:
 | --------------------- | --------------------------------------- |
 | `Path`                | Effect's `Path.layer`                   |
 | `ChildProcessSpawner` | `NodeChildProcessSpawner.layer`         |
-| `HttpClient`          | `NodeHttpClient.layerUndici`            |
+| `HttpClient`          | `EgressHttpClient.layer(process.env)`   |
 | `Jj`                  | `@smthrs/jj`'s `NodeJj.layer`           |
 | `FileSystem`          | this package's `AtomicFileSystem.layer` |
 
 Only the filesystem slot is this package's own implementation, and
 [it exists because Node cannot express what the kernel needs](./descriptor-relative-filesystem.md).
 
+The HTTP slot is Undici either way. `EgressHttpClient.layer` routes it through
+the egress proxy `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` name, and is exactly
+`NodeHttpClient.layerUndici` when they name none, so an unproxied host is
+unchanged. A bundle spans a whole host, and a host may be a sandbox whose only
+way out is that proxy; a bare Undici `Agent` reads none of those variables and
+dials every origin directly, which such a host drops.
+
 `NodeHost` re-exports the pieces it composes, so a program that wants one slot
 rather than the whole bundle needs no second dependency:
 `NodeHost.AtomicFileSystem`, `NodeHost.ProcessReaper`, `NodeHost.NodeCrypto`,
-`NodeHost.NodeFileSystem`, `NodeHost.NodeChildProcessSpawner`, and
-`NodeHost.NodeHttpClient`.
+`NodeHost.NodeFileSystem`, `NodeHost.NodeChildProcessSpawner`,
+`NodeHost.NodeHttpClient`, and `NodeHost.EgressHttpClient`.
 
 `NodeCrypto` is there for a different reason from the rest. `Crypto` is not a
 Host service: it carries no host authority the kernel could attenuate, so it is

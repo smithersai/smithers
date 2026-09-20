@@ -18,12 +18,12 @@
  *
  * @since 0.1.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import { Message, ModelRequest } from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer, Redacted, Stream } from "effect"
 
 /**
@@ -37,7 +37,7 @@ import { Effect, Layer, Redacted, Stream } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**

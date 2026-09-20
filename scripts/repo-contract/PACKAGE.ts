@@ -199,6 +199,25 @@ const cliVerbs = Smithers.NodeTest({
   deps: []
 })
 /**
+ * No shipped Node composition installs an HTTP client that ignores the egress
+ * proxy its environment names.
+ *
+ * The gate reads shipped source across `packages/`, `apps/`, `flows/` and
+ * `examples/`, which a declared glob may not cross, so `srcs` names only this
+ * directory and the gate re-runs regardless. That is correct here for the same
+ * reason it is correct for `packageContract`: its subject is the whole
+ * workspace.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const egressHttpClient = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/egress-http-client.test.mjs")]),
+  srcs: [sources],
+  deps: []
+})
+
+/**
  * Actual planner selection, runtime policy, sentinels and cache behavior.
  * This only plans commands; distribution outputs are not declaration inputs.
  * Keep it independent of builds so inventory can run beside a release gate.
@@ -214,5 +233,5 @@ const ciInventory = Smithers.NodeTest({
 })
 
 export const Package = Smithers.Package({
-  targets: { barrels, cliVerbs, faultSkips, machinePaths, packageContract, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps }
+  targets: { barrels, cliVerbs, egressHttpClient, faultSkips, machinePaths, packageContract, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps }
 })

@@ -2,7 +2,7 @@
  * Executes the exact planned Fetch payload. PackageExec owns cache and provenance.
  * @since 1.0.0
  */
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -225,7 +225,10 @@ const downloadedFile = async (
     })
     return { bytes: received, sha256: hash.digest("hex") }
   })).pipe(
-    Effect.provide(NodeHttpClient.layerUndici),
+    // A declared Fetch is outbound traffic like any other: it leaves through
+    // the egress proxy this build's environment names, and directly when it
+    // names none.
+    Effect.provide(EgressHttpClient.layer(process.env)),
     // A declared Fetch may carry no signal at all, so the request owns a
     // deadline of its own rather than trusting the caller to interrupt it.
     Effect.timeoutOrElse({

@@ -3,11 +3,11 @@
  */
 import { NodeCrypto, NodeHttpClient, NodeServices } from "@effect/platform-node"
 import type * as Undici from "@effect/platform-node/Undici"
-import { EnvHttpProxyAgent } from "@effect/platform-node/Undici"
 import * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Exit, Layer, Scope, Semaphore } from "effect"
 import * as ControlDatabase from "./ControlDatabase.ts"
 import * as ControlFileSystem from "./ControlFileSystem.ts"
@@ -16,24 +16,28 @@ import * as NativeControl from "./NativeControl.ts"
 /**
  * Respect the supplied environment's egress proxy without changing unproxied Node hosts.
  *
+ * The one definition lives in `@smthrs/platform-node`, so the dispatcher a
+ * transport rebuilds and the client a judge dials through are built by the
+ * same code. This name is the CLI's spelling of it.
+ *
  * @category constructors
  * @since 1.0.0
  */
-export const environmentDispatcher = (
-  environment: Readonly<Record<string, string | undefined>>
-): Effect.Effect<Undici.Dispatcher, never, Scope.Scope> =>
-  Effect.suspend(() => {
-    const httpProxy = environment.http_proxy ?? environment.HTTP_PROXY ?? ""
-    const httpsProxy = environment.https_proxy ?? environment.HTTPS_PROXY ?? ""
-    const noProxy = environment.no_proxy ?? environment.NO_PROXY ?? ""
-    if (!httpProxy && !httpsProxy) return NodeHttpClient.makeDispatcher
-    // Explicit empty values prevent Undici from falling back to a different
-    // ambient environment. Each replacement pool uses the same proxy policy.
-    return Effect.acquireRelease(
-      Effect.sync(() => new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy })),
-      (dispatcher) => Effect.promise(() => dispatcher.destroy())
-    )
-  })
+export const environmentDispatcher = EgressHttpClient.dispatcher
+
+/**
+ * The outbound HTTP client this process should use, given the environment it
+ * runs in: Undici through the egress proxy the environment names, and the
+ * plain Undici pool when it names none.
+ *
+ * Provide this, never `NodeHttpClient.layerUndici`, under any layer that takes
+ * `HttpClient` from context. The bare client ignores `HTTP_PROXY`/`HTTPS_PROXY`
+ * and dials every origin directly, which a default-deny sandbox drops.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerEgressHttpClient = EgressHttpClient.layer
 
 /**
  * A replaceable HTTP transport over Undici, given a way to acquire a dispatcher.
@@ -122,7 +126,12 @@ export const platform: NativeControl.Platform = {
   runtime: NodeFlowsRuntime.layer,
   jj: NodeJj.layerAt,
   requestExecutor: layerRequestExecutor,
-  httpClient: NodeHttpClient.layerUndici,
+  // The record's own HTTP client, four lines below the transport that already
+  // reads the environment. A host serving inside a default-deny sandbox reaches
+  // the network only through the proxy its environment names, and everything
+  // this record hands `HttpClient` to — the judge in `flows/coding/host.ts`
+  // most of all — inherits that decision from here.
+  httpClient: EgressHttpClient.layer(process.env),
   gateway: NodeGateway.layer,
   bearerPrincipal: NodeGateway.bearerPrincipal
 }
