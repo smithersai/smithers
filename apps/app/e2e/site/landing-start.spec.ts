@@ -1,6 +1,6 @@
 import { expect,test } from "@playwright/test"
 
-test("Start Here mounts the real island in place when it loads", async ({ page }) => {
+test("Get started for free mounts the real island in place when it loads", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
@@ -9,7 +9,7 @@ test("Start Here mounts the real island in place when it loads", async ({ page }
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
   } }))
   await page.goto("/")
-  await page.getByRole("link", { name: "Start Here", exact: true }).click()
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await expect(page).toHaveURL("/")
   await expect(page.locator("#start-error")).toHaveCount(0)
@@ -19,13 +19,13 @@ test("Start Here mounts the real island in place when it loads", async ({ page }
   await expect(actions).toHaveCount(0)
   await expect(page.getByRole('region', { name: 'Color themes' })).toBeVisible()
   await page.reload()
-  await page.getByRole("link", { name: "Start Here", exact: true }).click()
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.locator(".app-shell")).toBeVisible()
   await expect(actions).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
-test("Start Here swaps to the app before the boot answers", async ({ page }) => {
+test("Get started for free swaps to the app before the boot answers", async ({ page }) => {
   await page.route("**/api/bootstrap", async route => {
     await new Promise(resolve => setTimeout(resolve, 3000))
     await route.fulfill({ json: {
@@ -41,12 +41,12 @@ test("Start Here swaps to the app before the boot answers", async ({ page }) => 
 })
 
 for (const failure of ["chunk", "page"] as const) {
-  test(`Start Here reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
+  test(`Get started for free reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
     let aborted = 0
     const route = failure === "chunk" ? /\/_astro\/AppIsland\.[^/]+\.js$/ : /\/smithersai\/smithers\/\?tutorial$/
     await page.route(route, request => { aborted++; return request.abort() })
     await page.goto("/")
-    const start = page.getByRole("link", { name: "Start Here", exact: true })
+    const start = page.getByRole("link", { name: "Get started for free", exact: true })
     await expect(start).toBeVisible()
     if (failure === "chunk") await page.keyboard.press("s")
     else await start.click()
@@ -72,7 +72,7 @@ for (const failure of ["chunk", "page"] as const) {
 
 test("a returning entry reveals the landing error if its preloaded island fails", async ({ page }) => {
   await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, request => request.abort())
-  // Only an authentication return resumes instantly; saved storage leaves Start Here visible.
+  // Only an authentication return resumes instantly; saved storage leaves Get started for free visible.
   await page.goto("/?signed-in")
   await expect(page.getByRole("alert")).toHaveText("Smithers couldn't load. Reload to try again.")
   await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible()
@@ -81,7 +81,7 @@ test("a returning entry reveals the landing error if its preloaded island fails"
 
 test.describe("touch landing", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 844, height: 390 } })
-  test("Start Here hides the physical key chip on a coarse pointer", async ({ page }) => {
+  test("Get started for free hides the physical key chip on a coarse pointer", async ({ page }) => {
     await page.route(/\/smithersai\/smithers\/\?tutorial$/, request => request.abort())
     await page.goto("/")
     await expect(page.locator("#start")).toBeVisible()
@@ -102,7 +102,7 @@ test("tutorial query opens the plain app and hint dismissal survives reload", as
   await hint.getByRole("button", { name: "Dismiss help" }).click()
   await expect(hint).toHaveCount(0)
   await page.reload()
-  await page.getByRole("link", { name: "Start Here", exact: true }).click()
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await expect(hint).toHaveCount(0)
   await expect(page.locator(".help-bubble")).toHaveCount(0)

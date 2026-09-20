@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { shouldResumeApp } from "./appHistory"
 
-test("the landing keeps Start Here on ordinary return visits, including finished profiles", () => {
+test("the landing keeps Get started for free on ordinary return visits, including finished profiles", () => {
   assert.equal(shouldResumeApp(""), false)
   assert.equal(shouldResumeApp("?tutorial"), true)
 })

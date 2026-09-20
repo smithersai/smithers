@@ -8,12 +8,12 @@ import { WORDMARK } from "../../../app/src/mainview/Wordmark"
 const title = "Smithers"
 const description = project.tagline
 /*
- * Start Here opens the app in this document: the script below mounts
+ * Get started for free opens the app in this document: the script below mounts
  * apps/app (AppMount.tsx) directly and the wordmark becomes the
  * app's own. The href is the first catalog repository's app page
  * (src/pages/[owner]/[repo].astro) for a middle-click, a new tab, or a
  * browser without JavaScript. Docs and GitHub are plain secondary links,
- * beside Start Here and in the top-right corner.
+ * beside Get started for free and in the top-right corner.
  */
 const appHref = `/${AVAILABLE_REPOS[0].name}/?tutorial`
 const githubHref = "https://github.com/smithersai/smithers"
@@ -35,7 +35,7 @@ const githubHref = "https://github.com/smithersai/smithers"
       {/* JS hides the button (html.js) until the app is loaded; without JS it shows at once. */}
       <script is:inline>document.documentElement.classList.add("js")</script>
       <a id="start" class="start" href={appHref} aria-keyshortcuts="s">
-        <span>Start Here</span>
+        <span>Get started for free</span>
         <kbd class="start-key" aria-hidden="true">s</kbd>
       </a>
       <a class="btn ghost" href="/docs/" data-astro-prefetch="hover">Docs</a>
@@ -54,11 +54,11 @@ const githubHref = "https://github.com/smithersai/smithers"
   import { shouldResumeApp } from "../lib/appHistory"
   /*
    * The app arrives in this document. After `load` and an idle moment the
-   * page reads the prerendered app page (Start Here's href) for the app's
-   * island chunk and stylesheets, imports the chunk, and Start Here appears.
+   * page reads the prerendered app page (Get started for free's href) for the app's
+   * island chunk and stylesheets, imports the chunk, and Get started for free appears.
    * AppMount stays out of this page's module graph: Astro would link
    * every stylesheet the graph reaches into this page's head, render-blocking.
-   * Start Here, or S, mounts the app directly inside a view
+   * Get started for free, or S, mounts the app directly inside a view
    * transition: the hero wordmark glides onto the app's top-left mark, the
    * page fades away, and Suspense paints the shell while boot fills in the
    * app. The URL stays where it is.
@@ -217,7 +217,7 @@ const githubHref = "https://github.com/smithersai/smithers"
         mount = await load()
       } catch {
         // Failed imports can remain cached for this document. Offer a fresh
-        // document instead of returning to an apparently idle Start Here.
+        // document instead of returning to an apparently idle Get started for free.
         stopPress()
         start.classList.remove("pending")
         start.removeAttribute("aria-busy")
@@ -279,7 +279,7 @@ const githubHref = "https://github.com/smithersai/smithers"
 <style>
   /*
    * The app's accent (apps/app/src/mainview/styles/base.css .session-shell
-   * --g-accent) colors the wordmark and fills Start Here.
+   * --g-accent) colors the wordmark and fills Get started for free.
    */
   :global(:root) {
     --home-accent: #3a756b;
@@ -311,7 +311,7 @@ const githubHref = "https://github.com/smithersai/smithers"
     letter-spacing: 0;
     font-weight: 400;
     white-space: pre;
-    /* Shared with the app's mark while Start Here's view transition runs. */
+    /* Shared with the app's mark while Get started for free's view transition runs. */
     view-transition-name: smithers-wordmark;
   }
 

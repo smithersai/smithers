@@ -10,7 +10,7 @@ import { createClientErrorReporter } from "./state/ClientErrors"
 /*
  * Mount the app into a page that is already showing something else: the
  * smithers.sh home page imports this module after its `load` event and calls
- * `mountApp` on Start Here, so the app arrives in the same document without a
+ * `mountApp` on Get started for free, so the app arrives in the same document without a
  * navigation. Importing arms nothing; warmApp only fetches bootstrap, and
  * mountApp starts boot and arms the startup watchdog when the shell mounts.
  */

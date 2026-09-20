@@ -10,7 +10,7 @@ test("keyboard takeover at the Astro root consumes its intent and restores the s
   } }))
   await context.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
   await page.goto("/")
-  await page.getByRole("link", { name: "Start Here", exact: true }).focus()
+  await page.getByRole("link", { name: "Get started for free", exact: true }).focus()
   await page.keyboard.press("Enter")
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await page.keyboard.press("ControlOrMeta+k")
@@ -37,6 +37,6 @@ test("keyboard takeover at the Astro root consumes its intent and restores the s
 
   // Ordinary reload still shows the landing: taking over is a one-shot action.
   await page.reload()
-  await expect(page.getByRole("link", { name: "Start Here", exact: true })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Get started for free", exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

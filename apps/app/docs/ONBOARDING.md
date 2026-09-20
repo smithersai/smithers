@@ -1,6 +1,6 @@
 # First run
 
-Start Here opens the app immediately and keeps the landing URL. Signed-out visitors use the practice repository; signed-in visitors retain their existing selection.
+Get started for free opens the app immediately and keeps the landing URL. Signed-out visitors use the practice repository; signed-in visitors retain their existing selection.
 
 Recommended actions are a live projection of visible registered flows, grouped by namespace with rule-based recommendations first. Every button dispatches its flow. Dismissal or dispatch persists `firstRunDismissed`; no card row is stored.
 

@@ -92,8 +92,8 @@ export function checkAssetHeaders(root) {
 }
 
 /**
- * The landing page's primary action, Start Here, opens the product. The link
- * check above cannot see this: the app page is one this build emits, so a Start Here
+ * The landing page's primary action, Get started for free, opens the product. The link
+ * check above cannot see this: the app page is one this build emits, so a Get started for free
  * that points into /docs is a working link that sends every first visitor to
  * the documentation instead of the app (it did, before the app moved home).
  *
@@ -110,10 +110,10 @@ export function checkLandingActions(root, appPath) {
   const href = (tag) => tag.match(/href="([^"]*)"/)?.[1]
   const classes = (tag) => tag.match(/class="([^"]*)"/)?.[1]?.split(/\s+/) ?? []
   const start = anchors.find((tag) => /\bid="start"/.test(tag) || classes(tag).includes("start"))
-  if (start === undefined) return ["index.html: the landing page has no Start Here action"]
+  if (start === undefined) return ["index.html: the landing page has no Get started for free action"]
   const tutorialPath = `${appPath}?tutorial`
   if (href(start) !== tutorialPath) {
-    return [`index.html: Start Here must open the tutorial at ${tutorialPath}, got ${href(start) ?? "no href"}`]
+    return [`index.html: Get started for free must open the tutorial at ${tutorialPath}, got ${href(start) ?? "no href"}`]
   }
   return []
 }
