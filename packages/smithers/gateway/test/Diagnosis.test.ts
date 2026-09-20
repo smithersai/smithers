@@ -8,6 +8,7 @@
 import { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
 import * as Diagnosis from "../src/Diagnosis.ts"
+import { lastStepResolvedText, moduleRunJournal, moduleRunOutput } from "./fixtures/module-run-journal.ts"
 
 let sequence = 0
 
@@ -22,6 +23,41 @@ const event = (
   occurredAt,
   payload: payload as ControlSchema.ControlEvent["payload"]
 })
+
+const step = {
+  stepId: "b".repeat(64),
+  executionId: "execution-1",
+  action: "repository/research",
+  attempt: 1,
+  ask: 0,
+  retry: 1,
+  scope: "execution-1/repository/research"
+}
+
+/** One step-scoped native fact, as a host that records step facts emits it. */
+const stepFact = (eventType: string, payload: unknown, occurredAt = 0): ControlSchema.ControlEvent =>
+  event("control.engine.event", {
+    version: 1,
+    executionId: step.executionId,
+    generation: 0,
+    sequence: 1,
+    emittedAtMs: occurredAt,
+    sourceId: `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`,
+    sourceSequence: 7,
+    eventType: "flows.harness.step-fact.v1",
+    payload: {
+      version: 1,
+      step,
+      generation: 0,
+      frame: 0,
+      ordinal: 0,
+      cell: "",
+      at: occurredAt,
+      eventType,
+      sourceSequence: 7,
+      payload
+    }
+  }, occurredAt)
 
 describe("Diagnosis.digest", () => {
   it("reports nothing at all from no events", () => {
@@ -389,6 +425,68 @@ describe("Diagnosis.combine", () => {
       startedAt: undefined,
       endedAt: undefined,
       refusals: []
+    })
+  })
+})
+
+describe("Diagnosis.digest across step scopes", () => {
+  it("reads a module run's answer from the root, not from its last step", () => {
+    const digest = Diagnosis.digest(moduleRunJournal)
+
+    // The two step agents each resolved with their own answer. Neither is the
+    // run's, so the run-level field stays empty and the answer comes from the
+    // root's committed decision.
+    expect(digest.finalOutput).toBeUndefined()
+    const output = Diagnosis.resolvedOutput(digest)
+    expect(output).toBeDefined()
+    expect(JSON.parse(output!)).toEqual(moduleRunOutput)
+    expect(output).not.toContain(lastStepResolvedText)
+    // The same excerpt still reports what the steps did: their turns and the
+    // tokens they spent belong to the run that ran them.
+    expect(digest).toMatchObject({
+      status: "completed",
+      seat: "repository/research",
+      turns: 2,
+      inputTokens: 8580,
+      outputTokens: 502
+    })
+  })
+
+  it("still reads a prompt run's answer from its own resolution", () => {
+    const digest = Diagnosis.digest([
+      event("control.agent.turn-opened", { seat: "opus" }, 100),
+      event("control.agent.resolved", { text: "shipped" }, 200),
+      event("control.run.completed", {}, 300)
+    ])
+
+    // A prompt run records one unscoped stream, so nothing changes for it.
+    expect(digest.finalOutput).toBe("shipped")
+    expect(Diagnosis.resolvedOutput(digest)).toBe("shipped")
+  })
+})
+
+describe("Diagnosis handler classes", () => {
+  it("documents a class for every handler the fold has", () => {
+    // The table in `Diagnosis.ts` above the handler map, written down. A new
+    // handler has to appear here, which is what stops one arriving without a
+    // reader ever deciding whether a step may write its field.
+    expect(Diagnosis.handlerReach).toEqual({
+      "control.agent.turn-opened": "aggregate",
+      "control.agent.model-settled": "aggregate",
+      "control.agent.cell-call-started": "aggregate",
+      "control.agent.resolved": "root",
+      "control.approval.requested": "root"
+    })
+  })
+
+  it("cannot receive a run status or an approval from a step fact", () => {
+    // `StepFact.Fact` accepts `^control\.agent\.[a-z-]+$` alone, so the
+    // root-only status fields have no step-scoped reading to refuse.
+    for (const eventType of ["control.run.completed", "control.approval.requested"]) {
+      expect(Diagnosis.nativeStepEvent(stepFact(eventType, {}))).toBeUndefined()
+    }
+    expect(Diagnosis.nativeStepEvent(stepFact("control.agent.resolved", { text: "step" }))).toMatchObject({
+      kind: "control.agent.resolved"
     })
   })
 })

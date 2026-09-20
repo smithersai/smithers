@@ -331,6 +331,20 @@ interface CallSettlement {
  * Identified duplicate starts and settlements are ignored. Old idless rows
  * retain their original ordinal/FIFO interpretation; their missing dispatch
  * identity cannot be reconstructed when same-name calls overlapped.
+ *
+ * `uniqueCallEvents` also normalizes native step facts, so this fold reads the
+ * run's own records and one stream per step a module run dispatched. The three
+ * classes `Diagnosis` names apply here too, field by field:
+ *
+ * | Field                   | Class           | Why                                                    |
+ * | ----------------------- | --------------- | ------------------------------------------------------ |
+ * | `nodeId` (`call-N`)     | aggregate       | one tree lists every call the run made, steps included |
+ * | `flowName`, `startedAt` | aggregate       | read off the call's own record                         |
+ * | `settlement`            | aggregate       | claimed by call identity within the recorded scope     |
+ * | `seat`                  | scope dependent | who ran THIS call, so the turn must be this call's own |
+ *
+ * There is no root-only field here: a tree row describes a call, never the
+ * run's answer or state. A new field has to name its class.
  */
 const callHistory = (
   events: ReadonlyArray<ControlSchema.ControlEvent>
@@ -344,14 +358,19 @@ const callHistory = (
       readonly scope: string | undefined
     }
   > = []
-  let seat: string | undefined
+  // The seat of the last turn opened in each scope. A module run interleaves
+  // steps in one journal, so the run-wide reading attributed one step's seat
+  // to another step's calls. A prompt run records one unscoped stream and
+  // reads exactly as it did.
+  const seats = new Map<string | undefined, string | undefined>()
   let ordinal = 0
   let settlements = 0
 
   for (const event of uniqueCallEvents(events)) {
     const payload = Diagnosis.asRecord(event.payload)
     if (event.kind === "control.agent.turn-opened") {
-      seat = Diagnosis.asString(payload.seat) ?? seat
+      const scope = callScope(event)
+      seats.set(scope, Diagnosis.asString(payload.seat) ?? seats.get(scope))
       continue
     }
     if (event.kind === "control.agent.cell-call-started") {
@@ -359,8 +378,12 @@ const callHistory = (
       ordinal += 1
       const nodeId = `call-${ordinal}`
       const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
+      const scope = callScope(event)
+      // This scope's own turn, else the run's. A step that opened no turn of
+      // its own borrows nothing from a sibling step.
+      const seat = seats.get(scope) ?? seats.get(undefined)
       const call: CallRecord = { nodeId, flowName, seat, startedAt: Diagnosis.timeOf(event), settlement: undefined }
-      open.push({ callId, flowName, call, scope: callScope(event) })
+      open.push({ callId, flowName, call, scope })
       calls.set(nodeId, call)
       continue
     }
@@ -610,6 +633,19 @@ const transcriptKinds: ReadonlySet<string> = new Set(["control.approval.requeste
  * The turn counter advances on `control.agent.turn-opened`, so every row
  * carries the turn it belongs to, and each row's text is one display line, so
  * a multi-line seat, message, or question cannot split one row into several.
+ *
+ * `uniqueCallEvents` normalizes native step facts, so a module run's steps
+ * report here too. The classes `Diagnosis` names apply, field by field:
+ *
+ * | Field  | Class     | Why                                                       |
+ * | ------ | --------- | --------------------------------------------------------- |
+ * | rows   | aggregate | every row is one event this run recorded, wherever it ran |
+ * | `turn` | aggregate | a turn a step opened is a turn this run opened            |
+ *
+ * No row is root only, because no row claims to be the run's answer or state:
+ * a `control.agent.resolved` row says one agent resolved, and the run's own
+ * answer is served by `runSummary` from `Diagnosis`. A new field has to name
+ * its class.
  *
  * @param events the run's ordered control events
  * @since 1.0.0

@@ -22,7 +22,8 @@ const event = (
   sequence: number,
   kind = "control.agent.cell-call-started",
   scope = step,
-  generation = 0
+  generation = 0,
+  fields?: ControlSchema.ControlEvent["payload"]
 ): ControlSchema.ControlEvent => ({
   sequence,
   runId: "run",
@@ -47,10 +48,18 @@ const event = (
       at: 12,
       eventType: kind,
       sourceSequence: kind.endsWith("started") ? 0 : 1,
-      payload: { callId: "same", flowName: "write", outcome: "success", value: scope.scope }
+      payload: fields ?? { callId: "same", flowName: "write", outcome: "success", value: scope.scope }
     }
   }
 })
+
+const run: ControlSchema.RunSummary = {
+  runId: "run",
+  flowId: "repository-jobs/issues",
+  status: "running",
+  createdAt: 0,
+  updatedAt: 0
+}
 
 describe("native step facts", () => {
   it("ignores missing scopes and non-object step values", () => {
@@ -137,6 +146,27 @@ describe("native step facts", () => {
     } as ControlSchema.ControlEvent
     expect(callEventKey(next)).not.toBe(callEventKey(first))
     expect(uniqueCallEvents([first, next])).toHaveLength(2)
+  })
+
+  it("gives each step's call the seat of its own turn, and the run's when it opened none", () => {
+    const right = { ...step, stepId: "b".repeat(64), scope: "right" }
+    const quiet = { ...step, stepId: "c".repeat(64), scope: "quiet" }
+    const rows = Projection.runTree(run, [
+      { sequence: 1, runId: "run", kind: "control.agent.turn-opened", occurredAt: 1, payload: { seat: "root-seat" } },
+      event(2, "control.agent.turn-opened", step, 0, { seat: "left-seat" }),
+      event(3, "control.agent.turn-opened", right, 0, { seat: "right-seat" }),
+      event(4, "control.agent.cell-call-started", step, 0, { callId: "left-call", flowName: "write" }),
+      event(5, "control.agent.cell-call-started", right, 0, { callId: "right-call", flowName: "write" }),
+      event(6, "control.agent.cell-call-started", quiet, 0, { callId: "quiet-call", flowName: "write" })
+    ])
+
+    // The right step's turn is the last one opened, and under a run-wide
+    // reading it named the left step's call too.
+    expect(rows.map((row) => [row.nodeId, row.seat])).toEqual([
+      ["call-1", "left-seat"],
+      ["call-2", "right-seat"],
+      ["call-3", "root-seat"]
+    ])
   })
 
   it("never matches a scoped settlement to a legacy or another step's unidentified start", () => {

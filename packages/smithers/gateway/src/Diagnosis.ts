@@ -19,7 +19,7 @@
  * @since 1.0.0
  */
 import { ControlSchema } from "@smthrs/control"
-import { uniqueCallEvents } from "./internal/callEvents.ts"
+import { callScope, uniqueCallEvents } from "./internal/callEvents.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
 
 /**
@@ -213,29 +213,104 @@ interface Accumulator {
   parkedQuestion: string | undefined
 }
 
-const handlers: Readonly<
-  Record<string, (accumulator: Accumulator, payload: Record<string, unknown>) => void>
-> = {
-  "control.agent.turn-opened": (accumulator, payload) => {
-    accumulator.turns += 1
-    accumulator.seat = asString(payload.seat) ?? accumulator.seat
+/**
+ * Which events may write a run-level field.
+ *
+ * `uniqueCallEvents` normalizes a native step fact into the `control.agent.*`
+ * event the step recorded, so this fold reads two streams at once: the run's
+ * own, and one per step a module run dispatched. A step's record carries the
+ * `step` object its checkpoint was written under, which is what `callScope`
+ * reads; the run's own records carry none. Every run-level field therefore
+ * belongs to one of three classes, and a new handler has to name its class
+ * before it compiles:
+ *
+ * - `aggregate`: the field sums or counts what the whole run did, steps
+ *   included, so a step's record contributes to it like any other.
+ * - `root`: the field is the run's own answer or state, so only an unscoped
+ *   record may set it. A step's record is skipped.
+ * - scope dependent: the field means something only beside the scope that
+ *   recorded it, so it is kept per scope rather than run wide. No field of
+ *   this digest is one; `GatewayProjection.callHistory` holds the one that is,
+ *   the seat a call ran on.
+ *
+ * The table, field by field:
+ *
+ * | Field                           | Class     | Why                                                        |
+ * | ------------------------------- | --------- | ---------------------------------------------------------- |
+ * | `turns`                         | aggregate | a turn a step opened is a turn this run opened             |
+ * | `seat`                          | aggregate | the seat of the run's last opened turn, wherever it opened |
+ * | `inputTokens`, `outputTokens`   | aggregate | a step spends the run's budget, so the run pays for it     |
+ * | `calls`, `editsAttempted`       | aggregate | a call a step made is a call this run made                 |
+ * | `callsFailed`, `editsSucceeded` | aggregate | the settlement of one of those calls                       |
+ * | `refusals`                      | aggregate | the messages those settlements refused with                |
+ * | `startedAt`, `endedAt`          | aggregate | a step runs inside the run's span, so its records widen it |
+ * | `finalOutput`                   | root      | THE run's answer; a step's answer is the step's            |
+ * | `parkedQuestion`                | root      | THE question the run is parked on                          |
+ * | `status`, `cause`               | root      | THE run's terminal state, from `control.run.*` alone       |
+ *
+ * `status`, `cause` and `parkedQuestion` are root only by construction as well
+ * as by this class: `StepFact.Fact` accepts an `eventType` matching
+ * `^control\.agent\.[a-z-]+$`, so no step fact can normalize to a
+ * `control.run.*` kind or to `control.approval.requested`.
+ */
+type Reach = "aggregate" | "root"
+
+/** One kind's contribution, and the class of the fields it writes. */
+interface Handler {
+  readonly reach: Reach
+  readonly apply: (accumulator: Accumulator, payload: Record<string, unknown>) => void
+}
+
+const handlers: Readonly<Record<string, Handler>> = {
+  "control.agent.turn-opened": {
+    reach: "aggregate",
+    apply: (accumulator, payload) => {
+      accumulator.turns += 1
+      accumulator.seat = asString(payload.seat) ?? accumulator.seat
+    }
   },
-  "control.agent.model-settled": (accumulator, payload) => {
-    const usage = asRecord(payload.usage)
-    accumulator.inputTokens += asNumber(usage.inputTokens) ?? 0
-    accumulator.outputTokens += asNumber(usage.outputTokens) ?? 0
+  "control.agent.model-settled": {
+    reach: "aggregate",
+    apply: (accumulator, payload) => {
+      const usage = asRecord(payload.usage)
+      accumulator.inputTokens += asNumber(usage.inputTokens) ?? 0
+      accumulator.outputTokens += asNumber(usage.outputTokens) ?? 0
+    }
   },
-  "control.agent.cell-call-started": (accumulator, payload) => {
-    accumulator.calls += 1
-    if (editFlows.has(asString(payload.flowName) ?? "")) accumulator.editsAttempted += 1
+  "control.agent.cell-call-started": {
+    reach: "aggregate",
+    apply: (accumulator, payload) => {
+      accumulator.calls += 1
+      if (editFlows.has(asString(payload.flowName) ?? "")) accumulator.editsAttempted += 1
+    }
   },
-  "control.agent.resolved": (accumulator, payload) => {
-    accumulator.finalOutput = asString(payload.text)
+  "control.agent.resolved": {
+    reach: "root",
+    apply: (accumulator, payload) => {
+      accumulator.finalOutput = asString(payload.text)
+    }
   },
-  "control.approval.requested": (accumulator, payload) => {
-    accumulator.parkedQuestion = asString(payload.question)
+  "control.approval.requested": {
+    reach: "root",
+    apply: (accumulator, payload) => {
+      accumulator.parkedQuestion = asString(payload.question)
+    }
   }
 }
+
+/**
+ * The kinds this fold handles, with the class each one's fields belong to.
+ *
+ * Exported so a test can hold the table above against the map rather than
+ * trusting a comment, and so a new handler that names no class fails both the
+ * compiler and that test.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export const handlerReach: Readonly<Record<string, "aggregate" | "root">> = Object.fromEntries(
+  Object.entries(handlers).map(([kind, handler]) => [kind, handler.reach])
+)
 
 /**
  * Computes the diagnosis facts for one run from its ordered control events.
@@ -287,8 +362,11 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
     const at = timeOf(event)
     const handler = Object.hasOwn(handlers, event.kind) ? handlers[event.kind] : undefined
     if (handler !== undefined) {
+      // A step's record still widens the span it was recorded in, because the
+      // step ran inside this run. Whether it may write the field is the
+      // handler's class: a root-only field keeps the root's reading.
       observe(at)
-      handler(accumulator, payload)
+      if (handler.reach === "aggregate" || callScope(event) === undefined) handler.apply(accumulator, payload)
       continue
     }
     if (event.kind === "control.agent.cell-call-settled") {
