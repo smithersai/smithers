@@ -26,7 +26,7 @@
 import { Effect, type Layer, Option, Stream } from "effect"
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join, relative, resolve, sep } from "node:path"
 import * as Events from "./Events.ts"
@@ -202,17 +202,44 @@ export const listFiles = (directory: string, path: string): Array<Protocol.FileN
 /**
  * A file's content, as `/file/content` answers it: `text` with the bytes
  * decoded, or `binary` with no content when the head of the file holds a
- * NUL byte. `undefined` when `path` does not name a regular file under
- * `directory`.
+ * NUL byte. `undefined` when the read would leave the served directory, and
+ * when `path` does not name a regular file inside it.
  *
+ * Two things decide that, and each is load-bearing on its own.
+ *
+ * The base is `served`, the directory the server was started on, and never
+ * anything the request names. A base taken from the request's own `directory`
+ * parameter cannot fail its own containment check: every target resolved
+ * against it starts with it, so the check passes for `/`, for `/etc`, and for
+ * the operator's `~/.ssh`, and the route answers with the bytes. The
+ * request's `directory` is still honoured, as the app's own project-relative
+ * reads need, but only as a place to resolve `path` from; what the answer has
+ * to be inside is the served directory either way.
+ *
+ * The target is then resolved through `realpathSync`, not lexically. A
+ * lexical `resolve` walks the text of a path and follows no link, so a
+ * symlink sitting inside the served directory and pointing anywhere passes a
+ * containment check on its own name while the read that follows opens the
+ * file it points at. The real path is what the read opens, so the real path
+ * is what is checked, and the base is realpath'd too, or a served directory
+ * reached through a link (macOS `/tmp`, `/var`) would never contain its own
+ * files.
+ *
+ * @param served the directory the server was started on
+ * @param path the path the request asked for
+ * @param from where the request asked `path` to be resolved from, if it said
  * @category constructors
  * @since 1.0.0
  */
-export const fileContent = (directory: string, path: string): Protocol.FileContent | undefined => {
-  const base = resolve(directory)
-  const target = resolve(base, path)
-  if (!target.startsWith(base + sep)) return undefined
+export const fileContent = (
+  served: string,
+  path: string,
+  from?: string | undefined
+): Protocol.FileContent | undefined => {
   try {
+    const base = realpathSync(resolve(served))
+    const target = realpathSync(resolve(from === undefined ? base : resolve(base, from), path))
+    if (!target.startsWith(base + sep)) return undefined
     if (!statSync(target).isFile()) return undefined
     const bytes = readFileSync(target)
     return bytes.subarray(0, 8192).includes(0)
@@ -500,7 +527,9 @@ export const layer = (
           const params = query(request)
           const path = params.get("path") ?? ""
           return Effect.sync(() => {
-            const content = fileContent(params.get("directory") ?? directory, path)
+            // The served directory is the base; the request's own `directory`
+            // is only where `path` is resolved from.
+            const content = fileContent(directory, path, params.get("directory") ?? undefined)
             return content === undefined ? notFound(`File ${path} not found`) : json(content)
           })
         }
