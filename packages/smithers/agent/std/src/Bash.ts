@@ -249,6 +249,31 @@ export const capabilities = [capability("proc:spawn", "*")]
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
+/*
+ * `bash` declares no activity on purpose. What a shell call does is in the
+ * command, not in the declaration: the same flow runs a test suite, a type
+ * check, and `cat`. A reader that recognises a direct runner says so from the
+ * recorded command; everything else stays unknown, which is what an absent
+ * activity means.
+ */
+
+/**
+ * How one recorded call to this flow reads: the verb for each settlement, the
+ * input field that is its subject, and the measured output fields a one-line
+ * summary may count.
+ *
+ * Display metadata only, governed by `@smthrs/registry`
+ * `Descriptor.CallPresentation` and checked where `StandardFlows` binds it.
+ *
+ * @category presentation
+ * @since 1.0.0-rc.0
+ */
+export const presentation = {
+  verb: { pending: "running", success: "ran", failure: "failed to run" },
+  subject: "command",
+  result: "command"
+} as const
+
 /**
  * How each known interpreter is told to read its program from standard input.
  *

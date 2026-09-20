@@ -124,23 +124,74 @@ export const filesystem = (
 ): FlowBinding.Source => {
   const searchServices = Context.add(services, Search.Search, search)
   return FlowBinding.source("std/filesystem", [
-    FlowBinding.provide(FlowBinding.make({ flow: Read.flow, handler: Read.run, publicError: publicRefusal }), services),
     FlowBinding.provide(
-      FlowBinding.make({ flow: Write.flow, handler: Write.run, publicError: publicRefusal }),
+      FlowBinding.make({
+        flow: Read.flow,
+        handler: Read.run,
+        publicError: publicRefusal,
+        activity: Read.activity,
+        presentation: Read.presentation
+      }),
       services
     ),
-    FlowBinding.provide(FlowBinding.make({ flow: Edit.flow, handler: Edit.run, publicError: publicRefusal }), services),
     FlowBinding.provide(
-      FlowBinding.make({ flow: ApplyPatch.flow, handler: ApplyPatch.run, publicError: publicRefusal }),
+      FlowBinding.make({
+        flow: Write.flow,
+        handler: Write.run,
+        publicError: publicRefusal,
+        activity: Write.activity,
+        presentation: Write.presentation
+      }),
       services
     ),
-    FlowBinding.provide(FlowBinding.make({ flow: Ls.flow, handler: Ls.run, publicError: publicRefusal }), services),
     FlowBinding.provide(
-      FlowBinding.make({ flow: Glob.flow, handler: Glob.run, publicError: publicSearchError }),
+      FlowBinding.make({
+        flow: Edit.flow,
+        handler: Edit.run,
+        publicError: publicRefusal,
+        activity: Edit.activity,
+        presentation: Edit.presentation
+      }),
+      services
+    ),
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: ApplyPatch.flow,
+        handler: ApplyPatch.run,
+        publicError: publicRefusal,
+        activity: ApplyPatch.activity,
+        presentation: ApplyPatch.presentation
+      }),
+      services
+    ),
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: Ls.flow,
+        handler: Ls.run,
+        publicError: publicRefusal,
+        activity: Ls.activity,
+        presentation: Ls.presentation
+      }),
+      services
+    ),
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: Glob.flow,
+        handler: Glob.run,
+        publicError: publicSearchError,
+        activity: Glob.activity,
+        presentation: Glob.presentation
+      }),
       searchServices
     ),
     FlowBinding.provide(
-      FlowBinding.make({ flow: Grep.flow, handler: Grep.run, publicError: publicSearchError }),
+      FlowBinding.make({
+        flow: Grep.flow,
+        handler: Grep.run,
+        publicError: publicSearchError,
+        activity: Grep.activity,
+        presentation: Grep.presentation
+      }),
       searchServices
     )
   ])
@@ -169,7 +220,12 @@ export const shell = (
 ): FlowBinding.Source =>
   FlowBinding.source("std/shell", [
     FlowBinding.provide(
-      FlowBinding.make({ flow: Bash.flow, handler: Bash.run, publicError: publicExecutionError }),
+      FlowBinding.make({
+        flow: Bash.flow,
+        handler: Bash.run,
+        publicError: publicExecutionError,
+        presentation: Bash.presentation
+      }),
       Context.add(services, Container.Container, container)
     )
   ])
@@ -198,7 +254,13 @@ export const tests = (
 ): FlowBinding.Source =>
   FlowBinding.source("std/tests", [
     FlowBinding.provide(
-      FlowBinding.make({ flow: TestRun.flow, handler: TestRun.run, publicError: publicExecutionError }),
+      FlowBinding.make({
+        flow: TestRun.flow,
+        handler: TestRun.run,
+        publicError: publicExecutionError,
+        activity: TestRun.activity,
+        presentation: TestRun.presentation
+      }),
       services
     )
   ])

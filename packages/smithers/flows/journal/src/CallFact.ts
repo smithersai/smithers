@@ -27,7 +27,18 @@ export const Call = Schema.Struct({
   callId: Schema.String.check(Schema.isPattern(/^cell-call-v1:[0-9a-f]{64}$/)),
   identity: Identity,
   flowName: Schema.String,
-  input: Schema.Json
+  input: Schema.Json,
+  /**
+   * The resolved declaration's display projection, as its owner encoded it.
+   *
+   * JSON rather than a struct because the vocabulary belongs to
+   * `@smthrs/registry` (`Descriptor.FlowActivity`, `Descriptor.CallPresentation`),
+   * which sits above this package: `@smthrs/harness` `Cell.displayDescriptor`
+   * encodes it from a typed call and the reading card validates each field
+   * before it is displayed, so the journal carries it and claims nothing about
+   * it. Absent means the declaration claimed nothing.
+   */
+  descriptor: Schema.optional(Schema.Json)
 })
 
 /** Decoded authorized call coordinates.
@@ -76,7 +87,12 @@ const coordinates = {
  * @since 1.0.0
  */
 export const Fact = Schema.Union([
-  Schema.Struct({ ...coordinates, phase: Schema.Literal("invoked"), input: Schema.Json }),
+  Schema.Struct({
+    ...coordinates,
+    phase: Schema.Literal("invoked"),
+    input: Schema.Json,
+    descriptor: Schema.optional(Schema.Json)
+  }),
   Schema.Struct({
     ...coordinates,
     phase: Schema.Literal("settled"),

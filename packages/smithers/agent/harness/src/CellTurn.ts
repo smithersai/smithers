@@ -1733,12 +1733,8 @@ const callHandler = (
         )
       }
     }
-    const call = new Cell.Call({
-      flowName: descriptor.name,
+    const call = Cell.callOf(descriptor, {
       input: invocation.input,
-      capabilities: descriptor.capabilities,
-      effects: descriptor.effects,
-      placement: descriptor.placement,
       identity: new Cell.CallIdentity({
         session: state.session,
         frame: state.frame,

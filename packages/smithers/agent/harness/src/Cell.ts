@@ -458,8 +458,83 @@ export class Call extends Schema.Class<Call>("flows/harness/Cell/Call")({
    * reading of the tree as it was, and a grader that cannot tell those apart
    * cannot grade a fails-before proof at all.
    */
-  at: Schema.optional(Schema.String)
+  at: Schema.optional(Schema.String),
+  /**
+   * What the resolved declaration says a call to this flow does.
+   *
+   * Carried on the call rather than looked up later, because the reader of a
+   * run is not the host that resolved it: a card reading a journal months
+   * afterwards holds the record and nothing else, and a flow name is not a
+   * meaning. Absent is unknown, and unknown stays unknown.
+   */
+  activity: Schema.optional(Descriptor.FlowActivity),
+  /**
+   * How the resolved declaration says one recorded call to this flow reads.
+   *
+   * Display authority only. Neither this field nor `activity` enters a key:
+   * {@link callMaterial} and the durable call key name the fields they hash,
+   * and both digests in `@smthrs/registry` exclude these two, so enriching a
+   * declaration with them can neither replay nor re-approve anything.
+   */
+  presentation: Schema.optional(Descriptor.CallPresentation)
 }) {}
+
+/**
+ * Builds the call one resolved declaration and one cell invocation make.
+ *
+ * A constructor rather than an object literal at the boundary: what a call
+ * carries about its declaration is a contract two producers project into a
+ * journal (`AgentSession.trace` and the native `CallFact`), and a reader can
+ * only be as complete as this. A field copied from a descriptor onto a call
+ * belongs here, where the copy is stated once.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const callOf = (
+  descriptor: Descriptor.FlowDescriptor,
+  options: {
+    readonly input: Schema.Json
+    readonly identity: CallIdentity
+    /** The checkpoint the cell named, when it named one. */
+    readonly at?: string | undefined
+  }
+): Call =>
+  new Call({
+    flowName: descriptor.name,
+    input: options.input,
+    capabilities: descriptor.capabilities,
+    effects: descriptor.effects,
+    placement: descriptor.placement,
+    identity: options.identity,
+    ...(options.at === undefined ? {} : { at: options.at }),
+    ...(descriptor.activity === undefined ? {} : { activity: descriptor.activity }),
+    ...(descriptor.presentation === undefined ? {} : { presentation: descriptor.presentation })
+  })
+
+/**
+ * The display projection one recorded call carries for whoever reads it back.
+ *
+ * `undefined` when the declaration claimed neither field, so the record stays
+ * byte-identical to the one an undeclared flow produces and a reader's
+ * compatibility table still applies to it. The name travels with the fields so
+ * a reader can refuse metadata that belongs to a different flow.
+ *
+ * @category projections
+ * @since 1.0.0-rc.0
+ */
+export const displayDescriptor = (call: Call): Schema.Json | undefined =>
+  call.activity === undefined && call.presentation === undefined ? undefined : {
+    name: call.flowName,
+    ...(call.activity === undefined ? {} : { activity: call.activity }),
+    ...(call.presentation === undefined ? {} : {
+      presentation: {
+        verb: { ...call.presentation.verb },
+        subject: call.presentation.subject,
+        result: call.presentation.result
+      }
+    })
+  }
 
 /**
  * The id naming the tree a run opened on, pinned for free and always present.

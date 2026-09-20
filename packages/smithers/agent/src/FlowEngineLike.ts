@@ -795,11 +795,17 @@ const boundaryKey = (
  * calls it session, which must not be confused with an authentication token. */
 const factCall = (call: Cell.Call): CallFact.Call => {
   const { session, ...identity } = call.identity
+  // The declaration's display projection travels with the invocation, so the
+  // native fact a card reads says what the call meant without the card having
+  // to guess from a flow name. `Cell.displayDescriptor` answers `undefined`
+  // for a declaration that claimed nothing, and the field is then omitted.
+  const descriptor = Cell.displayDescriptor(call)
   return {
     callId: callId(call.identity),
     identity: { runId: session, ...identity },
     flowName: call.flowName,
-    input: call.input
+    input: call.input,
+    ...(descriptor === undefined ? {} : { descriptor })
   }
 }
 

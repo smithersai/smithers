@@ -53,7 +53,15 @@ export const make = (action: unknown, runId: string) => {
         flowName: call.flowName
       }
       const payload: CallFact.Fact = result === undefined
-        ? { ...coordinates, phase: "invoked", input: yield* bounded(call.input) }
+        ? {
+          ...coordinates,
+          phase: "invoked",
+          input: yield* bounded(call.input),
+          // Never bounded: the display projection is four short fields its
+          // owner already validated, and a truncation marker in its place
+          // would read as a declaration that claimed something unreadable.
+          ...(call.descriptor === undefined ? {} : { descriptor: call.descriptor })
+        }
         : {
           ...coordinates,
           phase: "settled",

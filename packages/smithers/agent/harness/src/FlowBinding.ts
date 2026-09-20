@@ -107,6 +107,23 @@ export interface DescriptorOptions {
   readonly inputDocument?: Schema.Json | undefined
   /** The output schema as a JSON Schema document, carried by value. */
   readonly outputDocument?: Schema.Json | undefined
+  /**
+   * What a call to this flow does, for a reader of a run.
+   *
+   * Absent means unknown, and unknown stays unknown: a reader that is given
+   * nothing says nothing rather than guessing from the flow's name. `bash` is
+   * the deliberate absence — what a shell call does is in the command.
+   */
+  readonly activity?: Descriptor.FlowActivity | undefined
+  /**
+   * How one recorded call to this flow reads.
+   *
+   * This is the one authority a run card has for the words beside a call. It
+   * grants nothing: {@link Descriptor.declarationDigest} and
+   * {@link Descriptor.executionDigest} both exclude it, so declaring it cannot
+   * invalidate a reviewed plan, a call identity, or a cached prompt.
+   */
+  readonly presentation?: Descriptor.CallPresentation | undefined
 }
 
 /**
@@ -192,6 +209,11 @@ export const descriptorOf = (
     effects: declaredEffects(declaration.effects),
     placement: options.placement ?? Option.none(),
     modelInvocable: options.modelInvocable ?? true,
+    // Omitted rather than carried as `undefined`: an absent display field is
+    // the absence of the claim, and `Descriptor.FlowDescriptor` encodes an
+    // omitted optional field away instead of writing a null nobody declared.
+    ...(options.activity === undefined ? {} : { activity: options.activity }),
+    ...(options.presentation === undefined ? {} : { presentation: options.presentation }),
     path,
     frontmatter: {},
     provenance: options.provenance ?? new Descriptor.Provenance({ source: "binding", root: "binding://" })

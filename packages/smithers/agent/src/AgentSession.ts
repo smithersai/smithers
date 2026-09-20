@@ -60,7 +60,7 @@ import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { DurableDeferred, Flow, FlowRuntime, WaitFor } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import type * as Cell from "@smthrs/harness/Cell"
+import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as CellTurn from "@smthrs/harness/CellTurn"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -272,7 +272,10 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // callId enriches the control projection of an identity the harness already
   // carried. Resuming a pre-callId run must deduplicate its recorded prefix
   // instead of publishing every call a second time.
-  ["control.agent.cell-call-started", new Set(["callId"])],
+  // `descriptor` joined `callId` for the same reason: it enriches a record
+  // that already exists in journals, and a resumed pre-enrichment run must
+  // deduplicate its recorded prefix rather than publish all of it again.
+  ["control.agent.cell-call-started", new Set(["callId", "descriptor"])],
   ["control.agent.cell-call-settled", new Set(["callId"])],
   // The five events below reached every consumer countable and otherwise
   // empty: the projection's `default` arm dropped every field they carried.
@@ -528,18 +531,27 @@ export const trace = (
         eventType: "control.agent.cell-rejected-in-frame",
         payload: { attempt: event.attempt, code: event.code, message: tracedField(event.message) }
       }
-    case "cell-call-started":
+    case "cell-call-started": {
       // The input is bounded for the same reason the result is. A `write` call
       // carries the whole file it is about to write, so the record that opens
       // the call is as large as the one that settles it.
+      //
+      // The declaration's display fields ride the opening record because that
+      // is the only record that holds them: the call settles with an outcome,
+      // and a reader months later has the journal and no registry to ask. A
+      // flow that declared neither field adds nothing, so its record is
+      // unchanged and a reader's compatibility table still applies to it.
+      const descriptor = Cell.displayDescriptor(event.call)
       return {
         eventType: "control.agent.cell-call-started",
         payload: {
           callId: callId(event.call.identity),
           flowName: event.call.flowName,
-          input: tracedField(event.call.input)
+          input: tracedField(event.call.input),
+          ...(descriptor === undefined ? {} : { descriptor })
         }
       }
+    }
     case "cell-call-settled":
       return {
         eventType: "control.agent.cell-call-settled",

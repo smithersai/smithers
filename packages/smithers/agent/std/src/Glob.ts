@@ -146,6 +146,36 @@ export const capabilities = [capability("fs:read", "/**")]
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
 /**
+ * What a call to this flow does, for a reader of a run.
+ *
+ * Display metadata only. `@smthrs/registry` `Descriptor.FlowActivity` is the
+ * governing vocabulary and `StandardFlows` binds this value onto the flow's
+ * descriptor, where the binding site checks it. `declarationDigest` excludes
+ * it, so declaring it cannot invalidate a call identity or a cached prompt.
+ *
+ * @category presentation
+ * @since 1.0.0-rc.0
+ */
+export const activity = "reads" as const
+
+/**
+ * How one recorded call to this flow reads: the verb for each settlement, the
+ * input field that is its subject, and the measured output fields a one-line
+ * summary may count.
+ *
+ * Display metadata only, governed by `@smthrs/registry`
+ * `Descriptor.CallPresentation` and checked where `StandardFlows` binds it.
+ *
+ * @category presentation
+ * @since 1.0.0-rc.0
+ */
+export const presentation = {
+  verb: { pending: "listing", success: "listed", failure: "failed to list" },
+  subject: "pattern",
+  result: "paths"
+} as const
+
+/**
  * Runs one `rg --files -g` contract call through the selected peer implementation.
  *
  * @category handlers
