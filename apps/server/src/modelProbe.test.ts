@@ -177,7 +177,7 @@ describe("POST /api/model/test, a generation model", () => {
       model: "gpt-oss-120b",
       stream: false,
       max_tokens: MODEL_TEST_MAX_TOKENS,
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       messages: [{ role: "user", content: MODEL_TEST_PROMPT }]
     })
   })
@@ -193,7 +193,7 @@ describe("POST /api/model/test, a generation model", () => {
       model: "gpt-oss-120b",
       stream: false,
       max_tokens: 64,
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       temperature: 0.2,
       messages: [{ role: "system", content: "Answer tersely." }, { role: "user", content: "ping?" }]
     })

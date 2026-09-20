@@ -71,9 +71,10 @@ const ANSWER_MAX_BYTES = 64 * 1024
  * A Test proves the key, the address and the wire, and a person is watching
  * the latency it reports. The Cerebras default reasons at `high` when the
  * body says nothing, which would spend the whole answer budget and most of
- * the deadline before a word arrives, so this probe asks for none.
+ * the deadline before a word arrives. `low`, not `none`: the probe tests any
+ * Cerebras model id, and gpt-oss-120b accepts only low, medium and high.
  */
-const MODEL_TEST_REASONING_EFFORT = "none" as const
+const MODEL_TEST_REASONING_EFFORT = "low" as const
 
 /** The model keys this deployment holds, by credential name. Closed: a name absent here is never read. */
 const WORKER_MODEL_KEYS = {
