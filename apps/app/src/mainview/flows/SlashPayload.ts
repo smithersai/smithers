@@ -1128,6 +1128,16 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ cardId, field, value: rest.length === 0 ? "" : value })
   },
   "form.submit": (args) => required("cardId", args, "form.submit needs the card id"),
+  /* The signup onboarding (entries/signup.ts): `set`'s value is the rest of the line (blank clears). */
+  "signup.set": (args) => {
+    const [field, ...rest] = tokensOf(args)
+    if (field === undefined) return no("signup.set needs the field name")
+    return ok({ field, value: rest.length === 0 ? "" : trimmed(args).slice(field.length).trim() })
+  },
+  "signup.email": (args) => required("email", args, "Type your company email"),
+  "signup.verify": (args) => required("code", args, "Type the 6-digit code"),
+  "signup.answer": (args) => required("value", args, "Choose an answer"),
+  "signup.repo": (args) => required("repo", args, "Choose a repository, or new"),
   /*
    * The cloud agent sessions (entries/agentSession.ts). `new` reads its line
    * as [owner/repo] [provider] [task…], each position OPTIONAL: a token that

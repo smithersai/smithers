@@ -27,6 +27,24 @@ const jobState = (states: Partial<Record<RepositoryJob, string>> | undefined, fl
   return state === undefined ? null : ` · ${state}`
 }
 
+/*
+ * What each job does, drawn rather than said (MINIMAL TEXT): an issue turning
+ * into a merged change, a pull request collecting review marks, a pipeline
+ * going green, a feature branch growing off main, a clock firing a chore.
+ */
+const JOB_PICTURES: Readonly<Record<string, string>> = {
+  "issues.setup": '<rect class="frp-soft" x="8" y="14" width="34" height="32" rx="4"/><circle class="frp-bad" cx="17" cy="23" r="3"/><path class="frp-ink" d="M24 23h12M15 31h20M15 38h14"/><path class="frp-acc" d="M46 30h14M56 25l5 5-5 5"/><rect class="frp-soft" x="64" y="14" width="30" height="32" rx="4"/><path class="frp-ok" d="M71 30l5 5 10-11"/>',
+  "review.setup": '<circle class="frp-acc" cx="22" cy="14" r="5"/><circle class="frp-acc" cx="22" cy="46" r="5"/><circle class="frp-ok" cx="58" cy="46" r="5"/><path class="frp-acc" d="M22 19v22M58 41V26a8 8 0 0 0-8-8H36M40 13l-4 5 4 5"/><rect class="frp-soft" x="68" y="8" width="26" height="9" rx="3"/><path class="frp-ok" d="M72 12.5l2.5 2.5 5-5"/><rect class="frp-soft" x="68" y="22" width="26" height="9" rx="3"/><path class="frp-ok" d="M72 26.5l2.5 2.5 5-5"/><rect class="frp-soft" x="68" y="36" width="26" height="9" rx="3"/><path class="frp-ok" d="M72 40.5l2.5 2.5 5-5"/>',
+  "ci.setup": '<path class="frp-ink" d="M14 30h10M38 30h10M62 30h10"/><circle class="frp-okf" cx="8" cy="30" r="5"/><circle class="frp-okf" cx="32" cy="30" r="5"/><circle class="frp-okf" cx="56" cy="30" r="5"/><circle class="frp-acc" cx="80" cy="30" r="5"/><path class="frp-acc" d="M86 30h8"/><path class="frp-ink" d="M8 42v6h72v-6" opacity=".5"/>',
+  "feature.setup": '<path class="frp-ink" d="M10 44h80"/><circle class="frp-ink frp-fill" cx="24" cy="44" r="4"/><circle class="frp-ink frp-fill" cx="80" cy="44" r="4"/><path class="frp-acc" d="M24 44c8-10 12-22 30-22h12"/><circle class="frp-accf" cx="66" cy="22" r="4"/><path class="frp-acc" d="M66 22h12"/><path class="frp-acc" d="M78 22c4 0 6 10 2 22" opacity=".5" stroke-dasharray="3 3"/>',
+  "chores.setup": '<circle class="frp-ink frp-fill" cx="34" cy="30" r="18"/><path class="frp-ink" d="M34 16v3M48 30h-3M34 44v-3M20 30h3" opacity=".5"/><path class="frp-acc" d="M34 30V19M34 30l7 4"/><path class="frp-acc" d="M56 30h8M64 30l4-4M64 30l4 4" opacity=".6"/><rect class="frp-soft" x="72" y="20" width="20" height="20" rx="4"/><path class="frp-ok" d="M77 30l3 3 6-7"/>'
+}
+
+const JobPicture = ({ flow }: { flow: string }) => {
+  const picture = JOB_PICTURES[flow]
+  return picture === undefined ? null : <svg className="first-run-picture" viewBox="0 0 100 60" aria-hidden="true" dangerouslySetInnerHTML={{ __html: picture }} />
+}
+
 export function FirstRunActionsCard({ commands, state, repo, jobStates, onRunCommand: dispatchFlow, onDismiss }: {
   commands: readonly CatalogItem[]
   state: CommandState
@@ -43,7 +61,7 @@ export function FirstRunActionsCard({ commands, state, repo, jobStates, onRunCom
   return <section className="first-run-actions" data-testid="first-run-actions" aria-label="Recommended actions">
     <header><h2>Recommended actions</h2><button type="button" aria-label="Dismiss recommended actions" {...flowAction(onRunCommand, "app.first-run.dismiss")}>×</button></header>
     {firstRunGroups(commands, state).map(group => <section key={group.namespace} aria-label="Repository jobs">
-      {group.flows.map(flow => <button type="button" key={flow.name} {...dynamicFlowAction(onRunCommand, flow.name, repo)}>{flow.summary}{jobState(jobStates, flow.name)}</button>)}
+      {group.flows.map(flow => <button type="button" key={flow.name} {...dynamicFlowAction(onRunCommand, flow.name, repo)}><JobPicture flow={flow.name} />{flow.summary}{jobState(jobStates, flow.name)}</button>)}
     </section>)}
   </section>
 }

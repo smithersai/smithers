@@ -25,6 +25,7 @@ import * as account from "./entries/account"
 import * as admin from "./entries/admin"
 import * as agent from "./entries/agent"
 import * as app from "./entries/app"
+import * as signup from "./entries/signup"
 import * as appearance from "./entries/appearance"
 import * as approval from "./entries/approval"
 import * as approvals from "./entries/approvals"
@@ -503,6 +504,7 @@ export const NAMESPACES: ReadonlyArray<Namespace> = [
   debug.namespace,
   experimental.namespace,
   app.namespace,
+  signup.namespace,
   smithers.namespace,
   admin.namespace,
   system.namespace,

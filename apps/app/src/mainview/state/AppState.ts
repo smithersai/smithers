@@ -23,6 +23,7 @@ import { HARNESS_IDS,HarnessSchema,RepoFileEntrySchema,RepoSchema } from "@smthr
 import type { LocalRepositoryInspection,RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
 import { z } from "zod"
+import { SignupSchema, type Signup } from "./Signup"
 import { FLOW_NAMES } from "../flows/FlowName"
 import { CloudWikiState } from "../wiki/CloudWikiState"
 import type { CommandIntent } from "./CommandIntent"
@@ -745,6 +746,8 @@ export const SessionSchema = z.object({
   /** Optional so previously saved sessions still parse. */
   firstRunDismissed: z.boolean().optional(),
   hintsSeen: z.array(z.string()).optional(),
+  /** The signup onboarding's stage and answers (state/Signup.ts); absent on sessions saved before it existed. */
+  signup: SignupSchema.optional(),
   id: z.literal("main"),
   draft: z.string(),
   phase: z.enum(["idle", "responding"]),
@@ -1248,6 +1251,8 @@ export type AppTransition =
   | { type: "app.reset"; actor: Actor }
   | { type: "hint.dismissed"; actor: Actor; id: string }
   | { type: "first-run.dismissed"; actor: Actor }
+  /** One merge onto the signup row; a missing row starts from initialSignup(). */
+  | { type: "signup.changed"; actor: Actor; patch: Partial<Signup> }
   | { type: "librarian.launches.changed"; actor: Actor; launches: NonNullable<Session["librarianLaunches"]> }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */

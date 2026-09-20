@@ -313,6 +313,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../SessionNavigation.tsx": 1, // -1: the wordmark is a static mark; the sidebar it toggled is gone.
       "../cards/FirstRunActions.tsx": 2, // +2: the first-run card's dismiss and shared action button.
       "../cards/SetupChecklist.tsx": 2, // The shared step button and the shared job button; each one's flow is data, not a handler.
+      "../cards/SignupCards.tsx": 14, // The signup onboarding: three doors, three submits, poll choice/back/skip/continue/send/repo/new-repo, finish.
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/LiveTutorialRunBody.tsx": 6, // -1: removed the tutorial restart/skip action.
       "../cards/RepositoryUpdateCard.tsx": 3,

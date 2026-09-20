@@ -1,0 +1,76 @@
+import { expect, test } from "@playwright/test"
+import { signedOutVisitor } from "./identity"
+
+/*
+ * The signup onboarding (state/Signup.ts) in a real browser: a signed-out
+ * cloud visitor meets the hero and its doors → the doors this host lacks refuse with a
+ * typed toast → account → the seven questions → ready → Start Automating,
+ * and a reload resumes the stage the person stopped at.
+ */
+const SHOTS = process.env.SIGNUP_SHOTS
+
+test("a signed-out visitor walks the signup in the transcript and a reload resumes it", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.goto("/smithersai/smithers/")
+  const signup = page.getByTestId("signup")
+  await expect(signup).toBeVisible()
+  await expect(signup.locator("h1")).toHaveText(/Automate\s+your\s+codebase\s+today/)
+  await expect(page.getByTestId("setup-checklist")).toHaveCount(0)
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/1-hero.png` })
+
+  await expect(page.getByTestId("signup-github")).toBeVisible()
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/2-sign-in.png` })
+
+  // The host has no email door: the refusal is typed, the doors stay.
+  await page.getByTestId("signup-email").fill("ada@acme.dev")
+  await page.getByTestId("signup-email-continue").click()
+  await expect(page.locator("[data-toast-status='failed']")).toContainText("not available on this host yet")
+  await expect(page.getByTestId("signup-github")).toBeVisible()
+
+  // The GitHub door is auth.sign-in's redirect.
+  await page.route("**/api/auth/github**", route => route.fulfill({ body: "Sign-in handoff" }))
+  const request = page.waitForRequest(request => new URL(request.url()).pathname === "/api/auth/github/start")
+  await page.getByTestId("signup-github").click()
+  await request
+  await page.waitForURL(/\/api\/auth\/github\/start/)
+
+  // Back from GitHub: the identity answer moves the signup to the account step with the login prefilled.
+  await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-in", login: "adapark", allowlisted: true, admin: false } }))
+  await page.goto("/smithersai/smithers/")
+  await expect(page.getByTestId("signup-account")).toHaveValue("adapark")
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/3-account.png` })
+  await page.getByTestId("signup-name").fill("Ada Park")
+  await page.getByTestId("signup-account-continue").click()
+
+  const question = page.getByTestId("signup-question")
+  await expect(question).toHaveAttribute("data-question", "size")
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/4-poll.png` })
+  await page.keyboard.press("b")
+  await expect(question).toHaveAttribute("data-question", "role")
+  await question.getByRole("radio", { name: /Engineering/ }).click()
+  await expect(question).toHaveAttribute("data-question", "heard")
+  await page.getByTestId("signup-skip").click()
+  await expect(question).toHaveAttribute("data-question", "know")
+  await question.getByRole("radio", { name: /Yes/ }).click()
+  await expect(question).toHaveAttribute("data-question", "models")
+  await question.getByRole("checkbox", { name: /Claude/ }).click()
+  await page.getByTestId("signup-continue").click()
+  await expect(question).toHaveAttribute("data-question", "repo")
+
+  // A reload resumes the same question. The session row reaches OPFS on the
+  // store's own flush cadence, so the return is a later visit, not the next frame.
+  await page.waitForTimeout(1500)
+  await page.reload()
+  await expect(page.getByTestId("signup-question")).toHaveAttribute("data-question", "repo")
+  await page.getByTestId("signup-new-repo").click()
+  await expect(page.getByTestId("signup-question")).toHaveAttribute("data-question", "more")
+  await page.getByTestId("signup-skip").click()
+
+  await expect(page.getByTestId("signup-finish")).toBeVisible()
+  await expect(page.getByTestId("signup")).toContainText("smithers.sh/adapark")
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/5-ready.png` })
+  await page.getByTestId("signup-finish").click()
+  await expect(page.getByTestId("signup")).toHaveCount(0)
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/6-home.png` })
+})

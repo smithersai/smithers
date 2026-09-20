@@ -35,6 +35,7 @@ import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,reposito
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import type { AccountController } from "./controller/account"
 import { createAccountController } from "./controller/account"
+import { createSignupController, type SignupController } from "./controller/signup"
 import type { AgentsController } from "./controller/agents"
 import { createAgentsController } from "./controller/agents"
 import type { AppShellController } from "./controller/app"
@@ -159,6 +160,18 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** The command registry: every interactive affordance routes through it. */
   readonly dismissFirstRun: () => void
   readonly dismissHint: (id: string) => void
+  /** The signup onboarding's doors (controller/signup.ts). */
+  readonly signupChange: SignupController["signupChange"]
+  readonly signupSet: SignupController["signupSet"]
+  readonly signupGoogle: SignupController["signupGoogle"]
+  readonly signupEmail: SignupController["signupEmail"]
+  readonly signupVerify: SignupController["signupVerify"]
+  readonly signupAccount: SignupController["signupAccount"]
+  readonly signupAnswer: SignupController["signupAnswer"]
+  readonly signupNext: SignupController["signupNext"]
+  readonly signupBack: SignupController["signupBack"]
+  readonly signupRepo: SignupController["signupRepo"]
+  readonly signupFinish: SignupController["signupFinish"]
   readonly commands: CommandRegistry
   /**
    * The active repository's declared flows (the `flows` rows of its
@@ -1418,6 +1431,7 @@ export const createAppController = (
    */
   const account = actors.pair(ctx, (context) =>
     createAccountController(context, { nextOrdinal: store.nextOrdinal, promptSignIn }))
+  const signup = actors.pair(ctx, (context) => createSignupController(context))
 
   /*
    * The /chat.commands answer: the LIVE visible catalog as one chat message —
@@ -1757,6 +1771,7 @@ export const createAppController = (
     promptDownload,
     dismissFirstRun: () => { store.dispatch({ type: "first-run.dismissed", actor: ctx.commandActor }) },
     dismissHint: (id: string) => { store.dispatch({ type: "hint.dismissed", actor: ctx.commandActor, id }) },
+    ...signup,
     introduce,
     showAccount: account.showAccount,
     prototypeFeature: onboarding.prototypeFeature,

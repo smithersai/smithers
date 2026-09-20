@@ -2,6 +2,7 @@ import { AgentTurnBatchSchema,AgentTurnCursorSchema,AgentTurnJournalRequestSchem
 import { BillingPlanSchema,SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
 import { ConfiguredModelSchema,ModelRecordIdSchema,ModelTestRecordSchema,SeatIdSchema } from "@smthrs/rpc/ConfiguredModel"
 import { StatusRollupSchema } from "@smthrs/rpc/Health"
+import { SignupSchema } from "./Signup"
 import { RepoFileEntrySchema } from "@smthrs/rpc/LocalApp"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
 import { z } from "zod"
@@ -66,6 +67,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "hint.dismissed": z.object({ type: z.literal("hint.dismissed"), actor: ActorSchema, id: z.string() }).strict(),
   "librarian.launches.changed": z.object({ type: z.literal("librarian.launches.changed"), actor: ActorSchema, launches: SessionSchema.shape.librarianLaunches.unwrap() }).strict(),
   "first-run.dismissed": z.object({ type: z.literal("first-run.dismissed"), actor: ActorSchema }).strict(),
+  "signup.changed": z.object({ type: z.literal("signup.changed"), actor: ActorSchema, patch: SignupSchema.partial() }).strict(),
   "card.navigated": z.object({ "type": z.literal("card.navigated"), "actor": ActorSchema, "card": CardSchema }).strict(),
   "card.history.moved": z.object({ "type": z.literal("card.history.moved"), "actor": ActorSchema, "id": z.string(), "delta": z.union([z.literal(-1), z.literal(1)]) }).strict(),
   "input.mode.changed": z.object({ "type": z.literal("input.mode.changed"), "actor": ActorSchema, "mode": z.enum(INPUT_MODES) }).strict(),

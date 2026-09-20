@@ -29,6 +29,7 @@ import { adminOperatorFlows, adminResetFlows, adminToolFlows } from "./entries/a
 import { agentFlows, tutorialChangeFlows } from "./entries/agent"
 import { agentSessionFlows } from "./entries/agentSession"
 import { appFlows } from "./entries/app"
+import { signupFlows } from "./entries/signup"
 import { appearanceFlows } from "./entries/appearance"
 import { approvalFlows } from "./entries/approval"
 import { approvalsFlows } from "./entries/approvals"
@@ -142,6 +143,7 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...authFlows(actions),
   ...accountFlows(actions),
   ...appFlows(actions),
+  ...signupFlows(actions),
   ...storageFlows(actions),
   ...cloudFlows(actions),
   ...toastFlows(actions),

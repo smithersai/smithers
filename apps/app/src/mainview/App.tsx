@@ -20,6 +20,8 @@ import { cardActions } from "./cards/CardActions"
 import { isPracticeRepo } from "./state/practice/PracticeRepository"
 import { FirstRunActions } from "./cards/FirstRunActions"
 import { SetupChecklist } from "./cards/SetupChecklist"
+import { SignupCards } from "./cards/SignupCards"
+import { signupActive } from "./state/Signup"
 import { CardView } from "./ChatCards"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
@@ -82,6 +84,7 @@ function AppContent() {
     q.from({ session: collections.sessions }).select(({ session }) => ({
       id: session.id,
       firstRunDismissed: session.firstRunDismissed,
+      signup: session.signup,
       phase: session.phase,
       theme: session.theme,
       surface: session.surface,
@@ -232,7 +235,9 @@ function AppContent() {
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && cloudHost
-  const authMessage: Message | undefined = isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
+  // The signup onboarding owns the transcript until its stage is done (state/Signup.ts).
+  const signingUp = cloudHost && signupActive(session.signup, identity?.state)
+  const authMessage: Message | undefined = signingUp || isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
     ? bootPending ? undefined : bootUnavailable
       ? {
         id: "repository-state",
@@ -376,7 +381,7 @@ function AppContent() {
 
   const latestEntry = entries.at(-1)
   const latestReadId = latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
-  const initialReadId = !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id : undefined
+  const initialReadId = signingUp ? "signup" : !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id : undefined
 
   // Chat stays mounted when closed.
   const composerWrap = (
@@ -563,8 +568,9 @@ function AppContent() {
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
-            <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>
-            {!session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
+            {signingUp && <MessageScrollerItem messageId="signup"><SignupCards /></MessageScrollerItem>}
+            {!signingUp && <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>}
+            {!signingUp && !session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
             {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}

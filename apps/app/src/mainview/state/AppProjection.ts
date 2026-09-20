@@ -97,6 +97,7 @@ import { acceptStatus,exitedStatus,expireStatus } from "./HealthStatus"
 import { HttpTurnLegSchema,HttpTurnSchema,httpToolLegCount,projectHttpFrame,settleHttpClaims,verifyHttpBatch } from "./HttpTurn"
 import { pendingRecoveryScope,sameRecoveryScope } from "./PendingRecovery"
 import { PRACTICE_REPO } from "./practice/PracticeRepository"
+import { initialSignup, signupAfterIdentity } from "./Signup"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema,notificationReadVersion,notificationReceiptKey,type RepositoryNotification } from "./RepositoryNotifications"
 import { impossibleAskOf,runLaunchCommandOf,toolResultLaunchedRun } from "./RunClaims"
@@ -226,6 +227,7 @@ export const APP_TRANSITION_TYPES = {
   "chain.turn.resumed": true,
   "hint.dismissed": true,
   "first-run.dismissed": true,
+  "signup.changed": true,
   "librarian.launches.changed": true,
   "theme.changed": true,
   "palette.changed": true,
@@ -2020,6 +2022,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, draft => { draft.firstRunDismissed = true })
           break
         }
+        case "signup.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.signup = { ...(draft.signup ?? initialSignup()), ...transition.patch } })
+          break
+        }
         case "librarian.launches.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.librarianLaunches = transition.launches })
           break
@@ -2531,6 +2537,12 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             forgetAccountState(collections, createdAt)
           }
           const nextOwner = transition.state === "signed-in" ? transition.login : transition.state === "signed-out" ? null : owner
+          // A definitive sign-in carries an unfinished signup past its doors (state/Signup.ts).
+          if (transition.state === "signed-in") {
+            const session = collections.sessions.get(SESSION_ID)
+            const advanced = signupAfterIdentity(session?.signup, "signed-in", transition.login)
+            if (advanced !== undefined && advanced !== session?.signup) collections.sessions.update(SESSION_ID, draft => { draft.signup = advanced })
+          }
           const commandEntry = collections.sessions.get(SESSION_ID)?.repositoryCommandEntry
           if (commandEntry !== undefined && commandEntry.owner !== nextOwner) {
             collections.sessions.update(SESSION_ID, draft => {
