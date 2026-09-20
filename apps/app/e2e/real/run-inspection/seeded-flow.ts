@@ -8,7 +8,7 @@ export const FAILED_FLOW = "timeline-probe-failed"
 export const MARKER_TEST = "timeline-marker.test.ts"
 export const PIN_FILES = ["timeline-pin-1.txt", "timeline-pin-2.txt", "timeline-pin-3.txt"] as const
 
-const flowText = (failure: boolean): string => [
+const flowText = (failure: boolean, marker: string): string => [
   "---",
   "description: Exercise a real agent timeline in a disposable repository.",
   'capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]',
@@ -20,13 +20,13 @@ const flowText = (failure: boolean): string => [
   failure
     ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 45" and timeoutMs 60000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
     : [
-      "Append exactly the marker from the arguments to README.md. Preserve all original bytes and add one final newline.",
+      `The marker is the exact line ${JSON.stringify(marker)}. Append it to README.md, preserving all original bytes and adding one final newline.`,
       "Use one numbered step per model response, one JavaScript cell per step. Never combine steps in one response.",
       '1. Read README.md with ctx.call("read", {path:"README.md"}); save the returned content in a variable and print it. Do not write yet.',
       '2. In the next response, create the live observation interval: make three sequential bash calls in one cell, with commands "sleep 90; echo interval-1", "sleep 90; echo interval-2", and "sleep 90; echo interval-3", each with timeoutMs 110000. Print each result. Do not write yet.',
       '3. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:110000}) and print the result. Its marker assertion must fail before the edit.',
-      '4. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the marker to the saved text. read.content omits its final LF, so append one newline before and after the marker.',
-      `5. In each of the next three responses write one of ${PIN_FILES.join(", ")} with ctx.call("write", {path:..., content:marker+"\\n"}). These three files record the same marker. Use a separate response for each file.`,
+      `4. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the exact line ${JSON.stringify(marker)} to the saved text. read.content omits its final LF, so append one newline before and after the marker.`,
+      `5. In each of the next three responses write one of ${PIN_FILES.join(", ")} with ctx.call("write", {path:..., content:${JSON.stringify(`${marker}\n`)}}). These three files record the same marker. Use a separate response for each file.`,
       '6. In the next response run the exact same bun test command with timeoutMs 110000 and print the result. It must pass after the edit.',
       '7. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
     ].join("\n")
@@ -108,8 +108,8 @@ export const measureWorkspaceHost = async (page: Page, request: APIRequestContex
 /** Type real files through the PTY, then verify the bytes through the independent file API. */
 export const writeSeededFlow = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string, marker: string): Promise<void> => {
   const files = new Map([
-    [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false)],
-    [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true)],
+    [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false, marker)],
+    [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true, marker)],
     [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(90000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 100000);\n`]
   ])
   const sessions = cloudRepoPath(repo, "/workspace/sessions")
@@ -142,7 +142,8 @@ export const restartWorkspaceHost = async (page: Page, request: APIRequestContex
     await expect.poll(async () => {
       const response = await realApi(page, request, "GET", workspace)
       return response.status() === 200 ? String(((await response.json()) as { readonly status?: unknown }).status) : `http-${response.status()}`
-    }, { timeout: 240_000, intervals: [1_000, 2_000, 5_000] }).toBe(settled)
+      // A production resume has been measured past four minutes; the seeded subject needs the restarted host, not a shorter wait.
+    }, { message: `the workspace must report ${settled}`, timeout: 420_000, intervals: [1_000, 2_000, 5_000] }).toBe(settled)
   }
 }
 

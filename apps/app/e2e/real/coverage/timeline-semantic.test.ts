@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
 import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
+import { deployedHeaderSource } from "../run-inspection/revisions"
 
 const event = (sequence: number, kind: string, payload: Record<string, unknown> = {}) => ({ sequence, kind, payload })
 const opened = "control.agent.turn-opened"
@@ -79,6 +80,13 @@ describe("ordinary module journal evidence", () => {
       moduleFact(4, settled, { callId, flowName: "read", outcome: "success", value: { startLine: 1, endLine: 4 } })]
     expect(moduleMeaning(rows).lines.map(line => [line.subject, line.result])).toEqual([["README.md", "4 lines"]])
   })
+})
+
+describe("the deployed header source comparison", () => {
+  test.each(["", "HEAD", "main", "eb20827c", `${"a".repeat(39)}g`, "../../etc/passwd"])(
+    "%p is not a revision this comparison will read", revision => {
+      expect(() => deployedHeaderSource(revision)).toThrow("Invalid deployed frontend revision")
+    })
 })
 
 describe("the independent timeline evidence oracle", () => {

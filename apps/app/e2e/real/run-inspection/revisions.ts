@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import type { Page, TestInfo } from "@playwright/test"
 import { attachProductionJson } from "../repositories-github/production"
 import { expect } from "../support/test"
@@ -7,7 +9,34 @@ import { moduleRows } from "./module-evidence"
 
 export const ENRICHED_COMMIT = "3b2b9f518c"
 export const MODULE_COMMIT = "0c31eb19cecf"
-export type HostManifest = { sourceCommit: string; sha256: string; object: string }
+export type HostManifest = { sourceCommit: string; sha256: string; object: string; frontendRevision: string }
+
+/** The card sources whose deployed bytes decide the run header this tier reads. */
+export const HEADER_SOURCES = ["apps/app/src/mainview/cards/RunTraceStatus.ts"] as const
+const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
+
+export type DeployedSourceFact =
+  | { _tag: "DeployedSourceMatchesWorkingCopy"; frontendRevision: string; files: readonly string[] }
+  | { _tag: "DeployedSourcePredatesWorkingCopy"; frontendRevision: string; message: string; files: readonly string[] }
+
+/**
+ * Compares the deployed bundle's sources with this working copy's, by exact
+ * bytes at the deployed revision. A commit id would stop naming this lane's
+ * own fix the moment it is rebased; the file contents keep saying what the
+ * browser under test is actually running.
+ */
+export const deployedHeaderSource = (frontendRevision: string): DeployedSourceFact => {
+  if (!/^[0-9a-f]{40}$/.test(frontendRevision)) throw new Error("Invalid deployed frontend revision")
+  const differing = HEADER_SOURCES.filter(path => {
+    const deployed = execFileSync("jj", ["file", "show", "--ignore-working-copy", "-r", frontendRevision, path],
+      { encoding: "utf8", cwd: repositoryRoot, timeout: 30000 })
+    return deployed !== readFileSync(`${repositoryRoot}${path}`, "utf8")
+  })
+  return differing.length === 0
+    ? { _tag: "DeployedSourceMatchesWorkingCopy", frontendRevision, files: HEADER_SOURCES }
+    : { _tag: "DeployedSourcePredatesWorkingCopy", frontendRevision, files: differing,
+      message: `the deployed frontend ${frontendRevision} does not carry this working copy's ${differing.join(", ")}` }
+}
 export type ProducerFact =
   | { _tag: "HostPredatesCommit"; hostRevision: string; producingCommit: string; message: string; observed: number }
   | { _tag: "EnrichedPayloadsVerified"; hostRevision: string; producingCommit: string; observed: number }
@@ -27,7 +56,7 @@ export const captureRevisions = async (page: Page, testInfo: TestInfo, attachmen
   expect(manifest.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
   expect(manifest.sha256).toMatch(/^[0-9a-f]{64}$/)
   await attachProductionJson(testInfo, attachment, { frontend, host: manifest, capturedAt: new Date().toISOString() })
-  return manifest
+  return { ...manifest, frontendRevision: frontend.gitSha as string }
 }
 
 export const hostContains = (revision: string, producingCommit: string): boolean => {

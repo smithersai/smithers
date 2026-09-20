@@ -3,6 +3,7 @@ import type { OwnedWorkflowRepository } from "../flow-execution/fixture"
 import { acceptedRunId, gatewayCall, runSummary } from "../flow-execution/production"
 import { attachProductionJson } from "../repositories-github/production"
 import { closeComposer, command, expect } from "../support/test"
+import { deployedHeaderSource } from "./revisions"
 import { journalMeaning, requireLaterPhase, type JournalRow, type Meaning } from "./semantic"
 import { frameLines, phaseStrip, readBands, readLines, readPins } from "./timeline"
 
@@ -90,7 +91,8 @@ const liveDom = (card: Locator) => card.evaluate(element => {
 
 /** Match each DOM snapshot to the independently read journal sequence, then require growth between them. */
 export const inspectRunning = async (page: Page, request: APIRequestContext, owned: OwnedWorkflowRepository,
-  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, meaningOf = journalMeaning, requireCallGrowth = true): Promise<void> => {
+  subject: Awaited<ReturnType<typeof launchSubject>>, testInfo: TestInfo, frontendRevision: string,
+  meaningOf = journalMeaning, requireCallGrowth = true): Promise<void> => {
   type Sample = { journal: readonly JournalRow[]; expected: Meaning; rendered: Awaited<ReturnType<typeof liveDom>>; summary: ReturnType<typeof runSummary> }
   const samples: Sample[] = []
   const observe = async (previous?: Sample): Promise<Sample> => {
@@ -113,6 +115,8 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
     }, { timeout: 180000, intervals: [250, 500, 1000] }).toBe(true)
     return sample!
   }
+  const deployed = deployedHeaderSource(frontendRevision)
+  const headerGaps: unknown[] = []
   try {
     const first = await observe()
     samples.push(first)
@@ -125,14 +129,26 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
       expect(sample.rendered.goals).toEqual(sample.expected.goals)
       expect(sample.rendered.conditions).toEqual([])
       expect(sample.rendered.actions).toEqual([])
-      expect.soft(sample.rendered.status).toBe(sample.expected.status)
+      // A deployed build that carries this working copy's header source must say exactly what the
+      // journal recorded. Only the one known older reading, a cell announcement standing in for the
+      // call it hid, is recorded as an absent proof instead, naming the revision that produced it.
+      if (sample.rendered.status !== sample.expected.status &&
+        deployed._tag === "DeployedSourcePredatesWorkingCopy" && sample.rendered.status === "Running code") {
+        headerGaps.push({ _tag: "DeployedHeaderPredatesWorkingCopy", frontendRevision, files: deployed.files,
+          through: sample.rendered.through, recorded: sample.expected.status, rendered: sample.rendered.status,
+          message: `${deployed.message}; its header said "Running code" where the journal records ${JSON.stringify(sample.expected.status)}` })
+      } else expect(sample.rendered.status).toBe(sample.expected.status)
       expect(sample.rendered.phase).toBe("running")
     }
     expect(later.rendered.through).toBeGreaterThan(first.rendered.through)
     expect(later.rendered.bands).not.toEqual(first.rendered.bands)
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-running.png") })
     await testInfo.attach("timeline-running", { path: testInfo.outputPath("timeline-running.png"), contentType: "image/png" })
-  } finally { await attachProductionJson(testInfo, "timeline-live-observations", samples) }
+  } finally {
+    await attachProductionJson(testInfo, "timeline-live-observations", samples)
+    await attachProductionJson(testInfo, "timeline-deployed-header-source", { deployed, headerGaps })
+    for (const gap of headerGaps) testInfo.annotations.push({ type: "DeployedHeaderPredatesWorkingCopy", description: String((gap as { message: string }).message) })
+  }
 }
 
 const press = async (control: Locator, key: string): Promise<void> => {

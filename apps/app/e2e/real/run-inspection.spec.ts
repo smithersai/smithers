@@ -279,7 +279,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, SEEDED_FLOW, { args: marker }, testInfo)
   try {
-    await inspectRunning(page, request, workflowRepo, subject, testInfo)
+    await inspectRunning(page, request, workflowRepo, subject, testInfo, host.frontendRevision)
     const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 9 * 60_000, workspaceId)
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
@@ -392,7 +392,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
       payload: { issue: { title: "What is README.md's exact first line?", body: "Answer from README.md and cite it. Do not change files or propose changes." } } } }
   const subject = await launchSubject(page, workflowRepo, "repository-jobs/issues", input, testInfo)
   try {
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, moduleMeaning, false)
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) await inspectRunning(page, request, workflowRepo, subject, testInfo, host.frontendRevision, moduleMeaning, false)
     const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 10 * 60_000, workspaceId)
     const rows = await readJournal(page, request, workflowRepo, subject.runId)
     const after = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
