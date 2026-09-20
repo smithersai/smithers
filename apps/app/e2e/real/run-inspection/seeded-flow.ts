@@ -15,7 +15,8 @@ const flowText = (failure: boolean, marker: string): string => [
   "model: coding/implement",
   "budget:",
   "  tokens: 200000",
-  `  milliseconds: ${failure ? 30000 : 600000}`,
+  // Ten responses, two forty-second intervals and two real checks; the failing subject keeps a budget it must exceed.
+  `  milliseconds: ${failure ? 30000 : 900000}`,
   "---", "",
   failure
     ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 45" and timeoutMs 60000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
