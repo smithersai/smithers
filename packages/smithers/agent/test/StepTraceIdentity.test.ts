@@ -1,12 +1,15 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as Digest from "@smthrs/core/Digest"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import { Flow } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import { Journal, type StepFact } from "@smthrs/journal"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
-import { Effect, Option, Schema } from "effect"
+import { Cause, Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as AgentSession from "../src/AgentSession.ts"
 import * as EventSink from "../src/EventSink.ts"
 import { facts, stores } from "./fixtures/step-trace-stack.ts"
 
@@ -60,6 +63,96 @@ const observed = (ordinal: number, sample: typeof cases[number]) => {
 }
 
 describe("durable source checkpoint identity", () => {
+  it.each(["missing identity", "foreign identity", "missing generation"] as const)(
+    "refuses %s without committing an unowned or unversioned fact",
+    async (invalid) => {
+      await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const engine = yield* EngineStore.make({
+            owner: { hostId: "trace-contract" },
+            journalSource: "trace-contract"
+          })
+          const journal = yield* Journal.Journal
+          const runId = `trace-contract-${invalid}`
+          const step: StepFact.Step = {
+            stepId: "b".repeat(64),
+            executionId: invalid === "foreign identity" ? "another-run" : runId,
+            action: "agent",
+            attempt: 1,
+            ask: 0,
+            retry: 1,
+            scope: "session"
+          }
+          yield* engine.register(TraceFlow, () =>
+            Effect.gen(function*() {
+              // generation is optional on the generic Journal port; a legacy
+              // implementation cannot provide the native tracing contract.
+              const { generation: _generation, ...legacy } = journal
+              const sink = yield* EventSink.durable(invalid === "missing generation" ? legacy : journal)
+              yield* sink.emit(opened, invalid === "missing identity" ? undefined : step)
+              return "must not complete"
+            }))
+          const result = yield* engine.execute(TraceFlow, { executionId: runId, payload: {} }).pipe(Effect.exit)
+          expect(result._tag).toBe("Failure")
+          const failure = result._tag === "Failure" ? Cause.squash(result.cause) : undefined
+          expect(failure).toMatchObject({
+            message: invalid === "missing generation"
+              ? "The trace journal has no generation reader"
+              : "An agent trace requires its owning dispatch identity"
+          })
+          expect(yield* facts(runId)).toEqual([])
+        })).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
+      )
+    }
+  )
+
+  it("bounds an oversized non-call fact and preserves the same digest on replay", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const engine = yield* EngineStore.make({ owner: { hostId: "trace-bound" }, journalSource: "trace-bound" })
+        const journal = yield* Journal.Journal
+        const step: StepFact.Step = {
+          stepId: "c".repeat(64),
+          executionId: "trace-bound",
+          action: "agent",
+          attempt: 1,
+          ask: 0,
+          retry: 1,
+          scope: "session"
+        }
+        // These are within the per-message text bound, but JSON escaping makes
+        // the whole steering fact exceed the durable checkpoint payload bound.
+        const event = new AgentEvent.SteeringDrained({
+          eventType: "flows.harness.steering-drained.v1",
+          messages: [ModelRequest.Message.user(escaped)]
+        })
+        const projected = AgentSession.trace(event)
+        if (projected === undefined) throw new Error("Steering must produce a trace")
+        const json = JSON.stringify(projected.payload)
+        expect(new TextEncoder().encode(json).byteLength).toBeGreaterThan(262_144)
+        yield* engine.register(TraceFlow, () =>
+          Effect.gen(function*() {
+            const original = yield* EventSink.durable(journal)
+            yield* original.emit(opened, step)
+            yield* original.emit(event, step)
+            const before = yield* facts(step.executionId)
+            const fact = before.find((row) => row.payload.eventType === "control.agent.steering-drained")
+            expect(fact?.payload.payload).toEqual({
+              truncated: true,
+              bytes: new TextEncoder().encode(json).byteLength,
+              digest: Digest.digest(json)
+            })
+            const replay = yield* EventSink.durable(journal)
+            yield* replay.emit(opened, step)
+            yield* replay.emit(event, step)
+            expect(yield* facts(step.executionId)).toEqual(before)
+            return "done"
+          }))
+        expect(yield* engine.execute(TraceFlow, { executionId: step.executionId, payload: {} })).toBe("done")
+      })).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
+    )
+  })
+
   it.each(cases)(
     "keeps a partial prefix when a fresh observer receives identical call results in reverse order ($kind, $label)",
     async (sample) => {

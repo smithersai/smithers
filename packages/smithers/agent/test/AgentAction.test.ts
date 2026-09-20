@@ -9,7 +9,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Model from "@smthrs/model/Model"
@@ -819,6 +819,76 @@ describe("AgentAction refusals that never reach the provider", () => {
 
 describe("AgentAction event sink", () => {
   const decodes = answering(`{"approved":true,"issues":[]}`)
+
+  it.each(["absent", "observer", "source"] as const)(
+    "handles a legacy runtime without dispatch identity with a %s sink",
+    async (kind) => {
+      const requests: Array<string> = []
+      const observed: Array<{ readonly event: string; readonly step: unknown }> = []
+      // A foreign runtime may execute the action without a native dispatch
+      // identity. Keep the real engine for every boundary, but reproduce that
+      // missing context only inside this action's implementation.
+      const legacyRuntime = Layer.effect(
+        FlowRuntime.FlowRuntime,
+        Effect.map(FlowRuntime.FlowRuntime, (runtime) => {
+          const legacy: FlowRuntime.FlowRuntime["Service"] = {
+            ...runtime,
+            register: (flow, handler) =>
+              runtime.register(
+                flow,
+                (payload, executionId) =>
+                  handler(payload, executionId).pipe(Effect.provideService(FlowRuntime.FlowRuntime, legacy))
+              ),
+            actionExecute: (action, attempt) =>
+              runtime.actionExecute(
+                action.name !== Reviewer.name ? action : {
+                  ...action,
+                  execute: action.execute.pipe(Effect.provideService(Action.CurrentInvocationKey, undefined)),
+                  executeEncoded: action.executeEncoded.pipe(
+                    Effect.provideService(Action.CurrentInvocationKey, undefined)
+                  )
+                },
+                attempt
+              )
+          }
+          return legacy
+        })
+      )
+      const layers = stack(
+        Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(Layer.provideMerge(legacyRuntime)),
+        host,
+        scripted([decodes], requests)
+      )
+      const sink = kind === "absent" ? Layer.empty : EventSink.layer({
+        atSource: kind === "source",
+        emit: (event, step) => Effect.sync(() => observed.push({ event: event._tag, step }))
+      })
+      const result = await Effect.runPromise(
+        ReviewFlow.execute({ diff: "diff" }, {
+          executionId: `legacy-sink-${kind}`
+        }).pipe(Effect.provide(Layer.merge(layers, sink)), Effect.exit)
+      )
+      if (kind === "source") {
+        expect(result._tag).toBe("Failure")
+        const failure = result._tag === "Failure" ? Cause.squash(result.cause) : undefined
+        expect(failure).toMatchObject({
+          code: "engine_failed",
+          message: "Agent monitoring requires a durable dispatch identity"
+        })
+        expect(requests).toEqual([])
+        expect(observed).toEqual([])
+      } else {
+        expect(result).toMatchObject({ _tag: "Success", value: { approved: true, issues: [] } })
+        expect(requests).toHaveLength(1)
+        if (kind === "observer") {
+          expect(observed.some((item) => item.event === "resolved")).toBe(true)
+          expect(observed.every((item) => item.step === undefined)).toBe(true)
+        } else {
+          expect(observed).toEqual([])
+        }
+      }
+    }
+  )
 
   it("hands every event to the host sink as it happens, before the step resolves", async () => {
     const requests: Array<string> = []
