@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
 import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
-import { demandInventory, deployedHeaderSource, HEADER_SOURCES, reloadBootFact, repositoryRoot } from "../run-inspection/revisions"
-import { existsSync } from "node:fs"
+import type { JournalRow } from "../run-inspection/semantic"
+import { demandInventory, deployedHeaderSource, HEADER_SOURCES, liveInspectionFact, reloadBootFact, repositoryRoot } from "../run-inspection/revisions"
+import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 
 const event = (sequence: number, kind: string, payload: Record<string, unknown> = {}) => ({ sequence, kind, payload })
@@ -81,6 +82,64 @@ describe("ordinary module journal evidence", () => {
       }), runId: "run-1" },
       moduleFact(4, settled, { callId, flowName: "read", outcome: "success", value: { startLine: 1, endLine: 4 } })]
     expect(moduleMeaning(rows).lines.map(line => [line.subject, line.result])).toEqual([["README.md", "4 lines"]])
+  })
+})
+
+/*
+ * The journal a repinned production host actually wrote.
+ *
+ * Its coding hosts were repinned to `c9935981` on 2026-09-20 and the module
+ * subject recorded twenty-four `flows.harness.step-fact.v1` facts for the two
+ * `repository/research` steps of `repository-jobs/issues`. The run also
+ * finished in under seven seconds, which is what the live claim beside these
+ * rows had been resting on. The excerpt is anonymised; identities are not.
+ */
+describe("the module journal the repinned production host recorded", () => {
+  const recorded = JSON.parse(readFileSync(
+    resolve(repositoryRoot(), "apps/app/e2e/real/run-inspection/module-journal.fixture.json"), "utf8"
+  )) as { readonly rows: ReadonlyArray<JournalRow> }
+
+  test("the recorded step facts fold into one frame per invocation and claim nothing else", () => {
+    const meaning = moduleMeaning(recorded.rows)
+    expect(moduleRows(recorded.rows)).toHaveLength(recorded.rows.length)
+    expect(meaning.frames).toHaveLength(2)
+    // Neither research step called a tool, so the strip says the phase it can
+    // prove and the card draws no line. Absence is absence.
+    expect(meaning.bands).toEqual([{ phase: "unrecorded", seq: 72 }, { phase: "unrecorded", seq: 248 }])
+    expect(meaning.lines).toEqual([])
+    expect(meaning.pins).toEqual([{ seq: 439, label: "completed" }])
+    expect(meaning.status).toBe("Finished.")
+    expect(meaning.goals).toEqual([])
+  })
+
+  test("each frame is placed by the invocation that recorded it", () => {
+    const meaning = moduleMeaning(recorded.rows)
+    expect(meaning.frames.every(frame => frame.node.startsWith("step:"))).toBe(true)
+    // Both invocations opened their own frame one; only the recorded scope tells them apart.
+    expect(meaning.frames.map(frame => frame.node.endsWith("/frame-1"))).toEqual([true, true])
+    expect(new Set(meaning.frames.map(frame => frame.node)).size).toBe(2)
+    expect(moduleMeaning(recorded.rows, 100).frames).toHaveLength(1)
+    expect(moduleMeaning(recorded.rows, 250).status).toBe("Thinking")
+  })
+
+  test("a run that finished before the first comparable boundary exercised no live claim", () => {
+    expect(liveInspectionFact([], { status: "completed", seq: 439 })).toMatchObject({
+      _tag: "LiveInspectionUnexercised", reason: "run-terminal-before-first-sample",
+      samples: 0, firstSampleStatus: "completed", sampledAtSeq: 439
+    })
+  })
+
+  test("one live boundary is not the growth the live claim is about", () => {
+    expect(liveInspectionFact([{ status: "running", seq: 120 }], { status: "completed", seq: 439 })).toMatchObject({
+      _tag: "LiveInspectionUnexercised", reason: "run-terminal-before-second-sample",
+      samples: 1, firstSampleStatus: "running", sampledAtSeq: 120
+    })
+  })
+
+  test("two live boundaries are the claim, and only then is it made", () => {
+    expect(liveInspectionFact([{ status: "running", seq: 120 }, { status: "running", seq: 240 }])).toEqual({
+      _tag: "LiveInspectionObserved", samples: 2, firstSampleStatus: "running", sampledAtSeq: 120
+    })
   })
 })
 
@@ -267,5 +326,105 @@ describe("the independent timeline evidence oracle", () => {
     const meaning = journalMeaning([event(1, opened), event(2, started, { flowName, input }), event(3, settled, { flowName, outcome: "success", value })])
     expect(meaning.lines[0]).toMatchObject({ verb, subject, result })
     expect(meaning.bands).toEqual([{ seq: 1, phase }])
+  })
+
+  test("a nested path is named the way a person names the file", () => {
+    const rows = [event(1, opened), event(2, started, { flowName: "read", callId: "a", input: { path: "src/deep/a.txt" } })]
+    expect(journalMeaning(rows).status).toBe("Reading a.txt")
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ subject: "a.txt" })
+  })
+
+  test("a failed call is said in the verb its declaration chose", () => {
+    const rows = [event(1, opened), event(2, started, { flowName: "read", callId: "a", input: { path: "a.txt" } }),
+      event(3, settled, { flowName: "read", callId: "a", outcome: "failure", message: "no such file" })]
+    expect(journalMeaning(rows).status).toBe("Failed to read a.txt")
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "failed to read", result: "no such file" })
+  })
+
+  test("a parsed test result reports what it measured, not its exit code", () => {
+    const run = (value: Record<string, unknown>) => journalMeaning([event(1, opened),
+      event(2, started, { flowName: "test", callId: "a", input: { selection: ["unit"] } }),
+      event(3, settled, { flowName: "test", callId: "a", outcome: "success", value })]).lines[0]?.result
+    expect(run({ parsed: true, passed: 3, failed: ["one"], exitCode: 1 })).toBe("3 passed · 1 failed")
+    expect(run({ parsed: true, passed: 3, failed: [], exitCode: 2 })).toBe("3 passed · exit 2")
+    // An unparsed probe counts nothing and says only what it exited with.
+    expect(run({ parsed: true, passed: 3, failed: [], exitCode: 1, invalidProbe: "unreadable" })).toBe("exit 1")
+  })
+
+  test("a truncated output is a digest, not a measurement", () => {
+    const meaning = journalMeaning([event(1, opened), event(2, started, { flowName: "read", callId: "a", input: { path: "a.txt" } }),
+      event(3, settled, { flowName: "read", callId: "a", outcome: "success", value: { truncated: true, digest: "d", startLine: 1, endLine: 400 } })])
+    expect(meaning.lines[0]?.result).toBe("")
+  })
+})
+
+/*
+ * `@smthrs/harness` `Cell.displayDescriptor` writes a flow's declared activity
+ * and presentation beside every call it records, and the card reads that in
+ * preference to anything it knows by name. A module run reaches flows this
+ * suite has never seen, so an oracle that read only the names would either
+ * refuse them or predict a row the card never printed.
+ */
+describe("a recorded call descriptor", () => {
+  const descriptor = (name: string, activity: string | undefined, verb: Record<string, string>, subject: string, result: string) => ({
+    name, ...(activity === undefined ? {} : { activity }), presentation: { verb, subject, result }
+  })
+  const inspect = descriptor("search_docs", "reads",
+    { pending: "inspecting", success: "inspected", failure: "failed to inspect" }, "pattern", "matches")
+
+  test("names a flow the compatibility table has never heard of", () => {
+    const rows = [event(1, opened),
+      event(2, started, { flowName: "search_docs", callId: "a", descriptor: inspect, input: { pattern: "marker" } }),
+      event(3, settled, { flowName: "search_docs", callId: "a", outcome: "success", value: { matches: [1, 2] } })]
+    expect(journalMeaning(rows, 2).status).toBe("Inspecting marker")
+    expect(journalMeaning(rows).status).toBe("Inspected marker")
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "inspected", subject: "marker", result: "2 matches" })
+    expect(journalMeaning(rows).bands).toEqual([{ seq: 1, phase: "researching" }])
+  })
+
+  test("outranks the compatibility table for a name it also knows", () => {
+    const writes = descriptor("read", "writes", { pending: "recording", success: "recorded", failure: "failed to record" }, "path", "write")
+    const rows = [event(1, opened),
+      event(2, started, { flowName: "read", callId: "a", descriptor: writes, input: { path: "dir/one.txt" } }),
+      event(3, settled, { flowName: "read", callId: "a", outcome: "success", value: { bytesWritten: 4 } })]
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "recorded", subject: "one.txt", result: "4 bytes" })
+    expect(journalMeaning(rows).bands).toEqual([{ seq: 1, phase: "implementing" }])
+    expect(journalMeaning(rows).pins).toEqual([{ seq: 3, label: "one.txt" }])
+  })
+
+  test("belonging to another flow is not this call's descriptor", () => {
+    const rows = [event(1, opened),
+      event(2, started, { flowName: "read", callId: "a", descriptor: { ...inspect, name: "search_docs" }, input: { path: "one.txt" } }),
+      event(3, settled, { flowName: "read", callId: "a", outcome: "success", value: { startLine: 1, endLine: 2 } })]
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "read", subject: "one.txt", result: "2 lines" })
+  })
+
+  test("that declares only an activity leaves the call named rather than described", () => {
+    const rows = [event(1, opened),
+      event(2, started, { flowName: "search_docs", callId: "a", descriptor: { name: "search_docs", activity: "reads" }, input: { path: "dir/one.txt" } }),
+      event(3, settled, { flowName: "search_docs", callId: "a", outcome: "success", value: { startLine: 1, endLine: 9 } })]
+    expect(journalMeaning(rows, 2).status).toBe("Running search_docs one.txt")
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "search_docs", subject: "one.txt", result: "" })
+    expect(journalMeaning(rows).bands).toEqual([{ seq: 1, phase: "researching" }])
+  })
+
+  test("with an unreadable presentation claims none of it", () => {
+    const rows = [event(1, opened),
+      event(2, started, { flowName: "search_docs", callId: "a", input: { pattern: "marker" },
+        descriptor: { name: "search_docs", activity: "reads", presentation: { verb: { pending: "inspecting" }, subject: "pattern", result: "matches" } } })]
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "search_docs pending", subject: "marker" })
+  })
+
+  test("still fails closed when the record declares nothing at all", () => {
+    expect(() => journalMeaning([event(1, opened), event(2, started, { flowName: "search_docs", input: {} })])).toThrow(TimelineEvidenceError)
+  })
+
+  test("reads a refusal as the denial it is, not the success it settled as", () => {
+    const ask = descriptor("ask", "other", { pending: "asking", success: "asked", failure: "refused" }, "none", "none")
+    const rows = [event(1, opened), event(2, started, { flowName: "ask", callId: "a", descriptor: ask, input: { prompt: "land it?" } }),
+      event(3, settled, { flowName: "ask", callId: "a", outcome: "success", value: { approved: false } })]
+    expect(journalMeaning(rows).lines[0]).toMatchObject({ verb: "refused", subject: "", result: "" })
+    expect(journalMeaning(rows).bands).toEqual([{ seq: 1, phase: "blocked" }])
+    expect(journalMeaning(rows).status).toBe("Asked")
   })
 })
