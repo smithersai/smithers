@@ -28,7 +28,7 @@ import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWork
 import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
-import { compareEmptyTimeline, compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readFinalOutput, readJournal } from "./run-inspection/exercise"
+import { compareEmptyTimeline, compareMeaning, gatherEvidence, inspectKeyboard, inspectRunning, launchSubject, readFinalOutput, readJournal } from "./run-inspection/exercise"
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
@@ -298,9 +298,11 @@ workflowTest("a successful prompt run matches its journal while live and after k
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-completed.png") })
     await testInfo.attach("timeline-completed", { path: testInfo.outputPath("timeline-completed.png"), contentType: "image/png" })
   } finally {
-    const rows = await readJournal(page, request, workflowRepo, subject.runId)
-    await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-    await enrichedEvidence(testInfo, host, rows)
+    await gatherEvidence(testInfo, async () => {
+      const rows = await readJournal(page, request, workflowRepo, subject.runId)
+      await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+      await enrichedEvidence(testInfo, host, rows)
+    })
   }
 })
 
@@ -346,9 +348,11 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
     expect(expected.pins).toContainEqual(expect.objectContaining({ label: "failed" }))
     await attachProductionJson(testInfo, "timeline-failed-semantic-comparison", { expected, rendered, terminal })
   } finally {
-    const rows = await readJournal(page, request, workflowRepo, subject.runId)
-    await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-    await enrichedEvidence(testInfo, host, rows)
+    await gatherEvidence(testInfo, async () => {
+      const rows = await readJournal(page, request, workflowRepo, subject.runId)
+      await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+      await enrichedEvidence(testInfo, host, rows)
+    })
   }
 })
 
@@ -432,10 +436,12 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-module.png") })
     await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
   } finally {
-    const rows = await readJournal(page, request, workflowRepo, subject.runId)
-    await attachProductionJson(testInfo, "timeline-module-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-    await moduleEvidence(testInfo, host, rows)
-    await enrichedEvidence(testInfo, host, rows)
+    await gatherEvidence(testInfo, async () => {
+      const rows = await readJournal(page, request, workflowRepo, subject.runId)
+      await attachProductionJson(testInfo, "timeline-module-journal", { repo, workspaceId, runId: subject.runId, events: rows })
+      await moduleEvidence(testInfo, host, rows)
+      await enrichedEvidence(testInfo, host, rows)
+    })
   }
 })
 

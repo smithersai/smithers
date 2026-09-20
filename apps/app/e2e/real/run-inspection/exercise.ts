@@ -188,6 +188,25 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
   }
 }
 
+/**
+ * Gather evidence in a `finally` without replacing the failure it belongs to.
+ *
+ * A throw inside `finally` discards the exception the block was entered with.
+ * A production attempt lost its real failure that way: the gateway answered a
+ * journal read with no `ok` field, and the error the run reported was that read
+ * rather than whatever the scenario had actually found. The gathering failure is
+ * attached, and it only fails the test when the test had nothing else to say.
+ */
+export const gatherEvidence = async (testInfo: TestInfo, gather: () => Promise<void>): Promise<void> => {
+  try { await gather() } catch (error) {
+    await attachProductionJson(testInfo, "timeline-evidence-error", {
+      _tag: "EvidenceNotGathered", message: error instanceof Error ? error.message : String(error)
+    })
+    testInfo.annotations.push({ type: "EvidenceNotGathered", description: String(error) })
+    if (testInfo.errors.length === 0) throw error
+  }
+}
+
 const press = async (control: Locator, key: string): Promise<void> => {
   await control.focus(); await expect(control).toBeFocused(); await control.press(key)
 }
