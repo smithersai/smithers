@@ -12,6 +12,7 @@ import {
   MODEL_CALL_MAX_TOKENS_MAX,
   MODEL_CALL_NAME_MAX,
   MODEL_CALL_STATE_MAX_BYTES,
+  MODEL_CALL_TEMPERATURE_MAX,
   MODEL_CALL_TEXT_MAX,
   MODEL_CREDENTIAL_ENV_PREFIX,
   MODEL_CREDENTIALS,
@@ -28,9 +29,12 @@ import {
   MODEL_TEST_SAMPLE_MAX,
   MODEL_TEST_STATES,
   ModelBindingSchema,
+  ModelCallCardPayloadSchema,
   modelCallDefault,
   ModelCallDraftSchema,
+  modelCallInputOf,
   ModelCallInputSchema,
+  ModelCallOutputSchema,
   modelCallProblemOf,
   ModelCatalogSchema,
   modelCredentialEnvName,
@@ -891,5 +895,169 @@ describe("a composed call", () => {
         "nonsense"
       ]
     ) expect(decodeModelAnswers(decision.questions, raw)).toEqual({ ok: false })
+  })
+
+  test("a temperature is drafted as the text typed, and only one in range becomes the wire's number", () => {
+    const typed = (temperature: string) => ModelCallDraftSchema.parse({ ...generation, temperature })
+    for (const text of ["3", "warm", "-1", "1e0", "0x1", " ", "2.01"]) {
+      // The draft keeps what is on screen, names it, and never reaches the wire.
+      expect(typed(text)).toEqual({ ...generation, temperature: text })
+      expect(modelCallProblemOf(typed(text))).toEqual({ code: "temperature", max: MODEL_CALL_TEMPERATURE_MAX })
+      expect(modelCallInputOf(typed(text))).toBeUndefined()
+    }
+    for (const [text, number] of [["0", 0], ["0.2", 0.2], [".5", 0.5], ["2", 2], ["1.", 1]] as const) {
+      expect(modelCallProblemOf(typed(text))).toBeUndefined()
+      expect(modelCallInputOf(typed(text))).toEqual({ ...generation, temperature: number })
+    }
+    expect(modelCallInputOf(generation)).toEqual(generation)
+    expect(modelCallInputOf(decision)).toEqual(decision)
+    // The wire is a number in range and nothing else.
+    expect(ModelCallInputSchema.parse({ ...generation, temperature: 0.2 })).toEqual({ ...generation, temperature: 0.2 })
+    expect(ModelCallInputSchema.safeParse({ ...generation, temperature: "0.2" }).success).toBe(false)
+    expect(ModelCallInputSchema.safeParse({ ...generation, temperature: 3 }).success).toBe(false)
+    expect(ModelCallDraftSchema.safeParse({ ...generation, temperature: "9".repeat(33) }).success).toBe(false)
+  })
+
+  test("a criteria name an object takes as its prototype is refused by the draft, the problem and the wire alike", () => {
+    const rungs = { ...decision, questions: { sure: { ...score, criteria: ["__proto__", "other"] } } }
+    // A rung is an array element, so the draft holds it and names it inline.
+    expect(modelCallProblemOf(ModelCallDraftSchema.parse(rungs))).toEqual({
+      code: "name_reserved",
+      question: "sure",
+      name: "__proto__"
+    })
+    expect(ModelCallInputSchema.safeParse(rungs).success).toBe(false)
+    // An option is a record key: one that arrived as JSON is an own key, and it is refused rather than silently dropped.
+    const options = JSON.parse(
+      JSON.stringify({ ...decision, questions: { which: { ...choice, criteria: {} } } }).replace(
+        "\"criteria\":{}",
+        "\"criteria\":{\"__proto__\":\"\",\"blue\":\"\",\"red\":\"\"}"
+      )
+    )
+    expect(Object.keys(options.questions.which.criteria)).toEqual(["__proto__", "blue", "red"])
+    expect(ModelCallDraftSchema.safeParse(options).success).toBe(false)
+    expect(ModelCallInputSchema.safeParse(options).success).toBe(false)
+    const model: ConfiguredModel = {
+      id: "mine",
+      protocol: "evaluation",
+      modelId: "typesafe-ai/jev",
+      credential: "AI_GATEWAY_API_KEY"
+    }
+    for (const input of [rungs, options]) {
+      expect(ModelTestRequestSchema.safeParse(JSON.parse(JSON.stringify({ model, input }))).success).toBe(false)
+    }
+  })
+
+  test("a question id an object takes as its prototype is refused, never dropped from the request it arrived in", () => {
+    // A record parse never shows the key rule this id, so the request would pass with the question gone.
+    const body = JSON.stringify({ ...decision, questions: { ok: score } }).replace(
+      "\"ok\":",
+      "\"__proto__\":{\"type\":\"boolean\",\"instructions\":\"?\"},\"ok\":"
+    )
+    const arrived = JSON.parse(body)
+    expect(Object.keys(arrived.questions)).toEqual(["__proto__", "ok"])
+    expect(ModelCallDraftSchema.safeParse(arrived).success).toBe(false)
+    expect(ModelCallInputSchema.safeParse(arrived).success).toBe(false)
+    const model: ConfiguredModel = {
+      id: "mine",
+      protocol: "evaluation",
+      modelId: "typesafe-ai/jev",
+      credential: "AI_GATEWAY_API_KEY"
+    }
+    expect(ModelTestRequestSchema.safeParse({ model, input: JSON.parse(body) }).success).toBe(false)
+    expect(ModelCallInputSchema.safeParse({ ...decision, questions: { ok: score } }).success).toBe(true)
+  })
+
+  test("a distribution keeps an entry named as an object's prototype: read from a provider, and carried in a result", () => {
+    const questions = JSON.parse(
+      "{\"sure\":{\"type\":\"score\",\"instructions\":\"?\",\"criteria\":[\"__proto__\",\"other\"]},\"which\":{\"type\":\"choice\",\"instructions\":\"?\",\"criteria\":{\"__proto__\":\"\",\"other\":\"\"}}}"
+    )
+    const distribution = "{\"__proto__\":0.6,\"other\":0.4}"
+    const decoded = decodeModelAnswers(
+      questions,
+      JSON.parse(
+        `{"sure":{"type":"score","score":0,"probabilities":${distribution}},"which":{"type":"choice","choice":"__proto__","probabilities":${distribution}}}`
+      )
+    )
+    if (!decoded.ok) throw new Error("the answer did not decode")
+    for (const answer of Object.values(decoded.answers)) {
+      if (answer.type === "boolean") throw new Error("the answer holds no distribution")
+      expect(Object.entries(answer.probabilities)).toEqual([["__proto__", 0.6], ["other", 0.4]])
+      expect(answer.confidence).toBe(0.6)
+    }
+    // A probability that is no number is still no answer.
+    expect(
+      decodeModelAnswers(
+        questions,
+        JSON.parse(
+          "{\"sure\":{\"type\":\"score\",\"score\":0,\"probabilities\":{\"__proto__\":\"0.6\"}},\"which\":{\"type\":\"choice\",\"choice\":\"other\"}}"
+        )
+      ).ok
+    ).toBe(false)
+    expect(
+      decodeModelAnswers(
+        questions,
+        JSON.parse(
+          "{\"sure\":{\"type\":\"score\",\"score\":0,\"probabilities\":[0.6,0.4]},\"which\":{\"type\":\"choice\",\"choice\":\"other\"}}"
+        )
+      ).ok
+    ).toBe(false)
+    // The result crosses the wire with every entry it was decoded with.
+    const output = JSON.parse(JSON.stringify({ kind: "decision", answers: decoded.answers }))
+    const carried = ModelCallOutputSchema.parse(output)
+    if (carried.kind !== "decision" || carried.answers.sure?.type !== "score") {
+      throw new Error("the output is not the decision")
+    }
+    expect(Object.entries(carried.answers.sure.probabilities)).toEqual([["__proto__", 0.6], ["other", 0.4]])
+    expect(
+      ModelCallOutputSchema.safeParse(
+        JSON.parse(
+          `{"kind":"decision","answers":{"sure":{"type":"score","value":0,"label":"other","probabilities":{"__proto__":1.5},"confidence":1}}}`
+        )
+      ).success
+    ).toBe(false)
+  })
+
+  test("a reserved rung name decodes as an own key: the chosen rung keeps its mass", () => {
+    const questions = { sure: { ...score, criteria: ["__proto__", "other"] } }
+    const decoded = decodeModelAnswers(questions, { sure: { type: "score", score: 0 } })
+    if (!decoded.ok) throw new Error("the answer did not decode")
+    const sure = decoded.answers.sure
+    if (sure?.type !== "score") throw new Error("the answer is not a score")
+    expect(sure.label).toBe("__proto__")
+    expect(Object.entries(sure.probabilities)).toEqual([["__proto__", 1], ["other", 0]])
+    expect(sure.confidence).toBe(1)
+  })
+
+  test("the composer card keeps the asked request apart from the draft, each with the binding it is about", () => {
+    const binding = bindingOf(chat())
+    const asked = { ...generation, temperature: "0.2" }
+    const payload = {
+      model: "fast-local",
+      request: { ...generation, prompt: "edited while out", temperature: "3" },
+      pending: { requestId: "0b9e4b0e-ask1", request: asked, binding, owner: null },
+      response: {
+        askedAt: 1,
+        request: asked,
+        binding,
+        result: { ok: true, latencyMs: 9, sample: "ok", output: { kind: "generation", text: "ok" } }
+      }
+    }
+    expect(ModelCallCardPayloadSchema.parse(payload)).toEqual(payload)
+    expect(
+      ModelCallCardPayloadSchema.safeParse({ ...payload, pending: { ...payload.pending, apiKey: "sk-live" } }).success
+    ).toBe(false)
+    expect(
+      ModelCallCardPayloadSchema.safeParse({ ...payload, pending: { ...payload.pending, owner: undefined } }).success
+    ).toBe(false)
+    // A card written before the snapshot existed still replays: a bare flag, a response without a binding, a numeric temperature.
+    const before = {
+      model: "fast-local",
+      request: { ...generation, temperature: 0.2 },
+      asking: true,
+      response: { askedAt: 1, request: { ...generation, temperature: 0.2 }, result: payload.response.result }
+    }
+    expect(ModelCallCardPayloadSchema.parse(before)).toEqual(before)
+    expect(modelCallInputOf(before.request as ModelCallDraft)).toEqual({ ...generation, temperature: 0.2 })
   })
 })

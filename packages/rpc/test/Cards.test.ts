@@ -405,13 +405,19 @@ describe("the models card", () => {
             output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.97 } } }
           }
         },
-        asking: true,
-        fixture: "Evaluator.layerScripted(() => ({ ok: { probability: 0.97 } }))"
+        pending: {
+          requestId: "6f0a2c1e-ask-0001",
+          request,
+          binding: { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" },
+          owner: "will"
+        },
+        fixture: "Evaluator.layerScripted(() => ({ [\"ok\"]: { probability: 0.97 } }))"
       }
     })
     if (card.kind !== "model-call") throw new Error("the model-call card decoded as another kind")
     expect(card.payload.request).toEqual(request)
     expect(card.payload.response?.result.ok).toBe(true)
+    expect(card.payload.pending?.request).toEqual(request)
     // A draft that is not yet askable is still a card: the composer says what is wrong.
     expect(
       CardSchema.safeParse({
@@ -427,6 +433,14 @@ describe("the models card", () => {
       .toBe(true)
     expect(
       refused({ response: { askedAt: 1, request, result: { ok: true, latencyMs: 1, sample: "", message: "sk-live" } } })
+    ).toBe(true)
+    // An ask that is out names its binding by credential NAME, like a record: no field a value could ride in.
+    const binding = { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" }
+    expect(refused({ pending: { requestId: "6f0a2c1e-ask-0001", request, binding, owner: null } })).toBe(false)
+    expect(
+      refused({
+        pending: { requestId: "6f0a2c1e-ask-0001", request, binding: { ...binding, apiKey: "sk-live" }, owner: null }
+      })
     ).toBe(true)
   })
 
@@ -1334,10 +1348,22 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
           latencyMs: 41,
           sample: "true 0.97",
           output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.97 } } }
-        }
+        },
+        binding: { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" }
+      },
+      pending: {
+        requestId: "6f0a2c1e-ask-0001",
+        request: { kind: "generation", system: "", prompt: "A", maxTokens: 32, temperature: "0.2" },
+        binding: {
+          protocol: "openai-chat",
+          baseUrl: "http://127.0.0.1:4010",
+          modelId: "e2e-slow",
+          credential: "LOOPBACK"
+        },
+        owner: null
       },
       asking: true,
-      fixture: "Evaluator.layerScripted(() => ({ ok: { probability: 0.97 } }))"
+      fixture: "Evaluator.layerScripted(() => ({ [\"ok\"]: { probability: 0.97 } }))"
     }
   },
   history: {

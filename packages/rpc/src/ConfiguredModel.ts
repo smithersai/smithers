@@ -723,6 +723,37 @@ export const MODEL_CALL_MAX_TOKENS_MAX = 4096
  * @category constants
  */
 export const MODEL_CALL_NAME_MAX = 128
+/**
+ * The highest sampling temperature a composed generation request may ask
+ * for; the lowest is 0.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_TEMPERATURE_MAX = 2
+/**
+ * The longest temperature text a draft keeps, in characters.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_TEMPERATURE_TEXT_MAX = 32
+/**
+ * The name no option or rung may take: a plain object takes it as its
+ * prototype, never as a key, so a distribution would lose that entry.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_NAME_RESERVED = "__proto__"
+
+const criteriaName = z.string().min(1).max(MODEL_CALL_NAME_MAX)
+/** A record parse drops the reserved key silently, so the own key is refused before the record is read. */
+const unreserved = <Value>() =>
+  z.custom<Record<string, Value>>((value) =>
+    typeof value !== "object" || value === null || !Object.hasOwn(value, MODEL_NAME_RESERVED)
+  )
+const ChoiceCriteriaSchema = unreserved<string>().pipe(z.record(criteriaName, z.string().max(MODEL_CALL_TEXT_MAX)))
 
 const questionShape = { instructions: z.string().max(MODEL_CALL_TEXT_MAX) }
 
@@ -730,7 +761,9 @@ const questionShape = { instructions: z.string().max(MODEL_CALL_TEXT_MAX) }
  * Validates one question as it crosses the wire: the same three shapes as
  * `Evaluator.Question`. The count and distinctness limits are
  * {@link modelCallProblemOf}'s, so a draft can hold a question that is not
- * yet askable.
+ * yet askable. An option named {@link MODEL_NAME_RESERVED} is refused here,
+ * because a record cannot hold it; a rung so named is held and named as a
+ * problem.
  *
  * @since 1.0.0
  * @category schemas
@@ -745,12 +778,12 @@ export const ModelQuestionSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("choice"),
     ...questionShape,
-    criteria: z.record(z.string().min(1).max(MODEL_CALL_NAME_MAX), z.string().max(MODEL_CALL_TEXT_MAX))
+    criteria: ChoiceCriteriaSchema
   }),
   z.strictObject({
     type: z.literal("score"),
     ...questionShape,
-    criteria: z.array(z.string().min(1).max(MODEL_CALL_NAME_MAX)).max(MODEL_QUESTION_OPTIONS_MAX)
+    criteria: z.array(criteriaName).max(MODEL_QUESTION_OPTIONS_MAX)
   })
 ])
 /**
@@ -811,25 +844,34 @@ export const ModelStateFieldSchema = z.strictObject({
  */
 export type ModelStateField = z.infer<typeof ModelStateFieldSchema>
 
+const DecisionCallSchema = z.strictObject({
+  kind: z.literal("decision"),
+  state: z.array(ModelStateFieldSchema).max(64),
+  // The key rule never sees the reserved id: the record parse drops it first, and the request would pass with the question gone.
+  questions: unreserved<ModelQuestion>().pipe(z.record(z.string().regex(MODEL_FIELD_KEY), ModelQuestionSchema))
+})
+const generationCallShape = {
+  kind: z.literal("generation"),
+  system: z.string().max(MODEL_CALL_TEXT_MAX),
+  prompt: z.string().max(MODEL_CALL_TEXT_MAX),
+  maxTokens: z.number().int()
+}
+
 /**
  * Validates a composed request as a DRAFT: the shape, without the limits, so
- * the composer can hold a request that is not yet askable and say why.
+ * the composer can hold a request that is not yet askable and say why. The
+ * temperature is the text as typed, so what is on screen is what is kept;
+ * {@link modelCallInputOf} makes it the wire's number. A number is a draft
+ * written before the text was kept, and is read as that number.
  *
  * @since 1.0.0
  * @category schemas
  */
 export const ModelCallDraftSchema = z.discriminatedUnion("kind", [
+  DecisionCallSchema,
   z.strictObject({
-    kind: z.literal("decision"),
-    state: z.array(ModelStateFieldSchema).max(64),
-    questions: z.record(z.string().regex(MODEL_FIELD_KEY), ModelQuestionSchema)
-  }),
-  z.strictObject({
-    kind: z.literal("generation"),
-    system: z.string().max(MODEL_CALL_TEXT_MAX),
-    prompt: z.string().max(MODEL_CALL_TEXT_MAX),
-    maxTokens: z.number().int(),
-    temperature: z.number().min(0).max(2).optional()
+    ...generationCallShape,
+    temperature: z.union([z.string().max(MODEL_CALL_TEMPERATURE_TEXT_MAX), z.number()]).optional()
   })
 ])
 /**
@@ -839,14 +881,6 @@ export const ModelCallDraftSchema = z.discriminatedUnion("kind", [
  * @category models
  */
 export type ModelCallDraft = z.infer<typeof ModelCallDraftSchema>
-/**
- * The decoded value accepted by {@link ModelCallInputSchema}: a draft with no problem.
- *
- * @since 1.0.0
- * @category models
- */
-export type ModelCallInput = ModelCallDraft
-
 /**
  * Why a draft cannot be asked yet, as the composer states it inline. Each
  * carries the question or field it names and the number the limit is about.
@@ -863,8 +897,10 @@ export type ModelCallProblem =
   | { readonly code: "field_invalid"; readonly key: string; readonly kind: ModelFieldKind }
   | { readonly code: "field_duplicate"; readonly key: string }
   | { readonly code: "state_size"; readonly bytes: number; readonly max: number }
+  | { readonly code: "name_reserved"; readonly question: string; readonly name: string }
   | { readonly code: "prompt_empty" }
   | { readonly code: "max_tokens"; readonly max: number }
+  | { readonly code: "temperature"; readonly max: number }
 
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
 
@@ -933,11 +969,22 @@ export const modelStateFieldsOf = (state: unknown): ReadonlyArray<ModelStateFiel
   })
 }
 
+/** Plain decimal digits only: `Number` also reads hex, exponents and blanks, which no temperature field shows as a number. */
+const TEMPERATURE_TEXT = /^(?:\d+\.?\d*|\.\d+)$/
+
+/** The number a drafted temperature is, or undefined when it is not one from 0 to {@link MODEL_CALL_TEMPERATURE_MAX}. */
+const temperatureOf = (typed: string | number): number | undefined => {
+  const value = typeof typed === "number" ? typed : TEMPERATURE_TEXT.test(typed) ? Number(typed) : Number.NaN
+  return value >= 0 && value <= MODEL_CALL_TEMPERATURE_MAX ? value : undefined
+}
+
 /**
  * The first reason a draft cannot be asked, or undefined when it can. The
  * limits are the question classes' own: a choice offers 2 to 255 options, a
- * score orders at least 2 distinct rungs, a question says something, a
- * state fits {@link MODEL_CALL_STATE_MAX_BYTES}.
+ * score orders at least 2 distinct rungs, none named
+ * {@link MODEL_NAME_RESERVED}, a question says something, a state fits
+ * {@link MODEL_CALL_STATE_MAX_BYTES}, a temperature is a number from 0 to
+ * {@link MODEL_CALL_TEMPERATURE_MAX}.
  *
  * @since 1.0.0
  * @category conversions
@@ -947,6 +994,9 @@ export const modelCallProblemOf = (draft: ModelCallDraft): ModelCallProblem | un
     if (draft.prompt.trim() === "") return { code: "prompt_empty" }
     if (draft.maxTokens < 1 || draft.maxTokens > MODEL_CALL_MAX_TOKENS_MAX) {
       return { code: "max_tokens", max: MODEL_CALL_MAX_TOKENS_MAX }
+    }
+    if (draft.temperature !== undefined && temperatureOf(draft.temperature) === undefined) {
+      return { code: "temperature", max: MODEL_CALL_TEMPERATURE_MAX }
     }
     return undefined
   }
@@ -973,21 +1023,54 @@ export const modelCallProblemOf = (draft: ModelCallDraft): ModelCallProblem | un
         return { code: "rungs_count", question, count: shape.criteria.length }
       }
       if (new Set(shape.criteria).size !== shape.criteria.length) return { code: "rungs_distinct", question }
+      if (shape.criteria.includes(MODEL_NAME_RESERVED)) {
+        return { code: "name_reserved", question, name: MODEL_NAME_RESERVED }
+      }
     }
   }
   return undefined
 }
 
 /**
- * Validates a composed request as a host runs it: a draft with no problem.
+ * Validates a composed request as a host runs it: a draft with no problem,
+ * its temperature a number.
  *
  * @since 1.0.0
  * @category schemas
  */
-export const ModelCallInputSchema = ModelCallDraftSchema.check((context) => {
+export const ModelCallInputSchema = z.discriminatedUnion("kind", [
+  DecisionCallSchema,
+  z.strictObject({
+    ...generationCallShape,
+    temperature: z.number().min(0).max(MODEL_CALL_TEMPERATURE_MAX).optional()
+  })
+]).check((context) => {
   const problem = modelCallProblemOf(context.value)
   if (problem !== undefined) context.issues.push({ code: "custom", input: context.value, message: problem.code })
 })
+/**
+ * The decoded value accepted by {@link ModelCallInputSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallInput = z.infer<typeof ModelCallInputSchema>
+
+/**
+ * The request a host runs for a draft: the draft itself, its temperature the
+ * number its text is. Undefined while the draft has a problem, so a value
+ * that is not on screen is never sent in its place.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const modelCallInputOf = (draft: ModelCallDraft): ModelCallInput | undefined => {
+  if (modelCallProblemOf(draft) !== undefined) return undefined
+  if (draft.kind === "decision") return draft
+  const { temperature: typed, ...rest } = draft
+  const temperature = typed === undefined ? undefined : temperatureOf(typed)
+  return temperature === undefined ? rest : { ...rest, temperature }
+}
 
 /**
  * The request a Test runs when none is composed: the fixed prompt, or the
@@ -1008,6 +1091,17 @@ export const modelCallDefault = (kind: ModelKind): ModelCallInput =>
 const Probability = z.number().min(0).max(1)
 
 /**
+ * A distribution read key by key. A record parse drops an entry named
+ * {@link MODEL_NAME_RESERVED}, and that entry's mass with it; a provider may
+ * send one, and a decoded answer may hold one.
+ */
+const distributionSchema = (entry: z.ZodType<number>) =>
+  z.custom<Record<string, number>>((value) =>
+    typeof value === "object" && value !== null && !Array.isArray(value) &&
+    Object.values(value).every((probability) => entry.safeParse(probability).success)
+  )
+
+/**
  * Validates one typed answer, as the classifier decodes it: a boolean's value
  * and probability; a choice's option, distribution and confidence; a score's
  * value, nearest rung and distribution.
@@ -1020,14 +1114,14 @@ export const ModelAnswerSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("choice"),
     value: z.string(),
-    probabilities: z.record(z.string(), Probability),
+    probabilities: distributionSchema(Probability),
     confidence: Probability
   }),
   z.strictObject({
     type: z.literal("score"),
     value: z.number().finite(),
     label: z.string(),
-    probabilities: z.record(z.string(), Probability),
+    probabilities: distributionSchema(Probability),
     confidence: Probability
   })
 ])
@@ -1063,9 +1157,9 @@ const RawAnswerSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("choice"),
     choice: z.string(),
-    probabilities: z.record(z.string(), z.number()).optional()
+    probabilities: distributionSchema(z.number()).optional()
   }),
-  z.object({ type: z.literal("score"), score: z.number(), probabilities: z.record(z.string(), z.number()).optional() })
+  z.object({ type: z.literal("score"), score: z.number(), probabilities: distributionSchema(z.number()).optional() })
 ])
 
 const isUnit = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 1
@@ -1077,7 +1171,8 @@ const distributionOf = (
   given: Readonly<Record<string, number>> | undefined,
   alias: (index: number) => string
 ): Record<string, number> | undefined => {
-  const probabilities: Record<string, number> = {}
+  // No prototype, as the classifier's: a key is an entry whatever it is called.
+  const probabilities: Record<string, number> = Object.create(null)
   for (const [index, key] of keys.entries()) {
     const provided = given === undefined
       ? undefined
@@ -1107,9 +1202,9 @@ export const decodeModelAnswers = (
 ): { readonly ok: true; readonly answers: Record<string, ModelAnswer> } | { readonly ok: false } => {
   const no = { ok: false } as const
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return no
-  const answers: Record<string, ModelAnswer> = {}
+  const answers: Record<string, ModelAnswer> = Object.create(null)
   for (const [id, question] of Object.entries(questions)) {
-    const parsed = RawAnswerSchema.safeParse((raw as Record<string, unknown>)[id])
+    const parsed = RawAnswerSchema.safeParse(Object.hasOwn(raw, id) ? (raw as Record<string, unknown>)[id] : undefined)
     if (!parsed.success || parsed.data.type !== question.type) return no
     const answer = parsed.data
     switch (answer.type) {
@@ -1726,10 +1821,34 @@ export const ModelsCardPayloadSchema = z.object({
 export type ModelsCardPayload = z.infer<typeof ModelsCardPayloadSchema>
 
 /**
+ * Validates an ask that is out: the request as it was accepted, the binding
+ * it was sent to, the account that asked and the ask's own identity, written
+ * before dispatch and never edited. A reload resumes exactly this.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCallPendingSchema = z.strictObject({
+  requestId: ModelCredentialRequestIdSchema,
+  request: ModelCallDraftSchema,
+  binding: ModelBindingSchema,
+  /** The account's login; null for a visitor. */
+  owner: z.string().nullable()
+})
+/**
+ * The decoded value accepted by {@link ModelCallPendingSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallPending = z.infer<typeof ModelCallPendingSchema>
+
+/**
  * Validates the `model-call` card's payload (Cards.ts): the composer for one
- * configured model. The request is the editable draft; the response is the
- * answer the model gave to the request it carries, so an edit after it is
- * visibly stale; `asking` survives a reload and is launched again.
+ * configured model. The request is the editable draft and nothing else reads
+ * it; `pending` is the ask that is out; the response is the answer one
+ * binding gave to the request it carries, so an edit after it is visibly
+ * stale and a rebound model keeps none of it.
  *
  * @since 1.0.0
  * @category schemas
@@ -1740,8 +1859,12 @@ export const ModelCallCardPayloadSchema = z.strictObject({
   response: z.strictObject({
     askedAt: z.number().finite(),
     request: ModelCallDraftSchema,
+    /** Absent only on a card written before answers kept their binding. */
+    binding: ModelBindingSchema.optional(),
     result: ModelTestResultSchema
   }).optional(),
+  pending: ModelCallPendingSchema.optional(),
+  /** Written before `pending` existed, and read only so that journal replays; it names no request, so it resumes nothing. */
   asking: z.boolean().optional(),
   /** The `Evaluator.layerScripted` fixture written from the last decision answer. */
   fixture: z.string().max(MODEL_CALL_TEXT_MAX * 4).optional()
