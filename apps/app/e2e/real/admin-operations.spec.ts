@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { command, expect, closeComposer } from "./support"
+import { command, expect, closeComposer, reloadApp } from "./support"
 
 import { bootProductionRepository } from "./repositories-github/production"
 
@@ -116,7 +116,7 @@ authenticatedTest("admin allowlist add and remove are real, observable, and clea
     await expect(page.getByTestId("transcript")).toContainText(login)
     await expect(page.getByTestId("transcript")).toContainText(/allowlist/i)
     await expect.poll(() => [200, 201, 204].includes(responses.find(response => response.action === "add")?.status ?? 0)).toBe(true)
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await bootProductionRepository(page)
     await command(page, `/admin.allowlist.remove ${login}`)
     await expect(page.getByTestId("transcript")).toContainText(login)

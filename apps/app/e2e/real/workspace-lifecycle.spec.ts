@@ -1,5 +1,5 @@
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, realApi } from "./support/test"
+import { closeComposer, command, expect, realApi, reloadApp } from "./support/test"
 import { expectFlowOutcome } from "./repositories-github/local"
 import { attachProductionJson, bootProductionRepository, cloudRepoPath } from "./repositories-github/production"
 import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
@@ -176,7 +176,7 @@ workflowTest(
     await expectFlowOutcome(page, "workspace.delete", `${workspaceId} ${name}`, "executed")
     await expect.poll(async () => (await realApi(page, request, "GET", path)).status(), { timeout: 60_000 }).toBe(404)
     await expect(card).toHaveCount(0)
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
     await expect(card).toHaveCount(0)
     await attachProductionJson(testInfo, "workspace-lifecycle", {

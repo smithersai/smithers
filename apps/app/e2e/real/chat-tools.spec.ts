@@ -19,6 +19,7 @@ import {
   expect,
   openComposer,
   realApi,
+  reloadApp,
   test
 } from "./support/test"
 
@@ -188,7 +189,7 @@ test("a multiline draft survives keyboard dismissal and a real reload before sub
   await openComposer(page)
   await expect(input).toHaveValue(expected)
   await closeComposer(page)
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await page.getByRole("button", { name: "Chat", exact: true }).focus()
   await page.keyboard.press("Enter")
   await expect(page.getByTestId("composer-input")).toBeVisible()

@@ -1,7 +1,7 @@
 import { scenario } from "./coverage/types"
 import { fixtureCommentBody } from "./support/values"
 import type { Request, Response } from "@playwright/test"
-import { command, expect, openApp, realApi, test } from "./support/test"
+import { command, expect, openApp, realApi, reloadApp, test } from "./support/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import {
   createIssueThroughUi,
@@ -41,7 +41,7 @@ test(
     await issue.getByRole("button", { name: "Issue flows", exact: true }).focus()
     await issue.getByRole("button", { name: "Issue flows", exact: true }).press("Enter")
     await expect(catalog).toBeVisible()
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(page.getByTestId("card-practice-issue-flows-3")).toContainText(/repro|research|implement/i)
   }
 )
@@ -147,7 +147,7 @@ test(
     await expect(page.getByText("Sign in with GitHub to create an issue.", { exact: true }).last()).toBeVisible()
     expect(issueWrites).toEqual([])
 
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
     expect(issueWrites).toEqual([])
     expect(await (await realApi(page, request, "GET", "/api/auth/session")).json()).toEqual({ status: "signed-out" })
@@ -352,7 +352,7 @@ authenticatedTest(
       expect((await closing).status()).toBe(200)
       expect(await readIssue(page, request, fixture.repo, created.number)).toMatchObject({ state: "closed" })
 
-      await page.reload({ waitUntil: "domcontentloaded" })
+      await reloadApp(page)
       await runSlash(page, `/issues.view ${created.number} ${fixture.repo}`)
       let card = issueCard(page, fixture.repo, created.number)
       await expect(card).toContainText(title)

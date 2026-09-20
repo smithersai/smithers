@@ -1,4 +1,4 @@
-import { closeComposer } from "./support"
+import { closeComposer, reloadApp } from "./support"
 import { bootProductionRepository } from "./repositories-github/production"
 import { scenario } from "./coverage/types"
 import { fixtureCommentBody } from "./support/values"
@@ -94,7 +94,7 @@ test(
       await expect(detail).toContainText(`docs/second-${owned.marker}.md`)
       await expect(detail.locator(".ghc-file")).toHaveCount(2)
 
-      await page.reload({ waitUntil: "domcontentloaded" })
+      await reloadApp(page)
       await bootProductionRepository(page)
       await command(page, `/prs.view ${created.number} ${owned.fullName}`)
       await expectFlowOutcome(page, "prs.view", `${created.number} ${owned.fullName}`, "executed")

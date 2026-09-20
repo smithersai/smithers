@@ -1,7 +1,7 @@
 import { fixtureInputText } from "./support/values"
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, test } from "./support/test"
+import { closeComposer, command, expect, reloadApp, test } from "./support/test"
 import { attachProductionJson, bootProductionRepository, enableProductionVerbose } from "./repositories-github/production"
 import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
 import {
@@ -234,7 +234,7 @@ workflowTest(
     const accepted = await gatewayCall(page, request, repo, "Projection.Snapshot", { selector: { _tag: "run-summary", runId: createRunId } }, workflowRepo.workspaceId)
     expect(["accepted", "running", "parked", "completed"]).toContain(runSummary(accepted)?.status)
 
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(page.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${createRunId}"]`)).toBeVisible({ timeout: 60_000 })
     const created = await waitForCompletedRun(page, request, repo, createRunId, workflowRepo.workspaceId)
     await expect(page.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${createRunId}"]`)).toHaveAttribute("data-status", "acted")
