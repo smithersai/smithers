@@ -43,7 +43,7 @@ export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "t
       onData={(data) => controller.cloudTerminal.input(sessionId, data)}
       onResize={({ cols, rows }) => {
         // The adapter refits on every host resize; only a changed geometry reaches the server.
-        const geometry = `${cols}x${rows}`
+        const geometry = `${repo}:${sessionId}:${cols}x${rows}`
         if (geometry === lastGeometry.current || cols === 0 || rows === 0) return
         lastGeometry.current = geometry
         controller.cloudTerminal.resize(sessionId, cols, rows)

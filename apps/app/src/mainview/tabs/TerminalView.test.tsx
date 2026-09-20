@@ -15,11 +15,20 @@ test("replacing a terminal session detaches the old stream and attaches the new 
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, unavailableAgent)
   const calls: string[] = []
+  const sizes: Array<{ sessionId: string; cols: number; rows: number }> = []
+  const originalResizeObserver = globalThis.ResizeObserver
+  globalThis.ResizeObserver = class {
+    constructor(private readonly notify: ResizeObserverCallback) {}
+    observe() { this.notify([], this as unknown as ResizeObserver) }
+    unobserve() {}
+    disconnect() {}
+  } as typeof ResizeObserver
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   const testController = { ...controller, cloudTerminal: { ...controller.cloudTerminal,
-    attach: (_repo: string, sessionId: string) => { calls.push(`attach ${sessionId}`); return () => { calls.push(`detach ${sessionId}`) } }
+    attach: (_repo: string, sessionId: string) => { calls.push(`attach ${sessionId}`); return () => { calls.push(`detach ${sessionId}`) } },
+    resize: (sessionId: string, cols: number, rows: number) => { sizes.push({ sessionId, cols, rows }) }
   } }
   const render = (sessionId: string) => flushSync(() => root.render(
     <ControllerTestProvider controller={testController}>
@@ -34,10 +43,13 @@ test("replacing a terminal session detaches the old stream and attaches the new 
     expect(calls).toEqual(["attach first"])
     render("second"); await until(3)
     expect(calls).toEqual(["attach first", "detach first", "attach second"])
+    expect(sizes).toHaveLength(2)
+    expect(sizes[1]).toEqual({ ...sizes[0]!, sessionId: "second" })
     render("second"); await settle()
     expect(calls).toHaveLength(3)
   } finally {
     flushSync(() => root.unmount()); host.remove(); await controller.dispose()
+    globalThis.ResizeObserver = originalResizeObserver
   }
   expect(calls.at(-1)).toBe("detach second")
 })
