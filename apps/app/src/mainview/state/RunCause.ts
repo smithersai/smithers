@@ -13,7 +13,7 @@
  *
  * This is the table that answers the ones it can. Three rules hold it honest,
  * and the third is why it answers all nine of the harness's codes but one and
- * only three of the model's.
+ * only five of the model's.
  *
  * - A code is never read off prose, and prose is never rendered at a person.
  *   The harness writes run ids into its own messages (`The agent session
@@ -30,10 +30,10 @@
  *   `_tag`, the package that raised it and the seam it crossed are all gone by
  *   the time a card reads it: a code string does NOT identify its author. Where
  *   two vocabularies spell the same code, this file answers neither — see
- *   {@link SHARED_CODES}. That is what costs the table nine of the model's
+ *   {@link SHARED_CODES}. That is what costs the table seven of the model's
  *   twelve codes: `flows/librarian` re-raises the seven provider conditions
  *   under its own tag, and three more are spelled by the stores, the scorers
- *   and `jj`. For those nine the fault's own lead — true about a union this
+ *   and `jj`. For those seven the fault's own lead — true about a union this
  *   side cannot split — is the honest answer.
  *
  *   The rule cuts the other way too. A lead must be true about every member of
@@ -42,7 +42,22 @@
  *   person made; "nothing your request could have changed" is untrue of both
  *   under every author that can raise them, and `invalid_provider_output` is
  *   the provider's own answer, not Smithers' side. Those three are sole-
- *   authored and answered here.
+ *   authored and answered here. Two more are NOT sole-authored and are
+ *   answered here anyway, because the lead is false under every author they
+ *   have — see {@link SHARED_ANSWERED}. Sharing is a reason to withhold a
+ *   sentence, never a reason to print a false one.
+ *
+ * What this table does NOT rest on is that a code is spelled somewhere in this
+ * repo's sources. It rests on every failure record's `code` being a declared
+ * literal set, which the compiler then enforces at every raise site — see
+ * {@link OPEN_CODED}, which is the list of classes that escape that and is
+ * asserted empty. The distinction is not academic: `flows/coding/native.ts`
+ * decoded a guest program's JSON error envelope onto an unconstrained `code`,
+ * so an adapter outside this repo could put `model_failed` on a
+ * `{ code, message }` record and make a `repository/inspection` run card say a
+ * model never answered, with no model in the run and no source change
+ * anywhere. A sweep over sources cannot see a string. That boundary now
+ * decodes into `NativeCode` (`flows/coding/native-schema.ts`).
  *
  * @see ../../../../../packages/smithers/agent/harness/src/HarnessError.ts
  * @see ../../../../../packages/smithers/agent/model/src/ModelError.ts
@@ -82,10 +97,12 @@ export type HarnessCode = (typeof HARNESS_CODES)[number]
  * typed refusal under the harness wrapper"). That is why this vocabulary is
  * swept at all, and not just the outer one.
  *
- * Three of these twelve have a row — `content_policy`, `context_overflow` and
- * `invalid_provider_output`, the three that describe an exchange that reached
- * the provider. The other nine are in {@link SHARED_CODES}: seven because
- * `flows/librarian/runtime.ts` re-raises the provider conditions under
+ * Five of these twelve have a row. Three are sole-authored —
+ * `content_policy`, `context_overflow` and `invalid_provider_output`, which
+ * describe an exchange that reached the provider. Two are shared and answered
+ * anyway, because the lead is false under every author they have
+ * ({@link SHARED_ANSWERED}). The other seven are in {@link SHARED_CODES}: five
+ * because `flows/librarian/runtime.ts` re-raises the provider conditions under
  * `librarian/ProviderUnavailable`, and `invalid_request` and `unknown` because
  * the scorers, the stores, sync and `jj` spell them. All twelve are listed
  * because the sweep still has to find them: a code the model package adds
@@ -187,14 +204,85 @@ export const SHARED_CODES = {
 export type SharedCode = keyof typeof SHARED_CODES
 
 /**
- * A code exactly one failure vocabulary in this repo spells, so the string
- * does identify its author. Derived from {@link SHARED_CODES} rather than
- * restated, so removing a code from there is what opens a row for it.
+ * Every failure class in this repo whose `code` no declaration closes, so its
+ * codes are whatever its raise sites happen to pass — including a string that
+ * is not a literal at all.
+ *
+ * It is empty, and `RunCause.test.ts` asserts that by parsing the tree rather
+ * than by trusting this line. Empty is what makes the rest of this file true:
+ * when every `{ code, message }` record's `code` is a declared literal set,
+ * TypeScript refuses a raise site that invents one, and the sweep's reading of
+ * the declarations is the whole set of codes that can reach a person. An open
+ * `code: Schema.String` breaks that, and it broke it in exactly the way that
+ * is hardest to see — `coding/NativeCodingError` carried a guest program's
+ * word verbatim out of a subprocess, which is not a raise site and which no
+ * sweep over this repo's sources can ever see.
+ *
+ * Adding a class here is allowed and is a decision, not a formality: it says
+ * the codes on that class are outside this table's guarantee, and every code
+ * it can spell has to be placed in {@link SHARED_CODES} or shown unreachable
+ * before a row that a foreign string could steal is written.
  */
-export type RunCauseCode = Exclude<HarnessCode | ModelCode, SharedCode>
+export const OPEN_CODED: ReadonlyArray<string> = []
 
-/** Whether {@link SHARED_CODES} holds this code, so no sentence here may claim it. */
-export const isSharedCode = (code: string): boolean => Object.hasOwn(SHARED_CODES, code)
+/**
+ * Shared codes that are answered here anyway, and why the union cannot keep
+ * them.
+ *
+ * {@link SHARED_CODES} withholds a sentence because one line of
+ * `<code>: <message>` cannot say which vocabulary wrote it, and a sentence
+ * picked for one author is false for the others. That argument only works
+ * while the fault's own lead is TRUE for every author. For these two it is
+ * false for all of them, so withholding does not leave a person with a vaguer
+ * sentence — it leaves them with a wrong one.
+ *
+ * Both are also a narrower case than they look. `flows/librarian/runtime.ts`
+ * builds a `ProviderUnavailable` only out of a `ModelError`, copying `code`
+ * and `message` unchanged (`surfaceFailure`, and `preserveProvider` re-wraps
+ * the same pair), so the "two vocabularies" here are one condition wearing two
+ * tags. A sentence true of the model's code is true of the librarian's.
+ *
+ * A third vocabulary spelling either code would change that, and would red
+ * `RunCause.test.ts` against {@link SHARED_CODES} until somebody re-decided.
+ */
+export const SHARED_ANSWERED = {
+  /*
+   * The model's `quota_exceeded` is an exhausted paid balance — `ModelError`'s
+   * `isQuotaExhausted` matches "insufficient quota", "credit balance",
+   * "payment required", and `retryable` is false for it alone, because a run
+   * parks until the account is funded. `packages/rpc/src/RefusalCopy.ts` says
+   * of the plue code of the same name that it is "the one that must NEVER show
+   * the infra line: this account is at its own cap, which is a fact about them
+   * and is fixed by them". The infra lead told them the opposite.
+   */
+  quota_exceeded: "an exhausted account balance is the account holder's to clear, and the infra lead denies it",
+  /*
+   * `ModelErrorCode`'s own doc comment, in the file this table's sweep reads:
+   * `call_timeout` "describes what the caller did: it exceeded a wall-clock
+   * budget it declared for the call", and "an overrun is re-issued with the
+   * model told to be shorter". "Nothing your request could have changed" is
+   * false by the declaration's own sentence.
+   */
+  call_timeout: "the caller's own budget ended the call, and a shorter request is what repairs it"
+} as const satisfies Partial<Record<SharedCode, string>>
+
+/** One code {@link SHARED_ANSWERED} holds. */
+export type AnsweredSharedCode = keyof typeof SHARED_ANSWERED
+
+/**
+ * A code this table may answer: one exactly one failure vocabulary in this
+ * repo spells, plus the shared ones whose fallback lead is false of every
+ * author. Derived from {@link SHARED_CODES} and {@link SHARED_ANSWERED} rather
+ * than restated, so moving a code between them is what opens or closes a row.
+ */
+export type RunCauseCode = Exclude<HarnessCode | ModelCode, Exclude<SharedCode, AnsweredSharedCode>>
+
+/**
+ * Whether {@link SHARED_CODES} holds this code AND the fault's own lead is
+ * true of every vocabulary that spells it, so no sentence here may claim it.
+ */
+export const isSharedCode = (code: string): boolean =>
+  Object.hasOwn(SHARED_CODES, code) && !Object.hasOwn(SHARED_ANSWERED, code)
 
 /** What one code says happened, and whose problem it is. */
 export interface RunCauseRow {
@@ -205,8 +293,9 @@ export interface RunCauseRow {
 
 /**
  * The sentence for each code. Total over both vocabularies minus
- * {@link SHARED_CODES}, which today leaves eight of the harness's nine codes
- * and three of the model's twelve; a code added to either declaration is a red
+ * {@link SHARED_CODES} plus {@link SHARED_ANSWERED}, which today leaves eight
+ * of the harness's nine codes and five of the model's twelve; a code added to
+ * either declaration is a red
  * in `RunCause.test.ts` until it is answered or shown to be shared.
  *
  * Every fault that is not the person's keeps "Not your fault" or "Not your
@@ -270,12 +359,14 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
 
   /*
    * The model boundary's vocabulary, which arrives here under a harness
-   * wrapper. Three of its twelve codes have a row, and they are the three the
-   * person's own request is the lever for. The fault's generic lead —
-   * "Not your fault, and nothing your request could have changed" — is a false
-   * statement about all three under every author that can raise them, so
-   * leaving them to it was not a conservative shrink but a second wrong
-   * sentence. The other nine are shared, each for its own reason below.
+   * wrapper. Five of its twelve codes have a row, and the test each one passes
+   * is the same: the fault's generic lead — "Not your fault, and nothing your
+   * request could have changed" — is a FALSE statement about it under every
+   * author that can raise it, so leaving it to the lead was not a conservative
+   * shrink but a second wrong sentence. Three of the five are the model's
+   * alone; two are shared and answered anyway, because sharing is a reason to
+   * withhold a sentence and never a reason to print a false one. The other
+   * seven are shared, each for its own reason below.
    */
   content_policy: {
     fault: "user",
@@ -288,13 +379,28 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
   invalid_provider_output: {
     fault: "dependency",
     message: "The model provider answered with something Smithers couldn't read. Not your doing — it's worth asking again."
+  },
+  /*
+   * The two shared codes the lead is false for, under every author they have
+   * (see {@link SHARED_ANSWERED}). Each sentence has to be true of the model's
+   * code AND of `librarian/ProviderUnavailable`'s, which is the same condition
+   * re-raised, so neither says which side of the call it happened on.
+   */
+  quota_exceeded: {
+    fault: "user",
+    message: "The model account is out of credit, so the run stopped where it was. Add credit to the account, then start it again."
+  },
+  call_timeout: {
+    fault: "infra",
+    message:
+      "A model call ran past the time this run allows and was cut off, so nothing came back from it. Not your fault — asking for something shorter usually gets through."
   }
   /*
-   * The nine with no row, and why each one has none.
+   * The seven with no row, and why each one has none.
    *
-   * Seven of them — `no_route`, `authentication`, `transport`,
-   * `provider_internal`, `call_timeout`, `rate_limited`, `quota_exceeded` —
-   * are also `librarian/ProviderUnavailable`'s, which declares exactly the set
+   * Five of them — `no_route`, `authentication`, `transport`,
+   * `provider_internal`, `rate_limited` — are also
+   * `librarian/ProviderUnavailable`'s, which declares exactly the set
    * `flows/librarian/runtime.ts` can surface. One line of `<code>: <message>`
    * cannot say which of the two wrote it, so `no_route: ...` from the
    * librarian would reach a person as "No model seat was available for this
@@ -305,10 +411,19 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
    * `invalid_provider_output` describe an exchange that DID reach the
    * provider, and the librarian never re-raises one under its own tag.
    *
+   * `call_timeout` and `quota_exceeded` share that same author and are
+   * answered anyway: for those two the lead is not true of EITHER of them
+   * ({@link SHARED_ANSWERED}), and the librarian's is the model's own
+   * condition re-raised, copied code and message unchanged. Withholding a
+   * sentence there did not leave a person with a vaguer one; it left them with
+   * "not your fault" in front of their own empty account.
+   *
    * `rate_limited` would be shared even without the librarian: `@smthrs/std`
    * raises it when a tool's own provider throttles a search and
    * `@smthrs/time-travel` when Smithers' own rewind limiter refuses, and the
-   * three do not even share a fault class.
+   * three do not even share a fault class. It stays with the lead because a
+   * throttle IS waited out, so "nothing your request could have changed" is
+   * true of it in a way it is not of an exhausted balance.
    *
    * `invalid_request` is shared with `flows/scorers`, `@smthrs/sync` and the
    * coding flows' `CodingError`; the setup bridge is unaffected, since
@@ -326,7 +441,7 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
    */
 }
 
-/** Every code this table answers: the two vocabularies minus what {@link SHARED_CODES} excludes. */
+/** Every code this table answers: the two vocabularies minus what {@link SHARED_CODES} still withholds. */
 export const ANSWERED_CODES: ReadonlyArray<RunCauseCode> = Object.keys(RUN_CAUSE_COPY) as ReadonlyArray<RunCauseCode>
 
 /**

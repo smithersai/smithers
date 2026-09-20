@@ -4,7 +4,17 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
-import { ANSWERED_CODES, HARNESS_CODES, isSharedCode, MODEL_CODES, RUN_CAUSE_COPY, runCause, SHARED_CODES } from "./RunCause"
+import {
+  ANSWERED_CODES,
+  HARNESS_CODES,
+  isSharedCode,
+  MODEL_CODES,
+  OPEN_CODED,
+  RUN_CAUSE_COPY,
+  runCause,
+  SHARED_ANSWERED,
+  SHARED_CODES
+} from "./RunCause"
 
 /*
  * The sweep. `failureSummary` prefixes the code of the innermost rendered
@@ -31,7 +41,14 @@ import { ANSWERED_CODES, HARNESS_CODES, isSharedCode, MODEL_CODES, RUN_CAUSE_COP
  * helper's body with its parameters bound. A spelling nobody has invented yet
  * resolves because the parser understands the language, not because someone
  * anticipated it. Where the evaluation cannot close the set the class is open,
- * and its codes are the literals its own `new` sites pass.
+ * and its codes are the literals its own `new` sites pass — read through a
+ * shorthand, a const or a call into a repo helper, because a raise site's
+ * `code` is evaluated exactly as a declaration's is.
+ *
+ * A class this walk cannot take apart is COUNTED, and the count is asserted at
+ * zero. That is the part four earlier rounds lacked: each of them was beaten
+ * by a shape that made a class vanish, and a table one class lighter looks
+ * exactly like a table that is right.
  *
  * Tests are not swept. A class declared inside a `*.test.ts` or a `test/`
  * directory never crosses a seam into a person's run journal, and two such
@@ -107,6 +124,52 @@ interface Scope {
 const returned = (block: ts.Block): ts.Expression | undefined => {
   for (const statement of block.statements) if (ts.isReturnStatement(statement)) return statement.expression
   return undefined
+}
+
+/**
+ * One member of a schema's fields, of a tagged class's type argument, or of the
+ * object a `new` site passes.
+ *
+ * A shorthand yields its own name, because `{ code, message }` says `code` is
+ * whatever `code` is in scope — which is a question for the evaluator, not for
+ * this walk. That is the whole of the raise-site hole R111d found.
+ */
+const memberOf = (members: ts.ObjectLiteralExpression | ts.TypeLiteralNode, field: string): ts.Node | undefined => {
+  if (ts.isObjectLiteralExpression(members)) {
+    for (const property of members.properties) {
+      if (ts.isShorthandPropertyAssignment(property) && property.name.text === field) return property.name
+      if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === field) return property.initializer
+    }
+    return undefined
+  }
+  for (const member of members.members) {
+    if (ts.isPropertySignature(member) && ts.isIdentifier(member.name) && member.name.text === field) return member.type
+  }
+  return undefined
+}
+
+/**
+ * Whether every member of a container is one {@link memberOf} can see, so that
+ * finding no `code` means the class declares none rather than that the walk
+ * could not read it.
+ *
+ * A spread is the case this exists for: `{ ...Common.fields, code: … }` has a
+ * `message` this walk cannot find and `failureSummary` can, and a class dropped
+ * for a missing `message` is a class that left this table silently.
+ */
+const readable = (members: ts.ObjectLiteralExpression | ts.TypeLiteralNode): boolean =>
+  ts.isObjectLiteralExpression(members)
+    ? members.properties.every((property) =>
+      ts.isShorthandPropertyAssignment(property) ||
+      (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name)))
+    : members.members.every((member) => ts.isPropertySignature(member) && ts.isIdentifier(member.name))
+
+/** What one raise expression constructs: the class, and the codes that raise gives it. */
+interface Raise {
+  readonly raiser: string
+  readonly codes: ReadonlySet<string>
+  /** Whether the object it passes carries both members `failureSummary` reads. */
+  readonly record: boolean
 }
 
 /**
@@ -198,9 +261,11 @@ const resolver = (files: ReadonlyArray<ts.SourceFile>) => {
     /* `Schema.Literal("a")`, `Schema.Literal("a", "b")`, `Schema.Literals([…])` and `Schema.Union([…])`
      * are all the union of their arguments, whatever shape those arguments are written in. */
     if (called === "Literal" || called === "Literals" || called === "Union") return every(node.arguments, at, path)
-    /* A pipe keeps its receiver's members whatever it adds — a constructor default is still that
-     * set — and a pick keeps the ones it names. */
-    if (called === "pipe" && receiver !== undefined) return codes(receiver, at, path)
+    /* A pipe, an annotation and a check all keep their receiver's members whatever they add —
+     * a constructor default, an identifier, a refinement are still that set — and a pick keeps
+     * the ones it names. `@smthrs/sync`'s `Schema.Literals(errorCodes).annotate({ identifier })`
+     * is a closed declaration that read as an open one until `annotate` was one of these. */
+    if ((called === "pipe" || called === "annotate" || called === "check") && receiver !== undefined) return codes(receiver, at, path)
     if (called === "pick" && receiver !== undefined) {
       const whole = codes(receiver, at, path)
       const picked = every(node.arguments, at, path)
@@ -250,13 +315,104 @@ const resolver = (files: ReadonlyArray<ts.SourceFile>) => {
     }
   }
 
+  /**
+   * Every class a raise expression constructs, to the codes that raise gives it.
+   *
+   * A `new` site's `code` is EVALUATED here, not matched: a shorthand, a const and a
+   * call into a repo helper all resolve exactly as they already do in a declaration.
+   * And a CALL is a raise site too, because `failure("model_failed", …)` raises
+   * whatever its body constructs — so the helper is inlined with its arguments bound,
+   * which is the same machinery {@link call} uses. Without that hop, a file whose
+   * every raise goes through a one-line helper credits its codes to nothing.
+   */
+  /**
+   * Every name bound to a function that raises, directly or through another one.
+   *
+   * The inlining below is worth doing for `failure(…)` and pointless for the tens of
+   * thousands of other calls in this repo, so the names worth trying are found once: a
+   * function whose returned expression is a `new`, then a function whose returned
+   * expression calls one of those, to a fixed point.
+   */
+  let raisers: Set<string> | undefined
+  const helpers = (): ReadonlySet<string> => {
+    if (raisers !== undefined) return raisers
+    const bodies = new Map<string, Array<ts.Node>>()
+    const add = (bind: string, node: ts.Node) => {
+      const fn = unwrap(node)
+      if (!ts.isArrowFunction(fn) && !ts.isFunctionDeclaration(fn) && !ts.isFunctionExpression(fn)) return
+      const body = fn.body === undefined ? undefined : ts.isBlock(fn.body) ? returned(fn.body) : fn.body
+      if (body !== undefined) bodies.set(bind, [...(bodies.get(bind) ?? []), unwrap(body)])
+    }
+    for (const file of files) for (const [bind, nodes] of scope(file).locals) for (const node of nodes) add(bind, node)
+    for (const [bind, sites] of exported) for (const site of sites) add(bind, site.node)
+    const found = new Set<string>()
+    for (let round = 0, grew = true; grew && round < 8; round++) {
+      grew = false
+      for (const [bind, nodes] of bodies) {
+        if (found.has(bind)) continue
+        const raises = nodes.some((body) =>
+          ts.isNewExpression(body) || (ts.isCallExpression(body) && found.has(name(unwrap(body.expression)) ?? "")))
+        if (raises) { found.add(bind); grew = true }
+      }
+    }
+    raisers = found
+    return found
+  }
+
+  const raises = (node: ts.Node, at: Scope, path: Set<ts.Node>): ReadonlyArray<Raise> => {
+    if (path.has(node)) return []
+    path.add(node)
+    try {
+      const it = unwrap(node)
+      if (ts.isNewExpression(it)) {
+        const raiser = name(it.expression)
+        const first = it.arguments?.[0] === undefined ? undefined : unwrap(it.arguments[0])
+        if (raiser === undefined || first === undefined || !ts.isObjectLiteralExpression(first)) return []
+        const code = memberOf(first, "code")
+        const found = code === undefined ? undefined : codes(code, at, path)
+        return [{ raiser, codes: found ?? new Set(), record: code !== undefined && memberOf(first, "message") !== undefined }]
+      }
+      if (!ts.isCallExpression(it)) return []
+      const called = name(unwrap(it.expression))
+      if (called === undefined || !helpers().has(called)) return []
+      for (const site of sites(called, at)) {
+        const fn = unwrap(site.node)
+        if (!ts.isArrowFunction(fn) && !ts.isFunctionDeclaration(fn) && !ts.isFunctionExpression(fn)) continue
+        const body = fn.body === undefined ? undefined : ts.isBlock(fn.body) ? returned(fn.body) : fn.body
+        if (body === undefined) continue
+        const bound = new Map<string, { readonly node: ts.Node; readonly scope: Scope }>()
+        fn.parameters.forEach((parameter, index) => {
+          const argument = it.arguments[index]
+          if (argument !== undefined && ts.isIdentifier(parameter.name)) bound.set(parameter.name.text, { node: argument, scope: at })
+        })
+        const found = raises(body, { file: site.scope.file, locals: site.scope.locals, bound }, path)
+        if (found.length > 0) return found
+      }
+      return []
+    } finally {
+      path.delete(node)
+    }
+  }
+
   return {
     scope,
+    /** What one raise expression constructs, read in one file's scope. */
+    raises: (node: ts.Node, file: ts.SourceFile): ReadonlyArray<Raise> => raises(node, scope(file), new Set()),
     /** The literal set a schema expression or type admits, read in one file's scope. */
     read: (node: ts.Node, file: ts.SourceFile): ReadonlySet<string> | undefined => codes(node, scope(file), new Set()),
     /** The literal set a name admits, read in one file's scope. */
     declared: (bind: string, file: ts.SourceFile): ReadonlySet<string> | undefined => named(bind, scope(file), new Set())
   }
+}
+
+/** What a class's heritage clause says it is, whether or not the walk got it all. */
+interface Heritage {
+  /** Whether the base chain calls a `*TaggedError`, which is what makes it a failure class. */
+  readonly tagged: boolean
+  /** Whether the base is a call chain at all, as every tagged spelling in this repo is. */
+  readonly chain: boolean
+  readonly tag?: string
+  readonly members?: ts.ObjectLiteralExpression | ts.TypeLiteralNode
 }
 
 /**
@@ -265,14 +421,23 @@ const resolver = (files: ReadonlyArray<ts.SourceFile>) => {
  * Both spellings this repo uses land here, because the walk follows the call
  * chain of the heritage clause rather than a shape:
  * `Schema.TaggedError<T>()("tag", { … })` puts the members in an argument and
- * `Data.TaggedError("tag")<{ … }>` puts them in a type argument.
+ * `Data.TaggedError("tag")<{ … }>` puts them in a type argument. A tag written
+ * as a name rather than a literal — `Schema.TaggedError<Skipped>()(skippedTag,
+ * { … })`, live in `agent/src/Budget.ts` — is EVALUATED, like every other
+ * member of this walk.
+ *
+ * What it found is returned even when it is not everything, because a class
+ * this walk cannot take apart has to be counted rather than dropped: that is
+ * the difference between a sixth shape reddening this file and vanishing from
+ * it.
  */
-const taggedOf = (node: ts.ClassLikeDeclaration): { readonly tag: string; readonly members: ts.ObjectLiteralExpression | ts.TypeLiteralNode } | undefined => {
+const taggedOf = (node: ts.ClassLikeDeclaration, read: (node: ts.Node) => ReadonlySet<string> | undefined): Heritage => {
   const heritage = node.heritageClauses?.find((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]
-  if (heritage === undefined) return undefined
+  if (heritage === undefined) return { tagged: false, chain: false }
   let tag: string | undefined
   let members: ts.ObjectLiteralExpression | ts.TypeLiteralNode | undefined
   let tagged = false
+  let chain = false
   const fromTypes = (nodes: ts.NodeArray<ts.TypeNode> | undefined) => {
     for (const argument of nodes ?? []) {
       const type = unwrap(argument)
@@ -282,29 +447,25 @@ const taggedOf = (node: ts.ClassLikeDeclaration): { readonly tag: string; readon
   fromTypes(heritage.typeArguments)
   let at: ts.Node = unwrap(heritage.expression)
   while (ts.isCallExpression(at)) {
+    chain = true
     if (name(at.expression)?.endsWith("TaggedError") === true) tagged = true
     for (const argument of at.arguments) {
-      if (ts.isStringLiteralLike(argument) && tag === undefined) tag = argument.text
-      if (ts.isObjectLiteralExpression(argument) && members === undefined) members = argument
+      /* `Schema.Struct({ … })` is those fields, so a base written around one is as readable
+       * as a bare fields object (`harness/Cell.ts` `CallResult`). */
+      const fields = unwrap(argument)
+      const inner = ts.isCallExpression(fields) && name(fields.expression) === "Struct" && fields.arguments[0] !== undefined
+        ? unwrap(fields.arguments[0])
+        : fields
+      if (ts.isObjectLiteralExpression(inner)) { if (members === undefined) members = inner }
+      else if (tag === undefined) {
+        const found = read(argument)
+        if (found?.size === 1) tag = [...found][0]
+      }
     }
     fromTypes(at.typeArguments)
     at = unwrap(at.expression)
   }
-  return tagged && tag !== undefined && members !== undefined ? { tag, members } : undefined
-}
-
-/** One member of a schema's fields or of a tagged class's type argument. */
-const memberOf = (members: ts.ObjectLiteralExpression | ts.TypeLiteralNode, field: string): ts.Node | undefined => {
-  if (ts.isObjectLiteralExpression(members)) {
-    for (const property of members.properties) {
-      if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === field) return property.initializer
-    }
-    return undefined
-  }
-  for (const member of members.members) {
-    if (ts.isPropertySignature(member) && ts.isIdentifier(member.name) && member.name.text === field) return member.type
-  }
-  return undefined
+  return { tagged, chain, ...(tag === undefined ? {} : { tag }), ...(members === undefined ? {} : { members }) }
 }
 
 /**
@@ -318,16 +479,17 @@ const memberOf = (members: ts.ObjectLiteralExpression | ts.TypeLiteralNode, fiel
 const sweepOf = (files: ReadonlyArray<ts.SourceFile>) => {
   const read = resolver(files)
   const raised = new Map<string, Set<string>>()
+  /* Every class some raise site passes the `{ code, message }` record `failureSummary` reads. */
+  const records = new Set<string>()
   const owners = new Map<string, Set<string>>()
+  const unread: Array<string> = []
+  const open = new Set<string>()
   for (const file of files) {
     const visit = (node: ts.Node): void => {
-      if (ts.isNewExpression(node) && node.arguments?.[0] !== undefined) {
-        const fields = unwrap(node.arguments[0])
-        const code = ts.isObjectLiteralExpression(fields) ? memberOf(fields, "code") : undefined
-        const literal = code === undefined ? undefined : unwrap(code)
-        const raiser = name(node.expression)
-        if (literal !== undefined && ts.isStringLiteralLike(literal) && raiser !== undefined) {
-          raised.set(raiser, (raised.get(raiser) ?? new Set()).add(literal.text))
+      if (ts.isNewExpression(node) || ts.isCallExpression(node)) {
+        for (const raise of read.raises(node, file)) {
+          if (raise.record) records.add(raise.raiser)
+          for (const code of raise.codes) raised.set(raise.raiser, (raised.get(raise.raiser) ?? new Set()).add(code))
         }
       }
       ts.forEachChild(node, visit)
@@ -335,34 +497,69 @@ const sweepOf = (files: ReadonlyArray<ts.SourceFile>) => {
     visit(file)
   }
   for (const file of files) {
+    const where = (node: ts.ClassLikeDeclaration) => `${file.fileName.slice(file.fileName.lastIndexOf("/") + 1)} ${node.name?.text ?? "(anonymous)"}`
     const visit = (node: ts.Node): void => {
       if (ts.isClassLike(node)) {
-        const tagged = taggedOf(node)
-        /* `failureSummary` reads a record's code only when that record also carries the message. */
-        const code = tagged === undefined || memberOf(tagged.members, "message") === undefined ? undefined : memberOf(tagged.members, "code")
-        if (tagged !== undefined && code !== undefined) {
-          const closed = read.read(code, file) ?? (node.name === undefined ? undefined : raised.get(node.name.text))
-          for (const one of closed ?? []) owners.set(one, (owners.get(one) ?? new Set()).add(tagged.tag))
+        const heritage = taggedOf(node, (at) => read.read(at, file))
+        const { chain, members, tag, tagged } = heritage
+        const whole = tag !== undefined && members !== undefined && readable(members)
+        /* A class the heritage says IS a failure and this walk could not take apart, and
+         * a class it read as nothing at all that a raise site builds with the record
+         * `failureSummary` reads. A spread, a tag it cannot evaluate and a factory base
+         * all land here rather than leaving the table one class lighter in silence. */
+        if (tagged ? !whole : chain && members === undefined && node.name !== undefined && records.has(node.name.text)) {
+          unread.push(where(node))
+        } else if (tagged && whole) {
+          /* `failureSummary` reads a record's code only when that record also carries the message. */
+          const code = memberOf(members!, "message") === undefined ? undefined : memberOf(members!, "code")
+          if (code !== undefined) {
+            const declared = read.read(code, file)
+            if (declared === undefined) open.add(tag!)
+            const closed = declared ?? (node.name === undefined ? undefined : raised.get(node.name.text))
+            for (const one of closed ?? []) owners.set(one, (owners.get(one) ?? new Set()).add(tag!))
+          }
         }
       }
       ts.forEachChild(node, visit)
     }
     visit(file)
   }
-  return { owners: owners as ReadonlyMap<string, ReadonlySet<string>>, read }
+  return {
+    owners: owners as ReadonlyMap<string, ReadonlySet<string>>,
+    /** Every tagged failure class this walk could not take apart, by file and name. */
+    unread: unread as ReadonlyArray<string>,
+    /** Every tagged failure whose `code` no declaration closes, by tag. */
+    open: open as ReadonlySet<string>,
+    read
+  }
 }
 
 const HARNESS = "packages/smithers/agent/harness/src/HarnessError.ts"
 const MODEL = "packages/smithers/agent/model/src/ModelError.ts"
 
+/**
+ * How long the first test that touches {@link repo} may take.
+ *
+ * `ts.createSourceFile` over every source in the repo is ~2 s alone and several
+ * times that on a loaded machine, and it happens once for the whole file. The
+ * default 5 s is a coin flip under CI load, and a suite that reds on the
+ * machine's queue depth teaches people to ignore it.
+ */
+const SWEPT = 60_000
+
 /** The parsed repo, swept once for every test that needs it. */
-let swept: { readonly owners: ReadonlyMap<string, ReadonlySet<string>>; readonly vocabulary: (path: string, of: string) => ReadonlyArray<string> } | undefined
+let swept: {
+  readonly owners: ReadonlyMap<string, ReadonlySet<string>>
+  readonly unread: ReadonlyArray<string>
+  readonly open: ReadonlySet<string>
+  readonly vocabulary: (path: string, of: string) => ReadonlyArray<string>
+} | undefined
 const repo = () => {
   if (swept !== undefined) return swept
   const files = new Map<string, ts.SourceFile>()
   for (const root of ROOTS) for (const path of sources(join(REPO, root))) files.set(path, parse(path, readFileSync(path, "utf8")))
-  const { owners, read } = sweepOf([...files.values()])
-  swept = { owners, vocabulary: (path, of) => [...read.declared(of, files.get(join(REPO, path))!) ?? []] }
+  const { open, owners, read, unread } = sweepOf([...files.values()])
+  swept = { owners, unread, open, vocabulary: (path, of) => [...read.declared(of, files.get(join(REPO, path))!) ?? []] }
   return swept
 }
 
@@ -378,7 +575,7 @@ test("every code the harness and the model declare is answered here, and only th
   expect(Object.keys(RUN_CAUSE_COPY).sort()).toEqual([...harness, ...model].filter((code) => !isSharedCode(code)).sort())
   const table: ReadonlyArray<string> = ANSWERED_CODES
   expect([...table].sort()).toEqual(Object.keys(RUN_CAUSE_COPY).sort())
-})
+}, SWEPT)
 
 /*
  * The claim this file used to make, and the one it makes now. The two
@@ -407,16 +604,29 @@ test("a code this table answers is one no other failure vocabulary in the repo s
   expect(shared).toEqual(
     Object.fromEntries(Object.entries(SHARED_CODES).map(([code, tags]) => [code, [...tags].sort()]))
   )
-  for (const code of Object.keys(shared)) expect(runCause(code)).toBeUndefined()
-  for (const code of ANSWERED_CODES) expect(owners.get(code)?.size).toBe(1)
+  /* A shared code gets no sentence UNLESS the fault's own lead is false of every author
+   * that spells it, which is the one thing that makes withholding worse than answering. */
+  for (const code of Object.keys(shared)) {
+    if (Object.hasOwn(SHARED_ANSWERED, code)) expect(runCause(code)).toBeDefined()
+    else expect(runCause(code)).toBeUndefined()
+  }
+  for (const code of ANSWERED_CODES) {
+    expect(owners.get(code)?.size).toBe(Object.hasOwn(SHARED_ANSWERED, code) ? 2 : 1)
+  }
   /* The librarian declares what its own code can surface, so these three are the model's alone. */
   for (const code of ["content_policy", "context_overflow", "invalid_provider_output"]) {
     expect(owners.get(code)).toEqual(new Set(["flows/model/ModelError"]))
   }
-})
+  /* And the two answered shared codes have exactly the second author the argument rests on:
+   * `surfaceFailure` re-raising the model's own condition, code and message unchanged. A
+   * third vocabulary spelling either one reds the map above until somebody re-decides. */
+  for (const code of Object.keys(SHARED_ANSWERED)) {
+    expect(owners.get(code)).toEqual(new Set(["flows/model/ModelError", "librarian/ProviderUnavailable"]))
+  }
+}, SWEPT)
 
 /*
- * Seven declaration shapes, each read off a class that is on the tree today,
+ * Nine declaration shapes, each read off a class that is on the tree today,
  * so a shape stops being understood here before it stops being caught above.
  * Every one of them was a live blind spot of some earlier regular expression,
  * and the parser resolves them all without a branch for any of them.
@@ -430,7 +640,8 @@ test("every shape this repo declares a failure code in is read off the real tree
   expect(only("no_route")).toEqual(["flows/model/ModelError", "librarian/ProviderUnavailable"])
   /* 3. `Data.TaggedError("tag")<{ readonly code?: WorkerFailureCode; … }>`, members in a type argument. */
   expect(only("workspace_gone")).toEqual(["SetupStoreError", "TokenError"])
-  /* 4. An open `code`, closed only by the literals its own `new` sites pass. */
+  /* 4. A closed set reached through `.annotate({ identifier })`, which read as an OPEN class
+   * until `annotate` joined `pipe`: an annotation keeps its receiver's members. */
   expect(only("lineage_changed")).toEqual(["@smthrs/sync/SyncError"])
   /* 5. `Schema.Literal("…")` singular, under a name, one directory from the harness's own error. */
   expect(only("invalid_compaction_prefix")).toEqual(["flows/harness/ContextWindowError"])
@@ -444,7 +655,14 @@ test("every shape this repo declares a failure code in is read off the real tree
   expect(only("sink_unreachable")).toEqual(["/notifications/AlertError"])
   /* The build tree ships and is walked: it holds two vocabularies no earlier sweep ever saw. */
   expect(only("probe_failed")).toEqual(["smithers-build/RuntimeError"])
-})
+  /* 8. A tag written as a name rather than a literal: `agent/src/Budget.ts` declares
+   * `Schema.TaggedError<Skipped>()(skippedTag, { … })`, which the walk used to drop whole. */
+  expect(repo().vocabulary("packages/smithers/agent/src/Budget.ts", "skippedTag")).toEqual(["flows/agent/Skipped"])
+  /* 9. A code this repo declares and a guest program outside it answers: the codes on
+   * `coding/NativeCodingError` are `NativeCode`, which is what the native adapter's error
+   * envelope now decodes into (`flows/coding/native.ts`). */
+  expect(only("workspace_busy")).toEqual(["coding/NativeCodingError"])
+}, SWEPT)
 
 /*
  * The same seven shapes as source rather than as pins, so a regression in the
@@ -506,6 +724,103 @@ test("the reader resolves each shape from source, including a renamed re-export"
   })
 })
 
+/*
+ * The eighth shape, and the first one a reviewer beat on the first try: an open
+ * class whose every raise goes through a one-line helper, which is how
+ * `flows/coding/native.ts` writes about twenty codes. A raise site's `code` is
+ * read by the same evaluator a declaration's is, so a shorthand, a const and a
+ * call into a repo helper all resolve — and a call IS a raise site, because
+ * `failure("model_failed", …)` raises whatever its body constructs.
+ */
+test("an open class's codes are read off its raise sites however the raise is written", () => {
+  const files = [
+    parse("/probe/open.ts", [
+      `export class Open extends Schema.TaggedError<Open>()("probe/Open", {`,
+      `  code: Schema.String, message: Schema.String`,
+      `}) {}`
+    ].join("\n")),
+    parse("/probe/helper.ts", [
+      /* The live shape: a shorthand `{ code, message }` inside a helper nobody calls directly. */
+      `const failure = (code: string, message: string) => new Open({ code, message })`,
+      `export const one = () => failure("helper_one", "through this file's own helper")`,
+      `export const two = () => Effect.fail(failure("helper_two", "and again, under a wrapper"))`,
+      /* A const, resolved where the raise site writes it. */
+      `const THIRD = "helper_three"`,
+      `export const three = () => new Open({ code: THIRD, message: "a name, not a literal" })`,
+      /* And the bare literal that was the only spelling ever credited before. */
+      `export const four = () => new Open({ code: "helper_four", message: "" })`
+    ].join("\n"))
+  ]
+  const { owners } = sweepOf(files)
+  expect(Object.fromEntries([...owners].map(([code, tags]) => [code, [...tags].sort()]))).toEqual({
+    helper_one: ["probe/Open"],
+    helper_two: ["probe/Open"],
+    helper_three: ["probe/Open"],
+    helper_four: ["probe/Open"]
+  })
+})
+
+/*
+ * Four rounds of this file each closed the shape a reviewer had just shown and
+ * were beaten by the next one. The reason was never the shape: it was that a
+ * class this walk cannot take apart LEAVES, and a table one class lighter looks
+ * exactly like a table that is right. So a class the heritage says is a failure
+ * and the walk cannot read is counted, and the count is asserted at zero — a
+ * sixth shape reds this file rather than surprising the next reviewer.
+ */
+test("a failure class this reader cannot take apart is counted, not dropped", () => {
+  const files = [
+    parse("/probe/common.ts", `export const Common = { fields: { message: Schema.String } }`),
+    parse("/probe/unread.ts", [
+      /* A fields object behind a spread: `memberOf` finds no `message` and `failureSummary` does. */
+      `export class Spread extends Schema.TaggedError<Spread>()("probe/Spread", {`,
+      `  ...Common.fields, code: Schema.Literal("spread_one")`,
+      `}) {}`,
+      /* A tag this walk cannot evaluate. */
+      `export class Computed extends Schema.TaggedError<Computed>()(tagFor("probe", counter()), {`,
+      `  code: Schema.Literal("computed_one"), message: Schema.String`,
+      `}) {}`,
+      /* A base built by a factory: no `TaggedError` anywhere in the chain, and no fields
+       * object either, so the class is read as nothing — while a raise site beside it
+       * passes the exact record `failureSummary` reads. */
+      `export class Factory extends failureClass<Factory>("probe/Factory", "model_failed") {}`,
+      `export const raise = () => new Factory({ code: "model_failed", message: "" })`
+    ].join("\n")),
+    /* A readable class in the same file set, so the count is of the unreadable ones only. */
+    parse("/probe/read.ts", [
+      `export class Plain extends Schema.TaggedError<Plain>()("probe/Plain", {`,
+      `  code: Schema.Literal("plain_one"), message: Schema.String`,
+      `}) {}`
+    ].join("\n"))
+  ]
+  const { owners, unread } = sweepOf(files)
+  expect([...unread].sort()).toEqual(["unread.ts Computed", "unread.ts Factory", "unread.ts Spread"])
+  /* And each one really did lose its code: the count is what says so, not a reviewer. */
+  expect(owners.get("spread_one")).toBeUndefined()
+  expect(owners.get("computed_one")).toBeUndefined()
+  expect(owners.get("model_failed")).toBeUndefined()
+  expect([...owners.get("plain_one") ?? []]).toEqual(["probe/Plain"])
+})
+
+test("no failure class on the real tree defeats this reader in silence", () => {
+  expect(repo().unread).toEqual([])
+}, SWEPT)
+
+/*
+ * Where the guarantee stops, enumerated rather than asserted.
+ *
+ * A class whose `code` a declaration closes can only ever carry codes written
+ * in this repo. A class whose `code` is open cannot: its codes are the literals
+ * its raise sites pass PLUS whatever a raise site passes that is not a literal
+ * at all — a string decoded from a subprocess, an HTTP body, a file. Those are
+ * the classes {@link RunCause.SOURCE_AUTHORED} names, and this is the check
+ * that the list is the whole list: a new open `{ code, message }` class reds
+ * here until it is placed.
+ */
+test("every failure class whose code no declaration closes is one the guarantee names", () => {
+  expect([...repo().open].sort()).toEqual([...OPEN_CODED].sort())
+}, SWEPT)
+
 test("no sentence a person reads carries a code, an internal id, or a thrown message", () => {
   for (const [code, row] of Object.entries(RUN_CAUSE_COPY)) {
     expect(row.message).not.toContain(code)
@@ -541,7 +856,11 @@ test("the late-turn conditions are different sentences, not one lead", () => {
     /* The three the person's own request is the lever for, so the lead is false for them. */
     "content_policy",
     "context_overflow",
-    "invalid_provider_output"
+    "invalid_provider_output",
+    /* And the two shared with the librarian's re-raise of the same condition, where the
+     * lead is false of both authors rather than true of neither. */
+    "quota_exceeded",
+    "call_timeout"
   ] as const
   const said = distinct.map((code) => runCause(code)!.message)
   expect(new Set(said).size).toBe(distinct.length)
@@ -552,6 +871,10 @@ test("a code this build has never heard of is answered by nothing here", () => {
   for (const code of ["", "brand_new_code", "invalid_receipt", "execution", "stale_revision"]) {
     expect(runCause(code)).toBeUndefined()
   }
-  /* And neither is one another vocabulary also spells, whoever raised it this time. */
-  for (const code of Object.keys(SHARED_CODES)) expect(runCause(code)).toBeUndefined()
+  /* And neither is one another vocabulary also spells, whoever raised it this time —
+   * except the two the lead is false for under every one of those vocabularies. */
+  for (const code of Object.keys(SHARED_CODES)) {
+    if (Object.hasOwn(SHARED_ANSWERED, code)) continue
+    expect(runCause(code)).toBeUndefined()
+  }
 })
