@@ -595,6 +595,24 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { assignment: rest } : { assignment: rest, repo })
   },
   "secrets.list": (args) => repoOnly("secrets.list", args),
+  "model.credential.enroll": args => {
+    const payload: Record<string, unknown> = {}
+    if (!trimmed(args)) return ok(payload)
+    for (const part of trimmed(args).split(/\s+(?=--)/)) {
+      const match = /^--(name|origin)(?:\s+(\S+))?$/.exec(part)
+      if (!match) return no("Invalid credential fields")
+      if (match[2]) payload[match[1]!] = match[2]
+    }
+    return ok(payload)
+  },
+  "model.credential.rotate": args => {
+    const [name, ...rest] = tokensOf(args)
+    return rest.length ? no("Invalid credential name") : ok(name ? { name } : {})
+  },
+  "model.credential.remove": args => {
+    const [name, ...rest] = tokensOf(args)
+    return rest.length ? no("Invalid credential name") : ok(name ? { name } : {})
+  },
   "model.show": (args) => modelName("model.show", args),
   "model.edit": (args) => modelName("model.edit", args),
   "model.remove": (args) => modelName("model.remove", args),

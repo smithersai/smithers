@@ -1,12 +1,16 @@
-import { MODEL_CATALOG_PATH,MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { MODEL_CATALOG_PATH,MODEL_TEST_PATH,MODEL_CREDENTIAL_PATH,MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { ConfiguredModel,ModelBinding,ModelCatalog,ModelProtocol,ModelTestFailure,ModelTestResult,SeatId } from "@smthrs/rpc/ConfiguredModel"
 import {
+  failedModelCredential, ModelCredentialRequestSchema, ModelCredentialResultSchema, ModelCredentialReceiptSchema,
   ConfiguredModelSchema,MODEL_PROTOCOL_DEFAULTS,MODEL_SEAT_DEFAULT,ModelCatalogSchema,ModelTestResultSchema,SeatIdSchema,
   bindingOf,hostRefusedModelTest,modelOriginOf,modelSeat,modelTestFixOf,planModelBinding,seatAccepts
 } from "@smthrs/rpc/ConfiguredModel"
 import { clientRefusal,refusalOf } from "@smthrs/rpc/Refusal"
+import type { CommandGesture } from "../../flows/CommandGesture"
+import type { ModelCredentialResult } from "@smthrs/rpc/ConfiguredModel"
 import type { CommandResult } from "../../flows/entries/Declare"
+import type { FieldOption } from "../../flows/FlowForms"
 import { flag,line } from "../../flows/FlowForms"
 import { actorSharedState } from "../ActorBindings"
 import type { Card,StoredModel } from "../AppState"
@@ -32,6 +36,8 @@ export interface SaveModelInput {
 }
 
 export interface ModelsController {
+  readonly newModelCredential: () => CommandResult
+  readonly mutateModelCredential: (action: "enroll" | "rotate" | "remove", input: { readonly name: string; readonly origin?: string }, gesture?: CommandGesture) => Promise<CommandResult>
   /** `model.list`: requested at once; the persisted refresh and its toast run in the background. */
   readonly listModels: () => Promise<CommandResult>
   /** `model.show <name>`: the card's selected row. */
@@ -97,6 +103,13 @@ export const modelFailureLine = (failure: ModelTestFailure): string => {
   }
 }
 
+/** The credential picker's options are host facts, including its enrollment capability. */
+export const credentialOptions = (catalog: Pick<ModelCatalog, "credentials" | "enrollment"> | undefined): FieldOption[] => [
+  ...(catalog?.credentials ?? []).map(row => ({ value: row.name, label: row.name, ...(row.present ? {} : { disabled: true, reason: "missing" }) })),
+  ...(catalog?.enrollment === undefined ? [] : [{ value: "__enroll", label: "Add credential", flow: "model.credential.new" as const,
+    ...(catalog.enrollment.available ? {} : { disabled: true, reason: catalog.enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" }) }])
+]
+
 /** One test in flight, for one account. A newer launch of an edited route, or for the account that arrived, replaces it, and only the current one may write. */
 interface Flight { readonly route: string; readonly epoch: number }
 interface CatalogFlight { readonly epoch: number; work: Promise<unknown> }
@@ -110,10 +123,10 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
    * a test the agent launched is the one the human's second press joins.
    */
   const shared = actorSharedState(ctx, "models", (): {
-    catalog: ModelCatalog | undefined; refresh: ModelsPayload["refresh"]; catalogFlight: CatalogFlight | undefined; flights: Map<string, Flight>; requested: Set<string>
+    credentialFlights: Map<string, number>; credentialRequests: NonNullable<ModelsPayload["credentialRequests"]>; catalog: ModelCatalog | undefined; refresh: ModelsPayload["refresh"]; catalogFlight: CatalogFlight | undefined; flights: Map<string, Flight>; requested: Set<string>
   } => {
     const saved = collections.cards.get(MODELS_CARD_ID)
-    return { catalog: undefined, refresh: saved?.kind === "models" ? saved.payload.refresh : undefined, catalogFlight: undefined,
+    return { credentialFlights: new Map(), credentialRequests: saved?.kind === "models" ? saved.payload.credentialRequests ?? [] : [], catalog: undefined, refresh: saved?.kind === "models" ? saved.payload.refresh : undefined, catalogFlight: undefined,
       flights: new Map(), requested: new Set(saved?.kind === "models" ? saved.payload.testing : []) }
   })
 
@@ -142,6 +155,8 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
       models: rows.map(recordOf),
       seats,
       credentials: [...credentials],
+      enrollment: shared.catalog?.enrollment ?? existing?.enrollment,
+      credentialRequests: shared.credentialRequests,
       tests: rows.flatMap((row) => row.lastTest === undefined ? [] : [row.lastTest]),
       testing: [...shared.requested].filter((id) => collections.models.has(id)).sort(),
       host: shared.catalog === undefined ? "unavailable" : "observed",
@@ -210,6 +225,20 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     return { ok: true, catalog: decoded.data }
   }
 
+  const refreshCredentialForms = (catalog: ModelCatalog): void => {
+    for (const form of [...collections.cards.values()]) if (form.kind === "flow-form" && form.status !== "acted") {
+      const relevant = form.payload.fields.some(field => field.optionsFrom === "credentials" || field.kind === "write-only")
+      if (!relevant) continue
+      const fields = form.payload.fields.map(field => {
+        if (field.optionsFrom === "credentials") return { ...field, options: credentialOptions(catalog) }
+        if (field.kind !== "write-only" || !form.payload.flow.startsWith("model.credential.")) return field
+        const { disabledReason: _old, ...rest } = field
+        return catalog.enrollment?.available === false ? { ...rest, disabledReason: catalog.enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" } : rest
+      })
+      store.dispatch({ type: "card.upsert", actor: "system", card: { ...form, payload: { ...form.payload, fields } } })
+    }
+  }
+
   const refreshCatalog = (toTail: boolean): Promise<unknown> => {
     if (shared.catalogFlight?.epoch === ctx.accountEpoch) {
       if (toTail) render(ctx.commandActor, true, undefined)
@@ -227,7 +256,10 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
       if (!owns()) return TOAST_SUPERSEDED
       shared.catalog = result.ok ? result.catalog : undefined
       shared.refresh = result.ok ? undefined : { state: "failed", failure: result.failure }
-      if (result.ok) await store.dispatch({ type: "models.observed", actor: "system", models: result.catalog.models }).isPersisted.promise
+      if (result.ok) {
+        await store.dispatch({ type: "models.observed", actor: "system", models: result.catalog.models }).isPersisted.promise
+        refreshCredentialForms(result.catalog)
+      }
       if (!owns()) return TOAST_SUPERSEDED
       const attention = unresolved() ?? standing()
       await render("system", attention !== undefined && JSON.stringify(card()?.payload.attention) !== JSON.stringify(attention), attention)
@@ -262,7 +294,10 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     return { value: formRenderedText(form.missing) }
   }
 
-  const newModel: ModelsController["newModel"] = () => openForm(undefined)
+  const newModel: ModelsController["newModel"] = () => {
+    if (shared.catalog === undefined) void refreshCatalog(false)
+    return openForm(undefined)
+  }
 
   const editModel: ModelsController["editModel"] = (id) => {
     const record = collections.models.get(id)
@@ -397,7 +432,84 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     return { value: "Requested" }
   }
 
+  const newModelCredential: ModelsController["newModelCredential"] = () => {
+    if (shared.catalog === undefined) void refreshCatalog(false)
+    if (ctx.commandActor !== "smithers" && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard()
+    const form = deps.renderFlowForm({ name: "model.credential.enroll", args: undefined, via: ctx.commandActor === "smithers" ? "agent" : "user" })
+    return form ? { value: formRenderedText(form.missing) } : "Credential form unavailable"
+  }
+
+  type PendingCredential = NonNullable<ModelsPayload["credentialRequests"]>[number]
+  const credentialWork = (pending: PendingCredential, send: () => Promise<ModelCredentialResult>, persisted?: Promise<unknown>): void => {
+    const epoch = ctx.accountEpoch
+    shared.credentialFlights.set(pending.requestId, epoch)
+    const key = `model.credential:${pending.name}`
+    const owns = () => !ctx.disposed && epoch === ctx.accountEpoch && shared.credentialFlights.get(pending.requestId) === epoch
+    void ctx.withToast(key, `${pending.name}…`, pending.name, async () => {
+      await persisted
+      if (!owns()) return TOAST_SUPERSEDED
+      let result: ModelCredentialResult
+      try { result = await send() } catch { result = failedModelCredential({ code: "host_refused", refusal: null, status: null }, "dependency") }
+      if (!owns()) return TOAST_SUPERSEDED
+      if (result.ok) {
+        // An older catalog request cannot overwrite the mutation's fresh observation.
+        shared.catalogFlight = undefined
+        const answer = await callCatalog()
+        if (!owns()) return TOAST_SUPERSEDED
+        if (answer.ok) {
+          shared.catalog = answer.catalog
+          shared.refresh = undefined
+          await store.dispatch({ type: "models.observed", actor: "system", models: answer.catalog.models }).isPersisted.promise
+          refreshCredentialForms(answer.catalog)
+        } else shared.refresh = { state: "failed", failure: answer.failure }
+      }
+      if (!owns()) return TOAST_SUPERSEDED
+      shared.credentialRequests = shared.credentialRequests.map(row => row.requestId !== pending.requestId ? row : {
+        ...pending, state: result.ok ? "completed" : "failed", ...(result.ok ? {} : { failure: result.failure, fault: result.fault })
+      })
+      await render("system", false, unresolved() ?? standing())
+      return result.ok ? true : result.failure.code
+    }).then(outcome => {
+      if (!owns()) return
+      shared.credentialFlights.delete(pending.requestId)
+      if (typeof outcome === "string") ctx.resolveToast(key, { status: "failed", detail: outcome,
+        action: pending.action === "enroll" ? { flow: "model.credential.new", label: "Retry" } : { flow: pending.action === "rotate" ? "model.credential.rotate" : "model.credential.remove", args: pending.name, label: "Retry" } })
+    })
+  }
+
+  const mutateModelCredential: ModelsController["mutateModelCredential"] = async (action, input, gesture) => {
+    const existing = shared.credentialRequests.find(row => row.name === input.name && row.state === "requested" && shared.credentialFlights.get(row.requestId) === ctx.accountEpoch)
+    if (existing) { gesture?.release(); return { value: "Requested" } }
+    const requestId = crypto.randomUUID()
+    const request = ModelCredentialRequestSchema.safeParse({ action, name: input.name, requestId,
+      ...(action === "enroll" ? { origin: input.origin } : {}), ...(action === "remove" ? {} : { value: gesture?.takeWriteOnly?.("value") }) })
+    if (!request.success) return "invalid · credential"
+    const pending: PendingCredential = { requestId, name: request.data.name, action, state: "requested", ...(action === "enroll" ? { origin: input.origin } : {}) }
+    shared.credentialRequests = [...shared.credentialRequests.filter(row => row.name !== pending.name), pending].slice(-64)
+    const persisted = render(ctx.commandActor, card() === undefined, standing())
+    // One transient request body; it is never part of the form, command, card or journal.
+    let body: string | undefined = JSON.stringify(request.data)
+    if ("value" in request.data) request.data.value = ""
+    credentialWork(pending, async () => {
+      const sending = body
+      body = undefined
+      const response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_CREDENTIAL_PATH}`, { method: "POST", headers: { "content-type": "application/json" }, body: sending })
+      const parsed = ModelCredentialResultSchema.safeParse(await response.json().catch(() => undefined))
+      return response.ok && parsed.success ? parsed.data : failedModelCredential({ code: "host_refused", refusal: null, status: response.status }, response.ok ? "bug" : "dependency")
+    }, persisted)
+    return { value: "Requested" }
+  }
+
   const resumeModels: ModelsController["resumeModels"] = () => {
+    shared.credentialRequests = card()?.payload.credentialRequests ?? shared.credentialRequests
+    for (const pending of shared.credentialRequests) {
+      if (pending.state !== "requested" || shared.credentialFlights.get(pending.requestId) === ctx.accountEpoch) continue
+      credentialWork(pending, async () => {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_CREDENTIAL_RECEIPT_PATH}?id=${encodeURIComponent(pending.requestId)}`)
+        const parsed = ModelCredentialReceiptSchema.safeParse(await response.json().catch(() => undefined))
+        return response.ok && parsed.success && parsed.data.state === "completed" ? parsed.data.result : failedModelCredential({ code: "interrupted" })
+      })
+    }
     const requested = card()?.payload.testing ?? []
     // A test is idempotent, so a persisted request is launched again rather than forgotten.
     for (const id of requested) {
@@ -418,5 +530,5 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     await refreshCatalog(false)
   }
 
-  return { listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, resumeModels, observeModels }
+  return { newModelCredential, mutateModelCredential, listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, resumeModels, observeModels }
 }

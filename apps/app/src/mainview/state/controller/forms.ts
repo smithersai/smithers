@@ -8,7 +8,7 @@ import type { AgentInvocation } from "../../flows/AgentInvocation"
 import type { CommandGesture } from "../../flows/CommandGesture"
 import type { CommandOutcome } from "../../flows/Commands"
 import type { FieldOption,FieldValue,FormDraft,FormField,FormHints,OptionProvider } from "../../flows/FlowForms"
-import { assembleArgs,declaredInput,draftFrom,formFieldsFor,missingFields,positionalRead,submissionPayload } from "../../flows/FlowForms"
+import { assembleArgs,declaredInput,draftFrom,formFieldsFor,missingFields,positionalRead,publicFormPayload,submissionPayload } from "../../flows/FlowForms"
 import { payloadFor } from "../../flows/SlashPayload"
 import { manifests } from "../../plugins/catalog"
 import { actorSharedState } from "../ActorBindings"
@@ -17,7 +17,7 @@ import type { Card } from "../AppState"
 import { knownRepositories } from "../RepoContext"
 import { fileOptions,fileTargetKey } from "../seams/tutorial2-file_open"
 import type { ControllerContext } from "./context"
-import { MODELS_CARD_ID } from "./models"
+import { MODELS_CARD_ID, credentialOptions } from "./models"
 import { setupQuestionCardId } from "./repositorySetup"
 import { setupGuideQuestions } from "./repositorySetupGuide"
 import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
@@ -71,6 +71,7 @@ export interface FormsController {
 }
 
 export interface FormsControllerDependencies {
+  readonly minimizeCard?: () => void
   readonly nextOrdinal: () => number
 }
 
@@ -125,6 +126,7 @@ export const decideFormFieldInput = (
   if (card.payload.submitting === true) return { error: `The form ${cardId} is being submitted.` }
   const field = card.payload.fields.find((candidate) => candidate.name === name)
   if (field === undefined) return { error: `The form has no field ${name}; its fields are ${card.payload.fields.map((candidate) => candidate.name).join(", ")}.` }
+  if (field.kind === "write-only") return { error: "Use the secure field." }
   const value = raw.trim()
   const { [name]: _cleared, ...rest } = card.payload.draft
   let draft: FormDraft = rest
@@ -237,12 +239,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
             .map((model) => ({ value: model.id, label: `${model.id} · ${model.modelId}` }))
         ]
       }
-      case "credentials":
-        return (listed()?.credentials ?? []).map((credential) =>
-          credential.present
-            ? { value: credential.name, label: credential.name }
-            : { value: credential.name, label: credential.name, disabled: true, reason: "missing" }
-        )
+      case "credentials": return credentialOptions(listed())
       case "seats":
         return (listed()?.seats ?? []).map((seat) => ({ value: seat.id, label: modelSeat(seat.id).label }))
     }
@@ -334,7 +331,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const read = "payload" in parsed
       ? { payload: parsed.payload, skipped: [] as ReadonlyArray<string> }
       : positionalRead(fields, hints, request.args)
-    let given = read.payload
+    let given = publicFormPayload(fields, read.payload, request.payloadField)
+    if (request.via === "agent" && (entry ?? ctx.commands.find(request.name))?.metadata.confirm !== undefined) fields = fields.filter(field => field.kind !== "write-only")
     if (request.name === "files.read") {
       /* Keep the selected repository and ask only for what is actually missing. */
       const repo = typeof given["repo"] === "string" ? given["repo"] : fileTargetKey(store)
@@ -370,7 +368,11 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const nestedPayload = request.payloadField === undefined ? {} : {
       payloadField: request.payloadField, inputSchema: Schema.toJsonSchemaDocument(input)
     }
-    const resolved = withOptions(fields, draft)
+    const host = collections.cards.get(MODELS_CARD_ID)
+    const enrollment = (host?.kind === "models" ? host.payload.enrollment : undefined) ??
+      (ctx.services?.bootstrap?.host === "cloud" ? { available: false as const, reason: "local_host_required" as const } : undefined)
+    const resolved = withOptions(fields, draft).map(field => request.name.startsWith("model.credential.") && field.kind === "write-only" && enrollment?.available === false
+      ? { ...field, disabledReason: enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" } : field)
     /*
      * THE FORM LAW's one sentence, and the two rules allowed to write it.
      *
@@ -416,6 +418,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
         if (open === true) store.dispatch({ type, actor: "user", open: false })
       }
     }
+    if (request.via === "user" && ctx.commandActor === "user" && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard?.()
     const existing = collections.cards.get(cardId)
     if (existing?.kind === "flow-form" && existing.payload.submitting === true) {
       return { cardId, missing: missingFields(existing.payload.fields, existing.payload.draft) }
@@ -502,7 +505,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     if (card === undefined) return `There is no form card ${cardId}.`
     if (card.status === "acted") return `The form ${cardId} was already submitted.`
     if (card.payload.submitting === true) return `The form ${cardId} is being submitted.`
-    const missing = missingFields(card.payload.fields, card.payload.draft)
+    const missing = missingFields(card.payload.fields.filter(field => field.kind !== "write-only" || gesture?.hasWriteOnly?.(field.name) !== true), card.payload.draft)
     if (missing.length > 0) {
       const labels = card.payload.fields.filter((field) => missing.includes(field.name)).map((field) => field.label)
       const error = `The form still needs: ${labels.join(", ")}.`
@@ -558,12 +561,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
         name: flow,
         payload,
         actor: asAgent ? "agent" : "user",
-        ...(!asAgent && gesture?.name === flow ? { gesture } : {}),
+        ...(!asAgent && gesture !== undefined ? { gesture: { ...gesture, name: flow } } : {}),
         ...(args === "" ? {} : { display: args }),
         ...(asAgent && continuation !== undefined ? { invocation: continuation } : {})
       })
     } catch (cause) {
-      outcome = { status: "failed", error: cause instanceof Error ? cause.message : String(cause) }
+      outcome = { status: "failed", error: card.payload.fields.some(field => field.kind === "write-only") ? "Submission failed." : cause instanceof Error ? cause.message : String(cause) }
     }
     if (ctx.disposed || (outcome.status === "failed" && outcome.persistenceFailed)) return describe(outcome)
     const current = formCard(cardId) ?? card

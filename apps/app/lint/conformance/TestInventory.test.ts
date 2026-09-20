@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url))
 const read = (path: string) => readFileSync(join(app, path), "utf8")
 const scripts: Record<string, string> = JSON.parse(read("package.json")).scripts
 const testFile = /\.(test|spec)\.[cm]?[jt]sx?$/
-const files = execFileSync("jj", ["file", "list", "apps/app"], {
+const files = execFileSync("rg", ["--files", "apps/app"], {
   cwd: root, encoding: "utf8"
 }).trim().split("\n").map((path) => path.slice("apps/app/".length)).filter((path) => testFile.test(path))
 

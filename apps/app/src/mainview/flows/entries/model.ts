@@ -40,6 +40,27 @@ const ModelRecord = Schema.Struct({
  * Worker's refusal is typed onto the card.
  */
 export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "model.credential.new", summary: "Add credential", input: NoPayload, handler: () => actions.newModelCredential() }),
+  flow({
+    name: "model.credential.enroll", summary: "Add credential", args: "[--name <NAME>] [--origin <origin>]",
+    input: Schema.Struct({ name: Schema.String, origin: Schema.String, value: Schema.optional(Schema.String) }),
+    form: { submitLabel: "Add", args: payload => line(flag(payload, "name"), flag(payload, "origin")),
+      fields: { origin: { label: "Origin" }, value: { label: "API key", kind: "write-only", required: true } } },
+    confirm: payload => `add credential ${String(payload["name"])} for ${String(payload["origin"])}`,
+    handler: (input, _signal, _call, gesture) => actions.mutateModelCredential("enroll", input, gesture)
+  }),
+  flow({
+    name: "model.credential.rotate", summary: "Rotate credential", args: "<name>",
+    input: Schema.Struct({ name: Schema.String, value: Schema.optional(Schema.String) }),
+    form: { submitLabel: "Rotate", fields: { value: { label: "API key", kind: "write-only", required: true } } },
+    confirm: payload => `rotate credential ${String(payload["name"])}`,
+    handler: (input, _signal, _call, gesture) => actions.mutateModelCredential("rotate", input, gesture)
+  }),
+  flow({
+    name: "model.credential.remove", summary: "Remove credential", args: "<name>",
+    input: Schema.Struct({ name: Schema.String }), confirm: payload => `remove credential ${String(payload["name"])}`,
+    handler: input => actions.mutateModelCredential("remove", input)
+  }),
   flow({
     name: "model.list",
     summary: "Show the models and the seats they answer for",

@@ -49,7 +49,7 @@ import {
 import type { Parsed } from "./SlashPayload"
 import { payloadFor, unknownFlag } from "./SlashPayload"
 import { namesPractice } from "../state/practice/PracticeRepository"
-import { formFieldsFor } from "./FlowForms"
+import { assembleArgs, formFieldsFor, publicFormPayload } from "./FlowForms"
 
 export type { CommandActions, CommandResult } from "./Flows"
 
@@ -418,8 +418,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
             tracedArgs = `${variable}=[REDACTED]${typeof parsed.payload.repo === "string" ? ` ${parsed.payload.repo}` : ""}`
           }
         } else if (name === "form.set") {
-          // Form schemas have no sensitivity declaration yet. Mask every
-          // value, including arbitrary card/field targets, without guessing.
+          // Mask every form.set value, including arbitrary card/field targets.
+          // Write-only controls never enter this path in the first place.
           tracedArgs = `${parsed.payload.cardId} ${parsed.payload.field} [REDACTED]`
         }
       }
@@ -450,6 +450,12 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     inheritedGesture?: CommandGesture
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
+    const declared = find(name)
+    if (named !== undefined && declared !== undefined) {
+      const fields = formFieldsFor(declared.input, declared.metadata.form)
+      named = publicFormPayload(fields, named)
+      if (fields.some(field => field.kind === "write-only")) args = assembleArgs(fields, declared.metadata.form, named)
+    }
     const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
       source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
     const gesture = inheritedGesture?.name === name ? inheritedGesture
@@ -640,7 +646,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     // JSON can parse successfully while omitting a required schema field.
     // Let the form collect it before the binding can produce an input error.
     const fields = formFieldsFor(target.input, target.metadata.form)
-    if ("error" in parsed || fields.some(field => field.required && parsed.payload[field.name] === undefined)) {
+    if ("error" in parsed || fields.some(field => field.required && (field.kind === "write-only"
+      ? invoker !== "agent" && gesture?.hasWriteOnly?.(field.name) !== true
+      : parsed.payload[field.name] === undefined))) {
       /*
        * THE FORM LAW: a line without the flow's required input renders the
        * flow's form — derived from its input schema, prefilled with what the

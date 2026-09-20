@@ -5,6 +5,8 @@ export interface CommandGesture {
   readonly name: string
   readonly openExternal?: (url: string) => Promise<boolean>
   readonly copyText?: (text: string) => Promise<void>
+  readonly hasWriteOnly?: (field: string) => boolean
+  readonly takeWriteOnly?: (field: string) => string | undefined
   readonly release: () => void
 }
 export const FlowGesture = Context.Reference<CommandGesture | undefined>("ui/flows/FlowGesture", { defaultValue: () => undefined })
@@ -42,5 +44,17 @@ export const reserveBrowserCommandGesture = (name: string): CommandGesture | und
     name,
     copyText: text => { consumed = true; resolve(new Blob([text], { type: "text/plain" })); return writing },
     release: () => { if (!consumed) reject(new Error("The command was not accepted")) }
+  }
+}
+
+/** Values live only in this one-shot closure, never in a serializable command. */
+export const writeOnlyGesture = (name: string, input: Record<string, string>): CommandGesture => {
+  const values = new Map(Object.entries(input))
+  for (const key of Object.keys(input)) delete input[key]
+  return {
+    name,
+    hasWriteOnly: field => (values.get(field)?.length ?? 0) > 0,
+    takeWriteOnly: field => { const value = values.get(field); values.delete(field); return value },
+    release: () => values.clear()
   }
 }

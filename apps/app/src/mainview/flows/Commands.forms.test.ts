@@ -281,7 +281,8 @@ describe("THE FORM LAW — every flow's form round-trips through its own grammar
         else sample[field.name] = "x1"
       }
       const draft = draftFrom(fields, sample)
-      if (missingFields(fields, draft).length > 0) failures.push(`${name}: the sample left ${missingFields(fields, draft).join(", ")} missing`)
+      const publicFields = fields.filter(field => field.kind !== "write-only")
+      if (missingFields(publicFields, draft).length > 0) failures.push(`${name}: the sample left ${missingFields(publicFields, draft).join(", ")} missing`)
       const args = assembleArgs(fields, entry.metadata.form, { ...draft })
       const parsed = payloadFor(name, args === "" ? undefined : args)
       if ("error" in parsed) failures.push(`${name}: "${args}" → ${parsed.error}`)
@@ -361,6 +362,10 @@ describe("THE FORM LAW — every flow's form submits its own named payload", () 
       }
       const kept = decoded.value as Record<string, unknown>
       for (const field of fields) {
+        if (field.kind === "write-only") {
+          if (field.name in kept) failures.push(`${name}.${field.name}: write-only value entered the payload`)
+          continue
+        }
         if (JSON.stringify(kept[field.name]) !== JSON.stringify(given[field.name])) {
           failures.push(`${name}.${field.name}: submitted ${JSON.stringify(given[field.name])}, ran with ${JSON.stringify(kept[field.name])}`)
         }

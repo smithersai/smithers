@@ -5,6 +5,31 @@ import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { FlowFormCardBody } from "./FlowFormCards"
 import { payloadFor } from "../flows/SlashPayload"
+import { ControllerContext } from "../ControllerContext"
+import type { AppController } from "../state/AppController"
+import type { FlowSubmission } from "../flows/Commands"
+
+test("a write-only input stays outside form.set, clears before submit, and travels only through the gesture", () => {
+  const requests: FlowSubmission[] = []
+  const calls: string[] = []
+  const controller = { submitCommand: async (request: FlowSubmission) => {
+    expect(document.querySelector<HTMLInputElement>("input[type=password]")?.value).toBe("")
+    requests.push(request)
+    return { status: "executed" }
+  } } as unknown as AppController
+  const host = mount(<ControllerContext value={controller}><FlowFormCardBody card={formCard({
+    flow: "model.credential.enroll", via: "user", fields: [{ name: "value", label: "API key", kind: "write-only", required: true }], draft: {}, given: {}
+  })} onRunCommand={name => calls.push(name)} /></ControllerContext>)
+  input(host, "flow-form-value", "dom-private-fixture")
+  expect(calls).toEqual([])
+  expect(host.innerHTML).not.toContain("dom-private-fixture")
+  flushSync(() => host.querySelector<HTMLButtonElement>("[data-testid=flow-form-submit]")!.click())
+  expect(requests).toHaveLength(1)
+  expect(JSON.stringify(requests)).not.toContain("dom-private-fixture")
+  expect(requests[0]?.name).toBe("form.submit")
+  expect(requests[0]?.gesture?.takeWriteOnly?.("value")).toBe("dom-private-fixture")
+  expect(requests[0]?.gesture?.takeWriteOnly?.("value")).toBeUndefined()
+})
 
 /*
  * THE FORM LAW (flow-forms.md): the generic form card. One control per
@@ -321,7 +346,6 @@ test("invoking a persisted form again hands focus back without refocusing on dra
  * restored form, an agent's form, and a draft edit never take the keyboard.
  */
 import { ControllerTestProvider } from "../ControllerContext"
-import type { AppController } from "../state/AppController"
 
 const handoffFor = (cardId: string | undefined) => {
   let pending = cardId

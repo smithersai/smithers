@@ -44,6 +44,7 @@ export type CommandActions =
     | "slashItems"
     | "slashTree"
     | "runCommand"
+    | "submitCommand"
     | "commands"
     | "tappedFetch"
     // Feature flags and the download URL are the composition root's configuration, never an action.

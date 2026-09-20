@@ -1,3 +1,4 @@
+import type { FlowSubmission } from "../flows/Commands"
 import { createRepositoryReadiness } from "./controller/repositoryReadiness"
 import { lostActRefusal } from "./BrowserWriteFailure"
 import { openRequestedRepo } from "../RepoLink"
@@ -186,6 +187,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listPlugins: () => { readonly value: string }
   readonly askReset: () => void
   readonly cancelReset: () => void
+  readonly submitCommand: (submission: FlowSubmission) => Promise<import("../flows/Commands").CommandOutcome>
   readonly runCommand: (name: string, args?: string) => boolean
   readonly connectLocalRepository: (access: RepositoryAccess) => Promise<void>
   readonly makeConnectorReadOnly: (id: string) => string | void
@@ -316,6 +318,8 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly submitForm: FormsController["submitForm"]
   readonly dismissCard: FormsController["dismissCard"]
   /* Configured models and the seats they fill; see controller/models.ts. */
+  readonly newModelCredential: ModelsController["newModelCredential"]
+  readonly mutateModelCredential: ModelsController["mutateModelCredential"]
   readonly listModels: ModelsController["listModels"]
   readonly showModel: ModelsController["showModel"]
   readonly newModel: ModelsController["newModel"]
@@ -952,8 +956,10 @@ export const createAppController = (
     notePtyExit,
     installKeyboard
   } = actors.pair(ctx, (context) => createTabsController(context))
-  const { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff: formFocus } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal }))
+  const { renderFlowForm, setFormField, submitForm, dismissCard, focusHandoff: formFocus } = actors.pair(ctx, (context) => createFormsController(context, { nextOrdinal: store.nextOrdinal, minimizeCard }))
   const {
+    newModelCredential,
+    mutateModelCredential,
     listModels,
     showModel,
     newModel,
@@ -1608,6 +1614,8 @@ export const createAppController = (
     setFormField,
     submitForm,
     dismissCard,
+    newModelCredential,
+    mutateModelCredential,
     listModels,
     showModel,
     newModel,
@@ -1927,6 +1935,13 @@ export const createAppController = (
   // The scope stops pumps, then releases consumers before their hosts.
   const dispose = ctx.dispose
 
+  const submitCommand: AppController["submitCommand"] = async submission => {
+    const saidBefore = latestOrdinal(store.collections)
+    const outcome = await commands.submit(submission).catch(() => ({ status: "failed" as const, error: "Submission failed" }))
+    if (!ctx.disposed) surfaceCommandFailure(submission.name, outcome, saidBefore)
+    return outcome
+  }
+
   const runCommand = (name: string, args?: string): boolean => {
     if (ctx.disposed) return false
     if (commands.find(name) === undefined) return false
@@ -1958,6 +1973,7 @@ export const createAppController = (
     slashItems: (needle) => commands.slashItems(needle),
     slashTree: (needle) => commands.slashTree(needle),
     runCommand,
+    submitCommand,
     dispose
   }
 }

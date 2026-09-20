@@ -24,7 +24,7 @@ export const declaredInput = (document: unknown): Schema.Top | undefined => {
   } catch { return undefined }
 }
 
-export type FieldKind = "text" | "textarea" | "number" | "boolean" | "select"
+export type FieldKind = "text" | "textarea" | "number" | "boolean" | "select" | "write-only"
 
 /**
  * The seams a select may draw its options from (NO INVENTION: an option is a
@@ -62,6 +62,7 @@ export interface FieldOption {
   /** The human cannot pick it; `reason` says why (not installed, no credential). */
   readonly disabled?: boolean
   readonly reason?: string
+  readonly flow?: "model.credential.new"
 }
 
 /** What a flow may say about one of its fields beyond what the schema already says. */
@@ -102,6 +103,7 @@ export interface FormField {
   readonly kind: FieldKind
   readonly required: boolean
   readonly placeholder?: string
+  readonly disabledReason?: string
   readonly options?: ReadonlyArray<FieldOption>
   readonly optionsFrom?: OptionProvider
 }
@@ -370,6 +372,7 @@ export const submissionPayload = (
     Object.entries(given).filter(([name]) => !represented.has(name))
   )
   for (const field of fields) {
+    if (field.kind === "write-only") continue
     const property = shape.get(field.name)
     const value = draft[field.name]
     if (value !== undefined) {
@@ -409,6 +412,7 @@ const coerce = (field: FormField, value: unknown): FieldValue | undefined => {
 export const draftFrom = (fields: ReadonlyArray<FormField>, given: Readonly<Record<string, unknown>>): FormDraft => {
   const draft: Record<string, FieldValue> = {}
   for (const field of fields) {
+    if (field.kind === "write-only") continue
     const value = coerce(field, given[field.name] ?? (field.kind === "boolean" && field.required ? false : undefined))
     if (value !== undefined) draft[field.name] = value
   }
@@ -435,6 +439,7 @@ export const assembleArgs = (
   hints: FormHints | undefined,
   payload: Readonly<Record<string, unknown>>
 ): string => {
+  payload = publicFormPayload(fields, payload)
   if (hints?.args !== undefined) return hints.args(payload).trim()
   return [...fields.filter((field) => field.name === "sourceCard"), ...fields.filter((field) => field.name !== "sourceCard")]
     .flatMap((field) => {
@@ -446,4 +451,19 @@ export const assembleArgs = (
       return text === "" ? [] : [field.name === "sourceCard" ? `sourceCard=${text}` : text]
     })
     .join(" ")
+}
+
+/** Write-only properties are never an input to a durable command or form. */
+export const publicFormPayload = (fields: ReadonlyArray<FormField>, payload: Readonly<Record<string, unknown>>, payloadField?: string): Record<string, unknown> => {
+  // Leave other forms' input (including malformed input their schema refuses)
+  // untouched. Object.entries would normalize a non-object into a valid map.
+  if (!fields.some(field => field.kind === "write-only")) return payload
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return {}
+  if (payloadField !== undefined) {
+    const nested = payload[payloadField]
+    return nested !== null && typeof nested === "object" && !Array.isArray(nested)
+      ? { ...payload, [payloadField]: publicFormPayload(fields, nested as Record<string, unknown>) } : { ...payload }
+  }
+  const privateNames = new Set(fields.filter(field => field.kind === "write-only").map(field => field.name))
+  return Object.fromEntries(Object.entries(payload).filter(([name]) => !privateNames.has(name)))
 }

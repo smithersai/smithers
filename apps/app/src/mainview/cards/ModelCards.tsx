@@ -216,6 +216,28 @@ const Seats = ({ card, onRunCommand }: { readonly card: ModelsCard; readonly onR
     </table>
   )
 
+const Credentials = ({ card, onRunCommand }: { readonly card: ModelsCard; readonly onRunCommand: RunCommand }) => {
+  const enrollment = card.payload.enrollment
+  if (!enrollment) return null
+  return <section aria-label="Credentials" data-testid="model-credentials">
+    <table className="secrets-table"><tbody>{card.payload.credentials.filter(row => row.managed).map(row =>
+      <tr key={row.name} data-credential-name={row.name} data-present={row.present}>
+        <th scope="row">{row.name}</th><td>{row.origins.join(", ")}</td>
+        <td><Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.credential.rotate", row.name)}>Rotate</Button>
+          {row.present ? <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.credential.remove", row.name)}>Remove</Button> : null}</td>
+      </tr>)}</tbody></table>
+    <Button size="sm" disabled={!enrollment.available} title={enrollment.available ? undefined : enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable"}
+      data-testid="model-credential-new" {...flowAction(onRunCommand, "model.credential.new")}>Add credential</Button>
+  </section>
+}
+
+const CredentialFailures = ({ card, onRunCommand }: { readonly card: ModelsCard; readonly onRunCommand: RunCommand }) => <>
+  {(card.payload.credentialRequests ?? []).filter(row => row.state === "failed").map(row => <div key={row.requestId} role="alert" data-testid="credential-failure" data-credential-name={row.name}>
+    {row.name} · {row.failure?.code}
+    <Button size="sm" variant="ghost" {...flowAction(onRunCommand, row.action === "enroll" ? "model.credential.new" : row.action === "rotate" ? "model.credential.rotate" : "model.credential.remove", row.action === "enroll" ? undefined : row.name)}>Retry</Button>
+  </div>)}
+</>
+
 export const ModelsCardBody = ({
   card,
   onRunCommand,
@@ -227,16 +249,16 @@ export const ModelsCardBody = ({
 }) => {
   const { models, selected, error } = card.payload
   const create = <Button size="sm" data-testid="model-new" {...flowAction(onRunCommand, "model.new")}>New</Button>
-  const alert = error === undefined ? null : <p className="sui-approval-error" role="alert" data-testid="models-error">{error}</p>
+  const alert = <>{error === undefined ? null : <p className="sui-approval-error" role="alert" data-testid="models-error">{error}</p>}<CredentialFailures card={card} onRunCommand={onRunCommand} /></>
   const empty = <p className="world-card-empty" data-testid="models-empty">No models.</p>
   if (presentation === "embedded") {
     const attention = attentionOf(card, onRunCommand)
-    if (attention !== undefined) return <div className="models-card" data-presentation="embedded">{attention}{alert}</div>
+    if (attention !== undefined) return <div className="models-card" data-presentation="embedded" data-credential-state={card.payload.credentialRequests?.at(-1)?.state}>{attention}{alert}</div>
     // The payload lists the host's rows first; the few rows shown here lead with the one just saved or tested, then the user's own, the ones with acts to press.
     const first = [...models.filter((model) => model.id === selected), ...models.filter((model) => model.id !== selected && model.builtin !== true),
       ...models.filter((model) => model.id !== selected && model.builtin === true)]
     return (
-      <div className="models-card" data-presentation="embedded">
+      <div className="models-card" data-presentation="embedded" data-credential-state={card.payload.credentialRequests?.at(-1)?.state}>
         {models.length === 0 ? empty : (
           <ul className="workflow-list" data-testid="models-list">
             {first.slice(0, EMBEDDED_ROWS).map((model) => (
@@ -252,7 +274,7 @@ export const ModelsCardBody = ({
   }
   const current = models.find((model) => model.id === selected) ?? models[0]
   return (
-    <div className="models-card models-pane" data-presentation="maximized">
+    <div className="models-card models-pane" data-presentation="maximized" data-credential-state={card.payload.credentialRequests?.at(-1)?.state}>
       <div className="models-pane-list">
         {models.length === 0 ? empty : (
           <ul className="workflow-list" data-testid="models-list">
@@ -266,6 +288,7 @@ export const ModelsCardBody = ({
       <div className="models-pane-main">
         {current === undefined ? null : <Detail model={current} card={card} onRunCommand={onRunCommand} />}
         <Seats card={card} onRunCommand={onRunCommand} />
+        <Credentials card={card} onRunCommand={onRunCommand} />
         {alert}
       </div>
     </div>

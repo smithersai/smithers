@@ -1,6 +1,8 @@
 import { MODEL_CATALOG_PATH,MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { ConfiguredModel,ModelCatalog,ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
 import { MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
+import { MODEL_CREDENTIAL_PATH, MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { writeOnlyGesture } from "../../flows/CommandGesture"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach,expect,test } from "bun:test"
 import type { Card } from "../AppState"
@@ -58,6 +60,61 @@ async function setup(answer: Answer, storage: StorageApi = memoryStorage(), serv
 const save = (t: Awaited<ReturnType<typeof setup>>, model: ConfiguredModel = mine) =>
   t.store.dispatch({ type: "model.saved", actor: "user", model }).isPersisted.promise
 const tick = (ms = 15) => new Promise((resolve) => setTimeout(resolve, ms))
+
+test("credential work acknowledges an unresolved launch, deduplicates, keeps chat usable, and persists no value", async () => {
+  let release!: (response: Response) => void
+  const t = await setup(url => url === MODEL_CREDENTIAL_PATH ? new Promise(resolve => { release = resolve }) : Promise.resolve(Response.json(catalog)))
+  const input = { name: "ENROLLED", origin: "http://127.0.0.1:5555" }
+  expect(await Promise.race([t.models.mutateModelCredential("enroll", input, writeOnlyGesture("model.credential.enroll", { value: "private-test-key" })), tick(100).then(() => "blocked")])).toEqual({ value: "Requested" })
+  await tick()
+  expect(t.card()?.payload.credentialRequests?.[0]?.state).toBe("requested")
+  expect(JSON.stringify([...t.store.collections.cards.values(), ...t.store.collections.transitions.values()])).not.toContain("private-test-key")
+  await t.models.mutateModelCredential("enroll", input, writeOnlyGesture("model.credential.enroll", { value: "duplicate-private-key" }))
+  await t.store.dispatch({ type: "composer.changed", actor: "user", draft: "still usable" }).isPersisted.promise
+  expect(t.calls.filter(call => call.path === MODEL_CREDENTIAL_PATH)).toHaveLength(1)
+  expect([...t.store.collections.toasts.values()].find(row => row.key.startsWith("model.credential:"))?.status).toBe("running")
+  release(Response.json({ ok: true, credential: { name: input.name, origins: [input.origin], present: true, managed: true } }))
+  await t.settled()
+  expect(t.card()?.payload.credentialRequests?.[0]?.state).toBe("completed")
+  expect([...t.store.collections.toasts.values()].find(row => row.key.startsWith("model.credential:"))?.status).toBe("ok")
+})
+
+test("unknown credential receipts fail visibly after reload without replaying a key", async () => {
+  const t = await setup(url => Promise.resolve(Response.json(url.startsWith(MODEL_CREDENTIAL_RECEIPT_PATH) ? { state: "unknown" } : catalog)))
+  await t.models.listModels(); await t.settled()
+  const card = t.card()!
+  await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { ...card.payload, credentialRequests: [
+    { name: "LOST", action: "enroll", origin: "http://127.0.0.1:5555", requestId: "lost-request", state: "requested" }
+  ] } } }).isPersisted.promise
+  t.models.resumeModels(); await t.settled()
+  expect(t.card()?.payload.credentialRequests?.[0]).toMatchObject({ state: "failed", failure: { code: "interrupted" } })
+  expect(t.calls.some(call => call.path === MODEL_CREDENTIAL_PATH)).toBe(false)
+})
+
+test("credential toast waits for reconciliation, and a stale account cannot settle it", async () => {
+  let release!: (response: Response) => void
+  const t = await setup(url => url === MODEL_CREDENTIAL_PATH
+    ? Promise.resolve(Response.json({ ok: true, credential: { name: "ENROLLED", origins: ["https://provider.example"], present: true, managed: true } }))
+    : new Promise(resolve => { release = resolve }))
+  await t.models.mutateModelCredential("enroll", { name: "ENROLLED", origin: "https://provider.example" }, writeOnlyGesture("model.credential.enroll", { value: "private-fixture" }))
+  await tick()
+  expect(t.card()?.payload.credentialRequests?.[0]?.state).toBe("requested")
+  expect([...t.store.collections.toasts.values()].find(row => row.key.startsWith("model.credential:"))?.status).toBe("running")
+  Object.assign(t.ctx, { accountEpoch: 1 })
+  release(Response.json(catalog))
+  await t.settled()
+  expect(t.card()?.payload.credentialRequests?.[0]?.state).toBe("requested")
+  expect(t.store.collections.models.has("jev")).toBe(false)
+})
+
+test("credential transport failure stays typed, retryable and contains no exception text", async () => {
+  const t = await setup(async () => { await tick(); throw new Error("private-key-error-fixture") })
+  await t.models.mutateModelCredential("rotate", { name: "ENROLLED" }, writeOnlyGesture("model.credential.rotate", { value: "private-key-error-fixture" }))
+  await t.settled()
+  expect(t.card()?.payload.credentialRequests?.[0]).toMatchObject({ state: "failed", failure: { code: "host_refused", status: null, refusal: null }, fault: "dependency" })
+  expect([...t.store.collections.toasts.values()].find(row => row.key.startsWith("model.credential:"))).toMatchObject({ status: "failed", action: { flow: "model.credential.rotate", args: "ENROLLED", label: "Retry" } })
+  expect(JSON.stringify([...t.store.collections.cards.values(), ...t.store.collections.transitions.values(), ...t.store.collections.toasts.values()])).not.toContain("private-key-error-fixture")
+})
 /** A host whose test route answers only when the test says so. */
 const held = () => {
   const releases: Array<(response: Response) => void> = []

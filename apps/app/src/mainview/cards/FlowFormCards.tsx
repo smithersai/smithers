@@ -4,6 +4,7 @@ import { useCallback, useContext, useRef, type KeyboardEvent } from "react"
 import { ControllerContext } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
+import { writeOnlyGesture } from "../flows/CommandGesture"
 import { flowArgs } from "../flows/FlowArgs"
 
 /*
@@ -70,7 +71,7 @@ const focusNeighbor = (form: HTMLFormElement): void => {
 
 /** The required fields the draft has not filled (a boolean is answered either way). */
 export const unfilled = (payload: FlowFormCard["payload"]): ReadonlyArray<FlowFormField> =>
-  payload.fields.filter((field) => field.required && field.kind !== "boolean" && blank(payload.draft[field.name]))
+  payload.fields.filter((field) => field.required && field.kind !== "boolean" && field.kind !== "write-only" && blank(payload.draft[field.name]))
 
 export const FlowFormCardBody = ({
   card,
@@ -83,9 +84,10 @@ export const FlowFormCardBody = ({
   const settled = card.status === "acted"
   const busy = card.payload.submitting === true
   const commit = (field: string, value: string): void => onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field, value }))
-  const complete = unfilled(card.payload).length === 0
+  const complete = unfilled(card.payload).length === 0 && fields.every(field => field.disabledReason === undefined)
   // Static previews and isolated tests mount without a controller; they keep the button handoff only.
-  const handoff = useContext(ControllerContext)?.formFocus
+  const controller = useContext(ControllerContext)
+  const handoff = controller?.formFocus
   // Runs on mount and whenever the request (ordinal) or the submission state
   // changes, never on a draft edit: the DOM keeps in-flight editing and focus.
   const bindFocus = useCallback((node: HTMLFormElement | null): void => {
@@ -141,7 +143,15 @@ export const FlowFormCardBody = ({
         // Move before React disables the active input: browsers clear focus
         // synchronously on disable, before the updated ref can observe it.
         if (event.currentTarget.contains(event.currentTarget.ownerDocument.activeElement)) holdFocus(event.currentTarget)
-        onRunCommand("form.submit", card.id)
+        const privateFields = [...event.currentTarget.querySelectorAll<HTMLInputElement>("input[type=password][data-write-only]")]
+        if (privateFields.length === 0) onRunCommand("form.submit", card.id)
+        else {
+          const values: Record<string, string> = {}
+          for (const input of privateFields) { values[input.dataset.writeOnly!] = input.value; input.value = "" }
+          const gesture = writeOnlyGesture("form.submit", values)
+          if (controller) void controller.submitCommand({ name: "form.submit", payload: { cardId: card.id }, actor: "user", gesture }).finally(gesture.release)
+          else gesture.release()
+        }
       }
     }}>
       {fields.map((field) => {
@@ -161,7 +171,9 @@ export const FlowFormCardBody = ({
         return (
           <label key={field.name} className="flow-form-row" data-field={field.name} data-kind={field.kind} data-required={field.required}>
             <span>{field.label}</span>
-            {field.kind === "select" && options.length > 0 ?
+            {field.disabledReason !== undefined ? <select aria-label={field.label} data-testid={testId} disabled value="">
+              <option value="" disabled>{field.label} · {field.disabledReason}</option>
+            </select> : field.kind === "select" && options.length > 0 ?
               (
                 <select
                   aria-label={field.label}
@@ -170,7 +182,11 @@ export const FlowFormCardBody = ({
                   value={text}
                   required={field.required}
                   disabled={settled || busy}
-                  onChange={(event) => commit(field.name, event.currentTarget.value)}
+                  onChange={(event) => {
+                    const option = options.find(option => option.value === event.currentTarget.value)
+                    if (option?.flow) { event.currentTarget.value = text; onRunCommand(option.flow) }
+                    else commit(field.name, event.currentTarget.value)
+                  }}
                 >
                   {/* The unpicked state: a select must be able to say "nothing yet" without inventing a default. */}
                   {options.some((option) => option.value === text) ? null : <option value="">{""}</option>}
@@ -181,6 +197,10 @@ export const FlowFormCardBody = ({
                   ))}
                 </select>
               ) :
+              field.kind === "write-only" ?
+              <input type="password" aria-label={field.label} data-testid={testId} data-write-only={field.name}
+                autoComplete="new-password" spellCheck={false} required={field.required} disabled={settled || busy}
+                onKeyDown={submitOnEnter} /> :
               field.kind === "textarea" ?
               <textarea aria-label={field.label}
                 data-testid={testId} ref={restoreDraft} defaultValue={text} placeholder={field.placeholder} rows={12} required={field.required} disabled={settled || busy}
@@ -232,6 +252,7 @@ export const FlowFormCardBody = ({
           <Button variant="ghost" size="sm" data-testid="flow-form-cancel" disabled={busy} {...cancel} onClick={(event) => {
             // The card leaves with this act; a keyboard user's focus moves on before it does.
             if (event.currentTarget.form?.contains(event.currentTarget.ownerDocument.activeElement) === true) focusNeighbor(event.currentTarget.form)
+            event.currentTarget.form?.querySelectorAll<HTMLInputElement>("input[type=password][data-write-only]").forEach(input => { input.value = "" })
             cancel.onClick()
           }}>
             Cancel

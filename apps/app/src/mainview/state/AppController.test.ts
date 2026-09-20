@@ -167,6 +167,7 @@ describe("the controller's command surface", () => {
       "slashItems",
       "slashTree",
       "runCommand",
+      "submitCommand",
       "dispose"
     ]
     expect(members.sort()).toEqual([...compositionRoot].sort())

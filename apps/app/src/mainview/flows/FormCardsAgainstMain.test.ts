@@ -220,10 +220,16 @@ const shapesFor = (names: ReadonlyArray<string>): ReadonlyArray<readonly [string
 }
 
 const sweep = async (): Promise<ReadonlyArray<Row>> => {
-  const { store, controller } = await boot()
+  const initial = await boot()
+  const entries = [...initial.controller.commands.entries()]
+  await initial.controller.dispose()
   const rows: Array<Row> = []
-  try {
-    for (const entry of controller.commands.entries()) {
+  // Each flow still exercises every shape against the same fixture. Bound its
+  // persistence history here instead of queueing the whole registry's writes
+  // in one store; the baseline and all differential assertions stay identical.
+  for (const entry of entries) {
+    const { store, controller } = await boot()
+    try {
       const flow = nameOf(entry)
       const fields = entry.input === undefined ? [] : formFieldsFor(entry.input, entry.metadata.form)
       for (const [shape, args] of shapesFor(fields.map((field) => field.name))) {
@@ -243,9 +249,9 @@ const sweep = async (): Promise<ReadonlyArray<Row>> => {
           rows.push({ flow, shape, args, rendered: false, threw: String(cause), missing: null, fields: null, draft: null, error: null })
         }
       }
+    } finally {
+      await controller.dispose()
     }
-  } finally {
-    await controller.dispose()
   }
   return rows
 }
@@ -317,7 +323,7 @@ const DECLARED: ReadonlyArray<DeclaredMove> = [
   }
 ]
 
-/* One boot for the whole file: the sweep is the expensive thing, and every test below reads the same rows. */
+/* One exhaustive sweep for the whole file; every test below reads the same rows. */
 let swept: Promise<ReadonlyArray<Row>> | undefined
 const swipe = (): Promise<ReadonlyArray<Row>> => (swept ??= sweep())
 
