@@ -46,19 +46,23 @@
   write while `awaitSettled` had nothing to wait on. The journal then read
   `control.run.completed` ahead of `projection-started`, the copied
   `flows.engine.run-decision` and `projection-settled`, which is the fold that
-  reports `completed` with no output. A launch now registers the hold before
-  the executor runs, releases it when the acceptance is not `accepted`, when
-  the launch fails, when no observation is coming and when the host scope
-  closes first, and the observation adopts it.
+  reports `completed` with no output. A launch, and a resume taken up through
+  the executor port, now register the hold before the executor runs, release it
+  when the acceptance is not `accepted`, when the call fails, when no
+  observation is coming and when the host scope closes first, and the
+  observation adopts it.
 
   The scope of the ordering, exactly: every terminal `completed` or `failed`
   that `AgentSession.settle` or `settleDriverFailure` writes waits for this
-  run's `control.engine.projection-settled`, including when the run settles
-  before its observation is registered, bounded by a 30 second grace that
-  records in the journal which wait gave up. One terminal write stays
-  unordered, `ControlLive.reconcileTerminal` in `@smthrs/control`, which
-  `Control.cancel` reaches only when it finds a run another process already
-  completed without settling the control row. Ordering that one needs a
+  run's `control.engine.projection-settled` for as long as this host holds the
+  run, which now includes a run that settles before its observation is
+  registered, bounded by a 30 second grace that records in the journal which
+  wait gave up. Two terminal writes stay outside it: `reconcileTerminal` in
+  `@smthrs/control`, which `Control.cancel` reaches on a run another process
+  already completed without settling the control row, and a re-drive taken up
+  by AgentSession's own resume bridge, which is how `Control.resume` reaches a
+  host and which registers no hold, so a run resumed before this host's
+  recovery has admitted it is not held. Ordering the first needs a
   `ControlExecutor` port, because the supervisor is internal to `@smthrs/cli`
   while `ControlLive` lives in `@smthrs/control` and can reach no observation
   from there.
