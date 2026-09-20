@@ -14,20 +14,21 @@ const flowText = (failure: boolean): string => [
   'capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]',
   "model: coding/implement",
   "budget:",
-  "  tokens: 80000",
+  "  tokens: 200000",
   `  milliseconds: ${failure ? 30000 : 600000}`,
   "---", "",
   failure
-    ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 120" and timeoutMs 150000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
+    ? 'Read README.md in one cell and print its content. In the NEXT cell call bash with command "sleep 45" and timeoutMs 60000. Do not write any files. This subject intentionally exceeds its run budget. Do not finish early.'
     : [
       "Append exactly the marker from the arguments to README.md. Preserve all original bytes and add one final newline.",
       "Use one numbered step per model response, one JavaScript cell per step. Never combine steps in one response.",
       '1. Read README.md with ctx.call("read", {path:"README.md"}); save the returned content in a variable and print it. Do not write yet.',
-      '2. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:220000}) and print the result. This deliberate three-minute check creates a live inspection interval. Its marker assertion must fail before the edit.',
-      '3. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the marker to the saved text. read.content omits its final LF, so append one newline before and after the marker.',
-      `4. In each of the next three responses write one of ${PIN_FILES.join(", ")} with ctx.call("write", {path:..., content:marker+"\\n"}). These three files record the same marker. Use a separate response for each file.`,
-      '5. In the next response run the exact same bun test command with timeoutMs 220000 and print the result. It must pass after the edit.',
-      '6. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
+      '2. In the next response, create the live observation interval: make three sequential bash calls in one cell, with commands "sleep 90; echo interval-1", "sleep 90; echo interval-2", and "sleep 90; echo interval-3", each with timeoutMs 110000. Print each result. Do not write yet.',
+      '3. In the next response call ctx.call("bash", {command:"bun test timeline-marker.test.ts", timeoutMs:110000}) and print the result. Its marker assertion must fail before the edit.',
+      '4. In the next response use ctx.call("write", {path:"README.md", content: ...}) to append the marker to the saved text. read.content omits its final LF, so append one newline before and after the marker.',
+      `5. In each of the next three responses write one of ${PIN_FILES.join(", ")} with ctx.call("write", {path:..., content:marker+"\\n"}). These three files record the same marker. Use a separate response for each file.`,
+      '6. In the next response run the exact same bun test command with timeoutMs 110000 and print the result. It must pass after the edit.',
+      '7. In the next response read README.md again. Finish with ctx.done only if the exact marker line exists and the test passed.'
     ].join("\n")
 ].join("\n") + "\n"
 
@@ -93,7 +94,7 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
   const files = new Map([
     [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false)],
     [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true)],
-    [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(180000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 200000);\n`]
+    [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(90000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 100000);\n`]
   ])
   const sessions = cloudRepoPath(repo, "/workspace/sessions")
   let sessionId: string | undefined

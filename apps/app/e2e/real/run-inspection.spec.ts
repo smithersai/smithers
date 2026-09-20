@@ -373,8 +373,9 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
-  const workspace = await readJson<{ head: { commit_id: string } }>(page, request, cloudRepoPath(repo, `/workspaces/${workspaceId}`))
-  expect(workspace.head.commit_id).toMatch(/^[0-9a-f]{40}$/)
+  const bookmarks = await readJson<{ items: { name: string; target_commit_id: string }[] }>(page, request, cloudRepoPath(repo, "/bookmarks"))
+  const sourceRevision = bookmarks.items.find(bookmark => bookmark.name === "main")?.target_commit_id
+  expect(sourceRevision).toMatch(/^[0-9a-f]{40}$/)
   const configuration: SetupDraft = {
     steps: ["research", "followup"].map(id => ({ id, name: id, mode: "automatic", prompt: "Answer with README.md's exact first line and cite README.md. The supplied source contains everything needed. Leave question empty and reproduction null." })),
     checks: [], cases: [], replies: "draft", landing: "ask", scope: "future", label: "", schedule: "", choreEvent: "none",
@@ -385,7 +386,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   const digest = createHash("sha256").update(JSON.stringify({ repo, job: "issues", revision: 1, draft: legacyDraft })).digest("hex")
   expect(storedSetupCandidate({ repo, job: "issues", revision: 1, draft: configuration }, digest)).toBe(true)
   const input = { repo, job: "issues" as const, revision: 1, digest,
-    sourceRevision: workspace.head.commit_id, configuration,
+    sourceRevision, configuration,
     event: { source: "smithers-cloud", type: "issues", action: "opened", deliveryKey: crypto.randomUUID(),
       payload: { issue: { title: "What is README.md's exact first line?", body: "Answer from README.md and cite it. Do not change files or propose changes." } } } }
   const subject = await launchSubject(page, workflowRepo, "repository-jobs/issues", input, testInfo)

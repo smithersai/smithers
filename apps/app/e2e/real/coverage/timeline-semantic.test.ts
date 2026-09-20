@@ -61,6 +61,17 @@ describe("ordinary module journal evidence", () => {
     const row = moduleFact(1, opened, {})
     expect(() => moduleRows([{ ...row, payload: { ...row.payload, executionId: "another" } }])).toThrow(TimelineEvidenceError)
   })
+
+  test("a nested native call is represented by its owning step facts, not borrowed by the outer run", () => {
+    const callId = `cell-call-v1:${"a".repeat(64)}`
+    const rows = [moduleFact(1, opened, {}), moduleFact(2, started, { callId, flowName: "read", input: { path: "README.md" } }),
+      { ...event(3, "control.engine.event", { version: 1, eventType: "flows.harness.call-fact.v1", executionId: "child-a", generation: 0,
+        sourceSequence: 0, sourceId: `call-fact-v1:${callId}:invoked`, payload: { version: 1, phase: "invoked", callId, flowName: "read",
+          identity: { runId: "child-a/session#0", cell: "cell", frame: 0, ordinal: 0, declaration: "read", layers: [] }, input: { path: "README.md" } }
+      }), runId: "run-1" },
+      moduleFact(4, settled, { callId, flowName: "read", outcome: "success", value: { startLine: 1, endLine: 4 } })]
+    expect(moduleMeaning(rows).lines.map(line => [line.subject, line.result])).toEqual([["README.md", "4 lines"]])
+  })
 })
 
 describe("the independent timeline evidence oracle", () => {

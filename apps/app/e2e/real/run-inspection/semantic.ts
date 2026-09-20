@@ -70,6 +70,8 @@ const callRecords = (rows: readonly JournalRow[]): readonly JournalRow[] => {
     const p = fields(row.payload)
     if (p.eventType !== "flows.harness.call-fact.v1") return row
     const fact = fields(p.payload), identity = fields(fact.identity)
+    // Nested logical sessions belong to their module step facts, not the outer prompt run.
+    if (typeof identity.runId === "string" && identity.runId !== row.runId) return row
     if (word(row.kind) !== "control.engine.event" || p.version !== 1 || fact.version !== 1 ||
       !/^cell-call-v1:[0-9a-f]{64}$/.test(word(fact.callId)) || identity.runId !== row.runId ||
       typeof row.runId !== "string" || p.sourceSequence !== 0 ||
@@ -100,7 +102,8 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
     const p = fields(row.payload), seq = Number(row.sequence), frame = frames.at(-1), kind = word(row.kind)
     const nativeState = fields(fields(p.payload).state)
     if (kind.includes("PreparePlan") || [p.flowName, nativeState.flowName].some(name => name === "coding/PreparePlan" || name === "coding/PrepareWithWiki") ||
-      fields(p.value).plan !== undefined || fields(nativeState.payload).plan !== undefined || fields(p.input).plan !== undefined) {
+      fields(p.value).plan !== undefined || fields(nativeState.payload).plan !== undefined ||
+      fields(fields(nativeState.payload).input).plan !== undefined || fields(p.input).plan !== undefined) {
       throw new TimelineEvidenceError("unsupported-evidence", `Recorded plan at #${seq} needs a goal oracle; no goal claim was made.`)
     }
     if (kind === OPEN) { frames.push({ frame: frames.length + 1, node: `frame-${frames.length + 1}`, opens: seq,
