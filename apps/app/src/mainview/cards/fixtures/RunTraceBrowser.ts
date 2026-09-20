@@ -48,6 +48,19 @@ const events = scenario === "interleaved" ? [
   stamp(7, "agent.unresolved-demanded", 1205),
   stamp(8, "agent.sufficiency-observed", 1206),
   stamp(9, "run.completed", 10000)
+] : scenario === "tail" || scenario === "tail-live" ? [
+  // The journal's LAST record opens a frame, so the last band's seq is also
+  // the last recorded position. A band door there asks for the latest
+  // sequence, which is the case a production keyboard walk could not commit.
+  stamp(1, "agent.turn-opened", 1000),
+  stamp(2, "agent.cell-call-started", 1100, { flowName: "read", input: { path: "src/a.ts" } }),
+  stamp(3, "agent.cell-call-settled", 1800, { flowName: "read", outcome: "success", value: "one line" }),
+  stamp(4, "agent.turn-closed", 1900),
+  stamp(5, "agent.turn-opened", 2000),
+  stamp(6, "agent.cell-call-started", 2100, { flowName: "write", input: { path: "src/a.ts", content: "x" } }),
+  stamp(7, "agent.cell-call-settled", 2800, { flowName: "write", outcome: "success" }),
+  stamp(8, "agent.turn-closed", 2900),
+  stamp(9, "agent.turn-opened", 3000)
 ] : scenario === "labels" || scenario === "live" ? [
   stamp(1, "agent.turn-opened", 1000),
   stamp(2, "agent.read-only-demand-issued", 1000),
@@ -69,7 +82,7 @@ const cardId = "flow-run-strip-browser"
 if (!store.collections.cards.has(cardId)) {
   const card: Extract<Card, { kind: "run-trace" }> = {
     id: cardId, kind: "run-trace", title: "Trace", status: "active", createdAt: 0, ordinal: 0,
-    payload: { repo: "fixture/strip", runId: "strip-browser", workflow: "probe", phase: scenario === "live" ? "running" : "completed", steps: [], result: null, lastSeq: events.length, events, traceView: "timeline", liveTail: true }
+    payload: { repo: "fixture/strip", runId: "strip-browser", workflow: "probe", phase: scenario === "live" || scenario === "tail-live" ? "running" : "completed", steps: [], result: null, lastSeq: events.length, events, traceView: "timeline", liveTail: true }
   }
   await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 }
@@ -80,24 +93,46 @@ const controller = createAppController(store, unavailableRepositories, silentAge
 })
 const root = createRoot(document.getElementById("fixture")!)
 const commands: Array<{ name: string; args?: string }> = []
+// A refused command is the product's own answer, so the probe reads it instead
+// of inferring a refusal from a cursor that did not move.
+const refusals: Array<{ name: string; args?: string; error: string }> = []
 declare global {
   interface Window {
-    runTraceBrowser: { cursor: number | "latest"; selection: string; commands: typeof commands; appendMilestone: () => Promise<void> }
+    runTraceBrowser: {
+      cursor: number | "latest"
+      selection: string
+      commands: typeof commands
+      refusals: typeof refusals
+      appendMilestone: () => Promise<void>
+      appendFrame: () => Promise<void>
+    }
   }
 }
 const render = () => {
   const card = store.collections.cards.get(cardId)
   if (card?.kind !== "run-trace") throw new Error("The fixture run card is absent")
   root.render(createElement(RunTraceBody, { card, onRunCommand: run }))
-  window.runTraceBrowser = { cursor: card.payload.cursorSeq ?? "latest", selection: card.payload.selection ?? "", commands, appendMilestone }
+  window.runTraceBrowser = { cursor: card.payload.cursorSeq ?? "latest", selection: card.payload.selection ?? "", commands, refusals, appendMilestone, appendFrame }
 }
 const run = (name: FlowName, args?: string) => {
   commands.push({ name, args })
   void controller.commands.run(name, args).then(async (result) => {
     await store.settled?.()
-    if (result.status === "failed") throw new Error(result.error)
+    if (result.status === "failed") refusals.push({ name, args, error: result.error })
     render()
+    if (result.status === "failed") throw new Error(result.error)
   })
+}
+/** One more frame of the phase the last band already holds: the band grows, it is not replaced. */
+const appendFrame = async () => {
+  const card = store.collections.cards.get(cardId)
+  if (card?.kind !== "run-trace") throw new Error("The fixture run card is absent")
+  const held = card.payload.events ?? []
+  const next = held.length + 1
+  await store.dispatch({ type: "card.updated", actor: "system", id: cardId, patch: { payload: {
+    ...card.payload, events: [...held, stamp(next, "agent.turn-opened", 3000 + next * 100)], lastSeq: next
+  } } }).isPersisted.promise
+  render()
 }
 const appendMilestone = async () => {
   const card = store.collections.cards.get(cardId)

@@ -230,3 +230,49 @@ test("interleaved native steps keep every pin, cluster member and slider positio
     expect(await owner()).toEqual([false, true])
   } finally { await page.close() }
 }, 30000)
+
+test("a band door commits its own sequence, including the band the journal's last record opened", async () => {
+  const page = await open("tail")
+  try {
+    const bands = page.locator("button[data-phase-band]")
+    const seqs = await bands.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-seq")))
+    expect(seqs).toEqual(["1", "5", "9"])
+    const latest = await page.evaluate(() => Number(document.querySelector('[role="slider"]')!.getAttribute("aria-valuemax")))
+    expect(latest, "the last band must open at the journal's last position").toBe(9)
+    const door = (seq: string) => page.locator(`button[data-phase-band][data-seq="${seq}"]`)
+    await door("1").focus()
+    await door("1").press("Enter")
+    await settled(page, "1")
+    await door("5").focus()
+    await door("5").press("Space")
+    await settled(page, "5")
+    await door("9").focus()
+    await door("9").press("Space")
+    expect(await page.evaluate(() => window.runTraceBrowser.refusals)).toEqual([])
+    await settled(page, "9")
+  } finally { await page.close() }
+}, 30000)
+
+test("a band door still commits when its own band grows under the keypress", async () => {
+  const page = await open("tail-live")
+  try {
+    const door = page.locator('button[data-phase-band][data-seq="9"]')
+    const last = () => page.evaluate(() => Number(document.querySelector('[role="slider"]')!.getAttribute("aria-valuemax")))
+    const bands = () => page.locator("button[data-phase-band]").count()
+    expect(await door.count()).toBe(1)
+    expect(await last()).toBe(9)
+    await door.focus()
+    // Space activates a button on keyup. A live run appends to its last band
+    // between the two, which is the one band a keypress can outlive.
+    await page.keyboard.down("Space")
+    await page.evaluate(() => window.runTraceBrowser.appendFrame())
+    await page.waitForFunction(() => document.querySelector('[role="slider"]')!.getAttribute("aria-valuemax") === "10")
+    await page.keyboard.up("Space")
+    // The band grew under the key; it was not replaced by another one.
+    expect(await bands()).toBe(3)
+    expect(await last()).toBe(10)
+    expect(await page.evaluate(() => window.runTraceBrowser.refusals)).toEqual([])
+    await settled(page, "9")
+  } finally { await page.close() }
+}, 30000)
+
