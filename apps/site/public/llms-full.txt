@@ -3659,11 +3659,21 @@ The explicit `executionId` identifies this invocation. Without one, Smithers fir
 
 The in-memory engine loses its state when the process exits. To resume after a restart, compose a durable engine over persistent SQLite state. The [first flow tutorial](/docs/tutorials/first-flow/#6-run-durably-over-sqlite) supplies that complete host setup.
 
-## Keep discovery separate from execution
+## Discover the flow from `flows/<name>/flow.ts`
 
-The project registry can read metadata from module entries under `flows/<name>/flow.ts` without executing their code. An entry appearing in the catalog does not install its action implementations into a host.
+Put the same declaration in `flows/<name>/flow.ts` as the file's `export default`, and the project registry lists it and runs it. Discovery reads the metadata without executing the module, so `description`, `payload`, `success`, and `capabilities` have to be literals in the declaration:
 
-Run a module flow through the host program that provides its implementations. Do not assume that a discovered typed module runs through the prompt-flow CLI executor. [Flow discovery](/docs/guides/flow-discovery/) describes the catalog rules.
+```ts title="flows/greeting/flow.ts"
+export default Flow.make("example/Greeting", {
+  description: "Greets whoever the caller names.",
+  capabilities: [],
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: (payload) => Greet.call(payload)
+})
+```
+
+The default export is the flow that runs: `smthrs up greeting --data '{"name":"Ada"}'` executes this body. What discovery does not install is the code behind the actions the body names, so the host still provides `Greet.toLayer(...)`; without it the run fails with an unresolved-action failure rather than executing an empty step. [Flow discovery](/docs/guides/flow-discovery/) describes the catalog rules.
 
 ## Verify failures
 
@@ -24143,10 +24153,12 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
-The gateway declares `effect`, `@effect/platform-node`, and `@effect/platform-bun`
-as exact `4.0.0-rc.115` peers; `@effect/platform-node` is optional for
-`node/NodeGateway`, and `@effect/platform-bun` is optional for `bun/BunGateway`.
-Use the same Effect version in the host.
+The gateway declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
+`4.0.0-rc.115` peers; `@effect/platform-node` is optional for
+`node/NodeGateway`, `@effect/platform-bun` is optional for `bun/BunGateway`, and
+`@effect/platform-node-shared` is optional beside them, since it is the sibling
+both of those adapters pull in. Use the same Effect version in the host.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -33263,10 +33275,12 @@ https://smithers.sh/docs/reference/api/opencode/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/opencode/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/opencode/docs/api.md)
 
-> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
 
-The package declares `effect`, `@effect/platform-node` and
-`@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Use the same Effect
+The package declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared` and `@effect/sql-sqlite-node` as exact
+`4.0.0-rc.115` peers; the shared adapter is the sibling `@effect/platform-node`
+pulls in, declared so it cannot float to a later release. Use the same Effect
 version in the host.
 
 The root entry point exports one namespace per module, and every module is
@@ -33518,17 +33532,21 @@ broken cursor is reported rather than read as the end of the history.
 
 ## `Cors` and `Auth`
 
-| Export                 | Meaning                                                                                            |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| `Cors.defaultOrigins`  | `https://*.opencode.ai`, `http://localhost:*`, `http://127.0.0.1:*`.                               |
-| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                    |
-| `Cors.layer`           | `(extras?) => Layer`: answers preflights and stamps the allow headers, on a 404 too.               |
-| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both. |
-| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.      |
-| `Auth.Credentials`     | `{ username, password }`.                                                                          |
-| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                   |
-| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                |
-| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.     |
+| Export                 | Meaning                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cors.defaultOrigins`  | `https://*.opencode.ai`. Loopback is not allowed by default; a local build names itself with `--cors`.                                                                                      |
+| `Cors.loopbackExample` | `http://localhost:5173`, the `--cors` value a local build of the app passes.                                                                                                                |
+| `Cors.allows`          | `(origin, extras?) => boolean`.                                                                                                                                                             |
+| `Cors.patternRefusal`  | `(pattern) => string \| undefined`: why a `--cors` pattern is not an origin, such as `*`.                                                                                                   |
+| `Cors.refusal`         | `(extras) => string \| undefined`: the first `--cors` pattern the policy cannot use.                                                                                                        |
+| `Cors.forbiddenOrigin` | The JSON 403 body a disallowed origin gets in place of the route.                                                                                                                           |
+| `Cors.layer`           | `(extras?) => Layer`: answers preflights, stamps the allow headers on a 404 too, and refuses a disallowed origin with 403 before any route runs. A request with no `Origin` passes through. |
+| `Cors.preflightVary`   | `Origin, Access-Control-Request-Headers`: what a preflight answer varies on, since it echoes both.                                                                                          |
+| `Cors.routeNotFound`   | The JSON 404 body an unmounted route answers: `{ name: "NotFoundError", data: { message } }`.                                                                                               |
+| `Auth.Credentials`     | `{ username, password }`.                                                                                                                                                                   |
+| `Auth.fromEnvironment` | Reads `OPENCODE_SERVER_PASSWORD` and `OPENCODE_SERVER_USERNAME`.                                                                                                                            |
+| `Auth.authorizes`      | `(header, credentials) => boolean`.                                                                                                                                                         |
+| `Auth.layer`           | `(credentials \| undefined) => Layer`: 401 on everything but the health probes and preflights.                                                                                              |
 
 ---
 
@@ -35832,8 +35850,11 @@ There is no shell service. Running a command is Effect's `ChildProcess` /
 `ChildProcessSpawner`; a wall-clock budget is `Effect.timeout` around the
 effect, and cancellation is fiber interruption, never an `AbortSignal`. There is
 no HTTP service either: an outgoing request is Effect's `HttpClient`, provided
-here as `NodeHttpClient.layerUndici`, which installs no redirect interceptor and
-so leaves every hop visible to [@smthrs/kernel](/docs/reference/api/kernel/).
+here as `EgressHttpClient.layer(environment)`. That layer is Undici through the egress proxy
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` name, and the plain
+`NodeHttpClient.layerUndici` pool when they name none. Undici installs no
+redirect interceptor either way, so every hop stays visible to
+[@smthrs/kernel](/docs/reference/api/kernel/).
 
 The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
 layer with one version probe; construction can fail with `JjError`, including
@@ -36907,10 +36928,16 @@ class BodyRefMarkdown {
   readonly contentDigest?: string
 }
 
+class ModuleImport {
+  readonly path: string
+  readonly contentDigest?: string
+}
+
 class BodyRefModule {
   readonly _tag: "Module"
   readonly path: string
   readonly contentDigest?: string
+  readonly imports?: ReadonlyArray<ModuleImport>
 }
 
 const BodyRef: Schema.Union<[typeof BodyRefMarkdown, typeof BodyRefModule]>
@@ -36925,6 +36952,21 @@ by an older version, before the digest existed, still decodes. `Registry.loadBod
 verifies source bytes before returning a prompt or module locator, and
 `Executable.fromDescriptor` verifies source before loading it. A missing digest
 or mismatch is `body_unavailable`; refresh the registry before loading it.
+
+`contentDigest` measures the ENTRY FILE. `imports` measures what that entry
+loads from beside itself: every module reached through a relative specifier,
+transitively, as a path relative to the entry's directory plus the digest of
+its bytes. The loader imports the verified entry bytes as a sibling of the
+original so those specifiers resolve to the live files, which makes them code
+the flow runs, so they ride `Descriptor.executionDigest` and are re-measured
+before anything is imported. The field is ABSENT, not empty, when the entry
+loads nothing beside itself, so such a module hashes exactly as it did before
+the field existed. Bare package specifiers are not measured: those resolve into
+installed code, which is the host's own. A `ModuleImport` with no
+`contentDigest` is a specifier discovery could not pin: one that resolves to no
+file, a module it could not read, an `import()` whose target is computed, or a
+closure past its bound. Its `path` then carries that reason instead of a
+location, and `Executable.fromDescriptor` refuses to run such a module.
 
 ### Descriptor.FlowBody, FlowBodyPrompt, FlowBodyModule
 
@@ -37496,7 +37538,7 @@ Turning a discovered descriptor into something the durable engine runs.
 ```ts
 interface Executable {
   readonly descriptor: Descriptor.FlowDescriptor
-  readonly delegate: string
+  readonly delegate: string | undefined
   readonly lowered: Lowered
   readonly invocation: (input: Schema.Json) => Invocation
   readonly flow: RuntimeFlow.Flow<string, typeof Payload, typeof Schema.Unknown, typeof Schema.Unknown, any>
@@ -37505,8 +37547,16 @@ interface Executable {
 ```
 
 One discovered flow, made runnable. `flow` is tagged with the descriptor's
-registry name and its body is one delegating node. `layer` registers it with
-the runtime.
+registry name and `layer` registers it with the runtime.
+
+`delegate` is the registered flow this descriptor hands its work to, and
+`undefined` when the module IS the flow: a `flows/<name>/flow.ts` that
+`export default`s a `@smthrs/flow` flow runs its own body, so its body is the
+plan rather than one delegating node. The distinction is an authority one. A
+delegate is host-registered code the descriptor never measured, so an approved
+plan's envelope has to name it; a module that is its own flow is measured
+instead, by `Descriptor.executionDigest` over its entry bytes and every module
+that entry imports from beside itself.
 
 ### Executable.Options
 
@@ -48608,9 +48658,9 @@ Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. A 0.x proje
 
 | 0.x construct | 1.0 equivalent |
 | --- | --- |
-| `<Workflow>` and the other JSX components | A module flow at `flows/<name>/flow.ts`, built on `Flow.make(tag, { payload, success, error, body })`. The JSX root has no counterpart; the flow declaration is the root. |
+| `<Workflow>` and the other JSX components | A module flow at `flows/<name>/flow.ts`, which `export default`s `Flow.make(tag, { description, payload, success, error, body })`. The JSX root has no counterpart; the flow declaration is the root. |
 | Markdown agent steps (MDX prompts) | `flows/<name>/flow.mdx`, or a `prompt: (payload) => string` template on an agent action. `{props.x}` becomes `${payload.x}`. |
-| `createSmithers` and `runWorkflow` | `Flow.make(tag, { payload, success, error, body })` and `flow.execute(payload, { executionId })`, run by a host that registers the flow and provides its action implementations and engine. The CLI discovers and plans module flows, but leaves their execution `pending` until a host drives them. `smthrs up` executes markdown agent flows directly. |
+| `createSmithers` and `runWorkflow` | `Flow.make(tag, { payload, success, error, body })` and `flow.execute(payload, { executionId })`, run by a host that provides its action implementations and engine. `smthrs up` executes a module flow's own body, and a markdown agent flow's prompt, directly. |
 | `.smithers/workflows/` | `flows/`. A workflow keeps its position: `.smithers/workflows/pipelines/ci-fast.tsx` becomes `flows/pipelines/ci-fast/flow.ts`. |
 | `smithers.config.ts` | No 1.0 equivalent. `repoCommands.test` seeds the migration's test command (override it with `--verify-test`), `backend` is recorded in the report, and the file is deleted after the final unit. |
 | `smithers` binary | Both spellings still work. `@smthrs/cli@next` installs `smthrs`, with `smithers` as an alias of the same executable. |
@@ -50604,13 +50654,12 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/registry`](/docs/reference/api/registry/)
+[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/)
 
 ## Source
 
 ```ts title="examples/src/12-agent-live-smoke.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -50625,6 +50674,7 @@ import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 
@@ -50639,7 +50689,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -50724,7 +50774,7 @@ export const liveLayer = (apiKey: string) =>
     // The completion brake judges every claim through Jev and never falls back
     // to the model. Without `AI_GATEWAY_API_KEY` this smoke refuses composition
     // before any host resource is opened.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/12-agent-live-smoke").pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/12-agent-live-smoke").pipe(Layer.provide(EgressHttpClient.layer(process.env)))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50780,13 +50830,12 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/registry`](/docs/reference/api/registry/)
+[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/)
 
 ## Source
 
 ```ts title="examples/src/13-agent-live-smoke-local.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -50802,6 +50851,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 
@@ -50816,7 +50866,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -50929,7 +50979,7 @@ export const liveLayer = (baseUrl: string) =>
     // The completion brake judges every claim through Jev and never falls back
     // to the model. A local provider does not change that: without
     // `AI_GATEWAY_API_KEY` this host refuses composition before opening resources.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(EgressHttpClient.layer(process.env)))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50982,13 +51032,12 @@ This program has no dedicated test file. Read its setup requirements before runn
 
 ## Related reference
 
-[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/registry`](/docs/reference/api/registry/)
+[`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/)
 
 ## Source
 
 ```ts title="examples/src/14-agent-live-smoke-gemini.ts"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
@@ -51003,6 +51052,7 @@ import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 
@@ -51017,7 +51067,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -51107,7 +51157,7 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
     // The completion brake judges every claim through Jev and never falls back
     // to the model. Without `AI_GATEWAY_API_KEY` this smoke refuses composition
     // before any host resource is opened.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/14-agent-live-smoke-gemini").pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/14-agent-live-smoke-gemini").pipe(Layer.provide(EgressHttpClient.layer(process.env)))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -51172,17 +51222,17 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/)
+[`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/)
 
 ## Source
 
 ```ts title="examples/src/15-model-layer-smoke.ts"
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import { Message, ModelRequest } from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer, Redacted, Stream } from "effect"
 
 /**
@@ -51196,7 +51246,7 @@ import { Effect, Layer, Redacted, Stream } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(NodeHttpClient.layerUndici)
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -51499,8 +51549,8 @@ const start = (
 export interface DiscoveredSummary {
   /** The descriptor name discovery derived from the directory. */
   readonly flow: string
-  /** The flow the descriptor delegates to. */
-  readonly delegate: string
+  /** The flow the descriptor delegates to, or `undefined` when it is its own. */
+  readonly delegate: string | undefined
   /** The priority the bridge lowered off the declaration. */
   readonly lowered: number | undefined
   /** Every priority the built plan's nodes carry, in plan order. */
@@ -53820,12 +53870,12 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+[`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
 
 ## Source
 
 ```ts title="examples/src/24-control-plane-and-gateway.ts"
-import { NodeHttpClient, NodeHttpServer, NodeSocket } from "@effect/platform-node"
+import { NodeHttpServer, NodeSocket } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
@@ -53840,6 +53890,7 @@ import { Action, Flow, type FlowRuntime, Interpreter, WaitFor } from "@smthrs/fl
 import { NotificationQueue } from "@smthrs/notifications"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -54133,7 +54184,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
           // The client: the same `Control` interface, over two transports.
           const client = ControlClient.layer({ url: `${url}/rpc`, credential }).pipe(
             Layer.provide([
-              NodeHttpClient.layerUndici,
+              EgressHttpClient.layer(process.env),
               // This Node client can put the credential on the upgrade request.
               // Browser WebSocket constructors cannot set Authorization headers.
               Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(

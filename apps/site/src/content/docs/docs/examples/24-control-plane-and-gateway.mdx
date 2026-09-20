@@ -28,12 +28,12 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 
 ## Related reference
 
-[`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
+[`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/)
 
 ## Source
 
 ```ts title="examples/src/24-control-plane-and-gateway.ts"
-import { NodeHttpClient, NodeHttpServer, NodeSocket } from "@effect/platform-node"
+import { NodeHttpServer, NodeSocket } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
@@ -48,6 +48,7 @@ import { Action, Flow, type FlowRuntime, Interpreter, WaitFor } from "@smthrs/fl
 import { NotificationQueue } from "@smthrs/notifications"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
+import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -341,7 +342,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
           // The client: the same `Control` interface, over two transports.
           const client = ControlClient.layer({ url: `${url}/rpc`, credential }).pipe(
             Layer.provide([
-              NodeHttpClient.layerUndici,
+              EgressHttpClient.layer(process.env),
               // This Node client can put the credential on the upgrade request.
               // Browser WebSocket constructors cannot set Authorization headers.
               Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(
