@@ -56,8 +56,26 @@
  * so an adapter outside this repo could put `model_failed` on a
  * `{ code, message }` record and make a `repository/inspection` run card say a
  * model never answered, with no model in the run and no source change
- * anywhere. A sweep over sources cannot see a string. That boundary now
- * decodes into `NativeCode` (`flows/coding/native-schema.ts`).
+ * anywhere. A sweep over sources cannot see a string.
+ *
+ * That guest program has two modes and this repo decodes each one separately.
+ * Both are closed at their own boundary: `--local` in `flows/coding/native.ts`
+ * admits only `NativeCode` (`flows/coding/native-schema.ts`), and `--engine` in
+ * `flows/coding/snapshots.ts` admits only the codes its `ENGINE_CODES` table
+ * maps, onto `JjErrorCode`. Each keeps the guest's own word in the message,
+ * which is prose and is never read as a code.
+ *
+ * They have to be closed there, because the sweep cannot reach them. What
+ * `RunCause.test.ts` reads is every tagged failure class this repo DECLARES,
+ * and a `cause` record projected from a host object is not a declaration:
+ * `JjErrorCause.code` is `Schema.String` (`packages/smithers/flows/jj/src/Jj.ts`),
+ * `jjErrorCause` copies any string `code` off any object, and `failureSummary`
+ * prefers the innermost record — so whatever reaches that projection is the
+ * code a person's sentence is picked from. `snapshots.ts` now drops a code that
+ * jj's own vocabulary does not declare before building that record, and the
+ * remaining projections of it (`flows/jj/src/node/NodeJj.ts`) carry the host's
+ * errno, which no row here spells. That channel is the one thing this
+ * guarantee does not get from the compiler.
  *
  * @see ../../../../../packages/smithers/agent/harness/src/HarnessError.ts
  * @see ../../../../../packages/smithers/agent/model/src/ModelError.ts

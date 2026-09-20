@@ -813,7 +813,7 @@ test("no failure class on the real tree defeats this reader in silence", () => {
  * in this repo. A class whose `code` is open cannot: its codes are the literals
  * its raise sites pass PLUS whatever a raise site passes that is not a literal
  * at all — a string decoded from a subprocess, an HTTP body, a file. Those are
- * the classes {@link RunCause.SOURCE_AUTHORED} names, and this is the check
+ * the classes {@link RunCause.OPEN_CODED} names, and this is the check
  * that the list is the whole list: a new open `{ code, message }` class reds
  * here until it is placed.
  */
