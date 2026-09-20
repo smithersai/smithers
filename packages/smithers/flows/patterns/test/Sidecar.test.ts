@@ -80,9 +80,9 @@ describe("Sidecar", () => {
       _tag: "Succeed",
       value: { error: { _tag: "PlannedInput", path: [] }, quarantined: true }
     })
-    expect(Graph.diagnostics(graph).map(({ code, paths }) => ({ code, paths }))).toEqual([
-      { code: "capability_outside_grant", paths: ["sidecar/primary"] },
-      { code: "capability_outside_grant", paths: ["sidecar/shadow"] }
+    expect(Graph.diagnostics(graph).map(({ code, path }) => ({ code, path }))).toEqual([
+      { code: "capability_outside_grant", path: ["sidecar/primary"] },
+      { code: "capability_outside_grant", path: ["sidecar/shadow"] }
     ])
   })
 

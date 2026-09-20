@@ -69,8 +69,8 @@ describe("Graph width limits", () => {
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
     expect(error).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: `root.all.n${Graph.maximumGraphNodes - 1}`
+      path: [],
+      node: `root.all.n${Graph.maximumGraphNodes - 1}`
     })
   })
 
@@ -88,8 +88,8 @@ describe("Graph width limits", () => {
     const overLimit = writerGroups([writers], "lane", plain + 1)
     expect(thrown(() => Graph.build(overLimit.node))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: `lane.merge.${merges - 1}`
+      path: [],
+      node: `lane.merge.${merges - 1}`
     })
   })
 
@@ -106,8 +106,8 @@ describe("Graph width limits", () => {
 
     expect(thrown(() => Graph.build(writerGroups([writers], "serialize", plain + 1).node))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: expect.stringMatching(/^root\.all\.g0w\d+$/)
+      path: [],
+      node: expect.stringMatching(/^root\.all\.g0w\d+$/)
     })
   })
 
@@ -124,8 +124,8 @@ describe("Graph width limits", () => {
     expect(overLimit.conflicts).toBe(Graph.maximumGraphConflicts + 1)
     expect(thrown(() => Graph.build(overLimit.node))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root.all.g5w1"
+      path: [],
+      node: "root.all.g5w1"
     })
   })
 
@@ -146,7 +146,7 @@ describe("Graph width limits", () => {
     expect(() => Graph.build(Node.succeed(items(Graph.maximumPayloadMembers)))).not.toThrow()
     const error = thrown(() => Graph.build(Node.succeed(items(Graph.maximumPayloadMembers + 1))))
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "payload_too_large", paths: ["$"], nodeId: "root" })
+    expect(error).toMatchObject({ code: "payload_too_large", path: ["$"], node: "root" })
   })
 
   it("charges a sparse array by its length before materializing holes", () => {
@@ -155,8 +155,8 @@ describe("Graph width limits", () => {
 
     expect(thrown(() => Graph.build(Node.succeed({ sparse })))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.sparse"],
-      nodeId: "root"
+      path: ["$.sparse"],
+      node: "root"
     })
   })
 
@@ -168,8 +168,8 @@ describe("Graph width limits", () => {
 
     expect(thrown(() => Graph.build(Node.succeed(decorated)))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$"],
-      nodeId: "root"
+      path: ["$"],
+      node: "root"
     })
   })
 
@@ -188,8 +188,8 @@ describe("Graph width limits", () => {
     expect(() => Graph.build(Node.succeed({ value: make(Graph.maximumPayloadMembers - 1) }))).not.toThrow()
     expect(thrown(() => Graph.build(Node.succeed({ value: make(Graph.maximumPayloadMembers) })))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.value"],
-      nodeId: "root"
+      path: ["$.value"],
+      node: "root"
     })
   })
 
@@ -199,8 +199,8 @@ describe("Graph width limits", () => {
 
     expect(thrown(() => Graph.build(Node.succeed(map)))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$"],
-      nodeId: "root"
+      path: ["$"],
+      node: "root"
     })
   })
 
@@ -211,8 +211,8 @@ describe("Graph width limits", () => {
     expect(() => Graph.build(Node.succeed({ left: level(half - 1), right: level(half - 1) }))).not.toThrow()
     expect(thrown(() => Graph.build(Node.succeed({ left: level(half), right: level(half) })))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.right"],
-      nodeId: "root"
+      path: ["$.right"],
+      node: "root"
     })
   })
 
@@ -228,8 +228,8 @@ describe("Graph width limits", () => {
     expect(() => Graph.build(flow, wide)).not.toThrow()
     expect(thrown(() => Graph.build(flow, items(Graph.maximumPayloadMembers + 1)))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$"],
-      nodeId: "root"
+      path: ["$"],
+      node: "root"
     })
   })
 
@@ -243,13 +243,13 @@ describe("Graph width limits", () => {
     expect(() => Graph.build(Node.succeed(carrier(Graph.maximumPayloadMembers - 15)))).not.toThrow()
     expect(thrown(() => Graph.build(Node.succeed(carrier(Graph.maximumPayloadMembers - 14))))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.schema.document.schema"],
-      nodeId: "root"
+      path: ["$.schema.document.schema"],
+      node: "root"
     })
     expect(thrown(() => Graph.build(Node.succeed(carrier(Graph.maximumPayloadMembers - 1))))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.schema.ast.annotations.wide"],
-      nodeId: "root"
+      path: ["$.schema.ast.annotations.wide"],
+      node: "root"
     })
   })
 
@@ -299,7 +299,9 @@ describe("Graph width limits", () => {
 
   it("lists the width codes as fatal", () => {
     for (const code of ["plan_too_large", "payload_too_large"] as const) {
-      expect(Graph.isFatalDiagnostic(new Graph.GraphBuildError({ code, paths: [], nodeId: "root" }))).toBe(true)
+      expect(Graph.isFatalDiagnostic(new Graph.GraphBuildError({ code, node: "root", path: [], message: "" }))).toBe(
+        true
+      )
     }
   })
 })
@@ -352,11 +354,11 @@ describe("Graph effect path limits", () => {
       Graph.build(Node.all({ w: assembled([], [lengthOnly(Graph.maximumEffectPathLength + 1)]) }))
     )
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "plan_too_large", paths: [], nodeId: "root.all.w" })
+    expect(error).toMatchObject({ code: "plan_too_large", path: [], node: "root.all.w" })
     expect(thrown(() => Graph.build(assembled([lengthOnly(Graph.maximumEffectPathLength + 1)], [])))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root"
+      path: [],
+      node: "root"
     })
   })
 
@@ -369,7 +371,7 @@ describe("Graph effect path limits", () => {
     expect(() => Graph.build(carrying("a".repeat(Graph.maximumEffectPathLength)))).not.toThrow()
     const error = thrown(() => Graph.build(carrying(lengthOnly(Graph.maximumEffectPathLength + 1))))
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "payload_too_large", paths: ["$.flow.effects"], nodeId: "root" })
+    expect(error).toMatchObject({ code: "payload_too_large", path: ["$.flow.effects"], node: "root" })
   })
 
   it("builds a list of exactly maximumEffectGlobs patterns and refuses one more before reading the next path", () => {
@@ -388,12 +390,12 @@ describe("Graph effect path limits", () => {
     })
     const error = thrown(() => Graph.build(Node.all({ w: assembled([], observed) })))
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "plan_too_large", paths: [], nodeId: "root.all.w" })
+    expect(error).toMatchObject({ code: "plan_too_large", path: [], node: "root.all.w" })
     expect(Math.max(...read)).toBe(Graph.maximumEffectGlobs)
     expect(thrown(() => Graph.build(assembled(globs(Graph.maximumEffectGlobs + 1, "in"), [])))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root"
+      path: [],
+      node: "root"
     })
   })
 
@@ -411,8 +413,8 @@ describe("Graph effect path limits", () => {
     const started = performance.now()
     expect(thrown(() => Graph.build(siblings(16, () => declaring([], nested(1024)))))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root.all.n0000"
+      path: [],
+      node: "root.all.n0000"
     })
     const graph = Graph.build(siblings(16, () => declaring([], widest)))
     const elapsed = performance.now() - started
@@ -496,7 +498,7 @@ describe("Graph effect path limits", () => {
     const elapsed = performance.now() - started
 
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "plan_too_large", paths: [], nodeId: "root.all.left" })
+    expect(error).toMatchObject({ code: "plan_too_large", path: [], node: "root.all.left" })
     expect(elapsed).toBeLessThan(1_000)
   })
 
@@ -515,13 +517,13 @@ describe("Graph effect path limits", () => {
     const elapsed = performance.now() - started
 
     expect(error).toBeInstanceOf(Graph.GraphBuildError)
-    expect(error).toMatchObject({ code: "plan_too_large", paths: [], nodeId: "root" })
+    expect(error).toMatchObject({ code: "plan_too_large", path: [], node: "root" })
     expect(members).toBe(0)
     expect(elapsed).toBeLessThan(1_000)
     expect(thrown(() => Graph.build(assembled(million, [])))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root"
+      path: [],
+      node: "root"
     })
   })
 
@@ -539,8 +541,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(assembled(iterable, [])))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root"
+      path: [],
+      node: "root"
     })
     expect(yielded).toBe(Graph.maximumEffectPaths + 1)
 
@@ -557,8 +559,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(declaring(paths(half, "in"), paths(half + 1))))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root"
+      path: [],
+      node: "root"
     })
   })
 
@@ -575,8 +577,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(Node.all({ ...members, x: declaring([], ["extra"]) })))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "root.all.x"
+      path: [],
+      node: "root.all.x"
     })
   })
 
@@ -599,8 +601,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(inheriting(children + 1)))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: `root.all.n${pad(children)}`
+      path: [],
+      node: `root.all.n${pad(children)}`
     })
   })
 
@@ -623,8 +625,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(siblings(calls + 1, (index) => called(index))))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: `root.all.n${pad(calls)}`
+      path: [],
+      node: `root.all.n${pad(calls)}`
     })
   })
 
@@ -652,8 +654,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(siblings(count + 1, overridden)))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: `root.all.n${pad(count)}`
+      path: [],
+      node: `root.all.n${pad(count)}`
     })
   })
 
@@ -669,8 +671,8 @@ describe("Graph effect path limits", () => {
 
     expect(thrown(() => Graph.build(laned(half + 1)))).toMatchObject({
       code: "plan_too_large",
-      paths: [],
-      nodeId: "lane.merge.0"
+      path: [],
+      node: "lane.merge.0"
     })
   })
 
@@ -685,8 +687,8 @@ describe("Graph effect path limits", () => {
     expect(() => Graph.build(carrying(Graph.maximumEffectPaths + 1))).not.toThrow()
     expect(thrown(() => Graph.build(carrying(Graph.maximumPayloadMembers)))).toMatchObject({
       code: "payload_too_large",
-      paths: ["$.flow.effects"],
-      nodeId: "root"
+      path: ["$.flow.effects"],
+      node: "root"
     })
   })
 })

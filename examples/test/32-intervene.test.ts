@@ -26,7 +26,7 @@ const approvals = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
  * fatal reaches the plan.
  */
 const grantDiagnostics = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown>> =>
-  Graph.diagnostics(graph).map(({ code, nodeId, paths }) => ({ code, nodeId, paths }))
+  Graph.diagnostics(graph).map(({ code, node, path }) => ({ code, node, path }))
 
 /** The fatal diagnostics a graph records. A plan must have none. */
 const fatal = (graph: Graph.Graph): ReadonlyArray<Graph.GraphBuildError> =>
@@ -72,21 +72,21 @@ it("plans the approval ahead of the write", () => {
   expect(approval).toHaveLength(1)
   expect(fatal(graph)).toEqual([])
   expect(grantDiagnostics(graph)).toEqual([
-    { code: "capability_outside_grant", nodeId: "root.andThen", paths: ["fs:read:/**"] },
+    { code: "capability_outside_grant", node: "root.andThen", path: ["fs:read:/**"] },
     {
       code: "capability_outside_grant",
-      nodeId: "root.then.then.andThen",
-      paths: ["fs:read:/**", "fs:write:/**"]
+      node: "root.then.then.andThen",
+      path: ["fs:read:/**", "fs:write:/**"]
     },
     {
       code: "capability_outside_grant",
-      nodeId: "root.then.then.andThen.flow.then",
-      paths: ["fs:read:/**", "fs:write:/**"]
+      node: "root.then.then.andThen.flow.then",
+      path: ["fs:read:/**", "fs:write:/**"]
     },
     {
       code: "capability_outside_grant",
-      nodeId: "root.then.then.andThen.flow.then.flow.then",
-      paths: ["fs:read:/**", "fs:write:/**"]
+      node: "root.then.then.andThen.flow.then.flow.then",
+      path: ["fs:read:/**", "fs:write:/**"]
     }
   ])
   const gates = Graph.edges(graph).filter((edge) => edge.from === approval[0]!.id)
@@ -117,6 +117,6 @@ it("plans no write and no approval at all on a dry run", () => {
   // The dry-run plan reads and never writes, so the only capability it reaches
   // for outside its grant is the read. No `fs:write` path appears anywhere.
   expect(grantDiagnostics(graph)).toEqual([
-    { code: "capability_outside_grant", nodeId: "root.andThen", paths: ["fs:read:/**"] }
+    { code: "capability_outside_grant", node: "root.andThen", path: ["fs:read:/**"] }
   ])
 })

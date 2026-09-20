@@ -500,6 +500,40 @@ describe("Graph.build composition", () => {
     expect(body(graph, "root.flow").declaration).toMatchObject({ capabilities: ["fs:read"] })
   })
 
+  it("carries an action's declared capability ceiling into its graph node", () => {
+    const Restricted = Action.make("caps/restricted", {
+      payload: { path: Schema.String },
+      success: Schema.Number,
+      capabilities: ["fs:write", "fs:read"]
+    })
+    const Holder = Flow.make("caps/holder", {
+      payload: {},
+      success: Schema.Number,
+      capabilities: ["fs:read", "fs:write"],
+      body: () => Restricted.call({ path: "counter.txt" })
+    })
+
+    const graph = Graph.build(Holder, {})
+
+    // Sorted and deduped exactly as a flow declaration's ceiling is.
+    expect(body(graph, "root.flow").declaration).toMatchObject({ capabilities: ["fs:read", "fs:write"] })
+    expect(Graph.diagnostics(graph)).toEqual([])
+  })
+
+  it("leaves the declaration of an action that declares no ceiling without one", () => {
+    const graph = Graph.build(
+      Flow.make("caps/unceilinged", {
+        payload: {},
+        success: Schema.Number,
+        capabilities: ["fs:read"],
+        body: () => Increment.call({ path: "counter.txt" })
+      }),
+      {}
+    )
+
+    expect(body(graph, "root.flow").declaration).not.toHaveProperty("capabilities")
+  })
+
   it("folds the callee's own body digest into a call the graph keeps as a leaf", () => {
     const digestOf = (
       calleeBody: (
@@ -1259,10 +1293,13 @@ describe("Graph.build limits and cost", () => {
       return deep
     }
 
-    expect(codeOf(() => Graph.build(leftNested(1_000)))).toBe("built")
-    expect(codeOf(() => Graph.build(leftNested(1_001)))).toBe("graph_too_deep")
-    expect(codeOf(() => Graph.build(rightNested(1_000)))).toBe("built")
-    expect(codeOf(() => Graph.build(rightNested(1_001)))).toBe("graph_too_deep")
+    // The EXPORTED constant is the boundary, so a pattern computing its own
+    // bound refusal reads the same number the build enforces.
+    expect(Graph.maximumGraphDepth).toBe(1_000)
+    expect(codeOf(() => Graph.build(leftNested(Graph.maximumGraphDepth)))).toBe("built")
+    expect(codeOf(() => Graph.build(leftNested(Graph.maximumGraphDepth + 1)))).toBe("graph_too_deep")
+    expect(codeOf(() => Graph.build(rightNested(Graph.maximumGraphDepth)))).toBe("built")
+    expect(codeOf(() => Graph.build(rightNested(Graph.maximumGraphDepth + 1)))).toBe("graph_too_deep")
   })
 
   it("accepts a payload exactly maximumPayloadDepth containers deep and refuses one more", () => {

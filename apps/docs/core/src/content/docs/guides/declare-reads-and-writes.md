@@ -92,15 +92,15 @@ console.log(Graph.diagnostics(Graph.build(Escaping)))
 ```text
 [
   {
-    _tag: 'flows/core/GraphBuildError',
+    _tag: '@smthrs/plan/GraphBuildError',
     code: 'effect_outside_envelope',
-    paths: [ 'secret.txt' ],
-    nodeId: 'root'
+    node: 'root',
+    path: [ 'secret.txt' ]
   }
 ]
 ```
 
-`nodeId` names the node whose declaration was refused, so you can find it in
+`node` names the node whose declaration was refused, so you can find it in
 your source by its structural position.
 
 ## Two writers of one path

@@ -832,37 +832,42 @@ Returns build diagnostics without throwing.
 ### Graph.GraphBuildError
 
 ```ts
-class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("flows/core/GraphBuildError", {
+class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/plan/GraphBuildError", {
   code: GraphBuildErrorCode,
-  paths: Schema.Array(Schema.String),
-  nodeId: Schema.optional(Schema.String),
-  nodes: Schema.optional(Schema.Tuple([Schema.String, Schema.String]))
+  node: Schema.String,
+  path: Schema.Array(Schema.String),
+  message: Schema.String
 }) {}
 ```
 
-`GraphBuildErrorCode` is the literal schema of thirteen codes:
+This is [`@smthrs/plan`](/api/plan#graphbuilderror)'s `GraphBuildError`, the one build refusal,
+which [`@smthrs/flow`](/api/flow)'s graph builder raises too. `Graph` re-exports the class, its
+code union, and `isFatalDiagnostic`.
 
-| Code                       | Meaning                                                                 |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `effect_outside_envelope`  | A step declared a path its envelope does not cover. `paths` names them. |
-| `effect_mode_widening`     | A `hermetic` envelope with an `expected` step.                          |
-| `effect_tier_widening`     | A step whose tier is less reversible than its envelope's.               |
-| `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `nodes` names both.  |
-| `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.       |
-| `duplicate_node_id`        | Two nodes claim one structural id.                                      |
-| `dependency_cycle`         | Dependencies cannot be ordered. `nodeId` names a node in the cycle.     |
-| `missing_key_material`     | A node reached `keyMaterial` without any.                               |
-| `invalid_node`             | A malformed node AST. Thrown, not recorded.                             |
-| `plan_too_deep`            | Nesting past `maximumGraphDepth`. Thrown.                               |
-| `plan_too_large`           | A node, edge, conflict, or effect-path limit crossed. Thrown.           |
-| `payload_too_deep`         | Nesting past `maximumPayloadDepth` inside one plan value. Thrown.       |
-| `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.     |
+`node` names the site. `path` carries the escaping effect paths, the dropped
+capabilities, or an oversized plan value's path, and is empty for every other
+code. `message` states the fix.
 
-`nodeId` is populated for the three effect codes, `missing_key_material`,
-`duplicate_node_id`, `dependency_cycle`, `capability_outside_grant`, `invalid_node`, and the four
-limit codes. For `plan_too_large` it names the node whose admission crossed the
-limit. `nodes` is populated for `write_conflict`. `paths` carries the offending
-value path for `payload_too_large`.
+`Graph.build` raises thirteen of the codes the union carries:
+
+| Code                       | Meaning                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `effect_outside_envelope`  | A step declared a path its envelope does not cover. `path` names them.                                   |
+| `effect_mode_widening`     | A `hermetic` envelope with an `expected` step.                                                           |
+| `effect_tier_widening`     | A step whose tier is less reversible than its envelope's.                                                |
+| `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `node` names the first, `Graph.conflicts` names both. |
+| `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.                                        |
+| `duplicate_node`           | Two nodes claim one structural id.                                                                       |
+| `dependency_cycle`         | Dependencies cannot be ordered. `node` names a node in the cycle.                                        |
+| `missing_key_material`     | A node reached `keyMaterial` without any.                                                                |
+| `invalid_node`             | A malformed node AST. Thrown, not recorded.                                                              |
+| `graph_too_deep`           | Nesting past `maximumGraphDepth`. Thrown.                                                                |
+| `plan_too_large`           | A node, edge, conflict, or effect-path limit crossed. Thrown.                                            |
+| `payload_too_deep`         | Nesting past `maximumPayloadDepth` inside one plan value. Thrown.                                        |
+| `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.                                      |
+
+For `plan_too_large`, `node` names the node whose admission crossed the limit.
+`path` carries the offending value path for `payload_too_large`.
 
 ### Graph.isFatalDiagnostic
 

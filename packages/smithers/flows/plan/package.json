@@ -41,6 +41,8 @@
     "./internal/*": null,
     "./*/index": null,
     "./Effects": "./src/Effects.ts",
+    "./CachePolicy": "./src/CachePolicy.ts",
+    "./Repetition": "./src/Repetition.ts",
     "./FileSet": "./src/FileSet.ts",
     "./KeyMaterial": "./src/KeyMaterial.ts",
     "./Migrations": null,
@@ -120,6 +122,26 @@
         "require": {
           "types": "./dist/cjs/Effects.d.ts",
           "default": "./dist/cjs/Effects.js"
+        }
+      },
+      "./CachePolicy": {
+        "import": {
+          "types": "./dist/esm/CachePolicy.d.ts",
+          "default": "./dist/esm/CachePolicy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CachePolicy.d.ts",
+          "default": "./dist/cjs/CachePolicy.js"
+        }
+      },
+      "./Repetition": {
+        "import": {
+          "types": "./dist/esm/Repetition.d.ts",
+          "default": "./dist/esm/Repetition.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Repetition.d.ts",
+          "default": "./dist/cjs/Repetition.js"
         }
       },
       "./FileSet": {

@@ -26,13 +26,15 @@ diagnostics before you trust anything else:
 
 ```ts
 for (const diagnostic of Graph.diagnostics(graph)) {
-  console.log(diagnostic.code, diagnostic.nodeId, Graph.isFatalDiagnostic(diagnostic))
+  console.log(diagnostic.code, diagnostic.node, Graph.isFatalDiagnostic(diagnostic))
 }
 ```
 
-A `GraphBuildError` carries a `code`, a `paths` array, an optional `nodeId`,
-and an optional `nodes` pair for a write conflict. `Graph.isFatalDiagnostic`
-reports whether the code blocks key material. Every code except
+A `GraphBuildError` carries a `code`, the `node` it belongs to, a `path` array,
+and a `message` stating the fix. It is [`@smthrs/plan`](/api/plan#graphbuilderror)'s
+one build refusal. A write conflict names the first of the overlapping pair in
+`node`; `Graph.conflicts` carries both. `Graph.isFatalDiagnostic` reports
+whether the code blocks key material. Every code except
 `capability_outside_grant` is fatal. For each code and its fix, see
 [Troubleshooting](../troubleshooting.md).
 

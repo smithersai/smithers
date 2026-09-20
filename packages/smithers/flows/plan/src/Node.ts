@@ -64,6 +64,30 @@ export type TypeId = "~@smthrs/plan/Node"
 export type Ast = internal.NodeAst
 
 /**
+ * How a flow call joins the caller's plan: `inline` splices the callee's body
+ * in, `boundary` makes it one child execution, and `handoff` names the next
+ * trampoline round.
+ *
+ * This is the ONE call-mode vocabulary. {@link flowCall} takes it and
+ * `@smthrs/flow`'s graph builder switches on it, so a second spelling in
+ * either package would fork the moment one gained a mode.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export const CallMode = internal.CallMode
+
+/**
+ * The value form of {@link CallMode}.
+ *
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
+export type CallMode = internal.CallMode
+
+/**
  * The serializable stand-in an AST keeps for a plan-time function: a digest of
  * its normalized source, hashed in place of a closure that could not be
  * shipped, stored, or compared.
@@ -613,7 +637,7 @@ export const declaredPriority = (ast: Ast): number | undefined => ast.priority
 export const flowCall = <A = unknown, E = never, R = never>(
   declaration: unknown,
   flow: string,
-  mode: internal.CallMode,
+  mode: CallMode,
   payload: unknown
 ): Node<A, E, R> => internal.makeNode<A, E, R>(internal.flowCall(declaration, flow, mode, payload))
 

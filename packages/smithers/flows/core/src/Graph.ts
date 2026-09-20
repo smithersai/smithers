@@ -7,10 +7,10 @@
  * @since 0.0.0
  */
 import * as Effects from "@smthrs/plan/Effects"
+import { GraphBuildError, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 import { Context, Option, Result, Schema } from "effect"
 import * as Annotations from "./Annotations.ts"
 import * as Flow from "./Flow.ts"
-import { GraphBuildError, isFatalDiagnostic } from "./internal/diagnostic.ts"
 import * as internal from "./internal/node.ts"
 import type { NodeAst } from "./internal/node.ts"
 import type { FlowDetails } from "./internal/reflection.ts"
@@ -30,9 +30,13 @@ import type * as Placement from "./Placement.ts"
  * The diagnostic a graph build records or throws, its code union, and the
  * predicate that reports whether one blocks key material.
  *
+ * It is `@smthrs/plan`'s `GraphBuildError`, the one build refusal, which
+ * `@smthrs/flow`'s graph builder raises too. This package declared a second one
+ * beside it, and the two code sets diverged rather than merging.
+ *
  * @since 0.0.0
  */
-export { GraphBuildError, GraphBuildErrorCode, isFatalDiagnostic } from "./internal/diagnostic.ts"
+export { GraphBuildError, GraphBuildErrorCode, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 
 /**
  * Why one node depends on another.
@@ -425,13 +429,43 @@ const supportedNodeTags: ReadonlySet<NodeAst["_tag"]> = Object.freeze(
   ])
 )
 
+/**
+ * The refusal an over-claiming effect declaration records, stated so an author
+ * who widened an envelope by accident reads the narrowing rather than a
+ * classification.
+ */
+const narrowedRefusal = (
+  narrowed: Extract<Effects.NarrowResult, { readonly ok: false }>,
+  nodeId: string
+): GraphBuildError => {
+  const message = narrowed.code === "effect_outside_envelope"
+    ? `The declaration at "${nodeId}" names ${narrowed.paths.length === 1 ? "a path" : "paths"} its caller's ` +
+      `effect envelope does not cover: ${narrowed.paths.join(", ")}. Widen the caller's declared effects to ` +
+      "cover them, or narrow this declaration to what the envelope already allows."
+    : narrowed.code === "effect_mode_widening"
+    ? `The declaration at "${nodeId}" declares an expected effect mode inside a hermetic envelope. A hermetic ` +
+      "envelope is the claim that every effect beneath it is declared, so the callee has to declare a " +
+      "hermetic mode too."
+    : `The declaration at "${nodeId}" declares an effect tier its caller's envelope does not permit. A tier ` +
+      "may only narrow from irreversible to compensable to sealed, so raise the caller's tier or lower this one."
+  return new GraphBuildError({ code: narrowed.code, node: nodeId, path: [...narrowed.paths], message })
+}
+
+/** A node that reached key compilation without material of its own. */
+const missingKeyMaterial = (nodeId: string): GraphBuildError =>
+  new GraphBuildError({
+    code: "missing_key_material",
+    node: nodeId,
+    path: [],
+    message: `Node "${nodeId}" reached key compilation without key material.`
+  })
+
 const invalidNode = (nodeId: string, cause?: unknown): GraphBuildError => {
-  const error = new GraphBuildError({ code: "invalid_node", paths: [], nodeId })
-  Object.defineProperty(error, "message", {
-    configurable: true,
-    enumerable: false,
-    value: `Graph.build expected a supported Node AST at "${nodeId}"`,
-    writable: true
+  const error = new GraphBuildError({
+    code: "invalid_node",
+    node: nodeId,
+    path: [],
+    message: `Graph.build expected a supported Node AST at "${nodeId}"`
   })
   if (cause !== undefined) {
     Object.defineProperty(error, "cause", {
@@ -592,7 +626,14 @@ const dependencyOrder = (
       if (frame.next < frame.node.dependencies.length) {
         const dependency = frame.node.dependencies[frame.next++]!
         if (active.has(dependency)) {
-          return Result.fail(new GraphBuildError({ code: "dependency_cycle", paths: [], nodeId: dependency }))
+          return Result.fail(
+            new GraphBuildError({
+              code: "dependency_cycle",
+              node: dependency,
+              path: [],
+              message: `Node "${dependency}" is part of a dependency cycle, so the graph cannot be ordered.`
+            })
+          )
         }
         const child = byId.get(dependency)
         if (child !== undefined && !complete.has(dependency)) {
@@ -648,7 +689,13 @@ export const build = (
     outgoing.get(id) ?? []
 
   const planTooLarge = (nodeId: string): GraphBuildError =>
-    new GraphBuildError({ code: "plan_too_large", paths: [], nodeId })
+    new GraphBuildError({
+      code: "plan_too_large",
+      node: nodeId,
+      path: [],
+      message: `Admitting "${nodeId}" crossed a node, edge, conflict, or effect-path limit. ` +
+        "Split the flow with .child() boundaries so one execution plans a bounded graph."
+    })
 
   // Effect paths admitted so far, across every declaration this build copies.
   let planEffectPaths = 0
@@ -715,7 +762,13 @@ export const build = (
     prerequisites: ReadonlyArray<{ readonly from: string; readonly reason: EdgeReason }> = []
   ): VisitResult => {
     if (depth > maximumGraphDepth) {
-      throw new GraphBuildError({ code: "plan_too_deep", paths: [], nodeId: id })
+      throw new GraphBuildError({
+        code: "graph_too_deep",
+        node: id,
+        path: [],
+        message: `The graph nests more than ${maximumGraphDepth} levels deep. ` +
+          "Split the flow with .child() boundaries so one execution plans a bounded graph."
+      })
     }
     ast = validateNodeAst(ast, id)
     const annotations = Annotations.merge(parentAnnotations, ast.annotations)
@@ -899,9 +952,7 @@ export const build = (
           if (calleeEnvelope !== undefined) {
             const narrowed = narrowAgainst(calleeEnvelope, declaration)
             if (!narrowed.ok) {
-              observedDiagnostics.push(
-                new GraphBuildError({ code: narrowed.code, paths: [...narrowed.paths], nodeId: id })
-              )
+              observedDiagnostics.push(narrowedRefusal(narrowed, id))
               continue
             }
           }
@@ -915,8 +966,10 @@ export const build = (
           observedDiagnostics.push(
             new GraphBuildError({
               code: "capability_outside_grant",
-              paths: dropped,
-              nodeId: id
+              node: id,
+              path: dropped,
+              message: `The call at "${id}" requires ${dropped.join(", ")}, which the calling flow does not ` +
+                "hold. The call runs without them, so declare them on the caller or stop requiring them here."
             })
           )
         }
@@ -944,7 +997,7 @@ export const build = (
     if (ast._tag !== "FlowCall" && envelope !== undefined && declaredEffects !== undefined) {
       const narrowed = narrowAgainst(envelope, declaredEffects)
       if (!narrowed.ok) {
-        observedDiagnostics.push(new GraphBuildError({ code: narrowed.code, paths: [...narrowed.paths], nodeId: id }))
+        observedDiagnostics.push(narrowedRefusal(narrowed, id))
       }
     }
 
@@ -1014,7 +1067,15 @@ export const build = (
   for (const node of observed) {
     if (visitedNodeIds.has(node.id) && !duplicateNodeIds.has(node.id)) {
       duplicateNodeIds.add(node.id)
-      observedDiagnostics.push(new GraphBuildError({ code: "duplicate_node_id", paths: [], nodeId: node.id }))
+      observedDiagnostics.push(
+        new GraphBuildError({
+          code: "duplicate_node",
+          node: node.id,
+          path: [],
+          message: `Node id "${node.id}" is durable dispatch identity, so two nodes may not share one. ` +
+            "Two structural addresses in this graph collided; rename one of them."
+        })
+      )
     }
     visitedNodeIds.add(node.id)
   }
@@ -1027,9 +1088,7 @@ export const build = (
     recordEdge({ from, to: to.id, reason })
     /* v8 ignore next 6 -- every visited node and every lane merge is given key material before this pass runs; the guard records the invariant instead of silently dropping the edge from identity if that ever changes */
     if (to.keyMaterial === undefined) {
-      observedDiagnostics.push(
-        new GraphBuildError({ code: "missing_key_material", paths: [], nodeId: to.id })
-      )
+      observedDiagnostics.push(missingKeyMaterial(to.id))
       return
     }
     to.keyMaterial = {
@@ -1195,7 +1254,13 @@ export const build = (
         conflicts.push({ nodes: [a.id, b.id], paths, strategy: selected })
         if (selected === "fail") {
           observedDiagnostics.push(
-            new GraphBuildError({ code: "write_conflict", paths: [...paths], nodes: [a.id, b.id] })
+            new GraphBuildError({
+              code: "write_conflict",
+              node: a.id,
+              path: [...paths],
+              message: `Nodes "${a.id}" and "${b.id}" both write ${paths.join(", ")} under ` +
+                `onConflict: "fail". Graph.conflicts names the pair; declare an ordering or change the strategy.`
+            })
           )
         }
         if (selected === "serialize") {
@@ -1418,7 +1483,7 @@ export const keyMaterial = (
   const ordered: Array<KeyMaterial.Entry> = []
   for (const node of order.success) {
     if (node.keyMaterial === undefined) {
-      return Result.fail(new GraphBuildError({ code: "missing_key_material", paths: [], nodeId: node.id }))
+      return Result.fail(missingKeyMaterial(node.id))
     }
     ordered.push({ nodeId: node.id, material: node.keyMaterial })
   }

@@ -32,7 +32,13 @@ describe("GraphBuildError", () => {
       "effect_outside_envelope",
       "effect_mode_widening",
       "effect_tier_widening",
-      "capability_outside_grant"
+      "capability_outside_grant",
+      "write_conflict",
+      "missing_key_material",
+      "dependency_cycle",
+      "plan_too_large",
+      "payload_too_large",
+      "invalid_node"
     ])
   })
 

@@ -92,9 +92,9 @@ export const safeIntegerPriorityRefusal = (
  *
  * A pattern that unrolls a bound sequences `callsPerUnit` calls per unit into
  * a left-nested chain, so the plan nests one level deeper per call. Core
- * refuses a plan nested past `Graph.maximumGraphDepth` with a `plan_too_deep`
- * `GraphBuildError` carrying no message, which names neither the option nor
- * the pattern that produced it. Refusing at the declaration names both.
+ * refuses a plan nested past `Graph.maximumGraphDepth` with a `graph_too_deep`
+ * `GraphBuildError` naming the node, which names neither the option nor the
+ * pattern that produced it. Refusing at the declaration names both.
  *
  * The limit counts the chain alone. Deeper member flows, or an enclosing
  * pattern that unrolls this one, spend the same budget, so a bound under the

@@ -31,7 +31,7 @@ describe("Graph release regressions", () => {
     try {
       Graph.build(chain(Graph.maximumGraphDepth + 1))
     } catch (error) {
-      expect(error).toMatchObject({ code: "plan_too_deep", paths: [], nodeId: expect.any(String) })
+      expect(error).toMatchObject({ code: "graph_too_deep", path: [], node: expect.any(String) })
     }
   })
 
@@ -48,7 +48,7 @@ describe("Graph release regressions", () => {
     try {
       Graph.build(Node.succeed(nested(Graph.maximumPayloadDepth + 1)))
     } catch (error) {
-      expect(error).toMatchObject({ code: "payload_too_deep", paths: [], nodeId: "root" })
+      expect(error).toMatchObject({ code: "payload_too_deep", path: [], node: "root" })
     }
   })
 
@@ -116,14 +116,14 @@ describe("Graph release regressions", () => {
     }))
 
     expect(Graph.diagnostics(graph)).toMatchObject([{
-      code: "duplicate_node_id",
-      paths: [],
-      nodeId: "root.all.a.all.b"
+      code: "duplicate_node",
+      path: [],
+      node: "root.all.a.all.b"
     }])
     expect(Graph.diagnostics(graph)).toHaveLength(1)
     expect(Graph.keyMaterial(graph)).toMatchObject({
       _tag: "Failure",
-      failure: { code: "duplicate_node_id", nodeId: "root.all.a.all.b" }
+      failure: { code: "duplicate_node", node: "root.all.a.all.b" }
     })
   })
 
@@ -141,8 +141,8 @@ describe("Graph release regressions", () => {
     "effect_tier_widening",
     "write_conflict",
     "missing_key_material",
-    "duplicate_node_id",
-    "plan_too_deep",
+    "duplicate_node",
+    "graph_too_deep",
     "plan_too_large",
     "payload_too_deep",
     "payload_too_large"
@@ -150,7 +150,7 @@ describe("Graph release regressions", () => {
 
   it.each(fatalCodes)("blocks key material for fatal diagnostic %s", (code) => {
     const built = Graph.build(Node.succeed("ok"))
-    const diagnostic = new Graph.GraphBuildError({ code, paths: ["path"], nodeId: "root" })
+    const diagnostic = new Graph.GraphBuildError({ code, node: "root", path: ["path"], message: "" })
     const graph = { ...built, diagnostics: [diagnostic] } as Graph.Graph
     const result = Graph.keyMaterial(graph)
 
@@ -235,7 +235,7 @@ describe("Graph release regressions", () => {
       throw new Error("expected the nested schema to exceed its depth limit")
     } catch (error) {
       expect(error).toBeInstanceOf(Graph.GraphBuildError)
-      expect(error).toMatchObject({ code: "payload_too_deep", paths: [], nodeId: "root" })
+      expect(error).toMatchObject({ code: "payload_too_deep", path: [], node: "root" })
     }
   })
 
@@ -301,8 +301,8 @@ describe("Graph release regressions", () => {
     expect(nodeMaterial(graph, "root")?.kind).toBe("compensable")
     expect(Graph.diagnostics(graph)).toMatchObject([{
       code: "effect_outside_envelope",
-      paths: ["secret"],
-      nodeId: "root.all.outside"
+      path: ["secret"],
+      node: "root.all.outside"
     }])
   })
 
@@ -324,8 +324,8 @@ describe("Graph release regressions", () => {
 
     expect(Graph.diagnostics(graph)).toMatchObject([{
       code: "capability_outside_grant",
-      paths: ["shell"],
-      nodeId: "root"
+      path: ["shell"],
+      node: "root"
     }])
     expect(Graph.diagnostics(graph)).toHaveLength(1)
     expect(Result.isSuccess(Graph.keyMaterial(graph))).toBe(true)
@@ -366,8 +366,8 @@ describe("Graph release regressions", () => {
     } catch (error) {
       expect(error).toMatchObject({
         code: "invalid_node",
-        paths: [],
-        nodeId: "root",
+        path: [],
+        node: "root",
         message: "Graph.build expected a supported Node AST at \"root\""
       })
     }
@@ -383,7 +383,7 @@ describe("Graph release regressions", () => {
     } catch (error) {
       expect(error).toMatchObject({
         code: "invalid_node",
-        nodeId: "root.all.malformed",
+        node: "root.all.malformed",
         message: "Graph.build expected a supported Node AST at \"root.all.malformed\""
       })
     }

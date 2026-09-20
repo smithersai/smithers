@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 import { Sha256 } from "@smthrs/crypto"
-import * as Effects from "@smthrs/plan/Effects"
+import type * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
@@ -14,8 +14,8 @@ import * as Effect from "effect/Effect"
 import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
+import { lowerDeclarations } from "../internal/Declarations.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
-import { Capabilities, EffectEnvelope } from "./Annotations.ts"
 import { CurrentExecutionIds } from "./ExecutionIds.ts"
 import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, Flow } from "./Flow.ts"
 import type { To } from "./Outcome.ts"
@@ -274,33 +274,6 @@ type Body<
 type PayloadSchemaOf<Payload extends Schema.Struct.Fields | AnyStructSchema> = Payload extends Schema.Struct.Fields
   ? Schema.Struct<Payload>
   : Payload
-
-/**
- * Lowers the literal declarations a `Flow.make` call carries into the
- * annotation bag every reader already consults.
- *
- * Both literals exist so a CATALOG can project them from source text without
- * importing the module, so the lowering is the only place either spelling is
- * turned into a value: a flow that declares `capabilities` and a flow that
- * annotates `Annotations.Capabilities` are the same flow to `Graph.build`, and
- * the same holds for `effects` and `Annotations.EffectEnvelope`.
- *
- * @private
- */
-const lowerDeclarations = (options: {
-  readonly capabilities?: ReadonlyArray<string> | undefined
-  readonly effects?: Effects.MakeOptions | undefined
-  readonly annotations?: Context.Context<never> | undefined
-}): Context.Context<never> => {
-  let annotations = options.annotations ?? Context.empty()
-  if (options.capabilities !== undefined) {
-    annotations = Context.add(annotations, Capabilities, options.capabilities)
-  }
-  if (options.effects !== undefined) {
-    annotations = Context.add(annotations, EffectEnvelope, Effects.make(options.effects))
-  }
-  return annotations
-}
 
 /**
  * Whether a value is a flow this package made.

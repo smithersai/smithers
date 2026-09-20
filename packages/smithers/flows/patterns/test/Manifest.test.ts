@@ -68,8 +68,10 @@ describe("package manifest", () => {
   // moved to `@smthrs/plan-store`, which is why neither this package nor
   // `@smthrs/core` carries `@smthrs/database` in its dependency closure any
   // more. This case keeps the import narrow anyway, so a future plan module
-  // cannot arrive here unnoticed.
-  it("takes only the effect model from @smthrs/plan", () => {
+  // cannot arrive here unnoticed. Three are named: the effect model, the cache
+  // policy `WithCache` declares and the engine reads, and the ceiling
+  // vocabulary `Loop` shares with `@smthrs/flow`'s `Poll`.
+  it("takes only shared vocabularies from @smthrs/plan", () => {
     const specifiers = new Set<string>()
     for (const file of sourceFiles(sourceDirectory)) {
       for (const match of readFileSync(file, "utf8").matchAll(/from\s+"(@smthrs\/plan[^"]*)"/g)) {
@@ -77,6 +79,10 @@ describe("package manifest", () => {
       }
     }
 
-    expect([...specifiers]).toEqual(["@smthrs/plan/Effects"])
+    expect([...specifiers].sort()).toEqual([
+      "@smthrs/plan/CachePolicy",
+      "@smthrs/plan/Effects",
+      "@smthrs/plan/Repetition"
+    ])
   })
 })

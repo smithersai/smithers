@@ -23,6 +23,18 @@
 export * as GraphBuildError from "./GraphBuildError.ts"
 
 /**
+ * @since 1.0.0-rc.0
+ * @category models
+ */
+export * as CachePolicy from "./CachePolicy.ts"
+
+/**
+ * @since 1.0.0-rc.0
+ * @category models
+ */
+export * as Repetition from "./Repetition.ts"
+
+/**
  * @since 0.1.0
  * @category models
  * @slop

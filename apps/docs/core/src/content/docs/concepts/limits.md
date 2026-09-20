@@ -19,7 +19,7 @@ So every axis is bounded, every bound is exported, and crossing one produces a
 
 | Constant                        | Value   | Bounds                                                        | Refuses with        |
 | ------------------------------- | ------- | ------------------------------------------------------------- | ------------------- |
-| `Graph.maximumGraphDepth`       | 512     | Nested node structure.                                        | `plan_too_deep`     |
+| `Graph.maximumGraphDepth`       | 512     | Nested node structure.                                        | `graph_too_deep`    |
 | `Graph.maximumPayloadDepth`     | 128     | Nesting inside one reflected plan value.                      | `payload_too_deep`  |
 | `Graph.maximumGraphNodes`       | 4,096   | Nodes, synthesized lane merges included.                      | `plan_too_large`    |
 | `Graph.maximumGraphEdges`       | 65,536  | Edges, conflict and lane-merge edges included.                | `plan_too_large`    |

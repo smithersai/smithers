@@ -19,6 +19,7 @@
  * @since 0.1.0
  */
 import { Flow, Node } from "@smthrs/core"
+import type * as Repetition from "@smthrs/plan/Repetition"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
@@ -27,10 +28,13 @@ import { PatternError } from "./PatternError.ts"
 /**
  * What a loop does when it reaches its iteration bound unsatisfied.
  *
+ * This is `@smthrs/plan`'s `Repetition.AtCeiling`, the one ceiling vocabulary,
+ * which `@smthrs/flow`'s `Poll.make` takes as `onTimeout`.
+ *
  * @category models
  * @since 0.1.0
  */
-export type OnMaxReached = "fail" | "return-last"
+export type OnMaxReached = Repetition.AtCeiling
 
 /**
  * Configuration for {@link make}.

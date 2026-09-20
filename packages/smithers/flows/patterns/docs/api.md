@@ -266,7 +266,10 @@ Invalid effects, TTL, or version throw `PatternError` with code
 All declared fields enter the wrapper's name and captured key material.
 `version` changes declaration identity only. `ttlMs` and `scope` also travel
 in `WithCache.CachePolicyAnnotation`, under `@smthrs/flow/Action/CachePolicy`.
-`WithCache.policyOf(annotations)` reads that bag. Decorator composition
+That key is [`@smthrs/plan`](/api/plan#cachepolicy)'s
+`CachePolicy.CachePolicyAnnotation`, the same object `@smthrs/flow` publishes
+and the engine reads at dispatch, so `Scope` and `Policy` here are that one
+model. `WithCache.policyOf(annotations)` reads that bag. Decorator composition
 preserves annotations, with an outer decorator's values overriding inner ones.
 
 The flow-level bag requires a host to lower it. The [`@smthrs/registry`](/api/registry)
@@ -504,9 +507,9 @@ each chained call costs one level, so a chain reaches 511 declared calls, or
 255 when a unit declares two of them. `Loop.make` refuses a `maxIterations`
 past that limit at the declaration, with an `invalid_decorator` `PatternError`
 naming the option and the limit. Every other pattern reaches the ceiling as a
-`plan_too_deep` `GraphBuildError` from `Graph.build`, which carries no
-message. The limit counts the chain alone, so deeper member flows or an
-enclosing unrolled pattern lower it.
+`graph_too_deep` `GraphBuildError` from `Graph.build`, which names the node
+rather than the option. The limit counts the chain alone, so deeper member
+flows or an enclosing unrolled pattern lower it.
 
 ## Entry points
 

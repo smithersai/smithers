@@ -82,7 +82,7 @@ keeps process-local identity.
 `TypeError: Node.capture requires a function operation` means the second
 argument was not a function.
 
-### plan_too_deep, plan_too_large, payload_too_deep, payload_too_large
+### graph_too_deep, plan_too_large, payload_too_deep, payload_too_large
 
 `Graph.build` throws a `GraphBuildError` with one of these codes, naming the
 node or the value path that crossed a limit. These are not recorded
@@ -93,7 +93,7 @@ Each limit is exported, so a test can assert on the boundary and a generator
 can stay inside it. See [Build limits](./concepts/limits.md) for the table.
 
 The usual cause is a generated declaration, or a loop that composes nodes
-without a bound. `plan_too_deep` after a recursive builder means the recursion
+without a bound. `graph_too_deep` after a recursive builder means the recursion
 has no base case that stops at 512.
 
 ## Failures that are recorded
@@ -107,15 +107,15 @@ reports which is which.
 
 ```text
 {
-  _tag: 'flows/core/GraphBuildError',
+  _tag: '@smthrs/plan/GraphBuildError',
   code: 'effect_outside_envelope',
-  paths: [ 'secret.txt' ],
-  nodeId: 'root'
+  node: 'root',
+  path: [ 'secret.txt' ]
 }
 ```
 
 A step declared a read or write path the envelope it inherited does not cover.
-`paths` names the uncovered paths and `nodeId` names the step.
+`path` names the uncovered paths and `node` names the step.
 
 Either narrow the step to stay inside the envelope, or widen the enclosing
 flow's declaration to grant what the step needs. A path containing a whole `.`
@@ -142,15 +142,17 @@ Raise the enclosing flow's tier to cover the step, or lower the step's.
 
 ```text
 {
-  _tag: 'flows/core/GraphBuildError',
+  _tag: '@smthrs/plan/GraphBuildError',
   code: 'write_conflict',
-  paths: [ 'out/report.json' ],
-  nodes: [ 'root.all.a', 'root.all.b' ]
+  node: 'root.all.a',
+  path: [ 'out/report.json' ]
 }
 ```
 
 Two work nodes declared overlapping writes and at least one of them declared
-`onConflict: "fail"`. This is fatal by design: it is what `fail` is for.
+`onConflict: "fail"`. This is fatal by design: it is what `fail` is for. `node`
+names the first of the pair and the message names both; `Graph.conflicts`
+carries the pair as data.
 
 Fix the declarations so only one node writes the path, or change the strategy.
 `serialize` orders the two writers with a `conflict` edge; `lane` gives each a
@@ -160,22 +162,22 @@ lane and synthesizes a merge node. Both keep the graph keyable.
 
 ```text
 {
-  _tag: 'flows/core/GraphBuildError',
+  _tag: '@smthrs/plan/GraphBuildError',
   code: 'capability_outside_grant',
-  paths: [ 'net:fetch' ],
-  nodeId: 'root'
+  node: 'root',
+  path: [ 'net:fetch' ]
 }
 ```
 
 A called flow declares a capability the calling flow's grant does not include.
-`paths` names the dropped capabilities. This one is advisory: the graph still
+`path` names the dropped capabilities. This one is advisory: the graph still
 keys, and the inner flow's effective grant is the intersection, so the
 capability is dropped rather than smuggled through.
 
 Add the capability to the outer flow with `Flow.withCapabilities`, or remove it
 from the inner one.
 
-### duplicate_node_id
+### duplicate_node
 
 Two nodes claim the same structural id. Ordinary `Node.all` member names can
 collide with structural separators:
@@ -190,7 +192,7 @@ const graph = Graph.build(Node.all({
 ```
 
 Both leaves have id `root.all.a.all.b`. `Graph.diagnostics(graph)` records
-`duplicate_node_id`, and `Graph.keyMaterial(graph)` refuses the graph.
+`duplicate_node`, and `Graph.keyMaterial(graph)` refuses the graph.
 Rename the colliding member, for example from `"a.all.b"` to `"other"`.
 Dotted member names are allowed when their structural ids are unambiguous.
 

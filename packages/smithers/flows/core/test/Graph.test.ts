@@ -84,7 +84,7 @@ describe("Graph", () => {
     })
 
     expect(Graph.diagnostics(Graph.build(flow))).toMatchObject([
-      { code: "effect_outside_envelope", paths: ["secret.txt"], nodeId: "root" }
+      { code: "effect_outside_envelope", path: ["secret.txt"], node: "root" }
     ])
   })
 
@@ -149,8 +149,29 @@ describe("Graph", () => {
     expect(Graph.diagnostics(Graph.build(parent))).toMatchObject([
       {
         code: "effect_outside_envelope",
-        paths: ["secret.txt"],
-        nodeId: "root"
+        path: ["secret.txt"],
+        node: "root",
+        message: expect.stringContaining("names a path its caller's effect envelope does not cover")
+      }
+    ])
+  })
+
+  it("names every escaping path when a child flow escapes on more than one", () => {
+    const child = Flow.make({
+      effects: effect({ writes: ["secret.txt", "other.txt"] }),
+      body: () => Node.dynamic({})
+    })
+    const parent = Flow.make({
+      effects: effect({ writes: ["out/**"] }),
+      body: () => child(undefined)
+    })
+
+    expect(Graph.diagnostics(Graph.build(parent))).toMatchObject([
+      {
+        code: "effect_outside_envelope",
+        path: ["other.txt", "secret.txt"],
+        node: "root",
+        message: expect.stringContaining("names paths its caller's effect envelope does not cover")
       }
     ])
   })
@@ -161,30 +182,30 @@ describe("Graph", () => {
       restricted: effect({ reads: ["src/**"] }),
       escaped: effect({ reads: ["secret.txt"] }),
       code: "effect_outside_envelope",
-      paths: ["secret.txt"]
+      path: ["secret.txt"]
     },
     {
       dimension: "writes",
       restricted: effect({ writes: ["out/**"] }),
       escaped: effect({ writes: ["secret.txt"] }),
       code: "effect_outside_envelope",
-      paths: ["secret.txt"]
+      path: ["secret.txt"]
     },
     {
       dimension: "mode",
       restricted: effect({ mode: "hermetic" }),
       escaped: effect({ mode: "expected" }),
       code: "effect_mode_widening",
-      paths: []
+      path: []
     },
     {
       dimension: "tier",
       restricted: effect(),
       escaped: effect({ tier: "irreversible" }),
       code: "effect_tier_widening",
-      paths: []
+      path: []
     }
-  ])("flow call $dimension envelopes", ({ restricted, escaped, code, paths }) => {
+  ])("flow call $dimension envelopes", ({ restricted, escaped, code, path }) => {
     it.each([false, true])("rejects a callee escape with annotated=%s", (annotated) => {
       const child = Flow.make({ effects: escaped, body: () => Node.dynamic({}) })
       const graph = Graph.build(Flow.make({
@@ -192,7 +213,7 @@ describe("Graph", () => {
         body: () => annotated ? Node.withEffects(child(undefined), restricted) : child(undefined)
       }))
 
-      expect(Graph.diagnostics(graph)).toMatchObject([{ code, paths, nodeId: "root" }])
+      expect(Graph.diagnostics(graph)).toMatchObject([{ code, path, node: "root" }])
       expect(Graph.keyMaterial(graph)._tag).toBe("Failure")
       expect(Graph.nodes(graph).find((node) => node.id === "root.flow")?.effectiveEffects).toEqual(restricted)
     })
@@ -201,7 +222,7 @@ describe("Graph", () => {
       const child = Flow.make({ effects: escaped, body: () => Node.dynamic({}) })
       const graph = Graph.build(Node.withEffects(child(undefined), restricted))
 
-      expect(Graph.diagnostics(graph)).toMatchObject([{ code, paths, nodeId: "root" }])
+      expect(Graph.diagnostics(graph)).toMatchObject([{ code, path, node: "root" }])
       expect(Graph.keyMaterial(graph)._tag).toBe("Failure")
       expect(Graph.nodes(graph).find((node) => node.id === "root.flow")?.effectiveEffects).toEqual(restricted)
     })
@@ -213,7 +234,7 @@ describe("Graph", () => {
         body: () => Node.withEffects(child(undefined), escaped)
       }))
 
-      expect(Graph.diagnostics(graph)).toMatchObject([{ code, paths, nodeId: "root" }])
+      expect(Graph.diagnostics(graph)).toMatchObject([{ code, path, node: "root" }])
       expect(Graph.keyMaterial(graph)._tag).toBe("Failure")
       expect(Graph.nodes(graph).find((node) => node.id === "root.flow")?.effectiveEffects).toEqual(restricted)
     })
@@ -265,8 +286,8 @@ describe("Graph", () => {
     ])
     expect(Graph.diagnostics(graph)).toMatchObject([{
       code: "capability_outside_grant",
-      paths: ["proc:spawn:**"],
-      nodeId: "root"
+      path: ["proc:spawn:**"],
+      node: "root"
     }])
   })
 
@@ -280,9 +301,9 @@ describe("Graph", () => {
     expect(Graph.keyMaterial(graph)).toMatchObject({
       _tag: "Failure",
       failure: {
-        _tag: "flows/core/GraphBuildError",
+        _tag: "@smthrs/plan/GraphBuildError",
         code: "missing_key_material",
-        nodeId: "root"
+        node: "root"
       }
     })
   })
@@ -398,7 +419,7 @@ describe("Graph", () => {
     try {
       Graph.build(Node.dynamic({ output }))
     } catch (error) {
-      expect(error).toMatchObject({ code: "payload_too_deep", nodeId: "root" })
+      expect(error).toMatchObject({ code: "payload_too_deep", node: "root" })
     }
   })
 
@@ -410,7 +431,7 @@ describe("Graph", () => {
     try {
       Graph.build(Node.dynamic({ output }))
     } catch (error) {
-      expect(error).toMatchObject({ code: "payload_too_large", nodeId: "root" })
+      expect(error).toMatchObject({ code: "payload_too_large", node: "root" })
     }
   })
 
@@ -428,7 +449,7 @@ describe("Graph", () => {
     try {
       Graph.build(Node.succeed(output(62)))
     } catch (error) {
-      expect(error).toMatchObject({ code: "payload_too_deep", nodeId: "root" })
+      expect(error).toMatchObject({ code: "payload_too_deep", node: "root" })
     }
   })
 
@@ -444,8 +465,8 @@ describe("Graph", () => {
     } catch (error) {
       expect(error).toMatchObject({
         code: "payload_too_large",
-        paths: ["$.document.schema.allOf[0].enum"],
-        nodeId: "root"
+        path: ["$.document.schema.allOf[0].enum"],
+        node: "root"
       })
     }
   })

@@ -29,7 +29,8 @@ const words = [
   "nine",
   "ten",
   "eleven",
-  "twelve"
+  "twelve",
+  "thirteen"
 ]
 
 describe("reference docs", () => {

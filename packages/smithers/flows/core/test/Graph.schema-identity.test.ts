@@ -29,7 +29,7 @@ describe("Graph schema annotation identity", () => {
         Graph.build(Node.dynamic({ output: schema }))
         throw new Error("expected schema annotations to exceed the payload depth")
       } catch (error) {
-        expect(error).toMatchObject({ code: "payload_too_deep", nodeId: "root" })
+        expect(error).toMatchObject({ code: "payload_too_deep", node: "root" })
       }
     }
   })

@@ -14,8 +14,7 @@
  *
  * @since 0.1.0
  */
-import * as Context from "effect/Context"
-import * as Option from "effect/Option"
+import * as PlanCachePolicy from "@smthrs/plan/CachePolicy"
 import * as Schema from "effect/Schema"
 
 /**
@@ -63,13 +62,13 @@ export const CacheEnvironment = Schema.Struct({
  * result is only meaningful inside one execution, or inside one flow, folds
  * that identity into its key so a sibling never reads it.
  *
- * The old scope vocabulary was `run | workflow | global`; `flow` and `shared`
- * are the same three levels named after the current concepts.
+ * This is `@smthrs/plan`'s `CachePolicy.CacheScope`, the one scope vocabulary
+ * `@smthrs/patterns` also declares its policy with.
  *
  * @category models
  * @since 0.1.0
  */
-export const CacheScope = Schema.Literals(["run", "flow", "shared"])
+export const CacheScope = PlanCachePolicy.CacheScope
 
 /**
  * How far a recorded sealed result may travel.
@@ -77,15 +76,7 @@ export const CacheScope = Schema.Literals(["run", "flow", "shared"])
  * @category models
  * @since 0.1.0
  */
-export type CacheScope = typeof CacheScope.Type
-
-/**
- * A positive whole number of milliseconds.
- *
- * @private
- * @since 0.1.0
- */
-const PositiveMillis = Schema.Int.check(Schema.isGreaterThan(0))
+export type CacheScope = PlanCachePolicy.CacheScope
 
 /**
  * The caller's declaration about the decay and the reach of a sealed action's
@@ -96,17 +87,12 @@ const PositiveMillis = Schema.Int.check(Schema.isGreaterThan(0))
  * evidence a replay reads rather than a fresh clock reading. `scope` decides
  * what the key names besides the inputs.
  *
- * Both fields are optional and both defaults are the pre-policy behavior: no
- * age bound, and the reach the composition's `CacheEnvironment` already
- * granted.
+ * This is `@smthrs/plan`'s `CachePolicy.CachePolicy`, the one policy schema.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const CachePolicy = Schema.Struct({
-  ttlMs: Schema.optionalKey(PositiveMillis),
-  scope: Schema.optionalKey(CacheScope)
-})
+export const CachePolicy = PlanCachePolicy.CachePolicy
 
 /**
  * The caller's declaration about the decay and the reach of a sealed action's
@@ -115,7 +101,7 @@ export const CachePolicy = Schema.Struct({
  * @category models
  * @since 0.1.0
  */
-export type CachePolicy = typeof CachePolicy.Type
+export type CachePolicy = PlanCachePolicy.CachePolicy
 
 /**
  * Annotation key carrying a declaration's {@link CachePolicy}.
@@ -125,10 +111,14 @@ export type CachePolicy = typeof CachePolicy.Type
  * declaration and is read by whoever executes it, and adding it changes no
  * existing call site.
  *
+ * It is `@smthrs/plan`'s `CachePolicy.CachePolicyAnnotation` itself, the same
+ * object `@smthrs/patterns` annotates a flow with, identified by
+ * `"@smthrs/flow/Action/CachePolicy"`.
+ *
  * @category annotations
  * @since 0.1.0
  */
-export const CachePolicyAnnotation = Context.Service<CachePolicy>("@smthrs/flow/Action/CachePolicy")
+export const CachePolicyAnnotation = PlanCachePolicy.CachePolicyAnnotation
 
 /**
  * Reads the cache policy an annotation bag carries, or `undefined` when it
@@ -137,8 +127,7 @@ export const CachePolicyAnnotation = Context.Service<CachePolicy>("@smthrs/flow/
  * @category getters
  * @since 0.1.0
  */
-export const cachePolicyOf = (annotations: Context.Context<never>): CachePolicy | undefined =>
-  Option.getOrUndefined(Context.getOption(annotations, CachePolicyAnnotation))
+export const cachePolicyOf = PlanCachePolicy.cachePolicyOf
 
 /**
  * Declares a cache policy on an action.
@@ -147,12 +136,14 @@ export const cachePolicyOf = (annotations: Context.Context<never>): CachePolicy 
  * {@link CachePolicyAnnotation} off the dispatched action, bounds the age of
  * the row it may serve by `ttlMs`, and narrows the address that row is stored
  * under from `scope`. `@smthrs/patterns`' `WithCache` declares the same policy
- * over a `@smthrs/core` flow under the same annotation identifier, for the
- * declaration surface; both halves are the same key, so a policy written by
- * either is read by the engine.
+ * over a `@smthrs/core` flow under the same annotation key, for the
+ * declaration surface, so a policy written by either is read by the engine.
  *
  * The action is not mutated. `annotate` returns a new declaration carrying the
  * policy, which is what a plan captures.
+ *
+ * It is `@smthrs/plan`'s `CachePolicy.annotate` under this package's name for
+ * it.
  *
  * @example
  * ```ts
@@ -175,7 +166,4 @@ export const cachePolicyOf = (annotations: Context.Context<never>): CachePolicy 
  * @category combinators
  * @since 0.1.0
  */
-export const withCache = <A extends { annotate: (key: typeof CachePolicyAnnotation, value: CachePolicy) => A }>(
-  action: A,
-  policy: CachePolicy
-): A => action.annotate(CachePolicyAnnotation, policy)
+export const withCache = PlanCachePolicy.annotate

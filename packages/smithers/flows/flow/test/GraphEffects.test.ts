@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Graph } from "@smthrs/flow"
 import { Effects, GraphBuildError } from "@smthrs/plan"
-import { Schema } from "effect"
+import { Context, Option, Schema } from "effect"
 
 const Touch = Action.make("envelope/touch", {
   payload: { path: Schema.String },
@@ -16,6 +16,10 @@ const envelope = (input: Partial<Effects.MakeOptions> = {}): Effects.Declaration
     onConflict: input.onConflict ?? "serialize",
     ...(input.tier === undefined ? {} : { tier: input.tier })
   })
+
+/** The envelope a declaration's annotation bag carries, or `undefined`. */
+const declaredEnvelope = (annotations: Context.Context<never>): Effects.Declaration | undefined =>
+  Option.getOrUndefined(Context.getOption(annotations, Flow.EffectEnvelope))
 
 /** The diagnostic a build recorded for one code, or `undefined`. */
 const recorded = (graph: Graph.Graph, code: string): GraphBuildError.GraphBuildError | undefined =>
@@ -203,6 +207,29 @@ describe("Graph.build effect envelope", () => {
     expect(Graph.drafts(graph).length).toBeGreaterThan(0)
   })
 
+  it("records a capability an action requires and its caller does not grant", () => {
+    const Privileged = Action.make("envelope/privileged-action", {
+      payload: { path: Schema.String },
+      success: Schema.Number,
+      capabilities: ["fs:write", "net"]
+    })
+    const Caller = Flow.make("envelope/action-capability-caller", {
+      payload: {},
+      success: Schema.Number,
+      capabilities: ["fs:write"],
+      body: () => Privileged.call({ path: "src/a.ts" })
+    })
+
+    const graph = Graph.build(Caller, {})
+    const refusal = recorded(graph, "capability_outside_grant")
+
+    expect(refusal?.node).toBe("root.flow")
+    expect(refusal?.path).toEqual(["net"])
+    // Advisory for an action exactly as for a flow: the dispatch runs with
+    // less authority, so the drafts are still handed over.
+    expect(Graph.drafts(graph).length).toBeGreaterThan(0)
+  })
+
   it("checks a child boundary exactly as it checks an inline call", () => {
     const Callee = Flow.make("envelope/child-callee", {
       payload: {},
@@ -293,6 +320,65 @@ describe("Graph.build effect envelope", () => {
     // The declaration the catalog and the build both read is the normalized one.
     expect(Flow.EffectEnvelope).toBeDefined()
     expect(Graph.diagnostics(graph)).toEqual([])
+  })
+
+  it("refuses an action whose declared effects literal widens the enclosing envelope", () => {
+    const Widening = Action.make("envelope/widening-literal", {
+      payload: { path: Schema.String },
+      success: Schema.Number,
+      effects: { reads: [], writes: ["/tmp/out"], mode: "hermetic", onConflict: "serialize" }
+    })
+    const Caller = Flow.make("envelope/literal-action-caller", {
+      payload: {},
+      success: Schema.Number,
+      effects: { reads: ["src/**"], writes: [], mode: "hermetic", onConflict: "serialize" },
+      body: () => Widening.call({ path: "/tmp/out" })
+    })
+
+    const refusal = recorded(Graph.build(Caller, {}), "effect_outside_envelope")
+
+    // The same code a widening INLINE FLOW gets, so the control fires for both.
+    expect(refusal?.code).toBe("effect_outside_envelope")
+    expect(refusal?.path).toEqual(["/tmp/out"])
+  })
+
+  it("lowers an action's declared effects literal to the annotated envelope", () => {
+    const declared = Action.make("envelope/declared-literal", {
+      payload: {},
+      effects: { reads: ["src/a.ts"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "compensable" }
+    })
+    const annotated = Action.make("envelope/annotated-literal", {
+      payload: {}
+    }).annotate(
+      Flow.EffectEnvelope,
+      envelope({ reads: ["src/a.ts"], mode: "hermetic", tier: "compensable" })
+    )
+
+    expect(declaredEnvelope(declared.annotations)).toEqual(declaredEnvelope(annotated.annotations))
+    expect(declaredEnvelope(declared.annotations)).toEqual(
+      envelope({ reads: ["src/a.ts"], mode: "hermetic", tier: "compensable" })
+    )
+  })
+
+  it("lets an annotated copy narrow the envelope and the ceiling the literals declared", () => {
+    const declared = Action.make("envelope/annotated-over-declared", {
+      payload: {},
+      capabilities: ["fs:read", "fs:write"],
+      effects: { reads: ["src/**"], writes: [], mode: "expected", onConflict: "serialize" }
+    })
+
+    const narrowed = declared
+      .annotate(Flow.Capabilities, ["fs:read"])
+      .annotate(Flow.EffectEnvelope, envelope({ reads: ["src/a.ts"], mode: "hermetic" }))
+
+    // The literals lower ONCE, at the declaration, so an annotated copy is
+    // rebuilt from the lowered bag rather than from the literals again.
+    expect(Context.get(narrowed.annotations, Flow.Capabilities)).toEqual(["fs:read"])
+    expect(declaredEnvelope(narrowed.annotations)).toEqual(
+      envelope({ reads: ["src/a.ts"], mode: "hermetic" })
+    )
+    // The original is untouched.
+    expect(Context.get(declared.annotations, Flow.Capabilities)).toEqual(["fs:read", "fs:write"])
   })
 
   it("leaves a flow that declares no envelope unconstrained", () => {

@@ -102,8 +102,20 @@ identically.
 `payload_too_deep`, `unstable_callback`, `effect_outside_envelope`,
 `effect_mode_widening`, `effect_tier_widening`, and
 `capability_outside_grant`. Those come from
-[`@smthrs/flow`](/api/flow)'s graph walk, which shares this vocabulary. The
-code set is closed so a caller can switch on it across both packages.
+[`@smthrs/flow`](/api/flow)'s graph walk, which shares this vocabulary.
+
+Six more come from [`@smthrs/core`](/api/core)'s graph builder, which raises
+this error rather than a second class of its own: `write_conflict` for two work
+nodes overlapping under `onConflict: "fail"`, where `node` names the first of
+the pair and `Graph.conflicts` carries both; `missing_key_material` for a node
+that reached key compilation without any; `dependency_cycle` for a dependency
+set that cannot be ordered, where `node` names a node in the cycle;
+`plan_too_large` for a node, edge, conflict, or effect-path limit crossed, where
+`node` names the node whose admission crossed it; `payload_too_large` for one
+plan value with more members than the bound, where `path` names the offending
+value path; and `invalid_node` for a malformed node AST. All six are fatal.
+
+The code set is closed so a caller can switch on it across all three packages.
 
 The last four are the effect-authority refusals. `Effects` above defines the
 rule: a declaration may narrow the envelope enclosing it and never widen it.

@@ -9,7 +9,7 @@ const strip = (graph: Graph.Graph): unknown => ({
   nodes: Graph.nodes(graph).map(({ keyMaterial, ...node }) => ({ ...node, keyMaterial })),
   edges: Graph.edges(graph),
   conflicts: Graph.conflicts(graph),
-  diagnostics: Graph.diagnostics(graph).map(({ code, paths, nodes }) => ({ code, paths, nodes }))
+  diagnostics: Graph.diagnostics(graph).map(({ code, node, path }) => ({ code, node, path }))
 })
 
 describe("Graph purity", () => {

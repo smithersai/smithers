@@ -7,8 +7,7 @@
  * @since 0.1.0
  */
 import { Flow, Node } from "@smthrs/core"
-import * as Context from "effect/Context"
-import * as Option from "effect/Option"
+import * as CachePolicy from "@smthrs/plan/CachePolicy"
 import type * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import * as Pattern from "./Pattern.ts"
@@ -23,14 +22,14 @@ import { PatternError } from "./PatternError.ts"
  * result is only meaningful inside one execution or inside one flow.
  *
  * The three levels are the old `run | workflow | global` policy named after the
- * current concepts, and they match
- * `@smthrs/flow/CacheEnvironment` `CacheScope`, which is what the engine reads
- * at dispatch.
+ * current concepts. This is `@smthrs/plan`'s `CachePolicy.CacheScope`, the same
+ * vocabulary `@smthrs/flow` publishes as `CacheEnvironment.CacheScope` and the
+ * engine reads at dispatch.
  *
  * @category models
  * @since 0.1.0
  */
-export type Scope = "run" | "flow" | "shared"
+export type Scope = CachePolicy.CacheScope
 
 /**
  * The cache policy a wrapper declares: how long a recorded result may be
@@ -68,32 +67,27 @@ export interface Options {
  * dispatch instruction: it changes the key the step is addressed by and
  * nothing else.
  *
+ * This is `@smthrs/plan`'s `CachePolicy.CachePolicy`, the one policy model, so
+ * a field added for the engine reaches this declaration surface too.
+ *
  * @category models
  * @since 0.1.0
  */
-export interface Policy {
-  readonly ttlMs?: number | undefined
-  readonly scope?: Scope | undefined
-}
+export type Policy = CachePolicy.CachePolicy
 
 /**
  * Annotation key carrying a declaration's {@link Policy}.
  *
- * The IDENTIFIER is the contract. `@smthrs/engine-store` reads the policy at
- * dispatch through `@smthrs/flow`'s `CacheEnvironment.CachePolicyAnnotation`,
- * which is the same key under the same identifier. A host must lower the flow
- * bag onto an action, as the registry bridge does for default-exported flows.
- * The key is declared twice rather than imported
- * because `@smthrs/patterns` does not depend on `@smthrs/flow` and
- * `@smthrs/flow` does not depend on `@smthrs/core`, so neither package can
- * import the other. `packages/smithers/flows/patterns/test/WithCache.test.ts` pins the two halves
- * together: it reads a wrapper's annotations back with `@smthrs/flow`'s reader,
- * and fails the moment the identifiers drift.
+ * It is `@smthrs/plan`'s `CachePolicy.CachePolicyAnnotation`, the same object
+ * `@smthrs/flow` publishes as `CacheEnvironment.CachePolicyAnnotation` and
+ * `@smthrs/engine-store` reads the policy by at dispatch, identified by
+ * `"@smthrs/flow/Action/CachePolicy"`. A host must lower the flow bag onto an
+ * action, as the registry bridge does for default-exported flows.
  *
  * @category annotations
  * @since 0.1.0
  */
-export const CachePolicyAnnotation = Context.Service<Policy>("@smthrs/flow/Action/CachePolicy")
+export const CachePolicyAnnotation = CachePolicy.CachePolicyAnnotation
 
 /**
  * The policy an annotation bag carries, or `undefined` when it carries none.
@@ -101,8 +95,7 @@ export const CachePolicyAnnotation = Context.Service<Policy>("@smthrs/flow/Actio
  * @category getters
  * @since 0.1.0
  */
-export const policyOf = (annotations: Context.Context<never>): Policy | undefined =>
-  Option.getOrUndefined(Context.getOption(annotations, CachePolicyAnnotation))
+export const policyOf = CachePolicy.cachePolicyOf
 
 /**
  * The durable fields of a declared policy, or `undefined` when the caller

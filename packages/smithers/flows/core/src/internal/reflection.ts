@@ -19,12 +19,12 @@
 import { processNonce } from "@smthrs/crypto/Identity"
 import type * as Effects from "@smthrs/plan/Effects"
 import { boundedEffects } from "@smthrs/plan/Effects"
+import { GraphBuildError } from "@smthrs/plan/GraphBuildError"
 import { Chunk, Option, Result, Schema, SchemaAST } from "effect"
 import type * as Context from "effect/Context"
 import * as Flow from "../Flow.ts"
 import type * as KeyMaterial from "../KeyMaterial.ts"
 import * as Node from "../Node.ts"
-import { GraphBuildError } from "./diagnostic.ts"
 import * as internal from "./node.ts"
 
 /**
@@ -158,8 +158,19 @@ const symbolIdentity = (value: symbol): SymbolIdentity => {
   return { scope: "process-local", id }
 }
 
+/** What an author reads when one plan value carried more members than the bound. */
+const tooLarge = (path: string): string =>
+  `The plan value at ${path} expands to more than ${maximumMembers} members. Shrink it, or hand the bulk to ` +
+  "an action that reads it at run time."
+
 const payloadDepthError = (nodeId: string): GraphBuildError =>
-  new GraphBuildError({ code: "payload_too_deep", paths: [], nodeId })
+  new GraphBuildError({
+    code: "payload_too_deep",
+    node: nodeId,
+    path: [],
+    message: `The plan value at "${nodeId}" nests more than ${maximumDepth} levels deep. Flatten it into ` +
+      "shallower data."
+  })
 
 /**
  * Members already produced while projecting one plan value. One budget spans
@@ -180,7 +191,7 @@ const memberBudget = (): MemberBudget => ({ used: 0 })
 const charge = (budget: MemberBudget, members: number, nodeId: string, path: string): void => {
   budget.used += members
   if (budget.used > maximumMembers) {
-    throw new GraphBuildError({ code: "payload_too_large", paths: [path], nodeId })
+    throw new GraphBuildError({ code: "payload_too_large", node: nodeId, path: [path], message: tooLarge(path) })
   }
 }
 
@@ -199,7 +210,7 @@ const reflectedEffects = (
   const effects = boundedEffects(
     declaration,
     maximumMembers - budget.used,
-    () => new GraphBuildError({ code: "payload_too_large", paths: [path], nodeId })
+    () => new GraphBuildError({ code: "payload_too_large", node: nodeId, path: [path], message: tooLarge(path) })
   )
   charge(budget, effects.reads.length + effects.writes.length, nodeId, path)
   return effects

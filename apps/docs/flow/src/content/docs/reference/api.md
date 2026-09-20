@@ -91,6 +91,8 @@ Scope helpers are `scope`, `provideScope`, `addFinalizer`, `withRollback`, and `
 
 `Action.make(options)` defines a named effect with success and error schemas, a `tier`, idempotency identity, metadata, annotations, an optional `retryPolicy`, and an optional `interruptRetryPolicy`. `Action.make(tag, options)` is the declared form: pure data whose implementation attaches later through `toLayer`. `Action.makeSystem` is the declared form that mints no requirement, which is how `Sleep`, `WaitFor`, `HumanTask`, and `Poll` ship implementations with the engine instead of pushing a layer obligation onto their callers.
 
+The declared form takes the same two literals `Flow.make` does, lowered into the annotation bag by the same code: `capabilities`, the capability ceiling the dispatch runs under, and `effects`, the effect envelope from [`@smthrs/plan`](https://plan.smithers.sh/reference/api/#effects). They are literals so a catalog can project a declaration's authority from source text without importing the module. An action is a leaf, so its envelope encloses nothing: `Graph.build` checks it against the envelope the calling flow granted, and records `capability_outside_grant` for every capability the caller does not hold.
+
 | Export                                                                           | Purpose                                                                                                                                                                                                                                                                                      |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Tier`                                                                           | `sealed`, `compensable`, or `irreversible`                                                                                                                                                                                                                                                   |
@@ -129,11 +131,12 @@ A deferred token encodes the flow name, the execution id, and the deferred name,
 
 `Graph.build(flowOrNode, payload, options)` turns a body, or a bare node, into the plan-time graph the interpreter drives and the planner compiles. Building is a pure function of the declarations and the payload, so the whole shape of a round is known before its first action runs.
 
-| Export                                                                     | Purpose                                                                                   |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `build`                                                                    | builds the graph, flattening inline flow calls and expanding combinators into keyed nodes |
-| `nodes`, `edges`, `drafts`, `diagnostics`                                  | read what the build produced                                                              |
-| `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, `BuildOptions` | the models                                                                                |
+| Export                                                                     | Purpose                                                                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `build`                                                                    | builds the graph, flattening inline flow calls and expanding combinators into keyed nodes   |
+| `nodes`, `edges`, `drafts`, `diagnostics`                                  | read what the build produced                                                                |
+| `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, `BuildOptions` | the models                                                                                  |
+| `maximumGraphDepth`                                                        | the nesting bound the build refuses past, so an unrolling composition reads the same number |
 
 A graph carrying a FATAL diagnostic is inspectable but deliberately not compilable, so a body whose topology is incomplete is reported rather than half-driven. Building refuses a nesting depth past its bound and refuses a duplicate node id, because a node id is durable dispatch identity and two nodes answering to one address would let a later settlement overwrite an earlier one.
 

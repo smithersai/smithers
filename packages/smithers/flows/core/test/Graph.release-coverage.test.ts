@@ -244,7 +244,7 @@ describe("Graph release coverage", () => {
       throw new Error("expected the planned input to exceed its depth limit")
     } catch (error) {
       expect(error).toBeInstanceOf(Graph.GraphBuildError)
-      expect(error).toMatchObject({ code: "payload_too_deep", paths: [], nodeId: "root.flow" })
+      expect(error).toMatchObject({ code: "payload_too_deep", path: [], node: "root.flow" })
     }
   })
 
@@ -309,8 +309,8 @@ describe("Graph release coverage", () => {
       expect(error).toBeInstanceOf(Graph.GraphBuildError)
       expect(error).toMatchObject({
         code: "invalid_node",
-        paths: [],
-        nodeId: "root",
+        path: [],
+        node: "root",
         message: "Graph.build expected a supported Node AST at \"root\""
       })
     }
@@ -327,7 +327,7 @@ describe("Graph release coverage", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(Graph.GraphBuildError)
       expect((error as Error & { readonly cause?: unknown }).cause).toBe(cause)
-      expect(error).toMatchObject({ code: "invalid_node", nodeId: "root" })
+      expect(error).toMatchObject({ code: "invalid_node", node: "root" })
     }
   })
 
@@ -363,7 +363,7 @@ describe("Graph release coverage", () => {
         Graph.build(node)
         throw new Error("expected the forged AST to be rejected")
       } catch (error) {
-        expect(error).toMatchObject({ code: "invalid_node", nodeId: "root" })
+        expect(error).toMatchObject({ code: "invalid_node", node: "root" })
       }
     }
     expect(accessorCalls).toBe(0)
@@ -442,10 +442,13 @@ describe("Graph release coverage", () => {
       paths: ["out/result"],
       strategy: "fail"
     }])
+    // The diagnostic names the first writer; `Graph.conflicts` above carries
+    // the pair, and the message names both.
     expect(Graph.diagnostics(graph)).toMatchObject([{
       code: "write_conflict",
-      paths: ["out/result"],
-      nodes: ["root.all.first", "root.all.second"]
+      node: "root.all.first",
+      path: ["out/result"],
+      message: expect.stringContaining("root.all.second")
     }])
     expect(Graph.keyMaterial(graph)).toMatchObject({
       _tag: "Failure",
@@ -477,7 +480,7 @@ describe("Graph release coverage", () => {
     }))
     const conflictEdges = Graph.edges(graph).filter((edge) => edge.reason === "conflict")
 
-    expect(Graph.diagnostics(graph).some((diagnostic) => diagnostic.code === "duplicate_node_id")).toBe(true)
+    expect(Graph.diagnostics(graph).some((diagnostic) => diagnostic.code === "duplicate_node")).toBe(true)
     expect(conflictEdges.filter((edge) => edge.to === "root.all.other")).toEqual([{
       from: "root.all.group.all.writer",
       to: "root.all.other",
@@ -500,7 +503,7 @@ describe("Graph release coverage", () => {
     } as unknown as Graph.Graph
     expect(Graph.keyMaterial(nestedFailure)).toMatchObject({
       _tag: "Failure",
-      failure: { code: "missing_key_material", nodeId: child.id }
+      failure: { code: "missing_key_material", node: child.id }
     })
 
     const missingDependency = {

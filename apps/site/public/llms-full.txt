@@ -19102,37 +19102,42 @@ Returns build diagnostics without throwing.
 ### Graph.GraphBuildError
 
 ```ts
-class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("flows/core/GraphBuildError", {
+class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/plan/GraphBuildError", {
   code: GraphBuildErrorCode,
-  paths: Schema.Array(Schema.String),
-  nodeId: Schema.optional(Schema.String),
-  nodes: Schema.optional(Schema.Tuple([Schema.String, Schema.String]))
+  node: Schema.String,
+  path: Schema.Array(Schema.String),
+  message: Schema.String
 }) {}
 ```
 
-`GraphBuildErrorCode` is the literal schema of thirteen codes:
+This is [`@smthrs/plan`](/docs/reference/api/plan/#graphbuilderror)'s `GraphBuildError`, the one build refusal,
+which [`@smthrs/flow`](/docs/reference/api/flow/)'s graph builder raises too. `Graph` re-exports the class, its
+code union, and `isFatalDiagnostic`.
 
-| Code                       | Meaning                                                                 |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `effect_outside_envelope`  | A step declared a path its envelope does not cover. `paths` names them. |
-| `effect_mode_widening`     | A `hermetic` envelope with an `expected` step.                          |
-| `effect_tier_widening`     | A step whose tier is less reversible than its envelope's.               |
-| `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `nodes` names both.  |
-| `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.       |
-| `duplicate_node_id`        | Two nodes claim one structural id.                                      |
-| `dependency_cycle`         | Dependencies cannot be ordered. `nodeId` names a node in the cycle.     |
-| `missing_key_material`     | A node reached `keyMaterial` without any.                               |
-| `invalid_node`             | A malformed node AST. Thrown, not recorded.                             |
-| `plan_too_deep`            | Nesting past `maximumGraphDepth`. Thrown.                               |
-| `plan_too_large`           | A node, edge, conflict, or effect-path limit crossed. Thrown.           |
-| `payload_too_deep`         | Nesting past `maximumPayloadDepth` inside one plan value. Thrown.       |
-| `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.     |
+`node` names the site. `path` carries the escaping effect paths, the dropped
+capabilities, or an oversized plan value's path, and is empty for every other
+code. `message` states the fix.
 
-`nodeId` is populated for the three effect codes, `missing_key_material`,
-`duplicate_node_id`, `dependency_cycle`, `capability_outside_grant`, `invalid_node`, and the four
-limit codes. For `plan_too_large` it names the node whose admission crossed the
-limit. `nodes` is populated for `write_conflict`. `paths` carries the offending
-value path for `payload_too_large`.
+`Graph.build` raises thirteen of the codes the union carries:
+
+| Code                       | Meaning                                                                                                  |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `effect_outside_envelope`  | A step declared a path its envelope does not cover. `path` names them.                                   |
+| `effect_mode_widening`     | A `hermetic` envelope with an `expected` step.                                                           |
+| `effect_tier_widening`     | A step whose tier is less reversible than its envelope's.                                                |
+| `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `node` names the first, `Graph.conflicts` names both. |
+| `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.                                        |
+| `duplicate_node`           | Two nodes claim one structural id.                                                                       |
+| `dependency_cycle`         | Dependencies cannot be ordered. `node` names a node in the cycle.                                        |
+| `missing_key_material`     | A node reached `keyMaterial` without any.                                                                |
+| `invalid_node`             | A malformed node AST. Thrown, not recorded.                                                              |
+| `graph_too_deep`           | Nesting past `maximumGraphDepth`. Thrown.                                                                |
+| `plan_too_large`           | A node, edge, conflict, or effect-path limit crossed. Thrown.                                            |
+| `payload_too_deep`         | Nesting past `maximumPayloadDepth` inside one plan value. Thrown.                                        |
+| `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.                                      |
+
+For `plan_too_large`, `node` names the node whose admission crossed the limit.
+`path` carries the offending value path for `payload_too_large`.
 
 ### Graph.isFatalDiagnostic
 
@@ -33862,7 +33867,10 @@ Invalid effects, TTL, or version throw `PatternError` with code
 All declared fields enter the wrapper's name and captured key material.
 `version` changes declaration identity only. `ttlMs` and `scope` also travel
 in `WithCache.CachePolicyAnnotation`, under `@smthrs/flow/Action/CachePolicy`.
-`WithCache.policyOf(annotations)` reads that bag. Decorator composition
+That key is [`@smthrs/plan`](/docs/reference/api/plan/#cachepolicy)'s
+`CachePolicy.CachePolicyAnnotation`, the same object `@smthrs/flow` publishes
+and the engine reads at dispatch, so `Scope` and `Policy` here are that one
+model. `WithCache.policyOf(annotations)` reads that bag. Decorator composition
 preserves annotations, with an outer decorator's values overriding inner ones.
 
 The flow-level bag requires a host to lower it. The [`@smthrs/registry`](/docs/reference/api/registry/)
@@ -34100,9 +34108,9 @@ each chained call costs one level, so a chain reaches 511 declared calls, or
 255 when a unit declares two of them. `Loop.make` refuses a `maxIterations`
 past that limit at the declaration, with an `invalid_decorator` `PatternError`
 naming the option and the limit. Every other pattern reaches the ceiling as a
-`plan_too_deep` `GraphBuildError` from `Graph.build`, which carries no
-message. The limit counts the chain alone, so deeper member flows or an
-enclosing unrolled pattern lower it.
+`graph_too_deep` `GraphBuildError` from `Graph.build`, which names the node
+rather than the option. The limit counts the chain alone, so deeper member
+flows or an enclosing unrolled pattern lower it.
 
 ## Entry points
 
@@ -34125,7 +34133,7 @@ https://smithers.sh/docs/reference/api/plan/
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/keys`](/docs/reference/api/keys/)
 
-`@smthrs/plan` exports eleven modules from its root entry point, and each is also
+`@smthrs/plan` exports thirteen modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
@@ -34150,6 +34158,8 @@ import * as Plan from "@smthrs/plan/Plan"
 | `PlanDiff`        | A plan comparison as a value: added, removed, re-keyed with attribution, unchanged.                       |
 | `Placement`       | Where a node runs: the four directives, their host-selection detail, and the annotation key.              |
 | `Scheduling`      | The pure admission policy a scheduler consults: concurrency, priority order, and the halt rule.           |
+| `CachePolicy`     | How far a recorded sealed result travels, how long it stays servable, and the key it rides under.         |
+| `Repetition`      | What a bounded repetition answers with at its ceiling.                                                    |
 
 The shortest composition that reaches every layer:
 
@@ -34792,6 +34802,15 @@ type Ast = Succeed | Fail | All | Map | AndThen | Branch | Catch | FlowCall | Ac
 
 The inspectable AST a node stores: closure-free, and JSON serializable for every JSON payload an author puts in it. Every variant carries an optional `priority`.
 
+### Node.CallMode
+
+```ts
+const CallMode: Schema.Literals<["inline", "boundary", "handoff"]>
+type CallMode = "inline" | "boundary" | "handoff"
+```
+
+How a flow call joins the caller's plan: `inline` splices the callee's body in, `boundary` makes it one child execution, and `handoff` names the next trampoline round. This is the one call-mode vocabulary. `Node.flowCall` takes it and [`@smthrs/flow`](/docs/reference/api/flow/)'s graph builder switches on it, so both packages read the same three names.
+
 ### Node.TypeId
 
 ```ts
@@ -35023,7 +35042,7 @@ The node reference a branch arm's symbolic subject carries, and the prefix each 
 const flowCall: <A = unknown, E = never, R = never>(
   declaration: unknown,
   flow: string,
-  mode: "inline" | "boundary" | "handoff",
+  mode: CallMode,
   payload: unknown
 ) => Node<A, E, R>
 
@@ -35379,6 +35398,69 @@ const Annotation: Context.Key<Placement, Placement>
 
 The annotation key a declared placement is carried under, identified by `"@smthrs/plan/Placement"`. One key: `@smthrs/core`'s `Annotations.Placement` and `@smthrs/flow`'s `Flow.Placement` are both this object.
 
+## CachePolicy
+
+[src/CachePolicy.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/CachePolicy.ts)
+
+The one cache-policy model. [`@smthrs/flow`](/docs/reference/api/flow/) publishes it as `CacheEnvironment.CachePolicy` and [`@smthrs/engine-store`](/docs/reference/api/engine-store/) reads it off a dispatched action; [`@smthrs/patterns`](/docs/reference/api/patterns/) declares it over a flow as `WithCache.Policy`. It was two declarations in those two packages, joined by nothing but a re-typed identifier string, so a field added on one side was invisible to the other.
+
+The annotation key reads `"@smthrs/flow/Action/CachePolicy"`. The engine reads stored and dispatched actions by that identifier, so retagging it would make every policy already written invisible at dispatch. The identifier is treated as a wire value rather than as a location.
+
+### CachePolicy.CacheScope
+
+```ts
+const CacheScope: Schema.Literals<["run", "flow", "shared"]>
+type CacheScope = "run" | "flow" | "shared"
+```
+
+How far a recorded sealed result may travel. `shared` is the content-addressed default: the key names the inputs and the environment, so any run on any host that would have produced the same bytes may reuse the row. `run` and `flow` fold one execution's or one flow's identity into the key, so a sibling never reads it. The three levels are the old `run | workflow | global` policy named after the current concepts.
+
+### CachePolicy.CachePolicy
+
+```ts
+const CachePolicy: Schema.Struct<{
+  ttlMs: Schema.optionalKey<Schema.Int>
+  scope: Schema.optionalKey<typeof CacheScope>
+}>
+```
+
+`ttlMs` is a positive whole number of milliseconds bounding the age of a row the engine may serve; past it the dispatch executes again and journals `cache-expired`, so the refusal is durable evidence a replay reads rather than a fresh clock reading. Both fields are optional and both defaults are the pre-policy behaviour: no age bound, and the reach the composition already granted.
+
+### CachePolicy.CachePolicyAnnotation and cachePolicyOf
+
+```ts
+const CachePolicyAnnotation: Context.Key<CachePolicy, CachePolicy>
+const cachePolicyOf: (annotations: Context.Context<never>) => CachePolicy | undefined
+```
+
+The key a declared policy is carried under, identified by `"@smthrs/flow/Action/CachePolicy"`, and the reader for it. One key: `@smthrs/flow`'s `CacheEnvironment.CachePolicyAnnotation` and `@smthrs/patterns`' `WithCache.CachePolicyAnnotation` are both this object.
+
+### CachePolicy.annotate
+
+```ts
+const annotate: <A extends { annotate: (key: typeof CachePolicyAnnotation, value: CachePolicy) => A }>(
+  declaration: A,
+  policy: CachePolicy
+) => A
+```
+
+Attaches a policy to any declaration that carries annotations, answering a new one rather than mutating it. `@smthrs/flow` publishes it as `CacheEnvironment.withCache`.
+
+## Repetition
+
+[src/Repetition.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Repetition.ts)
+
+The one bounded-repetition ceiling vocabulary. [`@smthrs/flow`](/docs/reference/api/flow/)'s `Poll.make` takes it as `onTimeout`, for the attempt a poll gives up on, and [`@smthrs/patterns`](/docs/reference/api/patterns/)' `Loop` takes it as `onMaxReached`, for the iteration a loop gives up on.
+
+### Repetition.AtCeiling
+
+```ts
+const AtCeiling: Schema.Literals<["fail", "return-last"]>
+type AtCeiling = "fail" | "return-last"
+```
+
+`fail` raises the repetition's own typed failure at the ceiling; `return-last` settles with the last value it produced.
+
 ## GraphBuildError
 
 [src/GraphBuildError.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/GraphBuildError.ts)
@@ -35417,13 +35499,22 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/pla
 | `effect_outside_envelope`     | a declaration reads or writes a path the enclosing effect envelope does not cover              |
 | `effect_mode_widening`        | an `expected` declaration sits inside a `hermetic` envelope                                    |
 | `effect_tier_widening`        | a declaration's tier is less reversible than the enclosing envelope's                          |
-| `capability_outside_grant`    | a called flow requires a capability the caller does not hold, so the call drops it             |
+| `capability_outside_grant`    | a called flow or action requires a capability the caller does not hold, so the call drops it   |
+| `write_conflict`              | two work nodes overlap under `onConflict: "fail"`                                              |
+| `missing_key_material`        | a node reached key compilation without any                                                     |
+| `dependency_cycle`            | a dependency set cannot be ordered                                                             |
+| `plan_too_large`              | a node, edge, conflict, or effect-path limit was crossed                                       |
+| `payload_too_large`           | one plan value expands to more members than the bound                                          |
+| `invalid_node`                | a malformed node AST                                                                           |
 
-`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk, which shares the vocabulary. `unstable_callback` is raised by that walk when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
+`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`. [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk raises `recursion_requires_boundary`, `placement_requires_boundary`, `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `unstable_callback`, and the four effect-authority codes. [`@smthrs/core`](/docs/reference/api/core/)'s graph builder raises the last six, plus `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `invalid_payload`, and the four effect-authority codes; it uses this error rather than a second class of its own. `unstable_callback` is raised when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
 
-The four effect-authority codes come from that walk too. It records them while
-it checks every declaration against the envelope enclosing it, using the
-narrowing rule [`Effects.narrow`](#effectsnarrow) defines.
+The four effect-authority codes are recorded while a walk checks every
+declaration against the envelope enclosing it, using the narrowing rule
+[`Effects.narrow`](#effectsnarrow) defines.
+
+A `write_conflict` names the first of the overlapping pair in `node` and both in
+its `message`; `Graph.conflicts` carries the pair as data.
 
 ### GraphBuildError.isFatalDiagnostic
 

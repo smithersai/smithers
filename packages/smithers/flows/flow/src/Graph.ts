@@ -370,9 +370,14 @@ const placeholder = (reference: PlannedRecord, node: string): unknown =>
  * trampoline handoffs — where unbounded acceptance would only defer the
  * failure to whatever walks the plan next.
  *
- * @private
+ * It is EXPORTED so a composition that unrolls its own topology, as
+ * `@smthrs/patterns` does for a bounded loop, refuses at the same number the
+ * build enforces instead of restating it and drifting.
+ *
+ * @since 0.1.0
+ * @category models
  */
-const maximumGraphDepth = 1_000
+export const maximumGraphDepth = 1_000
 
 /**
  * The nesting bound the build enforces on payload data, for the same reason
@@ -1045,7 +1050,7 @@ export const build = (
     readonly depth: number
     readonly ast: Node.Ast
     readonly flow: string
-    readonly mode: "inline" | "boundary" | "handoff"
+    readonly mode: Node.CallMode
     readonly declaration: Flow.Any | undefined
     readonly payload: unknown
     readonly capabilities: ReadonlyArray<string>
@@ -1295,6 +1300,24 @@ export const build = (
         // An action is a leaf, so its declaration cannot become an envelope for
         // anything; it is only checked against the one it sits inside.
         admitEnvelope(envelope, declaredEnvelope(annotations), { id, flow: ast.action })
+        // The ceiling the declaration named, read off its bag exactly as a
+        // called flow's is. An action that named none keeps the enclosing grant
+        // and adds nothing to its key, so every declaration written before the
+        // literal existed keys exactly where it did.
+        const ceiling = sorted(Context.get(annotations, Annotations.Capabilities))
+        const dropped = ceiling.filter((capability) => !capabilities.includes(capability))
+        if (dropped.length > 0) {
+          observedDiagnostics.push(
+            new GraphBuildError({
+              code: "capability_outside_grant",
+              node: id,
+              path: dropped,
+              message: `Action "${ast.action}" at "${id}" requires ${dropped.join(", ")}, which the calling ` +
+                "flow does not hold. The dispatch runs without them, so declare them on the caller or stop " +
+                "requiring them here."
+            })
+          )
+        }
         record({
           id,
           kind: ast._tag,
@@ -1313,6 +1336,7 @@ export const build = (
               payload: schemaIdentity(declared.payloadSchema),
               success: schemaIdentity(declared.successSchema),
               error: schemaIdentity(declared.errorSchema),
+              ...(ceiling.length === 0 ? {} : { capabilities: ceiling }),
               ...(declared.implementationVersion === undefined
                 ? {}
                 : { implementationVersion: declared.implementationVersion })

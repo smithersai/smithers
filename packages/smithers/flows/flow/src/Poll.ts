@@ -30,6 +30,7 @@
  * @since 0.1.0
  */
 import * as Node from "@smthrs/plan/Node"
+import type * as Repetition from "@smthrs/plan/Repetition"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
@@ -299,7 +300,7 @@ export const make = <
     readonly intervalMs: number
     readonly maxAttempts: number
     readonly backoff?: Backoff | undefined
-    readonly onTimeout?: "fail" | "return-last" | undefined
+    readonly onTimeout?: Repetition.AtCeiling | undefined
   }
 ): Flow.Flow<Tag, PayloadSchema<Input>, Result, typeof Failure, R> => {
   type Round = Flow.Flow<Tag, PayloadSchema<Input>, Result, typeof Failure, R>

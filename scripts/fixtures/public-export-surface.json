@@ -412,6 +412,28 @@
         "require": "./dist/cjs/test/PlanFixtures.js"
       },
       "reason": "Draft and compile fixtures shared with @smthrs/plan-store, which drives them against the persisted form. The same test-support convention as @smthrs/database's ./test/TestDatabase."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./CachePolicy",
+      "development": "./src/CachePolicy.ts",
+      "published": {
+        "types": "./dist/esm/CachePolicy.d.ts",
+        "import": "./dist/esm/CachePolicy.js",
+        "require": "./dist/cjs/CachePolicy.js"
+      },
+      "reason": "The one cache-policy declaration: the scope vocabulary, the policy schema, the annotation key @smthrs/engine-store reads at dispatch, and the annotator. It was declared twice, in @smthrs/flow and @smthrs/patterns, tied together only by a re-typed identifier string; @smthrs/plan is the package both already depend on. The identifier is unchanged, so every policy already written is still read."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Repetition",
+      "development": "./src/Repetition.ts",
+      "published": {
+        "types": "./dist/esm/Repetition.d.ts",
+        "import": "./dist/esm/Repetition.js",
+        "require": "./dist/cjs/Repetition.js"
+      },
+      "reason": "The one bounded-repetition ceiling vocabulary, taken by @smthrs/flow Poll as onTimeout and @smthrs/patterns Loop as onMaxReached. It was the same two literals written out in both packages with no edge between them."
     }
   ],
   "removed": [

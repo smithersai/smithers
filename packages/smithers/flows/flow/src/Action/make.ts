@@ -5,6 +5,7 @@
  *
  * @since 0.1.0
  */
+import type * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -18,6 +19,7 @@ import type { Scope } from "effect/Scope"
 import * as Flow from "../Flow/index.ts"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
+import { lowerDeclarations } from "../internal/Declarations.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Action, Declared, IdempotencyKey, Requirement, Tier } from "./Action.ts"
 import { CurrentAttempt } from "./Context.ts"
@@ -73,6 +75,33 @@ interface DeclaredOptions<
   readonly implementationVersion?: string | undefined
   readonly success?: Success | undefined
   readonly error?: Error | undefined
+  /**
+   * The capability ceiling this action dispatches under, as string literals.
+   *
+   * It is the same ceiling {@link module:Flow/Annotations.Capabilities}
+   * carries, and declaring it here is what makes it READABLE without importing
+   * the module, exactly as `Flow.make`'s option is: a catalog projects a
+   * discovered declaration's authority from the source text of this literal,
+   * and an annotation built at run time is invisible to that projection.
+   *
+   * {@link module:Graph.build} records a `capability_outside_grant` refusal for
+   * every capability named here that the calling flow does not hold. The
+   * refusal is advisory, because the dispatch runs with the capability dropped.
+   */
+  readonly capabilities?: ReadonlyArray<string> | undefined
+  /**
+   * The effect envelope this action dispatches under, as a literal.
+   *
+   * It is the same declaration {@link module:Flow/Annotations.EffectEnvelope}
+   * carries, declared here for the same reason `capabilities` is.
+   *
+   * An action is a leaf, so this envelope encloses nothing; it is checked
+   * against the envelope the calling flow granted, and
+   * {@link module:Graph.build} refuses a dispatch that reads or writes outside
+   * that grant, loosens `hermetic` to `expected`, or raises the tier. `reads`
+   * and `writes` are normalized to sorted, duplicate-free arrays.
+   */
+  readonly effects?: Effects.MakeOptions | undefined
   readonly tier?: Tier | undefined
   readonly idempotencyKey?:
     | IdempotencyKey
@@ -190,7 +219,15 @@ const makeDeclared = <
     : Schema.decodeUnknownSync(Schema.NonEmptyString)(options.implementationVersion)
   const successSchema = options.success ?? (Schema.Void as unknown as Success)
   const errorSchema = options.error ?? (Schema.Never as unknown as Error)
-  const annotations = options.annotations ?? Context.empty()
+  const annotations = lowerDeclarations(options)
+  // The literals are already in the bag above, so an annotated copy rebuilds
+  // from options WITHOUT them: re-lowering would overwrite a `Capabilities` or
+  // `EffectEnvelope` the caller annotated on top of the declared one.
+  const lowered: DeclaredOptions<Payload, Success, Error> = {
+    ...options,
+    capabilities: undefined,
+    effects: undefined
+  }
   // The requirement this declaration mints for itself. Context keys are
   // compared by their string key, so re-minting one for an annotated copy of
   // this declaration names the same slot the original does.
@@ -213,13 +250,13 @@ const makeDeclared = <
     requirement,
     annotate(key: Context.Key<any, any>, value: any) {
       return makeDeclared(tag, {
-        ...options,
+        ...lowered,
         annotations: Context.add(annotations, key, value)
       })
     },
     annotateMerge(context: Context.Context<any>) {
       return makeDeclared(tag, {
-        ...options,
+        ...lowered,
         annotations: Context.merge(annotations, context)
       })
     },

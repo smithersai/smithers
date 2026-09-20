@@ -43,16 +43,27 @@ import * as Schema from "effect/Schema"
  * and refuses at a bound, rather than recursing until the native stack
  * overflows without a typed error.
  *
- * The last four are the effect-authority refusals, raised when a declaration
- * claims more than the declaration enclosing it granted:
+ * The four effect-authority refusals are raised when a declaration claims more
+ * than the declaration enclosing it granted:
  * `effect_outside_envelope` is a read or write path the envelope does not
  * cover, and it names those paths in `path`; `effect_mode_widening` is an
  * `expected` declaration inside a `hermetic` envelope; `effect_tier_widening`
  * is a tier less reversible than the envelope's; and
- * `capability_outside_grant` is a called flow requiring a capability the caller
- * does not hold, which names the dropped capabilities in `path`. The first
- * three are fatal by {@link isFatalDiagnostic}; the fourth is advisory, because
- * dropping a capability narrows authority rather than widening it.
+ * `capability_outside_grant` is a called flow or action requiring a capability
+ * the caller does not hold, which names the dropped capabilities in `path`. The
+ * first three are fatal by {@link isFatalDiagnostic}; the fourth is advisory,
+ * because dropping a capability narrows authority rather than widening it.
+ *
+ * The last six are raised by `@smthrs/core`'s graph builder, which uses this
+ * one error rather than a second class of its own. `write_conflict` is two work
+ * nodes overlapping under `onConflict: "fail"`, and `node` names the first of
+ * the pair while `Graph.conflicts` carries both; `missing_key_material` is a
+ * node that reached key compilation without any; `dependency_cycle` is a
+ * dependency set that cannot be ordered, and `node` names a node in the cycle;
+ * `plan_too_large` is a node, edge, conflict, or effect-path limit crossed, and
+ * `node` names the node whose admission crossed it; `payload_too_large` is a
+ * plan value with more members than the bound, and `path` names the offending
+ * value path; `invalid_node` is a malformed node AST. All six are fatal.
  *
  * @since 0.1.0
  * @category schemas
@@ -74,7 +85,13 @@ export const GraphBuildErrorCode = Schema.Literals([
   "effect_outside_envelope",
   "effect_mode_widening",
   "effect_tier_widening",
-  "capability_outside_grant"
+  "capability_outside_grant",
+  "write_conflict",
+  "missing_key_material",
+  "dependency_cycle",
+  "plan_too_large",
+  "payload_too_large",
+  "invalid_node"
 ])
 
 /**
@@ -90,9 +107,16 @@ export type GraphBuildErrorCode = typeof GraphBuildErrorCode.Type
  * A build the planner refuses, naming the site and the fix.
  *
  * `node` is the node reference the failure belongs to — a planned value's
- * origin node, an `all` member name, or a branch arm. `path` is the property
- * path recorded on a planned value before it was misused, empty for every
- * other code.
+ * origin node, an `all` member name, a branch arm, or the node whose admission
+ * crossed a bound. `path` is the property path recorded on a planned value
+ * before it was misused, the effect paths an over-claiming declaration named,
+ * the capabilities a call lost, or the value path of an oversized payload; it
+ * is empty for every other code.
+ *
+ * This is the ONE build refusal. `@smthrs/core`'s graph builder raised a second
+ * `GraphBuildError` of its own, with `paths`, `nodeId` and `nodes` in place of
+ * these fields, and the two code sets diverged instead of merging. A conflict's
+ * second node is read from `Graph.conflicts`, which carries the pair.
  *
  * @since 0.1.0
  * @category errors

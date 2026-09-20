@@ -6,13 +6,18 @@
  * cases assert the same object, so a reintroduced copy fails here rather than
  * in a digest six packages away.
  */
+import * as PlanCachePolicy from "@smthrs/plan/CachePolicy"
 import * as Effects from "@smthrs/plan/Effects"
 import * as FileSet from "@smthrs/plan/FileSet"
+import * as Node from "@smthrs/plan/Node"
 import * as Plan from "@smthrs/plan/Plan"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Tier } from "../src/Action/Action.ts"
 import { BoundaryMode } from "../src/Action/BoundaryMode.ts"
+import * as CacheEnvironment from "../src/Action/CacheEnvironment.ts"
 import * as Annotations from "../src/Flow/Annotations.ts"
+import * as Flow from "../src/Flow/index.ts"
 
 describe("single definitions", () => {
   it("takes the boundary mode from the plan file vocabulary", () => {
@@ -33,6 +38,33 @@ describe("single definitions", () => {
   it("carries the effect envelope under the one annotation key", () => {
     expect(Annotations.EffectEnvelope).toBe(Effects.Envelope)
     expect(Annotations.EffectEnvelope.key).toBe("@smthrs/plan/Effects/Envelope")
+  })
+
+  it("names every flow call mode from the plan call vocabulary", () => {
+    const Callee = Flow.make("single-definitions/callee", {
+      payload: {},
+      success: Schema.Number,
+      body: () => Node.succeed(1)
+    })
+    const modeOf = (node: { readonly ast: Node.Ast }): unknown => (node.ast as { readonly mode?: unknown }).mode
+
+    expect([modeOf(Callee.call({})), modeOf(Callee.child({})), modeOf(Callee.to({}))])
+      .toEqual([...Node.CallMode.literals])
+  })
+
+  it("takes the whole cache policy from the plan declaration", () => {
+    expect(CacheEnvironment.CacheScope).toBe(PlanCachePolicy.CacheScope)
+    expect(CacheEnvironment.CachePolicy).toBe(PlanCachePolicy.CachePolicy)
+    expect(CacheEnvironment.CachePolicyAnnotation).toBe(PlanCachePolicy.CachePolicyAnnotation)
+    expect(CacheEnvironment.cachePolicyOf).toBe(PlanCachePolicy.cachePolicyOf)
+    expect(CacheEnvironment.withCache).toBe(PlanCachePolicy.annotate)
+    expect(CacheEnvironment.CacheScope.literals).toEqual(["run", "flow", "shared"])
+  })
+
+  it("keeps the identifier @smthrs/engine-store reads a dispatched policy by", () => {
+    // Renaming it would make every policy already written invisible at
+    // dispatch, so it is pinned on this side of the boundary too.
+    expect(CacheEnvironment.CachePolicyAnnotation.key).toBe("@smthrs/flow/Action/CachePolicy")
   })
 
   it("keeps the file-effect declaration and the envelope apart", () => {
