@@ -3,6 +3,7 @@ import type { Page, TestInfo } from "@playwright/test"
 import { attachProductionJson } from "../repositories-github/production"
 import { expect } from "../support/test"
 import type { JournalRow } from "./semantic"
+import { moduleRows } from "./module-evidence"
 
 export const ENRICHED_COMMIT = "3b2b9f518c"
 export const MODULE_COMMIT = "0c31eb19cecf"
@@ -37,7 +38,7 @@ export const hostContains = (revision: string, producingCommit: string): boolean
 }
 
 export const enrichedEvidence = async (testInfo: TestInfo, host: HostManifest, rows: readonly JournalRow[]): Promise<void> => {
-  const observed = rows.filter(({ kind: journalKind }) => journalKind === "control.agent.steering-drained" || journalKind === "control.agent.sufficiency-observed")
+  const observed = moduleRows(rows).filter(({ kind: journalKind }) => journalKind === "control.agent.steering-drained" || journalKind === "control.agent.sufficiency-observed")
   const missing = observed.filter(({ kind: journalKind, payload }) => {
     const p = typeof payload === "object" && payload !== null ? payload as Record<string, unknown> : {}
     return journalKind === "control.agent.steering-drained" ? !Array.isArray(p.messages) : p.failed === undefined || p.passed === undefined

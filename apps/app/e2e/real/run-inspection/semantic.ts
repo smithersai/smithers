@@ -12,7 +12,7 @@ export class TimelineEvidenceError extends Error {
 }
 
 type Call = { seq: number; name: string; id?: string; input: Fields; result?: Fields; outcome?: string; message?: string }
-type Frame = { frame: number; node: string; opens: number; calls: Call[]; changed: boolean; blocked: boolean }
+type Frame = { frame: number; node: string; opens: number; at: number; calls: Call[]; changed: boolean; blocked: boolean }
 export type ExpectedBand = { phase: string; seq: number }
 export type ExpectedLine = { node: string; number: string; verb: string; subject: string; result: string }
 export type Meaning = {
@@ -98,10 +98,14 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
   let status = "Running", terminalStatus: string | undefined
   for (const row of ordered) {
     const p = fields(row.payload), seq = Number(row.sequence), frame = frames.at(-1), kind = word(row.kind)
-    if (kind.includes("PreparePlan") || p.flowName === "coding/PreparePlan" || p.flowName === "coding/PrepareWithWiki" || fields(p.value).plan !== undefined) {
+    const nativeState = fields(fields(p.payload).state)
+    if (kind.includes("PreparePlan") || [p.flowName, nativeState.flowName].some(name => name === "coding/PreparePlan" || name === "coding/PrepareWithWiki") ||
+      fields(p.value).plan !== undefined || fields(nativeState.payload).plan !== undefined || fields(p.input).plan !== undefined) {
       throw new TimelineEvidenceError("unsupported-evidence", `Recorded plan at #${seq} needs a goal oracle; no goal claim was made.`)
     }
-    if (kind === OPEN) { frames.push({ frame: frames.length + 1, node: `frame-${frames.length + 1}`, opens: seq, calls: [], changed: false, blocked: false }); status = "Thinking" }
+    if (kind === OPEN) { frames.push({ frame: frames.length + 1, node: `frame-${frames.length + 1}`, opens: seq,
+      at: typeof p.at === "number" ? p.at : typeof row.occurredAt === "number" ? row.occurredAt : seq,
+      calls: [], changed: false, blocked: false }); status = "Thinking" }
     if (kind === "control.agent.cell-produced" && open.length === 0) status = "Running code"
     if (kind === READ) {
       const name = word(p.flowName)
@@ -113,7 +117,7 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
     }
     if (kind === RESULT) {
       if (p.outcome !== "success" && p.outcome !== "failure") throw new TimelineEvidenceError("unsupported-evidence", `Missing call outcome at #${seq}.`)
-      const index = open.findIndex(call => typeof p.callId === "string" ? call.id === p.callId : call.name === p.flowName)
+      const index = open.findIndex(call => typeof p.callId === "string" ? call.id === p.callId : call.id === undefined && call.name === p.flowName)
       if (index < 0) continue
       const call = open.splice(index, 1)[0]!
       call.result = fields(p.value); call.outcome = word(p.outcome); call.message = word(p.message)

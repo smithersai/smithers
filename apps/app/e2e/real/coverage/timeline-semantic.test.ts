@@ -50,6 +50,13 @@ describe("ordinary module journal evidence", () => {
     expect(moduleMeaning([first, replay]).frames).toHaveLength(1)
   })
 
+  test("interleaved module frames retain their recorded order", () => {
+    const rows = [moduleFact(1, opened, {}), moduleFact(2, started, { flowName: "read", input: { path: "one.txt" } }),
+      moduleFact(3, opened, {}, "b"), moduleFact(4, started, { flowName: "read", input: { path: "two.txt" } }, "b"),
+      moduleFact(5, opened, {}), moduleFact(6, started, { flowName: "read", input: { path: "three.txt" } })]
+    expect(moduleMeaning(rows).lines.map(line => line.subject)).toEqual(["one.txt", "two.txt", "three.txt"])
+  })
+
   test("a mismatched module execution is unsupported evidence", () => {
     const row = moduleFact(1, opened, {})
     expect(() => moduleRows([{ ...row, payload: { ...row.payload, executionId: "another" } }])).toThrow(TimelineEvidenceError)
@@ -91,6 +98,12 @@ describe("the independent timeline evidence oracle", () => {
 
   test("an outcome must be recorded before the oracle can say wrote", () => {
     expect(() => journalMeaning([...journal.slice(0, 5), event(6, settled, { flowName: "write", callId: "b", value: { bytesWritten: 7 } })])).toThrow(TimelineEvidenceError)
+  })
+
+  test("an unidentified settlement cannot settle an identified pending write", () => {
+    const rows = [...journal.slice(0, 5), event(6, settled, { flowName: "write", outcome: "success", value: { bytesWritten: 7 } })]
+    expect(journalMeaning(rows).lines[1]?.verb).toBe("writing")
+    expect(journalMeaning(rows).pins).toEqual([])
   })
 
   test.each(["completed", "failed", "cancelled"])("late agent telemetry cannot replace the recorded %s run outcome", outcome => {
@@ -146,6 +159,9 @@ describe("the independent timeline evidence oracle", () => {
   test("unsupported calls and plans fail visibly instead of making semantic claims", () => {
     expect(() => journalMeaning([event(1, opened), event(2, started, { flowName: "unknown", input: {} })])).toThrow(TimelineEvidenceError)
     expect(() => journalMeaning([event(1, "coding/PreparePlan", { changes: [{}] })])).toThrow(TimelineEvidenceError)
+    expect(() => journalMeaning([event(1, "control.engine.event", { eventType: "flows.engine.run-decision", payload: {
+      state: { flowName: "coding/PrepareWithWiki", result: { _tag: "Complete", value: { changes: [{}] } } }
+    } })])).toThrow(TimelineEvidenceError)
   })
 
   test("a discipline pin does not hide the written files in the same frame", () => {
