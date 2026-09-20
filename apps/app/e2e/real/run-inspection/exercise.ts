@@ -175,7 +175,10 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
       expect(sample.rendered.phase).toBe("running")
     }
     expect(later.rendered.through).toBeGreaterThan(first.rendered.through)
-    expect(later.rendered.bands).not.toEqual(first.rendered.bands)
+    // Two consecutive frames of the same phase are one band, so a live strip can
+    // advance without a new band. The frame lines are what must have grown.
+    expect(later.rendered.lines).not.toEqual(first.rendered.lines)
+    expect(later.rendered.lines.length).toBeGreaterThan(first.rendered.lines.length)
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-running.png") })
     await testInfo.attach("timeline-running", { path: testInfo.outputPath("timeline-running.png"), contentType: "image/png" })
   } finally {
