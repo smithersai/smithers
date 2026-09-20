@@ -87,6 +87,23 @@
   and `drainPendingResumes` polls for delegations taken in another process, so
   no resume loses its host.
 
+- An ask answered through `Control.signal` re-drives the run that asked it.
+  `Control.approve` is not how a `HumanTask` or `WaitFor` park is ever
+  answered: the gateway's `Approval.Submit` routes a human-wait target to
+  `Control.signal` (`ControlExecutor.answerableWait`), `smithers signal` calls
+  it directly, and every flow-authored ask parks on one. That path completes
+  the engine's durable wait point and recorded no resume delegation, so the
+  round the engine scheduled next was refused as unrequested and the run stayed
+  `waiting-approval` on the question the person had just answered — a job that
+  never resumed when somebody approved it. `AgentSession.deliverSignal` now
+  records the delegation on every `delivered` answer, including the retry of an
+  answer whose first attempt died after the completion, and the
+  `ControlExecutor.deliverSignal` port takes it up in the call that answered,
+  so an in-process answer does not wait for the one-second poll and an answer
+  delivered in another process still reaches the host that parked the run. The
+  round that takes a delegation up now clears it, so one answer buys exactly
+  one re-drive and a later park is not re-driven by a standing row.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

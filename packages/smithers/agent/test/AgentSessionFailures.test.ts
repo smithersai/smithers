@@ -148,6 +148,7 @@ interface RuntimeStub {
   readonly resume: ControlRuntime["Service"]["resume"]
   readonly pendingResumes: ControlRuntime["Service"]["pendingResumes"]
   readonly clearResume: ControlRuntime["Service"]["clearResume"]
+  readonly requestResume: ControlRuntime["Service"]["requestResume"]
 }
 
 interface Recorder {
@@ -192,6 +193,9 @@ const runtimeLayer = (
     // nothing to take up and every case below observes only what it published.
     pendingResumes: Effect.succeed([]),
     clearResume: () => Effect.void,
+    // A delivered answer records the resume it is owed, so the port asks for
+    // one; no case below reads the sequence back.
+    requestResume: () => Effect.succeed(1),
     ...overrides
   }
   return Layer.succeed(ControlRuntime)(stub as unknown as ControlRuntime["Service"])

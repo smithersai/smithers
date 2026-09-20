@@ -53,7 +53,7 @@ import * as Permission from "@smthrs/capability/Permission"
 import { ControlFacts } from "@smthrs/control"
 import { LaunchFailed, PersistenceError } from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
-import { ControlRuntime } from "@smthrs/control/ControlRuntime"
+import { ControlRuntime, type PendingResume } from "@smthrs/control/ControlRuntime"
 import type { Envelope, PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
 import * as Digest from "@smthrs/core/Digest"
 import { ExecutionFacts } from "@smthrs/engine-store"
@@ -1367,6 +1367,16 @@ const parseWakeToken = (
  * knowing there is none: another process may own the run, or it may not have
  * parked yet, and the recorded message is what a later start replays.
  *
+ * A `delivered` answer also records the resume it is owed, through
+ * `ControlRuntime.requestResume`. Completing the wait point is not on its own
+ * enough to restart the run: {@link make}'s round guard re-enters a parked run
+ * only for a delegation somebody recorded, and the only other caller of
+ * `requestResume` is `ControlLive.decide`, which records one for an approval
+ * TOKEN. Every ask answered by completing a wait point instead — each
+ * `HumanTask` and `WaitFor` park, which is how the repository flows ask and how
+ * the gateway routes `Approval.Submit` on a human wait — would otherwise settle
+ * its deferred and leave the run parked on the question it had just answered.
+ *
  * @category helpers
  * @since 0.1.0
  */
@@ -1380,6 +1390,20 @@ export const deliverSignal = (
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
     const control = yield* Effect.serviceOption(ControlRuntime)
+    // The answer is what asks for the re-drive, and this is the asking. Two
+    // refusals are not delivery failures: `RunNotFound` is an execution this
+    // control plane never launched, and `InvalidInput` is a run that has
+    // already settled. Neither has a park for a delegation to re-drive, and
+    // recording one anyway leaves a row no host ever clears.
+    const recordAnswerResume = Effect.suspend(() =>
+      Option.isNone(control) ? Effect.void : control.value.requestResume(input.runId).pipe(
+        Effect.asVoid,
+        Effect.catchTags({
+          "/control/RunNotFound": () => Effect.void,
+          "/control/InvalidInput": () => Effect.void
+        })
+      )
+    )
     // Every open wait in the run TREE, not only the named run's own row. A
     // flow that calls another flow parks the child execution, so `run-3` of
     // `coding/request` sat on an `event` wait while the question a person had
@@ -1431,7 +1455,16 @@ export const deliverSignal = (
         CanonicalJson.stringify(exit.value) === CanonicalJson.stringify(input.signal.payload)
     }
     const previous = yield* state.deferred(bound)
-    if (Option.isSome(previous)) return completionMatches(previous.value) ? "delivered" as const : "no-match" as const
+    if (Option.isSome(previous)) {
+      if (!completionMatches(previous.value)) return "no-match" as const
+      // A retry of an answer already recorded. The resume is requested again
+      // because the first attempt may have died between the completion and
+      // the request, and an answer whose re-drive was lost is an answer
+      // nobody gave: `requestResume` keys on the run, so a second request is
+      // the same delegation with a newer sequence, not a second one.
+      yield* recordAnswerResume
+      return "delivered" as const
+    }
     const engine = yield* FlowRuntime.FlowRuntime
     const outcome = yield* engine.deferredDoneIfWaiting(
       WaitFor.deferred(bound.deferredName.slice("WaitFor/".length)),
@@ -1447,7 +1480,11 @@ export const deliverSignal = (
     // Completion rechecks the concrete token in the engine transaction. A
     // competing resolver may have won; the durable stored result is the proof.
     const completed = yield* state.deferred(bound)
-    if (Option.isSome(completed)) return completionMatches(completed.value) ? "delivered" as const : "no-match" as const
+    if (Option.isSome(completed)) {
+      if (!completionMatches(completed.value)) return "no-match" as const
+      yield* recordAnswerResume
+      return "delivered" as const
+    }
     if (outcome !== "NotWaiting") return "unknown" as const
     // A normal resume clears waiting before replay parks on the same token.
     // Losing that CAS is not evidence that the admitted signal is wrong. Keep
@@ -2558,6 +2595,12 @@ export const make = (
             return yield* Flow.suspend(instance)
           }
           yield* claimForResume(payload.runId)
+          // One answer buys one re-drive. The delegation is durable and only a
+          // host clears it, and this round IS the host taking it up: left
+          // standing it would re-drive the run's NEXT park too, which is the
+          // unrequested round this guard exists to refuse. The sequence check
+          // keeps a resume requested since this read.
+          yield* runtime.clearResume(payload.runId, pending.sequence)
         }
         const fiber = yield* Effect.forkChild(
           body(payload, instance).pipe(
@@ -2598,26 +2641,43 @@ export const make = (
      * one has been standing, so it is the only path by which an abandoned
      * park is ever adopted ({@link hostsPark}).
      */
-    const drainPendingResumes = runtime.pendingResumes.pipe(
-      Effect.flatMap((pending) =>
-        Effect.forEach(pending, (entry) =>
-          takeUpResume(
-            entry.runId,
-            (runId) => Effect.asVoid(Effect.forkIn(resumeExecution(runId), scope)),
-            { _tag: "delegated", requestedAtMs: entry.requestedAtMs }
-          ).pipe(
-            Effect.flatMap((uptake) =>
-              uptake === "resuming" ? runtime.clearResume(entry.runId, entry.sequence) : Effect.void
-            )
-          ), { discard: true })
-      ),
-      Effect.catchCause((cause) =>
-        Effect.annotateLogs(
-          Effect.logWarning("A pending resume delegation could not be taken up"),
-          { cause: Cause.pretty(cause) }
+    const takeUpPendingResume = (entry: PendingResume) =>
+      takeUpResume(
+        entry.runId,
+        (runId) => Effect.asVoid(Effect.forkIn(resumeExecution(runId), scope)),
+        { _tag: "delegated", requestedAtMs: entry.requestedAtMs }
+      ).pipe(
+        Effect.flatMap((uptake) =>
+          uptake === "resuming" ? runtime.clearResume(entry.runId, entry.sequence) : Effect.void
         )
       )
-    )
+
+    const takeUpDelegations = (wanted: (entry: PendingResume) => boolean) =>
+      runtime.pendingResumes.pipe(
+        Effect.flatMap((pending) => Effect.forEach(pending.filter(wanted), takeUpPendingResume, { discard: true })),
+        Effect.catchCause((cause) =>
+          Effect.annotateLogs(
+            Effect.logWarning("A pending resume delegation could not be taken up"),
+            { cause: Cause.pretty(cause) }
+          )
+        )
+      )
+
+    const drainPendingResumes = takeUpDelegations(() => true)
+
+    /**
+     * Takes up the delegation an answered ask has just recorded, in the call
+     * that answered it.
+     *
+     * The record alone already reaches every host, through
+     * {@link drainPendingResumes}'s poll and through the engine's own
+     * post-completion round. Both are a wait, and a person who has just
+     * answered something is owed the restart in the call they made, which is
+     * what `ControlLive.takeUpResume` gives an approval decision. Nothing is
+     * claimed that the poll would not claim: a run this executor does not host
+     * is left parked with its delegation standing for the host that does.
+     */
+    const takeUpAnsweredPark = (runId: string) => takeUpDelegations((entry) => entry.runId === runId)
 
     /**
      * The durable follower: one pass, then one every second, forever.
@@ -2720,7 +2780,11 @@ export const make = (
       requestCancel: Effect.fn("AgentSession.requestCancel")((input) =>
         options.requestNativeCancel?.(input) ?? Effect.provide(requestCancel(input), services)
       ),
-      deliverSignal: Effect.fn("AgentSession.deliverSignal")((input) => Effect.provide(deliverSignal(input), services)),
+      deliverSignal: Effect.fn("AgentSession.deliverSignal")((input) =>
+        Effect.provide(deliverSignal(input), services).pipe(
+          Effect.tap((delivery) => delivery === "delivered" ? takeUpAnsweredPark(input.runId) : Effect.void)
+        )
+      ),
       resumeRun: Effect.fn("AgentSession.resumeRun")((input) =>
         takeUpResume(input.runId, (runId) => Effect.asVoid(Effect.forkIn(resumeExecution(runId), scope)), {
           _tag: "delegated"

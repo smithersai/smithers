@@ -66,7 +66,7 @@ const jj = Jj.make({
  * stores kept in the output because the ports read them.
  */
 const makeStack = (
-  controlLayer: Layer.Layer<ControlRuntime, never, Crypto.Crypto> = ControlRuntimeModule.layerMemory({
+  controlLayer: Layer.Layer<ControlRuntime, never, Crypto.Crypto> | null = ControlRuntimeModule.layerMemory({
     flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }]
   }),
   engineFilename = ":memory:"
@@ -75,7 +75,10 @@ const makeStack = (
     Mark.toLayer(() => Effect.succeed("before")),
     WaitFor.layer,
     Interpreter.layer(Gated),
-    Layer.fresh(controlLayer)
+    // `null` is a host with no control plane at all — and it has to be `null`,
+    // because an `undefined` argument takes the default above. The ports still
+    // read and write the engine; there is nothing to record a decision with.
+    controlLayer === null ? Layer.empty : Layer.fresh(controlLayer)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(
@@ -97,6 +100,13 @@ const stack = makeStack()
 const run = <A, E, R>(body: Effect.Effect<A, E, R>): Promise<A> =>
   Effect.runPromise(
     Effect.provide(body, stack as unknown as Layer.Layer<R>).pipe(Effect.scoped, Effect.orDie)
+  )
+
+const controlless = makeStack(null)
+
+const runControlless = <A, E, R>(body: Effect.Effect<A, E, R>): Promise<A> =>
+  Effect.runPromise(
+    Effect.provide(body, controlless as unknown as Layer.Layer<R>).pipe(Effect.scoped, Effect.orDie)
   )
 
 /** Plans, approves, and launches one control run through the port itself. */
@@ -279,6 +289,54 @@ describe("AgentSession.deliverSignal", () => {
       AgentSession.deliverSignal({ runId: "ports-signal-absent", signal: { name: "approval", payload: null } })
     )
     expect(observed).toBe("unknown")
+  })
+
+  /**
+   * A delivered answer records the resume it is owed, and a run the control
+   * plane has already settled is owed none: `requestResume` refuses a terminal
+   * run because no host will ever take the delegation up, and a row recorded
+   * anyway is one every host's poll filters out and nothing ever clears.
+   *
+   * The refusal is not a delivery failure. The wait point was completed, and
+   * telling `Control.signal` otherwise would have it record a rejection for an
+   * answer the engine has already consumed.
+   */
+  it("keeps an answer delivered when the control plane has already settled the run", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const runId = yield* startControlRun
+      yield* parkedRun(runId, "approval")
+      // What a cancel from another process leaves behind: the control row is
+      // terminal while the answer is still in flight to the wait point.
+      const fence = yield* runtime.claimFence(runId)
+      yield* runtime.writeStatus(runId, fence, "completed")
+
+      const delivery = yield* AgentSession.deliverSignal({
+        runId,
+        signal: { name: "approval", payload: { approved: true } }
+      })
+      return { delivery, pending: yield* runtime.pendingResumes }
+    }))
+
+    expect(observed.delivery).toBe("delivered")
+    expect(observed.pending).toEqual([])
+  })
+
+  it("delivers an answer on a host with no control plane to record a resume with", async () => {
+    const observed = await runControlless(Effect.gen(function*() {
+      const present = Option.isSome(yield* Effect.serviceOption(ControlRuntime))
+      yield* parkedRun("ports-signal-controlless", "approval")
+      const delivery = yield* AgentSession.deliverSignal({
+        runId: "ports-signal-controlless",
+        signal: { name: "approval", payload: { approved: true } }
+      })
+      return { present, delivery }
+    }))
+
+    // The wait point is the answer's whole effect here. Nothing re-drives a
+    // control row this composition does not have, and the engine's own
+    // `scheduleResume` is what carries the run on.
+    expect(observed).toEqual({ present: false, delivery: "delivered" })
   })
 })
 

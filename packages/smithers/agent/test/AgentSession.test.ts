@@ -21,7 +21,7 @@ import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, Co
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
@@ -1361,6 +1361,128 @@ describe("AgentSession", () => {
     },
     30_000
   )
+
+  /**
+   * A human wait answered through `Control.signal`.
+   *
+   * That is the only way a `HumanTask` ask is ever answered: the gateway's
+   * `Approval.Submit` routes a human-wait target to `Control.signal`
+   * (`ControlExecutor.answerableWait`), `smithers signal` calls it directly,
+   * and every flow-authored ask in `flows/repository` parks on one. The answer
+   * completes the engine's durable wait point; no approval token is decided,
+   * so `ControlLive.decide` — the one caller of `ControlRuntime.requestResume`
+   * — never runs.
+   *
+   * The run still has to be re-driven, exactly once. The executor refuses to
+   * re-enter a `waiting-approval` run nobody asked for, so an answered ask has
+   * to be the asking: one claim, the answer read by the resumed body, and the
+   * run settled. Before the answer requested its own resume the run stayed
+   * `waiting-approval` forever, which is a job that never resumes when the
+   * person approves it.
+   */
+  it("re-drives a run whose human wait `Control.signal` answered, exactly once", async () => {
+    const answers: Array<unknown> = []
+    const Answered = Action.make("test/SignalAnswered", {
+      payload: { answer: Schema.Json },
+      success: Schema.Json,
+      error: Schema.Never
+    })
+    const flow = Flow.make("agents/module", {
+      payload: Executable.Payload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () =>
+        HumanTask.action.call({ name: "ship-it", kind: "confirm", prompt: "Ship the change?", maxAttempts: 1 }).pipe(
+          Node.bindPlanned((answer) => Answered.call({ answer }))
+        )
+    })
+    const catalog: Executable.Catalog = {
+      executables: [{
+        descriptor: moduleDescriptor,
+        delegate: "test/Module",
+        lowered: { cache: undefined, placement: undefined, priority: undefined },
+        invocation: (input) => ({
+          flow: moduleDescriptor.name,
+          input,
+          prompt: "",
+          model: null,
+          placement: null,
+          placementOptions: null,
+          capabilities: [],
+          flows: ["test/Module"]
+        }),
+        flow,
+        layer: Interpreter.layer(flow)
+      }],
+      refused: []
+    }
+    const registration = Layer.mergeAll(
+      Interpreter.layer(flow),
+      HumanTask.layer,
+      Answered.toLayer(({ answer }) =>
+        Effect.sync(() => {
+          answers.push(answer)
+          return answer
+        })
+      )
+    )
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:signal-resume"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected admission")
+          }
+          const runId = receipt.runId
+          // The ask parks the module's own execution, so the run this control
+          // plane holds is `parked` on that child rather than `waiting-approval`
+          // in its own right. Both are parks the executor refuses to re-enter
+          // unasked, which is the whole of the defect.
+          yield* awaitStatus(runtime, runId, "parked")
+          // The park is published before the wait point is readable, so the
+          // answer is retried on the refusal that says so — by yielding, never
+          // by sleeping, so nothing here can be satisfied by a poll.
+          const answer = (attempts: number): Effect.Effect<void, unknown> =>
+            control.signal({
+              runId,
+              signal: { name: "ship-it", payload: true },
+              idempotencyKey: `answer:${attempts}`
+            }).pipe(
+              Effect.asVoid,
+              Effect.catchTag("/control/NoMatchingWait", (failure) =>
+                attempts <= 0 ? Effect.fail(failure) : Effect.andThen(Effect.yieldNow, answer(attempts - 1)))
+            )
+          yield* answer(20_000)
+          yield* awaitStatus(runtime, runId, "completed")
+          const page = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 })
+          return { claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length }
+        }).pipe(Effect.provide(stack({
+          gate,
+          notes: [],
+          resolve: () => Effect.die("a module must not resolve a model seat"),
+          modules: { catalog, layer: registration }
+        })))
+      }).pipe(Effect.scoped) as Effect.Effect<{ readonly claims: number }, unknown>
+    )
+
+    // The resumed body read the answer the person gave, and the park cost one
+    // claim: an answer requests one re-drive, and an unanswered round still
+    // requests none.
+    expect(answers).toEqual([true])
+    expect(observed.claims).toBe(1)
+  }, 30_000)
 
   it("journals a bounded cause when the model fails, for an empty and an absent input", async () => {
     const results = await Effect.runPromise(
