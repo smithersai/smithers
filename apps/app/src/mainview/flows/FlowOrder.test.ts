@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import type { CommandActions } from "./Flows"
-import { adminFlows, baseFlows } from "./Flows"
+import { adminFlows, baseFlows, experimentalFlows, guideFlows } from "./Flows"
 import { nameOf } from "./registry"
 
 /** Every controller call answers with nothing: registration never invokes a handler. */
@@ -212,7 +212,7 @@ describe("Flows.ts aggregator order", () => {
   })
 
   test("no flow registers twice across the blocks", () => {
-    const names = [...baseFlows(inertActions), ...adminFlows(inertActions)].map(nameOf)
+    const names = [...baseFlows(inertActions), ...experimentalFlows(inertActions), ...guideFlows(inertActions), ...adminFlows(inertActions)].map(nameOf)
     const seen = new Set<string>()
     const duplicates = names.filter((name) => (seen.has(name) ? true : (seen.add(name), false)))
     expect(duplicates).toEqual([])

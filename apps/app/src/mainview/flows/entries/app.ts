@@ -4,6 +4,7 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
+import { flowArgs } from "../FlowArgs"
 import type { FlowEntry,Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 import { flow,NoPayload } from "./Declare"
@@ -13,6 +14,10 @@ export const namespace: Namespace = { id: "app", label: "App", summary: "The Smi
 
 /** The `app` flows registered as one aggregator block. */
 export const appFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({ name: "app.experimental", summary: "Toggle experimental panes", args: "[on|off]",
+    input: Schema.Struct({ on: Schema.optional(Schema.Boolean) }),
+    form: { args: payload => typeof payload.on === "boolean" ? flowArgs("app.experimental", { on: payload.on }) : "" },
+    handler: ({ on }) => actions.toggleExperimental(on) }),
   flow({ name: "app.first-run.dismiss", hidden: true, summary: "Dismiss recommended actions", input: NoPayload, handler: () => actions.dismissFirstRun() }),
   flow({ name: "app.hint.dismiss", hidden: true, summary: "Dismiss a hint", args: "<id>", input: Schema.Struct({ id: Schema.String }), handler: ({ id }) => actions.dismissHint(id) }),
   /*

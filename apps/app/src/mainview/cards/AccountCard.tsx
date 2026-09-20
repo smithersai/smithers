@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 /*
  * The account card (factory mock 21, design session §6c): read-only seam
@@ -19,14 +20,24 @@ export const accessLabel = (payload: { readonly allowlisted: boolean; readonly a
 
 export const AccountCardBody = ({
   card,
+  experimental = false,
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "account" }>
+  readonly experimental?: boolean
   readonly onRunCommand: RunCommand
 }) => (
   <div className="world-card-list">
     <table className="secrets-table" aria-label="Account">
       <tbody>
+        <tr>
+          <th scope="row">Experimental</th>
+          <td><Button type="button" size="sm" variant="outline" role="switch"
+            aria-label="Experimental" aria-checked={experimental}
+            {...flowAction(onRunCommand, "app.experimental", flowArgs("app.experimental", { on: !experimental }))}>
+            {experimental ? "On" : "Off"}
+          </Button></td>
+        </tr>
         <tr data-testid="account-login">
           <th scope="row">GitHub</th>
           <td>Connected as @{card.payload.login}</td>
@@ -80,7 +91,7 @@ export const AccountCardBody = ({
 
 export const accountCardFamily: CardFamily<"account"> = {
   account: {
-    render: (card, actions) => <AccountCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <AccountCardBody card={card} experimental={actions.experimental} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   }
 }

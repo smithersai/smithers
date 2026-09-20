@@ -3,14 +3,18 @@
 Hidden mocks of Smithers abstractions that ship in `packages/` and have no UI.
 One pane per abstraction, one flow per pane, one card kind for all of them.
 
-```sh
-VITE_SMITHERS_EXPERIMENTAL=true pnpm --filter smithers-app dev
-```
+Use `/app.experimental on` or the **Experimental** switch in the account card.
+The setting persists with your session and works on smithers.sh. Use
+`/app.experimental off` to disable it; bare `/app.experimental` toggles it.
+
+For a build that should boot with it on, keep using
+`VITE_SMITHERS_EXPERIMENTAL=true`. The build flag and an explicit host feature
+also enable the panes, independently of the session setting.
 
 Then `/experimental.<id>` in the composer, or ask the agent for it by name —
 these are ordinary flows with all three doors.
 
-Without the flag the namespace does not register, so no experimental flow can
+While disabled the namespace does not register, so no experimental flow can
 be found, disclosed to a model, or run.
 
 ## Adding one

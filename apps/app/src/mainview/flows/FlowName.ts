@@ -39,6 +39,7 @@ export const FLOW_NAMES = [
   "agent.session.view",
   "app.download",
   "app.download.prompt",
+  "app.experimental",
   "app.first-run.dismiss",
   "app.hint.dismiss",
   "appearance.dark-mode",

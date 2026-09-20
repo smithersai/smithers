@@ -459,6 +459,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly noteCommandRun: (name: string) => void
   /** The /verbose switch: trace every flow and background transition in the transcript. */
   readonly toggleVerbose: () => void
+  readonly toggleExperimental: (on?: boolean) => { readonly value: string }
   /** Record one settled flow invocation (every trigger) — the verbose trace's source. */
   readonly traceFlow: (record: Extract<AppTransition, { type: "flow.invoked" }>) => void
   /**
@@ -742,7 +743,7 @@ export const createAppController = (
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
     mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
-    experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true",
+    experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true",
     flowBuilder: services.features?.flowBuilder ?? import.meta.env?.VITE_SMITHERS_FLOW_BUILDER === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
@@ -764,16 +765,20 @@ export const createAppController = (
   if ((!features.pluginLibrary && store.session().surface === "plugins") || (!features.wiki && store.session().surface === "world")) {
     store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
-  const restored = store.session()
-  const restoredCardAvailable = (kind: string): boolean =>
-    knowledgeCardAvailable(kind, features) && (kind !== "experimental" || features.experimental)
-  const maximized = restored.maximizedCardId === null ? undefined : store.collections.cards.get(restored.maximizedCardId)
-  if (maximized && !restoredCardAvailable(maximized.kind)) store.dispatch({ type: "frame.navigated", actor: "system",
-    workspaceId: restored.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID, branchId: restored.activeBranchId ?? DEFAULT_BRANCH_ID,
-    frameId: rootFrameId(restored.activeBranchId ?? DEFAULT_BRANCH_ID) })
-  const activeTab = restored.activeTabId === undefined ? undefined : store.collections.tabs.get(restored.activeTabId)
-  const tabCard = activeTab?.kind === "card" && activeTab.cardId ? store.collections.cards.get(activeTab.cardId) : undefined
-  if (tabCard && !restoredCardAvailable(tabCard.kind)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
+  const experimentalEnabled = (): boolean => features.experimental || store.session().experimental === true
+  const reconcileUnavailableCards = (): void => {
+    const restored = store.session()
+    const restoredCardAvailable = (kind: string): boolean =>
+      knowledgeCardAvailable(kind, features) && (kind !== "experimental" || experimentalEnabled())
+    const maximized = restored.maximizedCardId === null ? undefined : store.collections.cards.get(restored.maximizedCardId)
+    if (maximized && !restoredCardAvailable(maximized.kind)) store.dispatch({ type: "frame.navigated", actor: "system",
+      workspaceId: restored.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID, branchId: restored.activeBranchId ?? DEFAULT_BRANCH_ID,
+      frameId: rootFrameId(restored.activeBranchId ?? DEFAULT_BRANCH_ID) })
+    const activeTab = restored.activeTabId === undefined ? undefined : store.collections.tabs.get(restored.activeTabId)
+    const tabCard = activeTab?.kind === "card" && activeTab.cardId ? store.collections.cards.get(activeTab.cardId) : undefined
+    if (tabCard && !restoredCardAvailable(tabCard.kind)) store.dispatch({ type: "tab.selected", actor: "system", id: MAIN_TAB_ID })
+  }
+  reconcileUnavailableCards()
   const { withToast, resolveToast, dismissToast, surfaceCommandFailure: surfaceFailure } = createFailureController(ctx)
   const surfaceCommandFailure: typeof surfaceFailure = (name, outcome, saidBefore) => {
     if (ctx.disposed) return
@@ -1264,6 +1269,12 @@ export const createAppController = (
   }
   const paletteRecent = (): { readonly value: string } => ({ value: JSON.stringify({ items: store.session().paletteRecents ?? [] }) })
 
+  const toggleExperimental = (on?: boolean): { readonly value: string } => {
+    store.dispatch({ type: "experimental.toggled", actor: "user", on: on ?? !experimentalEnabled() })
+    reconcileUnavailableCards()
+    return { value: experimentalEnabled() ? "on" : "off" }
+  }
+
   const toggleVerbose = (): void => {
     store.dispatch({ type: "verbose.toggled", actor: "user", on: store.session().verbose !== true })
   }
@@ -1737,6 +1748,7 @@ export const createAppController = (
     deferRepositoryCommand: repositoryReadiness.defer,
     noteCommandRun,
     toggleVerbose,
+    toggleExperimental,
     traceFlow,
     requestFlowConfirmation,
     recommend,
@@ -1888,7 +1900,7 @@ export const createAppController = (
         pluginLibrary: features.pluginLibrary,
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
-        experimental: features.experimental,
+        experimental: experimentalEnabled(),
         flowBuilder: features.flowBuilder,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],

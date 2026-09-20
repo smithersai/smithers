@@ -207,6 +207,7 @@ export const APP_TRANSITION_TYPES = {
   "frame.forked": true,
   "devtools.toggled": true,
   "verbose.toggled": true,
+  "experimental.toggled": true,
   "flow.invoked": true,
   "surfaces-menu.toggled": true,
   "connect-menu.toggled": true,
@@ -1755,6 +1756,12 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "devtools.toggled":
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.devtoolsOpen = transition.open
+          })
+          break
+
+        case "experimental.toggled":
+          collections.sessions.update(SESSION_ID, (draft) => {
+            draft.experimental = transition.on
           })
           break
 

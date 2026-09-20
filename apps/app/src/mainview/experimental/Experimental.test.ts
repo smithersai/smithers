@@ -1,12 +1,13 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { EXPERIMENTAL_MANIFEST, manifestRow } from "./Manifest"
+import { executeAgentToolCall } from "../flows/agentTools"
 import { flowArgs } from "../flows/FlowArgs"
 import { payloadFor } from "../flows/SlashPayload"
 import type { AppStore } from "../state/AppStore"
 import { createAppStore } from "../state/AppStore"
-import { MAIN_TAB_ID } from "../state/AppState"
+import { MAIN_TAB_ID, PALETTES } from "../state/AppState"
 import { scopedControllers } from "../state/ControllerTestScope"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, settled, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -23,16 +24,68 @@ const names = (items: ReadonlyArray<{ readonly name: string }>) => items.map(ite
 const allNames = [...EXPERIMENTAL_MANIFEST.map(entry => `experimental.${entry.id}`), "experimental.set"].sort()
 
 describe("experimental flows share the flag and all three doors", () => {
+  test("the session switch changes all doors on the same controller", async () => {
+    const { controller, store } = await boot(false)
+    expect(controller.commands.all().some(item => item.name === "app.experimental")).toBe(true)
+    expect(names(controller.commands.all())).toEqual([])
+    expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unavailable")
+    expect((await controller.commands.run("app.experimental", "on")).status).toBe("executed")
+    expect(controller.commands.state().experimental).toBe(true)
+    expect(names(controller.commands.all())).toEqual(allNames)
+    const ordered = controller.commands.all().map(item => item.name)
+    expect(ordered.indexOf("experimental.set")).toBeLessThan(ordered.indexOf("input.mode"))
+    expect(ordered.indexOf("experimental.plan")).toBeGreaterThan(ordered.indexOf("palette.recent"))
+    expect(names(controller.commands.disclosed())).toEqual(allNames)
+    expect((await controller.commands.run("experimental.plan")).status).toBe("executed")
+    expect(cards(store)).toHaveLength(1)
+    expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("executed")
+    await controller.commands.run("app.experimental", "on")
+    expect(store.session().experimental).toBe(true)
+    await controller.commands.run("app.experimental", "off")
+    expect(names(controller.commands.all())).toEqual([])
+    expect(names(controller.commands.disclosed())).toEqual([])
+    for (const name of ["experimental.plan", "experimental.set"]) {
+      expect((await controller.commands.run(name)).status).toBe("unavailable")
+      expect((await controller.commands.runAsAgent(name)).status).toBe("unavailable")
+    }
+    expect(cards(store)).toHaveLength(1)
+    await controller.commands.run("app.experimental")
+    expect(store.session().experimental).toBe(true)
+    await controller.commands.run("app.experimental")
+    expect(store.session().experimental).toBe(false)
+    expect((await controller.commands.runAsAgent("app.experimental", "on")).status).toBe("executed")
+    expect(names(controller.commands.disclosed())).toEqual(allNames)
+  })
+
+  for (const presentation of ["maximized", "tab"] as const) {
+    test(`session setting persists with a ${presentation} card and off reconciles it live`, async () => {
+      const { controller, store, storage } = await boot(false)
+      await controller.commands.run("app.experimental", "on")
+      await controller.commands.run("experimental.plan")
+      const id = cards(store)[0]!.id
+      await controller.commands.run(presentation === "tab" ? "tab.card" : "card.maximize", id)
+      await controller.dispose()
+      const restored = await boot(false, storage)
+      expect(names(restored.controller.commands.all())).toEqual(allNames)
+      if (presentation === "tab") expect(restored.store.session().activeTabId).toBe(`card-${id}`)
+      else expect(restored.store.session().maximizedCardId).toBe(id)
+      await restored.controller.commands.run("app.experimental", "off")
+      expect(restored.store.session().maximizedCardId).toBeNull()
+      expect(restored.store.session().activeTabId).toBe(MAIN_TAB_ID)
+      expect(restored.store.collections.cards.has(id)).toBe(true)
+    })
+  }
+
   test("flag off: no registration, disclosure or agent invocation, and no upsert", async () => {
     const { controller, store } = await boot(false)
     const dispatch = spyOn(store, "dispatch")
     try {
       expect(names(controller.commands.all())).toEqual([])
       expect(names(controller.commands.disclosed())).toEqual([])
-      expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unknown-command")
+      expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unavailable")
       expect((await controller.commands.runAsAgent("experimental.set", flowArgs("experimental.set", {
         cardId: "experimental:plan", key: "nodeId", value: "test"
-      }))).status).toBe("unknown-command")
+      }))).status).toBe("unavailable")
       expect(dispatch.mock.calls.filter(([event]) => event.type === "card.upsert")).toEqual([])
       expect(cards(store)).toEqual([])
     } finally { dispatch.mockRestore() }
@@ -142,7 +195,7 @@ describe("experimental flows share the flag and all three doors", () => {
     }
   })
 
-  test("the environment enables the flows when features.experimental is absent; an explicit false wins", async () => {
+  test("the environment enables the flows with the setting unset, even with an explicit false", async () => {
     // Bun exposes import.meta.env through process.env, as in KnowledgeFeatures.test.tsx.
     const prior = process.env.VITE_SMITHERS_EXPERIMENTAL
     try {
@@ -153,11 +206,60 @@ describe("experimental flows share the flag and all three doors", () => {
       expect(names(controller.commands.disclosed())).toEqual(allNames)
       expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("executed")
       const disabled = await boot(false)
-      expect(names(disabled.controller.commands.all())).toEqual([])
+      expect(names(disabled.controller.commands.all())).toEqual(allNames)
     } finally {
       if (prior === undefined) delete process.env.VITE_SMITHERS_EXPERIMENTAL
       else process.env.VITE_SMITHERS_EXPERIMENTAL = prior
     }
+  })
+
+  /*
+   * A switch is not a missing name: the model is given the experimental
+   * commands while the switch is on, and a toggle-off mid-turn used to refuse
+   * its next call with "no command has that name" — which is false, and sent
+   * the model looking for a different flow instead of re-listing.
+   */
+  test("a name the switch hides refuses as not currently available, never as no such name", async () => {
+    const { controller } = await boot(false)
+    const reason = "/experimental.plan is not currently available — /app.experimental turns experimental panes on."
+    expect(controller.commands.explainAbsent("experimental.plan")).toEqual({ door: "experimental", reason })
+    expect(await controller.commands.run("experimental.plan")).toEqual({
+      status: "unavailable", door: "experimental", reason, action: null
+    })
+    expect(await executeAgentToolCall(controller.commands, {
+      name: "commands",
+      arguments: JSON.stringify({ action: "execute", name: "experimental.plan" })
+    })).toBe(`failed: ${reason} Use the list action for every command callable right now`)
+    // A name no host has is still nothing at all, and the switch explains nothing while it is on.
+    expect(controller.commands.explainAbsent("experimental.no-such-pane")).toBeUndefined()
+    expect((await controller.commands.runAsAgent("experimental.no-such-pane")).status).toBe("unknown-command")
+    await controller.commands.run("app.experimental", "on")
+    expect(controller.commands.explainAbsent("experimental.plan")).toBeUndefined()
+  })
+
+  /*
+   * A display preference, not account data: the sign-out scrub names the
+   * session fields it clears one by one (AppProjection `forgetAccountState`),
+   * and /verbose, the palette and this switch are not among them.
+   */
+  test("the setting survives a sign-out, like verbose and the palette", async () => {
+    const { controller, store } = await boot(false)
+    await controller.commands.run("app.experimental", "on")
+    store.dispatch({ type: "verbose.toggled", actor: "user", on: true })
+    store.dispatch({ type: "palette.changed", actor: "user", palette: PALETTES[1]! })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+      login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "message.appended", actor: "system", text: "Private work" }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out",
+      login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    await settled()
+    // The scrub ran...
+    expect([...store.collections.messages.values()].some(row => row.text?.includes("Private work"))).toBe(false)
+    // ...and left every preference, and the flows the switch registers, alone.
+    expect(store.session().experimental).toBe(true)
+    expect(store.session().verbose).toBe(true)
+    expect(store.session().palette).toBe(PALETTES[1]!)
+    expect(names(controller.commands.all())).toEqual(allNames)
   })
 
   test("pane ids are unique flow leaves and an unknown pane has no manifest row", () => {

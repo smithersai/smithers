@@ -19,6 +19,7 @@ import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "app.experimental": { readonly on: boolean }
   readonly "experimental.set": { readonly cardId: string; readonly key: string; readonly value: string }
   readonly "runs.graph.select": { readonly runId: string; readonly nodeId?: string }
   readonly "flow.plan.select": { readonly cardId: string; readonly nodeId?: string }
@@ -134,6 +135,7 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "app.experimental": payload => payload.on ? "on" : "off",
   "experimental.set": payload => JSON.stringify(payload),
   "runs.graph.select": payload => graphLine(payload, "runId", "nodeId"),
   "flow.plan.select": payload => graphLine(payload, "cardId", "nodeId"),

@@ -39,7 +39,7 @@ export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
 
 /** The exact collection subscriptions used by card decoration joins. */
 export interface CardProjectionAuthority {
-  readonly collections: Pick<AppStore["collections"], "repos" | "starredTargets" | "repositoryNotifications" | "notificationReceipts" | "runtimeRuns" | "runtimeApprovals" | "models"> & Partial<Pick<AppStore["collections"], "cards">>
+  readonly collections: Pick<AppStore["collections"], "repos" | "starredTargets" | "repositoryNotifications" | "notificationReceipts" | "runtimeRuns" | "runtimeApprovals" | "models"> & Partial<Pick<AppStore["collections"], "cards" | "sessions">>
 }
 
 /**
@@ -81,6 +81,7 @@ export interface CardActions {
    * raw journal, a debug surface) exists only where verbose does.
    */
   readonly debugVerbose?: boolean
+  readonly experimentalSnapshot?: () => boolean
   /** Existing source-qualified catalog cards; never a second availability store. */
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
   /** Existing dispatcher listings, so a plan card names the schedules that fire it without a second read of the box. */

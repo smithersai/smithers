@@ -35,7 +35,8 @@ export const cardActions = (controller: AppController): CardBindings => {
     pluginLibrary: controller.features?.pluginLibrary ?? false,
     wiki: controller.features?.wiki ?? false,
     mythicalHistory: controller.features?.mythicalHistory ?? false,
-    experimental: controller.features?.experimental ?? false,
+    get experimental() { return controller.commands?.state().experimental === true },
+    experimentalSnapshot: () => controller.commands?.state().experimental === true,
     flowBuilder: controller.features?.flowBuilder ?? false,
     onDecideApproval: (id, decision, answer, question) =>
       // Structured human answers keep their value shape through the controller.
