@@ -79,7 +79,36 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
     conditions.set(key, held)
     return held
   }
+  /** The coordinates that say which invocation of one step recorded a fact. */
+  const ordinals = (key: string): ReadonlyArray<number> => {
+    const scope = JSON.parse(key) as ReadonlyArray<unknown>
+    return [2, 3, 4, 6].map((index) => typeof scope[index] === "number" ? scope[index] : 0)
+  }
+  /**
+   * A step records one invocation at a time, so the next one answers for it.
+   *
+   * `executionId`, `stepId` and `scope` name the step; `attempt`, `ask`,
+   * `retry` and `generation` say which invocation of it this record belongs
+   * to. A read-only invocation can never record a mutation, so a brake its
+   * predecessor recorded would otherwise outlive every invocation that could
+   * close it.
+   */
+  const supersede = (row: { readonly payload?: unknown }): void => {
+    const key = callScope(row)
+    if (key === undefined || conditions.size === 0) return
+    const now = ordinals(key)
+    const identity = JSON.parse(key) as ReadonlyArray<unknown>
+    for (const held of conditions.keys()) {
+      if (held === key || held === "") continue
+      const was = JSON.parse(held) as ReadonlyArray<unknown>
+      if (was[0] !== identity[0] || was[1] !== identity[1] || was[5] !== identity[5]) continue
+      const previous = ordinals(held)
+      const decided = now.findIndex((value, index) => value !== previous[index])
+      if (decided >= 0 && now[decided]! > previous[decided]!) conditions.delete(held)
+    }
+  }
   for (const row of visible(model, cursor)) {
+    supersede(row)
     const p = record(row.payload)
     switch (row.kind) {
       case "control.agent.turn-opened": activity = "Thinking"; break
@@ -119,6 +148,9 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
         break
       case "control.agent.suspended":
       case "control.run.parked": step(row).parked = p.reason === "approval" ? "approval" : "resume"; break
+      // The invocation ended. Whatever it was carrying ended with it.
+      case "control.agent.resolved":
+      case "control.agent.aborted": conditions.delete(callScope(row) ?? ""); break
       // The run's own record that it is running again ends every park it holds.
       // It says nothing about a brake, so it closes none.
       case "control.run.resumed": for (const one of conditions.values()) one.parked = undefined; break

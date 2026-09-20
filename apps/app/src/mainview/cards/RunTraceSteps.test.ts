@@ -301,6 +301,46 @@ describe("recorded step identity", () => {
     ]) expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere, closing])).condition).toBeUndefined()
   })
 
+  test.each(["control.agent.resolved", "control.agent.aborted"])("%s ends the condition the same invocation recorded", (ending) => {
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.repeat-demanded", left, { frames: 4, cap: 4 }),
+      nativeStep(3, "control.agent.turn-opened", right),
+      nativeStep(4, ending, left, { text: "done", reason: "stop" })
+    ]
+    expect(traceStatus(traceFromJournal(run, records))).toEqual({ activity: "Thinking" })
+    // Another step's ending says nothing about this step's brake.
+    expect(traceStatus(traceFromJournal(run, [...records.slice(0, 3), nativeStep(4, ending, right, {})])).condition).toBe("thrashing")
+  })
+
+  test("a newer attempt of a step replaces the condition its earlier attempt recorded", () => {
+    const retried = { ...left, retry: 2 }
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.repeat-demanded", left, { frames: 4, cap: 4 }),
+      nativeStep(3, "control.agent.turn-closed", left, { outcome: "failed" }),
+      nativeStep(4, "control.agent.turn-opened", retried),
+      nativeStep(5, "control.agent.cell-call-started", retried, { callId: "w", flowName: "write", input: { path: "a.ts" } }),
+      nativeStep(6, "control.agent.cell-call-settled", retried, { callId: "w", flowName: "write", outcome: "success", value: { bytesWritten: 1 } }),
+      nativeStep(7, "control.agent.mutation-observed", retried, { basis: "observed", mutated: true })
+    ]
+    expect(traceStatus(traceFromJournal(run, records))).toEqual({ activity: "Wrote a.ts" })
+    // The earlier attempt's brake stands until the newer one is recorded.
+    expect(traceStatus(traceFromJournal(run, records.slice(0, 3))).condition).toBe("thrashing")
+  })
+
+  test("a park ends when the step's next attempt records work, with no run-level resume", () => {
+    const resumed = { ...right, retry: 2 }
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", right),
+      nativeStep(2, "control.agent.suspended", right, { reason: "quota" }),
+      nativeStep(3, "control.agent.turn-opened", resumed),
+      nativeStep(4, "control.agent.cell-call-started", resumed, { callId: "r", flowName: "read", input: { path: "a.ts" } })
+    ]
+    expect(traceStatus(traceFromJournal(run, records))).toEqual({ activity: "Reading a.ts" })
+    expect(traceStatus(traceFromJournal(run, records.slice(0, 2)))).toMatchObject({ condition: "blocked", action: "resume" })
+  })
+
   test("a park belongs to its step, a run-level resume ends it, and an approval outranks both", () => {
     const parked = [
       nativeStep(1, "control.agent.turn-opened", left),
