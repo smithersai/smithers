@@ -2521,9 +2521,24 @@ export const make = (
         // the registration scope. Such a round can start before the control
         // resume bridge runs; its previous park released the control fence.
         // Only the hosting session may reclaim that record before executing.
+        //
+        // The delegation is what makes a round a resume. Without it the round
+        // re-entered the body of a run nobody had answered: the executor
+        // claimed the park, replayed every settled frame, and suspended on the
+        // same ask again, once per heartbeat, for as long as the run waited on
+        // a human. `Control.approve` records the delegation before it hands
+        // the decision over, so the approval a park is waiting on always
+        // arrives with one; a bare `Control.resume` claims the row itself and
+        // reaches this round on a status that no longer parks. An unrequested
+        // round therefore has nothing to drive, and driving it anyway made the
+        // incarnation that consumed the operator's decision one that had read
+        // the run's durable history before the operator touched it.
         if (controlRun !== undefined && parks(controlRun.status)) {
           const pending = (yield* runtime.pendingResumes).find((entry) => entry.runId === payload.runId)
-          if (!(yield* hostsPark(payload.runId, { _tag: "delegated", requestedAtMs: pending?.requestedAtMs }))) {
+          if (
+            pending === undefined ||
+            !(yield* hostsPark(payload.runId, { _tag: "delegated", requestedAtMs: pending.requestedAtMs }))
+          ) {
             yield* FlowRuntime.annotateWaiting({
               reason: controlRun.status === "waiting-approval" ? "approval" : "event"
             })

@@ -396,6 +396,11 @@ interface Outcome {
   readonly requestedQuestion: string
   readonly grantTokens: ReadonlyArray<string>
   readonly agentTrail: ReadonlyArray<JournalEvent.Entry>
+  /**
+   * How many times the run was claimed for resume, which is how many
+   * incarnations re-entered the agent body after a park.
+   */
+  readonly claims: number
 }
 
 /**
@@ -485,7 +490,8 @@ const drive = (
       grantTokens: grants.map((grant) => grant.tokenId),
       agentTrail: page.entries.filter((entry) =>
         entry.eventType.startsWith("control.agent.") || entry.eventType === "control.run.failed"
-      )
+      ),
+      claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length
     }
   })
 
@@ -733,6 +739,14 @@ describe("AgentSession", () => {
     const failed = outcome.agentTrail.find((entry) => entry.eventType === "control.run.failed")
     expect(JSON.stringify(failed?.payload)).toContain("/harness/HarnessError")
     expect(JSON.stringify(failed?.payload)).toContain("predates harness journal format 2")
+    // The refusal is the operator's resume reading the history this test
+    // wrote, and nothing else: one claim means the run sat on its ask until
+    // the approval arrived, so no earlier incarnation was still inside the
+    // body holding a copy of the journal from before the incompatible record
+    // landed. When unrequested heartbeat rounds re-drove the park, this run
+    // was claimed four times and whichever claim happened to consume the
+    // approval decided whether the run failed or completed.
+    expect(outcome.claims).toBe(1)
   })
   it("resumes a newly forked execution under the child's identity even when the copied parent is terminal", async () => {
     let modelCalls = 0

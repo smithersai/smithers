@@ -73,6 +73,20 @@
   release, with no runtime or schema alteration. Schema representation is key
   material, so future dependency upgrades must verify these vectors as well.
 
+### Fixed
+
+- A parked run is re-driven only when a resume has actually been delegated.
+  Every engine round for a run parked on its own ask used to claim the park,
+  replay every settled frame, and suspend on the same ask again, once per
+  heartbeat, for as long as the run waited on a human. Nothing had asked for
+  that resume, and the incarnation that eventually consumed the operator's
+  decision could be one that had read the run's durable history before the
+  operator touched it, so a check the body makes on entry (the journal format
+  refusal) was made against a history the completing incarnation never saw.
+  `Control.approve` records the delegation before it hands over the decision,
+  and `drainPendingResumes` polls for delegations taken in another process, so
+  no resume loses its host.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added
