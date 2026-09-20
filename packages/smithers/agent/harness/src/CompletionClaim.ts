@@ -42,6 +42,15 @@
  * are read: every completion with a claim is read, and a claim past the cap
  * that the record does not record is a failed run rather than a finished one.
  *
+ * One host control sits outside that: `claimCap` of zero disarms this brake
+ * outright, the way zero disarms every other budget in `CellTurn.State`, and
+ * then no completion is read, no `ClaimDemanded` is journaled and nothing here
+ * can fail a run. It is a composition-time choice a host makes for a path it
+ * does not want a model in, not a fallback the brake takes on its own, and no
+ * shipped host makes it: `smithers run` and `smithers opencode` both leave the
+ * cap at `CellTurn.defaultClaimDemands`. Prose saying every completion of
+ * every run is read means every run under the default cap.
+ *
  * ## What that verdict may be about, and why it is not {@link Probabilities.complete}
  *
  * Arming the verdict on the first two questions destroyed true answers. Five
