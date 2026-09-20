@@ -11,6 +11,7 @@ import {
   cloudRepoPath,
   enableProductionVerbose,
   PRODUCTION_REPO,
+  repositoryApiPath,
   readJson
 } from "./repositories-github/production"
 import { workflowTest } from "./flow-execution/fixture"
@@ -373,7 +374,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   const before = await readWorkspaceText(page, request, repo, workspaceId!, "README.md")
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
-  const bookmarks = await readJson<{ items: { name: string; target_commit_id: string }[] }>(page, request, cloudRepoPath(repo, "/bookmarks"))
+  const bookmarks = await readJson<{ items: { name: string; target_commit_id: string }[] }>(page, request, repositoryApiPath(repo, "/bookmarks"))
   const sourceRevision = bookmarks.items.find(bookmark => bookmark.name === "main")?.target_commit_id
   expect(sourceRevision).toMatch(/^[0-9a-f]{40}$/)
   const configuration: SetupDraft = {
