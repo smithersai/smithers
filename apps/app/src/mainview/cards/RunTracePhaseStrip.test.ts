@@ -36,15 +36,21 @@ test("pin doors and their owning frames follow sequence when timestamps tie or r
     expect(frameAtSequence(model, seq)).toBe(owner)
   }
   const pins = phasePins([
-    { seq: 8, at: 2000, label: "last", tone: "good" },
-    { seq: 5, at: 3000, label: "middle", tone: "brand" },
-    { seq: 2, at: 3000, label: "first", tone: "warn" }
+    { seq: 8, at: 2000, label: "last", tone: "good", spanId: "frame-3" },
+    { seq: 5, at: 3000, label: "middle", tone: "brand", spanId: "frame-2" },
+    { seq: 2, at: 3000, label: "first", tone: "warn", spanId: "frame-1" }
   ], { start: 1000, end: 4000 })
   expect(pins.map((pin) => pin.milestone.seq)).toEqual([2, 5, 8])
+  // Sorting by sequence never rewrites a moment's own frame.
+  expect(pins.map((pin) => pin.milestone.spanId)).toEqual(["frame-1", "frame-2", "frame-3"])
 })
 
 test("a cluster's members remain before the next pin in DOM order when stamps regress", () => {
-  const moments = [1000, 2000, 1000, 1000, 2000, 1000].map((at, seq) => ({ at, seq, label: String(seq), tone: "brand" as const }))
+  const moments = [1000, 2000, 1000, 1000, 2000, 1000].map((at, seq) =>
+    ({ at, seq, label: String(seq), tone: "brand" as const, spanId: `frame-${seq + 1}` }))
   const pins = phasePins(moments, { start: 1000, end: 11000 })
-  expect(pins.flatMap((pin) => [pin.milestone, ...pin.folded]).map((moment) => moment.seq)).toEqual([0, 1, 2, 3, 4, 5])
+  const disclosed = pins.flatMap((pin) => [pin.milestone, ...pin.folded])
+  expect(disclosed.map((moment) => moment.seq)).toEqual([0, 1, 2, 3, 4, 5])
+  // A folded member keeps its own frame, so selecting it selects its own step.
+  expect(disclosed.map((moment) => moment.spanId)).toEqual([1, 2, 3, 4, 5, 6].map((one) => `frame-${one}`))
 })

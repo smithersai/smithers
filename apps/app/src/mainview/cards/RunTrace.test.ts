@@ -456,9 +456,10 @@ describe("what the frame was doing", () => {
 
   test("milestones are the moments worth scrubbing to, and every successful write is one of them", () => {
     const model = traceFromJournal(RUN, CODE_MODE, CHECKS)
+    // Every moment names the frame it was recorded under, the frame a scrub to it selects.
     expect(model.milestones).toEqual([
-      { seq: 9, at: 3200, label: "views.py", tone: "brand" },
-      { seq: 14, at: 5000, label: "completed", tone: "good" }
+      { seq: 9, at: 3200, label: "views.py", tone: "brand", spanId: "frame-3" },
+      { seq: 14, at: 5000, label: "completed", tone: "good", spanId: "frame-4" }
     ])
     // A failed write is not a write.
     const refused = traceFromJournal(RUN, [
@@ -467,7 +468,7 @@ describe("what the frame was doing", () => {
       at(3, "control.agent.cell-call-settled", { flowName: "write", outcome: "failure", message: "read-only tree" }, 3),
       at(4, "control.run.failed", {}, 4)
     ])
-    expect(refused.milestones).toEqual([{ seq: 4, at: 4, label: "failed", tone: "bad" }])
+    expect(refused.milestones).toEqual([{ seq: 4, at: 4, label: "failed", tone: "bad", spanId: "frame-1" }])
     expect(refused.lines).toEqual([
       { spanId: "frame-1", frame: 1, verb: "failed to write", subject: "x.ts", result: "read-only tree", failed: true, wrote: false }
     ])
@@ -486,7 +487,7 @@ describe("what the frame was doing", () => {
     const fifteen = Array.from({ length: 15 }, (_unused, index) => `src/a${index}.ts`)
     const model = traceFromJournal(RUN, writes(1, fifteen, 1))
     // The pin stands where the frame started writing, which is the file it names.
-    expect(model.milestones).toEqual([{ seq: 3, at: 1015, label: "a0.ts +14", tone: "brand" }])
+    expect(model.milestones).toEqual([{ seq: 3, at: 1015, label: "a0.ts +14", tone: "brand", spanId: "frame-1" }])
     // The count is of FILES, the unit a multi-file patch already counts in: a
     // file written twice is one file, and a patch adds the files it names.
     const patch = ["*** Begin Patch", "*** Update File: src/a.ts", "*** Add File: src/c.ts", "*** End Patch"].join("\n")
@@ -498,8 +499,8 @@ describe("what the frame was doing", () => {
       ...writes(2, ["src/a.ts"], 10)
     ])
     expect(mixed.milestones).toEqual([
-      { seq: 3, at: 1015, label: "a.ts +2", tone: "brand" },
-      { seq: 12, at: 2015, label: "a.ts", tone: "brand" }
+      { seq: 3, at: 1015, label: "a.ts +2", tone: "brand", spanId: "frame-1" },
+      { seq: 12, at: 2015, label: "a.ts", tone: "brand", spanId: "frame-2" }
     ])
   })
 
@@ -563,7 +564,7 @@ describe("what the frame was doing", () => {
       at(4, "control.agent.suspended", { reason: { code: "permission-required" } }, 1300)
     ], CHECKS)
     expect(parked.bands.map((band) => band.phase)).toEqual(["blocked"])
-    expect(parked.milestones).toEqual([{ seq: 3, at: 1200, label: "permission", tone: "warn" }])
+    expect(parked.milestones).toEqual([{ seq: 3, at: 1200, label: "permission", tone: "warn", spanId: "frame-1" }])
     // `ask` settles SUCCESSFULLY with the person's answer, so a refusal is a denial and not a failure.
     const denied = traceFromJournal(RUN, [
       at(1, "control.agent.turn-opened", {}, 1000),
@@ -634,11 +635,11 @@ describe("what the frame was doing", () => {
     ], CHECKS)
     // No steering moment at seq 4: the record does not say a message was delivered.
     expect(model.milestones).toEqual([
-      { seq: 2, at: 1100, label: "read-only", tone: "warn" },
-      { seq: 3, at: 1200, label: "narrow-only", tone: "warn" },
-      { seq: 5, at: 1400, label: "sufficiency", tone: "good" },
-      { seq: 8, at: 1700, label: "claim", tone: "bad" },
-      { seq: 9, at: 1800, label: "read-only", tone: "warn" }
+      { seq: 2, at: 1100, label: "read-only", tone: "warn", spanId: "frame-1" },
+      { seq: 3, at: 1200, label: "narrow-only", tone: "warn", spanId: "frame-1" },
+      { seq: 5, at: 1400, label: "sufficiency", tone: "good", spanId: "frame-1" },
+      { seq: 8, at: 1700, label: "claim", tone: "bad", spanId: "frame-1" },
+      { seq: 9, at: 1800, label: "read-only", tone: "warn", spanId: "frame-1" }
     ])
     // A fieldless record has nothing to put in a note, so it writes none.
     expect(model.notes.map(({ seq, title, body }) => ({ seq, title, body }))).toEqual([
@@ -662,11 +663,11 @@ describe("what the frame was doing", () => {
       at(8, "control.agent.steering-drained", { messages: [{ role: "user", text: { truncated: true, bytes: 99_999, digest: "d1" } }] }, 1700)
     ], CHECKS)
     expect(model.milestones).toEqual([
-      { seq: 3, at: 1200, label: "read-only", tone: "warn" },
-      { seq: 4, at: 1300, label: "narrow-only", tone: "warn" },
-      { seq: 6, at: 1500, label: "steering", tone: "warn" },
-      { seq: 7, at: 1600, label: "sufficiency", tone: "good" },
-      { seq: 8, at: 1700, label: "steering", tone: "warn" }
+      { seq: 3, at: 1200, label: "read-only", tone: "warn", spanId: "frame-1" },
+      { seq: 4, at: 1300, label: "narrow-only", tone: "warn", spanId: "frame-1" },
+      { seq: 6, at: 1500, label: "steering", tone: "warn", spanId: "frame-1" },
+      { seq: 7, at: 1600, label: "sufficiency", tone: "good", spanId: "frame-1" },
+      { seq: 8, at: 1700, label: "steering", tone: "warn", spanId: "frame-1" }
     ])
     expect(model.notes).toEqual([
       { seq: 2, spanId: "frame-1", tone: "warn", title: "rejected", body: "compile_failed. Attempt 2.", evidence: ["SyntaxError: unexpected }"] },
@@ -882,7 +883,7 @@ describe("what the journal did not say", () => {
       "patched views.py +1",
       "ran tests/admin_views"
     ])
-    expect(model.milestones).toEqual([{ seq: 3, at: 1200, label: "views.py +1", tone: "brand" }])
+    expect(model.milestones).toEqual([{ seq: 3, at: 1200, label: "views.py +1", tone: "brand", spanId: "frame-1" }])
     // A string that is not a patch names no file, and a pin is its label.
     const blank = traceFromJournal(RUN, [
       at(1, "control.agent.turn-opened", {}, 1000),

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { phaseExtent, traceFromJournal } from "./RunTrace"
+import { frameAtSequence, phasePins } from "./RunTracePhaseStrip"
 import type { JournalRecord } from "./RunTrace"
 import { traceGoals, traceStatus } from "./RunTraceStatus"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
@@ -10,6 +11,8 @@ const right = { ...left, stepId: "b".repeat(64), scope: "right" }
 const event = (sequence: number, kind: string, step: typeof left, payload: Record<string, unknown> = {}): JournalRecord => ({
   runId: "run", sequence, kind, payload: { ...payload, step, at: sequence * 100 }
 })
+/** Frames in the order the merged model lists them: by recorded start, then by sequence. */
+const framesOfModel = (model: ReturnType<typeof traceFromJournal>) => model.rows.filter((row) => row.kind === "frame")
 
 describe("module agent frame ownership", () => {
   test.each(["completed", "failed", "cancelled"])("a terminal %s run cannot leave an unclosed step running", (status) => {
@@ -125,8 +128,9 @@ describe("module agent frame ownership", () => {
     expect(traceStatus(model, 2).activity).toBe(`Testing ${target}`)
     expect(traceStatus(model, 3).activity).toBe(`Tested ${target}`)
     expect(traceGoals(model, CODING_PLAN, 2)[0]?.checks[0]?.state).toBe("running")
-    expect(traceGoals(model, CODING_PLAN, 3)[0]?.checks[0]?.state).toBe("passed")
-    expect(traceGoals(model, CODING_PLAN)[0]?.state).toBe("pending")
+    // A recorded command is partial evidence at every cursor: only a receipt verifies.
+    expect(traceGoals(model, CODING_PLAN, 3)[0]?.checks[0]?.state).toBe("narrowed")
+    expect(traceGoals(model, CODING_PLAN)[0]?.state).toBe("narrowed")
   })
 
   test.each([undefined, "reused-call"])("status and goals match interleaved settlements within their step: %s", (callId) => {
@@ -146,7 +150,7 @@ describe("module agent frame ownership", () => {
       event(6, "control.agent.cell-call-settled", left, { callId, flowName: "test", outcome: "success", value: { exitCode: 0 } })
     ])
     expect(traceStatus(settled).activity).toBe(`Tested ${first}`)
-    expect(traceGoals(settled, CODING_PLAN).map((goal) => goal.checks[0]?.state)).toEqual(["passed", "failed"])
+    expect(traceGoals(settled, CODING_PLAN).map((goal) => goal.checks[0]?.state)).toEqual(["narrowed", "failed"])
   })
 
   test("scoped summaries retain descriptor precedence and recorded write outcomes", () => {
@@ -178,7 +182,7 @@ describe("module agent frame ownership", () => {
       event(6, "control.agent.cell-call-settled", right, { callId: "write", flowName: "write", outcome: "success", value })
     ], { descriptors })
     expect(completed.lines[1]).toMatchObject({ verb: "wrote", result: "12 bytes", failed: false, wrote: true })
-    expect(completed.milestones).toEqual([{ seq: 6, at: 600, label: "b.ts", tone: "brand" }])
+    expect(completed.milestones).toEqual([{ seq: 6, at: 600, label: "b.ts", tone: "brand", spanId: framesOfModel(completed)[1]!.id }])
     expect(completed.rows.find((span) => span.kind === "call" && span.detail.input !== undefined && span.startedAt === 400)?.detail.output)
       .toBe(JSON.stringify(value))
   })
@@ -224,5 +228,141 @@ describe("module agent frame ownership", () => {
     expect(model.notes[0]?.evidence).toEqual(["check first"])
     expect(model.notes[1]?.body).toBe("3 of 3 frames changed nothing. Frame 2.")
     expect(model.milestones.map((pin) => [pin.seq, pin.at])).toEqual([[4, 400], [5, 50]])
+  })
+})
+
+describe("recorded step identity", () => {
+  /** A real `control.engine.event` envelope, so the fold reads identity through the gateway's own normalization. */
+  const nativeStep = (
+    sequence: number,
+    kind: string,
+    step: typeof left,
+    payload: Record<string, unknown> = {},
+    at = sequence * 100
+  ): JournalRecord => ({
+    runId: "run", sequence, kind: "control.engine.event",
+    payload: {
+      version: 1, executionId: step.executionId, generation: 1, sequence, emittedAtMs: at,
+      sourceId: `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`,
+      sourceSequence: sequence, eventType: "flows.harness.step-fact.v1",
+      payload: {
+        version: 1, step, generation: 0, frame: 0, ordinal: 0, cell: "", at,
+        eventType: kind, sourceSequence: sequence, payload
+      }
+    }
+  })
+
+  test("a milestone and a slider position keep the frame of the step that recorded them", () => {
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.turn-opened", right),
+      nativeStep(3, "control.agent.read-only-demanded", left, { streak: 3, cap: 3, nextFrame: 2 }),
+      nativeStep(4, "control.agent.repeat-demanded", right, { frames: 4, cap: 4 })
+    ]
+    const model = traceFromJournal(run, records)
+    const [a, b] = framesOfModel(model)
+    expect(a!.id).not.toBe(b!.id)
+    expect(model.milestones.map((one) => [one.seq, one.spanId])).toEqual([[3, a!.id], [4, b!.id]])
+    expect(frameAtSequence(model, 3)).toBe(a!.id)
+    expect(frameAtSequence(model, 4)).toBe(b!.id)
+    expect(phasePins(model.milestones, phaseExtent(model)).map((pin) => pin.milestone.spanId)).toEqual([a!.id, b!.id])
+  })
+
+  test("equal and backward stamps never hand a position to another step, in any arrival order", () => {
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", left, {}, 500),
+      nativeStep(2, "control.agent.turn-opened", right, {}, 500),
+      nativeStep(3, "control.agent.unmoved-demanded", left, { nextFrame: 2 }, 100),
+      nativeStep(4, "control.agent.cell-call-started", right, { callId: "r", flowName: "read", input: { path: "b.ts" } }, 500)
+    ]
+    const model = traceFromJournal(run, records)
+    const [a, b] = framesOfModel(model)
+    expect(frameAtSequence(model, 3)).toBe(a!.id)
+    expect(frameAtSequence(model, 4)).toBe(b!.id)
+    expect(model.milestones.map((one) => one.spanId)).toEqual([a!.id])
+    expect(traceFromJournal(run, [...records].reverse()).owners).toEqual(model.owners)
+  })
+
+  test("another step's mutation, sufficiency or resume cannot close a step's thrashing", () => {
+    const thrashing = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.repeat-demanded", left, { frames: 4, cap: 4 }),
+      nativeStep(3, "control.agent.turn-opened", right)
+    ]
+    const elsewhere = [
+      nativeStep(4, "control.agent.mutation-observed", right, { basis: "observed", mutated: true }),
+      nativeStep(5, "control.agent.sufficiency-observed", right, { flow: "test", failed: "before", passed: "after" }),
+      { runId: "run", sequence: 6, kind: "control.run.resumed", payload: { at: 600 } }
+    ]
+    expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere])).condition).toBe("thrashing")
+    expect(traceStatus(traceFromJournal(run, [...thrashing, ...elsewhere,
+      nativeStep(7, "control.agent.mutation-observed", left, { basis: "observed", mutated: true })])).condition).toBeUndefined()
+  })
+
+  test("a park belongs to its step, a run-level resume ends it, and an approval outranks both", () => {
+    const parked = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.repeat-demanded", left, { frames: 4, cap: 4 }),
+      nativeStep(3, "control.agent.turn-opened", right),
+      nativeStep(4, "control.agent.suspended", right, { reason: "event" })
+    ]
+    expect(traceStatus(traceFromJournal(run, parked))).toMatchObject({ condition: "blocked", action: "resume" })
+    const resumed = [...parked, { runId: "run", sequence: 5, kind: "control.run.resumed", payload: { at: 500 } }]
+    expect(traceStatus(traceFromJournal(run, resumed)).condition).toBe("thrashing")
+    expect(traceStatus(traceFromJournal(run, [...parked,
+      { runId: "run", sequence: 5, kind: "control.approval.requested", payload: { at: 500, requestId: "q" } }])))
+      .toMatchObject({ condition: "approval", action: "approval" })
+  })
+
+  test("a call recorded as a read cannot certify a required check, whatever its name and selection", () => {
+    const check = CODING_PLAN.changes[0]!.checks[0]!
+    const records = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.cell-call-started", left, {
+        callId: "probe", flowName: "test", input: { selection: [check.target] },
+        descriptor: { name: "test", activity: "reads" }
+      }),
+      nativeStep(3, "control.agent.cell-call-settled", left, {
+        callId: "probe", flowName: "test", outcome: "success", value: { exitCode: 0 }
+      })
+    ]
+    const model = traceFromJournal(run, records)
+    expect(model.bands.map((band) => band.phase)).toEqual(["researching"])
+    expect(traceGoals(model, CODING_PLAN)[0]!.checks[0]!.state).toBe("pending")
+  })
+
+  test("a recorded command with no receipt is partial evidence, and a display hint never certifies", () => {
+    const check = CODING_PLAN.changes[0]!.checks[0]!
+    const recorded = (descriptor?: Record<string, unknown>) => traceFromJournal(run, [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.cell-call-started", left, {
+        callId: "probe", flowName: "test", input: { selection: [check.target] },
+        ...(descriptor === undefined ? {} : { descriptor })
+      }),
+      nativeStep(3, "control.agent.cell-call-settled", left, {
+        callId: "probe", flowName: "test", outcome: "success", value: { exitCode: 0 }
+      })
+    ])
+    expect(traceGoals(recorded(), CODING_PLAN)[0]!.checks[0]!.state).toBe("narrowed")
+    expect(traceGoals(recorded({ name: "test", activity: "checks" }), CODING_PLAN)[0]!.checks[0]!.state).toBe("narrowed")
+    expect(traceGoals(recorded(), CODING_PLAN)[0]!.state).toBe("narrowed")
+  })
+
+  test("a custom flow recorded as a write invalidates a check on a planned path", () => {
+    const check = CODING_PLAN.changes[0]!.checks[0]!
+    const ran = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.cell-call-started", left, { callId: "probe", flowName: "test", input: { selection: [check.target] } }),
+      nativeStep(3, "control.agent.cell-call-settled", left, { callId: "probe", flowName: "test", outcome: "success", value: { exitCode: 0 } })
+    ]
+    const wrote = (path: string) => [
+      nativeStep(4, "control.agent.cell-call-started", left, {
+        callId: "patch", flowName: "morph", input: { path },
+        descriptor: { name: "morph", activity: "writes" }
+      }),
+      nativeStep(5, "control.agent.cell-call-settled", left, { callId: "patch", flowName: "morph", outcome: "success", value: { bytesWritten: 4 } })
+    ]
+    expect(traceGoals(traceFromJournal(run, [...ran, ...wrote("src/memory.ts")]), CODING_PLAN)[0]!.checks[0]!.state).toBe("stale")
+    expect(traceGoals(traceFromJournal(run, [...ran, ...wrote("docs/other.md")]), CODING_PLAN)[0]!.checks[0]!.state).toBe("narrowed")
   })
 })

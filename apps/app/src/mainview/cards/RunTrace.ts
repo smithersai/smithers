@@ -115,6 +115,24 @@ export interface Milestone {
   readonly at: number
   readonly label: string
   readonly tone: "warn" | "bad" | "good" | "brand"
+  /**
+   * The frame this moment was recorded under, carried through the scoped
+   * merge. Two steps run at once in one journal, so the frame a milestone
+   * belongs to is the one its OWN step had open, never whichever frame opened
+   * last.
+   */
+  readonly spanId: string
+}
+
+/**
+ * The frame one journal record was recorded under.
+ *
+ * The strip scrubs to sequences no milestone names, so the ownership rule has
+ * to hold for every record, not only for the ones that mint a pin.
+ */
+export interface TraceOwner {
+  readonly seq: number
+  readonly spanId: string
 }
 
 /** What one frame did, in plain English, derived from its calls. */
@@ -168,6 +186,8 @@ export interface TraceModel {
   readonly lines: ReadonlyArray<FrameLine>
   /** The discipline records that carry fields, attached where they happened. */
   readonly notes: ReadonlyArray<TraceNote>
+  /** Every recorded sequence with the frame it was recorded under, in journal order. */
+  readonly owners: ReadonlyArray<TraceOwner>
 }
 
 /** Mutable draft shared by the control and native journal folds; never persisted. */
@@ -507,11 +527,12 @@ const disciplineFold = (
   runId: string,
   ordered: ReadonlyArray<JournalRecord>,
   options: TraceOptions
-): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes"> => {
+): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes" | "owners"> => {
   const descriptors = new Map(options.descriptors?.map((descriptor) => [descriptor.name, descriptor]))
   const frames: Array<FrameFacts> = []
   const notes: Array<TraceNote> = []
   const milestones: Array<Milestone> = []
+  const owners: Array<TraceOwner> = []
   const open: Array<CallFacts> = []
   let frame: FrameFacts | undefined
   let lastAt = 0
@@ -526,6 +547,10 @@ const disciplineFold = (
   ): void => {
     const quoted = evidence.filter((line): line is string => line !== undefined)
     notes.push({ seq, spanId: here(), tone, title, body, ...(quoted.length === 0 ? {} : { evidence: quoted }) })
+  }
+  /** A moment, owned by the frame that recorded it, exactly the way a note is. */
+  const pin = (seq: number, at: number, label: string, tone: Milestone["tone"]): void => {
+    milestones.push({ seq, at, label, tone, spanId: here() })
   }
 
   for (const record of ordered) {
@@ -607,7 +632,7 @@ const disciplineFold = (
             // A write journaled outside a frame has no frame to be counted
             // into, so it stays a moment of its own.
             if (frame !== undefined) frame.wrote = { milestone: milestones.length, paths }
-            milestones.push({ seq, at, label: filesLabel(paths), tone: "brand" })
+            pin(seq, at, filesLabel(paths), "brand")
           }
         }
         break
@@ -631,7 +656,7 @@ const disciplineFold = (
       }
       case "control.agent.permission-required": {
         if (frame !== undefined) frame.blocked = true
-        milestones.push({ seq, at, label: "permission", tone: "warn" })
+        pin(seq, at, "permission", "warn")
         break
       }
       case "control.agent.suspended": {
@@ -654,7 +679,7 @@ const disciplineFold = (
           streak === undefined || cap === undefined ? undefined : `${streak} of ${cap} frames changed nothing.`,
           nextFrame === undefined || nextAction === undefined ? undefined : `Frame ${nextFrame}: ${nextAction}.`
         ), [])
-        milestones.push({ seq, at, label: "read-only", tone: "warn" })
+        pin(seq, at, "read-only", "warn")
         break
       }
       case "control.agent.repeat-demanded": {
@@ -665,7 +690,7 @@ const disciplineFold = (
           spent === undefined || cap === undefined ? undefined : `${spent} of ${cap} frames repeated calls.`,
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), [])
-        milestones.push({ seq, at, label: "repeat", tone: "warn" })
+        pin(seq, at, "repeat", "warn")
         break
       }
       case "control.agent.narrowed-demanded": {
@@ -675,7 +700,7 @@ const disciplineFold = (
           flow === undefined ? undefined : `${flow} ran narrower than the reading it stands in for.`,
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), [clip(payload.broader), clip(payload.narrower)])
-        milestones.push({ seq, at, label: "narrowed", tone: "bad" })
+        pin(seq, at, "narrowed", "bad")
         break
       }
       case "control.agent.unmoved-demanded": {
@@ -688,7 +713,7 @@ const disciplineFold = (
           "The tree the run opened on is the tree it closed on.",
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), opened === undefined || current === undefined ? [] : [opened, current])
-        milestones.push({ seq, at, label: "unmoved", tone: "bad" })
+        pin(seq, at, "unmoved", "bad")
         break
       }
       case "control.agent.unresolved-demanded": {
@@ -698,7 +723,7 @@ const disciplineFold = (
           flow === undefined ? undefined : `${flow} failed and was not answered.`,
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), [clip(payload.failed), clip(payload.instead)])
-        milestones.push({ seq, at, label: "unresolved", tone: "bad" })
+        pin(seq, at, "unresolved", "bad")
         break
       }
       case "control.agent.claim-demanded": {
@@ -715,7 +740,7 @@ const disciplineFold = (
             : `complete ${complete}, overclaims ${overclaims}.`,
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         ), [])
-        milestones.push({ seq, at, label: "claim", tone: "bad" })
+        pin(seq, at, "claim", "bad")
         break
       }
       /*
@@ -753,7 +778,7 @@ const disciplineFold = (
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         )
         if (body !== "") note(seq, "warn", "read-only", body, [])
-        milestones.push({ seq, at, label: "read-only", tone: "warn" })
+        pin(seq, at, "read-only", "warn")
         break
       }
       case "control.agent.narrow-only-demanded": {
@@ -773,7 +798,7 @@ const disciplineFold = (
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         )
         if (body !== "") note(seq, "warn", "narrow-only", body, [clip(payload.check)])
-        milestones.push({ seq, at, label: "narrow-only", tone: "warn" })
+        pin(seq, at, "narrow-only", "warn")
         break
       }
       case "control.agent.steering-drained": {
@@ -792,7 +817,7 @@ const disciplineFold = (
           messages.length === 1 ? "1 steer." : `${messages.length} steers.`,
           messages.map((message) => clip(asRecord(message).text))
         )
-        milestones.push({ seq, at, label: "steering", tone: "warn" })
+        pin(seq, at, "steering", "warn")
         break
       }
       case "control.agent.sufficiency-observed": {
@@ -806,19 +831,22 @@ const disciplineFold = (
           nextFrame === undefined ? undefined : `Frame ${nextFrame}.`
         )
         if (body !== "") note(seq, "good", "sufficiency", body, [clip(payload.failed), clip(payload.passed)])
-        milestones.push({ seq, at, label: "sufficiency", tone: "good" })
+        pin(seq, at, "sufficiency", "good")
         break
       }
       case "control.run.completed":
       case "control.run.failed":
       case "control.run.cancelled": {
         const verdict = kind.slice("control.run.".length)
-        milestones.push({ seq, at, label: verdict, tone: verdict === "completed" ? "good" : "bad" })
+        pin(seq, at, verdict, verdict === "completed" ? "good" : "bad")
         break
       }
       default:
         break
     }
+    // After the record's own arm, so a turn-opened belongs to the frame it
+    // opened: the rule `here()` already gives a note and a pin.
+    owners.push({ seq, spanId: here() })
   }
 
   // A measured unchanged tree is authoritative even when a write succeeded.
@@ -912,7 +940,7 @@ const disciplineFold = (
     }]
   })
 
-  return { bands, milestones, lines, notes }
+  return { bands, milestones, lines, notes, owners }
 }
 
 /**
@@ -1235,6 +1263,7 @@ export const traceFromJournal = (
   const milestones = [...base.milestones]
   const lines = [...base.lines]
   const notes = [...base.notes]
+  const owners = [...base.owners]
   const terminal = [...ordered].reverse().find((record) =>
     record.kind === "control.run.completed" || record.kind === "control.run.failed" || record.kind === "control.run.cancelled")
   const terminalAt = terminal === undefined ? undefined : timeOf(terminal, asRecord(terminal.payload))
@@ -1252,11 +1281,15 @@ export const traceFromJournal = (
     })
     children.push(...scoped.root.children.map(rename))
     bands.push(...scoped.bands.map((band) => ({ ...band, frames: band.frames.map((id) => `${prefix}${id}`) })))
-    milestones.push(...scoped.milestones)
+    // A moment, a line, a note and a position all name the frame they were
+    // recorded under, so the merge renames each of them the same way: the
+    // step's own frame, or this run's root for what the step recorded outside
+    // any frame.
+    const owned = (spanId: string): string => spanId === scoped.root.id ? base.root.id : `${prefix}${spanId}`
+    milestones.push(...scoped.milestones.map((one) => ({ ...one, spanId: owned(one.spanId) })))
     lines.push(...scoped.lines.map((line) => ({ ...line, spanId: `${prefix}${line.spanId}` })))
-    notes.push(...scoped.notes.map((note) => ({
-      ...note, spanId: note.spanId === scoped.root.id ? base.root.id : `${prefix}${note.spanId}`
-    })))
+    notes.push(...scoped.notes.map((note) => ({ ...note, spanId: owned(note.spanId) })))
+    owners.push(...scoped.owners.map((one) => ({ ...one, spanId: owned(one.spanId) })))
   }
   children.sort((left, right) => left.startedAt - right.startedAt || (left.detail.sequence ?? 0) - (right.detail.sequence ?? 0))
   const root = {
@@ -1283,7 +1316,8 @@ export const traceFromJournal = (
     bands: bands.sort((left, right) => left.startedAt - right.startedAt || left.seq - right.seq),
     milestones: milestones.sort((left, right) => left.seq - right.seq),
     lines: lines.sort((left, right) => (positions.get(left.spanId) ?? 0) - (positions.get(right.spanId) ?? 0)),
-    notes: notes.sort((left, right) => left.seq - right.seq)
+    notes: notes.sort((left, right) => left.seq - right.seq),
+    owners: owners.sort((left, right) => left.seq - right.seq)
   }
 }
 

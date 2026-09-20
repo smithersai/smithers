@@ -40,10 +40,24 @@ export const phasePins = (milestones: ReadonlyArray<Milestone>, extent: TraceExt
   return pins
 }
 
-/** Timestamps can tie or regress. A selection belongs to the latest opened frame by sequence. */
-export const frameAtSequence = (model: TraceModel, seq: number): string =>
-  model.rows.filter((span) => span.kind === "frame" && (span.detail.sequence ?? Infinity) <= seq)
-    .sort((a, b) => (b.detail.sequence ?? 0) - (a.detail.sequence ?? 0))[0]?.id ?? model.root.id
+/**
+ * The frame a position belongs to: the one the fold recorded it under.
+ *
+ * Timestamps tie and regress, and concurrent steps interleave, so neither the
+ * clock nor "the frame that opened last" names the owner. The fold already
+ * knows it — it walked the journal with that step's frame open — and carries
+ * it on the model, so navigation reads the recorded answer instead of
+ * guessing one. A sequence the journal never recorded keeps the frame that was
+ * open before it.
+ */
+export const frameAtSequence = (model: TraceModel, seq: number): string => {
+  let owner: string | undefined
+  for (const recorded of model.owners) {
+    if (recorded.seq > seq) break
+    owner = recorded.spanId
+  }
+  return owner ?? model.root.id
+}
 
 /**
  * Measure browser layout, including the loaded font and zoom, on mount and
@@ -130,7 +144,9 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
   const reached = (seq: number) => cursorSeq === undefined || seq <= cursorSeq
   const current = [...positions].reverse().find((position) => position.seq <= (cursorSeq ?? Infinity)) ?? positions[0]
   const here = cursorSeq === undefined ? undefined : [...model.bands].reverse().find((band) => band.seq <= cursorSeq)
-  const argsAt = (seq: number) => flowArgs("runs.trace.select", { runId, nodeId: frameAtSequence(model, seq), seq })
+  // A milestone carries its own frame; every other position is looked up.
+  const argsAt = (seq: number, spanId = frameAtSequence(model, seq)) =>
+    flowArgs("runs.trace.select", { runId, nodeId: spanId, seq })
   const select = (seq: number) => onRunCommand("runs.trace.select", argsAt(seq))
   const preview = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -158,7 +174,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
           }
           if (folded.length === 0) return <button key={`${milestone.seq}:${milestone.label}`} type="button" className="run-phase-pin" {...props}
             aria-label={`${milestone.label} · #${milestone.seq}`}
-            {...flowAction(onRunCommand, "runs.trace.select", argsAt(milestone.seq))}>
+            {...flowAction(onRunCommand, "runs.trace.select", argsAt(milestone.seq, milestone.spanId))}>
             <span className="run-phase-pin-label">{milestone.label}</span>
             <span className="run-phase-pin-tick" aria-hidden />
           </button>
@@ -176,12 +192,12 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
             <ol className="run-phase-members">
               {moments.map((one) => <li key={`${one.seq}:${one.label}`}>
                 <button type="button" aria-label={`${one.label} · #${one.seq}`} aria-current={one.seq === cursorSeq ? "location" : undefined}
-                  {...flowProps("runs.trace.select", argsAt(one.seq))}
+                  {...flowProps("runs.trace.select", argsAt(one.seq, one.spanId))}
                   onClick={(event) => {
                     const disclosure = event.currentTarget.closest("details")!
                     disclosure.open = false
                     disclosure.querySelector("summary")?.focus()
-                    onRunCommand("runs.trace.select", argsAt(one.seq))
+                    onRunCommand("runs.trace.select", argsAt(one.seq, one.spanId))
                   }}>
                   <span>{one.label}</span><span>#{one.seq}</span>
                 </button>

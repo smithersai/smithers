@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
 import { callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
+import { FlowActivity } from "@smthrs/registry/Descriptor"
 import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../flows/coding/schema"
 import { engineRunEvidence } from "./EngineTrace"
 import type { TraceModel } from "./RunTrace"
@@ -32,13 +33,34 @@ export interface RunStatus {
   readonly action?: "resume" | "approval"
 }
 
+/**
+ * What one recorded invocation is still carrying.
+ *
+ * A module run interleaves several steps in one journal, so a condition
+ * belongs to the step that recorded it. Another step's progress is not this
+ * step's answer: only a mutation or a sufficiency observed in the SAME
+ * invocation, attempt and retry closes the brake that invocation is under.
+ */
+interface StepCondition {
+  thrashing: boolean
+  parked: "resume" | "approval" | undefined
+}
+
 /** Current work and a separate condition. Historical callers must supply their cursor. */
 export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
   const latest = model.journal.reduce((seq, row) => Math.max(seq, row.sequence ?? 0), 0)
   if ((cursor === undefined || cursor >= latest) && terminal.has(model.root.status)) return { verdict: model.root.status }
-  let activity: string | undefined, condition: RunStatus["condition"], action: RunStatus["action"], verdict: string | undefined
+  let activity: string | undefined, verdict: string | undefined
   const approvals = new Set<string>()
   const calls: Array<{ flowName: string; callId?: string; scope?: string; input: unknown }> = []
+  const conditions = new Map<string, StepCondition>()
+  /** The record's own step; a prompt journal records one unscoped stream. */
+  const step = (row: { readonly payload?: unknown }): StepCondition => {
+    const key = callScope(row) ?? ""
+    const held = conditions.get(key) ?? { thrashing: false, parked: undefined }
+    conditions.set(key, held)
+    return held
+  }
   for (const row of visible(model, cursor)) {
     const p = record(row.payload)
     switch (row.kind) {
@@ -59,16 +81,18 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
         else if (ended !== undefined) activity = callActivity(ended.flowName, ended.input, true, p.outcome === "failure")
         break
       }
-      case "control.agent.repeat-demanded": condition = "thrashing"; break
+      case "control.agent.repeat-demanded": step(row).thrashing = true; break
       case "control.agent.mutation-observed":
-        if (p.basis === "observed" && p.mutated === true && condition === "thrashing") condition = undefined
+        if (p.basis === "observed" && p.mutated === true) step(row).thrashing = false
         break
       case "control.agent.sufficiency-observed":
-        if (text(p.flow) !== undefined && p.passed !== undefined && condition === "thrashing") condition = undefined
+        if (text(p.flow) !== undefined && p.passed !== undefined) step(row).thrashing = false
         break
       case "control.agent.suspended":
-      case "control.run.parked": condition = "blocked"; action = p.reason === "approval" ? undefined : "resume"; break
-      case "control.run.resumed": condition = undefined; action = undefined; break
+      case "control.run.parked": step(row).parked = p.reason === "approval" ? "approval" : "resume"; break
+      // The run's own record that it is running again ends every park it holds.
+      // It says nothing about a brake, so it closes none.
+      case "control.run.resumed": for (const one of conditions.values()) one.parked = undefined; break
       case "control.approval.requested":
         if (text(p.requestId) !== undefined) approvals.add(p.requestId as string)
         break
@@ -84,13 +108,32 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
     }
   }
   if (verdict !== undefined) return { verdict }
-  if (approvals.size > 0) { condition = "approval"; action = "approval" }
+  // The run's condition is what its steps still carry: a decision a person owes
+  // first, then a park that needs a resume, then a brake that needs neither.
+  const outstanding = [...conditions.values()]
+  const parked = outstanding.find((one) => one.parked !== undefined)?.parked
+  const condition: RunStatus["condition"] = approvals.size > 0 ? "approval"
+    : parked !== undefined ? "blocked"
+    : outstanding.some((one) => one.thrashing) ? "thrashing" : undefined
+  const action: RunStatus["action"] = approvals.size > 0 ? "approval" : parked === "resume" ? "resume" : undefined
   return { ...(activity === undefined ? {} : { activity }), ...(condition === undefined ? {} : { condition }), ...(action === undefined ? {} : { action }) }
 }
 
 export type GoalState = "pending" | "running" | "passed" | "failed" | "narrowed" | "stale"
 export interface GoalCheck { readonly id: string; readonly target: string; readonly required: boolean; readonly state: GoalState }
 export interface TraceGoal { readonly id: string; readonly title: string; readonly state: GoalState; readonly checks: ReadonlyArray<GoalCheck> }
+
+/**
+ * The activity the journal bound to this call, when its descriptor named one.
+ *
+ * A display hint can only ever DISQUALIFY a call here: it says what the flow
+ * does, never that this run's required check passed.
+ */
+const recordedActivity = (payload: Record<string, unknown>, flowName: string): FlowActivity | undefined => {
+  const descriptor = record(payload.descriptor)
+  if (descriptor.name !== flowName) return undefined
+  return Schema.is(FlowActivity)(descriptor.activity) ? descriptor.activity : undefined
+}
 
 /** Only these direct runner forms establish command checks. Shell programs and unknown runners do not. */
 const checkSelection = (flow: string, input: unknown): ReadonlyArray<string> | undefined => {
@@ -165,7 +208,10 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
         if (first === undefined || first.sequence! < planSequence) return []
         return [{ execution, implementation: implementation.value, opened: first.sequence! }]
       })
-      const open: Array<{ flowName: string; callId?: string; scope?: string; input: unknown; sequence: number; match?: "full" | "narrowed" }> = []
+      const open: Array<{
+        flowName: string; callId?: string; scope?: string; input: unknown; sequence: number
+        activity?: FlowActivity; match?: "full" | "narrowed"
+      }> = []
       const invalidate = (seq: number, changed: ReadonlyArray<string>) => {
         if (changed.length > 0 && paths.length > 0 && !changed.some(path => paths.some(planned => overlap(path, planned)) || overlap(path, check.target))) return
         invalidated = seq
@@ -179,15 +225,23 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
         }
         if (row.kind === "control.agent.mutation-observed" && p.basis === "observed" && p.mutated === true) invalidate(seq, strings(p.paths))
         if (row.kind === "control.agent.cell-call-started") {
-          const flowName = text(p.flowName) ?? "", matched = match(checkSelection(flowName, p.input), check.target)
-          open.push({ flowName, callId: text(p.callId), scope: callScope(row), input: p.input, sequence: seq, match: matched })
+          const flowName = text(p.flowName) ?? "", activity = recordedActivity(p, flowName)
+          // A call the journal recorded as a read, a write or anything else is
+          // not a check, whatever it is named. The band and the goal then read
+          // one record the same way, instead of the strip saying researching
+          // while the goal says the check ran.
+          const matched = activity === undefined || activity === "checks" || activity === "tests"
+            ? match(checkSelection(flowName, p.input), check.target) : undefined
+          open.push({ flowName, activity, callId: text(p.callId), scope: callScope(row), input: p.input, sequence: seq, match: matched })
           if (matched !== undefined) { state = matched === "full" ? "running" : "narrowed"; resultSequence = seq }
         }
         if (row.kind === "control.agent.cell-call-settled") {
           const index = openCallIndex(open, text(p.callId), text(p.flowName), callScope(row))
           const call = index < 0 ? undefined : open.splice(index, 1)[0]
           if (call === undefined) continue
-          if (["edit", "write", "apply_patch"].includes(call.flowName) && p.outcome === "success") {
+          // A custom flow the journal recorded as a write moves the tree exactly
+          // as a built-in one does, so the paths it named invalidate the same evidence.
+          if ((call.activity === "writes" || ["edit", "write", "apply_patch"].includes(call.flowName)) && p.outcome === "success") {
             const input = record(call.input)
             const patchPaths = typeof input.input === "string" ? [...input.input.matchAll(/^\*\*\* (?:(?:Add|Delete|Update) File|Move to): (.+)$/gm)].map(hit => hit[1]!) : []
             invalidate(seq, text(input.path) === undefined ? patchPaths : [input.path as string])
@@ -198,7 +252,11 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           state = invalidated >= call.sequence ? "stale" : p.outcome === "failure" || value.invalidProbe !== undefined ? "failed"
             : typeof value.exitCode !== "number" || !Number.isInteger(value.exitCode) ? "pending"
             : value.exitCode !== 0 || strings(value.failed).length > 0 ? "failed"
-            : value.parsed === true && value.passed === 0 ? "pending" : call.match === "narrowed" ? "narrowed" : "passed"
+            // A recorded command that matched the target's TEXT is not this
+            // plan's check: nothing on it binds the result to the check's
+            // implementation, revision or scope, which is what a receipt binds.
+            // It is partial evidence, and partial evidence never verifies.
+            : value.parsed === true && value.passed === 0 ? "pending" : "narrowed"
         }
         if (row.kind === "control.agent.narrowed-demanded" || row.kind === "control.agent.narrow-only-demanded") {
           const inputs = [p.broader, p.narrower, p.check].map(value => {

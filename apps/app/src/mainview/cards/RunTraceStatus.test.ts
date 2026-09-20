@@ -64,7 +64,7 @@ describe("recorded goal progress", () => {
     expect(checkState(records, 1)).toBe("running")
     expect(checkState(records, 2)).toBe("failed")
     for (const target of ["tests/memory", '"tests/memory"', "'tests/memory'"]) {
-      expect(checkState(call(1, "bash", { command: `bun test ${target}` }))).toBe("passed")
+      expect(checkState(call(1, "bash", { command: `bun test ${target}` }))).toBe("narrowed")
     }
     expect(checkState(call(1, "bash", { command: "bun test tests/memory" }, "passed"))).toBe("pending")
   })
@@ -79,17 +79,17 @@ describe("recorded goal progress", () => {
   })
   test("relevant changes invalidate results; unrelated paths do not; an earlier in-flight check stays stale", () => {
     const checked = call(1, "bash", { command: "bun test tests/memory" })
-    expect(checkState([...checked, event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["README.md"] })])).toBe("passed")
+    expect(checkState([...checked, event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["README.md"] })])).toBe("narrowed")
     const changed = [...checked, event(3, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["src/memory.ts"] })]
     expect(checkState(changed)).toBe("stale")
     expect(checkState([...checked, ...call(3, "apply_patch", { input: "*** Begin Patch\n*** Update File: README.md\n*** Move to: src/memory.ts\n*** End Patch" })])).toBe("stale")
-    expect(checkState(changed, 2)).toBe("passed")
-    expect(checkState([...changed, ...call(4, "bash", { command: "bun test tests/memory" })])).toBe("passed")
+    expect(checkState(changed, 2)).toBe("narrowed")
+    expect(checkState([...changed, ...call(4, "bash", { command: "bun test tests/memory" })])).toBe("narrowed")
     expect(checkState([checked[0]!, event(2, "agent.mutation-observed", { basis: "observed", mutated: true }), { ...checked[1]!, sequence: 3 }])).toBe("stale")
   })
-  test("one passing check cannot tick a goal with other required checks", () => {
-    expect(goals(call(1, "bash", { command: "bun test tests/memory" }))[0]!.state).toBe("pending")
-    expect(goals([...call(1, "bash", { command: "bun test tests/memory" }), ...call(3, "bash", { command: "bun run check //memory:review" })])[0]!.state).toBe("passed")
+  test("recorded commands leave a goal partial however many of its checks they match", () => {
+    expect(goals(call(1, "bash", { command: "bun test tests/memory" }))[0]!.state).toBe("narrowed")
+    expect(goals([...call(1, "bash", { command: "bun test tests/memory" }), ...call(3, "bash", { command: "bun run check //memory:review" })])[0]!.state).toBe("narrowed")
   })
   test.each(["./src/memory.ts", "src/../src/memory.ts", "/workspace/src/memory.ts", "src\\memory.ts"])("a changed path spelled %s cannot retain a passing check", path => {
     expect(checkState([...call(1, "bash", { command: "bun test tests/memory" }),
@@ -123,13 +123,32 @@ describe("recorded goal progress", () => {
       codingDecision(8, "check", "coding/CommandCheck", { parent: "correct", status: "completed", input: { flow: check.flow, input: { implementation, check } }, value: receipt })]
     expect(state(concurrent)).toBe("stale")
   })
+  test("a goal is verified only when every required check carries its own matching receipt", () => {
+    const change = CODING_PLAN.changes[0]!
+    const implementation = { change: change.id, parent: CODING_PLAN.base, head: CODING_PLAN.base, atoms: [CODING_PLAN.base], reads: [], writes: ["src/memory.ts"] }
+    const receipt = (check: (typeof change.checks)[number]) => ({
+      checkId: check.id, target: check.target, tier: check.tier, change: change.id, commitId: implementation.head.commitId,
+      treeId: implementation.head.treeId, inputDigest: checkInputDigest(implementation, check), status: "passed", evidence: "", findings: []
+    })
+    const checked = (...bound: ReadonlyArray<readonly [(typeof change.checks)[number], string]>) => [...preparedCodingJournal(),
+      ...bound.map(([check, flow], index) => codingDecision(6 + index, `check-${check.id}`, "coding/CommandCheck", {
+        parent: "correct", status: "completed", input: { flow, input: { implementation, check } }, value: receipt(check)
+      }))]
+    const goal = (records: ReadonlyArray<JournalRecord>) => traceGoals(model(records), CODING_PLAN)[0]!
+    const [types, review] = change.checks
+    expect(goal(checked([types!, types!.flow])).state).toBe("pending")
+    expect(goal(checked([types!, types!.flow], [review!, review!.flow])).checks.map(check => check.state)).toEqual(["passed", "passed"])
+    expect(goal(checked([types!, types!.flow], [review!, review!.flow])).state).toBe("passed")
+    // The wrapper names the flow the check declared, or the receipt is not this check's.
+    expect(goal(checked([types!, review!.flow], [review!, review!.flow])).checks.map(check => check.state)).toEqual(["pending", "passed"])
+  })
   test("test selections, declaration-only mutations, and explicit narrowing preserve the evidence boundary", () => {
     const passed = call(1, "test", { selection: ["tests/memory"] })
-    expect(checkState(passed)).toBe("passed")
+    expect(checkState(passed)).toBe("narrowed")
     expect(checkState(call(1, "test", { selection: ["tests/memory/single.test.ts"] }))).toBe("narrowed")
     expect(checkState(call(1, "test", { selection: ["tests/memory"] }, { exitCode: 0, parsed: true, passed: 0, failed: [] }))).toBe("pending")
     expect(checkState(call(1, "bash", { command: "bun test tests/memory" }, { exitCode: 0, invalidProbe: {} }))).toBe("failed")
-    expect(checkState([...passed, event(3, "agent.mutation-observed", { basis: "declared", mutated: true })])).toBe("passed")
+    expect(checkState([...passed, event(3, "agent.mutation-observed", { basis: "declared", mutated: true })])).toBe("narrowed")
     expect(checkState([...passed, event(3, "agent.narrowed-demanded", { flow: "test", broader: { selection: ["tests/memory"] }, narrower: { selection: ["tests/memory/one"] } })])).toBe("narrowed")
   })
   test("a baseline comparison uses the workspace result and unknown runner options make no scope claim", () => {

@@ -977,8 +977,8 @@ describe("the timeline reads as phases, then what each frame did", () => {
      * by. The fold drops such a moment now; the strip drops one regardless of
      * what the fold hands it.
      */
-    const unnamed = { seq: 3, at: 1200, label: "", tone: "brand" } as const
-    const named = { seq: 6, at: 5200, label: "memory.ts", tone: "brand" } as const
+    const unnamed = { seq: 3, at: 1200, label: "", tone: "brand", spanId: "frame-1" } as const
+    const named = { seq: 6, at: 5200, label: "memory.ts", tone: "brand", spanId: "frame-2" } as const
     const pins = phasePins([unnamed, named], { start: 1000, end: 6000 })
     expect(pins.map((pin) => pin.milestone.label)).toEqual(["memory.ts"])
     expect(pins.map((pin) => pin.row)).toEqual([0])
