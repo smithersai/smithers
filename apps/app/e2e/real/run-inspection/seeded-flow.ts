@@ -14,7 +14,9 @@ const flowText = (failure: boolean, marker: string): string => [
   'capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]',
   "model: coding/implement",
   "budget:",
-  "  tokens: 200000",
+  // Measured 2026-09-20 on host c9935981: the success subject spent 188,669 tokens over twelve turns (two
+  // rejected cells retried) and died on a 200,000 budget one call short of finishing; the old host finished under it.
+  "  tokens: 400000",
   // Ten responses, two forty-second intervals and two real checks; the failing subject keeps a budget it must exceed.
   `  milliseconds: ${failure ? 30000 : 900000}`,
   "---", "",
