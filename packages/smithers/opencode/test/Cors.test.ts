@@ -14,11 +14,14 @@ const served = () =>
   )
 
 describe("Cors", () => {
-  it("allows the OpenCode app, loopback pages, and extras", () => {
+  it("allows the OpenCode app and extras, and no loopback page nobody named", () => {
     expect(Cors.allows("https://app.opencode.ai")).toBe(true)
     expect(Cors.allows("https://dev.opencode.ai")).toBe(true)
-    expect(Cors.allows("http://localhost:5173")).toBe(true)
-    expect(Cors.allows("http://127.0.0.1:3000")).toBe(true)
+    // A page on a loopback port is a page the operator never chose; a local
+    // build of the app names itself with `--cors` (`Security.test.ts`).
+    expect(Cors.allows("http://localhost:5173")).toBe(false)
+    expect(Cors.allows("http://127.0.0.1:3000")).toBe(false)
+    expect(Cors.allows("http://localhost:5173", [Cors.loopbackExample])).toBe(true)
     expect(Cors.allows("https://evil.example")).toBe(false)
     expect(Cors.allows("https://opencode.ai.evil.example")).toBe(false)
     expect(Cors.allows(undefined)).toBe(false)
@@ -71,11 +74,14 @@ describe("Cors", () => {
       expect(plain.status).toBe(404)
       expect(plain.headers.get("access-control-allow-origin")).toBeNull()
       expect(await plain.json()).toEqual({ name: "NotFoundError", data: { message: "Route not found" } })
+      // A disallowed origin never reaches the router, so it learns nothing
+      // about which routes exist either.
       const preflight = await handler(
         new Request("http://test/nope", { method: "OPTIONS", headers: { origin: "https://evil.example" } })
       )
-      expect(preflight.status).toBe(404)
+      expect(preflight.status).toBe(403)
       expect(preflight.headers.get("access-control-allow-origin")).toBeNull()
+      expect(await preflight.json()).toEqual(Cors.forbiddenOrigin)
       // Any other failure of a route keeps failing past the middleware.
       const boom = await handler(new Request("http://test/boom", { headers: { origin: "https://app.opencode.ai" } }))
       expect(boom.status).toBe(500)
@@ -84,21 +90,23 @@ describe("Cors", () => {
     }
   })
 
-  it("stamps the allow headers on an ordinary answer and leaves other origins alone", async () => {
+  it("stamps the allow headers on an ordinary answer and refuses other origins", async () => {
     const { dispose, handler } = served()
     try {
-      const allowed = await handler(new Request("http://test/ok", { headers: { origin: "http://localhost:4321" } }))
+      const allowed = await handler(new Request("http://test/ok", { headers: { origin: "https://example.test" } }))
       expect(allowed.status).toBe(200)
-      expect(allowed.headers.get("access-control-allow-origin")).toBe("http://localhost:4321")
+      expect(allowed.headers.get("access-control-allow-origin")).toBe("https://example.test")
       expect(allowed.headers.get("vary")).toBe("Origin")
       const refused = await handler(new Request("http://test/ok", { headers: { origin: "https://evil.example" } }))
-      expect(refused.status).toBe(200)
+      expect(refused.status).toBe(403)
       expect(refused.headers.get("access-control-allow-origin")).toBeNull()
       const preflight = await handler(
         new Request("http://test/ok", { method: "OPTIONS", headers: { origin: "https://evil.example" } })
       )
-      expect(preflight.status).toBe(404)
+      expect(preflight.status).toBe(403)
+      // No Origin is not a cross-origin decision, so the route answers.
       const none = await handler(new Request("http://test/ok"))
+      expect(none.status).toBe(200)
       expect(none.headers.get("access-control-allow-origin")).toBeNull()
     } finally {
       await dispose()

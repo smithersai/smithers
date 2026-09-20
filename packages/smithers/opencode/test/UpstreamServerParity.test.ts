@@ -47,8 +47,15 @@ afterAll(() => served.dispose())
 const ask = (path: string, init?: RequestInit): Promise<Response> =>
   served.handler(new Request(`http://test${path}`, init))
 
+// Upstream's own cases use `http://localhost:3000`, because upstream allows
+// every loopback origin. This server does not: a page on any loopback port is
+// a page the operator never chose, and it would have read files and driven
+// the agent with no password and no gesture (`Cors`, and `Security.test.ts`).
+// What these cases are actually about is the preflight's header set and its
+// `Vary`, so they ask as the hosted app, which is the origin this server is
+// for. A loopback build names itself with `--cors`.
 const PREFLIGHT_HEADERS = {
-  origin: "http://localhost:3000",
+  origin: "https://app.opencode.ai",
   "access-control-request-method": "POST",
   "access-control-request-headers": "content-type, x-opencode-directory"
 }
@@ -186,13 +193,13 @@ describe("HttpApi CORS (httpapi-cors.test.ts)", () => {
     const response = await ask("/path", {
       method: "OPTIONS",
       headers: {
-        origin: "http://localhost:3000",
+        origin: "https://app.opencode.ai",
         "access-control-request-method": "GET",
         "access-control-request-headers": "authorization"
       }
     })
     expect(response.status).toBe(204)
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
     expect(response.headers.get("access-control-allow-headers")).toBe("authorization")
   })
 
@@ -215,6 +222,9 @@ describe("HttpApi CORS (httpapi-cors.test.ts)", () => {
       headers: { origin: "https://evil.example", "access-control-request-method": "GET" }
     })
     expect(response.headers.get("access-control-allow-origin")).not.toBe("https://evil.example")
+    // Upstream declines to mark the answer. This server also refuses it,
+    // because declining leaves the route to run for a CORS-simple request.
+    expect(response.status).toBe(403)
   })
 })
 
@@ -226,7 +236,7 @@ describe("CORS preflight Vary header (httpapi-cors-vary.test.ts)", () => {
   it("HTTP API backend preflight Vary contains Origin", async () => {
     const response = await ask("/global/config", { method: "OPTIONS", headers: PREFLIGHT_HEADERS })
     expect([200, 204]).toContain(response.status)
-    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.opencode.ai")
     expect((response.headers.get("vary") ?? "").toLowerCase()).toContain("origin")
   })
 

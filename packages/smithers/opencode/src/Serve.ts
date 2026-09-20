@@ -73,12 +73,18 @@ export const defaultBind: Bind = { hostname: "127.0.0.1", port: 4096, listen: fa
 export const isLoopback = (hostname: string): boolean => loopbackHosts.includes(hostname)
 
 /**
- * Why a bind is refused, or `undefined` when it is admitted.
+ * Why a bind is refused, or `undefined` when it is admitted: a `--cors`
+ * pattern that is not an origin, a non-loopback host with no `--listen`, or
+ * a non-loopback host with no password.
  *
  * @category getters
  * @since 1.0.0
  */
 export const refusal = (bind: Bind): string | undefined => {
+  // A `--cors` pattern the policy cannot use is refused before the socket is
+  // bound, because an operator who passed one believes they have a policy.
+  const pattern = Cors.refusal(bind.cors)
+  if (pattern !== undefined) return pattern
   if (isLoopback(bind.hostname)) return undefined
   if (!bind.listen) return `Refusing to bind ${bind.hostname}: pass --listen to serve on a non-loopback address.`
   if (bind.credentials === undefined) {
