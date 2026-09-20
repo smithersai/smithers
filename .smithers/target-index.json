@@ -12453,6 +12453,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/coding-catalog-refresh.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/coding-vibe-evidence.test.ts"
       },
       {
