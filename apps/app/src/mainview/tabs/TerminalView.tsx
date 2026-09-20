@@ -33,6 +33,7 @@ export function TerminalView({ tab }: { readonly tab: Extract<TabRow, { kind: "t
   }
   return (
     <Terminal
+      key={`${repo}:${sessionId}`}
       className="tab-terminal"
       data-testid={`terminal-${sessionId}`}
       /* Control focus (state/controller/controlFocus.ts): the xterm helper textarea's focusin finds this marker. */
