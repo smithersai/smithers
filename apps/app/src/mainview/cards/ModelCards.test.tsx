@@ -2,9 +2,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { failedModelTest, ModelsCardPayloadSchema } from "@smthrs/rpc/ConfiguredModel"
+import { failedModelTest, modelCallDefault, ModelsCardPayloadSchema } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelTestFailure, ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
 import type { Card } from "../state/AppState"
+import { createAppStore } from "../state/AppStore"
+import { memoryStorage } from "../state/TestFixtures"
 import type { CardActions } from "./CardFamily"
 import { modelCardFamily, ModelsCardBody } from "./ModelCards"
 
@@ -131,7 +133,7 @@ describe("the Models card, embedded", () => {
     expect(row(host, "model-5").getAttribute("data-selected")).toBeNull()
   })
 
-  test("a row names its model, its kind, and the three acts through their flows", () => {
+  test("a row names its model, its kind, and the four acts through their flows", () => {
     const { calls, onRunCommand } = recorder()
     const host = mount(<ModelsCardBody card={modelsCard({ models: [user, jev] })} onRunCommand={onRunCommand} presentation="embedded" />)
     const mine = row(host, "fast-kimi")
@@ -141,16 +143,16 @@ describe("the Models card, embedded", () => {
     expect(mine.textContent).toContain("fast-kimi")
     expect(mine.textContent).toContain("generation")
     expect(row(host, "jev").textContent).toContain("decision")
-    expect(acts(mine)).toEqual([["Test", "model.test", "fast-kimi"], ["Edit", "model.edit", "fast-kimi"], ["Remove", "model.remove", "fast-kimi"]])
+    expect(acts(mine)).toEqual([["Test", "model.test", "fast-kimi"], ["Compose", "model.compose", "fast-kimi"], ["Edit", "model.edit", "fast-kimi"], ["Remove", "model.remove", "fast-kimi"]])
     for (const button of mine.querySelectorAll("button")) button.click()
-    expect(calls).toEqual([["model.test", "fast-kimi"], ["model.edit", "fast-kimi"], ["model.remove", "fast-kimi"]])
+    expect(calls).toEqual([["model.test", "fast-kimi"], ["model.compose", "fast-kimi"], ["model.edit", "fast-kimi"], ["model.remove", "fast-kimi"]])
   })
 
-  test("a host row can only be tested", () => {
+  test("a host row can only be tested and composed against", () => {
     const { onRunCommand } = recorder()
     const host = mount(<ModelsCardBody card={modelsCard({ models: [builtin] })} onRunCommand={onRunCommand} presentation="embedded" />)
     expect(row(host, "cerebras").getAttribute("data-builtin")).toBe("true")
-    expect(acts(row(host, "cerebras"))).toEqual([["Test", "model.test", "cerebras"]])
+    expect(acts(row(host, "cerebras"))).toEqual([["Test", "model.test", "cerebras"], ["Compose", "model.compose", "cerebras"]])
   })
 
   test("the host's refusal stays on the card", () => {
@@ -310,11 +312,11 @@ describe("the Models card, maximized", () => {
     expect(host.querySelectorAll('[data-model-id="fast-kimi"]').length).toBe(1)
   })
 
-  test("the detail's acts are Test, Edit and Remove; a host model's is Test alone", () => {
+  test("the detail's acts are Test, Compose, Edit and Remove; a host model's are Test and Compose", () => {
     const mine = render({ selected: "fast-kimi" }).host.querySelector('[data-testid="model-detail"]')!
-    expect(acts(mine)).toEqual([["Test", "model.test", "fast-kimi"], ["Edit", "model.edit", "fast-kimi"], ["Remove", "model.remove", "fast-kimi"]])
+    expect(acts(mine)).toEqual([["Test", "model.test", "fast-kimi"], ["Compose", "model.compose", "fast-kimi"], ["Edit", "model.edit", "fast-kimi"], ["Remove", "model.remove", "fast-kimi"]])
     const hosts = render({ selected: "cerebras" }).host.querySelector('[data-testid="model-detail"]')!
-    expect(acts(hosts)).toEqual([["Test", "model.test", "cerebras"]])
+    expect(acts(hosts)).toEqual([["Test", "model.test", "cerebras"], ["Compose", "model.compose", "cerebras"]])
   })
 
   test("with nothing selected the detail is the first row's", () => {
@@ -398,5 +400,32 @@ describe("the family entry", () => {
     expect(modelCardFamily.models.pill(modelsCard({ models: [user], testing: ["fast-kimi"], attention: { kind: "test-failed", recordId: "fast-kimi" } }))).toBe("running")
     expect(modelCardFamily.models.pill(modelsCard({ models: [user], attention: { kind: "test-failed", recordId: "fast-kimi" } }))).toBe("failed")
     expect(modelCardFamily.models.pill(modelsCard({}))).toBe("done")
+  })
+})
+
+describe("the composer card, bound to the store", () => {
+  test("Last test appears once a Test lands, read from the model's record, with no rewrite of the card", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch({ type: "model.saved", actor: "user", model: { id: "judge", protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" } }).isPersisted.promise
+    const composer: Card = { id: "model-call-judge", kind: "model-call", title: "judge", status: "active", createdAt: 0, ordinal: 1, payload: { model: "judge", request: modelCallDefault("decision") } }
+    await store.dispatch({ type: "card.upsert", actor: "user", card: composer }).isPersisted.promise
+    const saved = structuredClone(store.collections.cards.get(composer.id))
+    const noop = () => {}
+    const Bound = () => modelCardFamily["model-call"].render(composer as Extract<Card, { kind: "model-call" }>, { projectionStore: store, worldDocuments: [], onRunCommand: noop,
+      onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop, onQueueApprove: noop,
+      onConnectGitHub: noop, onRunWorkflow: noop, onStopRun: noop,
+      onRetryRun: noop, onChooseWorkflowRepo: noop, onChangeWorldDocument: noop })
+    const host = mount(<Bound />)
+    try {
+      expect(host.querySelector('[data-testid="model-call-recall"]')).toBeNull()
+      await store.dispatch({ type: "model.tested", actor: "system", test: passed("judge", 12) }).isPersisted.promise
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync(() => {})
+      expect(host.querySelector('[data-testid="model-call-recall"]')?.textContent).toBe("Last test")
+      expect(store.collections.cards.get(composer.id)).toEqual(saved)
+    } finally {
+      await store.settled?.()
+      await store.dispose?.()
+    }
   })
 })

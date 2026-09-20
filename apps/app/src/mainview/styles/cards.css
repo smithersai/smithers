@@ -1409,6 +1409,165 @@
 }
 
 /*
+ * The model-call card: the request is controls, the answer is read-only text
+ * beside the question it answered. Every control is the flow form's control
+ * (same border, same focus ring); a long value reads in mono. An answer that
+ * no longer matches the request is struck and dimmed, never removed.
+ */
+.model-call {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-3);
+}
+.model-call :is(input:not([type="checkbox"]), textarea, select) {
+	min-width: 0;
+	padding: var(--sp-1) var(--sp-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+}
+.model-call :is(input:not([type="checkbox"]), textarea, select):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.model-call textarea {
+	resize: vertical;
+	width: 100%;
+}
+.model-call select,
+.model-call .model-call-key,
+.model-call .model-call-mono {
+	font-family: var(--font-mono);
+}
+.model-call-state,
+.model-call-questions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+}
+.model-call-field {
+	display: grid;
+	grid-template-columns: minmax(6rem, 10rem) auto minmax(0, 1fr) auto;
+	gap: var(--sp-2);
+	align-items: start;
+}
+.model-call-field > input[type="checkbox"] {
+	align-self: center;
+}
+.model-call-question {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+.model-call-question-head {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+.model-call-question-head > .model-call-key {
+	font-size: var(--fs-small);
+}
+.model-call-answer {
+	margin-left: auto;
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--success);
+}
+.model-call[data-stale="true"] .model-call-answer,
+.model-call[data-stale="true"] .model-call-text,
+.model-call[data-stale="true"] .model-call-result {
+	opacity: 0.45;
+	text-decoration: line-through;
+}
+.model-call-criteria {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+}
+.model-call-question[data-question-type="boolean"] .model-call-criteria {
+	flex-direction: row;
+}
+.model-call-question[data-question-type="boolean"] .model-call-criteria > input {
+	flex: 1;
+}
+.model-call-option {
+	display: grid;
+	grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr) auto;
+	gap: var(--sp-2);
+	align-items: center;
+}
+.model-call-question[data-question-type="score"] .model-call-option {
+	grid-template-columns: minmax(6rem, 10rem) auto;
+}
+.model-call-row {
+	display: flex;
+	align-items: start;
+	gap: var(--sp-2);
+}
+.model-call-row > span:first-child {
+	flex: 0 0 6rem;
+	padding-top: var(--sp-1);
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.model-call-knobs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-3);
+}
+.model-call-knobs input {
+	width: 6rem;
+}
+.model-call-text {
+	margin: 0;
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	font-size: var(--fs-small);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.model-call-foot {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+}
+.model-call-result {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+}
+.model-call-result[data-ok="true"] .models-dot {
+	background: var(--success);
+}
+.model-call-result[data-ok="false"] {
+	color: var(--danger);
+}
+.model-call-result[data-ok="false"] .models-dot {
+	background: var(--danger);
+}
+.model-call-fixture {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	align-items: start;
+}
+@media (max-width: 600px) {
+	.model-call-field,
+	.model-call-option { grid-template-columns: 1fr; }
+}
+
+/*
  * The run trace (Factory design session 2026-09-07 §6b, redrawn 2026-09-12):
  * the outcome line, the folded plan and progress, the turn list that expands
  * in place, and the timeline (call tree, waterfall, span pane). Body copy is

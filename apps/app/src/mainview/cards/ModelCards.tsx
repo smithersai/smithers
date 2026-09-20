@@ -6,15 +6,18 @@
  * someone. Maximized it is the list, the selected model's facts and the seats.
  * Selection and assignment are flows (model.show, model.assign), never
  * component state, and the presentation arrives through CardActions so the
- * other presentation's buttons are not in the DOM at all.
+ * other presentation's buttons are not in the DOM at all. Compose opens the
+ * model's composer, its own card (ModelCallCard.tsx).
  */
 import { Button } from "@smthrs/ui"
 import { MODEL_SEAT_DEFAULT, modelKindOf, modelSeat, modelTestFixOf, modelTestStateOf, seatAccepts } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelTestFailure, ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
+import { useLiveQuery } from "@tanstack/react-db"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import type { Card } from "../state/AppState"
-import type { CardFamily, RunCommand } from "./CardFamily"
+import type { CardFamily, CardProjectionAuthority, RunCommand } from "./CardFamily"
+import { ModelCallCardBody, modelCallPill } from "./ModelCallCard"
 
 type ModelsCard = Extract<Card, { kind: "models" }>
 type Model = ModelsCard["payload"]["models"][number]
@@ -56,10 +59,11 @@ const TestMark = ({ test, running }: { readonly test: ModelTestRecord | undefine
   </span>
 )
 
-/** Test for every model; Edit and Remove only for a record the user owns. */
+/** Test and Compose for every model; Edit and Remove only for a record the user owns. */
 const ModelActs = ({ model, running, onRunCommand }: { readonly model: Model; readonly running: boolean; readonly onRunCommand: RunCommand }) => (
   <>
     <Button size="sm" variant="outline" disabled={running} {...flowAction(onRunCommand, "model.test", model.id)}>Test</Button>
+    <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.compose", model.id)}>Compose</Button>
     {model.builtin === true ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.edit", model.id)}>Edit</Button>}
     {model.builtin === true ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.remove", model.id)}>Remove</Button>}
   </>
@@ -295,10 +299,23 @@ export const ModelsCardBody = ({
   )
 }
 
-export const modelCardFamily: CardFamily<"models"> = {
+/** The composer over the model's live record: whether a Test was recorded is the record's fact, so it is read there, not written to the card. */
+const ObservedModelCall = ({ card, models, onRunCommand }: { readonly card: Extract<Card, { kind: "model-call" }>; readonly models: CardProjectionAuthority["collections"]["models"]; readonly onRunCommand: RunCommand }) => {
+  const { data } = useLiveQuery(models)
+  return <ModelCallCardBody card={card} recall={data.some((row) => row.id === card.payload.model && row.lastTest !== undefined)} onRunCommand={onRunCommand} />
+}
+
+export const modelCardFamily: CardFamily<"models" | "model-call"> = {
   models: {
     render: (card, actions) => <ModelsCardBody card={card} onRunCommand={actions.onRunCommand} presentation={actions.presentation ?? "embedded"} />,
     /* Running while a test is out; failed while something needs someone; settled otherwise (the shell hides "done"). */
     pill: (card) => card.payload.testing.length > 0 ? "running" : card.payload.attention !== undefined ? "failed" : "done"
+  },
+  /* The composer for one model (ModelCallCard.tsx): the same body embedded and maximized. */
+  "model-call": {
+    render: (card, actions) => actions.projectionStore === undefined
+      ? <ModelCallCardBody card={card} recall={false} onRunCommand={actions.onRunCommand} />
+      : <ObservedModelCall card={card} models={actions.projectionStore.collections.models} onRunCommand={actions.onRunCommand} />,
+    pill: modelCallPill
   }
 }

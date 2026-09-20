@@ -60,6 +60,7 @@ import { createIssueFlowsController,type IssueFlowsController } from "./controll
 import { createRepositorySetupController, type RepositorySetupController } from "./controller/repositorySetup"
 import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
 import { createLiveTutorialController } from "./controller/liveTutorial"
+import { createModelCallController, type ModelCallController } from "./controller/modelCall"
 import { createModelsController,type ModelsController } from "./controller/models"
 import type { OnboardingController } from "./controller/onboarding"
 import { createOnboardingController } from "./controller/onboarding"
@@ -329,6 +330,15 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly testModel: ModelsController["testModel"]
   readonly assignSeat: ModelsController["assignSeat"]
   readonly observeModels: ModelsController["observeModels"]
+  /* The composer for one configured model; see controller/modelCall.ts. */
+  readonly composeModel: ModelCallController["composeModel"]
+  readonly askModel: ModelCallController["askModel"]
+  readonly recallModel: ModelCallController["recallModel"]
+  readonly setModelPrompt: ModelCallController["setModelPrompt"]
+  readonly setModelField: ModelCallController["setModelField"]
+  readonly setModelQuestion: ModelCallController["setModelQuestion"]
+  readonly setModelOption: ModelCallController["setModelOption"]
+  readonly fixtureModel: ModelCallController["fixtureModel"]
   readonly loadRepos: TabsController["loadRepos"]
   readonly notePtyExit: TabsController["notePtyExit"]
   /** Lane citc: the cloud-workspace terminal transport (one socket per workspace session). */
@@ -971,6 +981,17 @@ export const createAppController = (
     resumeModels,
     observeModels
   } = actors.pair(ctx, (context, select) => createModelsController(context, { nextOrdinal: store.nextOrdinal, renderFlowForm: select(renderFlowForm), minimizeCard }))
+  const {
+    composeModel,
+    askModel,
+    recallModel,
+    setModelPrompt,
+    setModelField,
+    setModelQuestion,
+    setModelOption,
+    fixtureModel,
+    resumeModelCalls
+  } = actors.pair(ctx, (context) => createModelCallController(context, { nextOrdinal: store.nextOrdinal, minimizeCard }))
   const {
     loadAgents,
     listAgents,
@@ -1625,6 +1646,14 @@ export const createAppController = (
     testModel,
     assignSeat,
     observeModels,
+    composeModel,
+    askModel,
+    recallModel,
+    setModelPrompt,
+    setModelField,
+    setModelQuestion,
+    setModelOption,
+    fixtureModel,
     loadRepos,
     notePtyExit,
     cloudTerminal,
@@ -1914,7 +1943,7 @@ export const createAppController = (
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
-    queueMicrotask(() => { if (!ctx.disposed) resumeModels() })
+    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     runs.resumeApprovalRequests()

@@ -327,8 +327,8 @@ describe("§3 the keyboard contract", () => {
     await press(view, "k", { meta: true })
     expect(view.store.session().paletteOpen).toBe(true)
     expect(palette(view.host)?.dataset["mode"]).toBe("all")
-    // Files (both prefix matches, in listing order), the run (contains), then the flow whose summary says "compose".
-    expect(rows(view.host)).toEqual(["", "local:r1/src/Composer.tsx", "local:r1/src/Compose.css", runSearchRef("run-compose", "runs-1"), "chat.send"])
+    // Files (both prefix matches, in listing order), then the flows: the one named compose, the ones whose summaries say it, then the run (contains).
+    expect(rows(view.host)).toEqual(["", "local:r1/src/Composer.tsx", "local:r1/src/Compose.css", "model.compose", "chat.send", "model.ask", "model.recall", runSearchRef("run-compose", "runs-1")])
     await press(view, "Escape")
     expect(view.store.session().paletteOpen).toBe(false)
     expect(palette(view.host)).toBeNull()
@@ -342,7 +342,7 @@ describe("§3 the keyboard contract", () => {
     await press(view, "k", { meta: true })
     expect(highlighted(view.host)?.hasAttribute("data-ask")).toBe(true)
     await press(view, "ArrowUp")
-    expect(highlighted(view.host)?.dataset["ref"]).toBe("chat.send")
+    expect(highlighted(view.host)?.dataset["ref"]).toBe(runSearchRef("run-compose", "runs-1"))
     await press(view, "ArrowDown")
     expect(highlighted(view.host)?.hasAttribute("data-ask")).toBe(true)
     await press(view, "ArrowDown")

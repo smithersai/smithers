@@ -39,6 +39,19 @@ describe("flowArgs — one serialisation, and the grammar gives the values back"
     roundTrip("model.assign", { seat: "explainer", recordId: "default" }, "explainer default", { seat: "explainer", recordId: "default" })
   })
 
+  test("a composer edit rides as JSON, newlines and quotes intact, and an omitted field stays omitted", () => {
+    const prompt = { id: "writer", system: "Answer in one line.\nNo \"quotes\".", maxTokens: 64, temperature: "" }
+    roundTrip("model.prompt", prompt, JSON.stringify(prompt), prompt)
+    const field = { id: "judge", key: "diff", kind: "diff", value: "@@ -1 +1 @@\n-a\n+b", was: "patch" }
+    roundTrip("model.state", field, JSON.stringify(field), field)
+    roundTrip("model.state", { id: "judge", key: "diff", remove: true }, "{\"id\":\"judge\",\"key\":\"diff\",\"remove\":true}", { id: "judge", key: "diff", remove: true })
+    const question = { id: "judge", question: "q1", type: "choice", instructions: "Which one?", criteria: { a: "the first", b: "" } }
+    roundTrip("model.question", question, JSON.stringify(question), question)
+    roundTrip("model.question", { id: "judge" }, "{\"id\":\"judge\"}", { id: "judge" })
+    const option = { id: "judge", question: "q1", option: "b", about: "the second" }
+    roundTrip("model.option", option, JSON.stringify(option), option)
+  })
+
   test("change.pins carries both pins", () => {
     roundTrip("change.pins", { changeId: "ch-1", from: "parent", to: "current" }, "ch-1 parent current", {
       changeId: "ch-1",
@@ -91,6 +104,10 @@ describe("FlowName — the seam's names are the registry's names", () => {
       "change.resolve",
       "form.set",
       "model.assign",
+      "model.option",
+      "model.prompt",
+      "model.question",
+      "model.state",
       "runs.steer",
     ]
     expect(named.filter((name) => !declared.has(name))).toEqual([])

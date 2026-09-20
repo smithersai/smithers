@@ -185,6 +185,15 @@ const modelName = (name: string, args: string | undefined): Parsed => {
   return ok(id === undefined ? {} : { id })
 }
 
+/** A composer edit: one JSON object, so a prompt keeps its newlines and quotes. */
+const jsonObject = (name: string) => (args: string | undefined): Parsed => {
+  if (!(args ?? "").trim()) return ok({})
+  try {
+    const value: unknown = JSON.parse(args!)
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? ok(value as Record<string, unknown>) : no(`${name} takes a JSON object`)
+  } catch { return no(`${name} takes a JSON object`) }
+}
+
 /**
  * `<name> [owner/repo]`: the schedule `triggers.run` fires now. A schedule's
  * name holds no whitespace (SLUG), so the repository trails it as it does
@@ -617,6 +626,14 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "model.edit": (args) => modelName("model.edit", args),
   "model.remove": (args) => modelName("model.remove", args),
   "model.test": (args) => modelName("model.test", args),
+  "model.compose": (args) => modelName("model.compose", args),
+  "model.ask": (args) => modelName("model.ask", args),
+  "model.recall": (args) => modelName("model.recall", args),
+  "model.fixture": (args) => modelName("model.fixture", args),
+  "model.prompt": jsonObject("model.prompt"),
+  "model.state": jsonObject("model.state"),
+  "model.question": jsonObject("model.question"),
+  "model.option": jsonObject("model.option"),
   "model.save": (args) => modelSave(args),
   /* `<seat> <name|default>`: the seat alone is the card's Assign button, and the form asks for the model. */
   "model.assign": (args) => {

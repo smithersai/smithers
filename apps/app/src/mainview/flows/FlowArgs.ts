@@ -70,6 +70,11 @@ export interface FlowInput {
   readonly "runs.steer": { readonly runId: string; readonly body: string }
   /** `<seat> <name|default>` — neither a seat nor a model name holds whitespace. */
   readonly "model.assign": { readonly seat: string; readonly recordId: string }
+  /** The composer's edits (controller/modelCall.ts) ride as JSON: a prompt holds newlines and quotes. */
+  readonly "model.prompt": { readonly id: string; readonly system?: string; readonly prompt?: string; readonly maxTokens?: number; readonly temperature?: string }
+  readonly "model.state": { readonly id: string; readonly key?: string; readonly kind?: string; readonly value?: string; readonly was?: string; readonly remove?: boolean }
+  readonly "model.question": { readonly id: string; readonly question?: string; readonly type?: string; readonly instructions?: string; readonly criteria?: unknown; readonly was?: string; readonly remove?: boolean }
+  readonly "model.option": { readonly id: string; readonly question: string; readonly option?: string; readonly about?: string; readonly was?: string; readonly remove?: boolean }
 
 }
 
@@ -137,6 +142,10 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "form.set": (payload) => line(token(payload, "cardId"), token(payload, "field"), token(payload, "value")),
   "runs.steer": (payload) => line(token(payload, "runId"), token(payload, "body")),
   "model.assign": (payload) => line(token(payload, "seat"), token(payload, "recordId")),
+  "model.prompt": (payload) => JSON.stringify(payload),
+  "model.state": (payload) => JSON.stringify(payload),
+  "model.question": (payload) => JSON.stringify(payload),
+  "model.option": (payload) => JSON.stringify(payload),
   "triggers.run": (payload) => line(token(payload, "slug"), token(payload, "repo")),
   "wiki.heading": (payload) => line(token(payload, "line"), token(payload, "cardId")),
   "workspace.desktop.open": (payload) => line(token(payload, "bookmark"), token(payload, "repo")),

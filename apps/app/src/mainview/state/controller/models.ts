@@ -1,6 +1,6 @@
 import { MODEL_CATALOG_PATH,MODEL_TEST_PATH,MODEL_CREDENTIAL_PATH,MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import type { ConfiguredModel,ModelBinding,ModelCatalog,ModelProtocol,ModelTestFailure,ModelTestResult,SeatId } from "@smthrs/rpc/ConfiguredModel"
+import type { ConfiguredModel,ModelBinding,ModelCallInput,ModelCatalog,ModelProtocol,ModelTestFailure,ModelTestResult,SeatId } from "@smthrs/rpc/ConfiguredModel"
 import {
   failedModelCredential, ModelCredentialRequestSchema, ModelCredentialResultSchema, ModelCredentialReceiptSchema,
   ConfiguredModelSchema,MODEL_PROTOCOL_DEFAULTS,MODEL_SEAT_DEFAULT,ModelCatalogSchema,ModelTestResultSchema,SeatIdSchema,
@@ -109,6 +109,32 @@ export const credentialOptions = (catalog: Pick<ModelCatalog, "credentials" | "e
   ...(catalog?.enrollment === undefined ? [] : [{ value: "__enroll", label: "Add credential", flow: "model.credential.new" as const,
     ...(catalog.enrollment.available ? {} : { disabled: true, reason: catalog.enrollment.reason === "local_host_required" ? "Local host required" : "Keychain unavailable" }) }])
 ]
+
+/**
+ * One call to the host's test route, as a result either way: a refusal to run
+ * it, or silence, is typed here. With no input the host runs its fixed Test;
+ * the composer (modelCall.ts) sends the request a person composed.
+ */
+export const callModelTest = async (ctx: Pick<ControllerContext, "baseUrl" | "boundedFetch">, model: ConfiguredModel, input?: ModelCallInput): Promise<ModelTestResult> => {
+  const startedAt = Date.now()
+  let response: Response
+  try {
+    response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_TEST_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input === undefined ? { model } : { model, input })
+    })
+  } catch (cause) {
+    // The refusal's fault and status are kept; nobody's words are.
+    return hostRefusedModelTest(clientRefusal(cause, ""), Date.now() - startedAt)
+  }
+  const body: unknown = await response.json().catch((): undefined => undefined)
+  const latencyMs = Date.now() - startedAt
+  if (!response.ok) return hostRefusedModelTest(refusalOf({ body, status: response.status, message: "" }), latencyMs)
+  const decoded = ModelTestResultSchema.safeParse(body)
+  // A 200 this build cannot read is nobody's mistake but ours.
+  return decoded.success ? decoded.data : hostRefusedModelTest({ code: null, status: response.status, fault: "bug" }, latencyMs)
+}
 
 /** One test in flight, for one account. A newer launch of an edited route, or for the account that arrived, replaces it, and only the current one may write. */
 interface Flight { readonly route: string; readonly epoch: number }
@@ -359,28 +385,6 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     render(ctx.commandActor, card() === undefined, unresolved())
   }
 
-  /** One call to the host's test route, as a result either way: a refusal to run it, or silence, is typed here. */
-  const callHost = async (model: ConfiguredModel): Promise<ModelTestResult> => {
-    const startedAt = Date.now()
-    let response: Response
-    try {
-      response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_TEST_PATH}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model })
-      })
-    } catch (cause) {
-      // The refusal's fault and status are kept; nobody's words are.
-      return hostRefusedModelTest(clientRefusal(cause, ""), Date.now() - startedAt)
-    }
-    const body: unknown = await response.json().catch((): undefined => undefined)
-    const latencyMs = Date.now() - startedAt
-    if (!response.ok) return hostRefusedModelTest(refusalOf({ body, status: response.status, message: "" }), latencyMs)
-    const decoded = ModelTestResultSchema.safeParse(body)
-    // A 200 this build cannot read is nobody's mistake but ours.
-    return decoded.success ? decoded.data : hostRefusedModelTest({ code: null, status: response.status, fault: "bug" }, latencyMs)
-  }
-
   /** The background half. Never awaited by the command that asked for it. */
   const launch = (model: ConfiguredModel): void => {
     const { id } = model
@@ -390,7 +394,7 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     shared.requested.add(id)
     const key = `model.test:${id}`
     void ctx.withToast(key, `Testing ${id}…`, `Tested ${id}`, async () => {
-      const result = await callHost(model)
+      const result = await callModelTest(ctx, model)
       // A newer launch of an edited route owns the id now; this answer is about a route that is gone.
       if (shared.flights.get(id) !== flight) return TOAST_SUPERSEDED
       shared.flights.delete(id)
