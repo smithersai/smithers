@@ -126,11 +126,31 @@ Measured on 2026-09-19, six live states on `cerebras:gpt-oss-120b`, one per fres
 
 The fourth row used to be the one to know about: a budget that ran out while a permission card was open kept the reason the park had earned, so the dot told you to answer a card that was no longer there. A health card was written only when the color changed, and a run that was already red for the park ended red for the budget, so no card carried the new words. A turn's last reading is exempt from that rule now and always writes its card, so an ended run's reason names what ended it. The same silence used to mask a seat out of quota and a claim the harness refused, and those read true now too. Measured on 2026-09-19 at `--max-frames 1`: on the old server a run that ended `The frame budget of 1 is exhausted` carried one health card and it read red `waiting for approval`; on the new one the park's red is followed by red `stopped: the frame budget of 1 is exhausted`, in every run that ended that way.
 
+## Who can reach the server
+
+The default bind is `127.0.0.1:4096` with no password, so the boundary is the
+browser's: the hosted app (`https://*.opencode.ai`) is the only origin allowed
+out of the box, and every other origin is answered 403 before the route runs.
+A page served on a loopback port is not allowed by default, because any dev
+server or preview tool on this machine put one there. A local build of the app
+names itself: `smithers opencode --cors http://localhost:5173`. A `--cors`
+pattern that is not an origin is refused at the bind rather than accepted and
+ignored, so `--cors '*'` exits naming the shape that would have worked.
+
+Clients that send no `Origin` are unaffected: `opencode attach`, `curl`, and
+anything else on the machine reach the server as before. What bounds those is
+the machine, so set `OPENCODE_SERVER_PASSWORD` when the machine is shared.
+
+`GET /file/content` only ever answers with a file inside the directory the
+server was started on. The `directory` parameter says where a relative path
+resolves from; it does not decide what contains the answer, and a symlink out
+of the served directory is refused on the real path it resolves to.
+
 ## Allow once and Allow always
 
 **Allow once** answers this one call. **Allow always** grants for the rest of the session, and the grant is stored, so it survives a restart of the server.
 
-What "always" covers depends on the flow. For `bash` it is the first word of the command, and only when the whole command is a plain line of words: allowing `ls -la` always allows every `ls` in that session, and nothing else. The card names the pattern, `ls *`, so you can read the grant off the card before you press the button. A command carrying anything a shell would act on offers no "always" at all: a quote, a pipe, a `;` or `&&`, a redirection, a substitution, a line break. Whichever button you press then covers that one call. Until 2026-09-19 it did not: an "always" on `echo one` let `echo two; printf reached > marker` run with no second card, and the marker was written. A command that runs inside a container covers that container only, so allowing `pytest` in `ci` never allows `pytest` on your machine. For every other flow it is the whole flow: allowing one `write` always allows every `write` in that session. Grants are per session, so a new session asks again.
+What "always" covers depends on the flow. For `bash` it is the first word of the command, and only when the whole command is a plain line of words and that first word is what decides which program runs: allowing `ls -la` always allows every `ls` in that session, and nothing else. The card names the pattern, `ls *`, so you can read the grant off the card before you press the button. A command carrying anything a shell would act on offers no "always" at all: a quote, a pipe, a `;` or `&&`, a redirection, a substitution, a line break. Whichever button you press then covers that one call. Until 2026-09-19 it did not: an "always" on `echo one` let `echo two; printf reached > marker` run with no second card, and the marker was written. A line whose first word decides nothing offers no "always" either. A shell or a launcher (`bash`, `sh`, `env`, `sudo`, `xargs`, `timeout`, `find`, `ssh`) runs whatever its arguments name, and an argument that carries program text (`-c`, `-e`, `--eval`, `-exec`) does the same whatever program is in front of it: `bash -c whoami` and `bash /tmp/payload.sh` are the same first word, so an "always" on the first must never cover the second. Until 2026-09-20 it did. A toolchain that runs your project's own code (`bun test`, `pnpm run check`) still offers its first word, because that word is the one the card shows and the one you approve. A command that runs inside a container covers that container only, so allowing `pytest` in `ci` never allows `pytest` on your machine. For every other flow it is the whole flow: allowing one `write` always allows every `write` in that session. Grants are per session, so a new session asks again.
 
 A `bash` call is not always a command line. The run can also hand an interpreter a program on standard input, and such a call has no first word to generalise from. Its card reads `node script: console.log(2 + 3)` and carries the interpreter and the whole program beside it, and it offers no "always" at all: whichever button you press, your answer covers that one call. No answer to a `bash` card ever grants the whole shell. Measured on 2026-09-18 in one session: an "always" on that script card left the next `ls -la` asking with its own `ls *` pattern, and left the same script call asking again two frames later.
 
