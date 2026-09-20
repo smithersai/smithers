@@ -746,6 +746,69 @@ describe("the run trace's reader gestures and the pump's tail (spec 06 §5, §6)
     expect(card?.kind === "run-trace" && card.payload.cursorSeq).toBe(2)
   })
 
+  test("every reader gesture answers only once the card it changed is durable", async () => {
+    /*
+     * Reading a trace is durable state: the reader who returns to Latest and
+     * reloads must find the run at its tail. A gesture that answers before its
+     * write is durable loses that write to the reload, which is what a
+     * production keyboard walk found: `Latest` was still on the card after the
+     * reload that followed it.
+     */
+    const store = await webStore()
+    const journal = [
+      { kind: "control.agent.turn-opened", payload: { seat: "openai:gpt-5.6-sol", at: 100 }, sequence: 1, occurredAt: 100 }
+    ]
+    const double = relay({ runs: [{ runId: "run-7", flowId: "deploy", status: "running" }], events: journal })
+    let holding = false
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const guarded = new Proxy(store, {
+      get: (target, key, receiver) => key !== "dispatch" ? Reflect.get(target, key, receiver)
+        : (transition: Parameters<typeof store.dispatch>[0]) => {
+          const transaction = target.dispatch(transition)
+          // Hold only the run card's own write. Every other dispatch settles as
+          // usual, so a gesture that answers without waiting for ITS write is
+          // what this catches, not a gesture waiting for its transcript line.
+          const changed = transition.type === "card.upsert"
+            ? (transition as { card: { id: string } }).card.id
+            : transition.type === "card.updated" ? (transition as { id: string }).id : undefined
+          if (!holding || changed !== "flow-run-run-7") return transaction
+          return new Proxy(transaction, { get: (owner, name, self) => name === "isPersisted"
+            ? { ...owner.isPersisted, promise: gate.then(() => owner.isPersisted.promise) }
+            : Reflect.get(owner, name, self) })
+        }
+    })
+    const controller = createAppController(guarded as typeof store, unavailableRepositories, silentAgent, double.services)
+    await signIn(store)
+    await controller.commands.run("runs.open", "run-7")
+    await waitFor(() => {
+      const current = store.collections.cards.get("flow-run-run-7")
+      return current?.kind === "run-trace" && (current.payload.events?.length ?? 0) === 1
+    })
+    await controller.commands.run("runs.trace.select", "run-7 frame-1 1")
+    const gestures = [
+      ["runs.trace.live", "run-7"],
+      ["runs.trace.view", "run-7 timeline"],
+      ["runs.trace.filter", "run-7 failed"]
+    ] as const
+    holding = true
+    const answered = gestures.map(([flow, args]) => {
+      let settled = false
+      const promise = controller.commands.run(flow, args).then((result) => { settled = true; return result })
+      return { flow, promise, said: () => settled }
+    })
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
+    for (const gesture of answered) {
+      expect(gesture.said(), `${gesture.flow} answered before its card was durable`).toBe(false)
+    }
+    release()
+    for (const gesture of answered) expect(said(await gesture.promise)).not.toContain("runs.open")
+    holding = false
+    const card = store.collections.cards.get("flow-run-run-7")
+    expect(card?.kind === "run-trace" && card.payload).toMatchObject({ liveTail: true, traceView: "timeline", filter: "failed" })
+    expect(card?.kind === "run-trace" && card.payload.cursorSeq).toBeUndefined()
+  })
+
   test("both gestures need the run's card first", async () => {
     const store = await webStore()
     const double = relay({ runs: [{ runId: "run-9", flowId: "deploy", status: "running" }] })

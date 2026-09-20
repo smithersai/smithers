@@ -60,12 +60,18 @@ export interface RunsController {
   readonly showRunLogs: (runId: string, follow?: boolean, sourceCard?: string) => Promise<CommandResult>
   readonly showRunSteps: (runId: string, sourceCard?: string) => CommandResult
   readonly showRunEvents: (runId: string, sourceCard?: string) => Promise<CommandResult>
+  /*
+   * Where the reader parked is durable state, so each of these gestures answers
+   * only once its card write is. A gesture that answered first lost the write
+   * to a reload issued straight after it: a production keyboard walk pressed
+   * Latest, reloaded, and found the card still parked at its cursor.
+   */
   /** `runs.trace.filter <runId> <filter>`: the trace's active filter, in the card payload (spec 06 §5, §6). */
-  readonly traceFilter: (runId: string, filter: TraceFilter, sourceCard?: string) => CommandResult
+  readonly traceFilter: (runId: string, filter: TraceFilter, sourceCard?: string) => Promise<CommandResult>
   /** `runs.trace.select <runId> <nodeId> [seq]`: the trace's selection and scrub cursor; leaves live tail. */
   readonly traceSelect: (runId: string, nodeId: string, seq?: number, sourceCard?: string) => Promise<CommandResult>
-  readonly traceView: (runId: string, view: TraceView, sourceCard?: string) => CommandResult
-  readonly traceLive: (runId: string, sourceCard?: string) => CommandResult
+  readonly traceView: (runId: string, view: TraceView, sourceCard?: string) => Promise<CommandResult>
+  readonly traceLive: (runId: string, sourceCard?: string) => Promise<CommandResult>
   readonly selectCodingChange: (runId: string, changeId: string, sourceCard?: string) => CommandResult
   readonly stopAllRuns: (repo?: string, sourceCard?: string) => Promise<CommandResult>
   /**
@@ -472,17 +478,17 @@ export const createRunsController = (
    * and no request leaves the browser. The pump keeps the journal current on
    * its own cycle.
    */
-  const traceFilter = (runId: string, filter: TraceFilter, sourceCard?: string): CommandResult => {
+  const traceFilter = async (runId: string, filter: TraceFilter, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
-    store.dispatch({
+    await store.dispatch({
       type: "card.updated",
       actor: ctx.commandActor,
       id: card.id,
       patch: { payload: { ...card.payload, filter } }
-    })
+    }).isPersisted.promise
     return { value: `trace-filter run=${runId} filter=${filter}` }
   }
 
@@ -534,21 +540,21 @@ export const createRunsController = (
     return { value: `coding-plan-selection run=${runId} change=${previous === changeId ? "none" : changeId}` }
   }
 
-  const traceView = (runId: string, view: TraceView, sourceCard?: string): CommandResult => {
+  const traceView = async (runId: string, view: TraceView, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the trace lives on its card.`
-    store.dispatch({
+    await store.dispatch({
       type: "card.updated",
       actor: ctx.commandActor,
       id: card.id,
       patch: { payload: { ...card.payload, traceView: view } }
-    })
+    }).isPersisted.promise
     return { value: `trace-view run=${runId} view=${view}` }
   }
 
-  const traceLive = (runId: string, sourceCard?: string): CommandResult => {
+  const traceLive = async (runId: string, sourceCard?: string): Promise<CommandResult> => {
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
@@ -556,11 +562,11 @@ export const createRunsController = (
     const { selection: _selection, cursorSeq: _cursorSeq, ...payload } = card.payload
     // card.updated merges payload fields. Replace the card to remove the cursor
     // durably: undefined patch values would disappear in the JSON journal.
-    store.dispatch({
+    await store.dispatch({
       type: "card.upsert",
       actor: ctx.commandActor,
       card: { ...card, payload: { ...payload, liveTail: true } }
-    })
+    }).isPersisted.promise
     return { value: `trace-live run=${runId}` }
   }
 
