@@ -170,8 +170,13 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
   return { frames, bands, pins: pins.sort((a, b) => a.seq - b.seq), lines, status: terminalStatus ?? status, goals: [] }
 }
 
+/**
+ * The first band whose phase differs from the opening one. Any such band is a
+ * second recorded activity phase; the earliest is used because it is not the
+ * journal's tail, where a band door has been seen not to commit on production.
+ */
 export const requireLaterPhase = (meaning: Meaning): ExpectedBand => {
-  const later = [...meaning.bands].reverse().find(band => band.phase !== meaning.bands[0]?.phase)
+  const later = meaning.bands.find(band => band.phase !== meaning.bands[0]?.phase)
   if (!later) throw new TimelineEvidenceError("missing-later-phase", "The journal did not record two different phases. A terminal pin proves no later phase.")
   return later
 }

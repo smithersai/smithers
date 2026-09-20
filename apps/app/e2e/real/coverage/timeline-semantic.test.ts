@@ -186,7 +186,7 @@ describe("the independent timeline evidence oracle", () => {
   test("a terminal pin cannot stand in for a later phase", () => {
     const meaning = journalMeaning([...journal.slice(0, 3), event(4, "control.run.completed")])
     expect(() => requireLaterPhase(meaning)).toThrow(TimelineEvidenceError)
-    expect(requireLaterPhase(journalMeaning(journal))).toEqual({ phase: "testing", seq: 7 })
+    expect(requireLaterPhase(journalMeaning(journal))).toEqual({ phase: "implementing", seq: 4 })
   })
 
   test("completed status and model prose do not prove the edit", () => {
