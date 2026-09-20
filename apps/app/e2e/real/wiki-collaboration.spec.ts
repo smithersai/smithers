@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openApp, test } from "./support"
+import { closeComposer, command, expect, openApp, reloadApp, test } from "./support"
 import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
@@ -51,7 +51,7 @@ test(
     await pane.locator('[data-slot="file-tree-file"]').filter({ hasText: second.title }).click()
     await pane.getByRole("button", { name: "Document", exact: true }).click()
     await expect(pane.getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByTestId("card-world-embedded").getByLabel(`Edit ${second.title}`, { exact: true })).toBeVisible()
     await page.close()
     const restarted = await context.newPage()

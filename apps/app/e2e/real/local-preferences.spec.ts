@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { command, expect, openApp, openComposer, test } from "./support"
+import { command, expect, openApp, openComposer, reloadApp, test } from "./support"
 import { DRAFT_RECOVERY_STORAGE_KEY } from "../../src/mainview/state/DraftRecovery"
 
 const boot = async (page: Page): Promise<void> => {
@@ -26,7 +26,7 @@ test(
     const expectedTheme = before === "dark" ? "light" : "dark"
     await expect(page.locator("html")).toHaveAttribute("data-theme", expectedTheme)
     await expect(page.locator("html")).toHaveAttribute("data-palette", "paper")
-    await page.reload()
+    await reloadApp(page)
     await expect(page.locator("html")).toHaveAttribute("data-theme", expectedTheme)
     await expect(page.locator("html")).toHaveAttribute("data-palette", "paper")
   }
@@ -45,7 +45,7 @@ test(
     await boot(page)
     await openComposer(page)
     await page.getByTestId("composer-input").fill("draft survives immediate reload")
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByTestId("composer-input")).toBeHidden()
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()
@@ -68,7 +68,7 @@ test(
     await boot(page)
     await openComposer(page)
     await page.getByTestId("composer-input").fill(draft)
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByTestId("composer-input")).toBeHidden()
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()
@@ -91,14 +91,14 @@ test(
     await openComposer(page)
     await page.getByTestId("composer-input").fill("durable baseline")
     await page.waitForFunction(key => localStorage.getItem(key) === null, DRAFT_RECOVERY_STORAGE_KEY)
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByTestId("composer-input")).toBeHidden()
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toHaveValue("durable baseline")
 
     await page.getByTestId("composer-input").fill("")
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByTestId("composer-input")).toBeHidden()
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await expect(page.getByTestId("composer-input")).toBeVisible()

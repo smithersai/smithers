@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { command, closeComposer, expect, openApp, test } from "./support"
+import { command, closeComposer, expect, openApp, reloadApp, test } from "./support"
 
 const boot = async (page: Page) => { await openApp(page); await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible() }
 const createNote = async (page: Page) => {
@@ -52,7 +52,7 @@ test("Wiki delete cancel preserves a note and confirm removes it", scenario("loc
 
 test("Wiki card edit survives immediate reload", scenario("local-wiki-immediate-reload", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "host:local", "host:production", "path:persistence", "door:slash", "door:button", "dimension:immediate-reload", "evidence:wiki-card-readback"] }), async ({ page }) => {
   await boot(page); const note = await createNote(page); const marker = `rapid-reload-${Date.now()}`
-  await edit(page, note.card, `# ${note.title}\n\n${marker}`); await page.reload()
+  await edit(page, note.card, `# ${note.title}\n\n${marker}`); await reloadApp(page)
   await expect(page.getByTestId(`card-${note.cardId}`).locator(".ProseMirror")).toContainText(marker)
 })
 

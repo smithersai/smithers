@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { closeComposer,command,expect,openApp,test } from "./support"
+import { closeComposer,command,expect,openApp,reloadApp,test } from "./support"
 import { fixtureInputText } from "./support/values"
 
 test.setTimeout(90_000)
@@ -57,7 +57,7 @@ test(
     await expect(dialog).toBeVisible()
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
     await expect(dialog).toBeHidden()
-    await page.reload()
+    await reloadApp(page)
     await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
     await command(page, `/wiki.open ${note.title}`)
     await closeComposer(page)
