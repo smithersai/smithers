@@ -1074,11 +1074,11 @@ compacting a transcript cannot erase the recorded change of task. Replay
 rebuilds this bounded evidence from recorded steering drains; a pending,
 undelivered instruction cannot change a replayed completion.
 
-`CellTurn` records a completion reading at an engine boundary keyed by the
-session, frame, cell digest and classifier digest. Replay uses that recorded
-reading, so a resumed turn keeps its previous decision without asking Jev
-again. Provider refusals retain their code, HTTP status when present and
-detail through the journal's error schema.
+`CellTurn` records the whole completion decision at an engine boundary keyed
+by the session, frame and cell digest. Replay uses that decision, including
+the classifier reading and usage, so a resumed turn keeps its previous
+decision without asking Jev again. Provider refusals retain their code, HTTP
+status when present and detail through the journal's error schema.
 
 **All three ask; only the third refuses.** `find` hands the completion back at
 any of three heights, `disprovenAt` (0.3) or below on the first question,
