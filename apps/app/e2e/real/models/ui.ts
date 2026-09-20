@@ -61,7 +61,7 @@ export const modelsCard = (page: Page): Locator => page.locator('.smithers-card[
 export const modelRow = (page: Page, name: string): Locator => modelsCard(page).locator(`[data-model-id="${name}"]`)
 export const modelDetail = (page: Page): Locator => modelsCard(page).getByTestId("model-detail")
 export const seatSelect = (page: Page, seat: string): Locator => modelsCard(page).locator(`select[data-seat="${seat}"]`)
-const saveForm = (page: Page): Locator => page.locator('.smithers-card[data-kind="flow-form"]').last()
+const saveForm = (page: Page): Locator => page.locator('.flow-form[data-flow-name="model.save"]')
 
 /** `/model.list`, settled: the host's catalog has answered, so the form offers the host's credential names. */
 export const listModels = async (page: Page): Promise<Locator> => {

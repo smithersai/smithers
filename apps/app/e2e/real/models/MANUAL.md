@@ -3,15 +3,15 @@
 Every step names what to do and what you must see. Anything else is a bug.
 The automated receipt is step 14. No paid key is needed before step 13.
 
-A credential is a NAME. You never type a key into the app. The host reads the
-value from its own environment and sends it only to the origin you declared.
+A credential is a NAME pinned to an origin. Enroll its value in the local
+macOS app; it stays in the host keychain. Model records carry only the name.
 
 ## 0. Before you start
 
 ```sh
 df -h /System/Volumes/Data      # Avail must read at least 2Gi
 lsof -nP -iTCP:47400 -iTCP:47500 -sTCP:LISTEN   # must print nothing
-cd ~/smithers/apps/app
+cd /Users/williamcory/smithers-models/apps/app
 pnpm build:web
 ```
 
@@ -20,7 +20,7 @@ See: `✓ built in …`. The build writes about 20 MB to `dist/`.
 ## 1. Terminal A: the loopback provider
 
 ```sh
-cd ~/smithers/apps/app
+cd /Users/williamcory/smithers-models/apps/app
 SMITHERS_MODEL_PROVIDER_KEY=sk-loopback-will-0123456789abcdef \
 SMITHERS_MODEL_PROVIDER_PORT=47500 \
 SMITHERS_MODEL_PROVIDER_SLOW_MS=30000 \
@@ -38,25 +38,33 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:47500/v1/chat/
 
 See: `401`
 
-## 2. Terminal B: the app, with two credentials declared by name
-
-Each credential is a pair: the value, and the one origin it may be sent to.
+## 2. Terminal B: the app, without model environment keys
 
 ```sh
-cd ~/smithers/apps/app
+cd /Users/williamcory/smithers-models/apps/app
 SMITHERS_LOCAL_PORT=47400 SMITHERS_LOCAL_MODE=hybrid \
 SMITHERS_LOCAL_STATE_DIR=/tmp/smithers-models-manual \
-SMITHERS_MODEL_KEY_LOOPBACK=sk-loopback-will-0123456789abcdef \
-SMITHERS_MODEL_KEY_LOOPBACK_ORIGIN=http://127.0.0.1:47500 \
-SMITHERS_MODEL_KEY_REVOKED=sk-revoked-will-0123456789abcdef \
-SMITHERS_MODEL_KEY_REVOKED_ORIGIN=http://127.0.0.1:47500 \
 bun src/bun/serve.ts
 ```
 
-See: `SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:47400`
+See: `SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:47400`. Open that address in
+Chrome. No sign-in is needed. Use a fresh state directory for a fresh vault.
 
-Open http://127.0.0.1:47400/ in Chrome. See the app with the `Chat` button.
-You do not need to sign in for any step below.
+1. Cmd+K, `/model.list`, Enter. Click New and open Credential.
+2. Choose Add credential. In its embedded form enter Name `LOOPBACK`, Origin
+   `http://127.0.0.1:47500`, API key `sk-loopback-will-0123456789abcdef`.
+3. Tab to Add and press Enter. See: the password clears immediately. Chat
+   stays usable; a slow keychain operation keeps the shared toast running.
+   The credential picker gains LOOPBACK only after host completion.
+4. Open `/model.credential.new`. Enroll `REVOKED` on the same origin with
+   `sk-revoked-will-0123456789abcdef`. The form accepts a value once; reload
+   never restores it.
+5. Restart Terminal B with the same state directory. Reload, `/model.list`.
+   See both names. The keys were restored from macOS keychain, not the browser.
+
+On the cloud host the disabled Add credential option reads Local host required.
+Off macOS it reads Keychain unavailable. A locked keychain fails visibly and can
+be retried after unlocking. Nothing claims successful in-memory-only enrollment.
 
 ## 3. Create
 
@@ -74,10 +82,10 @@ You do not need to sign in for any step below.
    row at all: it could reach none of them.
 2. Click `New`.
    See: a form with `Name`, `Protocol`, `Base URL`, `Path`, `Model`,
-   `Credential`, `Cancel` and `Save`. No field accepts a key. `Save` stays
+   `Credential`, `Cancel` and `Save`. This model form stores only credential names. `Save` stays
    disabled until Name, Protocol, Model and Credential are filled.
    `Credential` is a pick list: the five built-in names, then `LOOPBACK` and
-   `REVOKED`. A built-in name whose key the host lacks reads
+   `REVOKED`, then Add credential. A built-in name whose key the host lacks reads
    `ANTHROPIC_API_KEY · missing` and cannot be picked.
 3. Fill: Name `loopback-chat`, Protocol `openai-chat`, Base URL
    `http://127.0.0.1:47500`, Model `e2e-answers`, Credential `LOOPBACK`.
@@ -234,7 +242,7 @@ serves all three.
    See: `This host has no Front door seat.`
 
 Repeat steps 2–3 with Terminal B restarted using `SMITHERS_LOCAL_MODE=offline`
-and the same credential pairs. See: Test still passes and the assigned
+and the same state directory. See: Test still passes and the assigned
 Explainer still answers `loopback pong`. Select Default and ask again: the
 explanation is unavailable. The offline host never reaches a cloud agent.
 
@@ -262,40 +270,36 @@ and the Worker's route tests.
 4. A decision model whose id is not `typesafe-ai/jev` on a built-in credential
    is refused: the request answers 400 `request_invalid`. It never falls back.
 
-## 12. Your own self-hosted endpoint
+## 12. Rotate, remove, and use your own endpoint
 
-Pick a NAME (capitals, digits, underscores; it must not end in `ORIGIN`).
-Stop Terminal B and start it again with your pair added. For Ollama:
+1. `/model.list`, Maximize card. In Credentials, press Rotate for LOOPBACK.
+   The embedded form has its name and a blank API key, with no editable origin.
+   Enter the revoked fixture from step 2 and press Rotate. Test `loopback-chat`:
+   see `refused · 401`, and the journal gains the revoked key's SHA-256 only.
+2. Rotate LOOPBACK back to the provider's accepted key. Test: green.
+3. Add credential with Name LOOPBACK and Origin `https://example.com`.
+   Submit any fixture key. See `exists`; the original pin and value still work.
+4. In the maximized Credentials section, Remove LOOPBACK. Its value is gone;
+   Test on a model using it reads `credential_missing · LOOPBACK`, without
+   contacting the provider. Reload: still removed. Its pin remains reserved;
+   Rotate restores a value on that same origin. Add cannot repin the name.
+5. For Ollama, Add credential: Name OLLAMA, Origin `http://127.0.0.1:11434`,
+   API key `anything-nonblank`. New model: Name `ollama-qwen`, Protocol
+   `openai-chat`, Base URL `http://127.0.0.1:11434`, Model one you have loaded,
+   Credential OLLAMA. Save, Test. No host environment edit or restart is needed.
 
-```sh
-curl -s http://127.0.0.1:11434/api/tags      # the models you have pulled
-cd ~/smithers/apps/app
-SMITHERS_LOCAL_PORT=47400 SMITHERS_LOCAL_MODE=hybrid \
-SMITHERS_LOCAL_STATE_DIR=/tmp/smithers-models-manual \
-SMITHERS_MODEL_KEY_OLLAMA=anything-nonblank \
-SMITHERS_MODEL_KEY_OLLAMA_ORIGIN=http://127.0.0.1:11434 \
-bun src/bun/serve.ts
-```
+`http:` is allowed only for loopback. Other origins must use `https:`. Built-in
+credential names retain their predefined provider pins. Environment-declared
+keys remain read-only; rotate or remove those in the host environment. A custom
+Path belongs only to `openai-chat`.
 
-Reload the app. `New`: Name `ollama-qwen`, Protocol `openai-chat`, Base URL
-`http://127.0.0.1:11434`, Model a model you have pulled (`qwen2.5:3b` when this
-script was written), Credential `OLLAMA`. `Save`, then `Test`.
-See: green with a latency (`150 ms` warm). A model Ollama has not loaded yet
-can take longer than the deadline: the row reads `timeout · 15000 ms`. Click
-`Test` again once Ollama has loaded it.
+For agent parity, ask the agent to enroll a credential with a name and origin.
+See a confirmation before any key is collected. Confirm opens the human's key
+form. Never put an API key in chat or a slash command.
 
-Rules the host enforces:
-
-- The origin is scheme, host and port. `http:` is allowed for loopback only;
-  any other host must be `https:`.
-- A Base URL on any other origin is `endpoint_forbidden`.
-- A pair spelled with a built-in name (`OPENAI_API_KEY` and the like) declares
-  nothing. Built-in names read their usual variable and are pinned to their
-  vendor's origin.
-- A value with no `_ORIGIN` beside it is not a credential:
-  `credential_unknown`.
-- A server that needs a non-default path: set `Path`. Only `openai-chat`
-  honours it.
+Reload while a submission is pending: a completed host receipt resolves it.
+If no receipt exists, see `interrupted`; Retry asks for the key again. It never
+replays a persisted key, and a duplicate press never rotates or repins anything.
 
 ## 13. One real paid call
 
@@ -313,9 +317,9 @@ loopback origin, so the vendor never sees it.
 ## 14. The automated receipt
 
 ```sh
-cd ~/smithers/apps/app
+cd /Users/williamcory/smithers-models/apps/app
 lsof -nP -iTCP:47321 -sTCP:LISTEN     # must print nothing
-SMITHERS_CHAT_STUB=0 pnpm run test:e2e:real --grep models --trace off
+SMITHERS_REAL_PORT=47401 SMITHERS_CHAT_STUB=0 pnpm run test:e2e:real --grep models --trace off
 ```
 
 If port 47321 is taken, leave its owner alone and add `SMITHERS_REAL_PORT=47391`
@@ -323,5 +327,10 @@ in front of the command. `SMITHERS_MODEL_PROVIDER_PORT=<port>` fixes the
 loopback provider's port; unset, the runner takes a free one before the host
 boots.
 
-See: `18 passed` in about a minute. The command then prints the quality gate.
+See: `19 passed` in about a minute. The command then prints the quality gate.
 The gate's errors, if any, name other specs, never `models.spec.ts`.
+
+The enrollment scenario reads the actual OPFS SQLite tables after the UI steps,
+checks the host request log, and checks the provider journal's SHA-256 values.
+It uses real browser input, the real local host and the real macOS keychain.
+Playwright tracing remains off for credential entry.

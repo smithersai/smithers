@@ -1,3 +1,5 @@
+import { appendFileSync } from "node:fs"
+import { writeFile } from "node:fs/promises"
 import { randomBytes } from "node:crypto"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -24,12 +26,17 @@ const serve = async (): Promise<never> => {
     if (build !== 0) process.exit(build)
   }
   const { startLocalServer } = await import("../src/bun/server")
+  const { darwinKeychain } = await import("../src/bun/CloudAuth")
+  const { MODEL_KEYCHAIN_SERVICE, modelKeychainAccount } = await import("../src/bun/ModelCredentials")
 
   const port = Number(process.env.SMITHERS_REAL_PORT ?? "47321")
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid SMITHERS_REAL_PORT: ${process.env.SMITHERS_REAL_PORT}`)
   const root = await mkdtemp(join(tmpdir(), "smithers-real-e2e-host-"))
   const home = join(root, "home")
   await mkdir(home)
+  const logPath = join(appDir, "test-results", ["real-host", "log"].join("."))
+  await mkdir(join(appDir, "test-results"), { recursive: true })
+  await writeFile(logPath, "")
   let server: Awaited<ReturnType<typeof startLocalServer>> | undefined
   try {
     server = await startLocalServer({
@@ -37,7 +44,8 @@ const serve = async (): Promise<never> => {
       distDir: join(appDir, "dist"),
       home,
       stateDir: join(root, "state"),
-      cloudMode: "hybrid"
+      cloudMode: "hybrid",
+      log: line => { appendFileSync(logPath, `${line}\n`); console.log(line) }
     })
   } catch (error) {
     await rm(root, { recursive: true, force: true })
@@ -45,7 +53,10 @@ const serve = async (): Promise<never> => {
   }
 
   let stopping: Promise<void> | undefined
-  const stop = (): Promise<void> => stopping ??= server!.stop().then(() => rm(root, { recursive: true, force: true }))
+  const stop = (): Promise<void> => stopping ??= server!.stop().then(async () => {
+    await darwinKeychain().remove(MODEL_KEYCHAIN_SERVICE, modelKeychainAccount(join(root, "state")))
+    await rm(root, { recursive: true, force: true })
+  })
   process.on("SIGINT", () => { void stop().then(() => process.exit(0), () => process.exit(1)) })
   process.on("SIGTERM", () => { void stop().then(() => process.exit(0), () => process.exit(1)) })
   console.log(`[real-e2e] isolated real host listening at http://127.0.0.1:${port}`)
@@ -54,11 +65,10 @@ const serve = async (): Promise<never> => {
 
 /*
  * The named model credentials of e2e/real/models.spec.ts, and the loopback
- * provider they are pinned to. A custom credential exists only as the env pair
- * the operator declares before the host boots, so the provider's port has to
- * be known first: this runner owns the provider for the whole run. The values
- * are per-run random and the UI only ever types the NAME. E2E_LOOPBACK is the
- * key the provider accepts; E2E_REVOKED is a well-formed key it answers 401.
+ * provider they are pinned to. The runner declares two environment credentials
+ * for the model scenarios, and the enrollment scenario enters the same random
+ * values through the write-only UI under a new name. The provider's port must
+ * be known before the host boots. E2E_LOOPBACK is accepted; E2E_REVOKED gets 401.
  */
 const launchModelProvider = async (): Promise<() => Promise<void>> => {
   const loopback = `${MODEL_CREDENTIAL_ENV_PREFIX}E2E_LOOPBACK`
@@ -109,7 +119,7 @@ if (args[0] === "serve") {
   if (selection.grep !== undefined) process.env.SMITHERS_REAL_TEST_GREP = selection.grep
   if (process.env.SMITHERS_CHAT_STUB === "1") throw new Error("The real E2E runner refuses SMITHERS_CHAT_STUB=1.")
   let detectedRevision: string | undefined
-  for (const invocation of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
+  for (const invocation of [["jj", "--ignore-working-copy", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
     try {
       const revision = Bun.spawn(invocation, { cwd: appDir, stdout: "pipe", stderr: "pipe" })
       const value = (await new Response(revision.stdout).text()).trim()
