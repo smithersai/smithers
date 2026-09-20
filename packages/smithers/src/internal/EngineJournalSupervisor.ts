@@ -25,6 +25,8 @@ export interface Options {
   readonly engineState: Pick<DurableEngineState.Service, "runChildren" | "runParents">
   readonly runs: Pick<RunStore.Service, "get"> & Partial<Pick<RunStore.Service, "lineage">>
   readonly control: Pick<ControlRuntime.Service, "getRun" | "listRuns">
+  /** Overrides {@link orderingGrace}; a suite with no follower to wait for shortens it. */
+  readonly orderingGrace?: Duration.Duration | undefined
 }
 
 /**
@@ -324,16 +326,12 @@ export const make = (options: Options) =>
       Effect.suspend(() => {
         const entry = active.get(id)
         if (entry === undefined) return Effect.void
+        const grace = options.orderingGrace ?? orderingGrace
         return Effect.raceFirst(
           Deferred.await(entry.ended),
-          Effect.sleep(orderingGrace).pipe(
+          Effect.sleep(grace).pipe(
             Effect.andThen(
-              gap(
-                id,
-                entry.generation,
-                orderingPhase,
-                `No ${settledKind} within ${Duration.format(orderingGrace)}`
-              )
+              gap(id, entry.generation, orderingPhase, `No ${settledKind} within ${Duration.format(grace)}`)
             ),
             Effect.ignore
           )

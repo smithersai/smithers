@@ -28,9 +28,10 @@ import * as Diagnosis from "@smthrs/gateway/Diagnosis"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Schedule, Scope } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schedule, Scope } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
+import * as Projection from "../src/internal/EngineJournalProjection.ts"
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import * as Supervisor from "../src/internal/EngineJournalSupervisor.ts"
 
@@ -112,14 +113,19 @@ const setup = Effect.gen(function*() {
     controlJournal,
     reached,
     release,
-    make: Effect.suspend(() =>
+    make: (overrides: Partial<Supervisor.Options> = {}) =>
       Effect.gen(function*() {
         const scope = yield* Scope.fork(lifetime)
-        const supervisor = yield* Supervisor.make({ engineJournal, controlJournal, engineState, runs, control })
-          .pipe(Effect.provideService(Scope.Scope, scope))
+        const supervisor = yield* Supervisor.make({
+          engineJournal,
+          controlJournal,
+          engineState,
+          runs,
+          control,
+          ...overrides
+        }).pipe(Effect.provideService(Scope.Scope, scope))
         return { ...supervisor, close: Scope.close(scope, Exit.void) }
-      })
-    ),
+      }),
     /** The native wrapper row this control run is bound to. */
     create: runs.create(
       runId,
@@ -166,7 +172,7 @@ describe("a terminal control status ordered against the native projection", () =
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const f = yield* setup
         yield* f.create
-        const supervisor = yield* f.make
+        const supervisor = yield* f.make()
         yield* f.controlJournal.transact(supervisor.start(runId))
         // The follower is inside its read of the native journal, so the
         // decision below cannot be copied until this suite lets it.
@@ -216,7 +222,7 @@ describe("a terminal control status ordered against the native projection", () =
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const f = yield* setup
         yield* f.create
-        const supervisor = yield* f.make
+        const supervisor = yield* f.make()
         yield* f.controlJournal.transact(supervisor.start(runId))
         yield* Deferred.await(f.reached).pipe(Effect.timeout("10 seconds"))
 
@@ -233,11 +239,34 @@ describe("a terminal control status ordered against the native projection", () =
   )
 
   it(
+    "names what it waited for when the projection never settles",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        yield* f.create
+        const supervisor = yield* f.make({ orderingGrace: Duration.millis(1) })
+        yield* f.controlJournal.transact(supervisor.start(runId))
+        yield* Deferred.await(f.reached).pipe(Effect.timeout("10 seconds"))
+
+        // The follower is held, so nothing will settle. A run still ends, and
+        // the journal says which wait gave up rather than leaving a gap nobody
+        // can name.
+        yield* supervisor.awaitSettled(runId).pipe(Effect.timeout("10 seconds"))
+        yield* f.complete
+
+        const gaps = (yield* f.rows).filter((entry) => entry.eventType === Projection.gapKind)
+        expect(gaps.map((entry) => (entry.payload as { phase?: unknown }).phase)).toContain("terminal-ordering")
+        expect(String((gaps.at(-1)?.payload as { detail?: unknown }).detail)).toContain(settledKind)
+      }))),
+    30_000
+  )
+
+  it(
     "holds nothing for a run this process is not observing",
     () =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const f = yield* setup
-        const supervisor = yield* f.make
+        const supervisor = yield* f.make()
 
         yield* supervisor.awaitSettled("a-run-nobody-here-observes").pipe(
           Effect.timeout("10 seconds"),
