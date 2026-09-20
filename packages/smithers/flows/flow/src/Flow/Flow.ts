@@ -66,6 +66,15 @@ export interface Flow<
 
   readonly [TypeId]: typeof TypeId
   readonly _tag: Tag
+  /**
+   * One sentence saying what this flow does, for a catalog that lists it.
+   *
+   * It is a plain literal rather than an annotation because a discovered
+   * `flows/<name>/flow.ts` is read WITHOUT being imported: `@smthrs/registry`
+   * tokenizes the declaration and takes the description from it, so a flow that
+   * states one only in an annotation is listed with nothing to read.
+   */
+  readonly description?: string | undefined
   readonly payloadSchema: Payload
   readonly successSchema: Success
   readonly errorSchema: Error
@@ -388,6 +397,7 @@ export interface Any {
 
   readonly [TypeId]: typeof TypeId
   readonly _tag: string
+  readonly description?: string | undefined
   readonly executionId: (payload: any) => Effect.Effect<string, never, Crypto.Crypto>
   readonly payloadSchema: AnyStructSchema
   readonly successSchema: Schema.Top

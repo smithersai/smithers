@@ -196,6 +196,33 @@ export class BodyRefMarkdown
 {}
 
 /**
+ * One module a flow's entry file loads from beside itself.
+ *
+ * `path` is the module's location relative to the entry file's directory, with
+ * `/` separators, which is what the loader resolves a relative specifier
+ * against and is therefore stable wherever the project is checked out.
+ *
+ * `contentDigest` is absent for a specifier discovery could not pin, and `path`
+ * then carries the reason instead of a location: a specifier that resolves to
+ * no file, a module that could not be read, an `import()` whose target is
+ * computed, or a closure past its bound. Such an entry is not a location and
+ * must not be treated as one; it exists so the refusal can say what stopped it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export class ModuleImport extends Schema.Class<ModuleImport>("flows/registry/ModuleImport")({
+  path: Schema.String,
+  contentDigest: Schema.optional(
+    Schema.String.check(
+      Schema.isPattern(/^[0-9a-f]{64}$/, {
+        expected: "a 64-character lowercase hexadecimal SHA-256 digest"
+      })
+    )
+  )
+}) {}
+
+/**
  * A module body stored at a source path.
  *
  * @category models
@@ -207,6 +234,9 @@ export class BodyRefModule extends Schema.TaggedClass<BodyRefModule>("flows/regi
    * SHA-256 of the complete module source bytes measured during discovery.
    * Optional for older journaled descriptors to decode; Registry.loadBody and
    * Executable.fromDescriptor refuse an absent digest with body_unavailable.
+   *
+   * It measures the ENTRY FILE. What the entry loads from beside itself is
+   * {@link BodyRefModule.imports}.
    */
   contentDigest: Schema.optional(
     Schema.String.check(
@@ -214,7 +244,20 @@ export class BodyRefModule extends Schema.TaggedClass<BodyRefModule>("flows/regi
         expected: "a 64-character lowercase hexadecimal SHA-256 digest"
       })
     )
-  )
+  ),
+  /**
+   * Every module the entry reaches through relative specifiers, sorted by path.
+   *
+   * ABSENT means the entry loads nothing from beside itself, which is why it is
+   * optional rather than an empty array: a module with no relative imports
+   * hashes exactly as it did before this field existed, so its approvals and
+   * its recorded step keys do not move.
+   *
+   * It rides {@link executionDigest} through the ordinary schema encoding, so a
+   * changed sibling is a changed executable identity and cannot reuse an
+   * approval granted for the old one.
+   */
+  imports: Schema.optional(Schema.Array(ModuleImport))
 }) {}
 
 /**

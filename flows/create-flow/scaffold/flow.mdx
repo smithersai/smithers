@@ -16,21 +16,32 @@ The appended arguments carry the design and the project's `flows/` directory.
 
 ### 1. The flow entry file
 
-`flows/<flowName>/flow.ts`. It must state its metadata literally, because
-discovery parses it without importing it: a `description`, its `input` and
-`output` schemas, the `capabilities` it needs, and its declared `effects`.
+`flows/<flowName>/flow.ts`. It `export default`s one `@smthrs/flow` flow, and
+that flow is the whole entry: its body is what runs, so nothing else has to be
+registered for `smthrs up <flowName>` to work.
 
-Declare the durable interface with typed schemas:
+It must state its metadata literally, because discovery parses the file without
+importing it: a `description`, its `payload` and `success` schemas, and the
+`capabilities` it needs.
 
 ```ts
 import { Flow } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
+// Review is one of the actions from step 2.
 
 class ReviewFailure extends Schema.TaggedError<ReviewFailure>()(
   "example/ReviewFailure",
   { message: Schema.String }
 ) {}
+
+export default Flow.make("example/Review", {
+  description: "Reviews one change and reports what it found.",
+  capabilities: ["fs:read:**"],
+  payload: { change: Schema.String },
+  success: Schema.String,
+  error: ReviewFailure,
+  body: (payload) => Review.call({ change: payload.change })
+})
 ```
 
 Tags and encoded schemas are persistence contracts. Choose them once, with the

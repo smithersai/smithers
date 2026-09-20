@@ -59,7 +59,14 @@ export const make = ({ runs, control, registry, catalog }: Options) => (runId: s
     if (
       executable === undefined ||
       Descriptor.executionDigest(executable.descriptor) !== card.executionDigest ||
-      !card.envelope.flows.includes(executable.delegate)
+      // A delegate is a flow the HOST registered under a name; nothing in the
+      // descriptor measures its code, so the approved envelope has to name it.
+      // A module that IS its own flow has no delegate: the `executionDigest`
+      // compared above covers its entry bytes and the digest of every module
+      // that entry imports from beside itself, and the loader re-measures that
+      // closure before importing. Packages it imports are the host's own
+      // installed code and are not measured.
+      (executable.delegate !== undefined && !card.envelope.flows.includes(executable.delegate))
     ) return false
     return true
   }).pipe(Effect.catchCause((cause) =>

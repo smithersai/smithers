@@ -40,7 +40,14 @@ interface FlowObject {
   readonly constructor: "agent" | "make"
 }
 
-interface Token {
+/**
+ * One lexical token of module source.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export interface Token {
   readonly kind: "identifier" | "number" | "punctuation" | "regex" | "string"
   readonly value: string
   readonly start: number
@@ -187,7 +194,20 @@ const nextToken = (source: string, start: number, previous: Token | undefined): 
   return { kind: "punctuation", value: character, start: index, end: index + 1 }
 }
 
-const tokenize = (source: string): ReadonlyArray<Token> => {
+/**
+ * Splits module source into tokens, skipping strings, comments, and regular
+ * expressions.
+ *
+ * Exported so {@link module:ModuleClosure} reads import specifiers with the
+ * same lexer this module reads declarations with. A second scanner would be a
+ * second answer to "is this `import` real code or a word inside a comment",
+ * and the two would drift.
+ *
+ * @category parsing
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const tokenize = (source: string): ReadonlyArray<Token> => {
   const tokens: Array<Token> = []
   let previous: Token | undefined
   let offset = 0
@@ -441,7 +461,16 @@ const decodeEscapes = (value: string): string =>
     }
   )
 
-const stringLiteral = (source: string | undefined): string | undefined => {
+/**
+ * The value of a quoted literal, or `undefined` for anything else — an
+ * unterminated quote, or a template carrying a substitution, whose value is
+ * not decidable without running the module.
+ *
+ * @category parsing
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const stringLiteral = (source: string | undefined): string | undefined => {
   if (source === undefined) {
     return undefined
   }
@@ -643,8 +672,13 @@ export const parse = (source: string): Metadata => {
 
   return {
     description: stringLiteral(properties.get("description")),
-    hasInput: properties.has("input") || parsedProperties.hasUnprojectableMembers,
-    hasOutput: properties.has("output") || parsedProperties.hasUnprojectableMembers,
+    // Two declarations name the same two schemas. `@smthrs/core` calls them
+    // `input` and `output`; `@smthrs/flow`, which a `flows/<name>/flow.ts`
+    // default-exports, calls them `payload` and `success`. Discovery reads the
+    // file without importing it, so it reads both spellings rather than
+    // reporting a flow that declares a payload as one that takes no input.
+    hasInput: properties.has("input") || properties.has("payload") || parsedProperties.hasUnprojectableMembers,
+    hasOutput: properties.has("output") || properties.has("success") || parsedProperties.hasUnprojectableMembers,
     model: Option.fromUndefinedOr(stringLiteral(properties.get("model"))),
     flows: literalFlows ?? [],
     capabilities,

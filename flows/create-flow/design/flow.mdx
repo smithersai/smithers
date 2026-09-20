@@ -27,10 +27,11 @@ project's `flows/` directory.
   use it. `ReviewLoop`, `Loop`, `MapReduce`, `Escalation`, and `WithApproval`
   already carry the bound, the exit condition, and the failure behavior you
   would otherwise write twice.
-- **One flow directory.** The flow lives at `flows/<name>/flow.ts` and is
-  discovered by its path. Its entry file must state its description, input,
-  output, capabilities, and effects literally, where the registry can read them
-  without importing the module.
+- **One flow directory.** The flow lives at `flows/<name>/flow.ts`, is
+  discovered by its path, and is the `export default` of one `@smthrs/flow`
+  flow. Its entry file must state its description, `payload`, `success`, and
+  capabilities literally, where the registry can read them without importing
+  the module.
 - **Typed outputs.** Every model-backed action declares an `output` schema. Keep
   it minimal: a `summary` plus the few fields a later step actually reads. The
   runtime renders the schema into the system teaching and decodes the answer

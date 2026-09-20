@@ -24,6 +24,7 @@ import {
   BodyRefModule,
   DiscoveryWarning,
   FlowDescriptor,
+  type ModuleImport,
   Provenance,
   SchemaRefModule,
   SchemaRefNone,
@@ -31,6 +32,7 @@ import {
   SourceScan
 } from "./Descriptor.ts"
 import * as Frontmatter from "./internal/Frontmatter.ts"
+import * as ModuleClosure from "./internal/ModuleClosure.ts"
 import * as ModuleMetadata from "./internal/ModuleMetadata.ts"
 import * as Names from "./internal/Names.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
@@ -128,7 +130,20 @@ const oversizedEntry = (location: string, size: bigint | number): string =>
  */
 type EntryMetadata =
   | { readonly _tag: "Oversized"; readonly size: number }
-  | { readonly _tag: "Metadata"; readonly contentDigest: string; readonly text: string }
+  | {
+    readonly _tag: "Metadata"
+    readonly contentDigest: string
+    /** The decoded prefix the metadata parsers read. */
+    readonly text: string
+    /**
+     * The complete decoded source, for a module entry only.
+     *
+     * The metadata parsers stop at the default declaration, but an import can
+     * sit anywhere in the file, so pinning what a module loads beside itself
+     * needs the whole text rather than the prefix.
+     */
+    readonly source: string | undefined
+  }
 
 /**
  * Reads just enough of an entry file to decide its metadata.
@@ -166,7 +181,12 @@ const readMetadata = (
           : ModuleMetadata.isComplete(text)
         if (complete) break
       }
-      return { _tag: "Metadata", contentDigest, text: text + decoder.decode() }
+      return {
+        _tag: "Metadata",
+        contentDigest,
+        text: text + decoder.decode(),
+        source: kind === "module" ? new TextDecoder().decode(bytes) : undefined
+      }
     })
   )
 
@@ -194,6 +214,9 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
     scan: Effect.fn("Discovery.scan")((source) =>
       Effect.gen(function*() {
         const provenance = new Provenance({ source: source.source, root: source.root })
+        // Sibling flows in one project share most of their imports, so the
+        // closure walk reads and tokenizes each reached module once per scan.
+        const closures = ModuleClosure.cache()
         const entries: Array<FlowDescriptor> = []
         const warnings: Array<DiscoveryWarning> = []
 
@@ -292,7 +315,8 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           location: string,
           selected: (typeof entryPrecedence)[number],
           contents: Extract<EntryMetadata, { readonly _tag: "Metadata" }>,
-          segments: ReadonlyArray<string>
+          segments: ReadonlyArray<string>,
+          imports: ReadonlyArray<ModuleImport>
         ): {
           readonly descriptor: Option.Option<FlowDescriptor>
           readonly warnings: ReadonlyArray<DiscoveryWarning>
@@ -351,7 +375,11 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 description: metadata.description,
                 body: new BodyRefModule({
                   path: location,
-                  contentDigest: contents.contentDigest
+                  contentDigest: contents.contentDigest,
+                  // Absent, not empty, when the entry loads nothing beside
+                  // itself: such a module keeps the identity it had before a
+                  // closure was recorded at all.
+                  ...(imports.length === 0 ? {} : { imports })
                 }),
                 input: metadata.hasInput
                   ? new SchemaRefModule({ path: location, field: "input" })
@@ -507,7 +535,17 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                     warning("entry_too_large", location, oversizedEntry(location, contents.success.size))
                   )
                 } else {
-                  const projected = projectEntry(directory, location, selected, contents.success, segments)
+                  const imports = contents.success.source === undefined
+                    ? []
+                    : yield* ModuleClosure.collect(fs, path, location, contents.success.source, closures)
+                  const projected = projectEntry(
+                    directory,
+                    location,
+                    selected,
+                    contents.success,
+                    segments,
+                    imports
+                  )
                   warnings.push(...projected.warnings)
                   Option.match(projected.descriptor, {
                     onNone: () => undefined,

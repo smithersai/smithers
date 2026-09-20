@@ -79,11 +79,21 @@ The explicit `executionId` identifies this invocation. Without one, Smithers fir
 
 The in-memory engine loses its state when the process exits. To resume after a restart, compose a durable engine over persistent SQLite state. The [first flow tutorial](/docs/tutorials/first-flow/#6-run-durably-over-sqlite) supplies that complete host setup.
 
-## Keep discovery separate from execution
+## Discover the flow from `flows/<name>/flow.ts`
 
-The project registry can read metadata from module entries under `flows/<name>/flow.ts` without executing their code. An entry appearing in the catalog does not install its action implementations into a host.
+Put the same declaration in `flows/<name>/flow.ts` as the file's `export default`, and the project registry lists it and runs it. Discovery reads the metadata without executing the module, so `description`, `payload`, `success`, and `capabilities` have to be literals in the declaration:
 
-Run a module flow through the host program that provides its implementations. Do not assume that a discovered typed module runs through the prompt-flow CLI executor. [Flow discovery](/docs/guides/flow-discovery/) describes the catalog rules.
+```ts title="flows/greeting/flow.ts"
+export default Flow.make("example/Greeting", {
+  description: "Greets whoever the caller names.",
+  capabilities: [],
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: (payload) => Greet.call(payload)
+})
+```
+
+The default export is the flow that runs: `smthrs up greeting --data '{"name":"Ada"}'` executes this body. What discovery does not install is the code behind the actions the body names, so the host still provides `Greet.toLayer(...)`; without it the run fails with an unresolved-action failure rather than executing an empty step. [Flow discovery](/docs/guides/flow-discovery/) describes the catalog rules.
 
 ## Verify failures
 

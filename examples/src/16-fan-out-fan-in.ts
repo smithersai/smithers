@@ -229,8 +229,8 @@ const start = (
 export interface DiscoveredSummary {
   /** The descriptor name discovery derived from the directory. */
   readonly flow: string
-  /** The flow the descriptor delegates to. */
-  readonly delegate: string
+  /** The flow the descriptor delegates to, or `undefined` when it is its own. */
+  readonly delegate: string | undefined
   /** The priority the bridge lowered off the declaration. */
   readonly lowered: number | undefined
   /** Every priority the built plan's nodes carry, in plan order. */

@@ -27,6 +27,10 @@ Reference implementation: `apps/app/src/mainview/state/controller/liveTutorial.t
 Shared notifications: `apps/app/src/mainview/state/controller/failures.ts`.
 App-specific rules: `apps/app/AGENTS.md`.
 
+## Flow layering
+
+`@smthrs/flow` is the fundamental library; every other flow API, including `flows/<name>/flow.ts`, is a thin wrapper over it. Never add a second node or graph model.
+
 ## ⚖️ MINIMAL TEXT (Will, 2026-09-15, permanent)
 
 Cards, panes, toasts, and lessons carry the fewest words needed to act. No explanatory prose about how the product works, no provenance footers, no rows whose value is "not measured yet", no summary sentence beside a button. Show a button, a count, or a picture instead of a sentence. Unrequested buttons and unrequested copy are defects (NO INVENTION); delete them on sight.

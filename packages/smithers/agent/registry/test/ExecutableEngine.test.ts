@@ -24,6 +24,7 @@ import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
+import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import * as Workspace from "@smthrs/kernel/Workspace"
@@ -42,6 +43,7 @@ import { fileURLToPath } from "node:url"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
+import standalone, { Shout } from "./fixtures/executable/flows/standalone/flow.ts"
 
 const flowsRoot = fileURLToPath(new URL("./fixtures/executable/flows", import.meta.url))
 const projectRoot = fileURLToPath(new URL("./fixtures/executable", import.meta.url))
@@ -343,6 +345,90 @@ describe("a discovered flow runs on the durable engine", () => {
       expect(spawned[0]?.prompt).toContain("Summarize the changes since the previous release")
       expect(spawned[0]?.prompt).toContain("Base directory:")
       expect(spawned[0]?.input).toEqual({ args: "v2" })
+    }))
+
+  for (
+    const [label, name, expected] of [
+      ["takes the branch its body chose", "ada", "ADA"],
+      ["takes the other branch", "", "silence"]
+    ] as const
+  ) {
+    it.effect(`drives a flow.ts that IS a @smthrs/flow flow and ${label}`, () =>
+      Effect.gen(function*() {
+        const directory = workspace(`standalone-${expected}`)
+        const filename = join(directory, "engine.db")
+        const descriptor = yield* descriptorNamed("standalone").pipe(Effect.provide(platform))
+        // No delegate is registered, and none is needed: the module's default
+        // export is the flow, so its own graph is what the engine drives.
+        const executable = yield* Executable.fromDescriptor(descriptor, { delegates: [] }).pipe(
+          Effect.provide(platform)
+        )
+        const observed = yield* Effect.gen(function*() {
+          return yield* executable.flow.execute({ input: { name } }, { executionId: `standalone-${expected}` })
+        }).pipe(
+          Effect.provide(
+            durable(
+              filename,
+              `registry-standalone-${expected}`,
+              Layer.mergeAll(
+                Shout.toLayer(({ name }) => Effect.succeed(name.toUpperCase())),
+                executable.layer
+              ).pipe(Layer.provideMerge(Action.layerImplementations)) as Layer.Layer<unknown, never, never>
+            )
+          ),
+          Effect.scoped,
+          Effect.orDie
+        )
+
+        expect(observed).toBe(expected)
+        expect(existsSync(filename)).toBe(true)
+      }))
+  }
+
+  it.effect("serves a second run a self-delegating flow's recorded result", () =>
+    Effect.gen(function*() {
+      let shouts = 0
+      const filename = join(workspace("standalone-cache"), "engine.db")
+      const descriptor = yield* descriptorNamed("standalone").pipe(Effect.provide(platform))
+      // The policy a `@smthrs/flow` declaration carries is lowered exactly as a
+      // `@smthrs/core` one is: the run becomes ONE dispatched step with the
+      // flow beneath it as a child execution, which is the only shape a
+      // recorded result can be served again from.
+      const executable = yield* Executable.fromDescriptor(descriptor, {
+        delegates: [],
+        load: () =>
+          Effect.succeed({
+            default: standalone.annotate(CacheEnvironment.CachePolicyAnnotation, { ttlMs: 60_000, scope: "shared" })
+          })
+      }).pipe(Effect.provide(platform))
+      expect(executable.lowered.cache).toEqual({ ttlMs: 60_000, scope: "shared" })
+      expect(executable.descriptor.effects.tier).toBe("sealed")
+
+      const run = (executionId: string, hostId: string) =>
+        executable.flow.execute({ input: { name: "ada" } }, { executionId }).pipe(
+          Effect.provide(
+            durable(
+              filename,
+              hostId,
+              Layer.mergeAll(
+                Shout.toLayer(({ name }) =>
+                  Effect.sync(() => {
+                    shouts++
+                    return name.toUpperCase()
+                  })
+                ),
+                executable.layer
+              ).pipe(Layer.provideMerge(Action.layerImplementations)) as Layer.Layer<unknown, never, never>
+            )
+          ),
+          Effect.scoped,
+          Effect.orDie
+        )
+
+      expect(yield* run("standalone-cache-1", "registry-standalone-cache-a")).toBe("ADA")
+      expect(yield* run("standalone-cache-2", "registry-standalone-cache-b")).toBe("ADA")
+      // The second run never reached the flow's own step.
+      expect(shouts).toBe(1)
     }))
 
   it.effect("refuses a discovered flow whose delegate no host registered", () =>

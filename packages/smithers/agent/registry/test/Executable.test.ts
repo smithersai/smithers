@@ -198,6 +198,75 @@ describe("delegate resolution", () => {
     }).pipe(Effect.provide(platform)))
 })
 
+describe("a module that is its own flow", () => {
+  it.effect("discovers the description and schemas a @smthrs/flow declaration states", () =>
+    Effect.gen(function*() {
+      const descriptor = yield* descriptorNamed("standalone")
+      // `@smthrs/flow` names the two schemas `payload` and `success`, where
+      // `@smthrs/core` names them `input` and `output`. Discovery reads the
+      // file without importing it, so a flow declaring a payload has to be
+      // listed as one that takes input rather than one that takes none.
+      expect(descriptor.description).toBe("Shouts a name through its own graph, or says nothing.")
+      expect(descriptor.input._tag).toBe("Module")
+      expect(descriptor.output._tag).toBe("Module")
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("loads with nothing registered to delegate to", () =>
+    Effect.gen(function*() {
+      const descriptor = yield* descriptorNamed("standalone")
+      const executable = yield* Executable.fromDescriptor(descriptor, { delegates: [] })
+      // The module IS the flow, so there is no delegate to name and no host
+      // registration to miss.
+      expect(executable.delegate).toBeUndefined()
+      expect(executable.flow._tag).toBe("standalone")
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("plans its own graph rather than one delegating node", () =>
+    Effect.gen(function*() {
+      const executable = yield* Executable.fromDescriptor(
+        yield* descriptorNamed("standalone"),
+        { delegates: [] }
+      )
+      const built = Graph.build(executable.flow, { input: { name: "ada" } })
+      const drafts = Graph.drafts(built)
+      // The body's own steps are the plan a host reads: the flow it calls and
+      // the action inside that flow's branch, not a single node naming a
+      // delegate the host would have had to register.
+      expect(Graph.nodes(built).map((node) => node.kind)).toContain("ActionCall")
+      expect(drafts.map((draft) => JSON.stringify(draft.material)).join("\n"))
+        .toContain("test/standalone/Shout")
+      expect(Graph.diagnostics(built)).toEqual([])
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("keeps its own success schema rather than a delegate's", () =>
+    Effect.gen(function*() {
+      const executable = yield* Executable.fromDescriptor(
+        yield* descriptorNamed("standalone"),
+        { delegates: [] }
+      )
+      const codec = Schema.toCodecJson(
+        Flow.Result({ success: executable.flow.successSchema, error: executable.flow.errorSchema })
+      )
+      const encoded = yield* Schema.encodeEffect(codec)(new Flow.Complete({ exit: Exit.succeed("ADA") }))
+      expect(encoded).toMatchObject({ _tag: "Complete", exit: { _tag: "Success", value: "ADA" } })
+      // `Schema.Unknown` would accept anything; the flow's declared string
+      // schema is what refuses a number here.
+      expect(Exit.isFailure(
+        yield* Effect.exit(Schema.decodeEffect(codec)({ _tag: "Complete", exit: { _tag: "Success", value: 7 } }))
+      )).toBe(true)
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("carries the placement its source directive declares", () =>
+    Effect.gen(function*() {
+      const executable = yield* Executable.fromDescriptor(
+        yield* descriptorNamed("standalone"),
+        { delegates: [] }
+      )
+      expect(executable.lowered.placement).toEqual(CorePlacement.local())
+      expect(executable.invocation(null).placement).toBe("local")
+    }).pipe(Effect.provide(platform)))
+})
+
 describe("refusals", () => {
   for (const name of ["changelog", "greet"]) {
     it.effect(`refuses an unmeasured ${name} body before invoking a loader`, () =>
@@ -483,11 +552,19 @@ export default Flow.make({
         const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".g4-" })
         const path = `${root}/${filename}`
         const bytes = new TextEncoder().encode(source(7))
-        yield* fs.writeFileString(`${root}/helper.ts`, "export const identity = (n: number) => n")
+        const helper = new TextEncoder().encode("export const identity = (n: number) => n")
+        yield* fs.writeFile(`${root}/helper.ts`, helper)
         yield* fs.writeFile(path, bytes)
         const descriptor = new Descriptor.FlowDescriptor({
           ...(yield* descriptorNamed("greet")),
-          body: new Descriptor.BodyRefModule({ path, contentDigest: Digest.digest(bytes) })
+          // The entry imports `./helper.ts`, so the descriptor has to say so:
+          // the loader refuses a module that reaches code the descriptor never
+          // measured, and this is the shape discovery records.
+          body: new Descriptor.BodyRefModule({
+            path,
+            contentDigest: Digest.digest(bytes),
+            imports: [{ path: "helper.ts", contentDigest: Digest.digest(helper) }]
+          })
         })
         const racingFs = FileSystem.make({
           ...fs,
@@ -540,6 +617,210 @@ export default Flow.make({
       expect(logs[0]).toContain("aaa-hung")
       expect(yield* fs.readDirectory(`${root}/flows/aaa-hung`)).toEqual(["flow.ts", "helper.ts"])
     }).pipe(Effect.scoped, Effect.provide(platform)))
+})
+
+/**
+ * What a flow's entry file loads from beside itself.
+ *
+ * The entry's `contentDigest` measures the entry and nothing else, and the
+ * loader imports a verified copy of those bytes written as a SIBLING of the
+ * original, so the entry's relative imports resolve to the live files. That is
+ * code the flow runs, so this suite is about two claims: the executable
+ * identity a plan is approved under MOVES when one of those files changes, and
+ * the loader refuses before importing anything it cannot measure.
+ */
+describe("the modules a flow's entry imports", () => {
+  const selfFlow = (body: string, imports: ReadonlyArray<string> = []) =>
+    [
+      `import { Flow } from "@smthrs/flow"`,
+      ...imports.map((specifier, index) => `import { value${index} } from "${specifier}"`),
+      `export default Flow.make("test/pinned", {`,
+      `  description: "A flow whose body reaches beside itself.",`,
+      `  payload: {},`,
+      `  success: Schema.String,`,
+      `  body: () => ${body}`,
+      `})`
+    ].join("\n")
+
+  /** A project root holding one flow directory, written file by file. */
+  const project = (files: Readonly<Record<string, string>>) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".g5-" })
+      for (const [name, contents] of Object.entries(files)) {
+        const target = `${root}/${name}`
+        yield* fs.makeDirectory(target.slice(0, target.lastIndexOf("/")), { recursive: true })
+        yield* fs.writeFileString(target, contents)
+      }
+      return root
+    })
+
+  const descriptorIn = (root: string, name: string) =>
+    Effect.gen(function*() {
+      const registry = yield* Registry.Registry
+      return yield* registry.get(name)
+    }).pipe(Effect.provide(Registry.layerProject({ root })))
+
+  it.effect("records every reached module and moves the executable identity when one changes", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* project({
+        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["../shared/helper.ts"]),
+        "flows/shared/helper.ts": `export const value0 = "first"`
+      })
+      const before = yield* descriptorIn(root, "pinned")
+      expect(before.body._tag).toBe("Module")
+      expect((before.body as Descriptor.BodyRefModule).imports?.map((entry) => entry.path))
+        .toEqual(["../shared/helper.ts"])
+      const identity = Descriptor.executionDigest(before)
+
+      // The entry file is untouched; only the module it imports changed.
+      yield* fs.writeFileString(`${root}/flows/shared/helper.ts`, `export const value0 = "second"`)
+      const after = yield* descriptorIn(root, "pinned")
+
+      expect(after.body.contentDigest).toBe(before.body.contentDigest)
+      // This is the value all three approval guards compare. Without the
+      // closure in it, an edited sibling kept the old approval.
+      expect(Descriptor.executionDigest(after)).not.toBe(identity)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("follows the closure transitively and terminates on a cycle", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* project({
+        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./a.ts"]),
+        "flows/pinned/a.ts": `export { value0 } from "./b.ts"`,
+        // b imports a back: the walk has to end, and each module is named once.
+        "flows/pinned/b.ts": `import "./a.ts"\nexport const value0 = "deep"`
+      })
+      const before = yield* descriptorIn(root, "pinned")
+      expect((before.body as Descriptor.BodyRefModule).imports?.map((entry) => entry.path))
+        .toEqual(["a.ts", "b.ts"])
+      const identity = Descriptor.executionDigest(before)
+
+      // Two hops from the entry, and still part of what the flow runs.
+      yield* fs.writeFileString(`${root}/flows/pinned/b.ts`, `import "./a.ts"\nexport const value0 = "edited"`)
+      expect(Descriptor.executionDigest(yield* descriptorIn(root, "pinned"))).not.toBe(identity)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("leaves a module that imports nothing beside itself exactly as it was", () =>
+    Effect.gen(function*() {
+      const descriptor = yield* descriptorNamed("standalone")
+      const body = descriptor.body as Descriptor.BodyRefModule
+      // Absent, not empty. The encoded body carries no `imports` key at all, so
+      // such a descriptor hashes to the value it had before the field existed
+      // and no approval or recorded step key moves.
+      expect(body.imports).toBeUndefined()
+      const encoded = Schema.encodeSync(Descriptor.FlowDescriptor)(descriptor)
+      expect(Object.keys(encoded.body)).not.toContain("imports")
+      expect(Descriptor.executionDigest(descriptor)).toBe(
+        Descriptor.executionDigest(
+          new Descriptor.FlowDescriptor({
+            ...descriptor,
+            body: new Descriptor.BodyRefModule({ path: body.path, contentDigest: body.contentDigest })
+          })
+        )
+      )
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("refuses to import a module whose sibling changed after discovery, naming it", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* project({
+        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.ts"]),
+        "flows/pinned/helper.ts": `export const value0 = "first"`
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+
+      yield* fs.writeFileString(`${root}/flows/pinned/helper.ts`, `export const value0 = "swapped"`)
+      let loaded = false
+      const failure = yield* Effect.flip(Executable.fromDescriptor(
+        descriptor,
+        options({
+          load: () => {
+            loaded = true
+            return Effect.succeed({ default: greetModule })
+          }
+        })
+      ))
+
+      // Refused BEFORE the module was evaluated: the swapped code never ran.
+      expect(loaded).toBe(false)
+      expect(failure.code).toBe("body_unavailable")
+      expect(failure.message).toContain("helper.ts")
+      expect(failure.message).toContain("changed")
+      expect(failure.message).toContain("refresh")
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("refuses a module reaching a specifier that resolves to no file", () =>
+    Effect.gen(function*() {
+      const root = yield* project({
+        "flows/pinned/flow.ts": selfFlow(`Node.succeed("x")`, ["./gone.ts"])
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+      const failure = yield* Effect.flip(
+        Executable.fromDescriptor(descriptor, options({ load: () => Effect.succeed({}) }))
+      )
+      expect(failure.code).toBe("body_unavailable")
+      expect(failure.message).toContain("cannot pin")
+      expect(failure.message).toContain("./gone.ts")
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("refuses a module whose import target is computed", () =>
+    Effect.gen(function*() {
+      const root = yield* project({
+        // The target is decided at run time, so no static walk can measure it.
+        "flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = (name) => import(name)`
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+      const failure = yield* Effect.flip(
+        Executable.fromDescriptor(descriptor, options({ load: () => Effect.succeed({}) }))
+      )
+      expect(failure.code).toBe("body_unavailable")
+      expect(failure.message).toContain("cannot pin")
+      expect(failure.message).toContain("import()")
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("keeps a literal dynamic import pinned rather than refusing it", () =>
+    Effect.gen(function*() {
+      const root = yield* project({
+        "flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = () => import("./late.ts")`,
+        "flows/pinned/late.ts": `export const late = 1`
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+      expect((descriptor.body as Descriptor.BodyRefModule).imports?.map((entry) => entry.path))
+        .toEqual(["late.ts"])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+})
+
+describe("which refusal a failed load reports", () => {
+  it.effect("reports the load failure for a module that names no delegate", () =>
+    Effect.gen(function*() {
+      // `delegateOf` answers `agent` for a module that names no flows, but a
+      // self-contained flow never wanted an agent. Reporting a missing agent
+      // would send an operator after a registration their flow does not need.
+      const descriptor = yield* descriptorNamed("standalone")
+      const failure = yield* Effect.flip(Executable.fromDescriptor(
+        descriptor,
+        { delegates: [], load: () => Effect.fail(new Error("Unexpected token")) }
+      ))
+      expect(failure.code).toBe("body_unavailable")
+      expect(failure.message).toContain("could not be loaded")
+      expect(failure.cause).toMatchObject({ message: "Unexpected token" })
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("still reports the missing registration for a module that names one", () =>
+    Effect.gen(function*() {
+      // `orphan` asks this host for `test/missing`. That refusal is the one an
+      // operator can act on, whatever the body did.
+      const descriptor = yield* descriptorNamed("orphan")
+      const failure = yield* Effect.flip(Executable.fromDescriptor(
+        descriptor,
+        { delegates: [], load: () => Effect.fail(new Error("Unexpected token")) }
+      ))
+      expect(failure.code).toBe("missing_delegate")
+      expect(failure.delegate).toBe("test/missing")
+    }).pipe(Effect.provide(platform)))
 })
 
 describe("the module specifier", () => {
@@ -853,12 +1134,29 @@ describe("the host's catalog", () => {
         "changelog",
         "greet",
         "scoped",
+        "standalone",
         "tuned"
       ])
       expect(built.refused.map((failure) => `${failure.flow}:${failure.code}`).sort()).toEqual([
         "orphan:missing_delegate",
         "undecided:ambiguous_delegate"
       ])
+    }).pipe(Effect.provide(registryLayer), Effect.provide(platform)))
+
+  it.effect("fails a refused flow with its typed refusal while the rest stay listed", () =>
+    Effect.gen(function*() {
+      // A refusal is a warning in the catalog so one broken entry cannot take
+      // `ls` down with it. Asking to RUN that entry is the other half: the
+      // typed `ExecutableError` is what a caller turns into a non-zero exit,
+      // instead of the runtime's generic unregistered-flow failure.
+      const built = yield* Executable.catalog(options())
+      const failure = yield* Effect.flip(Executable.fromRegistry("orphan", options()))
+      expect(failure._tag).toBe("flows/registry/ExecutableError")
+      expect(failure).toMatchObject({ code: "missing_delegate", flow: "orphan", delegate: "test/missing" })
+      expect(built.refused.map((entry) => entry.flow)).toContain("orphan")
+      // Listing is unaffected: every other discovered flow is still runnable.
+      expect(built.executables.map((entry) => entry.descriptor.name)).toContain("standalone")
+      expect(built.executables.map((entry) => entry.descriptor.name)).toContain("greet")
     }).pipe(Effect.provide(registryLayer), Effect.provide(platform)))
 
   it.effect("reports a defective entry instead of failing the whole catalog", () =>
@@ -878,6 +1176,7 @@ describe("the host's catalog", () => {
         "greet:invalid_module",
         "orphan:missing_delegate",
         "scoped:invalid_module",
+        "standalone:invalid_module",
         "tuned:invalid_module",
         "undecided:ambiguous_delegate"
       ])
@@ -925,6 +1224,7 @@ describe("the project registry", () => {
         "greet",
         "orphan",
         "scoped",
+        "standalone",
         "tuned",
         "undecided"
       ])
@@ -1252,6 +1552,10 @@ describe("registration", () => {
         "registry/scoped",
         "registry/tuned",
         "scoped",
+        // A module that is its own flow registers twice: the bridged flow the
+        // registry name resolves to, and the flow it calls.
+        "standalone",
+        "test/standalone",
         "tuned"
       ])
     }).pipe(Effect.scoped, Effect.provide(registryLayer), Effect.provide(platform)))

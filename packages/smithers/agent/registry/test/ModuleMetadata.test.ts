@@ -150,6 +150,43 @@ describe("ModuleMetadata", () => {
     expect(Option.getOrThrow(metadata.placement)).toBe("remote")
   })
 
+  it("reads the @smthrs/flow call shape, whose schemas are payload and success", () => {
+    const metadata = ModuleMetadata.parse([
+      "\"use local\"",
+      "export default Flow.make(\"test/standalone\", {",
+      "  description: \"Shouts a name through its own graph.\",",
+      "  payload: { name: Schema.String },",
+      "  success: Schema.String,",
+      "  body: (payload) => Shout.call({ name: payload.name })",
+      "})"
+    ].join("\n"))
+
+    // The tag is the first argument, so the object discovery reads is the
+    // second one. `payload` and `success` are the same two schemas `input` and
+    // `output` name in the `@smthrs/core` shape.
+    expect(metadata).toMatchObject({
+      description: "Shouts a name through its own graph.",
+      hasInput: true,
+      hasOutput: true,
+      flows: [],
+      placement: Option.some("local"),
+      warnings: []
+    })
+  })
+
+  it("reports a @smthrs/flow declaration that states neither schema as taking neither", () => {
+    const metadata = ModuleMetadata.parse([
+      "export default Flow.make(\"test/bare\", {",
+      "  description: \"Takes nothing and returns nothing.\",",
+      "  payload: {},",
+      "  body: () => Node.succeed(undefined)",
+      "})"
+    ].join("\n"))
+
+    expect(metadata.hasInput).toBe(true)
+    expect(metadata.hasOutput).toBe(false)
+  })
+
   it("returns conservative metadata when no default flow declaration is present", () => {
     const metadata = ModuleMetadata.parse(
       "const helper = 1\nexport const named = Flow.make({ description: \"Named\" })"

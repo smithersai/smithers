@@ -9,12 +9,18 @@
  * `@smthrs/flow` flow the descriptor delegates to, and returns a durable flow
  * plus the `Interpreter` layer that registers it with the runtime.
  *
+ * A discovered flow arrives in one of two shapes. A module that
+ * default-exports a `@smthrs/flow` flow IS the work: its own body is the plan,
+ * and {@link selfDelegate} makes it its own delegate so nothing has to be
+ * registered under a name. Everything else — a markdown `flows:` frontmatter
+ * list, a `@smthrs/core` `Flow.make({ flows })` — declares WHAT it delegates
+ * to, and the host declares HOW that work runs by registering `@smthrs/flow`
+ * flows under those names.
+ *
  * The bridge deliberately does not compile a `@smthrs/core` graph into a plan.
- * A discovered flow declares WHAT it delegates to — a markdown `flows:`
- * frontmatter list, a module `Flow.make({ flows })` — and the host declares
- * HOW that work runs, by registering `@smthrs/flow` flows under those names.
- * One delegating node is therefore the whole lowering, and every runtime
- * decision the descriptor carries rides it:
+ * For a delegating descriptor one delegating node is therefore the whole
+ * lowering. Either way the runtime decisions the descriptor carries ride the
+ * same lowering:
  *
  * - the declared cache policy goes onto the ACTION the bridged flow
  *   dispatches, which is the value `@smthrs/engine-store` `ActionPersistence`
@@ -62,6 +68,7 @@ import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import * as Descriptor from "./Descriptor.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
+import * as ModuleClosure from "./internal/ModuleClosure.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
 import * as Registry from "./Registry.ts"
 import type { DiscoveryError, RegistryError } from "./RegistryError.ts"
@@ -313,8 +320,22 @@ export type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
 export interface Executable {
   /** The descriptor this was built from. */
   readonly descriptor: Descriptor.FlowDescriptor
-  /** The registered flow this descriptor delegates to. */
-  readonly delegate: string
+  /**
+   * The registered flow this descriptor delegates to, or `undefined` when the
+   * module IS the flow and delegates to nothing.
+   *
+   * The distinction is an authority one, which is why it is `undefined` rather
+   * than the flow's own tag. A delegate is a flow REGISTERED BY THE HOST under
+   * a name; nothing in the descriptor measures its code, so the approved
+   * envelope has to name it. A module that is its own flow is measured instead:
+   * {@link module:Descriptor.executionDigest} covers its entry bytes and the
+   * digest of every module that entry loads from beside itself
+   * ({@link module:Descriptor.BodyRefModule.imports}), and
+   * {@link module:Executable.fromDescriptor} re-measures that closure before
+   * importing anything. Packages it imports are not measured and are not meant
+   * to be: those resolve into the host's own installed code.
+   */
+  readonly delegate: string | undefined
   /** The runtime decisions lowered off the descriptor. */
   readonly lowered: Lowered
   /** The envelope the delegate receives for a given caller input. */
@@ -599,13 +620,25 @@ const boundaryOf = (descriptor: Descriptor.FlowDescriptor): Action.FileBoundary 
 })
 
 /**
- * The loaded body of one descriptor: the prompt it renders, and the annotation
- * bag its declaration carries.
+ * The loaded body of one descriptor: the prompt it renders, the annotation bag
+ * its declaration carries, and the flow it IS when it is one.
+ *
+ * A markdown body and a `@smthrs/core` declaration both say WHAT to run and
+ * leave HOW to a host-registered flow, so `flow` is absent for them. A module
+ * that default-exports a `@smthrs/flow` flow carries its own graph, so there is
+ * nothing to look up: {@link selfDelegate} turns that flow into the delegate.
  */
 interface LoadedBody {
   readonly prompt: string
   readonly annotations: Context.Context<never>
+  readonly flow: LoadedFlow | undefined
 }
+
+/**
+ * A loaded `@smthrs/flow` flow, at the dynamic boundary a module load is: any
+ * tag, any schemas, and whatever action implementations its body names.
+ */
+type LoadedFlow = RuntimeFlow.Flow<string, RuntimeFlow.AnyStructSchema, Schema.Top, Schema.Top, any>
 
 const sourceBytes = (
   descriptor: Descriptor.FlowDescriptor,
@@ -641,17 +674,93 @@ const loadMarkdown = (
     const body = MarkdownFlow.loadBody(text, baseDirectory)
     const prompt = MarkdownFlow.renderPrompt(body, { args: "" })
     const lowered = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt)
-    return { prompt, annotations: lowered.annotations }
+    return { prompt, annotations: lowered.annotations, flow: undefined }
+  })
+
+/**
+ * Re-measures what the entry loads from beside itself, and refuses when it is
+ * not what discovery recorded.
+ *
+ * `sourceBytes` verifies the ENTRY and nothing else, and {@link importModule}
+ * writes those verified bytes as a SIBLING of the original so the entry's
+ * relative imports resolve to the live files. Everything reached that way is
+ * code this flow runs, so it is measured here, against the list on the
+ * descriptor's {@link module:Descriptor.BodyRefModule.imports} — the same list
+ * `Descriptor.executionDigest` folds into the identity a plan was approved
+ * under.
+ *
+ * WHAT THIS DOES NOT CLOSE: the window between this measurement and the import
+ * below. A sibling rewritten in that interval is imported unmeasured, exactly
+ * as an entry rewritten after `readVerifiedBody` would be — the loader reads
+ * the entry's bytes once and evaluates those, while a sibling is read by the
+ * host's own module loader from the path, a second time. Narrowing that needs
+ * the loader to evaluate bytes for the whole closure rather than paths, which
+ * is a change to how modules are imported, not to what is measured.
+ *
+ * BARE SPECIFIERS ARE NOT MEASURED. `@smthrs/flow`, `effect`, and every other
+ * package resolve into installed code, which is the host's own code under the
+ * host's own trust.
+ */
+const verifyImports = (
+  descriptor: Descriptor.FlowDescriptor,
+  path: string,
+  bytes: Uint8Array,
+  recorded: ReadonlyArray<Descriptor.ModuleImport>
+): Effect.Effect<void, ExecutableError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const platformPath = yield* Path.Path
+    const entryPath = path.startsWith("file:")
+      ? yield* Effect.orDie(
+        Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))
+      )
+      : platformPath.normalize(path)
+    const measured = yield* ModuleClosure.collect(
+      fs,
+      platformPath,
+      entryPath,
+      new TextDecoder().decode(bytes)
+    )
+    const unpinnable = measured.find((entry) => entry.contentDigest === undefined)
+    if (unpinnable !== undefined) {
+      return yield* Effect.fail(
+        refuse({
+          code: "body_unavailable",
+          flow: descriptor.name,
+          path,
+          message:
+            `flow "${descriptor.name}" runs code this host cannot pin: ${unpinnable.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
+        })
+      )
+    }
+    const pinned = new Map(recorded.map((entry) => [entry.path, entry.contentDigest] as const))
+    const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
+      [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath))
+    if (changed !== undefined) {
+      return yield* Effect.fail(
+        refuse({
+          code: "body_unavailable",
+          flow: descriptor.name,
+          path,
+          message:
+            `the body of flow "${descriptor.name}" changed at "${changed}", a module "${path}" imports, after discovery; refresh the registry before running it`
+        })
+      )
+    }
   })
 
 const loadModule = (
   descriptor: Descriptor.FlowDescriptor,
   path: string,
+  recorded: ReadonlyArray<Descriptor.ModuleImport>,
   options: Options
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const platformPath = yield* Path.Path
     const bytes = yield* sourceBytes(descriptor, path)
+    // Before anything is imported: what runs is the entry AND every module it
+    // loads from beside itself, and only the entry has been verified so far.
+    yield* verifyImports(descriptor, path, bytes, recorded)
     const loadPath = path.startsWith("file:") ? path : platformPath.resolve(path)
     const loaded = yield* (options.load ?? importModule)(loadPath, {
       bytes,
@@ -668,6 +777,13 @@ const loadModule = (
       )
     )
     const exported = (loaded as { readonly default?: unknown } | null | undefined)?.default
+    // A `@smthrs/flow` flow is the whole body, so it is taken as one. The test
+    // is that package's own type id rather than the shape: a `@smthrs/core`
+    // declaration carries `annotations` and a `body` too, and guessing
+    // structurally would run the wrong model's graph.
+    if (RuntimeFlow.isFlow(exported)) {
+      return { prompt: "", annotations: exported.annotations, flow: exported as unknown as LoadedFlow }
+    }
     if (!CoreFlow.isFlow(exported)) {
       return yield* Effect.fail(
         refuse({
@@ -679,8 +795,35 @@ const loadModule = (
       )
     }
     // Every flow carries an annotation bag; `Flow.Any` simply does not say so.
-    return { prompt: "", annotations: (exported as unknown as CoreFlow.Flow<never, never, never>).annotations }
+    return {
+      prompt: "",
+      annotations: (exported as unknown as CoreFlow.Flow<never, never, never>).annotations,
+      flow: undefined
+    }
   })
+
+/**
+ * The delegate a module that IS a flow hands its work to: itself.
+ *
+ * Both ways in take the {@link Invocation} envelope, because the bridge only
+ * ever supplies one. The flow beneath it declared its own payload, so the
+ * envelope's `input` — the caller's `--data` — is what reaches it, checked
+ * against that payload schema first. A host-registered delegate does that check
+ * itself, in the body that decodes `invocation.input`; a flow that IS the body
+ * declared the schema instead, and running its graph on input the schema
+ * refuses would hand the body absent fields rather than say what was wrong.
+ *
+ * Everything downstream is the delegating path unchanged: a declared cache
+ * policy still makes the run one dispatched step, and an undeclared one still
+ * leaves the flow's own graph in the caller's plan.
+ */
+const selfDelegate = (flow: LoadedFlow): Delegate => ({
+  _tag: flow._tag,
+  successSchema: flow.successSchema,
+  errorSchema: flow.errorSchema,
+  call: (invocation) => flow.call(flow.payloadSchema.make(invocation.input)),
+  execute: (invocation, options) => flow.execute(invocation.input, options)
+})
 
 /**
  * The one action a policy-declaring descriptor's bridged flow dispatches, and
@@ -776,26 +919,43 @@ export const fromDescriptor = (
   options: Options
 ): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    // The delegate is resolved BEFORE the body is loaded. Both refusals are
-    // real, but only one of them is about this host: a flow whose delegate
-    // nobody registered is not runnable here whatever its body says, and an
-    // operator reading "could not load" would go looking in the wrong place.
+    // The delegate is resolved BEFORE the body is loaded, and the refusal for a
+    // missing one is raised after. Both refusals are real, but only one of them
+    // is about this host: a flow whose delegate nobody registered is not
+    // runnable here whatever its body says, and an operator reading "could not
+    // load" would go looking in the wrong place. The body is read first anyway
+    // because a module that default-exports a `@smthrs/flow` flow delegates to
+    // nothing, so its missing registration is not a refusal at all; a body that
+    // cannot be read keeps the missing registration as the refusal to report.
     const name = yield* delegateOf(descriptor, options)
-    const delegate = options.delegates.find((candidate) => candidate._tag === name)
-    if (delegate === undefined) {
-      return yield* Effect.fail(
-        refuse({
-          code: "missing_delegate",
-          flow: descriptor.name,
-          delegate: name,
-          available: options.delegates.map((candidate) => candidate._tag).sort(),
-          message: `flow "${descriptor.name}" delegates to "${name}", which no registered flow provides`
-        })
-      )
-    }
-    const body = descriptor.body._tag === "Markdown"
-      ? yield* loadMarkdown(descriptor, descriptor.body.path, descriptor.body.baseDirectory)
-      : yield* loadModule(descriptor, descriptor.body.path, options)
+    const registered = options.delegates.find((candidate) => candidate._tag === name)
+    const missing = refuse({
+      code: "missing_delegate",
+      flow: descriptor.name,
+      delegate: name,
+      available: options.delegates.map((candidate) => candidate._tag).sort(),
+      message: `flow "${descriptor.name}" delegates to "${name}", which no registered flow provides`
+    })
+    const load = descriptor.body._tag === "Markdown"
+      ? loadMarkdown(descriptor, descriptor.body.path, descriptor.body.baseDirectory)
+      : loadModule(descriptor, descriptor.body.path, descriptor.body.imports ?? [], options)
+    // Which refusal a failed load reports when no delegate is registered.
+    //
+    // A descriptor that NAMES a delegate is asking this host for a flow it does
+    // not have, and that is the refusal to report however the body fared: an
+    // operator reading "could not load" would go looking in the file when the
+    // registration is what is missing.
+    //
+    // A module that names none is the opposite case. `delegateOf` answers
+    // `agent` for it, and a self-contained flow never wanted an agent, so
+    // reporting `missing_delegate` would send the operator after a registration
+    // their flow does not need and hide the typo that actually stopped it. Its
+    // load failure is its own.
+    const masksLoadFailure = registered === undefined &&
+      !(descriptor.body._tag === "Module" && descriptor.flows.length === 0)
+    const body = yield* (masksLoadFailure ? Effect.catch(load, () => Effect.fail(missing)) : load)
+    if (body.flow === undefined && registered === undefined) return yield* Effect.fail(missing)
+    const delegate = body.flow === undefined ? registered! : selfDelegate(body.flow)
     const lowered = lower(descriptor, body.annotations)
     const invocation = (input: Schema.Json): Invocation => {
       const placement = invocationPlacement(lowered.placement)
@@ -845,7 +1005,7 @@ export const fromDescriptor = (
     const build = PlanNode.capture(
       {
         flow: descriptor.name,
-        delegate: name,
+        delegate: delegate._tag,
         prompt: body.prompt,
         model: Option.getOrNull(descriptor.model),
         placement: placement.placement,
@@ -869,12 +1029,19 @@ export const fromDescriptor = (
       // transformations and cannot encode tagged Error instances as JSON.
       success: delegate.successSchema ?? Schema.Unknown,
       error: delegate.errorSchema ?? Schema.Unknown,
-      annotations: annotationsOf(lowered),
+      // A module that is its own flow keeps its own bag underneath the lowered
+      // one, so a `@smthrs/flow` placement or capability ceiling it declared
+      // reaches `Graph` instead of being dropped at the bridge. The lowered
+      // values win, because they are the descriptor's statement about this
+      // entry and the bag is the body's about itself.
+      annotations: body.flow === undefined
+        ? annotationsOf(lowered)
+        : Context.merge(body.annotations, annotationsOf(lowered)),
       body: build
     })
     return {
       descriptor,
-      delegate: name,
+      delegate: body.flow === undefined ? name : undefined,
       lowered,
       invocation,
       // The catalog cannot name services of a dynamically selected delegate.
@@ -884,9 +1051,15 @@ export const fromDescriptor = (
       // The cast erases the requirement `bridge` minted for itself. Its key is
       // built from a tag this function computes, so no caller can spell the
       // type, and nothing outside the bridged flow's own body asks for it.
-      layer: (bridge === undefined
-        ? Interpreter.layer(flow)
-        : Layer.merge(Interpreter.layer(flow), bridge.layer)) as Layer.Layer<never, never, Registration>
+      //
+      // A module that is its own flow registers that flow too: the bridged flow
+      // CALLS it, and a declared cache policy EXECUTES it as a child, which the
+      // runtime resolves by tag.
+      layer: Layer.mergeAll(
+        Interpreter.layer(flow),
+        ...(bridge === undefined ? [] : [bridge.layer]),
+        ...(body.flow === undefined ? [] : [Interpreter.layer(body.flow)])
+      ) as Layer.Layer<never, never, Registration>
     }
   })
 

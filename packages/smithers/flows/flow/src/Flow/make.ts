@@ -10,11 +10,13 @@ import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
+import { Capabilities } from "./Annotations.ts"
 import { CurrentExecutionIds } from "./ExecutionIds.ts"
-import type { AnyStructSchema, AnyWithProps, BodySuccess, Flow } from "./Flow.ts"
+import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, Flow } from "./Flow.ts"
 import type { To } from "./Outcome.ts"
 import { withRollback } from "./Runtime.ts"
 import { TypeId } from "./TypeId.ts"
@@ -57,6 +59,7 @@ const Proto = {
   annotate(this: AnyWithProps, tag: Context.Key<any, any>, value: any) {
     return makeProto({
       _tag: this._tag,
+      description: this.description,
       payloadSchema: this.payloadSchema,
       successSchema: this.successSchema,
       errorSchema: this.errorSchema,
@@ -70,6 +73,7 @@ const Proto = {
   annotateMerge(this: AnyWithProps, context: Context.Context<any>) {
     return makeProto({
       _tag: this._tag,
+      description: this.description,
       payloadSchema: this.payloadSchema,
       successSchema: this.successSchema,
       errorSchema: this.errorSchema,
@@ -176,6 +180,7 @@ const makeProto = <
   Requires
 >(options: {
   readonly _tag: Tag
+  readonly description?: string | undefined
   readonly payloadSchema: Payload
   readonly successSchema: Success
   readonly errorSchema: Error
@@ -202,6 +207,19 @@ interface MakeOptions<
   Error extends Schema.Top
 > {
   readonly payload: Payload
+  /**
+   * One sentence saying what this flow does, read by a catalog that lists it.
+   */
+  readonly description?: string | undefined
+  /**
+   * The capability ceiling this flow's body runs under, as string literals.
+   *
+   * It is the same ceiling {@link Annotations.Capabilities} carries, and
+   * declaring it here is what makes it READABLE without importing the module:
+   * a catalog projects a discovered flow's authority from the declaration, and
+   * an annotation built at run time is invisible to that projection.
+   */
+  readonly capabilities?: ReadonlyArray<string> | undefined
   readonly idempotencyKey?:
     | ((
       payload: Payload extends Schema.Struct.Fields ? Schema.Struct.Type<Payload>
@@ -242,6 +260,19 @@ type PayloadSchemaOf<Payload extends Schema.Struct.Fields | AnyStructSchema> = P
   : Payload
 
 /**
+ * Whether a value is a flow this package made.
+ *
+ * The check is the runtime type id, not the shape: a host that loads a module
+ * and finds a default export has to decide whether it holds a flow before it
+ * reads anything off it, and a structural guess would accept a look-alike from
+ * another flow model.
+ *
+ * @category predicates
+ * @since 0.1.0
+ */
+export const isFlow = (value: unknown): value is Any => Predicate.hasProperty(value, TypeId)
+
+/**
  * Creates a durable flow definition with schemas, annotations, a required pure
  * body, and either caller-selected execution IDs or opt-in deterministic IDs
  * derived from the flow tag and idempotency key.
@@ -275,12 +306,15 @@ export const make = <
   }
   return makeProto<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>({
     _tag: tag,
+    description: options.description,
     payloadSchema: (Schema.isSchema(options.payload)
       ? options.payload
       : Schema.Struct(options.payload as any)) as PayloadSchemaOf<Payload>,
     successSchema: options.success ?? (Schema.Void as any),
     errorSchema: options.error ?? (Schema.Never as any),
-    annotations: options.annotations ?? Context.empty(),
+    annotations: options.capabilities === undefined
+      ? options.annotations ?? Context.empty()
+      : Context.add(options.annotations ?? Context.empty(), Capabilities, options.capabilities),
     body: options.body as (
       payload: PayloadSchemaOf<Payload>["Type"]
     ) => Node.Node<BodySuccess<Success["Type"]>, Error["Type"], Requires>,

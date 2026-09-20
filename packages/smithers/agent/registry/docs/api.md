@@ -167,10 +167,16 @@ class BodyRefMarkdown {
   readonly contentDigest?: string
 }
 
+class ModuleImport {
+  readonly path: string
+  readonly contentDigest?: string
+}
+
 class BodyRefModule {
   readonly _tag: "Module"
   readonly path: string
   readonly contentDigest?: string
+  readonly imports?: ReadonlyArray<ModuleImport>
 }
 
 const BodyRef: Schema.Union<[typeof BodyRefMarkdown, typeof BodyRefModule]>
@@ -185,6 +191,21 @@ by an older version, before the digest existed, still decodes. `Registry.loadBod
 verifies source bytes before returning a prompt or module locator, and
 `Executable.fromDescriptor` verifies source before loading it. A missing digest
 or mismatch is `body_unavailable`; refresh the registry before loading it.
+
+`contentDigest` measures the ENTRY FILE. `imports` measures what that entry
+loads from beside itself: every module reached through a relative specifier,
+transitively, as a path relative to the entry's directory plus the digest of
+its bytes. The loader imports the verified entry bytes as a sibling of the
+original so those specifiers resolve to the live files, which makes them code
+the flow runs, so they ride `Descriptor.executionDigest` and are re-measured
+before anything is imported. The field is ABSENT, not empty, when the entry
+loads nothing beside itself, so such a module hashes exactly as it did before
+the field existed. Bare package specifiers are not measured: those resolve into
+installed code, which is the host's own. A `ModuleImport` with no
+`contentDigest` is a specifier discovery could not pin: one that resolves to no
+file, a module it could not read, an `import()` whose target is computed, or a
+closure past its bound. Its `path` then carries that reason instead of a
+location, and `Executable.fromDescriptor` refuses to run such a module.
 
 ### Descriptor.FlowBody, FlowBodyPrompt, FlowBodyModule
 
@@ -756,7 +777,7 @@ Turning a discovered descriptor into something the durable engine runs.
 ```ts
 interface Executable {
   readonly descriptor: Descriptor.FlowDescriptor
-  readonly delegate: string
+  readonly delegate: string | undefined
   readonly lowered: Lowered
   readonly invocation: (input: Schema.Json) => Invocation
   readonly flow: RuntimeFlow.Flow<string, typeof Payload, typeof Schema.Unknown, typeof Schema.Unknown, any>
@@ -765,8 +786,16 @@ interface Executable {
 ```
 
 One discovered flow, made runnable. `flow` is tagged with the descriptor's
-registry name and its body is one delegating node. `layer` registers it with
-the runtime.
+registry name and `layer` registers it with the runtime.
+
+`delegate` is the registered flow this descriptor hands its work to, and
+`undefined` when the module IS the flow: a `flows/<name>/flow.ts` that
+`export default`s a `@smthrs/flow` flow runs its own body, so its body is the
+plan rather than one delegating node. The distinction is an authority one. A
+delegate is host-registered code the descriptor never measured, so an approved
+plan's envelope has to name it; a module that is its own flow is measured
+instead, by `Descriptor.executionDigest` over its entry bytes and every module
+that entry imports from beside itself.
 
 ### Executable.Options
 

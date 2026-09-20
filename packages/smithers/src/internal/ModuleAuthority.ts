@@ -108,7 +108,12 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
         if (
           card.executionDigest === undefined || Descriptor.executionDigest(descriptor) !== card.executionDigest ||
           executable === undefined || Descriptor.executionDigest(executable.descriptor) !== card.executionDigest ||
-          !card.envelope.flows.includes(executable.delegate)
+          // A module that IS its own flow names no delegate. The
+          // `executionDigest` checked above covers its entry bytes and every
+          // module that entry imports from beside itself; a host-registered
+          // delegate's code is covered by nothing, which is why the envelope
+          // has to name that one.
+          (executable.delegate !== undefined && !card.envelope.flows.includes(executable.delegate))
         ) {
           return yield* refuse(executionId, "The module no longer matches its approved executable identity")
         }

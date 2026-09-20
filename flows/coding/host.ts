@@ -25,7 +25,7 @@ import { requestRegistration, RunRequest } from "./request.ts"
 import { sourceAdmission } from "./source-admission.ts"
 import { planningWikiLayers } from "./planning-wiki.ts"
 import { preparationLayers } from "./preparation.ts"
-import { prototypeRegistration, RunPrototype } from "./prototype.ts"
+import { prototypeRegistration } from "./prototype.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 import { pocModels, pocPolicy } from "./poc.ts"
 import { pocSource } from "./poc-source.ts"
@@ -199,7 +199,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
     const catalog = Layer.unwrap(repositoryCatalog({ delegates: [RunPlan, RunDispatch, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
-      ...(options.planning === undefined ? [] : [RunRequest, RunPrototype]), ...(wikiEnabled ? [wikiCheckDelegate] : []),
+      ...(options.planning === undefined ? [] : [RunRequest]), ...(wikiEnabled ? [wikiCheckDelegate] : []),
       ...(options.landing === undefined || options.planning === undefined ? [] : [RunVibe])] }, builtins.load).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.map(built => Layer.mergeAll(leaves, ...built.executables.map(entry => entry.layer)).pipe(

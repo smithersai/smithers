@@ -1917,7 +1917,12 @@ export const make = (
             })
           )
         }
-        if (!card.envelope.flows.includes(executable.delegate)) {
+        // A module that IS its own flow delegates to nothing: the approved
+        // execution digest covers its entry bytes and the digest of every
+        // module that entry imports from beside itself, so there is no
+        // unmeasured code for the envelope to have had to name. A delegate is
+        // the opposite — host-registered code the descriptor never measured.
+        if (executable.delegate !== undefined && !card.envelope.flows.includes(executable.delegate)) {
           return Effect.fail(
             new LaunchFailed({
               runId,

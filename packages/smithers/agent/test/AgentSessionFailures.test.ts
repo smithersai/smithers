@@ -686,6 +686,122 @@ describe("the executor's registry seam", () => {
     expect(causeOf(record)).not.toContain("SeatUnresolved")
   })
 
+  /**
+   * A self-contained module flow runs the modules its entry imports from
+   * beside itself. Those are pinned on the descriptor and ride
+   * `executionDigest`, which is the value this guard compares, so editing one
+   * after approval has to cost the approval. Before they were pinned, the entry
+   * digest matched and the edited sibling ran under the old approval.
+   */
+  it("refuses a self-contained module flow whose imported sibling changed after approval", async () => {
+    const record = recorder()
+    const pinnedTo = (helper: string) =>
+      new Descriptor.FlowDescriptor({
+        ...seated,
+        flows: [],
+        body: new Descriptor.BodyRefModule({
+          path: "/flows/agents/notes/flow.ts",
+          contentDigest: "b".repeat(64),
+          imports: [{ path: "helper.ts", contentDigest: helper }]
+        })
+      })
+    const approvedDescriptor = pinnedTo("c".repeat(64))
+    const editedDescriptor = pinnedTo("d".repeat(64))
+    // Only the sibling moved: the entry file is byte-identical.
+    expect(editedDescriptor.body.contentDigest).toBe(approvedDescriptor.body.contentDigest)
+
+    const result = await withExecutor(
+      record,
+      {
+        registry: {
+          get: () => Effect.succeed(approvedDescriptor),
+          getOption: () => Effect.succeed(Option.some(approvedDescriptor)),
+          loadBody: () => Effect.succeed(moduleBody)
+        },
+        // The host's catalog holds what is on disk NOW.
+        catalog: {
+          executables: [({ descriptor: editedDescriptor, delegate: undefined }) as never],
+          refused: []
+        }
+      },
+      (executor) =>
+        Effect.flip(executor.launch({
+          ...launchInput,
+          plan: {
+            ...launchInput.plan,
+            card: {
+              ...launchInput.plan.card,
+              executionDigest: Descriptor.executionDigest(approvedDescriptor)
+            }
+          }
+        }))
+    )
+
+    // Refused at the launch, before any harness or model boundary opened.
+    expect(result).toBeInstanceOf(LaunchFailed)
+    expect(result.message).toContain("has no registered executable matching its approved identity")
+    expect(record.statuses).toEqual([])
+  })
+
+  /**
+   * The seam that decides what `smthrs up <flow>` exits with when the catalog
+   * refused the flow.
+   *
+   * A refusal is a warning in the catalog so one broken entry cannot take `ls`
+   * down with it. Asking to RUN that entry is the other half: this is where the
+   * registry's typed `ExecutableError` becomes the launch failure a command
+   * exits non-zero on, carrying the refusal itself rather than its text, so a
+   * caller can route on `code` instead of matching a sentence.
+   */
+  it("fails a launch of a refused module with the registry's own typed refusal", async () => {
+    const record = recorder()
+    const refusal = new Executable.ExecutableError({
+      code: "body_unavailable",
+      flow: flowId,
+      path: "/flows/agents/notes/flow.ts",
+      available: [],
+      message:
+        `the body of flow "${flowId}" changed at "helper.ts", a module "/flows/agents/notes/flow.ts" imports, after discovery; refresh the registry before running it`
+    })
+    const moduleDescriptor = new Descriptor.FlowDescriptor({
+      ...seated,
+      flows: [],
+      body: new Descriptor.BodyRefModule({
+        path: "/flows/agents/notes/flow.ts",
+        contentDigest: "b".repeat(64)
+      })
+    })
+
+    const failure = await withExecutor(
+      record,
+      {
+        registry: {
+          get: () => Effect.succeed(moduleDescriptor),
+          getOption: () => Effect.succeed(Option.some(moduleDescriptor)),
+          loadBody: () => Effect.succeed(moduleBody)
+        },
+        catalog: { executables: [], refused: [refusal] }
+      },
+      (executor) =>
+        Effect.flip(executor.launch({
+          ...launchInput,
+          plan: {
+            ...launchInput.plan,
+            card: { ...launchInput.plan.card, executionDigest: Descriptor.executionDigest(moduleDescriptor) }
+          }
+        }))
+    )
+
+    expect(failure).toBeInstanceOf(LaunchFailed)
+    // The refusal reaches the operator intact: its own message, and the error
+    // value itself as the cause.
+    expect(failure.message).toContain("changed at \"helper.ts\"")
+    expect(failure.cause).toBeInstanceOf(Executable.ExecutableError)
+    expect((failure.cause as Executable.ExecutableError).code).toBe("body_unavailable")
+    // Nothing ran, and nothing was recorded as running.
+    expect(record.statuses).toEqual([])
+  })
+
   it("leaves a flow the registry does not disclose pending, and drives nothing", async () => {
     const record = recorder()
     const acceptance = await withExecutor(

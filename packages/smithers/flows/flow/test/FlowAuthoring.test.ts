@@ -49,6 +49,64 @@ describe("Flow body and calls", () => {
     expect(flow.annotate(Flow.Capabilities, ["fs:read"]).body).toBe(body)
     expect(flow.annotateMerge(Context.make(Flow.Capabilities, ["fs:write"])).body).toBe(body)
   })
+
+  it("carries a declared description through annotation", () => {
+    // A catalog that lists a flow reads the description off the declaration
+    // without importing the module, so it has to be a literal on the
+    // declaration and it has to survive every combinator that rebuilds one.
+    const flow = Flow.make("Authoring/described", {
+      description: "Says what it does.",
+      payload: { count: Schema.Number },
+      body: () => Node.succeed(undefined)
+    })
+
+    expect(flow.description).toBe("Says what it does.")
+    expect(flow.annotate(Flow.Capabilities, ["fs:read"]).description).toBe("Says what it does.")
+    expect(flow.annotateMerge(Context.make(Flow.Capabilities, ["fs:write"])).description).toBe(
+      "Says what it does."
+    )
+    expect(Flow.make("Authoring/undescribed", { payload: {}, body: () => Node.succeed(undefined) }).description)
+      .toBeUndefined()
+  })
+
+  it("declares a capability ceiling a catalog can read without importing the module", () => {
+    // The literal and the annotation are the same ceiling. Writing it as a
+    // literal is what lets a registry project this flow's authority from the
+    // source text, which an annotation built at run time cannot do.
+    const declared = Flow.make("Authoring/ceiling", {
+      capabilities: ["fs:read:**"],
+      payload: {},
+      body: () => Node.succeed(undefined)
+    })
+    const beside = Flow.make("Authoring/ceiling-beside", {
+      capabilities: ["fs:read:**"],
+      annotations: Context.make(Flow.SuspendOnFailure, true),
+      payload: {},
+      body: () => Node.succeed(undefined)
+    })
+
+    expect(Context.get(declared.annotations, Flow.Capabilities)).toEqual(["fs:read:**"])
+    expect(Context.get(beside.annotations, Flow.Capabilities)).toEqual(["fs:read:**"])
+    expect(Context.get(beside.annotations, Flow.SuspendOnFailure)).toBe(true)
+    // An undeclared ceiling stays the reference's own default rather than
+    // becoming an empty declaration.
+    expect(Context.get(
+      Flow.make("Authoring/no-ceiling", { payload: {}, body: () => Node.succeed(undefined) }).annotations,
+      Flow.Capabilities
+    )).toEqual([])
+  })
+
+  it("recognizes its own flows and nothing else", () => {
+    const flow = Flow.make("Authoring/recognized", { payload: {}, body: () => Node.succeed(undefined) })
+
+    expect(Flow.isFlow(flow)).toBe(true)
+    // A look-alike from another flow model carries its own type id, so a host
+    // loading a module can tell which model it found instead of guessing.
+    expect(Flow.isFlow({ _tag: "Authoring/recognized", body: () => Node.succeed(undefined) })).toBe(false)
+    expect(Flow.isFlow(undefined)).toBe(false)
+    expect(Flow.isFlow(null)).toBe(false)
+    expect(Flow.isFlow("Authoring/recognized")).toBe(false)
+  })
 })
 
 describe("Flow trampoline outcomes", () => {

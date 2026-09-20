@@ -19,9 +19,9 @@ Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. A 0.x proje
 
 | 0.x construct | 1.0 equivalent |
 | --- | --- |
-| `<Workflow>` and the other JSX components | A module flow at `flows/<name>/flow.ts`, built on `Flow.make(tag, { payload, success, error, body })`. The JSX root has no counterpart; the flow declaration is the root. |
+| `<Workflow>` and the other JSX components | A module flow at `flows/<name>/flow.ts`, which `export default`s `Flow.make(tag, { description, payload, success, error, body })`. The JSX root has no counterpart; the flow declaration is the root. |
 | Markdown agent steps (MDX prompts) | `flows/<name>/flow.mdx`, or a `prompt: (payload) => string` template on an agent action. `{props.x}` becomes `${payload.x}`. |
-| `createSmithers` and `runWorkflow` | `Flow.make(tag, { payload, success, error, body })` and `flow.execute(payload, { executionId })`, run by a host that registers the flow and provides its action implementations and engine. The CLI discovers and plans module flows, but leaves their execution `pending` until a host drives them. `smthrs up` executes markdown agent flows directly. |
+| `createSmithers` and `runWorkflow` | `Flow.make(tag, { payload, success, error, body })` and `flow.execute(payload, { executionId })`, run by a host that provides its action implementations and engine. `smthrs up` executes a module flow's own body, and a markdown agent flow's prompt, directly. |
 | `.smithers/workflows/` | `flows/`. A workflow keeps its position: `.smithers/workflows/pipelines/ci-fast.tsx` becomes `flows/pipelines/ci-fast/flow.ts`. |
 | `smithers.config.ts` | No 1.0 equivalent. `repoCommands.test` seeds the migration's test command (override it with `--verify-test`), `backend` is recorded in the report, and the file is deleted after the final unit. |
 | `smithers` binary | Both spellings still work. `@smthrs/cli@next` installs `smthrs`, with `smithers` as an alias of the same executable. |
