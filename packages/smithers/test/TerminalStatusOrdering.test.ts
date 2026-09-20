@@ -272,6 +272,15 @@ describe("a terminal control status ordered against the native projection", () =
 
         const events = controlEvents(yield* f.rows)
         expect(events.map((entry) => entry.kind)).not.toContain(Projection.gapKind)
+        // The order a watcher sees. The terminal status is last, so a watch
+        // closed on `projection-settled` ends one event too early.
+        expect(events.map((entry) => entry.kind)).toEqual([
+          Supervisor.startedKind,
+          "control.engine.bound",
+          Projection.eventKind,
+          settledKind,
+          "control.run.completed"
+        ])
         const whole = Diagnosis.digest(events)
         expect(whole.status).toBe("completed")
         expect(Diagnosis.resolvedOutput(whole)).toBe(output)
@@ -326,6 +335,18 @@ describe("a terminal control status ordered against the native projection", () =
 
         const events = controlEvents(yield* f.rows)
         expect(events.map((entry) => entry.kind)).not.toContain(Projection.gapKind)
+        // The same order a launched run produces: the terminal status is last,
+        // so a watch closed on `projection-settled` never sees it.
+        expect(events.map((entry) => entry.kind)).toEqual([
+          Supervisor.startedKind,
+          "control.engine.bound",
+          Projection.eventKind,
+          settledKind,
+          "control.run.completed"
+        ])
+        const whole = Diagnosis.digest(events)
+        expect(whole.status).toBe("completed")
+        expect(Diagnosis.resolvedOutput(whole)).toBe(output)
         for (let length = 1; length <= events.length; length++) {
           const digest = Diagnosis.digest(events.slice(0, length))
           if (digest.status === "completed") expect(Diagnosis.resolvedOutput(digest)).toBe(output)
