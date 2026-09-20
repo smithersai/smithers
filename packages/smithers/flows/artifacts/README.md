@@ -23,7 +23,7 @@ run in Node.js, in Bun, in a browser tab, and inside a sandbox.
 ## Install
 
 ```bash
-pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.115
+pnpm add @smthrs/artifacts@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the Node.js implementations of the services

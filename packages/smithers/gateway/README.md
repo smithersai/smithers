@@ -28,8 +28,10 @@ including the hosting example below. The Bun host at `bun/BunGateway` instead
 requires `@effect/platform-bun@4.0.0-rc.115`:
 
 ```sh
-pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
+pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
+
+Pin `@effect/platform-node-shared@4.0.0-rc.115` with either adapter: both depend on that shared implementation through a caret, which otherwise resolves to a later release candidate whose own `effect` peer this release does not satisfy.
 
 Name the version. This README describes 1.0.0-rc.0, and until that release candidate reaches the registry the unqualified package name still resolves to the 0.x line, whose exports and wire format it does not describe.
 

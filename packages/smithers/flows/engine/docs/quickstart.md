@@ -16,7 +16,7 @@ Install the packages and a crypto service:
 
 ```bash
 pnpm add @smthrs/engine@next @smthrs/flow@next
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every

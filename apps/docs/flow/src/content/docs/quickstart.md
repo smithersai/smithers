@@ -19,7 +19,7 @@ A runnable copy of this program is published in the Smithers examples,
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
+pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 ## Declare the action and the flow

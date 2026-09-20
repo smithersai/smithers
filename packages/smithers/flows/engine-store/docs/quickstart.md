@@ -16,7 +16,7 @@ the whole point of the package.
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/engine-store@next @smthrs/flow@next @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/engine-store@next @smthrs/flow@next @smthrs/journal@next @smthrs/run-store@next @smthrs/step-cache@next @smthrs/database@next @smthrs/artifacts@next @smthrs/kernel@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ## Declare a sealed action and a flow

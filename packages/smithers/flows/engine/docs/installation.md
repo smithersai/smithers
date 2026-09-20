@@ -42,7 +42,7 @@ browser program provides its own; a Node program provides
 `@effect/platform-node`:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every

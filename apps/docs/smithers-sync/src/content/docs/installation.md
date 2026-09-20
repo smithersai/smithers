@@ -65,7 +65,7 @@ A follower needs a transport. `SyncClient.layer` derives its RPC client from
 serialization:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 A browser follower needs no extra package: the WebSocket protocol and the JSON

@@ -35,7 +35,7 @@ declaration.
 ## Install
 
 ```bash
-pnpm add @smthrs/registry@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
+pnpm add @smthrs/registry@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 Smithers is at `1.0.0-rc.0` and has not reached npm yet. When it does, the

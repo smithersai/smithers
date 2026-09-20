@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-pnpm add @smthrs/keys@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115
+pnpm add @smthrs/keys@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115
 ```
 
 `@effect/platform-node` provides `NodeCrypto` for the example below and is

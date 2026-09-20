@@ -71,8 +71,9 @@ wrangler, and the Cloudflare Vite plugin. It also installs this package's
 executable, `smithers-routes`, which the app's `pnpm routes` script runs.
 
 The generated `flows/chat/flow.e2e.ts` uses the optional testing adapter.
-The template already declares its `@smthrs/testing` and
-`@effect/platform-node` prerequisites and the compatible Vitest 4 runner.
+The template already declares its `@smthrs/testing`,
+`@effect/platform-node`, and `@effect/platform-node-shared` prerequisites and
+the compatible Vitest 4 runner.
 
 For npm consumers of `@smthrs/create-app/testing`, use npm 11.16.0 or newer.
 The release smoke certifies npm 11.16.0 on Node 22.19.0 and 24.18.0. Node
@@ -118,21 +119,28 @@ exported.
 Each peer is needed only by the subpath that uses it, so an app that skips a
 subpath skips its peer:
 
-| Peer                    | Range          | Needed by                                                |
-| ----------------------- | -------------- | -------------------------------------------------------- |
-| `@effect/platform-node` | `4.0.0-rc.115` | `./testing`                                              |
-| `@smthrs/testing`       | `1.0.0-rc.0`   | `./testing`                                              |
-| `react`                 | `^19.2.8`      | `./ui`, and any page or layout                           |
-| `vite`                  | `^8.2.2`       | `./vite`                                                 |
-| `vitest`                | `^5.0.0`       | `./testing`                                              |
-| `tsx`                   | `^4.23.13`     | `loadManifest` in `./vite`, which evaluates `PACKAGE.ts` |
+| Peer                           | Range          | Needed by                                                |
+| ------------------------------ | -------------- | -------------------------------------------------------- |
+| `@effect/platform-node`        | `4.0.0-rc.115` | `./testing`                                              |
+| `@effect/platform-node-shared` | `4.0.0-rc.115` | `./testing`                                              |
+| `@smthrs/testing`              | `1.0.0-rc.0`   | `./testing`                                              |
+| `react`                        | `^19.2.8`      | `./ui`, and any page or layout                           |
+| `vite`                         | `^8.2.2`       | `./vite`                                                 |
+| `vitest`                       | `^5.0.0`       | `./testing`                                              |
+| `tsx`                          | `^4.23.13`     | `loadManifest` in `./vite`, which evaluates `PACKAGE.ts` |
 
 The default library install has no test runner or testing facade. To use
 `@smthrs/create-app/testing`, install its prerequisites explicitly:
 
 ```bash
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
 ```
+
+`@effect/platform-node-shared` is the implementation `@effect/platform-node`
+loads. The Node adapter depends on it through a caret, so an install that names
+only the adapter is free to resolve a later shared release candidate whose own
+`effect` peer this release does not satisfy. Naming both at the same version
+keeps one Effect runtime in the tree.
 
 `@smthrs/testing` supplies its grading facade through `@smthrs/scorers`.
 Only its separate `Vitest` adapter also needs `@effect/vitest`.

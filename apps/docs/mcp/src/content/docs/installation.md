@@ -45,7 +45,7 @@ caller's environment:
 On Node, `@effect/platform-node` provides the spawner:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 ```ts

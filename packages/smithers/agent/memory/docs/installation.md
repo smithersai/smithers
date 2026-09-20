@@ -51,7 +51,7 @@ A store backed by a database file needs the database package and its selected
 Node adapters:
 
 ```bash
-pnpm add @smthrs/database@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/database@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 - `@smthrs/database` supplies the SQLite client and the durable writer. It is

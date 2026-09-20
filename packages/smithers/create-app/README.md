@@ -129,11 +129,12 @@ plugin regenerates the tables on start and on every routed file change, so
 ## Testing a flow
 
 `@smthrs/create-app/testing` selects optional peers. The default library
-install includes no test runner. Add the testing facade, Node adapter, and
-runner before importing this subpath:
+install includes no test runner. Add the testing facade, the Node adapter with
+the shared implementation it loads, and the runner before importing this
+subpath:
 
 ```sh
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
 ```
 
 ```ts

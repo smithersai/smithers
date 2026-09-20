@@ -11,7 +11,7 @@ An OpenCode protocol v1 server over the Smithers agent loop. It serves one direc
 ## Install
 
 ```sh
-pnpm add @smthrs/opencode@1.0.0-rc.0 effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/opencode@1.0.0-rc.0 effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Node 22.19.0 or later on the 22 release line, or Node 24.11.0 or later, is required.

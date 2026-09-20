@@ -79,7 +79,7 @@ There is one platform package per runtime:
 For `@smthrs/flows/NodeRuntime`, select the Node host and SQLite driver:
 
 ```bash
-pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 Compose a host yourself and you declare the platform package you compose
@@ -125,7 +125,8 @@ Stand a durable runtime up and run a flow on it in the
 
 ## Bun durable execution
 
-Install `@smthrs/platform-bun@1.0.0-rc.0`, `@effect/platform-bun@4.0.0-rc.115`
-and `@effect/sql-sqlite-bun@4.0.0-rc.115`, then import
+Install `@smthrs/platform-bun@1.0.0-rc.0`, `@effect/platform-bun@4.0.0-rc.115`,
+`@effect/platform-node-shared@4.0.0-rc.115` and
+`@effect/sql-sqlite-bun@4.0.0-rc.115`, then import
 `@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and `storage`
 compositions share the engine with Node. See [runtime portability](/concepts/runtime-portability/).

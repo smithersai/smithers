@@ -19,7 +19,7 @@ Nothing here executes a node. A plan is inert: driving one is
 - A package with the dependencies installed:
 
 ```bash
-pnpm add @smthrs/plan@next @smthrs/database@next @effect/platform-node@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/plan@next @smthrs/database@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 `@smthrs/database` supplies the SQLite client and the durable writer that

@@ -36,7 +36,7 @@ Compiling asks Effect for its `Crypto` service, which a platform package
 supplies:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later, and `effect` 4.0.0-rc.115 as a peer. Recording a plan

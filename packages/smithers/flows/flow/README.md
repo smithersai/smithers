@@ -50,7 +50,7 @@ The Smithers 1.0 release candidates publish under the `next` dist tag. Node.js
 Running a flow adds an engine and a platform crypto service:
 
 ```sh
-pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.115
+pnpm add @smthrs/engine@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 ## Declare a flow and run it

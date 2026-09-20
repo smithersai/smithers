@@ -98,7 +98,7 @@ inside `effect`. A Node host adds the platform bindings and a serialization
 format:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115
+pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 See [Serve the control plane over RPC](/guides/serve-over-rpc/).

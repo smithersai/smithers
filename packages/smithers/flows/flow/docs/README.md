@@ -37,7 +37,7 @@ restarted. Skip it when a plain `Effect` retry loop covers the whole problem.
 ## Install
 
 ```bash
-pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
+pnpm add @smthrs/plan@next @smthrs/flow@next @smthrs/engine@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 Node.js 22.19.0 or later. The Smithers 1.0 release candidates publish under the

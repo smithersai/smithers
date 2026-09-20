@@ -33,12 +33,15 @@ by `node/NodeGateway`. The root and protocol subpaths do not install the Node
 adapter. A Node gateway host selects it explicitly:
 
 ```bash
-pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115
+pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
 For Bun, add the optional `@effect/platform-bun@4.0.0-rc.115` peer and import
-`@smthrs/gateway/bun/BunGateway`. The root and protocol subpaths need neither
-native adapter.
+`@smthrs/gateway/bun/BunGateway`. Pin
+`@effect/platform-node-shared@4.0.0-rc.115` with either adapter: both depend on
+that shared implementation through a caret, which otherwise resolves to a later
+release candidate whose own `effect` peer this release does not satisfy. The
+root and protocol subpaths need neither native adapter.
 
 Two packages install with it as ordinary dependencies:
 [`@smthrs/control`](https://control.smithers.sh/reference/api/) and [`@smthrs/sync`](https://smithers-sync.smithers.sh/reference/api/).

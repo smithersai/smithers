@@ -132,7 +132,7 @@ The driver-neutral root installs no platform adapter. Select these optional
 prerequisites before importing `NodeRuntime`:
 
 ```sh
-pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
 ```ts
@@ -193,7 +193,7 @@ vice versa. A browser-safe import alone does not prove durable browser execution
 For a Bun executable, install the corresponding optional platform and SQL adapter:
 
 ```sh
-pnpm add @smthrs/platform-bun@1.0.0-rc.0 @effect/platform-bun@4.0.0-rc.115 @effect/sql-sqlite-bun@4.0.0-rc.115
+pnpm add @smthrs/platform-bun@1.0.0-rc.0 @effect/platform-bun@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-bun@4.0.0-rc.115
 ```
 
 Then use `BunRuntime.layerHost` with the same options and registered flows.
