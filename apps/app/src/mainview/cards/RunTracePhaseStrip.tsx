@@ -1,8 +1,9 @@
 import type { CSSProperties, PointerEvent } from "react"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
+import { uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 import type { RunCommand } from "./CardFamily"
-import { durationWords, phaseBandGeometry, phaseExtent, type JournalRecord, type Milestone, type TraceExtent, type TraceModel } from "./RunTrace"
+import { durationWords, phaseBandGeometry, phaseExtent, type JournalRecord, type Milestone, type PhaseBand, type TraceExtent, type TraceModel } from "./RunTrace"
 
 const BAND_NAMED = 12
 const PIN_ROWS = 3
@@ -108,9 +109,18 @@ export interface TracePosition {
   readonly left: number
 }
 
-/** Every recorded sequence stays a keyboard stop, including equal timestamps and journal gaps. */
+/**
+ * Every recorded sequence stays a keyboard stop, including equal timestamps and
+ * journal gaps.
+ *
+ * Read off the same normalized records the fold reads, or the strip runs two
+ * clocks: a producer envelope carries no `payload.at` of its own, so a raw
+ * record falls back to the time the follower COPIED it, while the pin above it
+ * sits at the time the agent recorded it. A replay of a committed fact is the
+ * same fact, so it is the same stop, not a second one.
+ */
 export const tracePositions = (records: ReadonlyArray<JournalRecord>, extent: TraceExtent): ReadonlyArray<TracePosition> => {
-  const ordered = [...new Map(records.flatMap((record) => Number.isSafeInteger(record.sequence) && record.sequence! >= 0
+  const ordered = [...new Map(uniqueCallEvents(records).flatMap((record) => Number.isSafeInteger(record.sequence) && record.sequence! >= 0
     ? [[record.sequence!, record] as const] : [])).values()].sort((a, b) => a.sequence! - b.sequence!)
   const axis = extent.end - extent.start
   return ordered.map((record, index) => {
@@ -146,6 +156,20 @@ const positionAt = (positions: ReadonlyArray<TracePosition>, left: number): Trac
   return reached ?? earliest
 }
 
+/**
+ * The band a sequence sits in: the one holding the frame the fold recorded it
+ * under.
+ *
+ * Concurrent steps draw overlapping bands on one track, so "the band that
+ * started last" is another step's answer to this step's question. A sequence
+ * the journal recorded under no frame keeps the band the journal was in.
+ */
+export const bandAtSequence = (model: TraceModel, seq: number): PhaseBand | undefined => {
+  const owner = frameAtSequence(model, seq)
+  return model.bands.find((band) => band.frames.includes(owner))
+    ?? [...model.bands].reverse().find((band) => band.seq <= seq)
+}
+
 // In-flight pointer mechanics only. A settled gesture has no state here.
 const drags = new WeakMap<HTMLElement, { readonly x: number; readonly bandSeq?: number; moved: boolean }>()
 
@@ -163,7 +187,7 @@ export const PhaseStrip = ({ model, records, runId, cursorSeq, onRunCommand }: {
   if (model.bands.length === 0 && pins.length === 0) return null
   const reached = (seq: number) => cursorSeq === undefined || seq <= cursorSeq
   const current = [...positions].reverse().find((position) => position.seq <= (cursorSeq ?? Infinity)) ?? positions[0]
-  const here = cursorSeq === undefined ? undefined : [...model.bands].reverse().find((band) => band.seq <= cursorSeq)
+  const here = cursorSeq === undefined ? undefined : bandAtSequence(model, cursorSeq)
   // A milestone carries its own frame; every other position is looked up.
   const argsAt = (seq: number, spanId = frameAtSequence(model, seq)) =>
     flowArgs("runs.trace.select", { runId, nodeId: spanId, seq })

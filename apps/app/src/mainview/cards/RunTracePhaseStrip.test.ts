@@ -1,6 +1,20 @@
 import { expect, test } from "bun:test"
-import { frameAtSequence, phasePins, tracePositions } from "./RunTracePhaseStrip"
-import { traceFromJournal } from "./RunTrace"
+import { bandAtSequence, frameAtSequence, phasePins, tracePositions } from "./RunTracePhaseStrip"
+import { phaseExtent, traceFromJournal } from "./RunTrace"
+
+const RUN = { runId: "run", flowId: "module", status: "running" }
+const LEFT = { executionId: "execution", stepId: "a".repeat(64), action: "coding/edit", attempt: 1, ask: 0, retry: 1, scope: "left", generation: 0 }
+const RIGHT = { ...LEFT, stepId: "b".repeat(64), scope: "right" }
+/** A producer envelope: the fact stamps `at` itself, the follower copies it later. */
+const native = (sequence: number, kind: string, step: typeof LEFT, at: number, occurredAt: number, payload = {}) => ({
+  runId: "run", sequence, kind: "control.engine.event", occurredAt,
+  payload: {
+    version: 1, executionId: step.executionId, generation: 1, sequence, emittedAtMs: at,
+    sourceId: `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`,
+    sourceSequence: sequence, eventType: "flows.harness.step-fact.v1",
+    payload: { version: 1, step, generation: 0, frame: 0, ordinal: 0, cell: "", at, eventType: kind, sourceSequence: sequence, payload }
+  }
+})
 
 test("scrub positions preserve sparse sequences, ties and clock regressions in journal order", () => {
   const records = [
@@ -53,4 +67,39 @@ test("a cluster's members remain before the next pin in DOM order when stamps re
   expect(disclosed.map((moment) => moment.seq)).toEqual([0, 1, 2, 3, 4, 5])
   // A folded member keeps its own frame, so selecting it selects its own step.
   expect(disclosed.map((moment) => moment.spanId)).toEqual([1, 2, 3, 4, 5, 6].map((one) => `frame-${one}`))
+})
+
+test("a stop reads the clock its pin reads, and a replay copy adds no stop", () => {
+  // The follower copies in batches: facts stamped 0s, 30s and 60s all land at ~61s.
+  const records = [
+    native(1, "control.agent.turn-opened", LEFT, 0, 61_000),
+    native(2, "control.agent.read-only-demanded", LEFT, 30_000, 61_001, { streak: 3, cap: 3, nextFrame: 2 }),
+    native(3, "control.agent.repeat-demanded", LEFT, 60_000, 61_002, { frames: 4, cap: 4 })
+  ]
+  const model = traceFromJournal(RUN, records)
+  const extent = phaseExtent(model)
+  const positions = tracePositions(records, extent)
+  expect(positions.map((position) => position.left)).toEqual([0, 50, 100])
+  for (const pin of phasePins(model.milestones, extent)) {
+    expect(positions.find((position) => position.seq === pin.milestone.seq)!.left).toBe(pin.left)
+  }
+  // A replay of a committed fact is the same fact, so it is the same stop.
+  expect(tracePositions([...records, { ...records[0]!, sequence: 4 }], extent).map((position) => position.seq)).toEqual([1, 2, 3])
+})
+
+test("the cursor's band is the one holding its own step's frame", () => {
+  const records = [
+    native(1, "control.agent.turn-opened", LEFT, 100, 100),
+    native(2, "control.agent.cell-call-started", LEFT, 200, 200, { callId: "a1", flowName: "read", input: { path: "a.ts" } }),
+    native(3, "control.agent.turn-opened", RIGHT, 300, 300),
+    native(4, "control.agent.cell-call-started", RIGHT, 400, 400, { callId: "b1", flowName: "write", input: { path: "b.ts" } }),
+    native(5, "control.agent.read-only-demanded", LEFT, 500, 500, { streak: 3, cap: 3, nextFrame: 2 })
+  ]
+  const model = traceFromJournal(RUN, records)
+  expect(model.bands.map((band) => band.phase)).toEqual(["researching", "implementing"])
+  expect(bandAtSequence(model, 5)?.phase).toBe("researching")
+  expect(bandAtSequence(model, 4)?.phase).toBe("implementing")
+  expect(bandAtSequence(model, 2)?.phase).toBe("researching")
+  // A sequence recorded before any frame opened keeps the rule the strip had.
+  expect(bandAtSequence(model, 0)).toBeUndefined()
 })
