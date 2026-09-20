@@ -155,6 +155,38 @@ const press = async (control: Locator, key: string): Promise<void> => {
   await control.focus(); await expect(control).toBeFocused(); await control.press(key)
 }
 
+/** Presses inside one band's own bar and releases inside it, so the committed position stays in that band. */
+const scrubWithinBand = async (page: Page, trace: Locator, seq: number): Promise<number> => {
+  const band = phaseStrip(trace).locator(`button[data-phase-band][data-seq="${seq}"]`)
+  const box = await band.boundingBox()
+  expect(box, "the band must be laid out before it can be dragged").not.toBeNull()
+  const y = box!.y + box!.height / 2
+  await page.mouse.move(box!.x + box!.width * 0.15, y)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width * 0.85, y, { steps: 8 })
+  await page.mouse.up()
+  const now = await trace.getByRole("slider", { name: "Run position" }).getAttribute("aria-valuenow")
+  return Number(now)
+}
+
+/** One capture per width, with the card's own box proving it did not overflow that width. */
+const captureWidths = async (page: Page, card: Locator, testInfo: TestInfo, label: string): Promise<unknown[]> => {
+  const original = page.viewportSize()
+  const measured: unknown[] = []
+  try {
+    for (const width of [390, 900] as const) {
+      await page.setViewportSize({ width, height: 900 })
+      const overflow = await card.evaluate(element => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }))
+      expect(overflow.scrollWidth, `the run card reads without sideways scrolling at ${width}px`).toBeLessThanOrEqual(overflow.clientWidth + 1)
+      const path = testInfo.outputPath(`${label}-${width}.png`)
+      await card.screenshot({ path })
+      await testInfo.attach(`${label}-${width}`, { path, contentType: "image/png" })
+      measured.push({ width, ...overflow })
+    }
+  } finally { if (original) await page.setViewportSize(original) }
+  return measured
+}
+
 /** Each cursor is checked again after reload, so a DOM-only keyboard response cannot pass. */
 export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<typeof launchSubject>>, rows: readonly JournalRow[], testInfo: TestInfo): Promise<void> => {
   const { trace, card } = subject, whole = journalMeaning(rows), later = requireLaterPhase(whole)
@@ -214,18 +246,39 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
       await press(summary, "Enter"); await expect(cluster).toHaveAttribute("open", "")
       await press(summary, "Escape"); await expect(cluster).not.toHaveAttribute("open", "")
       await press(summary, "Space"); await expect(cluster).toHaveAttribute("open", "")
-      const member = cluster.getByRole("button").first()
+      // Every folded milestone must be reachable by Tab, and the last one selects its own sequence.
+      const members = cluster.getByRole("button")
+      const count = await members.count()
+      expect(count, "a disclosed cluster folds at least two milestones").toBeGreaterThan(1)
+      await summary.press("Tab")
+      await expect(members.first()).toBeFocused()
+      for (let index = 1; index < count; index++) {
+        await members.nth(index - 1).press("Tab")
+        await expect(members.nth(index)).toBeFocused()
+      }
+      const member = members.nth(count - 1)
       const seq = Number((await member.getAttribute("data-flow-args"))!.split(" ").at(-1))
-      await summary.press("Tab"); await expect(member).toBeFocused(); await member.press("Enter")
+      await member.press("Enter")
       await expect(summary).toBeFocused()
       await press(trace.getByRole("button", { name: "Details", exact: true }), "Enter")
       await at(seq, "cluster Enter/Escape/Space/Tab/Enter")
       await press(trace.getByRole("button", { name: "Timeline", exact: true }), "Enter")
     }
+    const boxes = await Promise.all(whole.bands.map(async band =>
+      ({ band, box: await phaseStrip(trace).locator(`button[data-phase-band][data-seq="${band.seq}"]`).boundingBox() })))
+    const widest = boxes.filter(one => one.box !== null).sort((a, b) => b.box!.width - a.box!.width)[0]!
+    const dropped = await scrubWithinBand(page, trace, widest.band.seq)
+    const following = whole.bands.find(band => band.seq > widest.band.seq)?.seq ?? Infinity
+    expect(positions, "a pointer release commits a recorded position").toContain(dropped)
+    expect(dropped).toBeGreaterThanOrEqual(widest.band.seq)
+    expect(dropped, "a release inside one band stays inside it").toBeLessThan(following)
+    await at(dropped, "pointer drag within one band")
+    steps.push({ action: "pointer drag", band: widest.band, dropped })
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
     await compareMeaning(card, trace, whole)
     steps.push({ action: "Latest Enter/reload", persisted: true })
+    steps.push({ action: "width captures", measured: await captureWidths(page, card, testInfo, "timeline-completed") })
   } finally { await attachProductionJson(testInfo, "timeline-keyboard-roundtrips", steps) }
 }

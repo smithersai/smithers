@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
 import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
-import { deployedHeaderSource, HEADER_SOURCES, repositoryRoot } from "../run-inspection/revisions"
+import { demandInventory, deployedHeaderSource, HEADER_SOURCES, repositoryRoot } from "../run-inspection/revisions"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 
@@ -89,6 +89,25 @@ describe("the deployed header source comparison", () => {
     "%p is not a revision this comparison will read", revision => {
       expect(() => deployedHeaderSource(revision)).toThrow("Invalid deployed frontend revision")
     })
+
+  test("the demand inventory names every payload and marks the ones nothing recorded", () => {
+    const inventory = demandInventory([
+      event(1, settled, { flowName: "write", callId: "a", outcome: "failure", message: "read only" }),
+      event(2, settled, { flowName: "read", callId: "b", outcome: "success", value: {} }),
+      event(3, "control.agent.read-only-demand-issued"),
+      event(4, "control.agent.steering-drained", { messages: [{ role: "user", text: "continue" }] })
+    ])
+    expect(inventory).toEqual([
+      { name: "call-rejection", observed: 1, _tag: "Exercised" },
+      { name: "read-only-demand", observed: 1, _tag: "Exercised" },
+      { name: "narrow-only-demand", observed: 0, _tag: "Unexercised" },
+      { name: "narrowed-demand", observed: 0, _tag: "Unexercised" },
+      { name: "steering-delivery", observed: 1, _tag: "Exercised" },
+      { name: "sufficiency-observed", observed: 0, _tag: "Unexercised" },
+      { name: "permission-required", observed: 0, _tag: "Unexercised" }
+    ])
+    expect(demandInventory([event(1, "constructor")]).every(entry => entry._tag === "Unexercised")).toBe(true)
+  })
 
   test("every declared header source exists under the resolved repository root", () => {
     expect(HEADER_SOURCES.length).toBeGreaterThan(0)

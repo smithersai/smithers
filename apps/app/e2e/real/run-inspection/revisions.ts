@@ -88,10 +88,38 @@ export const enrichedEvidence = async (testInfo: TestInfo, host: HostManifest, r
     ? { _tag: "EnrichedPayloadMissing", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT,
       message: "The producing revision is present, but required payload fields are missing", observed: observed.length, sequences: missing }
     : { _tag: "EnrichedPayloadsVerified", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT, observed: observed.length }
-  await attachProductionJson(testInfo, "timeline-producer-capability", { fact, events: observed })
+  await attachProductionJson(testInfo, "timeline-producer-capability", { fact, events: observed, inventory: demandInventory(rows) })
   if (fact._tag !== "EnrichedPayloadsVerified") testInfo.annotations.push({ type: fact._tag, description: fact.message })
   if (fact._tag === "HostPredatesCommit") return
   expect(missing, "required enriched payload fields").toEqual([])
+}
+
+/**
+ * Names every host payload this tier would read, and says which the run exercised.
+ * An event nobody recorded is reported as unexercised, never as a silent pass.
+ */
+export const demandInventory = (rows: readonly JournalRow[]): ReadonlyArray<Readonly<Record<string, unknown>>> => {
+  // The journal's event names, as the harness writes them; a Map, because the
+  // event name is host data and an object lookup resolves "constructor".
+  const named = new Map(Object.entries({
+    "control.agent.cell-call-settled": "call-rejection",
+    "control.agent.read-only-demanded": "read-only-demand",
+    "control.agent.read-only-demand-issued": "read-only-demand",
+    "control.agent.narrow-only-demanded": "narrow-only-demand",
+    "control.agent.narrowed-demanded": "narrowed-demand",
+    "control.agent.steering-drained": "steering-delivery",
+    "control.agent.sufficiency-observed": "sufficiency-observed",
+    "control.agent.permission-required": "permission-required"
+  }))
+  const observed = new Map([...named.values()].map(name => [name, 0]))
+  for (const row of moduleRows(rows)) {
+    const name = named.get(String(row.kind))
+    if (name === undefined) continue
+    // A rejection is a settlement whose recorded outcome failed, not every settlement.
+    if (name === "call-rejection" && (row.payload as Record<string, unknown> | undefined)?.outcome !== "failure") continue
+    observed.set(name, observed.get(name)! + 1)
+  }
+  return [...observed].map(([name, count]) => ({ name, observed: count, _tag: count > 0 ? "Exercised" : "Unexercised" }))
 }
 
 export const moduleEvidence = async (testInfo: TestInfo, host: HostManifest, rows: readonly JournalRow[]): Promise<void> => {

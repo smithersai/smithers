@@ -257,7 +257,8 @@ workflowTest("a successful prompt run matches its journal while live and after k
     "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
     "dimension:real-provider", "dimension:real-pty", "dimension:keyboard", "dimension:repository-owned-prompt-flow", "dimension:completed-run",
     "dimension:timeline", "dimension:phase-strip", "dimension:frame-lines", "dimension:scrub-cursor", "dimension:live-run",
-    "dimension:later-phase-door", "dimension:reload", "dimension:verified-edit", "dimension:milestone-cluster-keyboard", "evidence:gateway-journal-frames-and-durable-cursor"
+    "dimension:later-phase-door", "dimension:reload", "dimension:verified-edit", "dimension:milestone-cluster-keyboard",
+    "dimension:pointer-scrub", "dimension:readable-widths", "evidence:gateway-journal-frames-and-durable-cursor"
   ],
   description: "Compare live and settled timeline meanings with independent calls and outcomes, require distinct read/write/test phases and an exact workspace-file append, and reload keyboard selections. Archive frontend and measured host revisions; report unavailable producer evidence explicitly."
 }), async ({ page, request, workflowRepo }, testInfo) => {
