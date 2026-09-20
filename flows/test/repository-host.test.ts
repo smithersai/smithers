@@ -272,7 +272,13 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       const launched = yield* client.Run({ _tag: "Plan", planId: plan.planId, digest: plan.digest, envelope: plan.envelope, idempotencyKey: `${operation}:run` })
       if (launched._tag !== "Accepted" || !launched.runId) throw new Error("Expected accepted setup run")
       const events = yield* control.watch({ runId: launched.runId, follow: true }).pipe(Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "events.ndjson"), JSON.stringify(event) + "\n"))),
-        Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect, Effect.timeout("90 seconds"))
+        // This host writes its terminal control status after the engine's
+        // `control.engine.projection-settled`, so a watch closing on that
+        // projection event can never collect `control.run.failed` and the
+        // check below would pass on every failure. Close on the terminal
+        // status itself; the timeout ends a run that never writes one.
+        Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+        Stream.runCollect, Effect.timeout("90 seconds"))
       assert(!events.some(event => event.kind === "control.run.failed"), `${operation} failed: ${JSON.stringify(events.filter(event => event.kind === "control.run.failed"))}`)
       const outputs = events.flatMap(event => { const e = event.payload as any; const value = e?.payload?.state
         return value?.flowName === "repository/Setup" && value?.result?._tag === "Complete" && value.result.exit?._tag === "Success" ? [value.result.exit.value] : [] })
@@ -357,7 +363,11 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       const launched = yield* client.Run({ _tag: "Plan", planId: plan.planId, digest: plan.digest, envelope: plan.envelope, idempotencyKey: `${kind}:run` })
       assert.equal(launched._tag, "Accepted")
       const events = yield* control.watch({ runId: launched.runId!, follow: true }).pipe(Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "events.ndjson"), JSON.stringify(event) + "\n"))),
-        Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect, Effect.timeout("90 seconds"))
+        // Same ordering as the setup watch above: the terminal control status
+        // follows the settled projection, so only a watch that closes on it can
+        // observe a failure at all.
+        Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+        Stream.runCollect, Effect.timeout("90 seconds"))
       assert(!events.some(event => event.kind === "control.run.failed"), `${job} failed`)
       const outputs = events.flatMap(event => { const state = (event.payload as any)?.payload?.state
         return state?.flowName === "repository/Job" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })

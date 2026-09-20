@@ -151,14 +151,25 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected accepted native run")
     return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
       Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "control-events.ndjson"), JSON.stringify(event) + "\n"))),
-      Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect,
-      Effect.timeout("180 seconds"))
+      // The terminal control status is now the last thing a run writes: this
+      // host orders it behind the engine's `control.engine.projection-settled`,
+      // so that a reader folding the journal cannot see `completed` before the
+      // decision carrying the run's output. A watch that closed on the
+      // projection event would therefore close before any terminal status
+      // existed, and both checks below would read a set that can never hold
+      // one. The timeout is what ends a run that never settles.
+      Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+      Stream.runCollect, Effect.timeout("180 seconds"))
   }).pipe(Effect.provide(layer(observedPlatform, options, seats)), Effect.scoped))
   const failed = result.find(event => event.kind === "control.run.failed")
   assert.equal(failed, undefined, JSON.stringify({ failed, contents: await readFile(join(root, "hello.txt"), "utf8").catch(() => null),
     history: jj("log", "--no-graph", "-r", "all()", "-T", "change_id ++ ' ' ++ description"),
     evidence: result.filter(event => event.kind === "control.engine.event").slice(-20) }))
-  assert(result.some(event => event.kind === "control.run.completed"))
+  assert.equal(result.at(-1)?.kind, "control.run.completed")
+  // The ordering this host promises, read from the run that just happened: the
+  // engine's projection is settled before the status a reader folds.
+  assert(result.slice(0, -1).some(event => event.kind === "control.engine.projection-settled"),
+    "a terminal control status must follow the copied engine decision")
   assert.equal(await readFile(join(root, "hello.txt"), "utf8"), "hello from the real agent cell\n")
   assert.equal(await readFile(join(root, "ignored.txt"), "utf8").catch(() => null), null)
   assert.equal(calls.length, 1)
@@ -181,8 +192,12 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
     task: "Write hello.txt", claim, treeMoved: true, checksRun: []
   }).pipe(Effect.provide(judge.layer)))
   const stands = await judged(JSON.stringify({ summary: "Wrote and edited hello.txt", reads: ["hello.txt"], writes: ["hello.txt"] }))
-  assert.equal(CompletionClaim.unrecorded(stands!), false, JSON.stringify(stands))
   const refused = await judged("I ran `node verify.mjs` and every check passed.")
+  // Both readings, in the gate's own log: a control that certifies a release
+  // reports what it decided, so a later reader can see it was consulted.
+  t.diagnostic(`Completion brake stands: ${JSON.stringify(stands)}`)
+  t.diagnostic(`Completion brake refuses: ${JSON.stringify(refused)}`)
+  assert.equal(CompletionClaim.unrecorded(stands!), false, JSON.stringify(stands))
   assert.equal(CompletionClaim.unrecorded(refused!), true, JSON.stringify(refused))
   assert.match(CompletionClaim.unproven(refused!, true).message, /A completion reporting work this run never recorded: invented 0\.9[0-9]/)
   passed = true

@@ -197,14 +197,21 @@ for (const wikiEnabled of [false, true]) test(`configured request host ${wikiEna
     }))))
     return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
       Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "control-events.ndjson"), JSON.stringify(event) + "\n"))),
-      Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect,
-      Effect.timeout("600 seconds"))
+      // This host orders its terminal control status behind the engine's
+      // `control.engine.projection-settled`, so `completed` and `failed` are
+      // written after it. Closing on the projection event would collect a set
+      // that can never hold either, leaving both checks below unable to read a
+      // terminal outcome. The timeout ends a run that never settles.
+      Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+      Stream.runCollect, Effect.timeout("600 seconds"))
   }).pipe(Effect.provide(layer(observedPlatform, options, seats)), Effect.scoped))
   const failed = result.find(event => event.kind === "control.run.failed")
   assert.equal(failed, undefined, JSON.stringify({ failed, contents: await readFile(join(root, "hello.txt"), "utf8").catch(() => null),
     history: jj("log", "--no-graph", "-r", "all()", "-T", "change_id ++ ' ' ++ description"),
     evidence: result.filter(event => event.kind === "control.engine.event").slice(-20) }))
-  assert(result.some(event => event.kind === "control.run.completed"))
+  assert.equal(result.at(-1)?.kind, "control.run.completed")
+  assert(result.slice(0, -1).some(event => event.kind === "control.engine.projection-settled"),
+    "a terminal control status must follow the copied engine decision")
   assert.equal(await readFile(join(root, "hello.txt"), "utf8"), "hello from the real agent cell\n")
   assert.equal(await readFile(join(root, "ignored.txt"), "utf8").catch(() => null), null)
   assert.equal(await readFile(join(root, "planner-mutation.txt"), "utf8").catch(() => null), null)
