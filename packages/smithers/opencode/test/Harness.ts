@@ -58,6 +58,15 @@ export const serve = (
   }
 }
 
+/**
+ * The `data:` payload of one SSE frame, or `undefined` when the frame carries
+ * none. A frame is a set of lines and the data line is not always the first:
+ * a frame the replay buffer holds carries its `id:` line ahead of the data,
+ * which is what lets a browser ask for what it missed (`Events.frame`).
+ */
+export const dataOf = (frame: string): string | undefined =>
+  frame.split("\n").find((line) => line.startsWith("data: "))?.slice("data: ".length)
+
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 /** Waits until `check` answers true, polling every few milliseconds. */

@@ -80,13 +80,17 @@ const randomTail = (length: number): string => {
  * @category constructors
  * @since 1.0.0
  */
-export const make = (kind: Kind, timestamp: number = Date.now()): string => {
+export const make = (kind: Kind, timestamp: number = Date.now()): string =>
+  `${prefixes[kind]}_${head(timestamp, kind === "session", sequence(timestamp))}${randomTail(bodyLength - timeLength)}`
+
+/** The next counter for a millisecond, restarted whenever the millisecond changes. */
+const sequence = (timestamp: number): number => {
   if (timestamp !== lastTimestamp) {
     lastTimestamp = timestamp
     counter = 0
   }
   counter += 1
-  return `${prefixes[kind]}_${head(timestamp, kind === "session", counter)}${randomTail(bodyLength - timeLength)}`
+  return counter
 }
 
 /**
@@ -141,6 +145,44 @@ export const reply = (userMessageID: string): string => {
     chars[index] = alphabet[0]!
   }
   return make("message")
+}
+
+/**
+ * The id of a prompt steered into a turn that is already running, derived so
+ * it sorts after that turn's own prompt and before the answer it is steered
+ * into.
+ *
+ * A fresh id would sort after the answer, because the answer was minted when
+ * the turn opened and this prompt is arriving now. The hosted app keeps
+ * messages in id order, so the person's words would land below the answer
+ * they are still shaping, and a user message with nothing after it is a
+ * question the app reads as unanswered.
+ *
+ * There is no room between the two ids at their own length: the answer is
+ * {@link reply} of the prompt, which is the prompt's id with its tail nudged
+ * up by one. So the id is the prompt's own body with a time head appended,
+ * which sorts after the prompt (a string is above every prefix of itself) and
+ * below the answer (they first differ where the answer was nudged up), and
+ * two steers of one turn sort in the order they were sent.
+ *
+ * The answer of a prompt whose tail had nothing left to nudge is a fresh id
+ * instead, and nothing can be derived to sit before it; that is what the
+ * comparison guards, and it falls back to a fresh id of its own.
+ *
+ * @param userMessageID the prompt that opened the running turn
+ * @param assistantMessageID the answer the steer is folded into
+ * @param timestamp the creation time; defaults to now
+ * @category constructors
+ * @since 1.0.0
+ */
+export const steer = (
+  userMessageID: string,
+  assistantMessageID: string,
+  timestamp: number = Date.now()
+): string => {
+  const body = userMessageID.slice(userMessageID.indexOf("_") + 1)
+  const candidate = `${prefixes.message}_${body}${head(timestamp, false, sequence(timestamp))}`
+  return candidate < assistantMessageID ? candidate : make("message", timestamp)
 }
 
 /**

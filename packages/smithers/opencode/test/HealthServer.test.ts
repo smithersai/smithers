@@ -5,7 +5,7 @@ import * as Ids from "../src/Ids.ts"
 import * as Projection from "../src/Projection.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Store from "../src/Store.ts"
-import { serve, type Served, until } from "./Harness.ts"
+import { dataOf, serve, type Served, until } from "./Harness.ts"
 
 /**
  * A scripted Jev: the health questions are answered from the facts the
@@ -58,7 +58,8 @@ describe("Health over the server", () => {
         const frames = buffered.split("\n\n")
         buffered = frames.pop() ?? ""
         for (const frame of frames) {
-          if (frame.startsWith("data: ")) seen.push(JSON.parse(frame.slice(6)).payload)
+          const data = dataOf(frame)
+          if (data !== undefined) seen.push(JSON.parse(data).payload)
         }
       }
     })()

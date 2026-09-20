@@ -111,6 +111,16 @@ export interface UserMessage {
   readonly sessionID: string
   readonly role: "user"
   readonly time: { readonly created: number }
+  /**
+   * The assistant message this prompt was steered into, when it was sent
+   * into a turn that was already running (a steer, or a prompt typed while
+   * a permission card was open). The turn answers it inside that message
+   * rather than opening one of its own, so without the link the prompt is
+   * the last thing in the history and reads as a question nothing answered.
+   * Absent on the prompt that opened its own turn, which is answered by the
+   * message that follows it.
+   */
+  readonly parentID?: string | undefined
   readonly agent: string
   readonly model: ModelRef
 }

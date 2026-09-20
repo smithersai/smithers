@@ -36,6 +36,7 @@ const facts = (extra: Partial<Health.Facts> = {}): Health.Facts => ({
   lastTransition: "continue",
   demandThisFrame: false,
   stoppedBy: undefined,
+  unreachable: undefined,
   endedBy: undefined,
   ...extra
 })

@@ -35,7 +35,7 @@ import * as Ids from "../src/Ids.ts"
 import * as Protocol from "../src/Protocol.ts"
 import * as Serve from "../src/Serve.ts"
 import * as Store from "../src/Store.ts"
-import { serve, type Served, until } from "./Harness.ts"
+import { dataOf, serve, type Served, until } from "./Harness.ts"
 import * as OpenApi from "./OpenApi.ts"
 
 let served: Served
@@ -116,7 +116,13 @@ describe("event HttpApi (httpapi-event.test.ts)", () => {
         buffered += decoder.decode(value)
         const parts = buffered.split("\n\n")
         buffered = parts.pop() ?? ""
-        for (const part of parts) if (part.startsWith("data: ")) frames.push(part.slice(6))
+        // 1.18.31 frames data alone; this server names the event id above
+        // it as well, so a browser can ask for the gap after a reconnect
+        // (`Events.frame`). The data line is read by name, not by position.
+        for (const part of parts) {
+          const data = dataOf(part)
+          if (data !== undefined) frames.push(data)
+        }
       }
     })()
     return {

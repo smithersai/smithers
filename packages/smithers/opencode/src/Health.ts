@@ -101,6 +101,97 @@ export const limitReason = (limit: Limit): string =>
     : `stopped: ${limit.seat} is rate limited`
 
 /**
+ * The infrastructure between this server and the seat failing: which way it
+ * failed, the seat it was reaching, and the provider's own words.
+ *
+ * A usage limit is {@link Limit} and an account the operator fixes; this is
+ * nothing anyone did. A dead network surfaced as a raw transport exception,
+ * `UnknownError` carrying `transport from cerebras:gpt-oss-120b: HTTP
+ * transport failed: TransportError: [ECONNREFUSED...]`, which names no fault
+ * and no remedy and reads to the person as something they broke. The house
+ * rule is that every failure is typed with a fault class and that an
+ * infrastructure failure blames the infrastructure and says what to do.
+ *
+ * The code is the provider-neutral `ModelError` code the adapter published
+ * and is never read off the sentence beside it, the same rule as {@link
+ * Limit}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Unreachable {
+  /** Which way the infrastructure failed, off `ModelError.code`. */
+  readonly code: "transport" | "call_timeout"
+  /** The seat it was reaching, as `provider:model`. */
+  readonly seat: string
+  /** The provider's message, verbatim. */
+  readonly message: string
+}
+
+/**
+ * The infrastructure failure a refusal reports, or `undefined` when the
+ * refusal is not one: a usage limit, a bad key, a request the model rejected.
+ *
+ * @category classification
+ * @since 1.0.0
+ */
+export const unreachable = (failure: Driver.ProviderFailure | undefined): Unreachable | undefined => {
+  if (failure === undefined) return undefined
+  return failure.code === "transport" || failure.code === "call_timeout"
+    ? { code: failure.code, seat: failure.seat, message: failure.message }
+    : undefined
+}
+
+/**
+ * What each infrastructure failure did, as the dot and the card say it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const unreachablePhrases: Readonly<Record<Unreachable["code"], string>> = {
+  transport: "could not be reached",
+  call_timeout: "did not answer in time"
+}
+
+/**
+ * What to do about each one. Every sentence names an action, because a
+ * failure with no way out reads as a wall.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const unreachableRemedies: Readonly<Record<Unreachable["code"], string>> = {
+  transport:
+    "Check that this machine has a network and that the provider is reachable from it, then send the prompt again.",
+  call_timeout: "Send the prompt again; if it keeps timing out, shorten it or serve a faster seat with --seat."
+}
+
+/**
+ * The reason an infrastructure failure renders as, on the dot and the card.
+ * It starts `stopped:` the way {@link limitReason} and {@link endedReason} do.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const unreachableReason = (fault: Unreachable): string =>
+  `stopped: ${fault.seat} ${unreachablePhrases[fault.code]}`
+
+/**
+ * The sentence the assistant message carries when the infrastructure failed:
+ * what happened, whose it is, what to do, and the provider's own words last,
+ * for whoever is reading a log rather than a screen.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const unreachableMessage = (fault: Unreachable): string =>
+  `The turn stopped: ${fault.seat} ${
+    unreachablePhrases[fault.code]
+  }. That is the infrastructure, not anything you did. ${
+    unreachableRemedies[fault.code]
+  } The provider's words: ${fault.message}`
+
+/**
  * The code a run its own frame budget ended reports. It is not a
  * `HarnessError` code because the budget raises no error: the loop stops at
  * the top of the frame it has no budget for and hands the run's last words
@@ -199,6 +290,8 @@ export interface Facts extends State {
   readonly demandThisFrame: boolean
   /** The usage limit that ended the run, when the provider's code said one did. */
   readonly stoppedBy: Limit | undefined
+  /** The infrastructure failure that ended the run, when the provider's code said one did. */
+  readonly unreachable: Unreachable | undefined
   /** What ended the run, when the harness ended it rather than the run. */
   readonly endedBy: Ended | undefined
 }
@@ -403,6 +496,7 @@ export const arrived = (answers: Answers): boolean =>
 export const decide = (facts: Facts, answers: Answers | undefined): Decision => {
   if (facts.parked !== "none") return { color: "red", reason: parkedReason[facts.parked] }
   if (facts.stoppedBy !== undefined) return { color: "red", reason: limitReason(facts.stoppedBy) }
+  if (facts.unreachable !== undefined) return { color: "red", reason: unreachableReason(facts.unreachable) }
   if (facts.endedBy !== undefined) return { color: "red", reason: endedReason(facts.endedBy) }
   if (answers === undefined) return { color: "gray", reason: "health unavailable" }
   const confident = Object.values(answers).some((answer) => Classifier.confidence(answer) >= confidenceFloor)

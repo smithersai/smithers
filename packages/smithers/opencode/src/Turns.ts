@@ -214,6 +214,24 @@ export const userPartID = (userMessageID: string, parts: PromptInput["parts"]): 
   parts.find((part) => part.type === "text" && typeof part.id === "string")?.id ??
     Ids.part(userMessageID, { frame: 0, slot: 0, ordinal: 0 })
 
+/** The two events one prompt of the person's makes: its header and its text. */
+const userEvents = (
+  user: Protocol.UserMessage,
+  partID: string,
+  text: string,
+  at: number
+): ReadonlyArray<Protocol.Emitted> => [
+  { type: "message.updated", properties: { sessionID: user.sessionID, info: user } },
+  {
+    type: "message.part.updated",
+    properties: {
+      sessionID: user.sessionID,
+      part: { id: partID, sessionID: user.sessionID, messageID: user.id, type: "text", text },
+      time: at
+    }
+  }
+]
+
 /**
  * Builds the composition.
  *
@@ -237,6 +255,14 @@ export const make = (
       pricing: options.pricing
     }
     const states = new Map<string, Projection.State>()
+    /**
+     * The prompts a fork has taken and not yet written. A prompt steered into
+     * a running turn is written when the turn accepts it, which is after the
+     * route has answered, so the store is not yet the record of what has been
+     * taken: a retry that arrived in that window read an empty store and was
+     * steered a second time.
+     */
+    const placing = new Set<string>()
     // Admission includes the store reads and the queued open. Concurrent
     // requests must not both observe idle (or the same absent message) before
     // either open reaches the projection. Other sessions keep their own lock.
@@ -491,24 +517,54 @@ export const make = (
      * take it (the turn ended between the status check and the steer, as it
      * does when the person types right after Stop), the prompt is not
      * dropped: it opens the next turn once the projection has closed.
+     *
+     * The person's message is written here and not before, because where it
+     * belongs in the history depends on which of the two happened. A steer is
+     * answered inside the turn's open assistant message, so it belongs before
+     * it ({@link Ids.steer}, and `parentID` naming it); a prompt that opens
+     * the next turn belongs after everything the last one wrote, which is
+     * what a fresh id gives it.
      */
     const steerOrOpen = (
       session: Protocol.Session,
-      userMessageID: string,
-      partID: string,
+      parts: PromptInput["parts"],
+      messageID: string | undefined,
+      opening: string,
       text: string,
       agent: string,
       model: Protocol.ModelRef
     ): Effect.Effect<void, Store.StoreError> =>
       Effect.gen(function*() {
-        if (yield* driver.steer(session.id, text)) {
+        const running = states.get(session.id)
+        if (running !== undefined && (yield* driver.steer(session.id, text))) {
+          // An id minted now sorts after the answer this steer is folded
+          // into, because that answer was minted when the turn opened. The
+          // app keeps messages in id order, so the person's words landed
+          // below the answer they were still shaping and read as a question
+          // nothing had answered. An app that minted the id itself keeps it,
+          // and `parentID` is the link that survives either way.
+          const userMessageID = messageID ?? Ids.steer(running.userMessageID, running.assistantMessageID)
+          const user: Protocol.UserMessage = {
+            id: userMessageID,
+            sessionID: session.id,
+            role: "user",
+            time: { created: ctx.now() },
+            parentID: running.assistantMessageID,
+            agent,
+            model
+          }
+          yield* commit({
+            _tag: "emit",
+            sessionID: session.id,
+            events: userEvents(user, userPartID(userMessageID, parts), text, user.time.created)
+          })
           // A steer into a turn parked on a question is that question's
           // answer, and the same rule applies as to a permission reply.
           yield* commit({ _tag: "replied", sessionID: session.id })
           return
         }
         while (states.has(session.id)) yield* Effect.sleep(steerRetryDelay)
-        yield* open(session, userMessageID, partID, text, agent, model)
+        yield* open(session, opening, userPartID(opening, parts), text, agent, model)
       }).pipe(admission(session.id).withPermit)
 
     const prompt: Service["prompt"] = (input) =>
@@ -536,42 +592,17 @@ export const make = (
           return yield* open(session.value, userMessageID, partID, text, agent, model, stored.value.time.created)
         }
         if (states.has(input.sessionID)) {
-          const now = ctx.now()
-          const user: Protocol.UserMessage = {
-            id: userMessageID,
-            sessionID: input.sessionID,
-            role: "user",
-            time: { created: now },
-            agent,
-            model
-          }
-          yield* commit({
-            _tag: "emit",
-            sessionID: input.sessionID,
-            events: [
-              { type: "message.updated", properties: { sessionID: input.sessionID, info: user } },
-              {
-                type: "message.part.updated",
-                properties: {
-                  sessionID: input.sessionID,
-                  part: {
-                    id: partID,
-                    sessionID: input.sessionID,
-                    messageID: userMessageID,
-                    type: "text",
-                    text
-                  },
-                  time: now
-                }
-              }
-            ]
-          })
           // Forked into the composition's scope: the queue's write waits for
           // the frame's own transaction, and the app expects the prompt route
-          // to answer at once.
+          // to answer at once. The person's message is written inside the
+          // fork, where the id it gets can depend on whether the turn took
+          // the steer.
+          if (placing.has(userMessageID)) return
+          placing.add(userMessageID)
           yield* Effect.forkIn(
-            steerOrOpen(session.value, userMessageID, partID, text, agent, model).pipe(
-              Effect.catchCause((cause) => Effect.logError({ message: "The prompt could not open a turn", cause }))
+            steerOrOpen(session.value, input.parts, input.messageID, userMessageID, text, agent, model).pipe(
+              Effect.catchCause((cause) => Effect.logError({ message: "The prompt could not open a turn", cause })),
+              Effect.ensuring(Effect.sync(() => placing.delete(userMessageID)))
             ),
             scope
           )
@@ -677,6 +708,17 @@ export const make = (
           if (yield* hub.stopping) return false
           yield* Effect.sleep(settleRetryDelay)
         }
+        // The state goes before the close's own events are stored and
+        // published: `apply` drops it first, so that the body's exit, which
+        // arrives after a fold has already ended the turn, finds no state and
+        // is dropped. A caller that answered on the empty map alone would
+        // therefore answer ahead of the turn's last writes, and did: a delete
+        // removed the session and the close wrote its messages back
+        // afterwards. The barrier is a job of this fiber's own with nothing in
+        // it. The queue is FIFO and the pump takes one job at a time, so when
+        // the pump has applied this one, everything the turn queued before it
+        // is in the store and on the stream.
+        yield* commit({ _tag: "emit", sessionID, events: [] })
         return true
       })
 

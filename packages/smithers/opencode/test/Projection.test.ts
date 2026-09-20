@@ -517,6 +517,72 @@ describe("Projection", () => {
     })
   })
 
+  it("types a dead network as the infrastructure and says what to do about it", () => {
+    const ctx = { directory, now: clock().now }
+    const start = Projection.open(ctx, opened())
+    const refused = (code: ModelError["code"], message: string): Projection.Closing => {
+      const outcome = EngineDriver.failedOutcome(
+        "cerebras:gpt-oss-120b",
+        Cause.fail(
+          new HarnessError({
+            code: "model_failed",
+            message: "The cell frame failed",
+            cause: new ModelError({ code, message })
+          })
+        )
+      )
+      if (outcome._tag !== "failed") throw new Error(`the driver reported ${outcome._tag}`)
+      return outcome
+    }
+    const errorOf = (step: Projection.Step): Protocol.MessageError | undefined => {
+      const assistant = step.events.find((event) =>
+        event.type === "message.updated" && (event.properties["info"] as Protocol.Message).role === "assistant"
+      )
+      return (assistant!.properties["info"] as Protocol.AssistantMessage).error
+    }
+    const dotOf = (step: Projection.Step): string =>
+      (step.events[0]!.properties["info"] as Protocol.Session).title.slice(0, 2).trim()
+    // What a dead network reaches the projection as. It used to end the turn
+    // with this sentence verbatim on the message, which names no fault and
+    // nothing to do, and reads as something the person broke.
+    const dead = Projection.close(
+      ctx,
+      start.state,
+      refused("transport", "HTTP transport failed: TransportError: [ECONNREFUSED 127.0.0.1:443]")
+    )
+    expect(dead.state.facts.unreachable).toEqual({
+      code: "transport",
+      seat: "cerebras:gpt-oss-120b",
+      message: "HTTP transport failed: TransportError: [ECONNREFUSED 127.0.0.1:443]"
+    })
+    const message = (errorOf(dead)!.data as { message: string }).message
+    expect(message).toContain("cerebras:gpt-oss-120b could not be reached")
+    expect(message).toContain("not anything you did")
+    expect(message).toContain("Check that this machine has a network")
+    // The provider's own words stay, last, for whoever is reading a log.
+    expect(message).toContain("ECONNREFUSED")
+    expect(dotOf(dead)).toBe("🔴")
+    // The replayed decision reads the same fault off the facts the
+    // projection kept, so a reload and the live stream agree.
+    expect(Health.decide(dead.state.facts, undefined)).toEqual({
+      color: "red",
+      reason: "stopped: cerebras:gpt-oss-120b could not be reached"
+    })
+    // A call that outran its own budget is the same fault class with its own
+    // remedy; a request the model rejected is not one at all.
+    const slow = Projection.close(ctx, start.state, refused("call_timeout", "The call exceeded 120s"))
+    expect(Health.decide(slow.state.facts, undefined).reason).toBe(
+      "stopped: cerebras:gpt-oss-120b did not answer in time"
+    )
+    expect((errorOf(slow)!.data as { message: string }).message).toContain("shorten it")
+    const rejected = Projection.close(ctx, start.state, refused("invalid_request", "messages must not be empty"))
+    expect(rejected.state.facts.unreachable).toBeUndefined()
+    expect(errorOf(rejected)).toEqual({
+      name: "UnknownError",
+      data: { message: "invalid_request from cerebras:gpt-oss-120b: messages must not be empty" }
+    })
+  })
+
   it("keeps the parked cell so an abort of a parked turn settles every open card", () => {
     const ctx = { directory, now: clock().now }
     const events = scriptEvents()

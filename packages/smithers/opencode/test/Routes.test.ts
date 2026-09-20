@@ -11,7 +11,7 @@ import * as Protocol from "../src/Protocol.ts"
 import * as Routes from "../src/Routes.ts"
 import * as Serve from "../src/Serve.ts"
 import * as Store from "../src/Store.ts"
-import { serve, type Served, until } from "./Harness.ts"
+import { dataOf, scratchDirectory, serve, type Served, until } from "./Harness.ts"
 
 let served: Served
 beforeAll(() => {
@@ -53,7 +53,8 @@ const watch = async (): Promise<Seen> => {
       const frames = buffered.split("\n\n")
       buffered = frames.pop() ?? ""
       for (const frame of frames) {
-        if (frame.startsWith("data: ")) seen.push(JSON.parse(frame.slice(6)).payload)
+        const data = dataOf(frame)
+        if (data !== undefined) seen.push(JSON.parse(data).payload)
       }
     }
   })()
@@ -142,6 +143,35 @@ describe("Routes through the OpenCode SDK client", () => {
       (await sdk.file.list({ query: { directory: join(served.directory, ".."), path: basename(served.directory) } }))
         .data!
     expect(fromParent.map((node) => node.name)).toEqual(files.map((node) => node.name))
+    // The listing is bounded and read off the request thread: one thread
+    // serves every session, and a directory of any size used to be read,
+    // mapped and sorted on it, then answered whole.
+    const crowded = scratchDirectory()
+    try {
+      for (let index = 0; index < 12; index++) writeFileSync(join(crowded.directory, `f${index}`), "")
+      const page = await Effect.runPromise(Routes.listFiles(crowded.directory, "", 5))
+      expect(page.entries.length).toBe(5)
+      expect(page.truncated).toBe(true)
+      expect((await Effect.runPromise(Routes.listFiles(crowded.directory, ""))).truncated).toBe(false)
+      expect((await Effect.runPromise(Routes.listFiles(crowded.directory, "missing"))).entries).toEqual([])
+      for (let index = 12; index <= Routes.fileListLimit; index++) {
+        writeFileSync(join(crowded.directory, `f${index}`), "")
+      }
+      const overflowed = await served.handler(
+        new Request(`http://test/file?directory=${encodeURIComponent(crowded.directory)}&path=`)
+      )
+      expect(overflowed.status).toBe(200)
+      // The body is the array the app reads either way; the header is how a
+      // reader learns the directory held more.
+      expect(overflowed.headers.get("x-entry-limit")).toBe(String(Routes.fileListLimit))
+      expect(((await overflowed.json()) as Array<unknown>).length).toBe(Routes.fileListLimit)
+      const whole = await served.handler(
+        new Request(`http://test/file?directory=${encodeURIComponent(served.directory)}&path=`)
+      )
+      expect(whole.headers.get("x-entry-limit")).toBeNull()
+    } finally {
+      crowded.remove()
+    }
     expect(await get("/api/reference?directory=x")).toEqual({
       location: {
         directory: served.directory,
@@ -282,8 +312,9 @@ describe("Routes through the OpenCode SDK client", () => {
         const frames = buffered.split("\n\n")
         buffered = frames.pop() ?? ""
         for (const frame of frames) {
-          if (!frame.startsWith("data: ")) continue
-          seen.push(JSON.parse(frame.slice(6)).payload)
+          const data = dataOf(frame)
+          if (data === undefined) continue
+          seen.push(JSON.parse(data).payload)
         }
       }
     }
@@ -356,8 +387,9 @@ describe("Routes through the OpenCode SDK client", () => {
       const chunks = greeting.split("\n\n")
       greeting = chunks.pop() ?? ""
       for (const chunk of chunks) {
-        if (chunk.startsWith("data: ")) {
-          greeted.push(JSON.parse(chunk.slice(6)).payload as { type: string; properties: Record<string, unknown> })
+        const data = dataOf(chunk)
+        if (data !== undefined) {
+          greeted.push(JSON.parse(data).payload as { type: string; properties: Record<string, unknown> })
         }
       }
     }
@@ -406,7 +438,13 @@ describe("Routes through the OpenCode SDK client", () => {
     expect(types).toContain("permission.replied")
     expect(types.filter((type) => type === "session.status").length).toBeGreaterThanOrEqual(2)
     const history = (await sdk.session.messages({ path: { id: session.id }, query: { limit: 20 } })).data!
-    expect(history.map((item: { info: Message }) => item.info.role)).toEqual(["user", "assistant", "user"])
+    // The prompt sent while the turn ran is steered into the turn's answer,
+    // so the history puts it above that answer and links it with `parentID`.
+    // Minted when it arrived, it sorted below the answer and the app read the
+    // person's last words as a question nothing had answered.
+    expect(history.map((item: { info: Message }) => item.info.role)).toEqual(["user", "user", "assistant"])
+    expect(history[1]!.info.id < history[2]!.info.id).toBe(true)
+    expect((history[1]!.info as Protocol.UserMessage).parentID).toBe(history[2]!.info.id)
     // The app's own part id comes back on the stream and in the history, so
     // its optimistic part is confirmed; a prompt sent without one gets a
     // derived id.
@@ -417,10 +455,10 @@ describe("Routes through the OpenCode SDK client", () => {
         (event.properties["part"] as Part).id === "prt_0000000000010000000000000u"
       )
     ).toBe(true)
-    expect(history[2]!.parts.map((part: Part) => part.id)).toEqual([
-      Ids.part(history[2]!.info.id, { frame: 0, slot: 0, ordinal: 0 })
+    expect(history[1]!.parts.map((part: Part) => part.id)).toEqual([
+      Ids.part(history[1]!.info.id, { frame: 0, slot: 0, ordinal: 0 })
     ])
-    const assistant = history[1]!
+    const assistant = history[2]!
     expect(assistant.info).toMatchObject({
       role: "assistant",
       finish: "stop",
@@ -490,7 +528,8 @@ describe("Routes through the OpenCode SDK client", () => {
       const chunks = bareText.split("\n\n")
       bareText = chunks.pop() ?? ""
       for (const chunk of chunks) {
-        if (chunk.startsWith("data: ")) bareFrames.push(JSON.parse(chunk.slice(6)) as Record<string, unknown>)
+        const data = dataOf(chunk)
+        if (data !== undefined) bareFrames.push(JSON.parse(data) as Record<string, unknown>)
       }
     }
     await bareReader.cancel()

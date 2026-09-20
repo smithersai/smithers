@@ -1438,6 +1438,7 @@ export const open = (ctx: Context, opened: Opened): Step => {
       lastTransition: "continue",
       demandThisFrame: false,
       stoppedBy: undefined,
+      unreachable: undefined,
       endedBy: undefined
     },
     editedThisFrame: false,
@@ -2208,12 +2209,22 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
   if (state.closed) return { state, events: [] }
   const finished = finishReasoning(state, ctx)
   const settled = settleOpenCards(finished.state, ctx, closing)
-  // A refused key is the app's own ProviderAuthError; every other provider
-  // refusal keeps the composed message, with the provider's words verbatim.
+  // A refused key is the app's own ProviderAuthError; the infrastructure
+  // failing is typed here (`Health.unreachable`) and reads as what happened,
+  // whose it is and what to do, instead of the transport exception the
+  // adapter composed; every other provider refusal keeps the composed
+  // message, with the provider's words verbatim.
+  //
+  // The name stays `UnknownError` because the protocol has three and the app
+  // renders no other; the fault class is the typed one, and it is what the
+  // dot, the card and the stored health record are read from.
+  const unreachable = closing._tag === "failed" ? Health.unreachable(closing.provider) : undefined
   const error: Protocol.MessageError = closing._tag === "interrupted"
     ? { name: "MessageAbortedError", data: { message: closing.message ?? "The turn was interrupted" } }
     : closing.provider?.code === "authentication"
     ? { name: "ProviderAuthError", data: { providerID: closing.provider.providerID, message: closing.message } }
+    : unreachable !== undefined
+    ? { name: "UnknownError", data: { message: Health.unreachableMessage(unreachable) } }
     : { name: "UnknownError", data: { message: closing.message } }
   // A turn that ended without an answer is red, and the reason names what
   // ended it. It used to be gray unless a usage limit ended it, and gray says
@@ -2240,10 +2251,12 @@ export const close = (ctx: Context, state: State, closing: Closing): Step => {
     ? { color: "gray", reason: "interrupted" }
     : stoppedBy !== undefined
     ? { color: "red", reason: Health.limitReason(stoppedBy) }
+    : unreachable !== undefined
+    ? { color: "red", reason: Health.unreachableReason(unreachable) }
     : { color: "red", reason: Health.endedReason(endedBy) }
   const marked = finalDecision(
     ctx,
-    { ...settled.state, facts: { ...settled.state.facts, stoppedBy, endedBy } },
+    { ...settled.state, facts: { ...settled.state.facts, stoppedBy, unreachable, endedBy } },
     decision,
     undefined,
     lastFrame(settled.state)

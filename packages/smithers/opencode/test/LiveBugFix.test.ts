@@ -315,8 +315,11 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
         const parts = buffered.split("\n\n")
         buffered = parts.pop() ?? ""
         for (const part of parts) {
-          if (!part.startsWith("data: ")) continue
-          frames.push((JSON.parse(part.slice(6)) as { payload: Frame }).payload)
+          // The data line is read by name: a buffered frame names its event
+          // id above it, so the reader cannot assume a position.
+          const data = part.split("\n").find((line) => line.startsWith("data: "))?.slice("data: ".length)
+          if (data === undefined) continue
+          frames.push((JSON.parse(data) as { payload: Frame }).payload)
         }
       }
     })()

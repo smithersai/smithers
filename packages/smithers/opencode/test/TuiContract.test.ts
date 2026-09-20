@@ -37,7 +37,7 @@ import * as Protocol from "../src/Protocol.ts"
 import * as Routes from "../src/Routes.ts"
 import * as Serve from "../src/Serve.ts"
 import * as Store from "../src/Store.ts"
-import { scratchDirectory, serve, type Served, until } from "./Harness.ts"
+import { dataOf, scratchDirectory, serve, type Served, until } from "./Harness.ts"
 import * as OpenApi from "./OpenApi.ts"
 
 let served: Served
@@ -79,7 +79,8 @@ const watch = async (): Promise<Array<{ type: string; properties: Record<string,
       const frames = buffered.split("\n\n")
       buffered = frames.pop() ?? ""
       for (const frame of frames) {
-        if (frame.startsWith("data: ")) seen.push(JSON.parse(frame.slice(6)).payload)
+        const data = dataOf(frame)
+        if (data !== undefined) seen.push(JSON.parse(data).payload)
       }
     }
   })()

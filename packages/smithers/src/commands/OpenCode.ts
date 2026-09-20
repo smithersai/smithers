@@ -262,11 +262,13 @@ export const host = async (
       // after it, so a server refused the directory never says it is serving
       // it.
       yield* Ownership.claim({ directory, url: Serve.url(requested) })
-      if (!connection.quiet) {
-        yield* Effect.sync(() =>
-          process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
-        )
-      }
+      // The banner is what R1 is accepted on, so it is printed by the server
+      // once the socket is bound and not a moment before it. Printed ahead of
+      // the bind, it announced a URL a port already in use then denied, and
+      // the acceptance passed on a server that never came up.
+      const announce = connection.quiet ? Effect.void : Effect.sync(() => {
+        process.stderr.write(`${Serve.banner(requested, directory)} Seat: ${seat}. ${judge}\n`)
+      })
       return yield* Serve.host({
         directory,
         bind: requested,
@@ -274,7 +276,7 @@ export const host = async (
         seat,
         maxFrames: options.maxFrames,
         pricing: Pricing.pricingOf(seat)
-      }).pipe(Effect.provide(driver))
+      }, announce).pipe(Effect.provide(driver))
     }).pipe(
       Effect.scoped,
       Effect.provide(RedactedLogger.layer()),
@@ -292,6 +294,9 @@ export const host = async (
     // A directory another live server holds is the operator's mistake, not a
     // broken server: it exits the way the missing key does.
     if (failure instanceof Ownership.ClaimRefused) throw new CliError.UsageError({ message: failure.message })
+    // A port already held is the operator's mistake too, and its message
+    // names the port and the way out.
+    if (failure instanceof Serve.BindFailed) throw new CliError.UsageError({ message: failure.message })
     throw failure
   }
   if (!connection.quiet) process.stderr.write(`Stopped serving ${directory}.\n`)

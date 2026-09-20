@@ -26,7 +26,8 @@
 import { Effect, type Layer, Option, Stream } from "effect"
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join, relative, resolve, sep } from "node:path"
 import * as Events from "./Events.ts"
@@ -167,6 +168,27 @@ export const gitBranch = (directory: string): string | undefined => {
 }
 
 /**
+ * How many entries `/file` answers with. A directory with more is answered
+ * with this many and says so.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const fileListLimit = 1_000
+
+/**
+ * One page of a directory: the entries, and whether the directory held more.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface FileListing {
+  readonly entries: ReadonlyArray<Protocol.FileNode>
+  /** Whether the directory held more than the page. */
+  readonly truncated: boolean
+}
+
+/**
  * The entries of a directory, as `/file` lists them: `path` relative to
  * `directory`. The app's project picker walks from the home directory with
  * this route, one typed segment at a time, so the base is whatever the app
@@ -174,30 +196,49 @@ export const gitBranch = (directory: string): string | undefined => {
  * starts with a dot (`.git`, `.smithers`) is left out, so the picker does
  * not offer to open the project there.
  *
+ * The read is asynchronous and the answer is bounded, because this server is
+ * one thread and this route is the one place a person can point it at a
+ * directory of any size. A synchronous `readdirSync`, `map` and `sort` over
+ * a directory of a hundred thousand entries is that thread doing nothing
+ * else until it finishes, and then tens of megabytes of JSON on the wire for
+ * a picker that shows a screenful: every other request, every open event
+ * stream and every running turn waits it out.
+ *
+ * @param directory the base the path is resolved against
+ * @param path the directory to list, relative to the base
+ * @param limit how many entries to answer with
  * @category constructors
  * @since 1.0.0
  */
-export const listFiles = (directory: string, path: string): Array<Protocol.FileNode> => {
-  const target = resolve(directory, path)
-  try {
-    return readdirSync(target, { withFileTypes: true })
-      .filter((entry) => entry.isFile() || (entry.isDirectory() && !entry.name.startsWith(".")))
-      .map((entry): Protocol.FileNode => {
-        const absolute = join(target, entry.name)
-        const type = entry.isDirectory() ? "directory" : "file"
-        return {
-          name: entry.name,
-          path: `${relative(directory, absolute)}${type === "directory" ? "/" : ""}`,
-          absolute,
-          type,
-          ignored: entry.name === ".git" || entry.name === "node_modules" || entry.name === ".smithers"
-        }
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  } catch {
-    return []
-  }
-}
+export const listFiles = (
+  directory: string,
+  path: string,
+  limit: number = fileListLimit
+): Effect.Effect<FileListing> =>
+  Effect.promise(async () => {
+    const target = resolve(directory, path)
+    const found = await readdir(target, { withFileTypes: true }).catch(() => [])
+    const listed = found.filter((entry) => entry.isFile() || (entry.isDirectory() && !entry.name.startsWith(".")))
+    // Bounded before the sort, which is the expensive half: a page is what
+    // the answer costs, whatever the directory holds.
+    const page = listed.slice(0, limit)
+    return {
+      entries: page
+        .map((entry): Protocol.FileNode => {
+          const absolute = join(target, entry.name)
+          const type = entry.isDirectory() ? "directory" : "file"
+          return {
+            name: entry.name,
+            path: `${relative(directory, absolute)}${type === "directory" ? "/" : ""}`,
+            absolute,
+            type,
+            ignored: entry.name === ".git" || entry.name === "node_modules" || entry.name === ".smithers"
+          }
+        })
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      truncated: listed.length > page.length
+    }
+  })
 
 /**
  * A file's content, as `/file/content` answers it: `text` with the bytes
@@ -515,8 +556,17 @@ export const layer = (
         "/file",
         (request) => {
           const params = query(request)
-          return Effect.sync(() =>
-            json(listFiles(params.get("directory") ?? directory, params.get("path") ?? ""))
+          return Effect.map(
+            listFiles(params.get("directory") ?? directory, params.get("path") ?? ""),
+            // A page the directory overflowed says so in a header rather than
+            // in the body, which is the array the app reads.
+            (listing) =>
+              listing.truncated
+                ? HttpServerResponse.jsonUnsafe(listing.entries, {
+                  status: 200,
+                  headers: { "x-entry-limit": String(fileListLimit) }
+                })
+                : json(listing.entries)
           )
         }
       )
@@ -544,7 +594,8 @@ export const layer = (
       yield* router.add(
         "GET",
         "/permission",
-        stored(store.listPermissions(), (pending) => json(pending))
+        stored(store.listPermissions(), (pending) =>
+          json(pending))
       )
       yield* router.add("GET", "/session/status", Effect.map(turns.status(), (status) => json(status)))
 
@@ -645,6 +696,15 @@ export const layer = (
               return Option.isNone(updated) ? notFound(`Session ${id} not found`) : json(updated.value)
             }).pipe(Effect.catchTag("@smthrs/opencode/StoreError", onStoreError)))
       )
+      // A delete answers `true`, and the app takes the row off the screen on
+      // that answer alone, so the answer has to be true. `abort` is not it:
+      // it returns once the interrupt is delivered, and the driver's exit
+      // still has a close to fold afterwards, which writes the messages of
+      // the turn the delete is removing. Deleting there removed the session
+      // row and then let the fold write the turn back underneath it, so the
+      // person watched the session vanish from a server that still had it.
+      // The wait is `settled`, the same one the synchronous prompt route
+      // waits on, and it is the only thing that says the turn is over.
       yield* router.add(
         "DELETE",
         "/session/:id",
@@ -652,6 +712,12 @@ export const layer = (
           withSession(id, (session) =>
             Effect.gen(function*() {
               yield* turns.abort(id)
+              // A server stopping is the one case nothing ends the turn, and
+              // an answer of `true` there would be the same lie by another
+              // route. It says so instead, and the session stays.
+              if (!(yield* turns.settled(id))) {
+                return unavailable(`Session ${id} is still running: the server is stopping.`)
+              }
               yield* store.deleteSession(id)
               yield* hub.publish({ type: "session.deleted", properties: { sessionID: id, info: session } })
               return json(true)

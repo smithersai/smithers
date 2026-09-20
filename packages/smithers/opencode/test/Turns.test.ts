@@ -126,13 +126,26 @@ describe("Turns", () => {
     expect(result.busy).toEqual({ ses_1: { type: "busy" } })
     expect(result.pending.length).toBe(1)
     expect(result.wrongPermission).toMatchObject({ code: "unknown_permission" })
-    expect(result.messages.map((message) => message.info.role)).toEqual(["user", "assistant", "user"])
+    // The prompt sent while the turn was running is answered inside that
+    // turn's assistant message, so it belongs above it: an id minted when it
+    // arrived sorted below the answer, and the app, which keeps messages in
+    // id order, read the person's last words as a question nothing had
+    // answered. `parentID` names the answer it was steered into.
+    expect(result.messages.map((message) => message.info.role)).toEqual(["user", "user", "assistant"])
+    const [opening, steered, answer] = result.messages.map((message) => message.info)
+    expect(steered!.role).toBe("user")
+    expect(answer!.role).toBe("assistant")
+    expect(opening!.id < steered!.id).toBe(true)
+    expect(steered!.id < answer!.id).toBe(true)
+    expect((steered as Protocol.UserMessage).parentID).toBe(answer!.id)
+    expect(result.messages[1]!.parts.map((part) => part.type === "text" ? part.text : part.type))
+      .toEqual(["and also this"])
     // Seven cards from the script, plus the health cards: frame zero's
     // settle (gray, no Jev key), the park (red), the resumed frame's settle
     // (gray again) and the color the resolved turn ends on (green), each
     // under the frame that produced it.
     expect(
-      result.messages[1]!.parts.flatMap((part) => part.type === "tool" ? [`${part.tool}:${part.state.status}`] : [])
+      result.messages[2]!.parts.flatMap((part) => part.type === "tool" ? [`${part.tool}:${part.state.status}`] : [])
     ).toEqual([
       "cell:completed",
       "read:completed",

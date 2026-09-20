@@ -10,8 +10,11 @@
  * carry `{payload}` only.
  *
  * A bounded replay buffer keeps the last events so a stream opened with
- * `Last-Event-ID` after a reconnect gets what it missed. A stream that names
- * no id is replayed nothing: the app reloads history over HTTP on connect,
+ * `Last-Event-ID` after a reconnect gets what it missed. Every buffered frame
+ * carries an `id:` line, which is what makes that reachable from a browser:
+ * `EventSource` sends back the last id it saw and nothing else, so a stream
+ * with no ids has no gap to ask about and loses whatever arrived while it was
+ * away. A stream that names no id is replayed nothing: the app reloads history over HTTP on connect,
  * and a replay it did not ask for re-animates finished turns and re-raises
  * every permission card in the window, which the app shows and can never take
  * down, because the reply that answered each one is in the same replay.
@@ -129,14 +132,24 @@ export const defaultReplay = 256
  * One SSE frame for an envelope: the envelope itself, or with `bare` its
  * payload alone, the `Event` shape of the 1.18.31 OpenAPI for `GET /event`.
  *
- * Data only, no `id:` line, which is what 1.18.31 sends: a browser reading
- * this stream sends no `Last-Event-ID` and asks for no replay.
+ * A frame the replay buffer holds carries an `id:` line as well, which is the
+ * only way a browser can ask for what it missed: `EventSource` remembers the
+ * last id it saw and sends it back as `Last-Event-ID` when it reconnects, and
+ * a stream that never names an id leaves that header empty forever, so a
+ * reload or a dropped connection loses whatever arrived in the gap without
+ * anything saying so. 1.18.31 sends no id and loses it; this server sends one.
+ *
+ * `identified` is false for the frames nothing remembers: `server.connected`,
+ * the heartbeats, and the opening cards, which are the state as the stream
+ * opens rather than something that happened. Naming one of those as the last
+ * id would point the next `Last-Event-ID` at an event no buffer holds, and an
+ * id the buffer cannot find is answered with the whole buffer.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const frame = (envelope: Envelope, bare = false): string =>
-  `data: ${JSON.stringify(bare ? envelope.payload : envelope)}\n\n`
+export const frame = (envelope: Envelope, bare = false, identified = false): string =>
+  `${identified ? `id: ${envelope.payload.id}\n` : ""}data: ${JSON.stringify(bare ? envelope.payload : envelope)}\n\n`
 
 /**
  * The keepalive comment.
@@ -224,14 +237,17 @@ export const make = (options: Options): Effect.Effect<Service> =>
           () => Effect.sync(() => void subscribers.delete(queue))
         )
         const opening = yield* streamOptions.opening ?? Effect.succeed([])
-        const told = [...past, ...opening.map(stamp)]
         const live = Stream.fromQueue(queue)
         return Stream.concat(
           Stream.fromIterable([
             frame(serverEvent("server.connected"), bare),
-            ...told.map((envelope) => frame(envelope, bare))
+            // The replay carries its ids, so a stream that drops again asks
+            // from where this one left off; the opening cards carry none,
+            // because nothing remembers them.
+            ...past.map((envelope) => frame(envelope, bare, true)),
+            ...opening.map((event) => frame(stamp(event), bare))
           ]),
-          Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare)), beats, { haltStrategy: "left" })
+          Stream.merge(Stream.map(live, (envelope) => frame(envelope, bare, true)), beats, { haltStrategy: "left" })
         )
       }))
     }

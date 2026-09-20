@@ -21,7 +21,6 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import type { HttpServer } from "effect/unstable/http/HttpServer"
-import type { ServeError } from "effect/unstable/http/HttpServerError"
 import { createServer, type Server } from "node:http"
 import { resolve } from "node:path"
 import * as Auth from "./Auth.ts"
@@ -103,6 +102,46 @@ export const refusal = (bind: Bind): string | undefined => {
 export class BindRefused extends Schema.TaggedError<BindRefused>()("@smthrs/opencode/BindRefused", {
   message: Schema.String
 }) {}
+
+/**
+ * A bind the socket refused: the port is held, the address is not this
+ * machine's, or the operating system would not give it. The message names
+ * where it tried to bind and what to do about it.
+ *
+ * The socket's own failure is `ServeError`, which carries the node error as
+ * an opaque `cause` and has no message of its own, so the CLI printed
+ * `ServeError` and an empty line. That is the one failure an operator meets
+ * by ordinary accident, a second server on the same port, and it has to say
+ * so.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class BindFailed extends Schema.TaggedError<BindFailed>()("@smthrs/opencode/BindFailed", {
+  message: Schema.String
+}) {}
+
+/**
+ * The sentence a socket that would not bind reports: where it tried, and the
+ * way out. The node error's `code` is what it branches on, never the text.
+ *
+ * @param bind what the verb asked to bind
+ * @param cause the error the socket raised
+ * @category getters
+ * @since 1.0.0
+ */
+export const bindFailure = (bind: Bind, cause: unknown): string => {
+  const code = (cause as { readonly code?: unknown } | undefined)?.code
+  if (code === "EADDRINUSE") {
+    return `Port ${bind.port} on ${bind.hostname} is already in use, so nothing is being served. Another program holds it, which is usually a server of this one already running here: stop it, or serve on another port with --port.`
+  }
+  if (code === "EACCES") {
+    return `Binding ${bind.hostname} port ${bind.port} was not permitted, so nothing is being served. A port below 1024 needs root: serve on a port above 1023 with --port.`
+  }
+  return `${bind.hostname} port ${bind.port} could not be bound, so nothing is being served: ${
+    cause instanceof Error ? cause.message : String(cause)
+  }. Check that ${bind.hostname} is an address this machine holds and that --port names a free port.`
+}
 
 /**
  * The URL the app connects to.
@@ -268,7 +307,7 @@ export const drain = (server: Server, grace: Duration.Input = shutdownTimeout): 
  */
 export const layer = (
   options: Options
-): Layer.Layer<HttpServer, ServeError | BindRefused, Driver.Driver | Store.Store> =>
+): Layer.Layer<HttpServer, BindFailed | BindRefused, Driver.Driver | Store.Store> =>
   Layer.unwrap(
     Effect.suspend(() => {
       const refused = refusal(options.bind)
@@ -294,16 +333,37 @@ export const layer = (
         Effect.flatMap(Events.Events, (events) =>
           Effect.addFinalizer(() => Effect.andThen(events.close, Effect.sync(() => drain(socket)))))
       ).pipe(Layer.provide(hub))
-      return Effect.succeed(Layer.provideMerge(closing, served))
+      // The socket's own failure says nothing an operator can act on, so it
+      // is re-raised as one that does. It is the layer's failure and not a
+      // defect, so the verb reports it the way it reports a refused bind.
+      return Effect.succeed(
+        Layer.provideMerge(closing, served).pipe(
+          Layer.catchTag("ServeError", (error) =>
+            bindFailed(new BindFailed({ message: bindFailure(options.bind, error.cause) })))
+        )
+      )
     })
   )
+
+/** A layer of the served shape that fails with the bind's own words. */
+const bindFailed = (error: BindFailed): Layer.Layer<HttpServer, BindFailed> => Layer.unwrap(Effect.fail(error))
 
 /**
  * Hosts the server until the fiber is interrupted.
  *
+ * `ready` runs once the socket is bound and the application is assembled,
+ * which is where the banner belongs: printed before, it announced a server
+ * on a port the socket then failed to take, and the documented acceptance
+ * for R1, "the banner names the directory and the URL", passed on a server
+ * that never bound.
+ *
+ * @param options how the server is assembled
+ * @param ready what to do once it is listening
  * @category constructors
  * @since 1.0.0
  */
 export const host = (
-  options: Options
-): Effect.Effect<never, ServeError | BindRefused, Driver.Driver | Store.Store> => Layer.launch(layer(options))
+  options: Options,
+  ready: Effect.Effect<void> = Effect.void
+): Effect.Effect<never, BindFailed | BindRefused, Driver.Driver | Store.Store> =>
+  Layer.launch(Layer.provideMerge(Layer.effectDiscard(ready), layer(options)))
