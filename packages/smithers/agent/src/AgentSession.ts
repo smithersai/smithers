@@ -871,15 +871,84 @@ export const patterns = (capabilities: ReadonlyArray<string>): ReadonlyArray<Cap
   })
 
 /**
- * Renders the prompt-flow body and its decoded input into the task the run is
- * admitted with. An absent or empty input adds nothing.
+ * A prompt flow's body and its launch input, rendered into one task.
+ *
+ * @category models
+ * @since 1.0.0
  */
-const prompt = (text: string, input: unknown): string => {
-  const rendered = input == null ? "null" : JSON.stringify(input, null, 2)
-  return rendered === "null" || rendered === "{}"
-    ? text.trim()
-    : `${text.trim()}\n\nInput:\n${rendered}`
+export interface RenderedPrompt {
+  /** The task the run is admitted with: the body, then the arguments. */
+  readonly text: string
+  /** The argument names the body can cite, in declaration order. */
+  readonly fields: ReadonlyArray<string>
+  /** The arguments section alone, as it appears inside {@link RenderedPrompt.text}. */
+  readonly arguments: string
 }
+
+/** One argument value as the body must read it back: a string verbatim, anything else as JSON. */
+const argumentValue = (value: unknown): string =>
+  typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "null"
+
+/**
+ * The heading the arguments section opens with.
+ *
+ * It says what the section is rather than only labelling it, because the
+ * failure this replaces was a model reading a trailing block as an appendix
+ * to skim: `Input:\n{ "args": "s16-marker" }` under no heading at all.
+ */
+const argumentsHeading = "# Arguments\n\nThe values this run was launched with. Use them exactly as given.\n\n"
+
+/**
+ * Renders the prompt-flow body and its decoded input into the task the run is
+ * admitted with.
+ *
+ * Every declared field becomes its own `## <field>` heading with its value
+ * verbatim beneath it, so a body that says "the line given in the arguments"
+ * resolves to one value in one place. The previous rendering appended
+ * `Input:` and the pretty-printed JSON object, and a production run
+ * (`plan:28e015f8`) asked to append the marker from its arguments appended the
+ * invented line `unknown-marker` instead and reported success.
+ *
+ * An absent or empty input adds nothing at all: the task is the trimmed body,
+ * byte for byte, so a flow that carries no input keeps the prompt it was
+ * already cached under.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const prompt = (text: string, input: unknown): RenderedPrompt => {
+  const body = text.trim()
+  const entries: ReadonlyArray<readonly [string, unknown]> = input == null
+    ? []
+    : typeof input === "object" && !Array.isArray(input)
+    ? Object.entries(input as Record<string, unknown>)
+    // A scalar or an array declares no field to name, so the section names the
+    // whole input rather than inventing a key the body could not cite.
+    : [["input", input] as const]
+  if (entries.length === 0) return { text: body, fields: [], arguments: "" }
+  const fields = entries.map(([field]) => field)
+  const rendered = entries.map(([field, value]) => `## ${field}\n\n${argumentValue(value)}`).join("\n\n")
+  return { text: `${body}\n\n${argumentsHeading}${rendered}`, fields, arguments: rendered }
+}
+
+/**
+ * The journal record of what a launch input was rendered into.
+ *
+ * Without it an ignored argument is only visible in the diff of whatever the
+ * run was asked to change, which is exactly the evidence a run that ignored
+ * its argument does not produce. The record is bounded like every other trail
+ * field, and it is written whether or not the flow declared an input, so an
+ * empty `fields` is the positive statement that there was nothing to ignore.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+export const promptRendered = (
+  rendered: RenderedPrompt
+): { readonly eventType: Transcript.ControlEventType; readonly payload: unknown } => ({
+  eventType: "control.agent.prompt-rendered",
+  payload: { fields: rendered.fields, arguments: tracedField(rendered.arguments) }
+})
 
 /**
  * The failure the engine persists as this flow's settlement.
@@ -1847,6 +1916,23 @@ export const make = (
         const pending: Array<
           { readonly sourceSeq: JournalEvent.SourceSeq; readonly eventType: string; readonly payload: unknown }
         > = []
+        // The one record that says what the model was actually handed of the
+        // launch input, pushed before the first frame so the flush on the way
+        // out carries it even if the run never opens a turn. Frame `-1` is
+        // where it sits: before every frame, and derived from the same
+        // material on a resumed attempt, so the unique index deduplicates it.
+        const rendered = prompt(flowBody.text, plan.decodedInput)
+        const renderedRecord = promptRendered(rendered)
+        const renderedMaterial = JSON.parse(JSON.stringify(renderedRecord.payload)) as Record<string, unknown>
+        pending.push({
+          sourceSeq: traceIdentity(-1, 0, "", renderedRecord.eventType, renderedMaterial),
+          eventType: renderedRecord.eventType,
+          payload: {
+            ...renderedMaterial,
+            at: yield* Clock.currentTimeMillis,
+            journalVersion: Transcript.journalVersion
+          }
+        })
         const flush = Effect.suspend(() =>
           Effect.forEach(
             pending.splice(0, pending.length),
@@ -1911,7 +1997,7 @@ export const make = (
           modelParams: ModelRequest.GenerationParams.make({
             reasoningEffort: effortFor(descriptor, options.reasoningEffort)
           }),
-          prompt: prompt(flowBody.text, plan.decodedInput),
+          prompt: rendered.text,
           system: options.system,
           registry,
           promptRunner: options.promptRunner,

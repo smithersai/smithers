@@ -913,6 +913,16 @@ describe("AgentSession", () => {
     //   from four to two, but the trail held 25 rows instead of the required
     //   28 and lost the new `cell-call-settled`, `cell-printed`, and
     //   `cell-settled`, including the only settled evidence for `ask`.
+    // One record of what the launch input was rendered into, across a park and
+    // a resume: the resumed attempt derives the same identity from the same
+    // arguments, so the unique index refuses the second copy rather than the
+    // trail growing a row per incarnation.
+    const renderedArguments = outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
+    expect(renderedArguments).toHaveLength(1)
+    expect(renderedArguments[0]!.payload).toMatchObject({
+      fields: ["topic"],
+      arguments: "## topic\n\nstandups"
+    })
     const settled = outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.model-settled")
     expect(settled).toHaveLength(2)
     expect(
@@ -1445,6 +1455,67 @@ describe("AgentSession", () => {
     )
 
     expect(requests.map((request) => request.params.reasoningEffort)).toEqual(["medium", "low"])
+  })
+
+  it("hands a prompt flow its launch arguments as named arguments, and journals what it rendered", async () => {
+    // Production run `plan:28e015f8` launched a `{ args: string }` prompt flow
+    // whose body cited its arguments, received them only as a trailing
+    // `Input:` JSON block, invented `unknown-marker` instead, and reported
+    // success. Both halves of the remedy are asserted here: what the model is
+    // handed, and the durable record that makes an ignored argument readable
+    // after the run has settled.
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const recording = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          requests.push(request)
+          return Stream.fail(new ModelError.ModelError({ code: "authentication", message: "no credential" }))
+        })
+    })
+
+    const entries = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        const notes: Array<string> = []
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/notes", input: { args: "s16-marker" } })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: `run:arguments:${card.planId}`
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          yield* control.watch({ runId: receipt.runId }).pipe(
+            Stream.filter((event) => event.kind === "control.run.failed"),
+            Stream.take(1),
+            Stream.runDrain
+          )
+          yield* journal.flush
+          const page = yield* journal.entries({ runId: JournalEvent.RunId.make(receipt.runId), limit: 200 })
+          return page.entries.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
+        }).pipe(Effect.provide(stack({ resolve: seat(recording), notes, gate, bare: true })))
+      }).pipe(Effect.scoped) as Effect.Effect<ReadonlyArray<JournalEvent.Entry>, unknown>
+    )
+
+    const prose = requests.flatMap((request) => [
+      ...request.system.map((part) => part.text),
+      ...request.messages.flatMap((message) =>
+        message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+      )
+    ]).join("\n")
+    expect(prose).toContain("# Arguments")
+    expect(prose).toContain("## args\n\ns16-marker")
+    expect(prose).not.toContain("Input:")
+
+    expect(entries.length).toBe(1)
+    expect(entries[0]!.payload).toMatchObject({ fields: ["args"], arguments: "## args\n\ns16-marker" })
   })
 
   it("refuses a launch whose seat cannot be resolved", async () => {

@@ -1020,3 +1020,74 @@ describe("what survives the journal's own redaction", () => {
     expect(Redaction.isSensitiveKey("callDigest")).toBe(false)
   })
 })
+
+/*
+ * A prompt flow's declared input is part of its task, not an appendix.
+ *
+ * Production run `plan:28e015f8` launched a `{ args: string }` prompt flow
+ * whose body said "append the exact line given in the appended arguments".
+ * The launch input reached the model only as a trailing `Input:\n{ "args":
+ * … }` block, the model appended the invented line `unknown-marker`, and the
+ * run reported success. The rendering below is what makes that impossible to
+ * misread, and the record is what makes an ignored argument detectable after
+ * the fact instead of only in the diff of a file the run was asked to edit.
+ */
+describe("prompt-flow arguments", () => {
+  it("gives every declared field its own heading, with the value verbatim", () => {
+    const rendered = AgentSession.prompt("Append the exact line given in the arguments.", { args: "s16-marker" })
+    expect(rendered.fields).toEqual(["args"])
+    expect(rendered.arguments).toBe("## args\n\ns16-marker")
+    // The body still opens the task, and the arguments follow under a heading
+    // naming the field, so "the appended arguments" resolves to one value.
+    expect(rendered.text.startsWith("Append the exact line given in the arguments.\n\n# Arguments\n")).toBe(true)
+    expect(rendered.text.endsWith("## args\n\ns16-marker")).toBe(true)
+    // Verbatim: no quoting, no JSON envelope, nothing for the model to strip.
+    expect(rendered.text).not.toContain("\"args\"")
+    expect(rendered.text).not.toContain("Input:")
+  })
+
+  it("names each field of a multi-field input in declaration order", () => {
+    const rendered = AgentSession.prompt("Body.", { marker: "s16", count: 2, nested: { deep: true } })
+    expect(rendered.fields).toEqual(["marker", "count", "nested"])
+    expect(rendered.arguments).toBe(
+      "## marker\n\ns16\n\n## count\n\n2\n\n## nested\n\n{\n  \"deep\": true\n}"
+    )
+  })
+
+  it("renders a field whose value is absent as the JSON null it decodes back to", () => {
+    // `decodedInput` is decoded JSON, so this cannot arrive from a launch; the
+    // rendering still has to answer rather than print `undefined` at a model.
+    expect(AgentSession.prompt("Body.", { args: undefined }).arguments).toBe("## args\n\nnull")
+  })
+
+  it("names a scalar or array input `input`, because it has no field to name", () => {
+    expect(AgentSession.prompt("Body.", "s16-marker")).toMatchObject({
+      fields: ["input"],
+      arguments: "## input\n\ns16-marker"
+    })
+    expect(AgentSession.prompt("Body.", [1, 2])).toMatchObject({ fields: ["input"] })
+  })
+
+  it("leaves a flow that carries no input byte-identical, so its prompt cache still hits", () => {
+    for (const empty of [undefined, null, {}]) {
+      const rendered = AgentSession.prompt("  Body.  ", empty)
+      expect(rendered.text).toBe("Body.")
+      expect(rendered.fields).toEqual([])
+      expect(rendered.arguments).toBe("")
+    }
+  })
+
+  it("projects the rendered arguments onto a journal record an auditor can read back", () => {
+    const rendered = AgentSession.prompt("Body.", { args: "s16-marker" })
+    expect(AgentSession.promptRendered(rendered)).toEqual({
+      eventType: "control.agent.prompt-rendered",
+      payload: { fields: ["args"], arguments: "## args\n\ns16-marker" }
+    })
+  })
+
+  it("bounds an argument the size of a file the way every other trail field is bounded", () => {
+    const rendered = AgentSession.prompt("Body.", { args: "x".repeat(AgentSession.maxTracedBytes + 1) })
+    const payload = AgentSession.promptRendered(rendered).payload as { readonly arguments: unknown }
+    expect(payload.arguments).toMatchObject({ truncated: true })
+  })
+})
