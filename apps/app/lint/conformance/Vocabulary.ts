@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url"
 import type { Card } from "@smthrs/rpc/Cards"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import ts from "typescript"
-import { adminFlows, baseFlows, type CommandActions } from "../../src/mainview/flows/Flows"
+import { adminFlows, baseFlows, guideFlows, type CommandActions } from "../../src/mainview/flows/Flows"
 import { nameOf } from "../../src/mainview/flows/registry"
 import type { NativeRepositories } from "../../src/mainview/native/NativeBridge"
 import type { AgentPort } from "../../src/mainview/runtime/AgentPort"
@@ -155,7 +155,8 @@ const declarationStub = (): CommandActions => new Proxy({}, {
 }) as unknown as CommandActions
 
 export const declaredFlowNames = (): ReadonlySet<string> =>
-  new Set([...baseFlows(declarationStub()), ...adminFlows(declarationStub())].map(nameOf))
+  /* The same composition `Commands.ts` builds the registry from, minus the experimental namespace a session turns on. */
+  new Set([...baseFlows(declarationStub()), ...guideFlows(declarationStub()), ...adminFlows(declarationStub())].map(nameOf))
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
