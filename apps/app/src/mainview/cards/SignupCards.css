@@ -4,7 +4,7 @@
 
 /* Hero */
 .signup-hero { text-align: center; padding: 40px 0 8px; }
-.signup-hero h1 { margin: 0; font-size: clamp(2.2rem, 6.5vw, 4rem); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; }
+.signup-hero h1 { margin: 0; font-size: clamp(2.2rem, 6.5vw, 4rem); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; text-wrap: balance; }
 .signup-word { display: inline-block; opacity: 0; transform: translateY(0.35em); filter: blur(6px); animation: signup-word 700ms var(--ease-current) forwards; animation-delay: calc(var(--i) * 110ms + 100ms); }
 .signup-word[data-accent] { color: var(--g-accent); }
 @keyframes signup-word { to { opacity: 1; transform: none; filter: blur(0); } }
@@ -25,9 +25,10 @@
 .signup-receipt[data-you] svg { display: none; }
 
 /* Controls */
-.signup-primary, .signup-door, .signup-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); }
+.signup-primary, .signup-door, .signup-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); transition: background-color var(--dur) var(--ease-current), border-color var(--dur) var(--ease-current), filter var(--dur) var(--ease-current); }
 .signup-door { width: 100%; }
 .signup-door:hover, .signup-ghost:hover { background: var(--hover-subtle); }
+.signup-door:hover { border-color: var(--g-accent); }
 /* Scoped under .signup so the button reset above never outranks the ink on the accent fill. */
 .signup .signup-primary { background: var(--g-accent); color: var(--inverse-text); border-color: transparent; font-weight: 500; }
 .signup-primary:hover { filter: brightness(0.95); }
@@ -42,37 +43,41 @@
 .signup-field { display: grid; gap: 4px; font-size: var(--fs-small); color: var(--text-muted); }
 .signup-field input, .signup-url { min-height: 44px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); padding: 0 12px; color: var(--text); font: inherit; }
 .signup-field input:focus, .signup-url:focus-within { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
-.signup-url { display: flex; align-items: center; gap: 2px; }
+.signup-url { display: flex; align-items: center; gap: 6px; transition: border-color var(--dur) var(--ease-current), box-shadow var(--dur) var(--ease-current); }
+/* The markup raises data-valid only when the slug is a real account name. */
+.signup-url[data-valid] { border-color: color-mix(in srgb, var(--success) 55%, var(--border-strong)); }
+.signup-url[data-valid]:focus-within { border-color: var(--brand); }
 .signup-url input { min-height: 0; border: 0; background: transparent; padding: 0; flex: 1; min-width: 0; font-family: var(--font-mono); }
 .signup-url input:focus { box-shadow: none; }
-.signup-url svg { color: var(--success); flex: none; }
+.signup-url svg { color: var(--success); flex: none; margin-right: 2px; }
 .signup-prefix { color: var(--text-faint); font-family: var(--font-mono); user-select: none; }
 .signup-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .signup-actions .signup-back { margin-right: auto; }
 .signup-sent { margin: 0; text-align: center; color: var(--text-muted); font-size: var(--fs-small); }
 .signup-sent b { color: var(--text); font-weight: 500; }
 .signup-code-form { display: flex; gap: 8px; justify-content: center; }
-.signup-code { width: 11ch; min-height: 52px; text-align: center; font-family: var(--font-mono); font-size: 1.5rem; letter-spacing: 0.4em; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); color: var(--text); }
+/* letter-spacing trails the last digit too; the left padding puts the glyphs back on optical center. */
+.signup-code { width: 11ch; min-height: 52px; padding-left: 0.4em; text-align: center; font-family: var(--font-mono); font-size: 1.5rem; letter-spacing: 0.4em; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); color: var(--text); transition: border-color var(--dur) var(--ease-current), box-shadow var(--dur) var(--ease-current); }
 .signup-code:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
 
 /* Poll */
 .signup-progress { height: 2px; background: var(--border-strong); border-radius: 2px; overflow: hidden; }
 .signup-progress i { display: block; height: 100%; background: var(--g-accent); transition: width var(--dur-slow) var(--ease-current); }
 .signup-choices { display: grid; gap: 8px; }
-.signup-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); text-align: left; animation: signup-rise var(--dur-slow) var(--ease-current) both; animation-delay: calc(var(--i) * 35ms); }
-.signup-choice:hover { background: var(--hover-subtle); }
-.signup-choice[aria-checked="true"] { border-color: var(--g-accent); background: color-mix(in srgb, var(--g-accent) 12%, var(--surface)); }
+.signup-choice { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); text-align: left; animation: signup-rise var(--dur-slow) var(--ease-current) both; animation-delay: calc(var(--i) * 35ms); transition: background-color var(--dur) var(--ease-current), border-color var(--dur) var(--ease-current); }
+.signup-choice:hover { background: var(--hover-subtle); border-color: color-mix(in srgb, var(--g-accent) 45%, var(--border-strong)); }
+.signup-choice[aria-checked="true"], .signup-choice[aria-checked="true"]:hover { border-color: var(--g-accent); background: color-mix(in srgb, var(--g-accent) 12%, var(--surface)); }
 .signup-key { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border-strong); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--text-muted); flex: none; }
 .signup-choice[aria-checked="true"] .signup-key { background: var(--g-accent); color: var(--inverse-text); border-color: transparent; }
 .signup-tick { margin-left: auto; color: var(--g-accent); opacity: 0; transition: opacity var(--dur); }
 .signup-choice[aria-checked="true"] .signup-tick { opacity: 1; }
 .signup-repos { display: grid; gap: 8px; }
-.signup-repo { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); text-align: left; }
-.signup-repo:hover { border-color: var(--g-accent); }
+.signup-repo { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); text-align: left; transition: border-color var(--dur) var(--ease-current), background-color var(--dur) var(--ease-current); }
+.signup-repo:hover { border-color: var(--g-accent); background: var(--hover-subtle); }
 .signup-repo-name { font-family: var(--font-mono); font-size: var(--fs-small); }
-.signup-tile { min-height: 48px; border-radius: 8px; border: 1px dashed var(--border-solid); background: transparent; font-weight: 500; }
-.signup-tile:hover { border-color: var(--g-accent); }
-.signup-free { width: 100%; min-height: 96px; resize: vertical; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); padding: 10px 12px; font: inherit; }
+.signup-tile { min-height: 48px; border-radius: 8px; border: 1px dashed var(--border-solid); background: transparent; font-weight: 500; transition: border-color var(--dur) var(--ease-current), background-color var(--dur) var(--ease-current); }
+.signup-tile:hover { border-color: var(--g-accent); background: var(--hover-subtle); }
+.signup-free { width: 100%; min-height: 96px; resize: vertical; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); padding: 10px 12px; font: inherit; transition: border-color var(--dur) var(--ease-current), box-shadow var(--dur) var(--ease-current); }
 .signup-free:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
 
 /* Ready */
@@ -84,8 +89,8 @@
 @keyframes signup-draw { to { stroke-dashoffset: 0; } }
 .signup-url-line { font-family: var(--font-mono); color: var(--text-muted); }
 .signup-url-line b { color: var(--g-accent); }
-.signup .signup-giant { width: 100%; min-height: 64px; margin-top: 8px; border-radius: 12px; border: 0; background: var(--g-accent); color: var(--inverse-text); font-size: 1.25rem; font-weight: 600; box-shadow: 0 3px 0 color-mix(in srgb, var(--g-accent) 78%, #011627), var(--shadow-2); transition: transform var(--dur) var(--ease-current); }
-.signup-giant:hover { transform: translateY(-1px); }
+.signup .signup-giant { width: 100%; min-height: 64px; margin-top: 8px; border-radius: 12px; border: 0; background: var(--g-accent); color: var(--inverse-text); font-size: 1.25rem; font-weight: 600; box-shadow: 0 3px 0 color-mix(in srgb, var(--g-accent) 72%, black), var(--shadow-2); transition: transform var(--dur) var(--ease-current), box-shadow var(--dur) var(--ease-current), filter var(--dur) var(--ease-current); }
+.signup-giant:hover { transform: translateY(-1px); filter: brightness(0.95); }
 .signup-giant:active { transform: translateY(2px); box-shadow: none; }
 .signup-video { width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid var(--border); background: linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--g-accent) 18%, var(--surface-2))); display: grid; place-items: center; }
 .signup-play { width: 56px; height: 56px; border-radius: 50%; background: var(--inverse-bg); color: var(--inverse-text); display: grid; place-items: center; box-shadow: var(--shadow-2); }
