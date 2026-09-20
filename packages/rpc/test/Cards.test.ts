@@ -29,6 +29,34 @@ const builtInCardRow = {
 
 const base = { id: "card-r1", title: "Aomi", status: "active", createdAt: 0, ordinal: 0 }
 
+test("a write-only form rejects values in either persisted input map", () => {
+  const payload = {
+    flow: "model.credential.enroll",
+    via: "user",
+    fields: [{ name: "value", label: "API key", kind: "write-only", required: true }],
+    draft: {},
+    given: {}
+  }
+  expect(CardSchema.safeParse({ ...base, kind: "flow-form", payload }).success).toBe(true)
+  expect(
+    CardSchema.safeParse({
+      ...base,
+      kind: "flow-form",
+      payload: {
+        ...payload,
+        payloadField: "input",
+        given: { input: { value: "nested-private-fixture" } }
+      }
+    }).success
+  ).toBe(false)
+  for (const map of ["draft", "given"]) {
+    expect(
+      CardSchema.safeParse({ ...base, kind: "flow-form", payload: { ...payload, [map]: { value: "private-fixture" } } })
+        .success
+    ).toBe(false)
+  }
+})
+
 /*
  * Lane citc (ADR 0002), completed by lane L3: the workspace card carries the
  * plue DTO. plue#446 landed, so `workspaceKind`, `head`, `ahead`, `behind`,
@@ -1061,6 +1089,8 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       ],
       testing: ["ollama"],
       refresh: { state: "requested" },
+      enrollment: { available: true },
+      credentialRequests: [],
       host: "observed",
       selected: "ollama",
       attention: { kind: "test-failed", recordId: "cerebras" },

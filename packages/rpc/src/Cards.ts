@@ -2383,7 +2383,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         z.object({
           name: z.string(),
           label: z.string(),
-          kind: z.enum(["text", "textarea", "number", "boolean", "select"]),
+          kind: z.enum(["text", "textarea", "number", "boolean", "select", "write-only"]),
+          disabledReason: z.string().optional(),
           required: z.boolean(),
           placeholder: z.string().optional(),
           options: z.array(
@@ -2391,7 +2392,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
               value: z.string(),
               label: z.string(),
               disabled: z.boolean().optional(),
-              reason: z.string().optional()
+              reason: z.string().optional(),
+              flow: z.literal("model.credential.new").optional()
             })
           ).optional(),
           optionsFrom: z.enum(FORM_OPTION_PROVIDERS).optional()
@@ -2408,6 +2410,16 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** The last submit's honest refusal, kept on the card. */
       error: z.string().optional()
     })
+  }).superRefine(({ payload }, context) => {
+    const given = payload.payloadField === undefined ? payload.given : payload.given[payload.payloadField]
+    for (const field of payload.fields) {
+      if (
+        field.kind === "write-only" && (field.name in payload.draft ||
+          (given !== null && typeof given === "object" && field.name in given))
+      ) {
+        context.addIssue({ code: "custom", message: "Write-only values cannot be persisted" })
+      }
+    }
   }),
 
   /*

@@ -10,6 +10,10 @@ Shared product contracts for the local host, browser, and server. Import individ
 
 `LocalApp` re-exports the names that moved to `LocalLsp` and `CloudTunnel` for one release. Import them from their home; a new name is exported from its home alone.
 
+The model host owns enrollment (`POST /api/model/credential`) and safe receipts
+(`GET /api/model/credential/receipt`). Bun uses its state-scoped OS keychain;
+the Worker returns `local_host_required` after its session gate.
+
 ## Route ownership
 
 Each route family has one home module, and a route constant is declared only there. A route belongs to the longest family it falls under. Add a route to the module its family names; a new family gets a row here first. `test/RouteOwnership.test.ts` holds every `/api/` constant to this table.
@@ -24,6 +28,7 @@ Each route family has one home module, and a route constant is declared only the
 | `/api/tutorial/live`                                                                                                                                                                           | `LiveTutorial.ts`          |
 | `/api/repository-setup`                                                                                                                                                                        | `RepositorySetup.ts`       |
 | `/api/tutorial/provider`                                                                                                                                                                       | `TutorialProviderProxy.ts` |
+| `/api/model/credential`, `/api/model/credential/receipt`                                                                                                                                       | `AgentApiRoutes.ts`        |
 | `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/jev`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`        |
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.

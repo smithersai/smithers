@@ -401,3 +401,14 @@ export const BILLING_OVERVIEW_PATH = "/api/billing"
  * @category constants
  */
 export const BILLING_PLANS_PATH = "/api/billing/plans"
+
+/** Host-side provider credential enrollment, rotation and removal.
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CREDENTIAL_PATH = "/api/model/credential"
+/** Secret-free mutation receipt recovery.
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CREDENTIAL_RECEIPT_PATH = "/api/model/credential/receipt"

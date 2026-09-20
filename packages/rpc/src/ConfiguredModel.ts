@@ -7,14 +7,14 @@
  * prompt-injected agent can file any record a person can, so a free endpoint
  * beside a named key would be key exfiltration: `{ credential:
  * "CEREBRAS_API_KEY", baseUrl: "https://attacker" }`. No request body can
- * introduce an origin. A built-in name travels only to the https origins this
- * file lists for it; a custom name exists only where the operator of a host
- * declared the environment pair `SMITHERS_MODEL_KEY_<NAME>` and
- * `SMITHERS_MODEL_KEY_<NAME>_ORIGIN`, and travels only there. The mandatory
- * prefix is why no route can be talked into reading an arbitrary variable.
+ * repin an existing credential. A built-in name travels only to the origins
+ * this file lists; a custom name is pinned when enrolled into host storage or
+ * declared by the operator's environment pair `SMITHERS_MODEL_KEY_<NAME>` and
+ * `SMITHERS_MODEL_KEY_<NAME>_ORIGIN`. That prefix prevents arbitrary env reads.
  *
- * Everything here is pure and holds no value: a host reads the secret itself,
- * after {@link planModelBinding} has said where it may go.
+ * Persistable models, catalogs and results hold no value. Enrollment's
+ * write-only request is consumed by the host; provider execution reads the
+ * secret only after {@link planModelBinding} has said where it may go.
  *
  * @since 1.0.0
  */
@@ -283,7 +283,8 @@ export const customModelCredentials = (
 export const ModelCredentialListingSchema = z.strictObject({
   name: ModelCredentialNameSchema,
   present: z.boolean(),
-  origins: z.array(z.string().max(512)).max(8)
+  origins: z.array(z.string().max(512)).max(8),
+  managed: z.boolean().optional()
 })
 /**
  * The decoded value accepted by {@link ModelCredentialListingSchema}.
@@ -307,6 +308,108 @@ export const hostModelCredentials = (env: ModelCredentialEnv): ReadonlyArray<Mod
     ...customModelCredentials(env).map((row) => ({ name: row.name, present: present(row.name), origins: [row.origin] }))
   ]
 }
+
+/** Enrollment capability reported by the host.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelEnrollmentSchema = z.discriminatedUnion("available", [
+  z.strictObject({ available: z.literal(true) }),
+  z.strictObject({ available: z.literal(false), reason: z.enum(["local_host_required", "keychain_unavailable"]) })
+])
+/** A bounded identity for one host mutation.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialRequestIdSchema = z.string().min(8).max(64).regex(/^[A-Za-z0-9-]+$/)
+const credentialRequest = { requestId: ModelCredentialRequestIdSchema, name: ModelCredentialNameSchema }
+const credentialValue = z.string().min(1).max(8192).refine((value) =>
+  value.trim().length > 0 && !/[\r\n\0]/.test(value)
+)
+/** The only wire accepting a credential value. Never persist this request in the browser.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialRequestSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    ...credentialRequest,
+    action: z.literal("enroll"),
+    origin: z.string().min(1).max(512),
+    value: credentialValue
+  }),
+  z.strictObject({ ...credentialRequest, action: z.literal("rotate"), value: credentialValue }),
+  z.strictObject({ ...credentialRequest, action: z.literal("remove") })
+])
+/** A write-only host request.
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCredentialRequest = z.infer<typeof ModelCredentialRequestSchema>
+/** Closed failures; no exception or provider text may escape.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialFailureSchema = z.discriminatedUnion("code", [
+  z.strictObject({ code: z.literal("invalid"), field: z.enum(["name", "origin", "value", "requestId", "action"]) }),
+  ...(["exists", "unknown", "read_only", "storage_unavailable", "local_host_required", "interrupted"] as const).map(
+    (code) => z.strictObject({ code: z.literal(code) })
+  ),
+  z.strictObject({
+    code: z.literal("host_refused"),
+    status: z.number().nullable(),
+    refusal: z.string().max(80).nullable()
+  })
+])
+/** A safe enrollment failure.
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCredentialFailure = z.infer<typeof ModelCredentialFailureSchema>
+/** Only metadata leaves storage, for either outcome.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialResultSchema = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true), credential: ModelCredentialListingSchema }),
+  z.strictObject({
+    ok: z.literal(false),
+    failure: ModelCredentialFailureSchema,
+    fault: z.enum(["user", "wait", "infra", "dependency", "bug"])
+  })
+])
+/** A safe mutation result.
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCredentialResult = z.infer<typeof ModelCredentialResultSchema>
+/** Build a typed failure without copying a caught exception.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const failedModelCredential = (
+  failure: ModelCredentialFailure,
+  fault: PlueFault = failure.code === "storage_unavailable" ? "infra" : "user"
+): ModelCredentialResult => ({ ok: false, failure, fault })
+/** Reload reconciles metadata receipts, never resends the secret.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialReceiptSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("unknown") }),
+  z.strictObject({ state: z.literal("completed"), result: ModelCredentialResultSchema })
+])
+/** Safe metadata kept on the models card while work runs.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCredentialPendingSchema = z.strictObject({
+  ...credentialRequest,
+  action: z.enum(["enroll", "rotate", "remove"]),
+  origin: z.string().optional(),
+  state: z.enum(["requested", "completed", "failed"]),
+  failure: ModelCredentialFailureSchema.optional(),
+  fault: z.enum(["user", "wait", "infra", "dependency", "bug"]).optional()
+})
 
 const modelShape = {
   protocol: ModelProtocolSchema,
@@ -952,7 +1055,8 @@ export const servableModels = (
 export const ModelCatalogSchema = z.strictObject({
   models: z.array(ConfiguredModelSchema).max(64),
   credentials: z.array(ModelCredentialListingSchema).max(64),
-  seats: z.array(SeatIdSchema).max(MODEL_SEAT_IDS.length)
+  seats: z.array(SeatIdSchema).max(MODEL_SEAT_IDS.length),
+  enrollment: ModelEnrollmentSchema.optional()
 })
 /**
  * The decoded value accepted by {@link ModelCatalogSchema}.
@@ -1033,6 +1137,8 @@ export const ModelsCardPayloadSchema = z.object({
   })),
   /** Names, presence and origins. No value exists on this wire. */
   credentials: z.array(ModelCredentialListingSchema),
+  enrollment: ModelEnrollmentSchema.optional(),
+  credentialRequests: z.array(ModelCredentialPendingSchema).max(64).optional(),
   /** The last result per model, at most one each. */
   tests: z.array(ModelTestRecordSchema),
   /** Tests requested and not yet settled; relaunched after a reload. */
