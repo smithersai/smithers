@@ -342,8 +342,15 @@ export const PlanGraph = Schema.Struct({
    *
    * A host that cannot name one reports nothing, and a reader that has
    * nothing shows no code at all rather than code it cannot bind (D-068).
+   *
+   * Exactly the forty lowercase hex digits the only producer emits
+   * (`SourceRevision.objectId`), because the app puts this value straight
+   * into a contents route's `?ref=` and a route that spawns jj or git from it
+   * should never see anything else.
    */
-  sourceRevision: Schema.optional(Schema.NonEmptyString)
+  sourceRevision: Schema.optional(
+    Schema.NonEmptyString.check(Schema.makeFilter((value) => /^[0-9a-f]{40}$/.test(value)))
+  )
 })
 
 /**

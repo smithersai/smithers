@@ -320,9 +320,28 @@ describe("the source revision beside the plan", () => {
     expect(withIt.approval.target.digest).toBe(without.approval.target.digest)
   })
 
-  it("reads a graph recorded before the field existed, and refuses an empty one", () => {
+  it("reads a graph recorded before the field existed, and takes only an object id", () => {
     expect(Schema.decodeUnknownSync(PlanGraph)({ edges: [] }).sourceRevision).toBeUndefined()
     expect(Schema.decodeUnknownSync(PlanGraph)({ edges: [], sourceRevision: REVISION }).sourceRevision).toBe(REVISION)
-    expect(() => Schema.decodeUnknownSync(PlanGraph)({ edges: [], sourceRevision: "" })).toThrow()
+    /*
+     * The app puts this value straight into a contents route's `?ref=`, and a
+     * route that honours it spawns jj or git from it. The only producer emits
+     * forty lowercase hex digits (`SourceRevision.objectId`), so a branch
+     * name, an abbreviation, an upper-case id, a leading `-` git would read as
+     * an option and the empty string are refused at the boundary.
+     */
+    for (
+      const invalid of [
+        "",
+        "main",
+        "9".repeat(39),
+        "9".repeat(41),
+        "A".repeat(40),
+        `-${"9".repeat(39)}`,
+        `${REVISION}\n`
+      ]
+    ) {
+      expect(() => Schema.decodeUnknownSync(PlanGraph)({ edges: [], sourceRevision: invalid })).toThrow()
+    }
   })
 })

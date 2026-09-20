@@ -439,8 +439,26 @@ describe("node and plan records", () => {
     expect(decode(page).graph?.sourceRevision).toBe("b".repeat(40))
     const { sourceRevision: _named, ...unnamed } = graph
     expect(decode({ ...page, graph: unnamed }).graph?.sourceRevision).toBeUndefined()
-    /* An empty string is not a revision: a ref nothing can resolve. */
-    expect(() => decode({ ...page, graph: { ...graph, sourceRevision: "" } })).toThrow()
+    /*
+     * Only the forty lowercase hex digits the producer emits. A reader puts
+     * this value into a contents route's `?ref=` and that route spawns jj or
+     * git from it, so a branch name, an abbreviation, an upper-case id, a
+     * leading `-` that git reads as an option, and the empty string are all
+     * refused here rather than downstream.
+     */
+    for (
+      const invalid of [
+        "",
+        "main",
+        "b".repeat(39),
+        "b".repeat(41),
+        "B".repeat(40),
+        `-${"b".repeat(39)}`,
+        `${"b".repeat(40)}\n`
+      ]
+    ) {
+      expect(() => decode({ ...page, graph: { ...graph, sourceRevision: invalid } })).toThrow()
+    }
     expect(
       Schema.decodeUnknownSync(EngineEvent.SubgraphAppendedPayload, { onExcessProperty: "error" })({
         flow: "build",

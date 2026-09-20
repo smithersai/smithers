@@ -509,6 +509,22 @@ export const EdgeSummary = Schema.Struct({
 })
 
 /**
+ * The immutable name of a tree a host read declaration sites out of.
+ *
+ * Exactly the forty lowercase hex digits the only producer emits: a jj
+ * working-copy commit id, or a git commit for a tree that still matches one
+ * (`SourceRevision.objectId`). It is narrowed here rather than left as text
+ * because a reader puts it straight into a contents route's `?ref=`, and
+ * `DeclaredAt` beside it refuses an absolute path for the same class of
+ * reason: a field that only ever holds one shape should refuse the others at
+ * the boundary rather than at whatever spawns a process downstream.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const SourceRevision = Schema.NonEmptyString.check(Schema.makeFilter((value) => /^[0-9a-f]{40}$/.test(value)))
+
+/**
  * The graph, or one page of it, carried beside a plan record.
  *
  * `edges` is optional because only one writer can answer it honestly. A plan
@@ -536,7 +552,7 @@ export const NodeGraph = Schema.Struct({
    * can name one. A writer that cannot says nothing, and a reader that has
    * nothing shows no code rather than code it cannot bind (D-068).
    */
-  sourceRevision: Schema.optionalKey(Schema.NonEmptyString)
+  sourceRevision: Schema.optionalKey(SourceRevision)
 })
 
 /**
