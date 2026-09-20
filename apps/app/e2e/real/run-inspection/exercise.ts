@@ -112,7 +112,8 @@ export const inspectRunning = async (page: Page, request: APIRequestContext, own
       expect(summary?.status, "the shared journal boundary is observed while running").toBe("running")
       sample = { journal, expected, rendered, summary }
       return true
-    }, { timeout: 180000, intervals: [250, 500, 1000] }).toBe(true)
+      // A later sample needs the subject's next frame, which is a model response away.
+    }, { message: "a later journal boundary must arrive while the run is still running", timeout: 300000, intervals: [250, 500, 1000] }).toBe(true)
     return sample!
   }
   const deployed = deployedHeaderSource(frontendRevision)

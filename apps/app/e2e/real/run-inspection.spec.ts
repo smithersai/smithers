@@ -400,11 +400,19 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     await attachProductionJson(testInfo, "timeline-module-readback", { repo, workspaceId, runId: subject.runId, input, terminal, before, after })
     expect(terminal.status).toBe("completed")
     expect(after).toBe(before)
-    const output = terminal.finalOutput as { status: string; eventKey: string; publicActions: unknown[];
+    // The gateway records this module's final output as a JSON document, not as a decoded object.
+    expect(typeof terminal.finalOutput).toBe("string")
+    const output = JSON.parse(terminal.finalOutput as string) as { status: string; eventKey: string; publicActions: unknown[]
+      digest: string; repo: string; job: string; revision: number; sourceRevision: string
       results: { stepId: string; status: string; summary: string; output: { citations: string[]; question: string; reproduction: unknown } }[] }
     expect(output.status).toBe("completed")
     expect(output.eventKey).toBe(input.event.deliveryKey)
     expect(output.publicActions).toEqual([])
+    // The recorded invocation identity, so this output cannot belong to another request.
+    expect({ digest: output.digest, repo: output.repo, job: output.job, revision: output.revision })
+      .toEqual({ digest: input.digest, repo: input.repo, job: input.job, revision: input.revision })
+    // The run answers with the revision it actually read, which need not be the bookmark that was asked for.
+    expect(output.sourceRevision).toMatch(/^[0-9a-f]{40}$/)
     expect(output.results.map(result => result.stepId).sort()).toEqual(["followup", "research"])
     for (const result of output.results) {
       expect(result.status).toBe("completed")
