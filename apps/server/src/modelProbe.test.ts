@@ -467,7 +467,13 @@ describe("POST /api/model/test refuses a body it will not run", () => {
     { name: "a body past the cap", body: { model: chat, pad: "x".repeat(MODEL_TEST_BODY_MAX_BYTES) }, status: 413, code: "request_body_too_large" },
     { name: "a composed request with no question", body: { model: decision, input: { kind: "decision", state: [], questions: {} } }, status: 400, code: "request_invalid" },
     { name: "a composed choice with one option", body: { model: decision, input: { kind: "decision", state: [], questions: { q: { type: "choice", instructions: "?", criteria: { a: "" } } } } }, status: 400, code: "request_invalid" },
-    { name: "a composed prompt with no words", body: { model: chat, input: { kind: "generation", system: "", prompt: " ", maxTokens: 8 } }, status: 400, code: "request_invalid" }
+    { name: "a composed prompt with no words", body: { model: chat, input: { kind: "generation", system: "", prompt: " ", maxTokens: 8 } }, status: 400, code: "request_invalid" },
+    { name: "a composed temperature that is text", body: { model: chat, input: { kind: "generation", system: "", prompt: "hi", maxTokens: 8, temperature: "0.2" } }, status: 400, code: "request_invalid" },
+    // Assigned into a plain object, this name sets a prototype and the rung's probability is lost; both hosts refuse it rather than disagree.
+    { name: "a composed score with a rung named __proto__", body: { model: decision, input: { kind: "decision", state: [], questions: { q: { type: "score", instructions: "?", criteria: ["__proto__", "other"] } } } }, status: 400, code: "request_invalid" },
+    { name: "a composed choice with an option named __proto__", body: { model: decision, input: { kind: "decision", state: [], questions: { q: { type: "choice", instructions: "?", criteria: { ["__proto__"]: "", a: "", b: "" } } } } }, status: 400, code: "request_invalid" },
+    // A record parse drops this id without a word; the request is refused whole, never run with a question missing.
+    { name: "a composed question whose id is __proto__", body: { model: decision, input: { kind: "decision", state: [], questions: { ok: { type: "boolean", instructions: "?" }, ["__proto__"]: { type: "boolean", instructions: "?" } } } }, status: 400, code: "request_invalid" }
   ]
 
   for (const example of cases) {
