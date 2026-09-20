@@ -24,7 +24,7 @@ import {
   LandingBlockSchema,
   RevisionPinSchema
 } from "./Changes.ts"
-import { ModelsCardPayloadSchema } from "./ConfiguredModel.ts"
+import { ModelCallCardPayloadSchema, ModelsCardPayloadSchema } from "./ConfiguredModel.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
 import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { StatusRollupSchema } from "./Health.ts"
@@ -1469,6 +1469,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     ...cardBaseShape,
     kind: z.literal("models"),
     payload: ModelsCardPayloadSchema
+  }),
+  /*
+   * The composer for one configured model (ConfiguredModel.ts): the request a
+   * person edits, the typed answer it got, and whether one is out. The
+   * request is fields and questions, the answer is numbers and option names
+   * or the generated text, and no value exists on this payload.
+   */
+  z.object({
+    ...cardBaseShape,
+    kind: z.literal("model-call"),
+    payload: ModelCallCardPayloadSchema
   }),
   /*
    * The mythical history (Factory design session 2026-09-07 §3, mock 13): the

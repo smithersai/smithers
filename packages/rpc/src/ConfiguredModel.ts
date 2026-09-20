@@ -591,12 +591,13 @@ export type SeatAssignment = z.infer<typeof SeatAssignmentSchema>
  */
 export const MODEL_TEST_DEADLINE_MS = 15_000
 /**
- * The ceiling of a test request body.
+ * The ceiling of a test request body: a composed decision request carries a
+ * state of up to {@link MODEL_CALL_STATE_MAX_BYTES} plus its questions.
  *
  * @since 1.0.0
  * @category constants
  */
-export const MODEL_TEST_BODY_MAX_BYTES = 8 * 1024
+export const MODEL_TEST_BODY_MAX_BYTES = 64 * 1024
 /**
  * The output a generation test asks for, in tokens.
  *
@@ -629,13 +630,558 @@ export const MODEL_TEST_DECISION = {
   questions: { ok: { type: "boolean", instructions: "Does the text mention a color?" } }
 } as const
 
+/*
+ * A composed call (the model-call card): the request a person edits and asks
+ * a configured model, in place of the fixed Test input. A decision request is
+ * one JSON state, authored as typed FIELDS so it renders as fields and never
+ * as raw JSON, plus a map of typed questions; a generation request is a
+ * prompt with a small parameter set. The question shapes and their limits
+ * mirror `@smthrs/model`'s `Evaluator.Question` classes, which this module
+ * cannot import (the rpc import law), so the limits are stated once in
+ * {@link modelCallProblemOf} and the wire schema refuses through it.
+ */
+
 /**
- * Validates a test request: the whole record, so a draft can be tested before it is saved.
+ * The question kinds a decision model answers.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_QUESTION_TYPES = ["boolean", "choice", "score"] as const
+/**
+ * Validates a question kind.
  *
  * @since 1.0.0
  * @category schemas
  */
-export const ModelTestRequestSchema = z.strictObject({ model: ConfiguredModelSchema })
+export const ModelQuestionTypeSchema = z.enum(MODEL_QUESTION_TYPES)
+/**
+ * One question kind.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelQuestionType = z.infer<typeof ModelQuestionTypeSchema>
+/**
+ * The fewest options a choice question offers.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_QUESTION_OPTIONS_MIN = 2
+/**
+ * The most options a choice question offers.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_QUESTION_OPTIONS_MAX = 255
+/**
+ * The fewest rungs a score question orders.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_SCORE_RUNGS_MIN = 2
+/**
+ * The ceiling of a decision request's JSON state, in bytes.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_STATE_MAX_BYTES = 32 * 1024
+/**
+ * The ceiling of a prompt, a system prompt, and the generated text a pass
+ * carries, in characters.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_TEXT_MAX = 16 * 1024
+/**
+ * The most output tokens a composed generation request may ask for.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_MAX_TOKENS_MAX = 4096
+/**
+ * The longest name a choice option or a score rung may take, in characters.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_CALL_NAME_MAX = 128
+
+const questionShape = { instructions: z.string().max(MODEL_CALL_TEXT_MAX) }
+
+/**
+ * Validates one question as it crosses the wire: the same three shapes as
+ * `Evaluator.Question`. The count and distinctness limits are
+ * {@link modelCallProblemOf}'s, so a draft can hold a question that is not
+ * yet askable.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelQuestionSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("boolean"),
+    ...questionShape,
+    criteria: z.strictObject({ true: z.string().max(MODEL_CALL_TEXT_MAX), false: z.string().max(MODEL_CALL_TEXT_MAX) })
+      .optional()
+  }),
+  z.strictObject({
+    type: z.literal("choice"),
+    ...questionShape,
+    criteria: z.record(z.string().min(1).max(MODEL_CALL_NAME_MAX), z.string().max(MODEL_CALL_TEXT_MAX))
+  }),
+  z.strictObject({
+    type: z.literal("score"),
+    ...questionShape,
+    criteria: z.array(z.string().min(1).max(MODEL_CALL_NAME_MAX)).max(MODEL_QUESTION_OPTIONS_MAX)
+  })
+])
+/**
+ * The decoded value accepted by {@link ModelQuestionSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelQuestion = z.infer<typeof ModelQuestionSchema>
+
+/**
+ * How a state field is authored and drawn. The kind decides the control, and
+ * `boolean`, `number` and `json` decide the JSON value the field becomes.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_FIELD_KINDS = ["text", "code", "path", "diff", "terminal", "boolean", "number", "json"] as const
+/**
+ * Validates a state field's kind.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelFieldKindSchema = z.enum(MODEL_FIELD_KINDS)
+/**
+ * One state field kind.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelFieldKind = z.infer<typeof ModelFieldKindSchema>
+/**
+ * The key a state field or a question may take: one JSON object key. Never
+ * `__proto__`, which a plain object takes as its prototype, not as a key.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const MODEL_FIELD_KEY = /^(?!__proto__$)[A-Za-z_][A-Za-z0-9_.-]{0,63}$/
+/**
+ * Validates one authored state field. The value is always text; the kind says
+ * what JSON it becomes ({@link modelStateOf}).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelStateFieldSchema = z.strictObject({
+  key: z.string().regex(MODEL_FIELD_KEY),
+  kind: ModelFieldKindSchema,
+  value: z.string().max(MODEL_CALL_STATE_MAX_BYTES * 4)
+})
+/**
+ * The decoded value accepted by {@link ModelStateFieldSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelStateField = z.infer<typeof ModelStateFieldSchema>
+
+/**
+ * Validates a composed request as a DRAFT: the shape, without the limits, so
+ * the composer can hold a request that is not yet askable and say why.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCallDraftSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("decision"),
+    state: z.array(ModelStateFieldSchema).max(64),
+    questions: z.record(z.string().regex(MODEL_FIELD_KEY), ModelQuestionSchema)
+  }),
+  z.strictObject({
+    kind: z.literal("generation"),
+    system: z.string().max(MODEL_CALL_TEXT_MAX),
+    prompt: z.string().max(MODEL_CALL_TEXT_MAX),
+    maxTokens: z.number().int(),
+    temperature: z.number().min(0).max(2).optional()
+  })
+])
+/**
+ * The decoded value accepted by {@link ModelCallDraftSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallDraft = z.infer<typeof ModelCallDraftSchema>
+/**
+ * The decoded value accepted by {@link ModelCallInputSchema}: a draft with no problem.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallInput = ModelCallDraft
+
+/**
+ * Why a draft cannot be asked yet, as the composer states it inline. Each
+ * carries the question or field it names and the number the limit is about.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallProblem =
+  | { readonly code: "no_questions" }
+  | { readonly code: "question_empty"; readonly question: string }
+  | { readonly code: "options_count"; readonly question: string; readonly count: number }
+  | { readonly code: "rungs_count"; readonly question: string; readonly count: number }
+  | { readonly code: "rungs_distinct"; readonly question: string }
+  | { readonly code: "field_invalid"; readonly key: string; readonly kind: ModelFieldKind }
+  | { readonly code: "field_duplicate"; readonly key: string }
+  | { readonly code: "state_size"; readonly bytes: number; readonly max: number }
+  | { readonly code: "prompt_empty" }
+  | { readonly code: "max_tokens"; readonly max: number }
+
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
+
+/** The JSON value one field becomes, or undefined when its text is not one of its kind. */
+const fieldValueOf = (field: ModelStateField): { readonly value: unknown } | undefined => {
+  switch (field.kind) {
+    case "boolean":
+      return field.value === "true" || field.value === "false" ? { value: field.value === "true" } : undefined
+    case "number": {
+      const number = field.value.trim() === "" ? Number.NaN : Number(field.value)
+      return Number.isFinite(number) ? { value: number } : undefined
+    }
+    case "json":
+      try {
+        return { value: JSON.parse(field.value) }
+      } catch {
+        return undefined
+      }
+    default:
+      return { value: field.value }
+  }
+}
+
+/**
+ * The one JSON object a decision request's fields become: the state the model
+ * reads. A field whose text is not of its kind is skipped; {@link modelCallProblemOf}
+ * names it first.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const modelStateOf = (fields: ReadonlyArray<ModelStateField>): Record<string, unknown> => {
+  // No prototype: a key an unvalidated caller lets through is still a key, never this object's prototype.
+  const state: Record<string, unknown> = Object.create(null)
+  for (const field of fields) {
+    const decoded = fieldValueOf(field)
+    if (decoded !== undefined) state[field.key] = decoded.value
+  }
+  return state
+}
+
+/**
+ * A recorded JSON state back as authored fields, one per top-level key: a
+ * string is text, a boolean and a number their own kinds, anything nested is
+ * json. A state that is not an object is one `state` field.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const modelStateFieldsOf = (state: unknown): ReadonlyArray<ModelStateField> => {
+  if (typeof state !== "object" || state === null || Array.isArray(state)) {
+    return [
+      typeof state === "string"
+        ? { key: "state", kind: "text", value: state }
+        : { key: "state", kind: "json", value: JSON.stringify(state ?? null) }
+    ]
+  }
+  return Object.entries(state).map(([key, value]) => {
+    const safeKey = MODEL_FIELD_KEY.test(key) ? key : "state"
+    if (typeof value === "string") return { key: safeKey, kind: "text", value }
+    if (typeof value === "boolean") return { key: safeKey, kind: "boolean", value: String(value) }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return { key: safeKey, kind: "number", value: String(value) }
+    }
+    return { key: safeKey, kind: "json", value: JSON.stringify(value ?? null) }
+  })
+}
+
+/**
+ * The first reason a draft cannot be asked, or undefined when it can. The
+ * limits are the question classes' own: a choice offers 2 to 255 options, a
+ * score orders at least 2 distinct rungs, a question says something, a
+ * state fits {@link MODEL_CALL_STATE_MAX_BYTES}.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const modelCallProblemOf = (draft: ModelCallDraft): ModelCallProblem | undefined => {
+  if (draft.kind === "generation") {
+    if (draft.prompt.trim() === "") return { code: "prompt_empty" }
+    if (draft.maxTokens < 1 || draft.maxTokens > MODEL_CALL_MAX_TOKENS_MAX) {
+      return { code: "max_tokens", max: MODEL_CALL_MAX_TOKENS_MAX }
+    }
+    return undefined
+  }
+  const seen = new Set<string>()
+  for (const field of draft.state) {
+    if (seen.has(field.key)) return { code: "field_duplicate", key: field.key }
+    seen.add(field.key)
+    if (fieldValueOf(field) === undefined) return { code: "field_invalid", key: field.key, kind: field.kind }
+  }
+  const bytes = utf8Bytes(JSON.stringify(modelStateOf(draft.state)))
+  if (bytes > MODEL_CALL_STATE_MAX_BYTES) return { code: "state_size", bytes, max: MODEL_CALL_STATE_MAX_BYTES }
+  const questions = Object.entries(draft.questions)
+  if (questions.length === 0) return { code: "no_questions" }
+  for (const [question, shape] of questions) {
+    if (shape.instructions.trim() === "") return { code: "question_empty", question }
+    if (shape.type === "choice") {
+      const count = Object.keys(shape.criteria).length
+      if (count < MODEL_QUESTION_OPTIONS_MIN || count > MODEL_QUESTION_OPTIONS_MAX) {
+        return { code: "options_count", question, count }
+      }
+    }
+    if (shape.type === "score") {
+      if (shape.criteria.length < MODEL_SCORE_RUNGS_MIN) {
+        return { code: "rungs_count", question, count: shape.criteria.length }
+      }
+      if (new Set(shape.criteria).size !== shape.criteria.length) return { code: "rungs_distinct", question }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Validates a composed request as a host runs it: a draft with no problem.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCallInputSchema = ModelCallDraftSchema.check((context) => {
+  const problem = modelCallProblemOf(context.value)
+  if (problem !== undefined) context.issues.push({ code: "custom", input: context.value, message: problem.code })
+})
+
+/**
+ * The request a Test runs when none is composed: the fixed prompt, or the
+ * fixed state and its one boolean question, as fields.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const modelCallDefault = (kind: ModelKind): ModelCallInput =>
+  kind === "generation"
+    ? { kind, system: "", prompt: MODEL_TEST_PROMPT, maxTokens: MODEL_TEST_MAX_TOKENS }
+    : {
+      kind,
+      state: [...modelStateFieldsOf(MODEL_TEST_DECISION.state)],
+      questions: { ok: { type: "boolean", instructions: MODEL_TEST_DECISION.questions.ok.instructions } }
+    }
+
+const Probability = z.number().min(0).max(1)
+
+/**
+ * Validates one typed answer, as the classifier decodes it: a boolean's value
+ * and probability; a choice's option, distribution and confidence; a score's
+ * value, nearest rung and distribution.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelAnswerSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("boolean"), value: z.boolean(), probability: Probability }),
+  z.strictObject({
+    type: z.literal("choice"),
+    value: z.string(),
+    probabilities: z.record(z.string(), Probability),
+    confidence: Probability
+  }),
+  z.strictObject({
+    type: z.literal("score"),
+    value: z.number().finite(),
+    label: z.string(),
+    probabilities: z.record(z.string(), Probability),
+    confidence: Probability
+  })
+])
+/**
+ * The decoded value accepted by {@link ModelAnswerSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelAnswer = z.infer<typeof ModelAnswerSchema>
+
+/**
+ * Validates what a passed call produced: one typed answer per question, or
+ * the generated text, scrubbed and bounded.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCallOutputSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("decision"), answers: z.record(z.string(), ModelAnswerSchema) }),
+  z.strictObject({ kind: z.literal("generation"), text: z.string().max(MODEL_CALL_TEXT_MAX) })
+])
+/**
+ * The decoded value accepted by {@link ModelCallOutputSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallOutput = z.infer<typeof ModelCallOutputSchema>
+
+const RawAnswerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("boolean"), probability: z.number() }),
+  z.object({
+    type: z.literal("choice"),
+    choice: z.string(),
+    probabilities: z.record(z.string(), z.number()).optional()
+  }),
+  z.object({ type: z.literal("score"), score: z.number(), probabilities: z.record(z.string(), z.number()).optional() })
+])
+
+const isUnit = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 1
+
+/** A distribution over `keys`, one-hot on `chosen` when the provider sent none; undefined when a probability is not one. */
+const distributionOf = (
+  keys: ReadonlyArray<string>,
+  chosen: string,
+  given: Readonly<Record<string, number>> | undefined,
+  alias: (index: number) => string
+): Record<string, number> | undefined => {
+  const probabilities: Record<string, number> = {}
+  for (const [index, key] of keys.entries()) {
+    const provided = given === undefined
+      ? undefined
+      : Object.hasOwn(given, alias(index))
+      ? given[alias(index)]
+      : undefined
+    const probability = provided ?? (given === undefined && key === chosen ? 1 : 0)
+    if (!isUnit(probability)) return undefined
+    probabilities[key] = probability
+  }
+  return probabilities
+}
+
+/**
+ * Decodes a provider's raw answers against the questions they answer, the
+ * way `Classifier.decodeAnswers` does on the local host: every question needs
+ * an answer of its own type, a boolean's probability and every distribution
+ * entry lie in [0, 1], a choice names one of its options, a score lies within
+ * its rungs. A host that cannot import the classifier decodes here.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const decodeModelAnswers = (
+  questions: Readonly<Record<string, ModelQuestion>>,
+  raw: unknown
+): { readonly ok: true; readonly answers: Record<string, ModelAnswer> } | { readonly ok: false } => {
+  const no = { ok: false } as const
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return no
+  const answers: Record<string, ModelAnswer> = {}
+  for (const [id, question] of Object.entries(questions)) {
+    const parsed = RawAnswerSchema.safeParse((raw as Record<string, unknown>)[id])
+    if (!parsed.success || parsed.data.type !== question.type) return no
+    const answer = parsed.data
+    switch (answer.type) {
+      case "boolean": {
+        if (!isUnit(answer.probability)) return no
+        answers[id] = { type: "boolean", value: answer.probability >= 0.5, probability: answer.probability }
+        break
+      }
+      case "choice": {
+        const keys = Object.keys((question as Extract<ModelQuestion, { type: "choice" }>).criteria)
+        if (!keys.includes(answer.choice)) return no
+        const probabilities = distributionOf(keys, answer.choice, answer.probabilities, (index) => keys[index]!)
+        if (probabilities === undefined) return no
+        answers[id] = {
+          type: "choice",
+          value: answer.choice,
+          probabilities,
+          confidence: Math.max(...Object.values(probabilities))
+        }
+        break
+      }
+      case "score": {
+        const rungs = (question as Extract<ModelQuestion, { type: "score" }>).criteria
+        if (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > rungs.length - 1) return no
+        const label = rungs[Math.round(answer.score)]!
+        const supplied = Object.keys(answer.probabilities ?? {})
+        const indexes = rungs.map((_, index) => String(index))
+        // One key space for the whole dictionary: every key an index, else every key a label.
+        const byIndex = supplied.every((key) => indexes.includes(key))
+        if (!byIndex && !supplied.every((key) => rungs.includes(key))) return no
+        const probabilities = distributionOf(
+          rungs,
+          label,
+          answer.probabilities,
+          (index) => byIndex ? indexes[index]! : rungs[index]!
+        )
+        if (probabilities === undefined) return no
+        answers[id] = {
+          type: "score",
+          value: answer.score,
+          label,
+          probabilities,
+          confidence: Math.max(...Object.values(probabilities))
+        }
+        break
+      }
+    }
+  }
+  return { ok: true, answers }
+}
+
+/**
+ * The row's sample of what a call produced: the generated words, scrubbed
+ * and cut ({@link scrubModelSample}), or the first answer as its value and
+ * its number, the way the fixed Test has always sampled `true 0.97`.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const modelCallSample = (output: ModelCallOutput, secret: string): string => {
+  if (output.kind === "generation") return scrubModelSample(output.text, secret)
+  const first = Object.values(output.answers)[0]
+  if (first === undefined) return ""
+  const line = first.type === "boolean"
+    ? `${first.value} ${first.probability.toFixed(2)}`
+    : first.type === "choice"
+    ? `${first.value} ${first.confidence.toFixed(2)}`
+    : `${first.label} ${first.confidence.toFixed(2)}`
+  return scrubModelSample(line, secret)
+}
+
+/**
+ * Validates a test request: the whole record, so a draft can be tested before
+ * it is saved, and the composed input when a person asked one; with none the
+ * host runs its fixed Test ({@link modelCallDefault}).
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelTestRequestSchema = z.strictObject({
+  model: ConfiguredModelSchema,
+  input: ModelCallInputSchema.optional()
+})
 /**
  * The decoded value accepted by {@link ModelTestRequestSchema}.
  *
@@ -795,7 +1341,9 @@ export const ModelTestResultSchema = z.discriminatedUnion("ok", [
     ok: z.literal(true),
     latencyMs: z.number().int().nonnegative(),
     /** The model's own words, scrubbed and cut by {@link scrubModelSample}. */
-    sample: z.string().max(MODEL_TEST_SAMPLE_MAX)
+    sample: z.string().max(MODEL_TEST_SAMPLE_MAX),
+    /** What the call produced, typed; a host that ran the request carries it, and the composer prefills from it. */
+    output: ModelCallOutputSchema.optional()
   }),
   z.strictObject({
     ok: z.literal(false),
@@ -1165,3 +1713,32 @@ export const ModelsCardPayloadSchema = z.object({
  * @category models
  */
 export type ModelsCardPayload = z.infer<typeof ModelsCardPayloadSchema>
+
+/**
+ * Validates the `model-call` card's payload (Cards.ts): the composer for one
+ * configured model. The request is the editable draft; the response is the
+ * answer the model gave to the request it carries, so an edit after it is
+ * visibly stale; `asking` survives a reload and is launched again.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ModelCallCardPayloadSchema = z.strictObject({
+  model: ModelRecordIdSchema,
+  request: ModelCallDraftSchema,
+  response: z.strictObject({
+    askedAt: z.number().finite(),
+    request: ModelCallDraftSchema,
+    result: ModelTestResultSchema
+  }).optional(),
+  asking: z.boolean().optional(),
+  /** The `Evaluator.layerScripted` fixture written from the last decision answer. */
+  fixture: z.string().max(MODEL_CALL_TEXT_MAX * 4).optional()
+})
+/**
+ * The decoded value accepted by {@link ModelCallCardPayloadSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ModelCallCardPayload = z.infer<typeof ModelCallCardPayloadSchema>

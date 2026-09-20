@@ -5,19 +5,33 @@ import {
   customModelCredentials,
   cutModelCredential,
   DECISION_MODEL_IDS,
+  decodeModelAnswers,
   failedModelTest,
   hostModelCredentials,
   hostRefusedModelTest,
+  MODEL_CALL_MAX_TOKENS_MAX,
+  MODEL_CALL_NAME_MAX,
+  MODEL_CALL_STATE_MAX_BYTES,
+  MODEL_CALL_TEXT_MAX,
   MODEL_CREDENTIAL_ENV_PREFIX,
   MODEL_CREDENTIALS,
+  MODEL_FIELD_KEY,
+  MODEL_KINDS,
   MODEL_PROTOCOLS,
   MODEL_SEAT_DEFAULT,
   MODEL_SEATS,
   MODEL_TEST_DEADLINE_MS,
+  MODEL_TEST_DECISION,
   MODEL_TEST_FAILURE_CODES,
+  MODEL_TEST_MAX_TOKENS,
+  MODEL_TEST_PROMPT,
   MODEL_TEST_SAMPLE_MAX,
   MODEL_TEST_STATES,
   ModelBindingSchema,
+  modelCallDefault,
+  ModelCallDraftSchema,
+  ModelCallInputSchema,
+  modelCallProblemOf,
   ModelCatalogSchema,
   modelCredentialEnvName,
   ModelCredentialListingSchema,
@@ -29,6 +43,9 @@ import {
   ModelRecordIdSchema,
   ModelsCardPayloadSchema,
   modelSeatsOf,
+  ModelStateFieldSchema,
+  modelStateFieldsOf,
+  modelStateOf,
   ModelTestFailureSchema,
   modelTestFixOf,
   ModelTestRequestSchema,
@@ -44,7 +61,10 @@ import {
 } from "../src/ConfiguredModel.ts"
 import type {
   ConfiguredModel,
+  ModelCallDraft,
   ModelCredentialListing,
+  ModelQuestion,
+  ModelStateField,
   ModelTestFailure,
   ModelTestResult
 } from "../src/ConfiguredModel.ts"
@@ -651,5 +671,225 @@ describe("the catalog and the card", () => {
       ModelsCardPayloadSchema.safeParse({ ...payload, attention: { kind: "test-failed", seat: "explainer" } }).success
     )
       .toBe(false)
+  })
+})
+
+describe("a composed call", () => {
+  const boolean: ModelQuestion = { type: "boolean", instructions: "Does it mention a color?" }
+  const choice: ModelQuestion = { type: "choice", instructions: "Which?", criteria: { blue: "the sky", red: "a rose" } }
+  const score: ModelQuestion = { type: "score", instructions: "How sure?", criteria: ["low", "high"] }
+  const state: ReadonlyArray<ModelStateField> = [{ key: "text", kind: "text", value: "The sky is blue." }]
+  const decision: Extract<ModelCallDraft, { kind: "decision" }> = {
+    kind: "decision",
+    state: [...state],
+    questions: { ok: boolean, which: choice, sure: score }
+  }
+  const generation: ModelCallDraft = { kind: "generation", system: "", prompt: "Say ok", maxTokens: 32 }
+
+  test("the default request per kind is exactly the fixed Test the hosts run", () => {
+    expect(modelCallDefault("generation")).toEqual({
+      kind: "generation",
+      system: "",
+      prompt: MODEL_TEST_PROMPT,
+      maxTokens: MODEL_TEST_MAX_TOKENS
+    })
+    const fixed = modelCallDefault("decision")
+    if (fixed.kind !== "decision") throw new Error("the decision default is a generation")
+    expect(modelStateOf(fixed.state)).toEqual(MODEL_TEST_DECISION.state)
+    expect(fixed.questions).toEqual(MODEL_TEST_DECISION.questions)
+    for (const kind of MODEL_KINDS) expect(modelCallProblemOf(modelCallDefault(kind))).toBeUndefined()
+  })
+
+  test("a request without an input is still a request, and an input rides typed per kind", () => {
+    const model: ConfiguredModel = {
+      id: "mine",
+      protocol: "evaluation",
+      modelId: "typesafe-ai/jev",
+      credential: "AI_GATEWAY_API_KEY"
+    }
+    expect(ModelTestRequestSchema.parse({ model })).toEqual({ model })
+    expect(ModelTestRequestSchema.parse({ model, input: decision })).toEqual({ model, input: decision })
+    expect(ModelTestRequestSchema.parse({ model, input: generation })).toEqual({ model, input: generation })
+    expect(ModelTestRequestSchema.safeParse({ model, input: { kind: "decision" } }).success).toBe(false)
+    expect(ModelTestRequestSchema.safeParse({ model, input: { ...generation, apiKey: "sk" } }).success).toBe(false)
+  })
+
+  test("the state renders as typed fields and travels as one JSON object", () => {
+    const fields = [
+      { key: "path", kind: "path", value: "src/a.ts" },
+      { key: "diff", kind: "diff", value: "@@ -1 +1 @@\n-a\n+b" },
+      { key: "passed", kind: "boolean", value: "true" },
+      { key: "count", kind: "number", value: "3" },
+      { key: "meta", kind: "json", value: "{\"a\":[1]}" }
+    ] as const
+    expect(modelStateOf(fields)).toEqual({
+      path: "src/a.ts",
+      diff: "@@ -1 +1 @@\n-a\n+b",
+      passed: true,
+      count: 3,
+      meta: { a: [1] }
+    })
+    expect(modelStateFieldsOf({ text: "hi", ok: false, n: 2, deep: { a: 1 } })).toEqual([
+      { key: "text", kind: "text", value: "hi" },
+      { key: "ok", kind: "boolean", value: "false" },
+      { key: "n", kind: "number", value: "2" },
+      { key: "deep", kind: "json", value: "{\"a\":1}" }
+    ])
+    expect(modelStateFieldsOf("just text")).toEqual([{ key: "state", kind: "text", value: "just text" }])
+  })
+
+  test("a field key is one JSON object key, never the one that sets a prototype", () => {
+    expect(["text", "constructor", "toString", "a.b-c_d"].every((key) => MODEL_FIELD_KEY.test(key))).toBe(true)
+    expect(MODEL_FIELD_KEY.test("__proto__")).toBe(false)
+    expect(ModelStateFieldSchema.safeParse({ key: "__proto__", kind: "json", value: "{\"polluted\":1}" }).success).toBe(
+      false
+    )
+    expect(ModelStateFieldSchema.safeParse({ key: "constructor", kind: "text", value: "x" }).success).toBe(true)
+    expect(modelStateOf([{ key: "constructor", kind: "text", value: "x" }])).toEqual({ constructor: "x" })
+    expect(modelStateFieldsOf({ ["__proto__"]: 1 })).toEqual([{ key: "state", kind: "number", value: "1" }])
+  })
+
+  test("an option or rung name is bounded by the one constant the composer refuses it with", () => {
+    const name = "x".repeat(MODEL_CALL_NAME_MAX)
+    const question = (criteria: unknown) => ({
+      ...decision,
+      questions: { which: { type: "choice", instructions: "?", criteria } }
+    })
+    expect(ModelCallDraftSchema.safeParse(question({ [name]: "", b: "" })).success).toBe(true)
+    expect(ModelCallDraftSchema.safeParse(question({ [`${name}x`]: "", b: "" })).success).toBe(false)
+    expect(
+      ModelCallDraftSchema.safeParse({
+        ...decision,
+        questions: { sure: { type: "score", instructions: "?", criteria: [name, "b"] } }
+      }).success
+    ).toBe(true)
+    expect(
+      ModelCallDraftSchema.safeParse({
+        ...decision,
+        questions: { sure: { type: "score", instructions: "?", criteria: [`${name}x`, "b"] } }
+      }).success
+    ).toBe(false)
+  })
+
+  test("every limit the question classes enforce is a typed problem, and the wire refuses the same request", () => {
+    const problems: ReadonlyArray<readonly [unknown, unknown]> = [
+      [{ ...decision, questions: {} }, { code: "no_questions" }],
+      [{ ...decision, questions: { ok: { ...boolean, instructions: " " } } }, {
+        code: "question_empty",
+        question: "ok"
+      }],
+      [{ ...decision, questions: { which: { ...choice, criteria: { blue: "" } } } }, {
+        code: "options_count",
+        question: "which",
+        count: 1
+      }],
+      [{
+        ...decision,
+        questions: {
+          which: { ...choice, criteria: Object.fromEntries(Array.from({ length: 256 }, (_, i) => [`o${i}`, ""])) }
+        }
+      }, { code: "options_count", question: "which", count: 256 }],
+      [{ ...decision, questions: { sure: { ...score, criteria: ["only"] } } }, {
+        code: "rungs_count",
+        question: "sure",
+        count: 1
+      }],
+      [{ ...decision, questions: { sure: { ...score, criteria: ["a", "a"] } } }, {
+        code: "rungs_distinct",
+        question: "sure"
+      }],
+      [{ ...decision, state: [{ key: "n", kind: "number", value: "many" }] }, {
+        code: "field_invalid",
+        key: "n",
+        kind: "number"
+      }],
+      [{ ...decision, state: [{ key: "j", kind: "json", value: "{" }] }, {
+        code: "field_invalid",
+        key: "j",
+        kind: "json"
+      }],
+      [{ ...decision, state: [...state, ...state] }, { code: "field_duplicate", key: "text" }],
+      [{ ...decision, state: [{ key: "big", kind: "text", value: "x".repeat(MODEL_CALL_STATE_MAX_BYTES) }] }, {
+        code: "state_size",
+        bytes: MODEL_CALL_STATE_MAX_BYTES + 10,
+        max: MODEL_CALL_STATE_MAX_BYTES
+      }],
+      [{ ...generation, prompt: " " }, { code: "prompt_empty" }],
+      [{ ...generation, maxTokens: 0 }, { code: "max_tokens", max: MODEL_CALL_MAX_TOKENS_MAX }],
+      [{ ...generation, maxTokens: MODEL_CALL_MAX_TOKENS_MAX + 1 }, {
+        code: "max_tokens",
+        max: MODEL_CALL_MAX_TOKENS_MAX
+      }]
+    ]
+    for (const [input, problem] of problems) {
+      // The draft schema keeps the request so the composer can show what is wrong; the wire schema refuses it.
+      const draft = ModelCallDraftSchema.parse(input)
+      expect(modelCallProblemOf(draft)).toEqual(problem)
+      expect(ModelCallInputSchema.safeParse(input).success).toBe(false)
+    }
+    expect(modelCallProblemOf(decision)).toBeUndefined()
+    expect(ModelCallInputSchema.parse(decision)).toEqual(decision)
+    expect(modelCallProblemOf(generation)).toBeUndefined()
+  })
+
+  test("a pass may carry the typed output, and no output field is free text but the generated text", () => {
+    const answers = {
+      ok: { type: "boolean", value: true, probability: 0.97 },
+      which: { type: "choice", value: "blue", probabilities: { blue: 0.97, red: 0 }, confidence: 0.97 },
+      sure: { type: "score", value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
+    }
+    const passed = { ok: true, latencyMs: 12, sample: "true 0.97", output: { kind: "decision", answers } }
+    expect(ModelTestResultSchema.parse(passed)).toEqual(passed)
+    const text = { ok: true, latencyMs: 12, sample: "ok", output: { kind: "generation", text: "ok" } }
+    expect(ModelTestResultSchema.parse(text)).toEqual(text)
+    expect(
+      ModelTestResultSchema.safeParse({
+        ...passed,
+        output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 2 } } }
+      }).success
+    ).toBe(false)
+    expect(
+      ModelTestResultSchema.safeParse({ ...passed, output: { kind: "decision", answers, message: "sk-live" } }).success
+    ).toBe(false)
+    expect(
+      ModelTestResultSchema.safeParse({
+        ...text,
+        output: { kind: "generation", text: "x".repeat(MODEL_CALL_TEXT_MAX + 1) }
+      }).success
+    ).toBe(false)
+  })
+
+  test("raw answers decode against their questions the way the classifier decodes them", () => {
+    const decoded = decodeModelAnswers(decision.questions, {
+      ok: { type: "boolean", probability: 0.2 },
+      which: { type: "choice", choice: "red", probabilities: { red: 0.8 } },
+      sure: { type: "score", score: 1 }
+    })
+    expect(decoded).toEqual({
+      ok: true,
+      answers: {
+        ok: { type: "boolean", value: false, probability: 0.2 },
+        which: { type: "choice", value: "red", probabilities: { blue: 0, red: 0.8 }, confidence: 0.8 },
+        sure: { type: "score", value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
+      }
+    })
+    for (
+      const raw of [
+        {},
+        { ...{ ok: { type: "choice", choice: "blue" } } },
+        { ok: { type: "boolean", probability: 1.5 } },
+        {
+          ok: { type: "boolean", probability: 0.5 },
+          which: { type: "choice", choice: "green" },
+          sure: { type: "score", score: 0 }
+        },
+        {
+          ok: { type: "boolean", probability: 0.5 },
+          which: { type: "choice", choice: "blue" },
+          sure: { type: "score", score: 5 }
+        },
+        "nonsense"
+      ]
+    ) expect(decodeModelAnswers(decision.questions, raw)).toEqual({ ok: false })
   })
 })

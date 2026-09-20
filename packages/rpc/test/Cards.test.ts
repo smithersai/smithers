@@ -383,6 +383,53 @@ describe("the models card", () => {
     expect(refused({ attention: { kind: "celebrate" } })).toBe(true)
   })
 
+  test("the model-call card holds the composed request, the answer it got and what is out, and no value", () => {
+    const request = {
+      kind: "decision",
+      state: [{ key: "text", kind: "text", value: "The sky is blue." }],
+      questions: { ok: { type: "boolean", instructions: "Does it mention a color?" } }
+    }
+    const card = CardSchema.parse({
+      ...base,
+      kind: "model-call",
+      payload: {
+        model: "ollama",
+        request,
+        response: {
+          askedAt: 5,
+          request,
+          result: {
+            ok: true,
+            latencyMs: 12,
+            sample: "true 0.97",
+            output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.97 } } }
+          }
+        },
+        asking: true,
+        fixture: "Evaluator.layerScripted(() => ({ ok: { probability: 0.97 } }))"
+      }
+    })
+    if (card.kind !== "model-call") throw new Error("the model-call card decoded as another kind")
+    expect(card.payload.request).toEqual(request)
+    expect(card.payload.response?.result.ok).toBe(true)
+    // A draft that is not yet askable is still a card: the composer says what is wrong.
+    expect(
+      CardSchema.safeParse({
+        ...base,
+        kind: "model-call",
+        payload: { model: "ollama", request: { ...request, questions: {} } }
+      }).success
+    ).toBe(true)
+    const refused = (patch: Record<string, unknown>): boolean =>
+      !CardSchema.safeParse({ ...base, kind: "model-call", payload: { model: "ollama", request, ...patch } }).success
+    expect(refused({ apiKey: "sk-live" })).toBe(true)
+    expect(refused({ request: { kind: "generation", system: "", prompt: "hi", maxTokens: 8, apiKey: "sk-live" } }))
+      .toBe(true)
+    expect(
+      refused({ response: { askedAt: 1, request, result: { ok: true, latencyMs: 1, sample: "", message: "sk-live" } } })
+    ).toBe(true)
+  })
+
   test("a retired agent-models card still decodes as retired beside it", () => {
     const retired = CardSchema.parse({ ...base, kind: "agent-models", payload: { models: [model] } })
     expect(retired).toEqual({ ...base, kind: "retired", title: "", status: "acted", payload: {}, loading: false })
@@ -1095,6 +1142,44 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       selected: "ollama",
       attention: { kind: "test-failed", recordId: "cerebras" },
       error: "The host did not list its models."
+    }
+  },
+  "model-call": {
+    minimal: {
+      model: "ollama",
+      request: { kind: "generation", system: "", prompt: "Reply with the single word: ok", maxTokens: 32 }
+    },
+    full: {
+      model: "judge",
+      request: {
+        kind: "decision",
+        state: [
+          { key: "path", kind: "path", value: "src/a.ts" },
+          { key: "diff", kind: "diff", value: "@@ -1 +1 @@\n-a\n+b" },
+          { key: "passed", kind: "boolean", value: "true" }
+        ],
+        questions: {
+          ok: { type: "boolean", instructions: "Did it pass?", criteria: { true: "it passed", false: "it failed" } },
+          which: { type: "choice", instructions: "Which file?", criteria: { a: "src/a.ts", b: "src/b.ts" } },
+          risk: { type: "score", instructions: "How risky?", criteria: ["low", "high"] }
+        }
+      },
+      response: {
+        askedAt: 7,
+        request: {
+          kind: "decision",
+          state: [{ key: "text", kind: "text", value: "The sky is blue." }],
+          questions: { ok: { type: "boolean", instructions: "Does it mention a color?" } }
+        },
+        result: {
+          ok: true,
+          latencyMs: 41,
+          sample: "true 0.97",
+          output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.97 } } }
+        }
+      },
+      asking: true,
+      fixture: "Evaluator.layerScripted(() => ({ ok: { probability: 0.97 } }))"
     }
   },
   history: {
