@@ -67,7 +67,7 @@ code{background:var(--code);padding:1px 4px;border-radius:3px;font-size:13px}pre
 <li>No custom UI. The hosted app and <code>opencode attach</code> both use the implemented v1 protocol. TUI fork, compact, revert, shell and session-command features are outside this release.</li>
 <li>No multi-user, no auth beyond OpenCode's basic password, no remote hosting.</li>
 <li>No OpenCode agents, skills, MCP, LSP, PTY, or worktree features. The routes answer empty.</li>
-<li>No Jev authority over destructive actions. Jev ranks, gates, and reports; permissions and completion checks stay with the harness and the person.</li>
+<li>No Jev authority over destructive actions, and none over whether a task is finished. Jev ranks, gates, and reports; every permission is the person's. The one thing it decides is narrower than that: the completion brake refuses a claim that reports running a command, or obtaining a result, the run's own record does not carry, and it ends that turn with no answer. It says nothing about whether the work is done, so a run that finishes by reporting what it could not do is untouched, and two classes of lie pass it by design, a completion that fixed one of two named files and a wrong answer about the repository, because the evidence it is shown carries no file list and no repository content. The five deterministic brakes still run, and the person still reads the answer. See <a href="design.html">design section 8</a>.</li>
 <li>No changes to the product app in <code>apps/app</code> or the cloud worker.</li>
 </ul>
 

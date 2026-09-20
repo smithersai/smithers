@@ -162,6 +162,7 @@ content-type: application/json
 </ul>
 
 <h2>4. Open questions to close before build</h2>
+<p class="note">Three of the four are closed, and where they were closed is in this folder. The route and event trace is <a href="trace/summary.md">trace/summary.md</a> Run A, which also settled the protocol at v1. On v1 the composer needs no <code>/api/model</code>: the seat reaches it through <code>/config/providers</code>, <code>/provider</code> and <code>/agent</code>, and live drives prompted from a fresh session (<a href="runbook.md">runbook.md</a>). A tool item the app does not know renders as its generic card, which is what <code>cell</code>, <code>classify</code>, <code>health</code> and <code>demand</code> all get. Question 2 is still open: every browser measurement in this folder was taken in Chromium or Chrome, and Safari has not been tried.</p>
 <ol>
 <li>Exact route and event trace of the hosted app against a logging proxy for: connect, list, create, prompt, tool call, permission, done. Closes the contract table above.</li>
 <li>Whether Safari allows <code>https://app.opencode.ai</code> to fetch <code>http://localhost:4096</code>. Chrome and Firefox treat localhost as potentially trustworthy. OpenCode ships this path, so it works in their supported browsers; we verify ours.</li>

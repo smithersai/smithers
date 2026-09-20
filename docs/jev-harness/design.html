@@ -133,7 +133,7 @@ const after  = await ctx.call("bash", { command: "pytest tests/test_widen.py::te
 <tr><td><code>ctx.done(output)</code> (<code>Resolved</code>)</td><td>assistant text</td><td>streamed as one text item; step ended; status idle.</td></tr>
 <tr><td><code>ctx.park</code> waiting-input</td><td>question card</td><td>Not enabled in this host. The agent asks with <code>ctx.done(question)</code>; the person replies with the next prompt.</td></tr>
 <tr><td><code>PermissionRequired</code></td><td>permission card</td><td><code>permission.asked</code> with <code>permission</code> = flow name, <code>patterns</code> and <code>always</code>, and <code>tool</code> naming the call.</td></tr>
-<tr><td>Discipline demand (read-only, repeat, unmoved, narrowed, unresolved)</td><td>tool item <code>demand</code></td><td>title is the demand name and streak; output is the demand text the model was shown.</td></tr>
+<tr><td>Discipline demand (read-only, repeat, unmoved, narrowed, unresolved, narrow-only) and the completion brake's claim demand</td><td>tool item <code>demand</code></td><td>title is the demand name and streak, or for a claim the three probabilities, <code>claim &middot; invented 0.46 (complete 0.32, overclaims 0.81)</code>; output is the demand text the model was shown, and for a claim the completion it handed back.</td></tr>
 <tr><td>Health change</td><td>tool item <code>health</code> and <code>session.updated</code></td><td>see section 3.</td></tr>
 <tr><td>Budget, quota park, model retry</td><td><code>session.status</code> retry</td><td>attempt, message, next wake time.</td></tr>
 </table>
