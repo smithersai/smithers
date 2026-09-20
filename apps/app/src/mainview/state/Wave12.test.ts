@@ -31,6 +31,12 @@ const OTHER_REPO = "codeplanesmithers/smithers-cloud"
 const said = (outcome: { status: string; value?: string; error?: string }): string =>
   outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
 
+/** The durable card `flow.create` mints: where a background refusal is stated and retried. */
+const authoringCard = (store: Awaited<ReturnType<typeof webStore>>) => {
+  const card = [...store.collections.cards.values()].find((entry) => entry.kind === "run-trace" && entry.payload.authoring !== undefined)
+  return card?.kind === "run-trace" ? card : undefined
+}
+
 /** The same relay double wave 11 proved against, with the states §3/§4 need. */
 const relay = (options: {
   readonly provision?: () => unknown
@@ -221,10 +227,10 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(rendered).not.toContain("has been created")
     expect(rendered).not.toContain("summarize-open-issues")
     // What IS on screen: the deterministic line, and the card beside it.
-    expect(rendered).toContain("I started a create-flow run — the run card shows its real progress.")
+    expect(rendered).toContain("I requested a create-flow run — the run card shows its real progress.")
     expect(runCard(store)).toBeDefined()
     // The act line names the run the CLIENT started, from the machine ack.
-    expect(rendered).toContain(`Smithers started a create-flow run on ${REPO}`)
+    expect(rendered).toContain(`Smithers requested a create-flow run on ${REPO}`)
   })
 
   test("prose that claims nothing about the run is rendered untouched", async () => {
@@ -285,8 +291,8 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(30)
     const rendered = transcript(store)
     expect(rendered).not.toContain("has been created")
-    expect(rendered).toContain("I started a create-flow run — the run card shows its real progress.")
-    expect(rendered).toContain(`Smithers started a create-flow run on ${REPO}`)
+    expect(rendered).toContain("I requested a create-flow run — the run card shows its real progress.")
+    expect(rendered).toContain(`Smithers requested a create-flow run on ${REPO}`)
     expect(runCard(store)).toBeDefined()
   })
 
@@ -312,7 +318,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     controller.send("make me a workflow")
     await settle(30)
     expect(transcript(store)).not.toContain("Creating that workflow for you now")
-    expect(transcript(store)).toContain("I started a create-flow run")
+    expect(transcript(store)).toContain("I requested a create-flow run")
   })
 
   test("an unknown remote flow is requested, then its recorded refusal appears on the card", async () => {
@@ -383,7 +389,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await waitFor(() => store.session().phase === "idle")
     expect(store.session().phase).toBe("idle")
     // The launch itself still happened and is stated by the client.
-    expect(transcript(store)).toContain("Smithers started a create-flow run")
+    expect(transcript(store)).toContain("Smithers requested a create-flow run")
   })
 
   test("a turn stopped mid-flight does not leave a claiming preamble standing (review)", async () => {
@@ -418,7 +424,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(4)
 
     expect(transcript(store)).not.toContain("has been created")
-    expect(transcript(store)).toContain("I started a create-flow run")
+    expect(transcript(store)).toContain("I requested a create-flow run")
     expect(store.session().phase).toBe("idle")
   })
 
@@ -428,7 +434,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(claimsRunState("It should be done shortly.")).toBe(true)
     expect(claimsRunState("Approvals go to you, never to me.")).toBe(false)
     expect(renderedRunTurnText("flow.create", WAVE11_LIE)).toBe(
-      "I started a create-flow run — the run card shows its real progress."
+      "I requested a create-flow run — the run card shows its real progress."
     )
     expect(
       runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "flow.create", args: "x" }))
@@ -451,8 +457,10 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     await signIn(store, [REPO])
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("run-started")
+    /* The door SAVES the request and answers; the launch rides the background (AGENTS.md instant chat). */
+    expect(said(outcome)).toContain(`flow-requested repo=${REPO}`)
     expect(store.collections.cards.get("workflow-repo")).toBeUndefined()
+    await waitFor(() => double.state.launched.length > 0)
     expect(double.state.launched[0]?.repo).toBe(REPO)
   })
 
@@ -465,6 +473,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     const outcome = await controller.commands.run("flow.create", `summarize my open issues ${OTHER_REPO}`)
     expect(said(outcome)).toContain(`repo=${OTHER_REPO}`)
     // The repo token is the target, NOT part of the description.
+    await waitFor(() => double.state.launched.length > 0)
     expect(double.state.launched[0]).toMatchObject({
       workflow: "create-flow",
       repo: OTHER_REPO,
@@ -498,6 +507,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
     // ONE confirm: choosing IS the answer, and the create resumes with it.
     const chosen = await controller.commands.run("flow.repo.choose", OTHER_REPO)
     expect(said(chosen)).toContain(`repo=${OTHER_REPO}`)
+    await waitFor(() => double.state.launched.length > 0)
     expect(double.state.launched[0]).toMatchObject({
       repo: OTHER_REPO,
       input: { args: "summarize my open issues" }
@@ -660,8 +670,11 @@ describe("wave 12 §4 — the residuals", () => {
     }) })
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
-    const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("Your plan is at its sandbox limit.")
+    /* The door answers at once and provisions in the background, so the refusal lands on the durable card. */
+    expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toContain("flow-requested")
+    await waitFor(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    expect(authoringCard(store)?.payload.authoring?.launchError).toContain("Your plan is at its sandbox limit.")
+    expect(authoringCard(store)?.status).toBe("error")
     expect(store.collections.cards.get("billing-plan-limit")).toMatchObject({ kind: "billing-plans", payload: { refusal: { upgrade_plan_key: "pro" } } })
     expect(double.calls.filter(call => call.path === "/api/workflow/provision")).toHaveLength(1)
     expect(double.state.launched).toHaveLength(0)
@@ -678,8 +691,10 @@ describe("wave 12 §4 — the residuals", () => {
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
-    const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("isn't on Smithers Cloud yet")
+    expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toContain("flow-requested")
+    await waitFor(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    expect(authoringCard(store)?.payload.authoring?.launchError).toContain("isn't on Smithers Cloud yet")
+    expect(authoringCard(store)?.payload.observationError).toContain("isn't on Smithers Cloud yet")
     // Honest, and un-looped: one provision attempt, nothing launched.
     expect(double.calls.filter((call) => call.path === "/api/workflow/provision")).toHaveLength(1)
     expect(double.state.launched).toHaveLength(0)

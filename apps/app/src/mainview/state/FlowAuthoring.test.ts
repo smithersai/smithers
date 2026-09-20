@@ -45,10 +45,10 @@ const fixture = () => {
   }
   return { state, calls, release, fetchImpl }
 }
-const ready = async (relay: ReturnType<typeof fixture>, storage = memoryStorage(), flag = true) => {
+const ready = async (relay: ReturnType<typeof fixture>, storage = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-  const controller = createController(store, unavailableRepositories, silentAgent, { features: { flowBuilder: flag }, fetchImpl: relay.fetchImpl, workflowPollMs: 1, toastDebounceMs: 0, toastAutoDismissMs: 10000 })
+  const controller = createController(store, unavailableRepositories, silentAgent, { fetchImpl: relay.fetchImpl, workflowPollMs: 1, toastDebounceMs: 0, toastAutoDismissMs: 10000 })
   return { store, controller }
 }
 const runs = (store: Awaited<ReturnType<typeof createAppStore>>) => Array.from<Card>(store.collections.cards.values()).filter((card): card is Extract<Card, { kind: "run-trace" }> => card.kind === "run-trace")

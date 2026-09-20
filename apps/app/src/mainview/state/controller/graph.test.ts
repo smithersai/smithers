@@ -75,7 +75,6 @@ const RECORDED: {
 
 /** A relay double answering the procedures a plan, a launch and a re-open ride. */
 const relay = (options: {
-  readonly flowBuilder?: boolean
   readonly events?: ReadonlyArray<unknown>
   readonly nodes?: ReadonlyArray<unknown>
   /** What a SECOND Plan answers, when the re-plan is meant to draw another graph. */
@@ -166,7 +165,6 @@ const relay = (options: {
     }
   }
   const services: AppServices = {
-    features: { flowBuilder: options.flowBuilder ?? true },
     workflowPollMs: 1,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
@@ -656,29 +654,5 @@ describe("the plan card's node drawer", () => {
     await controller.commands.run("flow.plan", FLOW)
     await settle(2)
     expect(planCard(store)?.payload.view).toEqual({ node: triggerNodeId("nightly") })
-  })
-})
-
-/*
- * D-038 / D-050: with `flowBuilder` off the app is the app it was before the
- * lane. No leaf, no catalog row, no act, and no payload field.
- */
-describe("the flow builder off", () => {
-  test("neither gesture is a flow at all", async () => {
-    const { controller } = await launched({ flowBuilder: false })
-    for (const name of ["runs.graph.select", "runs.graph.tab", "flow.plan.select", "flow.plan.tab"]) {
-      expect(controller.commands.find(name)).toBeUndefined()
-      expect((await controller.commands.run(name, `${RUN} gate`)).status).toBe("unknown-command")
-    }
-  })
-
-  test("the handlers refuse, so an agent holding an older catalog writes nothing", async () => {
-    const { store, controller, reads } = await launched({ flowBuilder: false, source: "const gate = 1\n" })
-    expect(await controller.selectGraphNode(RUN, "gate")).toBe("This feature is not enabled.")
-    expect(controller.graphNodeTab(RUN, "code")).toBe("This feature is not enabled.")
-    expect(runCard(store)?.payload.graph).toBeUndefined()
-    /* And the Code tab's read is the tab's, so a refused tab reads nothing. */
-    await settle(4)
-    expect(reads).toEqual([])
   })
 })

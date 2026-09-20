@@ -124,7 +124,7 @@ const PALETTES = [
 ] as const
 
 test.describe("the graph, to a reader who is not looking at it", () => {
-  test("loads no canvas library until a graph is opened @flag-on", async ({ page }) => {
+  test("loads no canvas library until a graph is opened", async ({ page }) => {
     await listFlows(page)
     /*
      * The canvas chunk carries its own stylesheet, so the sheet is the
@@ -154,7 +154,7 @@ test.describe("the graph, to a reader who is not looking at it", () => {
     expect(await sheetFor()).toBe(true)
   })
 
-  test("names every node by its tag, its id and its state word @flag-on", async ({ page }) => {
+  test("names every node by its tag, its id and its state word", async ({ page }) => {
     await listFlows(page)
     await drawPlan(page)
 
@@ -185,7 +185,7 @@ test.describe("the graph, to a reader who is not looking at it", () => {
     }
   })
 
-  test("opens a node from the keyboard, and closes it again @flag-on", async ({ page }) => {
+  test("opens a node from the keyboard, and closes it again", async ({ page }) => {
     await listFlows(page)
     await drawPlan(page)
     const first = canvasOf(page).locator(".react-flow__node").first()
@@ -207,13 +207,13 @@ test.describe("the graph, to a reader who is not looking at it", () => {
     await expect(page.locator(".flow-graph-drawer")).toHaveCount(0)
   })
 
-  test("a running node breathes where motion is allowed @flag-on", async ({ page }) => {
+  test("a running node breathes where motion is allowed", async ({ page }) => {
     await listFlows(page)
     await drawPlan(page)
     expect(await runningNodeAnimation(page)).toBe("flow-graph-breathe")
   })
 
-  test("draws a visible ring on the node the keyboard is on @flag-on", async ({ page }) => {
+  test("draws a visible ring on the node the keyboard is on", async ({ page }) => {
     await listFlows(page)
     await drawPlan(page)
     const first = canvasOf(page).locator(".react-flow__node").first()
@@ -242,7 +242,7 @@ test.describe("the graph, to a reader who is not looking at it", () => {
    * and the edge's stroke against the canvas behind it — and photographed, so
    * a failure comes with the picture that caused it.
    */
-  test("every palette and both themes clear the contrast floors @flag-on", async ({ page }, testInfo) => {
+  test("every palette and both themes clear the contrast floors", async ({ page }, testInfo) => {
     // Eighteen theme changes and eighteen photographs, over the real stack.
     test.slow()
     await listFlows(page)
@@ -334,7 +334,7 @@ test.describe("the graph, to a reader who is not looking at it", () => {
  * system sends.
  */
 test.describe("with reduced motion", () => {
-  test("nothing on the canvas animates, and the words still say everything @flag-on", async ({ page }) => {
+  test("nothing on the canvas animates, and the words still say everything", async ({ page }) => {
     /*
      * The same signal an operating system sends. It is emulated on the page
      * rather than declared as a test option, because `reducedMotion` is a

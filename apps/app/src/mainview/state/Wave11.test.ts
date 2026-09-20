@@ -278,6 +278,12 @@ const runCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { k
   return card?.kind === "run-trace" ? card : undefined
 }
 
+/** The durable card `flow.create` mints: where a background refusal is stated and retried. */
+const authoringCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { kind: "run-trace" }> | undefined => {
+  const card = [...store.collections.cards.values()].find(card => card.kind === "run-trace" && card.payload.authoring !== undefined)
+  return card?.kind === "run-trace" ? card : undefined
+}
+
 /** A scripted tool-loop agent (the ToolLoop.test.ts pattern). */
 describe("wave 11 — the full journey: make me a workflow", () => {
   test("description → provision → run card → approval → completed card leading with the result", async () => {
@@ -297,7 +303,9 @@ describe("wave 11 — the full journey: make me a workflow", () => {
       "a workflow that summarizes my open issues"
     )
     expect(outcome.status).toBe("executed")
-    expect(said(outcome)).toContain("run-w11")
+    /* The door SAVES the request and answers; provision and launch ride the background. */
+    expect(said(outcome)).toBe(`flow-requested repo=${REPO}`)
+    await waitFor(() => double.state.launched.length > 0)
 
     // The gateway was provisioned BEFORE anything was launched, and the
     // launch is the stock create-flow with the description as its input.
@@ -401,10 +409,10 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     expect(double.state.launched[0]?.workflow).toBe("create-flow")
     expect(runCard(store)).toBeDefined()
     expect(store.collections.sessions.get("main")?.surface).toBe("chat")
-    // The tool result the model saw states the run, so it cannot claim
+    // The tool result the model saw states the REQUEST, so it cannot claim
     // something the seam did not do.
     const secondTurn = requests[1]
-    expect(JSON.stringify(secondTurn?.messages)).toContain("run-w11")
+    expect(JSON.stringify(secondTurn?.messages)).toContain(`flow-requested repo=${REPO}`)
     // The transcript act line is compact — no raw tool payload.
     expect([...store.collections.messages.values()].map((message) => message.text).join("\n")).not.toContain(
       "{\"state\""
@@ -705,8 +713,10 @@ describe("wave 11 — the run card never silently stalls", () => {
     })
     await signIn(store)
 
-    const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("no free workspace capacity")
+    expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toBe(`flow-requested repo=${REPO}`)
+    /* The refusal is the durable card's, where the retry door stands beside it. */
+    await waitFor(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    expect(authoringCard(store)?.payload.authoring?.launchError).toContain("no free workspace capacity")
     expect(double.state.launched).toHaveLength(0)
     expect(double.calls.filter((call) => call.path === "/api/workflow/provision")).toHaveLength(1)
     // The failure toast keeps the attempt and states why.
@@ -774,9 +784,11 @@ describe("wave 11 — workflows are presented", () => {
     const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
     await signIn(store)
 
-    const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).not.toContain("is registered on this workspace")
-    expect(said(outcome)).toContain("flow-authoring flow")
+    expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toBe(`flow-requested repo=${REPO}`)
+    await waitFor(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    const refusal = authoringCard(store)?.payload.authoring?.launchError ?? ""
+    expect(refusal).not.toContain("is registered on this workspace")
+    expect(refusal).toContain("flow-authoring flow")
     expect(double.state.launched).toHaveLength(0)
     // It tried the launch — it did not refuse on a stale list.
     expect(double.calls.some((call) => (call.body as { procedure?: string } | undefined)?.procedure === "Plan")).toBe(
@@ -810,8 +822,8 @@ describe("wave 11 — workflows are presented", () => {
     })
     await signIn(store)
 
-    const outcome = await controller.commands.run("flow.create", "summarize my issues")
-    expect(said(outcome)).toContain("run-w11")
+    expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toBe(`flow-requested repo=${REPO}`)
+    await waitFor(() => double.state.launched.length > 0)
     expect(double.state.launched[0]?.workflow).toBe("create-flow")
   })
 
@@ -828,7 +840,7 @@ describe("wave 11 — workflows are presented", () => {
     await signIn(store)
 
     const created = said(await controller.commands.run("flow.create", "summarize my open issues"))
-    expect(created).toBe(`run-started workflow=create-flow run=run-w11 repo=${REPO}`)
+    expect(created).toBe(`flow-requested repo=${REPO}`)
 
     const ran = said(await controller.commands.run("flow.run", "review-pr"))
     expect(ran).toMatch(/^run-requested workflow=review-pr request=\S+ repo=/)
@@ -853,14 +865,16 @@ describe("wave 11 — workflows are presented", () => {
      * (the which-repo answer and a quiet run's stop/retry); lane runs added
      * the hidden stop-all — affordances the briefs name, invisible to the
      * slash menu and the tool catalog alike. The runs.* lifecycle commands
-     * are their own namespace, pinned in the registry test.
+     * are their own namespace, pinned in the registry test. `flow.plan` is the
+     * fourth conversational one (D-080: the flow builder is the app), and it
+     * brought two hidden graph gestures with it.
      */
-    expect(controller.commands.all().filter((command) => command.name.startsWith("flow."))).toHaveLength(7)
+    expect(controller.commands.all().filter((command) => command.name.startsWith("flow."))).toHaveLength(10)
     expect(
       controller.commands
         .all()
         .filter((command) => command.name.startsWith("flow.") && command.hidden !== true)
         .map((command) => command.name)
-    ).toEqual(["flow.create", "flow.list", "flow.run"])
+    ).toEqual(["flow.create", "flow.list", "flow.run", "flow.plan"])
   })
 })

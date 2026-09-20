@@ -67,7 +67,7 @@ const startChild = (command: string[], pipe = false) => {
   if (stopping !== undefined) throw new Error("Host is stopping")
   const child = spawn(command[0]!, command.slice(1), {
     cwd: APP_DIR, detached: true, stdio: ["ignore", pipe ? "pipe" : "inherit", "inherit"],
-    env: { ...process.env, VITE_SMITHERS_FLOW_BUILDER: process.env.VITE_SMITHERS_FLOW_BUILDER ?? "true" }
+    env: { ...process.env }
   })
   const exited = new Promise<number>((resolve, reject) => {
     child.once("error", reject)

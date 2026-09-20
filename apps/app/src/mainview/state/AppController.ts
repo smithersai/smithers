@@ -259,7 +259,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Ask 5: the Flows pane — the surface switch and the listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
   readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
-  /** What a flow WOULD run (flow.plan); behind the flowBuilder flag. */
+  /** What a flow WOULD run (flow.plan). */
   readonly planFlow: WorkflowController["planFlow"]
   /* Wave 12 §2 — the answer to "which loaded repository?" (one act). */
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
@@ -726,8 +726,6 @@ export interface AppFeatures {
   readonly suggestionPills?: boolean
   /** The hidden mock namespace (experimental/Manifest.ts). */
   readonly experimental?: boolean
-  /** The flow builder: the plan door, its card and its graph (docs/flow-builder). */
-  readonly flowBuilder?: boolean
 }
 
 /**
@@ -743,8 +741,7 @@ export const createAppController = (
   const knowledge = {
     wiki: services.features?.wiki ?? import.meta.env?.VITE_SMITHERS_WIKI === "true",
     mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
-    experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true",
-    flowBuilder: services.features?.flowBuilder ?? import.meta.env?.VITE_SMITHERS_FLOW_BUILDER === "true"
+    experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   }
   const ctx = createControllerContext(store, repositories, agent, {
     ...services, features: { ...services.features, ...knowledge }
@@ -858,8 +855,7 @@ export const createAppController = (
   /* A registration is a launched flow run: it rides the app's own run watch and the shared toast stack. */
   const triggersSeam = actors.pair(seamCtx, (context) => createTriggersSeam(context, {
     watchRun: (cardId) => pumpWorkflowRun(cardId),
-    withToast,
-    flowBuilder: features.flowBuilder
+    withToast
   }))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
@@ -1901,7 +1897,6 @@ export const createAppController = (
         wiki: features.wiki,
         mythicalHistory: features.mythicalHistory,
         experimental: experimentalEnabled(),
-        flowBuilder: features.flowBuilder,
         surface: store.session().surface,
         plugins: store.session().plugins ?? [],
         typing: store.session().phase === "responding",

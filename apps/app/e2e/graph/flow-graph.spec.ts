@@ -171,9 +171,9 @@ test.describe("the flow builder's plan door", () => {
    * the whole of a manual session, because a failed toast stays until it is
    * dismissed. A red toast over a stack that is working is the kind of thing
    * a reader learns to ignore, which is why it is asserted rather than
-   * described. Both builds boot the same host, so this runs in both.
+   * described.
    */
-  test("boots with nothing failed on screen @flag-on @flag-off", async ({ page }) => {
+  test("boots with nothing failed on screen", async ({ page }) => {
     await page.goto("/")
     // The session the relay answers is signed-in, which is what starts the
     // reads; waiting for a flow row means every one of them has been made.
@@ -202,7 +202,7 @@ test.describe("the flow builder's plan door", () => {
      * "this origin has no repositories at all", which boots the app without a
      * repositories backend. The host wraps no child process, so it says
      * `unavailable` and `unenforced` rather than claiming an enforcement it
-     * does not perform. Both builds boot the same host, so this runs in both.
+     * does not perform.
      */
     const bootstrap = await page.evaluate(async () => {
       const token = document.querySelector('meta[name="smithers-local-session"]')?.getAttribute("content") ?? ""
@@ -217,7 +217,7 @@ test.describe("the flow builder's plan door", () => {
     })
   })
 
-  test("draws the flow's real plan, with its node ids, its actions and its edges @flag-on", async ({ page }) => {
+  test("draws the flow's real plan, with its node ids, its actions and its edges", async ({ page }) => {
     await listFlows(page)
     await page.locator(`[data-flow="flow.plan"][data-flow-args="${GRAPH_FLOW}"]`).click()
 
@@ -256,42 +256,6 @@ test.describe("the flow builder's plan door", () => {
   })
 
   /*
-   * D-038 / D-050: with the flag off the app is the app it was. The host is
-   * the same one — the same relay, the same schedule in the same trigger
-   * store, the same contents route — so everything absent below is absent
-   * because the BUILD draws none of it, not because nothing answered.
-   */
-  test("is absent where the flag is off, and the Run door beside it is not @flag-off", async ({ page }) => {
-    await listFlows(page)
-    // The row renders, its Run door renders, and the plan door does not exist:
-    // with the flag off there is no registry entry to bind one to.
-    await expect(page.locator('[data-flow="flow.plan"]')).toHaveCount(0)
-    await expect(page.getByTestId("card-form-flow.plan")).toHaveCount(0)
-
-    // The dispatcher still lists, and the box's schedule still reaches its
-    // card: the trigger listing is not the flow builder's, and neither is the
-    // route behind it.
-    await command(page, `/triggers.list ${GRAPH_REPO}`)
-    await expect(page.getByTestId("trigger-live")).toBeVisible()
-    await expect(page.locator(`[data-trigger="${GRAPH_SCHEDULE.id}"][data-source="box"]`)).toContainText(GRAPH_SCHEDULE.words)
-    // No canvas anywhere draws it, because no canvas is drawn at all.
-    await expect(page.locator(".flow-plan-canvas")).toHaveCount(0)
-    await expect(page.locator(".flow-graph-drawer")).toHaveCount(0)
-
-    // A run card has its turns and no graph beside them: one binding gates
-    // the door, the bar it hangs in and the view.
-    const runId = await runFixture(page)
-    await expect(page.locator(`[data-flow="runs.trace.view"][data-flow-args="${runId} graph"]`)).toHaveCount(0)
-    await expect(page.locator(`[data-flow="runs.trace.view"][data-flow-args="${runId} turns"]`)).toHaveCount(0)
-    await expect(page.locator(".flow-plan-canvas")).toHaveCount(0)
-
-    // And a file still reads, through the same route the Code tab would have
-    // used: the contents route is the app's oldest read and no flag gates it.
-    await command(page, `/files.read ${GRAPH_FLOW_SOURCE} ${GRAPH_REPO}`)
-    await expect(page.locator(".world-card-panel").last()).toBeVisible()
-  })
-
-  /*
    * The run's drawer: the node's own records, the file its action was
    * declared in, and the state surviving a reload.
    *
@@ -303,7 +267,7 @@ test.describe("the flow builder's plan door", () => {
    * through the contents route, so the line a reader lands on is the line the
    * declaration is on.
    */
-  test("opens a run node onto its own records, and onto the file it was declared in @flag-on", async ({ page }) => {
+  test("opens a run node onto its own records, and onto the file it was declared in", async ({ page }) => {
     /*
      * This test owns the HOST's first run, and says so rather than relying on
      * the order it happens to be declared in. The fixture's retry is an
@@ -425,7 +389,7 @@ test.describe("the flow builder's plan door", () => {
    * an arm mid-flight would be a timing bet, and the run is over in under two
    * seconds.
    */
-  test("advances each node's status from the run's own node records @flag-on", async ({ page }) => {
+  test("advances each node's status from the run's own node records", async ({ page }) => {
     await listFlows(page)
     await page.locator(`[data-flow="flow.run"][data-flow-args="${GRAPH_FLOW}"]`).click()
 
@@ -495,7 +459,7 @@ test.describe("the flow builder's plan door", () => {
    * journal and no key. So each half is asserted against what its own source
    * really holds, and against the tabs the other one does not get.
    */
-  test("opens a plan node onto the key the control plane keyed it under @flag-on", async ({ page }) => {
+  test("opens a plan node onto the key the control plane keyed it under", async ({ page }) => {
     await listFlows(page)
     await page.locator(`[data-flow="flow.plan"][data-flow-args="${GRAPH_FLOW}"]`).click()
     const canvas = canvasOf(page)
@@ -565,7 +529,7 @@ test.describe("the flow builder's plan door", () => {
    * not what is on disk. The marker is inserted above the declaration, so a
    * reader served the working tree would see it and be one line off.
    */
-  test("shows the source the plan was built from, not the file on disk @flag-on", async ({ page }) => {
+  test("shows the source the plan was built from, not the file on disk", async ({ page }) => {
     await listFlows(page)
     const original = readFileSync(SOURCE_PATH, "utf8")
     const marker = "// edited after the host loaded this flow"
@@ -612,7 +576,7 @@ test.describe("the flow builder's plan door", () => {
    * what the surface reads a key off, so this is the tier that proves it: a
    * component test can dispatch a key from anywhere it likes.
    */
-  test("walks the graph from the keyboard and closes what it opened @flag-on", async ({ page }) => {
+  test("walks the graph from the keyboard and closes what it opened", async ({ page }) => {
     await listFlows(page)
     await page.locator(`[data-flow="flow.plan"][data-flow-args="${GRAPH_FLOW}"]`).click()
     const canvas = canvasOf(page)
@@ -669,7 +633,7 @@ test.describe("the flow builder's plan door", () => {
    * `GET /api/workflow/triggers`, so nothing below is a fixture the browser
    * was handed.
    */
-  test("draws the registered schedule beside the plan, outside its count @flag-on", async ({ page }) => {
+  test("draws the registered schedule beside the plan, outside its count", async ({ page }) => {
     await listFlows(page)
     await command(page, `/triggers.list ${GRAPH_REPO}`)
     // The dispatcher card's own row for the box's schedule: the box answered,
@@ -727,7 +691,7 @@ test.describe("the flow builder's plan door", () => {
    * unmeasured node on it is silence rather than a sum that is short by
    * whatever Doomed takes.
    */
-  test("wears the p50 two finished runs measured, and no estimate the path cannot make @flag-on", async ({ page }) => {
+  test("wears the p50 two finished runs measured, and no estimate the path cannot make", async ({ page }) => {
     await listFlows(page)
     await runFixture(page)
     await runFixture(page)
@@ -772,7 +736,7 @@ test.describe("the flow builder's plan door", () => {
    * states: the work a second run would do runs through the node that fails,
    * and nothing has measured it.
    */
-  test("counts the keys a second run would move, and only the ones that moved @flag-on", async ({ page }) => {
+  test("counts the keys a second run would move, and only the ones that moved", async ({ page }) => {
     await listFlows(page)
     const runId = await runFixture(page)
     // The durable launch card has no progress sentence naming its run ID.

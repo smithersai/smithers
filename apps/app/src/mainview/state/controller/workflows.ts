@@ -6,12 +6,12 @@ import type { Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import type { ControllerContext } from "./context"
-import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
+import type { GatewayWorkspaceBinding } from "./gateway"
 import { runCardIdFor, runScopeFromCard } from "../RunReference"
 import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../RepoContext"
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
-import { FLOW_AUTHORING_ENTRY, flowAuthoringUnavailable } from "@smthrs/rpc/FlowAuthoring"
+import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
 import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
@@ -563,7 +563,7 @@ export const createWorkflowController = (
      * just-launched run got an unlabelled graph the plan door had already
      * been told the reasons for.
      */
-    const planned = ctx.services.features?.flowBuilder === true ? planCardSnapshot(launch.value) : undefined
+    const planned = planCardSnapshot(launch.value)
     upsertRunCard({
       runId,
       repo: args.repo,
@@ -694,51 +694,7 @@ export const createWorkflowController = (
     const repo = target.repo
     const binding = flowAuthoringBinding(repo)
     if ("error" in binding) return refuseCreate(binding.error)
-    if (ctx.services.features?.flowBuilder === true) return authoring.request(description, repo, binding, ctx.commandActor)
-    const provisioned = await provisionWorkspace(repo, binding)
-    if (provisioned !== true) return refuseCreate(provisioned)
-    /*
-     * No pre-flight `listWorkflows` gate here, for a plainer reason than the
-     * one this comment used to give. It claimed the gateway populates a GLOBAL
-     * pack lazily, so a cold list could omit a flow the workspace really has.
-     * That is not how this host behaves: a workspace's catalog is its own
-     * repository's `flows/` tree plus the bodies the host provisions at
-     * startup (`flows/repository/registry.ts`), and both are settled before it
-     * serves a request. The reason to launch first is that the list is a
-     * second round trip which can only ever agree with the launch, and
-     * `launchRun` resolves the registry itself and answers FlowNotFound.
-     */
-    const launched = await launchWorkflow({
-      repo,
-      binding,
-      workflow: FLOW_AUTHORING_ENTRY,
-      /*
-       * A prompt body's input is the fixed `{ args: string }` marker
-       * (`Descriptor.SchemaRefMarkdownArgs`, decoded by a strict zod object in
-       * `SchemaBridge`), not a field of this door's choosing. `{ prompt }`
-       * decodes as an unknown key and the plan refuses before the run exists.
-       */
-      input: { args: description },
-      title: `Creating a flow: ${repo}`
-    })
-    /*
-     * A workspace with no authoring flow is told so in the product's own
-     * words. The control plane's refusal is `No flow "create-flow" is
-     * registered on this workspace.` — an internal id and no action — and for
-     * two nights on production that sentence was the entire answer a person
-     * got from the headline door. Every other refusal is still the
-     * workspace's own, because it is about their request, not about us.
-     */
-    if ("message" in launched) {
-      return refuseCreate(isFlowNotFound(launched.code) ? flowAuthoringUnavailable(repo) : launched.message)
-    }
-    /*
-     * Wave 12 §1: a MINIMAL machine acknowledgment. Wave 11's paragraph of
-     * warnings was the model's only evidence and it rounded up anyway, so the
-     * result stops trying to talk the model out of lying: it states the fact
-     * the client already knows, and the claim surface is the client's.
-     */
-    return { value: `run-started workflow=${FLOW_AUTHORING_ENTRY} run=${launched.runId} repo=${repo}` }
+    return authoring.request(description, repo, binding, ctx.commandActor)
   }
 
   /** A source card binds both catalog reads and launches to the retained host. */
@@ -855,7 +811,6 @@ export const createWorkflowController = (
    * progress; the answer fills the card when it lands.
    */
   const planFlow = async (name: string, repoArg?: string, inputArg?: Record<string, unknown>, sourceCard?: string, against?: string): Promise<string | void | { readonly value: string }> => {
-    if (ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
     const target = workflowScope(repoArg, sourceCard)

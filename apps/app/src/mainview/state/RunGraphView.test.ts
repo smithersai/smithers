@@ -48,7 +48,6 @@ const NODES = [planNode("gate", "graph/Gate"), planNode("steady", "graph/Steady"
 const relay = (
   options: {
     readonly nodes?: ReadonlyArray<unknown>
-    readonly flowBuilder?: boolean
     /** The graph the plan door answered with, when this workspace reports one. */
     readonly graph?: unknown
   } = {}
@@ -109,7 +108,6 @@ const relay = (
     }
   }
   const services: AppServices = {
-    features: { flowBuilder: options.flowBuilder ?? true },
     workflowPollMs: 1,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
@@ -154,7 +152,6 @@ const runCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { k
 const launched = async (
   options: {
     readonly nodes?: ReadonlyArray<unknown>
-    readonly flowBuilder?: boolean
     readonly graph?: unknown
   } = {}
 ) => {
@@ -255,42 +252,5 @@ describe("the graph view's reader gestures", () => {
     await signIn(store)
     expect(said(await controller.commands.run("runs.trace.view", "run-9 graph"))).toContain("runs.open run-9")
     expect(said(await controller.commands.run("runs.graph.follow", "run-9 on"))).toContain("runs.open run-9")
-  })
-})
-
-/*
- * D-038: with `flowBuilder` off the app is the app it was before the lane, in
- * the registry and on disk. The engine still records the nodes (D-046), so
- * every gate here is the app's own.
- */
-describe("the flow builder off", () => {
-  test("a launch keeps no plan on the run it started", async () => {
-    const { store } = await launched({ flowBuilder: false })
-    expect(runCard(store)?.payload.plan).toBeUndefined()
-    expect(Object.keys(runCard(store)?.payload ?? {})).not.toContain("plan")
-  })
-
-  test("the camera is not a flow at all", async () => {
-    const { controller } = await launched({ flowBuilder: false })
-    expect(controller.commands.find("runs.graph.follow")).toBeUndefined()
-    expect((await controller.commands.run("runs.graph.follow", `${RUN} on`)).status).toBe("unknown-command")
-  })
-
-  test("the handlers refuse, so an agent holding an older catalog draws nothing", async () => {
-    const { store, controller } = await launched({ flowBuilder: false })
-    expect(controller.graphFollow(RUN, true)).toBe("This feature is not enabled.")
-    // `traceView` answers a promise since main made the timeline view read its
-    // own page; the refusal is the value it resolves with, not a second shape.
-    expect(await controller.traceView(RUN, "graph")).toBe("This feature is not enabled.")
-    expect(runCard(store)?.payload.traceView).toBeUndefined()
-    expect(runCard(store)?.payload.graph).toBeUndefined()
-  })
-
-  test("the two views the run card always had still answer", async () => {
-    const { store, controller } = await launched({ flowBuilder: false })
-    expect(said(await controller.commands.run("runs.trace.view", `${RUN} timeline`))).toBe(`trace-view run=${RUN} view=timeline`)
-    expect(runCard(store)?.payload.traceView).toBe("timeline")
-    expect(said(await controller.commands.run("runs.trace.view", `${RUN} turns`))).toBe(`trace-view run=${RUN} view=turns`)
-    expect(runCard(store)?.payload.traceView).toBe("turns")
   })
 })

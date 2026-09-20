@@ -147,7 +147,7 @@ describe("a plan card states every ending it has", () => {
     ["There's no flow called review on o/r."]
   ])("a refusal stays on the card with the door that asks again: %s", (sentence) => {
     const host = render(
-      <FlowPlanCardBody card={card({ status: "failed", error: sentence })} onRunCommand={() => {}} flowBuilder />
+      <FlowPlanCardBody card={card({ status: "failed", error: sentence })} onRunCommand={() => {}} />
     )
     expect(host.querySelector(".flow-plan-error")?.textContent).toBe(sentence)
     expect(host.querySelector("[data-flow=\"flow.plan\"]")).not.toBeNull()
@@ -165,7 +165,6 @@ describe("a plan card states every ending it has", () => {
       <FlowPlanCardBody
         card={card({ status: "failed", error: "No workspace capacity right now.", nodes: NODES })}
         onRunCommand={() => {}}
-        flowBuilder
       />
     )
     expect(host.querySelector(".flow-plan-error")?.textContent).toBe("No workspace capacity right now.")
@@ -176,7 +175,7 @@ describe("a plan card states every ending it has", () => {
 
 describe("nothing is drawn as nothing", () => {
   test("a plan with no nodes draws no canvas, no count and no sentence about it", () => {
-    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: [] })} onRunCommand={() => {}} flowBuilder />)
+    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: [] })} onRunCommand={() => {}} />)
     expect(host.querySelector(".flow-plan-canvas")).toBeNull()
     expect(host.querySelector(".flow-plan-count")).toBeNull()
     expect(host.querySelectorAll("p").length).toBe(0)

@@ -243,10 +243,10 @@ Nothing in this group exists. The packaged binary is the shipped alpha artifact.
 | E13.4 | Every consumed house token defined in both `:root` and `[data-theme="dark"]` — no violet/zinc leak | PART    | `Palette.test.ts` unit   |
 | E13.5 | **`prefers-reduced-motion` honored**                                                               | **GAP** | —                        |
 
-The flow graph is behind `flowBuilder`, so the rows below are asserted by the
-flow-graph tier (`playwright.graph.config.ts`, real control plane and real
-engine) and by the unit pins beside the cards. They cover the graph surface
-only; E13.2 to E13.5 remain open for the rest of the app.
+The rows below are asserted by the flow-graph tier
+(`playwright.graph.config.ts`, real control plane and real engine) and by the
+unit pins beside the cards. They cover the graph surface only; E13.2 to E13.5
+remain open for the rest of the app.
 
 |        | Test                                                                                        | Status  | Where                                                    |
 | ------ | ------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------- |

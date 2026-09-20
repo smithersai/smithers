@@ -4,7 +4,7 @@ import { GRAPH_FLOW, GRAPH_NODE_IDS, GRAPH_REPO, GRAPH_STEADY } from "./workspac
 // Delay real HTTP with Chromium's network stack. No route interception: both
 // the pending toast and the completed read cross the production persistence path.
 for (const moment of ["during", "after"] as const) {
-  test(`reloads ${moment} a slow Code read @flag-on`, async ({ page }) => {
+  test(`reloads ${moment} a slow Code read`, async ({ page }) => {
     await page.goto("/")
     const composer = page.getByTestId("composer-input")
     if (!await composer.isVisible()) await page.locator('[data-flow="chat.open"]').first().click()

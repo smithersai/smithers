@@ -1,3 +1,4 @@
+import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 import type { PendingToolCall } from "./controller/context"
 import { runLaunchCommandOf, toolResultLaunchedRun } from "./RunClaims"
 
@@ -39,9 +40,10 @@ export const toolActLine = (call: PendingToolCall, result: string): string => {
    */
   const launched = runLaunchCommandOf(call.name, call.args)
   if (launched !== undefined && toolResultLaunchedRun(result)) {
-    const workflow = /\bworkflow=(\S+)/.exec(result)?.[1] ?? inner
+    /* The authoring door's acknowledgment names no workflow: `flow.create` is always the one flow. */
+    const workflow = /\bworkflow=(\S+)/.exec(result)?.[1] ?? (launched === "flow.create" ? FLOW_AUTHORING_ENTRY : inner)
     const repo = /\brepo=(\S+)/.exec(result)?.[1]
-    const verb = /\brun-requested\b/.test(result) ? "requested" : "started"
+    const verb = /-requested\b/.test(result) ? "requested" : "started"
     return `Smithers ${verb} a ${workflow} run${repo === undefined ? "" : ` on ${repo}`}`
   }
   const label = call.name === "commands" ? `/${inner}` : call.name

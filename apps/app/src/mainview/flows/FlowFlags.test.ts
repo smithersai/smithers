@@ -31,6 +31,6 @@ describe("a snapshot that answers nothing", () => {
 
   test("registers exactly what an empty snapshot does, so every flag reads off", () => {
     expect(names(noSnapshot)).toEqual(names(emptySnapshot))
-    expect(names(noSnapshot)).not.toContain("flow.plan")
+    expect(names(noSnapshot)).not.toContain("wiki.create")
   })
 })

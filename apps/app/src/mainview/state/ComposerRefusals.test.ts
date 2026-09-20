@@ -167,8 +167,12 @@ describe("a flow typed into the composer states its refusal", () => {
    * is the case the door cannot translate, so the workspace's own words are
    * what a person gets. The typed miss it CAN translate (FlowNotFound on the
    * authoring flow) is pinned in `FlowCreateEntry.test.ts`.
+   *
+   * The door SAVES the request and answers, so the sentence lands on the
+   * durable card the request minted rather than in the transcript — the same
+   * card the retry door hangs on, and it outlives the toast either way.
    */
-  test("a flow-authoring door the workspace refuses says so in the transcript", async () => {
+  test("a flow-authoring door the workspace refuses says so on the card it minted", async () => {
     const store = await signedInStore()
     const rpc: Array<string> = []
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
@@ -186,12 +190,14 @@ describe("a flow typed into the composer states its refusal", () => {
       }
     })
     controller.send("/flow.create a nightly lint flow codeplanesmithers/canary-sandbox")
-    await settled()
-    await settled()
+    const refused = () => {
+      const card = [...store.collections.cards.values()].find((entry) => entry.kind === "run-trace" && entry.payload.authoring !== undefined)
+      return card?.kind === "run-trace" ? card.payload.authoring?.launchError : undefined
+    }
+    for (let tick = 0; tick < 200 && refused() === undefined; tick += 1) await settled()
     /* One rpc: the launch stopped at its plan, so no run was ever started. */
     expect(rpc).toEqual(["Plan"])
-    expect([...store.collections.messages.values()].map((message) => message.text))
-      .toContain("The workspace gateway refused this plan.")
+    expect(refused()).toBe("The workspace gateway refused this plan.")
   })
 
   /*

@@ -552,11 +552,6 @@ export const createRunsController = (
   }
 
   const traceView = async (runId: string, view: TraceView, sourceCard?: string): Promise<CommandResult> => {
-    /*
-     * The graph is the flow builder's (D-038). The other two views are the
-     * ones the run card always had, so only the new word is refused here.
-     */
-    if (view === "graph" && ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)
@@ -571,7 +566,6 @@ export const createRunsController = (
   }
 
   const graphFollow = (runId: string, follow: boolean, sourceCard?: string): CommandResult => {
-    if (ctx.services.features?.flowBuilder !== true) return "This feature is not enabled."
     const target = resolveRun(runId, sourceCard)
     if ("error" in target) return target.error
     const card = runCardFor(target)

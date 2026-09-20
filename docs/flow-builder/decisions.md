@@ -341,7 +341,7 @@ edge reasons from `Graph.build`. Both ride an additive optional `graph` field on
 the PlanCard, outside the digest an approval binds to. Dagster's
 `LocalFileCodeReference` is the prior art (research.md R2).
 
-### D-038 — Ship dark behind `flowBuilder`, then flip. PROPOSED
+### D-038 — Ship dark behind `flowBuilder`, then flip. SUPERSEDED by D-080
 Every `jj bookmark set main` is a production deploy and the Stop-hook autodeploy
 does not gate on typecheck. The feature lands behind `VITE_SMITHERS_FLOW_BUILDER`
 with the flag off byte-for-byte identical, and the flip is a one-line change Will
@@ -449,7 +449,7 @@ environment its results are reusable under, with a real two-run test. Making
 deliberate engine project: enumerate layers, and either observe OS-level reads
 or restrict caching to actions that declare a hard file boundary. Will's call.
 
-### D-050 — Flag off means byte-identical, and a reviewer enforced it. RULED
+### D-050 — Flag off means byte-identical, and a reviewer enforced it. SUPERSEDED by D-080
 The run-graph lane first registered `runs.graph.follow`, accepted
 `traceView: graph` and wrote `payload.plan` on every launch with the flag off.
 Rejected and fixed: with `flowBuilder` off, a run card is the card it was.
@@ -626,7 +626,7 @@ monotonic deltas, with the subscription released at settlement/unmount. No
 local wall-clock timestamp is presented as an engine event, and unmeasured
 nodes receive no predicted duration or progress bar.
 
-### D-067 — Flag-off equivalence has a pre-feature witness. RULED
+### D-067 — Flag-off equivalence has a pre-feature witness. SUPERSEDED by D-080
 The frozen DOM, launch payload, requests, registry and agent catalog were
 captured from main@origin commit `7e30df62cf786834a26507f05b5d22f377641f20`
 in an isolated jj workspace. That checkout contains neither FlowRunGraph nor
@@ -1209,3 +1209,54 @@ the first place. That test is worth writing against `main`'s loader.
 What is unaffected. D-073, D-074 and D-078 — the rebuildable catalog, the
 loader repair a guarded host needed, and the rebuild-on-authoring default —
 are this lane's alone and are in the tree. So is D-068's recorded revision.
+
+### D-080 — The flag is removed; the flow builder is the app. RULED (Will, 2026-09-20)
+Will: "Remove the feature flag completely it shouldn't be there in first
+place". `VITE_SMITHERS_FLOW_BUILDER` and `AppFeatures.flowBuilder` are gone,
+with every conditional on them taking the flag-on branch. The plan door, the
+plan and run graphs, the drawer, the fire ledger, the box's policy fields,
+Pause, the camera and the authoring loop are what every visitor on
+smithers.sh gets.
+
+What went with it. The three refusals that existed only to say a shipped
+feature was off — `flow.plan`, `runs.trace.view <run> graph` and
+`runs.graph.follow` answering "This feature is not enabled." — are deleted;
+those doors are registered, so a caller reaching one is a caller using the
+product. `flow.create` no longer has two paths: the authoring request IS the
+create door, and the launch-then-answer path it shadowed is deleted rather
+than kept as a fallback. The flow-graph Chromium tier is one build and one
+run, not two selected by the flag.
+
+This supersedes D-038 (ship dark, then flip), D-050 (flag off means
+byte-identical) and D-067 (flag-off equivalence has a pre-feature witness).
+The witness those rulings were enforced with —
+`state/fixtures/FlowBuilderBaseline.*`, `FlowBuilderFlag.test.tsx` and
+`FlowBuilderBaseline.test.tsx` — proved a claim about an app that no longer
+exists, so it is deleted rather than frozen. What replaces it is the ordinary
+suite: the doors, the cards and the graph are asserted as the product's, with
+no second app to be equal to.
+
+Two things the flag had been hiding, found by flipping it and measured:
+
+The deterministic claim gate never armed for `flow.create`.
+`toolResultLaunchedRun` matched `run-started` and `run-requested`; the
+authoring door answers `flow-requested`, which is the whole of what
+`flow.create` returns with the builder on. So on the deployed build the model
+was free to write "has been created" beside a run that had not launched —
+the exact wave-12 lie, live, behind a gate that only ever fired in flag-off
+tests. The gate now reads the authoring door's request, and the line it
+substitutes says requested rather than started, because that is what the door
+did.
+
+The agent's command list crossed its byte bound. `flow.plan` becoming an
+unflagged door takes the cloud catalog to 200 commands, which render at 16279
+bytes plus the omission note against a 16384-byte tool-result limit, so
+`listResult` drops to names only. Every name still reaches the model and the
+note says to list one namespace to get the summaries back, which is the
+ladder working — but the margin is now about fourteen bytes, and the next
+visible command spends it. `flows/agentToolsList.test.ts` asserts the ladder's
+contract and the remedy rather than the rung.
+
+*Falsified if:* a reader on smithers.sh reaches a plan or graph surface that
+refuses, which would mean a gate survived the removal;
+`grep -rn 'flowBuilder\|FLOW_BUILDER' apps packages .github` finds one.

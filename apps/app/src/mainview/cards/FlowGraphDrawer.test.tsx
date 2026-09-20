@@ -21,7 +21,6 @@ import { payloadFor } from "../flows/SlashPayload"
 import { fileFor, FlowGraphDrawer, graphKeyAct, planDrawerNode, runDrawerNode, type GraphDrill } from "./FlowGraphDrawer"
 import { FlowGraphSurface } from "./FlowGraphSurface"
 import { FlowRunGraphSurface } from "./FlowRunGraphSurface"
-import { FlowPlanCardBody } from "./FlowPlanCard"
 import type { TriggerGraphPart } from "./FlowGraphTriggerNode"
 import { foldRunGraph, runGraphOf } from "./FlowGraphStatus"
 import type { NodeRun, RunGraphNode } from "./FlowGraphStatus"
@@ -1107,81 +1106,5 @@ describe("the run canvas drills in", () => {
     )
     ;(host.querySelector(`[data-node='${STEADY}']`) as HTMLElement).click()
     expect(ran).toEqual([["runs.graph.select", `run-1 ${STEADY}`]])
-  })
-})
-
-/*
- * D-038 / D-050: with `flowBuilder` off the card is the card it was before
- * this lane — in its flows, its catalog and its DOM. The canvas is imported
- * through the card here, so what is asserted is what a reader would see.
- */
-describe("the flow builder off", () => {
-  const planCardNode = (id: string, dependsOn: Array<string> = []): PlanCardNode => ({
-    id,
-    kind: "step",
-    key: `key1_${"0".repeat(64)}`,
-    dependsOn,
-    tier: "sealed",
-    status: "run",
-    action: "files/read"
-  })
-
-  const dispatcher = {
-    id: "trigger-list-o/r",
-    kind: "trigger-list" as const,
-    title: "Dispatcher",
-    status: "acted" as const,
-    createdAt: 0,
-    ordinal: 0,
-    payload: {
-      repo: "o/r",
-      live: true,
-      triggers: [{ id: "nightly", flowId: "review", cron: "0 9 * * 1-5", timezone: "UTC", enabled: true }],
-      webhooks: []
-    }
-  }
-
-  const card = (view?: { node?: string; tab?: "declaration" }) => ({
-    id: "flow-plan-1",
-    kind: "flow-plan" as const,
-    title: "review",
-    status: "active" as const,
-    createdAt: 0,
-    ordinal: 0,
-    payload: {
-      repo: "o/r",
-      flowId: "review",
-      status: "done" as const,
-      nodes: [planCardNode("a"), planCardNode("b", ["a"])],
-      ...(view === undefined ? {} : { view })
-    }
-  })
-
-  test("the card draws no drawer, no selection model and no schedule node, whatever the payload holds", () => {
-    const host = render(
-      <FlowPlanCardBody
-        card={card({ node: "a", tab: "declaration" })}
-        onRunCommand={() => {}}
-        flowBuilder={false}
-        triggerCatalogs={[dispatcher]}
-        /* Even with the declared file already read into the conversation. */
-        fileCards={[{
-          id: "file-o/r-flows/review/flow.ts",
-          kind: "file" as const,
-          title: "File",
-          status: "active" as const,
-          createdAt: 0,
-          ordinal: 1,
-          payload: { repo: "o/r", path: "flows/review/flow.ts", content: "const a = 1\n", truncated: false }
-        }]}
-      />
-    )
-    expect(host.querySelector(".flow-graph-drawer")).toBeNull()
-    expect(host.querySelector(".flow-graph-code-file")).toBeNull()
-    expect(host.querySelector("[role='button'][data-id]")).toBeNull()
-    /* The schedule is not a node on the canvas: the panel below is where it lives with the flag off. */
-    expect(host.querySelector("[data-node^='trigger:']")).toBeNull()
-    /* The schedule the card always showed beside the graph is still there. */
-    expect(host.querySelector(".flow-trigger-panel [data-trigger='nightly']")).not.toBeNull()
   })
 })

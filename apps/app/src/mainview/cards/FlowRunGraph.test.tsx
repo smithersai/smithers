@@ -554,13 +554,12 @@ describe("the run graph, drawn", () => {
 })
 
 describe("the run card's graph door", () => {
-  const renderTrace = (payload: Partial<RunTraceCard["payload"]>, flowBuilder = true) => {
+  const renderTrace = (payload: Partial<RunTraceCard["payload"]>) => {
     const dispatched: Array<{ name: string; args?: string }> = []
     const host = render(
       <RunTraceBody
         card={runCard(payload)}
         onRunCommand={(name, args) => dispatched.push({ name, args })}
-        flowBuilder={flowBuilder}
       />
     )
     return { host, dispatched }
@@ -601,37 +600,5 @@ describe("the run card's graph door", () => {
     const { host } = renderTrace({ traceView: "graph", plan: { ...RECORDED.plan, nodes: [] } })
     expect(host.querySelector(".run-trace-bar[data-view=\"graph\"]")).toBeNull()
     expect(host.querySelector(".run-trace-empty")).not.toBeNull()
-  })
-
-  /*
-   * D-038: the engine writes node records whatever the app flag says (D-046),
-   * so with the flow builder off a production run card holds everything the
-   * graph needs and must still be the card it was before the lane: no door,
-   * no canvas, and a view word it cannot honour falls back to the turns.
-   */
-  test("with the flow builder off, a run that ran a graph shows no door", () => {
-    const { host } = renderTrace({ traceView: "turns", plan: RECORDED.plan, events: RECORDED.rows }, false)
-    expect(viewButtons(host)).toEqual(["Details"])
-  })
-
-  test("with the flow builder off, a card parked on the graph view falls back to its turns", () => {
-    const { host } = renderTrace({ traceView: "graph", plan: RECORDED.plan, events: RECORDED.rows }, false)
-    expect(host.querySelector(".run-trace-bar[data-view=\"graph\"]")).toBeNull()
-    expect(host.querySelector("[data-flow=\"runs.graph.follow\"]")).toBeNull()
-    expect(viewButtons(host)).toEqual(["Details"])
-  })
-
-  // Differential coverage for a populated trace. FlowBuilderBaseline.test
-  // separately compares DOM, payloads and calls to the frozen main checkout.
-  test("off and on differ by exactly the Graph button", () => {
-    const recorded = { traceView: "turns" as const, plan: RECORDED.plan, events: RECORDED.rows }
-    const on = renderTrace(recorded).host.innerHTML
-    const off = renderTrace(recorded, false).host.innerHTML
-    expect(on).not.toBe(off)
-    const opens = on.lastIndexOf("<button", on.indexOf(">Graph<"))
-    const graphButton = on.slice(opens, on.indexOf("</button>", opens) + "</button>".length)
-    expect(graphButton).toContain(">Graph<")
-    expect(graphButton).toContain("run-1 graph")
-    expect(on.replace(graphButton, "")).toBe(off)
   })
 })

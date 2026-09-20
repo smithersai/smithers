@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
-import { json, memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, unavailableAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -53,10 +53,21 @@ describe("a seam that never answers becomes an honest answer", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     const started = Date.now()
+    /*
+     * The door saves the request and answers; the provision it never gets an
+     * answer to runs behind it, so the deadline's refusal is the durable
+     * card's (controller/flowAuthoring.ts), where the retry door stands.
+     */
     const outcome = await controller.commands.run("flow.create", "nightly digest will/flows")
+    expect(outcome.status).toBe("executed")
+    const authoring = () => {
+      const card = [...store.collections.cards.values()].find((entry) => entry.kind === "run-trace" && entry.payload.authoring !== undefined)
+      return card?.kind === "run-trace" ? card : undefined
+    }
+    await waitFor(() => authoring()?.payload.authoring?.launchError !== undefined, 5_000)
     expect(Date.now() - started).toBeLessThan(5_000)
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).toContain("didn't answer in time")
+    expect(authoring()?.payload.authoring?.launchError).toContain("didn't answer in time")
+    expect(authoring()?.status).toBe("error")
   })
 
   test("the deadline rejects with a named seam timeout, not a message-less TimeoutError", async () => {

@@ -34,9 +34,6 @@ export type FlowDurationsReader = (
 export const createFlowDurationsReader = (ctx: ControllerContext): FlowDurationsReader => {
   const turns = new Map<string, number>()
   return async (repo, flowId, binding) => {
-    /* D-038: with the flow builder off nothing reads this projection, so the
-     * app makes exactly the calls it made before the lane. */
-    if (ctx.services.features?.flowBuilder !== true) return
     const key = `${repo}\u0000${flowId}`
     const turn = (turns.get(key) ?? 0) + 1
     turns.set(key, turn)

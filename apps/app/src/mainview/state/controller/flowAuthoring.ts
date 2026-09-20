@@ -46,7 +46,6 @@ export const createFlowAuthoringController = (
   })
 
   const observe = (id: string): Promise<void> => {
-    if (ctx.services.features?.flowBuilder !== true) return Promise.resolve()
     const active = refreshing.get(id)
     if (active) return active
     const work = (async () => {
@@ -172,7 +171,6 @@ export const createFlowAuthoringController = (
     return { value: `flow-requested repo=${repo}` }
   }
   const resume = (retryCardId?: string) => {
-    if (ctx.services.features?.flowBuilder !== true) return
     for (const card of store.collections.cards.values()) {
       if (card.kind !== "run-trace" || !card.payload.authoring || !current(card)) continue
       if (retryCardId === card.id && card.payload.authoring.launchError !== undefined) {

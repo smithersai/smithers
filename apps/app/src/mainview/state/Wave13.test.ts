@@ -261,7 +261,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
     (_id, theater, honest) => {
       expect(offersImpossibleCapability(theater)).toBe(true)
       expect(renderedRunTurnText("flow.create", theater)).toBe(
-        "I started a create-flow run — the run card shows its real progress."
+        "I requested a create-flow run — the run card shows its real progress."
       )
       expect(offersImpossibleCapability(honest)).toBe(false)
       expect(renderedRunTurnText("flow.create", honest)).toBe(honest)

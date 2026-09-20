@@ -141,38 +141,32 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   }),
   /*
    * The plan door (docs/flow-builder): the same address as a launch, stopping
-   * at the plan. It exists only where the flow builder does, so with the flag
-   * off there is no slash leaf, no catalog row and no button — the app is the
-   * app it was before the lane.
+   * at the plan.
    */
-  ...(actions.snapshot?.()?.flowBuilder === true
-    ? [
-      flow({
-        name: "flow.plan",
-        form: {
-          fields: { name: { label: "Flow" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, input: { label: "Input JSON" } },
-          partial: flowPlanParts,
-          args: (payload) => line(text(payload, "sourceCard") === undefined ? undefined : `sourceCard=${text(payload, "sourceCard")}`,
-            text(payload, "against") === undefined ? undefined : `against=${text(payload, "against")}`,
-            text(payload, "name"), text(payload, "repo"),
-            payload.input === undefined ? undefined : typeof payload.input === "string" ? text(payload, "input") : JSON.stringify(payload.input))
-        },
-        summary: "See what a flow would run",
-        runtime: ["cloud"],
-        args: "[sourceCard=id] [against=runId] <name> [owner/repo] [JSON object]",
-        requires: ["signed-in"],
-        input: Schema.Struct({
-          name: Schema.String,
-          repo: Schema.optional(Schema.String),
-          sourceCard: Schema.optional(Schema.String),
-          /* The run to compare this plan with: the re-key preview (D-030). */
-          against: Schema.optional(Schema.String),
-          input: Schema.optional(Schema.Record(Schema.String, Schema.Json))
-        }),
-        handler: ({ name, repo, input, sourceCard, against }) => actions.planFlow(name, repo, input, sourceCard, against)
-      })
-    ]
-    : [])
+  flow({
+    name: "flow.plan",
+    form: {
+      fields: { name: { label: "Flow" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, input: { label: "Input JSON" } },
+      partial: flowPlanParts,
+      args: (payload) => line(text(payload, "sourceCard") === undefined ? undefined : `sourceCard=${text(payload, "sourceCard")}`,
+        text(payload, "against") === undefined ? undefined : `against=${text(payload, "against")}`,
+        text(payload, "name"), text(payload, "repo"),
+        payload.input === undefined ? undefined : typeof payload.input === "string" ? text(payload, "input") : JSON.stringify(payload.input))
+    },
+    summary: "See what a flow would run",
+    runtime: ["cloud"],
+    args: "[sourceCard=id] [against=runId] <name> [owner/repo] [JSON object]",
+    requires: ["signed-in"],
+    input: Schema.Struct({
+      name: Schema.String,
+      repo: Schema.optional(Schema.String),
+      sourceCard: Schema.optional(Schema.String),
+      /* The run to compare this plan with: the re-key preview (D-030). */
+      against: Schema.optional(Schema.String),
+      input: Schema.optional(Schema.Record(Schema.String, Schema.Json))
+    }),
+    handler: ({ name, repo, input, sourceCard, against }) => actions.planFlow(name, repo, input, sourceCard, against)
+  })
 ]
 
 /** The active repository's declared flows, as the controller reads them off the `repositoryFlows` collection. */

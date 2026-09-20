@@ -61,14 +61,12 @@ import { recordingAgent, unavailableRepositories } from "./TestFixtures"
  * reads a controller. A door declared behind a flag is in the inventory either
  * way, so a controller that leaves its flag off cannot register it, and the
  * roll call names it "not registered in this controller" — a hole in the claim
- * rather than a door that fails. `flowBuilder` gates three of them
- * (`runs.graph.follow`, `runs.graph.select`, `flow.plan.select`).
+ * rather than a door that fails.
  */
 const createAppController = scopedControllers({
   wiki: true,
   mythicalHistory: true,
-  pluginLibrary: true,
-  flowBuilder: true
+  pluginLibrary: true
 })
 
 const STORAGE_FULL =

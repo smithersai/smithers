@@ -112,7 +112,6 @@ instead of becoming a fact the UI believes.
 | --- | --- |
 | `SMITHERS_SKIP_SPA_BUILD=1` | reuse `apps/app/dist`; the first run must build it |
 | `SMITHERS_FLOW_GRAPH_PORT` | the origin port, 47331 by default |
-| `VITE_SMITHERS_FLOW_BUILDER` | the graph flag, built in as `true` by default here |
 
 ## Traps
 
@@ -142,10 +141,8 @@ instead of becoming a fact the UI believes.
 cd apps/app && pnpm exec playwright test --config playwright.graph.config.ts
 ```
 
-The flow builder is a BUILD-time flag, so its two halves are two builds and
-therefore two runs, selected by `VITE_SMITHERS_FLOW_BUILDER` and kept apart by
-the `@flag-on` and `@flag-off` tags. `scripts/run-pr-e2e.mjs` runs both, in
-order, as the last two steps of `//apps/app:browserE2e`.
+`scripts/run-pr-e2e.mjs` runs this tier as the last step of
+`//apps/app:browserE2e`.
 
 Nothing in the spec intercepts a request. The app boots against the real
 origin, lists the workspace's flows, and the plan door draws the eleven nodes

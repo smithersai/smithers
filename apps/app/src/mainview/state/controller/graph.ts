@@ -69,8 +69,6 @@ export const createGraphController = (
   ) => Promise<unknown>
 ): GraphController => {
   const { store } = ctx
-  const enabled = (): boolean => ctx.services.features?.flowBuilder === true
-
   /** Writes, or clears, the refusal a Code tab is showing on whichever card it is. */
   const stateCodeError = (
     cardId: string,
@@ -223,7 +221,6 @@ export const createGraphController = (
   }
 
   const selectGraphNode = async (runId: string, nodeId?: string, sourceCard?: string): Promise<CommandResult> => {
-    if (!enabled()) return "This feature is not enabled."
     const card = runCardFor(runId, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
     if (nodeId !== undefined && !runNodeIds(card).has(nodeId)) return `Run ${runId} has no graph node ${nodeId}.`
@@ -245,7 +242,6 @@ export const createGraphController = (
   }
 
   const graphNodeTab = (runId: string, tab: GraphDrawerTab, sourceCard?: string): CommandResult => {
-    if (!enabled()) return "This feature is not enabled."
     const card = runCardFor(runId, sourceCard)
     if (card === undefined) return `Open the run first (runs.open ${runId}): the graph lives on its card.`
     const graph = card.payload.graph
@@ -303,7 +299,6 @@ export const createGraphController = (
   }
 
   const selectPlanNode = async (cardId: string, nodeId?: string): Promise<CommandResult> => {
-    if (!enabled()) return "This feature is not enabled."
     const card = planCardFor(cardId)
     if (card === undefined) return "Open the plan first: the graph lives on its card."
     if (nodeId !== undefined && !planNodeIds(card).has(nodeId)) return `That plan has no node ${nodeId}.`
@@ -319,7 +314,6 @@ export const createGraphController = (
   }
 
   const planNodeTab = (cardId: string, tab: GraphDrawerTab): CommandResult => {
-    if (!enabled()) return "This feature is not enabled."
     const card = planCardFor(cardId)
     if (card === undefined) return "Open the plan first: the graph lives on its card."
     const view = card.payload.view

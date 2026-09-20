@@ -25,46 +25,45 @@ import type { CommandActions } from "./Declare"
 const Tab = Schema.Literals(GRAPH_DRAWER_TABS)
 
 /** `runs.graph.select`, `runs.graph.tab`, `flow.plan.select` and `flow.plan.tab`. */
-export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
-  actions.snapshot?.()?.flowBuilder !== true ? [] : [
-    flow({
-      name: "runs.graph.select",
-      summary: "Open one node of a run's graph, or close the one that is open",
-      runtimeAny: ["cloud", "practice"],
-      hidden: true,
-      args: "[sourceCard=id] <runId> [nodeId]",
-      input: Schema.Struct({
-        sourceCard: Schema.optional(Schema.String),
-        runId: Schema.String,
-        nodeId: Schema.optional(Schema.String)
-      }),
-      handler: ({ runId, nodeId, sourceCard }) => actions.selectGraphNode(runId, nodeId, sourceCard)
+export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "runs.graph.select",
+    summary: "Open one node of a run's graph, or close the one that is open",
+    runtimeAny: ["cloud", "practice"],
+    hidden: true,
+    args: "[sourceCard=id] <runId> [nodeId]",
+    input: Schema.Struct({
+      sourceCard: Schema.optional(Schema.String),
+      runId: Schema.String,
+      nodeId: Schema.optional(Schema.String)
     }),
-    flow({
-      name: "runs.graph.tab",
-      summary: "Show one tab of the node a run's graph has open",
-      runtimeAny: ["cloud", "practice"],
-      hidden: true,
-      args: `[sourceCard=id] <runId> <${GRAPH_DRAWER_TABS.join("|")}>`,
-      input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, tab: Tab }),
-      handler: ({ runId, tab, sourceCard }) => actions.graphNodeTab(runId, tab, sourceCard)
-    }),
-    flow({
-      name: "flow.plan.select",
-      summary: "Open one node of a plan's graph, or close the one that is open",
-      runtimeAny: ["cloud", "practice"],
-      hidden: true,
-      args: "<cardId> [nodeId]",
-      input: Schema.Struct({ cardId: Schema.String, nodeId: Schema.optional(Schema.String) }),
-      handler: ({ cardId, nodeId }) => actions.selectPlanNode(cardId, nodeId)
-    }),
-    flow({
-      name: "flow.plan.tab",
-      summary: "Show one tab of the node a plan's graph has open",
-      runtimeAny: ["cloud", "practice"],
-      hidden: true,
-      args: `<cardId> <${GRAPH_DRAWER_TABS.join("|")}>`,
-      input: Schema.Struct({ cardId: Schema.String, tab: Tab }),
-      handler: ({ cardId, tab }) => actions.planNodeTab(cardId, tab)
-    })
-  ]
+    handler: ({ runId, nodeId, sourceCard }) => actions.selectGraphNode(runId, nodeId, sourceCard)
+  }),
+  flow({
+    name: "runs.graph.tab",
+    summary: "Show one tab of the node a run's graph has open",
+    runtimeAny: ["cloud", "practice"],
+    hidden: true,
+    args: `[sourceCard=id] <runId> <${GRAPH_DRAWER_TABS.join("|")}>`,
+    input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, tab: Tab }),
+    handler: ({ runId, tab, sourceCard }) => actions.graphNodeTab(runId, tab, sourceCard)
+  }),
+  flow({
+    name: "flow.plan.select",
+    summary: "Open one node of a plan's graph, or close the one that is open",
+    runtimeAny: ["cloud", "practice"],
+    hidden: true,
+    args: "<cardId> [nodeId]",
+    input: Schema.Struct({ cardId: Schema.String, nodeId: Schema.optional(Schema.String) }),
+    handler: ({ cardId, nodeId }) => actions.selectPlanNode(cardId, nodeId)
+  }),
+  flow({
+    name: "flow.plan.tab",
+    summary: "Show one tab of the node a plan's graph has open",
+    runtimeAny: ["cloud", "practice"],
+    hidden: true,
+    args: `<cardId> <${GRAPH_DRAWER_TABS.join("|")}>`,
+    input: Schema.Struct({ cardId: Schema.String, tab: Tab }),
+    handler: ({ cardId, tab }) => actions.planNodeTab(cardId, tab)
+  })
+]

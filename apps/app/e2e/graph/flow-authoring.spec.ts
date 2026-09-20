@@ -10,7 +10,7 @@ const command = async (page: Page, text: string) => {
 
 // The author is scripted. Its source writes, copy-back, journal, compiler,
 // control approvals, execution and browser are real; no provider is involved.
-test("authors, edits, replans and runs the written source from chat @flag-on", async ({ page }) => {
+test("authors, edits, replans and runs the written source from chat", async ({ page }) => {
   await page.goto("/")
   const request = `/flow.create Build a flow ${GRAPH_REPO}`
   await command(page, request)

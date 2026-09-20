@@ -110,23 +110,13 @@ const reposChosen = async (store: AppStore): Promise<void> => {
   await settled()
 }
 
-/**
- * A controller watching exactly will/flows over the given backend, signed out
- * unless asked and with the flow builder off unless asked.
- *
- * The flag is always stated, never left to the build: the flag-off half of
- * D-050 is an assertion about what this seam does NOT do, and a default that
- * read `import.meta.env` would make it an assertion about the runner.
- */
+/** A controller watching exactly will/flows over the given backend, signed out unless asked. */
 const ready = async (
   services: AppServices,
-  options: { signedIn?: boolean; store?: AppStore; flowBuilder?: boolean } = {}
+  options: { signedIn?: boolean; store?: AppStore } = {}
 ) => {
   const store = options.store ?? await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
-    ...services,
-    features: { ...services.features, flowBuilder: options.flowBuilder === true }
-  })
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
   if (options.signedIn === true) await signedIn(store)
   else await signedOut(store)
   await reposChosen(store)
@@ -252,7 +242,7 @@ describe("triggers seam: the box, signed in", () => {
           webhooks: [{ name: "github-push", flowId: "review" }, { flowId: "nameless" }]
         })
       }, seen),
-      { signedIn: true, flowBuilder: true }
+      { signedIn: true }
     )
     const outcome = await controller.commands.run("triggers.list")
     expect(outcome.status).toBe("executed")
@@ -305,7 +295,7 @@ describe("triggers seam: the box, signed in", () => {
           webhooks: []
         })
       }),
-      { signedIn: true, flowBuilder: true }
+      { signedIn: true }
     )
     expect((await controller.commands.run("triggers.list")).status).toBe("executed")
     await settled()
@@ -326,11 +316,8 @@ describe("triggers seam: the box, signed in", () => {
   })
 
   /*
-   * The other half of D-050. The policies, the whole list of upcoming fires,
-   * the claim and the scheduler's heartbeat are the flow builder's own
-   * fields: its trigger panel is the only surface that reads one. With the
-   * flag off the row the card holds is the row it held before the builder,
-   * field for field, off the very same answer.
+   * The policies, the whole list of upcoming fires, the claim and the
+   * scheduler's heartbeat are the trigger panel's own fields.
    */
   const BOX_WITH_POLICIES = {
     status: "ok",
@@ -355,29 +342,10 @@ describe("triggers seam: the box, signed in", () => {
     webhooks: []
   }
 
-  test("with the flag off a box row is the row the card held before the builder, and the policies stay on the wire", async () => {
-    const { store, controller } = await ready(
-      backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: json(200, BOX_WITH_POLICIES) }),
-      { signedIn: true }
-    )
-    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
-    await settled()
-    expect(triggerCard(store).payload.triggers).toEqual([{
-      id: "nightly",
-      flowId: "review",
-      cron: "0 9 * * 1-5",
-      timezone: "America/New_York",
-      enabled: true,
-      lastFiredAt: 1_700_000_000_000,
-      nextFireAt: 1_700_086_400_000,
-      activeRunId: "run-8f21"
-    }])
-  })
-
-  test("the same answer with the flag on carries every field the builder's panel reads", async () => {
+  test("a box answer carries every field the trigger panel reads", async () => {
     const { store, controller } = await ready(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: json(200, BOX_WITH_POLICIES), [RPC]: json(200, { ok: true, payload: { _tag: "fires", items: [] } }) }),
-      { signedIn: true, flowBuilder: true }
+      { signedIn: true }
     )
     expect((await controller.commands.run("triggers.list")).status).toBe("executed")
     await settled()
@@ -412,7 +380,7 @@ describe("triggers seam: the box, signed in", () => {
           webhooks: []
         })
       }),
-      { signedIn: true, flowBuilder: true }
+      { signedIn: true }
     )
     expect((await controller.commands.run("triggers.list")).status).toBe("executed")
     await settled()
@@ -1812,7 +1780,7 @@ describe("triggers seam: a trigger's fire ledger", () => {
   const listedRows = async (rpc: Route, seen: Array<string> = []) => {
     const { store, controller } = await ready(
       backend({ [PROJECTION]: projectionDocument(DAY_ONE), [LIVE]: TWO_BOX_ROWS, [REGISTRATIONS]: ONE_PLUE_ROW, [RPC]: rpc }, seen),
-      { signedIn: true, flowBuilder: true }
+      { signedIn: true }
     )
     expect((await controller.commands.run("triggers.list")).status).toBe("executed")
     await settled()
@@ -1853,34 +1821,5 @@ describe("triggers seam: a trigger's fire ledger", () => {
   test("a box that read a ledger with nothing in it says so: an empty ledger is an answer", async () => {
     const rows = await listedRows(firesRoute([], () => okFrame({ _tag: "fires", items: [] })))
     expect(rows[0]?.fires).toEqual([])
-  })
-
-  /*
-   * D-050: with the flow builder off this seam is the seam that shipped
-   * before the builder. The ledger is the builder's own read, so the flag-off
-   * list asks the two routes it always asked, in the same number of calls,
-   * and puts no history on a row that never had one.
-   */
-  test("with the flag off the list reads no ledger at all: no relay call, and no row carries fires", async () => {
-    const calls: Array<RelayCall> = []
-    const seen: Array<string> = []
-    const { store, controller } = await ready(
-      backend({
-        [PROJECTION]: projectionDocument(DAY_ONE),
-        [LIVE]: TWO_BOX_ROWS,
-        [REGISTRATIONS]: ONE_PLUE_ROW,
-        [RPC]: firesRoute(calls, (triggerId) => okFrame({ _tag: "fires", items: [{ triggerId, occurrenceAtMs: 1_700_000_000_000, outcome: "completed" }] }))
-      }, seen),
-      { signedIn: true }
-    )
-    expect((await controller.commands.run("triggers.list")).status).toBe("executed")
-    await settled()
-    expect(calls).toEqual([])
-    expect(seen.filter((path) => path !== PROJECTION).sort()).toEqual(
-      [`${LIVE}?repo=will%2Fflows`, `${REGISTRATIONS}?repo=will%2Fflows`].sort()
-    )
-    const rows = triggerCard(store).payload.triggers
-    expect(rows.map((row) => row.id)).toEqual(["nightly", "sweep", "reg-1"])
-    expect(JSON.stringify(rows)).not.toContain("fires")
   })
 })

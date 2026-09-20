@@ -105,18 +105,32 @@ const signedInStore = async () => {
 const said = (outcome: { status: string; value?: string; error?: string }): string =>
   outcome.status === "failed" ? (outcome.error ?? "") : (outcome.value ?? "")
 
+/** The durable card `flow.create` mints: where a background refusal is stated and retried. */
+const authoringCard = (store: Awaited<ReturnType<typeof createAppStore>>) => {
+  const card = [...store.collections.cards.values()].find((entry) => entry.kind === "run-trace" && entry.payload.authoring !== undefined)
+  return card?.kind === "run-trace" ? card : undefined
+}
+
+/** Wait for a condition rather than a fixed sleep. */
+const until = async (done: () => boolean): Promise<void> => {
+  for (let tick = 0; tick < 200 && !done(); tick += 1) await settle(1)
+  if (!done()) throw new Error("condition never held")
+}
+
 test("the flow-authoring door launches the id the workspace host provisions", async () => {
   const store = await signedInStore()
   const double = relay()
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   try {
     const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    /* The door SAVES the request and answers; the launch rides the background. */
+    expect(said(outcome)).toBe(`flow-requested repo=${REPO}`)
+    await until(() => double.launched.length > 0)
     expect(double.launched.map(entry => entry.flowId)).toEqual([FLOW_AUTHORING_ENTRY])
     /* A prompt body takes the fixed `{ args }` marker, never a field of the door's choosing. */
     expect(double.launched[0]?.input).toEqual({ args: "summarise my issues" })
     /* The 0.x name, so a regression names itself rather than just failing an equality. */
     expect(double.launched.map(entry => entry.flowId)).not.toContain("create-workflow")
-    expect(said(outcome)).toContain(`run-started workflow=${FLOW_AUTHORING_ENTRY}`)
   } finally { await controller.dispose(); await store.dispose?.() }
 })
 
@@ -125,13 +139,16 @@ test("a workspace without the authoring flow is told what to do, not handed an i
   const double = relay({ registered: false })
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   try {
-    const answer = said(await controller.commands.run("flow.create", `summarise my issues ${REPO}`))
+    await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    await until(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    const answer = authoringCard(store)?.payload.authoring?.launchError ?? ""
     expect(answer).not.toContain(controlPlaneRefusal(FLOW_AUTHORING_ENTRY))
     expect(answer).not.toContain("is registered on this workspace")
     expect(answer).toContain(REPO)
     expect(answer).toContain("flow-authoring flow")
     expect(answer).toContain("/flow.create")
-    /* A toast dismisses in four seconds; the transcript is what is still there. */
-    expect([...store.collections.messages.values()].map(message => message.text)).toContain(answer)
+    /* A toast dismisses in four seconds; the durable card is what is still there. */
+    expect(authoringCard(store)?.status).toBe("error")
+    expect(authoringCard(store)?.payload.observationError).toBe(answer)
   } finally { await controller.dispose(); await store.dispose?.() }
 })

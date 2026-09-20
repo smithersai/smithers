@@ -213,8 +213,9 @@ describe("CardRenderers", () => {
         webhooks: []
       }
     }
+    /* The plan draws a canvas, so the schedule is a node on it, not a panel row. */
     expect(renderToStaticMarkup(<CardView card={plan} {...handlers} triggerCatalogs={[dispatcher]} />))
-      .toContain("data-trigger=\"nightly\"")
-    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} />)).not.toContain("data-trigger=")
+      .toContain("data-node=\"trigger:nightly\"")
+    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} />)).not.toContain("trigger:nightly")
   })
 })

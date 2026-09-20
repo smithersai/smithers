@@ -155,20 +155,12 @@ export const RunTraceBody = ({
   card,
   onRunCommand: sendRunCommand,
   workflowCatalogs,
-  flowBuilder = false,
   flowDurations,
   fileCards
 }: {
   readonly card: RunTraceCard
   readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
   readonly onRunCommand: RunCommand
-  /*
-   * The graph renders only where the flow builder does (D-038). The engine
-   * writes its node records whatever this flag says (D-046), so a production
-   * run card holds everything the graph needs: without the gate the door and
-   * the view would ship with the flag off.
-   */
-  readonly flowBuilder?: boolean
   /** Every measured row the session holds, for the graph's own predictions. */
   readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
   /** The files already read into this conversation; the graph's Code tab renders the declared one. */
@@ -183,8 +175,7 @@ export const RunTraceBody = ({
   const model = traceOf(card)
   const whole = wholeTraceOf(card)
   const view = card.payload.traceView ?? "turns"
-  /* One binding gates all three: the door, the bar it hangs in, and the view. */
-  const runGraph = flowBuilder ? runGraphOfCard(card) : undefined
+  const runGraph = runGraphOfCard(card)
   const filters = traceFiltersFor(kind)
   const filter: TraceFilter = filters.some(([id]) => id === card.payload.filter) ? card.payload.filter ?? "all" : "all"
   const selected = selectedSpan(card, model)

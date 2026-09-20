@@ -47,19 +47,32 @@ describe("the commands list action", () => {
     const raw = await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list" }) })
     const bounded = boundToolResult(raw)
     expect(bounded.truncated).toBe(false)
-    const parsed = JSON.parse(bounded.modelOutput) as { commands: Array<{ name: string; summary: string }> }
+    const parsed = JSON.parse(bounded.modelOutput) as { note?: string; commands: Array<{ name: string; summary?: string }> }
     const expected = agentVisibleCatalog(controller.commands.callable()).map((command) => command.name)
     expect(expected.length).toBeGreaterThan(100)
     expect(parsed.commands.map((command) => command.name)).toEqual(expected)
-    for (const command of parsed.commands) expect(typeof command.summary).toBe("string")
-    // One namespace always carries its args (the full list may have shed them to fit).
+    /*
+     * The ladder's contract, not one of its rungs: a command keeps its summary
+     * unless the result SAYS the summaries went, and then it says how to get
+     * them back. The cloud catalog crossed that threshold when `flow.plan`
+     * stopped being a flagged door (D-080) — 200 commands render at 16279
+     * bytes plus the note, against a 16384-byte bound — so the remedy below
+     * is the half a model actually depends on there.
+     */
+    if (parsed.note === undefined) {
+      for (const command of parsed.commands) expect(typeof command.summary).toBe("string")
+    } else {
+      expect(parsed.note).toContain("list one namespace")
+    }
+    // One namespace always carries its summaries and its args (the full list may have shed them to fit).
     const scoped = JSON.parse(
       await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list", namespace: "/repo" }) })
-    ) as { note?: string; commands: Array<{ name: string; args?: string }> }
+    ) as { note?: string; commands: Array<{ name: string; summary?: string; args?: string }> }
     expect(scoped.note).toBeUndefined()
     expect(scoped.commands.length).toBeGreaterThan(0)
     expect(scoped.commands.every((command) => command.name.startsWith("repo."))).toBe(true)
     expect(scoped.commands.map((command) => command.name)).toEqual(expected.filter((name) => name.startsWith("repo.")))
     expect(scoped.commands.some((command) => command.args !== undefined)).toBe(true)
+    for (const command of scoped.commands) expect(typeof command.summary).toBe("string")
   })
 })

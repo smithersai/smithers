@@ -51,8 +51,6 @@ export interface CardActions {
   readonly wiki?: boolean
   readonly mythicalHistory?: boolean
   readonly experimental?: boolean
-  /** The flow builder's doors render only under its flag (docs/flow-builder). */
-  readonly flowBuilder?: boolean
   /** Read authority for derived decorations; absent only in isolated static previews. */
   readonly projectionStore?: CardProjectionAuthority
   /** Structured answers carry what the human wrote, already shaped for the question. */

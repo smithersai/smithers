@@ -37,7 +37,6 @@ export const cardActions = (controller: AppController): CardBindings => {
     mythicalHistory: controller.features?.mythicalHistory ?? false,
     get experimental() { return controller.commands?.state().experimental === true },
     experimentalSnapshot: () => controller.commands?.state().experimental === true,
-    flowBuilder: controller.features?.flowBuilder ?? false,
     onDecideApproval: (id, decision, answer, question) =>
       // Structured human answers keep their value shape through the controller.
       answer === undefined

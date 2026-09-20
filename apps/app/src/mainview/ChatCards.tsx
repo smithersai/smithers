@@ -97,7 +97,6 @@ export const CardView = memo(function CardView({
   mythicalHistory,
   experimental: experimentalProp,
   experimentalSnapshot,
-  flowBuilder,
   signedOut,
   presentation
 }: CardViewProps) {
@@ -304,7 +303,6 @@ export const CardView = memo(function CardView({
             flowDurations,
             fileCards,
             projectionStore,
-            flowBuilder,
             signedOut,
             presentation: presentation ?? (maximized ? "maximized" : "embedded")
           })}

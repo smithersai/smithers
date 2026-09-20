@@ -22,12 +22,6 @@ SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:47331
 Open **http://127.0.0.1:47331**. On a rerun, `SMITHERS_SKIP_SPA_BUILD=1`
 reuses `apps/app/dist`.
 
-The flow builder is a BUILD-time flag and this command builds it on
-(`VITE_SMITHERS_FLOW_BUILDER=true`). Start it with
-`VITE_SMITHERS_FLOW_BUILDER=false` to see the app without it: every surface
-below disappears, and the Run door, the run card and the dispatcher card stay
-exactly as they are.
-
 ## Click through it
 
 **1. List the flows.** Open the chat and send:

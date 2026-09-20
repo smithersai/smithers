@@ -448,7 +448,7 @@ export const createWorkflowPumpController = (
         // Only a nonempty, prefix-matched suffix assigns events. A higher
         // offset at the same sequence is also actual observation progress.
         if (journalAdvanced) lastProgressAt = Date.now()
-        if (services.features?.flowBuilder === true && card.payload.authoring !== undefined) void ctx.observeFlowAuthoring(cardId)
+        if (card.payload.authoring !== undefined) void ctx.observeFlowAuthoring(cardId)
 
         const phase = PHASE_OF_STATUS[row.status]
         if (TERMINAL_PHASES.has(phase)) {

@@ -280,7 +280,7 @@ resolve through `DurableEngineState.waitingTree(runId)` (depth cap 64).
 
 # Production plan (2026-09-18, from a seven-area code map)
 
-Nine lanes behind a dark `flowBuilder` flag: lane 1 turns on the NativeControl plan hook and draws a real PlanCard in a new `flow-plan` card. Live status then folds app-side from the `run-events` pages the pump already reads, once the Interpreter emits node events. The only new gateway surface is a `flow-durations` projection.
+Nine lanes: lane 1 turns on the NativeControl plan hook and draws a real PlanCard in a new `flow-plan` card. Live status then folds app-side from the `run-events` pages the pump already reads, once the Interpreter emits node events. The only new gateway surface is a `flow-durations` projection.
 
 ## Architecture
 
@@ -327,9 +327,9 @@ Defer all polish; this lane only proves the vertical path.
    - Never return or persist the `envelope`.
    - `launch` reuses `plan()`. Its return widens to include nodes; L4 consumes that.
 4. **Wire.** Add kind `flow-plan` with payload `{repo, workspaceId?, flowId, input?, status: pending|done|failed, error?, planId?, digest?, nodes?: [{id, kind, key, dependsOn, tier, action?, status}]}`. Leave the retired `graph` kind alone.
-5. **Flag.**
-   - Add `AppFeatures.flowBuilder?: boolean`, resolved as `services.features?.flowBuilder ?? import.meta.env?.VITE_SMITHERS_FLOW_BUILDER === "true"`.
-   - When it is off, `flow.plan` does not register, is absent from the agent catalog, and the Plan button does not render.
+5. **Flag.** Removed by D-080 (Will, 2026-09-20): `flow.plan` registers for
+   everyone, it is in the agent catalog, and the Plan button renders. The steps
+   below are numbered as they were planned.
 6. **Flow.** Add visible flow `flow.plan`.
    - Args: `[sourceCard=id] <name> [owner/repo] [JSON object]`.
    - Copy form hints, runtime and requires from `flow.run` (flow.ts:121-140).
@@ -377,8 +377,7 @@ Gates:
 - `bun test src/mainview/cards/FlowGraph.test.ts src/mainview/cards/FlowPlanCard.test.tsx src/mainview/cards/CardRenderers.test.ts src/mainview/state/controller/gateway.test.ts src/mainview/flows/FlowName.test.ts src/mainview/flows/agent-parity.test.ts src/mainview/flows/parity.test.ts src/mainview/flows/Commands.forms.test.ts src/mainview/Architecture.test.ts src/mainview/styles/DeadCss.test.ts`
 
 **Done when.** - `proof:gateway` is green and its new step shows non-empty plan nodes crossing seam, relay and gateway.
-- With `VITE_SMITHERS_FLOW_BUILDER=true`, clicking Plan on a real flow row draws that flow's real nodes and edges.
-- With the flag off, the app is byte-for-byte the same in flows, catalog and DOM.
+- Clicking Plan on a real flow row draws that flow's real nodes and edges.
 
 ### L2-engine-node-events — Engine: the Interpreter journals plan-recorded, node-scheduled and node-settled with plan node ids, action tag and clean outcome
 
@@ -714,7 +713,7 @@ Start the fixture stack on day one in parallel. The spec waits for L4 and L5.
    - A tsx process runs `NodeGateway.layer({host:"127.0.0.1", port:0})`.
    - The same process runs the relay lifted from gateway-run-proof.ts:104-151. It uses the Worker's own `GATEWAY_PROCEDURE_MOUNTS`, `encodeGatewayRequest` and `decodeGatewayResponse`. It answers `provision` as ready and answers `/api/auth/session` with `SCOPED_TEST_USER` from e2e/playwright/identity.ts.
    - The tsx process prints the relay URL.
-   - The bun process runs `startLocalServer({cloudMode:"hybrid", identityUpstream: relayUrl, cloudApi: null, agent: createChatStub, home: tmp, stateDir: tmp})` with `VITE_SMITHERS_FLOW_BUILDER=true`.
+   - The bun process runs `startLocalServer({cloudMode:"hybrid", identityUpstream: relayUrl, cloudApi: null, agent: createChatStub, home: tmp, stateDir: tmp})`.
 5. **Spec.** Use zero `page.route`.
    - Run `/flow.plan`, then assert the node count equals the Plan RPC's.
    - Run `/flow.run`, then assert the `data-status` transitions.
@@ -832,7 +831,7 @@ Each of these needs engine or infra work that this milestone does not take on.
 
 1. **Announce first.**
    - Append `## FB001 (Claude flow-builder, <UTC>): ...` to `/Users/williamcory/smithers/CHAT.md` with a single `>>` write.
-   - List the exact owned paths per lane, the lane workspace names (`lane-fb-skeleton`, `-engine`, `-gateway`, `-rungraph`, `-drawer`, `-triggers`, `-durations`, `-e2e`, `-harden`), the flag `flowBuilder` / `VITE_SMITHERS_FLOW_BUILDER`, and the first landing window.
+   - List the exact owned paths per lane, the lane workspace names (`lane-fb-skeleton`, `-engine`, `-gateway`, `-rungraph`, `-drawer`, `-triggers`, `-durations`, `-e2e`, `-harden`), and the first landing window.
    - Re-read the tail afterwards.
    - Never run `jj new`, `commit`, `squash`, `edit` or `rebase` inside `~/smithers`. That working copy belongs to a peer.
 2. **Create lanes one at a time under flock.**
@@ -1022,8 +1021,7 @@ Procedure:
 6. Landing is the deploy request.
    - Any Claude Stop on this machine builds local main, deploys the Worker and probes both hosts.
    - A red typecheck does not block a deploy. b6d6ece7 deployed at 03:05Z even though CL095 reports it failing `pnpm run check`.
-   - Add `flowBuilder?: boolean` to `AppFeatures` on main, default off, with a VITE env fallback. Use the wiring at AppController.ts:705 as the model. That wiring exists only in the uncommitted working copy, not on main.
-   - Land the flag first, as one batch with everything behind it.
+   - The flag this step added is gone: D-080 (Will, 2026-09-20) removed it, and the feature is the app.
    - After each landing, grep autodeploy.log for deployed or FAILED, and check /__build.json on both hosts.
    - Announce using the next id after CL095: `## FB001 (Claude flow-builder, <UTC>): ...`. List exact paths owned, lane workspace names, the flag name and the intended landing window. Post again before each landing with the base main id and the file list.
 
@@ -1058,7 +1056,7 @@ Procedure:
 Blockers:
 - CL095 (CHAT.md:4356-4358) reports that main@origin fails apps/app `pnpm run check` with five errors. I did not run the check; main's source still has the sites CL095 names. The L105 fixes (c519b8e7d8d8, c5310bf0e5d1) are unlanded. Until they land, a lane cannot show a green check. It can only show a failing set identical to unmodified main's.
 - The spec and the mock (docs/flow-builder/**) exist only as uncommitted files in the main checkout working copy, which sits 15 commits behind main. A lane created at main does not contain them. Lanes must read /Users/williamcory/smithers/docs/flow-builder by absolute path, or someone must land the docs with an explicit fileset first. Do not commit them from the shared checkout with a catch-all fileset.
-- Collision: L105 commit c5310bf0e5d1 removes the 'experimental' surface from main while the peer's 53-file experimental work sits uncommitted in the main checkout. Reusing the experimental card kind or the VITE_SMITHERS_EXPERIMENTAL flag for the flow builder builds on a moving target. Add a separate flowBuilder flag.
+- Collision: L105 commit c5310bf0e5d1 removes the 'experimental' surface from main while the peer's 53-file experimental work sits uncommitted in the main checkout. Reusing the experimental card kind or the VITE_SMITHERS_EXPERIMENTAL flag for the flow builder builds on a moving target. Add a separate flowBuilder flag. (Reversed by D-080: the flag was removed and the feature ships to everyone.)
 - Every Claude Stop on this machine, including the new orchestrator's and its `claude -p` children, runs autodeploy against local main. `jj bookmark set main` in any workspace moves local main, so setting the bookmark is already a deploy request even before the push. Set it only on a fully verified head.
 - Quota: both Codex accounts are usage-limited until 09-20 and 09-22. The release owner is Opus-only, and its lanes share the same Claude session limit. A large fan-out can kill the release owner's lanes silently, because workflows stay 'running'. Cap concurrency, and check agent-*.jsonl mtime.
 - The smithers MCP server failed to connect in this session (CONNECTION_CLOSED). It was not needed for this read-only map.

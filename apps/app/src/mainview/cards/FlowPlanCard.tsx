@@ -40,7 +40,6 @@ const liveRowsFor = (catalogs: ReadonlyArray<TriggerCatalog>, repo: string): Rea
 export const FlowPlanCardBody = ({
   card,
   onRunCommand,
-  flowBuilder = false,
   triggerCatalogs = [],
   flowDurations = [],
   fileCards = []
@@ -53,23 +52,16 @@ export const FlowPlanCardBody = ({
   readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
   /** The files already read into this conversation; the drawer's Code tab renders the declared one. */
   readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
-  /*
-   * The plan door renders only where the flow builder does. The family is
-   * registered whatever the flag says, so a card persisted under the flag
-   * still renders with it off, where `flow.plan` is not in the registry: the
-   * button would answer "unknown command", which is not a door.
-   */
-  readonly flowBuilder?: boolean
 }) => {
   const { repo, flowId, input, nodes, graph, view, rekey } = card.payload
-  const changes = !flowBuilder || card.payload.previousPlan === undefined || nodes === undefined ? undefined : compareKeys(card.payload.previousPlan.nodes, nodes)
+  const changes = card.payload.previousPlan === undefined || nodes === undefined ? undefined : compareKeys(card.payload.previousPlan.nodes, nodes)
   /*
    * Where this plan ended up, as one closed set (flowGraph/PlanState.ts).
    * Every ending the seam can write is a case there, so a card cannot grow a
    * fourth one that falls through to the success door.
    */
   const state = planCardState(card.payload)
-  const args = { name: flowId, repo, ...(flowBuilder ? { sourceCard: card.id } : {}), ...(input === undefined ? {} : { input }) }
+  const args = { name: flowId, repo, sourceCard: card.id, ...(input === undefined ? {} : { input }) }
   /* A dispatcher listing whose box answered is what makes "no schedule" a reading rather than a silence. */
   const live = liveRowsFor(triggerCatalogs, repo)
   const triggers = triggerGraph(live, flowId, nodes ?? [])
@@ -81,32 +73,25 @@ export const FlowPlanCardBody = ({
    */
   const measured = flowDurations.filter((row) => row.repo === repo && row.flowId === flowId)
   const eta = nodes === undefined || nodes.length === 0 ? undefined : criticalPathEta(nodes, measured, flowId)
-  /*
-   * The drill-in exists only where the flow builder does (D-038, D-050):
-   * with the flag off the canvas has no selection model, no drawer and no
-   * act, and the card is the card it was.
-   */
-  const drill = flowBuilder
-    ? {
-      repo,
-      previousNodes: card.payload.previousPlan?.nodes,
-      /* The revision the plan's declaration sites were read at (D-068). */
-      ...(graph?.sourceRevision === undefined ? {} : { sourceRevision: graph.sourceRevision }),
-      doors: { select: "flow.plan.select", tab: "flow.plan.tab", target: card.id } as const,
-      ...(view?.node === undefined ? {} : { selected: view.node }),
-      ...(view?.tab === undefined ? {} : { tab: view.tab }),
-      ...(view?.codeError === undefined ? {} : { codeError: view.codeError }),
-      files: fileCards,
-      onRunCommand
-    }
-    : undefined
+  const drill = {
+    repo,
+    previousNodes: card.payload.previousPlan?.nodes,
+    /* The revision the plan's declaration sites were read at (D-068). */
+    ...(graph?.sourceRevision === undefined ? {} : { sourceRevision: graph.sourceRevision }),
+    doors: { select: "flow.plan.select", tab: "flow.plan.tab", target: card.id } as const,
+    ...(view?.node === undefined ? {} : { selected: view.node }),
+    ...(view?.tab === undefined ? {} : { tab: view.tab }),
+    ...(view?.codeError === undefined ? {} : { codeError: view.codeError }),
+    files: fileCards,
+    onRunCommand
+  }
   /*
    * A schedule is drawn on the canvas where the canvas exists, and its detail
    * is the drawer that node opens. The panel is what a card shows when the
-   * canvas does not draw them at all: with the flow builder off, and for a
-   * plan with no nodes to draw a canvas for.
+   * canvas does not draw them at all: a plan with no nodes to draw a canvas
+   * for.
    */
-  const drawnOnCanvas = drill !== undefined && nodes !== undefined && nodes.length > 0
+  const drawnOnCanvas = nodes !== undefined && nodes.length > 0
   const panel = drawnOnCanvas ? [] : triggers.nodes
   return (
     <div className="flow-plan-card">
@@ -132,14 +117,10 @@ export const FlowPlanCardBody = ({
         )}
         {/*
           * A refusal is answerable or it is nothing: the door that asks again
-          * stands beside it, and the door that runs what was planned does
-          * not. With the flag off `flow.plan` is not in the registry, so
-          * there is no door to offer and the card states the refusal alone.
+          * stands beside it, and the door that runs what was planned does not.
           */}
         {state.kind === "refused"
-          ? flowBuilder
-            ? <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.plan", flowArgs("flow.plan", args))}>Plan</Button>
-            : null
+          ? <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.plan", flowArgs("flow.plan", args))}>Plan</Button>
           : <Button size="sm" variant="outline" {...flowAction(onRunCommand, "flow.run", flowArgs("flow.run", args))}>Run</Button>}
       </div>
       {state.kind !== "refused" || state.sentence === undefined
@@ -151,7 +132,7 @@ export const FlowPlanCardBody = ({
             nodes={nodes}
             graph={graph}
             durations={measured}
-            triggers={drill === undefined || live.length === 0 ? undefined : triggers}
+            triggers={live.length === 0 ? undefined : triggers}
             drill={drill}
           />
         </Suspense>
@@ -167,7 +148,6 @@ export const flowPlanCardFamily: CardFamily<"flow-plan"> = {
       <FlowPlanCardBody
         card={card}
         onRunCommand={actions.onRunCommand}
-        flowBuilder={actions.flowBuilder}
         triggerCatalogs={actions.triggerCatalogs}
         flowDurations={actions.flowDurations}
         fileCards={actions.fileCards}

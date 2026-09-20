@@ -66,14 +66,6 @@ const render = (element: React.ReactElement): HTMLElement => {
 }
 
 describe("the plan card", () => {
-  test("flag off keeps the frozen header and run arguments even with an authoring comparison persisted", () => {
-    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: NODES,
-      previousPlan: { planId: "older", digest: "older-digest", nodes: [] } })} onRunCommand={() => {}} flowBuilder={false} />)
-    expect(host.querySelector(".flow-plan-head")?.textContent).toBe("2Run")
-    expect(host.querySelector("[data-flow='flow.run']")?.getAttribute("data-flow-args")).toBe("review o/r")
-    expect(host.querySelector(".flow-plan-key-changes")).toBeNull()
-  })
-
   test("a pending plan draws no graph and claims no nodes", () => {
     const host = render(<FlowPlanCardBody card={card({})} onRunCommand={() => {}} />)
     expect(host.querySelector(".flow-plan-count")).toBeNull()
@@ -98,9 +90,9 @@ describe("the plan card", () => {
       />
     )
     const button = host.querySelector("[data-flow=\"flow.run\"]") as HTMLButtonElement
-    expect(button.getAttribute("data-flow-args")).toBe('review o/r {"pr":4821}')
+    expect(button.getAttribute("data-flow-args")).toBe('sourceCard=flow-plan-1 review o/r {"pr":4821}')
     button.click()
-    expect(ran).toEqual([["flow.run", 'review o/r {"pr":4821}']])
+    expect(ran).toEqual([["flow.run", 'sourceCard=flow-plan-1 review o/r {"pr":4821}']])
   })
 
   test("a refused plan states the workspace's own sentence and offers the plan door again", () => {
@@ -108,38 +100,11 @@ describe("the plan card", () => {
       <FlowPlanCardBody
         card={card({ status: "failed", error: "There's no flow called review on o/r." })}
         onRunCommand={() => {}}
-        flowBuilder
       />
     )
     expect(host.querySelector(".flow-plan-error")?.textContent).toBe("There's no flow called review on o/r.")
     expect(host.querySelector("[data-flow=\"flow.plan\"]")).not.toBeNull()
     expect(host.querySelector("[data-flow=\"flow.run\"]")).toBeNull()
-  })
-
-  /*
-   * The card family is registered whatever the flag says, so a card persisted
-   * under the flag renders with it off. The door it would offer addresses a
-   * flow that is not in the registry there, and a button that answers
-   * "unknown command" is not a door.
-   */
-  test("with the flow builder off, a refused plan keeps its sentence and offers no door", () => {
-    const host = render(
-      <FlowPlanCardBody
-        card={card({ status: "failed", error: "There's no flow called review on o/r." })}
-        onRunCommand={() => {}}
-        flowBuilder={false}
-      />
-    )
-    expect(host.querySelector(".flow-plan-error")?.textContent).toBe("There's no flow called review on o/r.")
-    expect(host.querySelector("[data-flow=\"flow.plan\"]")).toBeNull()
-    expect(host.querySelector("[data-flow=\"flow.run\"]")).toBeNull()
-  })
-
-  test("with the flow builder off, a drawn plan still runs the flow it planned", () => {
-    const host = render(
-      <FlowPlanCardBody card={card({ status: "done", nodes: NODES })} onRunCommand={() => {}} flowBuilder={false} />
-    )
-    expect(host.querySelector("[data-flow=\"flow.run\"]")).not.toBeNull()
   })
 
   test("an empty plan draws no graph and writes no sentence about it", () => {
@@ -307,8 +272,10 @@ describe("what each node says about time", () => {
 
 /*
  * The schedules that fire this flow, beside the plan they fire (L6, D-031).
- * A trigger is not a plan node: it is never in the count, and the panel is
- * there only for a dispatcher listing whose box actually answered.
+ * A trigger is not a plan node: it is never in the count. Where the plan draws
+ * a canvas the schedule is drawn on it (FlowGraphDrawer.test.tsx renders that
+ * canvas); the panel below is what a plan with nothing to draw shows instead,
+ * and it is there only for a dispatcher listing whose box actually answered.
  */
 type TriggerListCard = Extract<Card, { kind: "trigger-list" }>
 
@@ -332,7 +299,7 @@ const NIGHTLY: TriggerListCard["payload"]["triggers"][number] = {
 }
 
 describe("the schedules that fire the plan", () => {
-  test("a schedule on this flow shows beside the graph and stays out of the node count", () => {
+  test("a schedule stays out of the node count, and the canvas draws it rather than the panel", () => {
     const host = render(
       <FlowPlanCardBody
         card={card({ status: "done", nodes: NODES })}
@@ -341,6 +308,19 @@ describe("the schedules that fire the plan", () => {
       />
     )
     expect(host.querySelector(".flow-plan-count")?.textContent).toBe("2")
+    /* Two nodes, not three: the schedule is never counted as plan work. */
+    expect(host.querySelector(".flow-trigger-panel")).toBeNull()
+  })
+
+  test("a plan with no canvas to draw shows its schedule in the panel beside it", () => {
+    const host = render(
+      <FlowPlanCardBody
+        card={card({ status: "done", nodes: [] })}
+        onRunCommand={() => {}}
+        triggerCatalogs={[dispatcher({ triggers: [NIGHTLY] })]}
+      />
+    )
+    expect(host.querySelector(".flow-plan-count")).toBeNull()
     expect(host.querySelector("[data-trigger='nightly']")?.getAttribute("data-trigger-state")).toBe("armed")
     expect(host.querySelector("[data-testid='trigger-schedule-nightly']")?.textContent).toBe("Every weekday at 09:00 UTC")
   })
@@ -352,14 +332,14 @@ describe("the schedules that fire the plan", () => {
       dispatcher({ live: false, triggers: [NIGHTLY] })
     ]) {
       const host = render(
-        <FlowPlanCardBody card={card({ status: "done", nodes: NODES })} onRunCommand={() => {}} triggerCatalogs={[catalog]} />
+        <FlowPlanCardBody card={card({ status: "done", nodes: [] })} onRunCommand={() => {}} triggerCatalogs={[catalog]} />
       )
       expect(host.querySelector("[data-trigger]")).toBeNull()
     }
   })
 
   test("no dispatcher listing at all is no panel, never an empty one", () => {
-    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: NODES })} onRunCommand={() => {}} />)
+    const host = render(<FlowPlanCardBody card={card({ status: "done", nodes: [] })} onRunCommand={() => {}} />)
     expect(host.querySelector(".flow-trigger-panel")).toBeNull()
   })
 })

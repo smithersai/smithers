@@ -202,12 +202,6 @@ export interface TriggersSeam {
 export interface TriggersRuntime {
   /** Watch one run card; it settles when that run does. */
   readonly watchRun: (cardId: string) => Promise<void>
-  /**
-   * The flow builder's flag. The fire ledger and the box's policy fields are
-   * the builder's own reads (D-050), so with the flag off this seam asks the
-   * two routes it always asked and writes the payload it always wrote.
-   */
-  readonly flowBuilder: boolean
   /** Background work on the shared stack, under its 300 ms debounce; a string outcome is the failure line. */
   readonly withToast: <T>(key: string, title: string, doneTitle: string, work: () => Promise<T | string>) => Promise<T | string>
 }
@@ -328,7 +322,7 @@ const builderFields = (value: Record<string, unknown>): Partial<TriggerRow> => {
  * {@link builderFields} names, and none for the registration's input or its
  * revision, so those two always stay on the wire.
  */
-const triggerRow = (value: unknown, builder: boolean): TriggerRow | undefined => {
+const triggerRow = (value: unknown): TriggerRow | undefined => {
   if (!isRecord(value)) return undefined
   if (typeof value.id !== "string" || typeof value.flowId !== "string" || typeof value.cron !== "string") return undefined
   return {
@@ -340,7 +334,7 @@ const triggerRow = (value: unknown, builder: boolean): TriggerRow | undefined =>
     ...(typeof value.lastFiredAt === "number" ? { lastFiredAt: value.lastFiredAt } : {}),
     ...(typeof value.nextFireAt === "number" ? { nextFireAt: value.nextFireAt } : {}),
     ...(typeof value.activeRunId === "string" ? { activeRunId: value.activeRunId } : {}),
-    ...(builder ? builderFields(value) : {})
+    ...builderFields(value)
   }
 }
 
@@ -362,11 +356,11 @@ const NO_LIVE: LiveList = { live: false, triggers: [], webhooks: [] }
  * answer; a route that did not answer, or answered without `live: true`,
  * is "no box answered" and the card shows no live column at all.
  */
-export const readLiveTriggers = async (ctx: SeamContext, repo: string, builder = false): Promise<LiveList> => {
+export const readLiveTriggers = async (ctx: SeamContext, repo: string): Promise<LiveList> => {
   const answer = await readJson(ctx, `${ctx.baseUrl}${WORKFLOW_TRIGGERS_PATH}?repo=${encodeURIComponent(repo)}`)
   if (answer.status !== 200 || !isRecord(answer.body) || answer.body.status !== "ok" || answer.body.live !== true) return NO_LIVE
   const triggers = (Array.isArray(answer.body.triggers) ? answer.body.triggers : [])
-    .map((row) => triggerRow(row, builder))
+    .map((row) => triggerRow(row))
     .filter((row): row is TriggerRow => row !== undefined)
   const webhooks = (Array.isArray(answer.body.webhooks) ? answer.body.webhooks : [])
     .map(webhookRow)
@@ -784,7 +778,7 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     const signedIn = identity?.state === "signed-in" && identity.allowlisted
     const [declared, box, registered] = await Promise.all([
       readDeclaredRules(ctx, repo),
-      signedIn ? readLiveTriggers(ctx, repo, runtime.flowBuilder) : Promise.resolve(NO_LIVE),
+      signedIn ? readLiveTriggers(ctx, repo) : Promise.resolve(NO_LIVE),
       signedIn ? readTriggerRegistrations(ctx, repo) : Promise.resolve(NO_LIVE)
     ])
     if ("error" in declared) return declared.error
@@ -797,19 +791,13 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
      * A box that refused leaves the row exactly as it was. "This schedule has
      * never fired" and "I could not read whether it has" are different
      * answers, and only the first of them is an empty `fires`.
-     *
-     * The ledger is the flow builder's own read: the trigger panel is what
-     * shows a fire, so with the flag off the list makes no call for one
-     * (D-050).
      */
-    const ledgers = runtime.flowBuilder
-      ? await Promise.all(
-        box.triggers.map(async (row): Promise<TriggerRow> => {
-          const read = await readTriggerFires(ctx, repo, row.id)
-          return read.ok ? { ...row, fires: [...read.fires] } : row
-        })
-      )
-      : box.triggers
+    const ledgers = await Promise.all(
+      box.triggers.map(async (row): Promise<TriggerRow> => {
+        const read = await readTriggerFires(ctx, repo, row.id)
+        return read.ok ? { ...row, fires: [...read.fires] } : row
+      })
+    )
     /* Listening means a box answered or a schedule is registered — never that the registrations route answered with nothing. */
     const live: LiveList = {
       live: box.live || registered.triggers.length > 0,

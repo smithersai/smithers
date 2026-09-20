@@ -82,7 +82,7 @@ export const createWorkflowLaunchController = (
             if (!current()) return TOAST_SUPERSEDED
             if (result.status === "ok") {
               request = { ...request, runId: result.value.runId, retryAt: undefined, error: undefined }
-              const plan = ctx.services.features?.flowBuilder === true ? planCardSnapshot(result.value) : undefined
+              const plan = planCardSnapshot(result.value)
               await publish(request, { runId: result.value.runId, phase: "running", error: undefined,
                 ...(plan === undefined ? {} : { plan }) })
               break

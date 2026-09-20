@@ -52,9 +52,15 @@ export const runLaunchCommandOf = (toolName: string, toolArguments: string): str
 /**
  * A saved request or confirmed launch arms claim suppression. A refusal,
  * unknown command or chooser leaves the model free to describe that outcome.
+ *
+ * `flow-requested` is the authoring door's saved request (controller/
+ * flowAuthoring.ts). It is a durable request exactly as `run-requested` is,
+ * and it was the whole of `flow.create`'s answer the moment the flow builder
+ * was on, so a gate reading only `run-` left the deployed model free to write
+ * "has been created" over a run that had not launched.
  */
 export const toolResultLaunchedRun = (result: string): boolean =>
-  !result.startsWith("failed:") && !result.startsWith("unknown-") && /\brun-(?:started|requested)\b/.test(result)
+  !result.startsWith("failed:") && !result.startsWith("unknown-") && /\b(?:run|flow)-(?:started|requested)\b/.test(result)
 
 /** What the run is called, in the vocabulary a claim would use. */
 const RUN_SUBJECT = /\b(workflow|workflows|run|runs|flow|flows|automation|pipeline|job|it|that|this|they|everything)\b/i
@@ -91,7 +97,8 @@ export const claimsRunState = (text: string): boolean => {
  */
 export const deterministicRunLine = (command: string): string =>
   command === "flow.run" ? "Run requested." : command === "flow.create"
-    ? `I started a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
+    /* The authoring door SAVES the request and launches in the background, so the client says what it did. */
+    ? `I requested a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
     : "I started that run — the run card shows its real progress."
 
 /*

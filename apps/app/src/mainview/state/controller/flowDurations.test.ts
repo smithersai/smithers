@@ -17,15 +17,14 @@ const row = (actionTag: string, p50Ms: number): FlowDurationRow =>
   ({ flowId: "review", actionTag, samples: 4, p50Ms, p90Ms: p50Ms * 2 })
 
 const scope = async (
-  answer: (repo: string, flowId: string) => Promise<GatewayResult<ReadonlyArray<FlowDurationRow>>>,
-  flowBuilder = true
+  answer: (repo: string, flowId: string) => Promise<GatewayResult<ReadonlyArray<FlowDurationRow>>>
 ) => {
   const store: AppStore = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const asked: Array<string> = []
   const read = createFlowDurationsReader({
     store,
     disposed: false,
-    services: { features: { flowBuilder } },
+    services: { features: {} },
     gateway: {
       flowDurations: (repo: string, flowId: string) => {
         asked.push(`${repo} ${flowId}`)
@@ -79,12 +78,5 @@ describe("reading a flow's measured durations", () => {
     await Promise.all([read("o/r", "review"), read("o/r", "ship")])
     expect(rowsOf(store, "review")).toEqual(["acme/review"])
     expect(rowsOf(store, "ship")).toEqual(["acme/ship"])
-  })
-
-  test("with the flow builder off the projection is never asked for", async () => {
-    const { asked, read, store } = await scope(async () => ({ status: "ok", value: [row("acme/Build", 1_000)] }), false)
-    await read("o/r", "review")
-    expect(asked).toEqual([])
-    expect([...store.collections.flowDurations.values()]).toEqual([])
   })
 })

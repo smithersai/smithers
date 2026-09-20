@@ -161,7 +161,6 @@ const ready = async (rows: ReadonlyArray<ControlEvent>, served: Served = {}) => 
     observation: { scope: { repo: REPO, runId: RUN }, summary: SUMMARY, journal: { mode: "full", events: [...rows] } }
   }).isPersisted.promise
   const controller = createAppController(store, unavailableRepositories, silentAgent, {
-    features: { flowBuilder: true },
     fetchImpl: relay(served),
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000

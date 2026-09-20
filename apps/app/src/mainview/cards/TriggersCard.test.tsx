@@ -50,13 +50,12 @@ const DECLARED: NonNullable<Payload["declared"]> = [
 
 const render = (
   card: TriggerListCard,
-  onRunCommand: (name: string, args?: string) => void = () => {},
-  flowBuilder = false
+  onRunCommand: (name: string, args?: string) => void = () => {}
 ): HTMLElement => {
   const host = document.createElement("div")
   document.body.append(host)
   flushSync(() => {
-    createRoot(host).render(<TriggerListCardBody card={card} onRunCommand={onRunCommand} flowBuilder={flowBuilder} />)
+    createRoot(host).render(<TriggerListCardBody card={card} onRunCommand={onRunCommand} />)
   })
   return host
 }
@@ -265,7 +264,7 @@ describe("the dispatcher card", () => {
    */
   test("Pause is the button door of triggers.pause, carrying its values as the object the grammar reads", () => {
     const calls: Array<[string, string | undefined]> = []
-    const host = render(triggerCard(TWO_ROWS), (name, args) => calls.push([name, args]), true)
+    const host = render(triggerCard(TWO_ROWS), (name, args) => calls.push([name, args]))
     const pause = host.querySelector<HTMLButtonElement>("[data-testid='trigger-pause-nightly']")
     expect(pause?.dataset.flow).toBe("triggers.pause")
     expect(pause?.textContent).toBe("Pause")
@@ -273,29 +272,5 @@ describe("the dispatcher card", () => {
     expect(calls).toEqual([["triggers.pause", JSON.stringify({ slug: "nightly", repo: REPO })]])
     /* Pause is a Plue route keyed by slug; a trigger-store row carries none, and no Control procedure pauses one. */
     expect(host.querySelector("[data-testid='trigger-pause-sweep']")).toBeNull()
-  })
-
-  /*
-   * D-050: with the flow builder off this card is the card that shipped
-   * before the builder, byte for byte. Pause is the builder's button, so the
-   * flag-off render carries the two doors the card always had and the flag-on
-   * render differs from it by exactly that one button and nothing else.
-   */
-  test("with the flow builder off the card is the pre-builder card, byte for byte", () => {
-    const calls: Array<[string, string | undefined]> = []
-    const off = render(triggerCard(TWO_ROWS), (name, args) => calls.push([name, args]))
-    expect([...off.querySelectorAll("[data-flow]")].map((node) => [node.getAttribute("data-flow"), node.textContent]))
-      .toEqual([["triggers.run", "Run now"], ["triggers.register", "Register a rule"]])
-    expect(off.querySelector("[data-testid='trigger-pause-nightly']")).toBeNull()
-    expect(off.innerHTML).not.toContain("Pause")
-    expect(off.innerHTML).not.toContain("triggers.pause")
-    /* Run now still runs: the flag withholds a button, it does not disarm the card. */
-    off.querySelector<HTMLButtonElement>("[data-testid='trigger-run-nightly']")?.click()
-    expect(calls).toEqual([["triggers.run", `nightly ${REPO}`]])
-
-    const on = render(triggerCard(TWO_ROWS), () => {}, true)
-    const pause = on.querySelector<HTMLButtonElement>("[data-testid='trigger-pause-nightly']")
-    expect(pause).not.toBeNull()
-    expect(on.innerHTML.replace(pause?.outerHTML ?? "", "")).toBe(off.innerHTML)
   })
 })

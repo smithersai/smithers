@@ -14,11 +14,17 @@ import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
 const REPO = "codeplanesmithers/canary-sandbox"
+
+/** The durable card `flow.create` mints: where a background refusal is stated and retried. */
+const authoringCard = (store: Awaited<ReturnType<typeof createAppStore>>) => {
+  const card = [...store.collections.cards.values()].find((entry) => entry.kind === "run-trace" && entry.payload.authoring !== undefined)
+  return card?.kind === "run-trace" ? card : undefined
+}
 const JOB_WORKSPACE = "af1e3bc5-6388-419e-98cc-e13372a89646"
 
 /* What the Worker answers for a refused provision: `refuse("upstream_refused", <the upstream's own prose>)`. */
@@ -83,6 +89,8 @@ test("the flow-authoring door provisions the box the repository's jobs run on", 
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   try {
     await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
+    /* The door answers first and provisions in the background (AGENTS.md instant chat). */
+    await waitFor(() => double.calls.some(call => call.path === "/api/workflow/rpc"))
     const provisions = double.calls.filter(call => call.path === "/api/workflow/provision")
     expect(provisions).toHaveLength(1)
     expect(provisions[0]?.body).toEqual({ repo: REPO, workspaceId: JOB_WORKSPACE })
@@ -95,11 +103,12 @@ test("a refused provision reaches the person as its registered refusal, with its
   const double = relay({ provisionStatus: 502, provision: () => UPSTREAM_500 })
   const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
   try {
-    const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
-    const answer = said(outcome)
-    expect(answer).toBe("upstream_refused — internal server error. Something Smithers depends on refused that. Not your doing.")
-    /* The refusal stays where the person is looking after the toast goes. */
-    expect([...store.collections.messages.values()].map(message => message.text)).toContain(answer)
+    expect(said(await controller.commands.run("flow.create", `summarise my issues ${REPO}`))).toBe(`flow-requested repo=${REPO}`)
+    /* The refusal stays where the person is looking after the toast goes: the durable card. */
+    await waitFor(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
+    expect(authoringCard(store)?.payload.authoring?.launchError)
+      .toBe("upstream_refused — internal server error. Something Smithers depends on refused that. Not your doing.")
+    expect(authoringCard(store)?.status).toBe("error")
   } finally { await controller.dispose(); await store.dispose?.() }
 })
 
@@ -140,6 +149,7 @@ test("a cold workspace keeps the flow-authoring door polling: no rpc, no transcr
     expect([...store.collections.toasts.values()].map(toast => toast.title)).toContain(`Preparing your ${REPO} workspace…`)
     await pending
     /* The same line, once the workspace is up, reaches the plan the next script saw. */
+    await waitFor(() => double.calls.some(call => call.path === "/api/workflow/rpc"), 10_000)
     expect(double.calls.filter(call => call.path === "/api/workflow/provision").length).toBeGreaterThan(1)
     expect(double.calls.filter(call => call.path === "/api/workflow/rpc").map(call => call.body).length).toBeGreaterThan(0)
   } finally { await controller.dispose(); await store.dispose?.() }

@@ -96,7 +96,6 @@ const readyController = async (relay: ReturnType<typeof scriptedRelay>, storage 
     repositories: [{ id: REPO, org: "smithersai", ownerKind: "org", name: "smithers", head: null }]
   }).isPersisted.promise
   const controller = createAppController(store, unavailableRepositories, silentAgent, {
-    features: { flowBuilder: true },
     fetchImpl: relay.fetchImpl,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000
