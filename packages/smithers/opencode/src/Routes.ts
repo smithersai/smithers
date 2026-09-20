@@ -295,7 +295,20 @@ export const layer = (
         sandboxes: []
       })
 
-      const onStoreError = (error: Store.StoreError) => Effect.succeed(failed(error.message))
+      /**
+       * A store read that failed is a 500, and its cause is written to the
+       * log on the way past. The cause was dropped here, so a one-off 500 on
+       * `GET /session/:id/message` left the operator a sentence about a read
+       * that failed and nothing that said why, which is not something anyone
+       * can diagnose after the fact. The message the person is answered with
+       * does not change: the cause is a defect of this server, not of their
+       * request.
+       */
+      const onStoreError = (error: Store.StoreError) =>
+        Effect.as(
+          Effect.logError({ message: `A store read failed: ${error.message}`, cause: error.cause }),
+          failed(error.message)
+        )
 
       /** Runs a store read and answers 500 on a store failure. */
       const stored = <A>(

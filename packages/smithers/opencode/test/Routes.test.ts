@@ -1,5 +1,5 @@
 import { createOpencodeClient, type Message, type Part, type Session } from "@opencode-ai/sdk"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
@@ -877,6 +877,59 @@ describe("Routes through the OpenCode SDK client", () => {
         })
       )
       expect(replied.status).toBe(500)
+    } finally {
+      await dispose()
+    }
+  })
+
+  /**
+   * A 500 the operator can act on.
+   *
+   * The handler answered the person with the store's sentence and threw the
+   * cause away, so a one-off 500 on `GET /session/:id/message` left a log
+   * saying a read failed and nothing at all saying why. The cause is written
+   * now; what the person is answered with is unchanged, because the cause is
+   * this server's business and not theirs.
+   */
+  it("writes the cause of a failed store read to the log", async () => {
+    const cause = new Error("SQLITE_IOERR: the disk went away")
+    const failing: Store.Service = new Proxy({} as Store.Service, {
+      get: () => () => Effect.fail(new Store.StoreError({ message: "disk gone", cause }))
+    })
+    const logged: Array<unknown> = []
+    const capture = Logger.make<unknown, void>(({ message }) => {
+      logged.push(message)
+    })
+    const scratch = serve()
+    await scratch.dispose()
+    const { dispose, handler } = HttpRouter.toWebHandler(
+      Layer.mergeAll(
+        Serve.app({ directory: scratch.directory, bind: Serve.defaultBind, version: "test", seat: "scripted:demo" })
+          .pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(Store.Store, failing),
+                Layer.succeed(Driver.Driver, {
+                  start: () => Effect.void,
+                  interrupt: () => Effect.succeed(false),
+                  permission: () => Effect.void,
+                  steer: () => Effect.succeed(false),
+                  resumeOnBoot: () => Effect.void
+                })
+              )
+            )
+          ),
+        Logger.layer([capture])
+      ),
+      { disableLogger: true }
+    )
+    try {
+      const response = await handler(new Request("http://test/session/ses_x/message"))
+      expect(response.status).toBe(500)
+      expect(await response.json()).toEqual({ name: "UnknownError", data: { message: "disk gone" } })
+      const written = logged.flat() as Array<{ readonly message?: string; readonly cause?: unknown }>
+      expect(written.map((entry) => entry.message)).toContain("A store read failed: disk gone")
+      expect(written.map((entry) => entry.cause)).toContain(cause)
     } finally {
       await dispose()
     }

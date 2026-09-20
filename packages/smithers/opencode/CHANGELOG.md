@@ -51,6 +51,11 @@
 
 ### Fixed
 
+- A store read that failed writes its cause to the log. `Routes.onStoreError`
+  answered the person with the `StoreError`'s sentence and dropped its `cause`,
+  so a one-off HTTP 500 on `GET /session/:id/message` left a log saying a read
+  failed and nothing saying why. What the person is answered with is unchanged.
+
 - A crash the instant after a permission answer no longer strands the turn.
   `Turns.permission` publishes the reply, which takes the card down, before it
   forks the driver's answer, so a server lost in that window leaves a run row
