@@ -2,7 +2,7 @@ import type { APIRequestContext, Locator, Page, TestInfo } from "@playwright/tes
 import type { OwnedWorkflowRepository } from "../flow-execution/fixture"
 import { acceptedRunId, gatewayCall, runSummary } from "../flow-execution/production"
 import { attachProductionJson } from "../repositories-github/production"
-import { closeComposer, command, expect } from "../support/test"
+import { closeComposer, command, expect, reloadApp } from "../support/test"
 import { deployedHeaderSource } from "./revisions"
 import { journalMeaning, requireLaterPhase, type JournalRow, type Meaning } from "./semantic"
 import { frameLines, phaseStrip, readBands, readLines, readPins } from "./timeline"
@@ -252,11 +252,12 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     await check()
     // The card's durable write is asynchronous and unobservable from here, and a
     // reload issued in the same tick cancels it: three stops in one production run
-    // survived and the fourth did not. This settles the write, and the reload below
-    // still has to find the cursor for the stop to count as persisted.
+    // survived and the fourth did not. This settles the write; `reloadApp` then
+    // waits for the app to boot again, and the cursor still has to be found on the
+    // booted page for the stop to count as persisted.
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await page.waitForTimeout(1_000)
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await check()
     steps.push({ action, seq, selected, current, persisted: true })
   }
@@ -295,7 +296,7 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     const node = await line.getAttribute("data-frame-line")
     await press(line, "Enter")
     await expect(line).toHaveAttribute("aria-expanded", "true")
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(trace.locator(`button[data-frame-line="${node}"]`)).toHaveAttribute("aria-expanded", "true")
     await press(trace.locator(`button[data-frame-line="${node}"]`), "Space")
     await expect(trace.locator(`button[data-frame-line="${node}"]`)).toHaveAttribute("aria-expanded", "false")
@@ -345,7 +346,7 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     await expect(trace).toHaveAttribute("data-view", "turns")
     steps.push({ action: "pointer drag", band: widest.band, dropped })
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
     await compareMeaning(card, trace, whole)
     steps.push({ action: "Latest Enter/reload", persisted: true })

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { SetupDraftSchema, storedSetupCandidate, type SetupDraft } from "@smthrs/rpc/RepositorySetup"
 import { scenario } from "./coverage/types"
 import { fixtureInputText } from "./support/values"
-import { closeComposer, command, expect, realApi, test } from "./support/test"
+import { closeComposer, command, expect, realApi, reloadApp, test } from "./support/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import {
   attachProductionJson,
@@ -94,7 +94,7 @@ test("signed-out run inspection parks durably before any workspace RPC", scenari
   await expect(runCards(page)).toHaveCount(0)
   expect(rpc).toEqual([])
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(page.locator('button[data-flow="auth.sign-in"]:visible').last()).toBeVisible()
   await expect(runCards(page)).toHaveCount(0)
   expect(await (await realApi(page, request, "GET", "/api/auth/session")).json()).toEqual({ status: "signed-out" })
@@ -232,7 +232,7 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   await expect(handoffText).toHaveValue(new RegExp(`Run: ${launched.runId}`))
   await expect(handoffText).toHaveValue(/Run phase: completed/)
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   const restored = runCard(page, launched.runId)
   await expect(restored).toBeVisible()
   await expect(restored.getByTestId(`run-trace-${launched.runId}`)).toHaveAttribute("data-view", "timeline")
@@ -242,7 +242,7 @@ workflowTest("a completed provider run exposes its real trace, transcript, event
   await expect(latest).toBeFocused()
   await latest.press("Enter")
   await expect(latest).toBeHidden()
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(runCard(page, launched.runId).getByRole("button", { name: "Latest", exact: true })).toBeHidden()
   await attachProductionJson(testInfo, "completed-run-inspection", {
     repo, marker, runId: launched.runId, terminal, selectedSpan, events, transcript
@@ -538,7 +538,7 @@ workflowTest("live message, thinking, and tool steering persist as real control 
     })
   }
 
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   const restored = runCard(page, launched.runId)
   await expect(restored).toBeVisible()
   expect(await exactRunId(restored)).toBe(launched.runId)

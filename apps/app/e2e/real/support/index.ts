@@ -115,6 +115,23 @@ export const openApp = async (page: Page): Promise<void> => {
   await page.goto(appEntryPath())
 }
 
+/**
+ * Reload, then wait for the app to finish booting before anything on it is read.
+ *
+ * `domcontentloaded` resolves while the app is still fetching its view chunk
+ * and opening its store, so an assertion made straight afterwards spends its
+ * whole budget inside the boot skeleton and then reports the element it wanted
+ * as missing, where the product had simply not rendered yet. Two production
+ * attempts of the run-timeline scenario failed exactly there, both with
+ * `status "Loading view"` as the entire page. The transcript is what the booted
+ * view renders, so waiting for it names what this wait is for, and the failure
+ * says the boot did not finish rather than blaming the thing being read.
+ */
+export const reloadApp = async (page: Page, timeout = 120_000): Promise<void> => {
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(page.getByTestId("transcript"), "the app must finish booting after a reload").toBeVisible({ timeout })
+}
+
 /** Open the transient Command-K composer and wait for its real input focus. */
 export const openComposer = async (page: Page): Promise<void> => {
   const input = page.getByTestId("composer-input")

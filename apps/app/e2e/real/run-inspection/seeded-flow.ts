@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test"
-import { closeComposer, command, expect, realApi } from "../support/test"
+import { closeComposer, command, expect, realApi, reloadApp } from "../support/test"
 import { cloudRepoPath } from "../repositories-github/production"
 
 /** Repository-owned prompt subjects, discovered when the disposable host restarts. */
@@ -75,7 +75,7 @@ const openOwnedTerminal = async (page: Page, repo: string, workspaceId: string) 
   await expect(terminal).toBeVisible({ timeout: 90000 })
   // The released terminal adapter retains its first stream when the session changes.
   // Reload mounts the measured session and exercises its persisted binding.
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await reloadApp(page)
   await expect(terminal).toBeVisible()
   return { terminal, sessionId: receipt.id }
 }

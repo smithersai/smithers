@@ -172,8 +172,14 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
 
 /**
  * The first band whose phase differs from the opening one. Any such band is a
- * second recorded activity phase; the earliest is used because it is not the
- * journal's tail, where a band door has been seen not to commit on production.
+ * second recorded activity phase, and the earliest is the one furthest from the
+ * journal's live tail, so the band it names stops moving soonest.
+ *
+ * A production attempt was read as a tail band refusing a keyboard commit. It
+ * was not: the commit assertion passed and the re-check after the reload was
+ * what failed, with the app still in its boot skeleton. Band doors at the tail,
+ * including one whose band grows under the keypress, are pinned in
+ * `e2e/probes/run-trace-phase-strip.test.ts`.
  */
 export const requireLaterPhase = (meaning: Meaning): ExpectedBand => {
   const later = meaning.bands.find(band => band.phase !== meaning.bands[0]?.phase)
