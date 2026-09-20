@@ -4,23 +4,41 @@ import { callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diag
 import { FlowActivity } from "@smthrs/registry/Descriptor"
 import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../flows/coding/schema"
 import { engineRunEvidence } from "./EngineTrace"
-import type { TraceModel } from "./RunTrace"
+import { callSemantics, callSubject, type CallMetadata, type TraceModel } from "./RunTrace"
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown): string | undefined => typeof value === "string" && value !== "" ? value : undefined
 const strings = (value: unknown): ReadonlyArray<string> => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 const terminal = new Set(["completed", "failed", "cancelled", "no-capacity"])
-const verbs = new Map<string, readonly [string, string]>([
-  ["read", ["Reading", "Read"]], ["grep", ["Searching", "Searched"]], ["glob", ["Listing", "Listed"]], ["ls", ["Listing", "Listed"]],
-  ["edit", ["Editing", "Edited"]], ["write", ["Writing", "Wrote"]], ["apply_patch", ["Editing", "Patched"]],
-  ["test", ["Testing", "Tested"]], ["bash", ["Running", "Ran"]]
-])
-const callActivity = (name: string, input: unknown, settled = false, failed = false): string => {
-  const fields = record(input)
-  const subject = text(fields.path) ?? text(fields.command) ?? text(fields.pattern) ?? strings(fields.selection).join(" ")
-  const verb = failed ? `Failed ${name}` : verbs.get(name)?.[settled ? 1 : 0] ?? `${settled ? "Finished" : "Running"} ${name}`
-  return `${verb}${subject ? ` ${subject}` : ""}`
+/** One open or just-settled call, with the semantics its record was read through. */
+interface CurrentCall {
+  readonly flowName: string
+  readonly callId?: string
+  readonly scope?: string
+  readonly input: unknown
+  readonly semantics: CallMetadata
+}
+
+/**
+ * What the run is doing, in the words its own declaration chose.
+ *
+ * The header reads a call through `callSemantics` and `callSubject`, the same
+ * two answers the rows and the phase bands read, so a call declared `reads`
+ * with an `inspected` verb cannot show a researching band, an "inspected" row
+ * and a "Wrote a.ts" header at once. A flow whose record carries no
+ * presentation and that the compatibility table does not know is named, not
+ * described: the header says it is running, and nothing more.
+ */
+const callActivity = (call: CurrentCall, outcome: "pending" | "success" | "failure"): string => {
+  const verb = call.semantics.presentation?.verb[outcome]
+    ?? (outcome === "pending"
+      ? `running ${call.flowName}`
+      : outcome === "failure"
+      ? `failed ${call.flowName}`
+      : `finished ${call.flowName}`)
+  const subject = callSubject(call.input, call.semantics.presentation?.subject)
+  return `${verb.charAt(0).toUpperCase()}${verb.slice(1)}${subject === "" ? "" : ` ${subject}`}`
 }
 const visible = (model: TraceModel, cursor = Infinity) => uniqueCallEvents(model.journal.filter(row =>
   Number.isSafeInteger(row.sequence) && row.sequence! <= cursor &&
@@ -52,7 +70,7 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
   if ((cursor === undefined || cursor >= latest) && terminal.has(model.root.status)) return { verdict: model.root.status }
   let activity: string | undefined, verdict: string | undefined
   const approvals = new Set<string>()
-  const calls: Array<{ flowName: string; callId?: string; scope?: string; input: unknown }> = []
+  const calls: Array<CurrentCall> = []
   const conditions = new Map<string, StepCondition>()
   /** The record's own step; a prompt journal records one unscoped stream. */
   const step = (row: { readonly payload?: unknown }): StepCondition => {
@@ -69,16 +87,23 @@ export const traceStatus = (model: TraceModel, cursor?: number): RunStatus => {
       case "control.agent.cell-call-started": {
         const name = text(p.flowName)
         if (name === undefined) break
-        calls.push({ flowName: name, callId: text(p.callId), scope: callScope(row), input: p.input })
-        activity = callActivity(name, p.input)
+        const call: CurrentCall = {
+          flowName: name,
+          callId: text(p.callId),
+          scope: callScope(row),
+          input: p.input,
+          semantics: callSemantics(name, p)
+        }
+        calls.push(call)
+        activity = callActivity(call, "pending")
         break
       }
       case "control.agent.cell-call-settled": {
         const index = openCallIndex(calls, text(p.callId), text(p.flowName), callScope(row))
         const ended = index < 0 ? undefined : calls.splice(index, 1)[0]
         const ongoing = calls.at(-1)
-        if (ongoing !== undefined) activity = callActivity(ongoing.flowName, ongoing.input)
-        else if (ended !== undefined) activity = callActivity(ended.flowName, ended.input, true, p.outcome === "failure")
+        if (ongoing !== undefined) activity = callActivity(ongoing, "pending")
+        else if (ended !== undefined) activity = callActivity(ended, p.outcome === "failure" ? "failure" : "success")
         break
       }
       case "control.agent.repeat-demanded": step(row).thrashing = true; break

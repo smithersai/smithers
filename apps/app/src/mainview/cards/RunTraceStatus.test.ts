@@ -48,8 +48,10 @@ describe("current run status", () => {
   test("settled calls use past tense and never replace another open call", () => {
     const first = call(1, "read", { path: "README.md" })
     const second = call(2, "write", { path: "src/file.ts" })
-    expect(traceStatus(model([first[0]!, second[0]!, { ...first[1]!, sequence: 3 }])).activity).toBe("Writing src/file.ts")
-    expect(traceStatus(model([first[0]!, { ...first[1]!, payload: { flowName: "read", callId: "c1", outcome: "failure" } }])).activity).toBe("Failed read README.md")
+    // One subject and one verb: the header names what the row names, through
+    // the declared `path` subject and the declared failure verb.
+    expect(traceStatus(model([first[0]!, second[0]!, { ...first[1]!, sequence: 3 }])).activity).toBe("Writing file.ts")
+    expect(traceStatus(model([first[0]!, { ...first[1]!, payload: { flowName: "read", callId: "c1", outcome: "failure" } }])).activity).toBe("Failed to read README.md")
   })
 })
 

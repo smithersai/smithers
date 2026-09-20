@@ -125,8 +125,8 @@ describe("module agent frame ownership", () => {
     const model = traceFromJournal(run, [...records].reverse())
     expect(model.journal).toEqual(records)
     expect(traceStatus(model)).toEqual({ verdict: "completed" })
-    expect(traceStatus(model, 2).activity).toBe(`Testing ${target}`)
-    expect(traceStatus(model, 3).activity).toBe(`Tested ${target}`)
+    expect(traceStatus(model, 2).activity).toBe(`Running ${target}`)
+    expect(traceStatus(model, 3).activity).toBe(`Ran ${target}`)
     expect(traceGoals(model, CODING_PLAN, 2)[0]?.checks[0]?.state).toBe("running")
     // A recorded command is partial evidence at every cursor: only a receipt verifies.
     expect(traceGoals(model, CODING_PLAN, 3)[0]?.checks[0]?.state).toBe("narrowed")
@@ -144,12 +144,12 @@ describe("module agent frame ownership", () => {
       event(5, "control.agent.cell-call-settled", right, { callId, flowName: "test", outcome: "success", value: { exitCode: 1 } })
     ]
     const partial = traceFromJournal(run, records)
-    expect(traceStatus(partial).activity).toBe(`Testing ${first}`)
+    expect(traceStatus(partial).activity).toBe(`Running ${first}`)
     expect(traceGoals(partial, CODING_PLAN).map((goal) => goal.checks[0]?.state)).toEqual(["running", "failed"])
     const settled = traceFromJournal(run, [...records,
       event(6, "control.agent.cell-call-settled", left, { callId, flowName: "test", outcome: "success", value: { exitCode: 0 } })
     ])
-    expect(traceStatus(settled).activity).toBe(`Tested ${first}`)
+    expect(traceStatus(settled).activity).toBe(`Ran ${first}`)
     expect(traceGoals(settled, CODING_PLAN).map((goal) => goal.checks[0]?.state)).toEqual(["narrowed", "failed"])
   })
 

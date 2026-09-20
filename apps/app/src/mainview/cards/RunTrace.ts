@@ -260,16 +260,28 @@ const builder = (
  * nothing said about it.
  */
 
-type CallMetadata = Pick<FlowDescriptor, "activity" | "presentation">
+/**
+ * What a recorded call means: what it did, and how it reads.
+ *
+ * The rows, the phase bands and the run header all read a call through this
+ * one answer, so they cannot tell three different stories about one record.
+ */
+export type CallMetadata = Pick<FlowDescriptor, "activity" | "presentation">
 
 /** Compatibility for journals whose descriptors predate presentation metadata. */
 const legacy = (
-  activity: FlowActivity, pending: string, success: string, failure: string,
+  activity: FlowActivity | undefined, pending: string, success: string, failure: string,
   subject: CallPresentation["subject"], result: CallPresentation["result"]
-): CallMetadata => ({ activity, presentation: { verb: { pending, success, failure }, subject, result } })
+): CallMetadata => ({
+  ...(activity === undefined ? {} : { activity }),
+  presentation: { verb: { pending, success, failure }, subject, result }
+})
 
 const LEGACY_PRESENTATION: ReadonlyMap<string, CallMetadata> = new Map([
-  ["bash", legacy("other", "running", "ran", "failed to run", "command", "command")],
+  // `bash` has no compatibility activity for the same reason `@smthrs/std`
+  // declares none: what a shell call does is in the command, which the rule
+  // below reads off the record.
+  ["bash", legacy(undefined, "running", "ran", "failed to run", "command", "command")],
   ["test", legacy("tests", "running", "ran", "failed to run", "selection", "tests")],
   ["edit", legacy("writes", "editing", "edited", "failed to edit", "path", "edit")],
   ["write", legacy("writes", "writing", "wrote", "failed to write", "path", "write")],
@@ -349,7 +361,16 @@ const writtenPaths = (input: unknown): ReadonlyArray<string> => {
 }
 
 /** A call's subject: a path reads as its basename, a command as itself. */
-const subjectOf = (input: unknown, format?: CallPresentation["subject"]): string => {
+/**
+ * What one recorded call was about, in the shape its declaration chose.
+ *
+ * Exported because the run header names the same subject as the row beneath
+ * it: two readings of one input is two answers to one question.
+ *
+ * @param input the call input, as journaled
+ * @param format the declared subject field, when the declaration named one
+ */
+export const callSubject = (input: unknown, format?: CallPresentation["subject"]): string => {
   const fields = asRecord(input)
   if (format === "none") return ""
   if (format === "path") return asString(fields.path) === undefined ? "" : basename(fields.path as string)
@@ -399,6 +420,44 @@ const shellActivity = (command: string): FlowActivity => {
   if (first === "cargo" && words[1] === "test") return "tests"
   if (first === "tsc") return "checks"
   return "other"
+}
+
+/**
+ * The one reading of a recorded call's semantics, shared by the rows, the
+ * phase bands and the run header.
+ *
+ * Precedence, and why: the record's own `descriptor` wins, because it is what
+ * the declaration said when the call was made; metadata a caller supplies for
+ * this journal comes next; and only a record that carries neither falls back
+ * to {@link LEGACY_PRESENTATION}, which is a guess about the flows that were
+ * journaled before a declaration could say anything. A flow the table does not
+ * know stays unknown, and unknown is said as unknown.
+ *
+ * `bash` is the one activity read off the call rather than the declaration.
+ * `@smthrs/std` declares none for it on purpose — the same flow runs a test
+ * suite, a type check and `cat` — so a recognised runner in the recorded
+ * command is the only thing that names the activity, and an explicit
+ * declaration still outranks it.
+ *
+ * @param flowName the flow the record names
+ * @param payload the `cell-call-started` payload, as journaled
+ * @param supplied descriptor metadata for this journal, when the caller has it
+ */
+export const callSemantics = (
+  flowName: string,
+  payload: Record<string, unknown>,
+  supplied?: CallMetadata | undefined
+): CallMetadata => {
+  const recorded = recordedMetadata(payload.descriptor, flowName)
+  const declared = recorded ?? supplied
+  const known = recorded !== undefined || declared?.activity !== undefined || declared?.presentation !== undefined
+  const metadata = known ? declared : LEGACY_PRESENTATION.get(flowName)
+  const activity = metadata?.activity
+    ?? (flowName === "bash" ? shellActivity(commandOf(payload.input) ?? "") : undefined)
+  return {
+    ...(activity === undefined ? {} : { activity }),
+    ...(metadata?.presentation === undefined ? {} : { presentation: metadata.presentation })
+  }
 }
 
 const stringList = (value: unknown): ReadonlyArray<string> | undefined =>
@@ -576,16 +635,13 @@ const disciplineFold = (
       }
       case "control.agent.cell-call-started": {
         const flowName = asString(payload.flowName) ?? ""
-        const recorded = recordedMetadata(payload.descriptor, flowName)
-        const descriptor = recorded ?? descriptors.get(flowName)
-        const declared = recorded !== undefined || descriptor?.activity !== undefined || descriptor?.presentation !== undefined
-        const metadata = declared ? descriptor : LEGACY_PRESENTATION.get(flowName)
+        const metadata = callSemantics(flowName, payload, descriptors.get(flowName))
         const call: CallFacts = {
           flowName,
           callId: asString(payload.callId),
           input: payload.input,
-          activity: !declared && flowName === "bash" ? shellActivity(commandOf(payload.input) ?? "") : metadata?.activity,
-          presentation: metadata?.presentation,
+          activity: metadata.activity,
+          presentation: metadata.presentation,
           signature: `${flowName} ${textOf(payload.input) ?? ""}`
         }
         open.push(call)
@@ -930,7 +986,7 @@ const disciplineFold = (
       spanId: entry.id,
       frame: entry.frame,
       verb: call.presentation?.verb[outcome] ?? `${call.flowName}${outcome === "pending" ? " pending" : outcome === "failure" ? " failed" : ""}`,
-      subject: subjectOf(call.input, call.presentation?.subject),
+      subject: callSubject(call.input, call.presentation?.subject),
       // Read supported output fields through the descriptor's presentation.
       // The selected call retains the raw value, including unsupported shapes.
       result: call.settled?.failed === true ? clip(call.settled.result) ?? "" : resultOf(call.settled?.value, call.presentation?.result),

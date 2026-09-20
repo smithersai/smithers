@@ -489,7 +489,8 @@ describe("the run card reads as outcome, then turns", () => {
   })
   test("a live run shows its progress open and the phase words; a tutorial plan card shows neither outcome nor turns", () => {
     const live = renderRun({ phase: "running", steps: ["Writing the test…"], events: COMPLETED.slice(0, 4), traceView: undefined })
-    expect(live.host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toContain("Editing src/hello.test.ts")
+    // The header names the subject the row names: the declared `path` subject.
+    expect(live.host.querySelector("[data-testid='run-outcome-run-1']")?.textContent).toContain("Editing hello.test.ts")
     expect(live.host.querySelector(".run-progress-fold")).toBeNull()
     expect(live.host.querySelector("[data-run-steps]")).toBeNull()
     const plan = renderRun({ kind: "change-plan", phase: "completed", input: { plan: { ...CODING_PLAN, changes: [CODING_PLAN.changes[0]!] } }, traceView: undefined })
