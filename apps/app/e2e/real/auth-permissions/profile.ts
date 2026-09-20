@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import type { BrowserContext, BrowserType, Page } from "@playwright/test"
 import { expect, test as realTest } from "../support/test"
-import { appEntryPath } from "../support"
+import { appEntryPath, awaitBoot } from "../support"
 
 type SessionBody = {
   readonly status?: unknown
@@ -152,9 +152,17 @@ export const restoreAuthenticatedSession = async (page: Page, baseURL: string): 
   // origin fixed while OAuth redirects replace the page's execution context.
   const readSession = () => readSessionAtOrigin(page.context(), origin)
   let session = await readSession()
+  // A restored session comes from the cookie jar, not the view, so the
+  // signed-in path returns without a boot wait every production test would pay
+  // for in fixture setup. Only the sign-in path below reads the DOM.
   if (session !== undefined) return session
 
+  const startedAt = performance.now()
   await page.goto(new URL(appEntryPath(), origin).toString(), { waitUntil: "domcontentloaded" })
+  // The door is chrome the booted view renders, and this profile boots in 12 to
+  // 72 s, so reading it straight after the navigation spends Playwright's 15 s
+  // default inside the boot skeleton and then reports the door as missing.
+  await awaitBoot(page, "navigate", startedAt)
   const door = page.locator('[data-testid="chrome-sign-in"], [data-flow="auth.sign-in"]').first()
   await expect(door).toBeVisible()
   await door.click()
