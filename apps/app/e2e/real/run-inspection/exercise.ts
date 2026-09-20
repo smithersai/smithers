@@ -272,7 +272,12 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     expect(positions, "a pointer release commits a recorded position").toContain(dropped)
     expect(dropped).toBeGreaterThanOrEqual(widest.band.seq)
     expect(dropped, "a release inside one band stays inside it").toBeLessThan(following)
+    // The selected span is named by the technical view, so the drag's cursor is read there.
+    await press(trace.getByRole("button", { name: "Details", exact: true }), "Enter")
+    await expect(trace).toHaveAttribute("data-view", "timeline")
     await at(dropped, "pointer drag within one band")
+    await press(trace.getByRole("button", { name: "Timeline", exact: true }), "Enter")
+    await expect(trace).toHaveAttribute("data-view", "turns")
     steps.push({ action: "pointer drag", band: widest.band, dropped })
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await page.reload({ waitUntil: "domcontentloaded" })
