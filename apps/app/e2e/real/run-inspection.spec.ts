@@ -28,7 +28,7 @@ import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWork
 import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
-import { compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
+import { compareEmptyTimeline, compareMeaning, inspectKeyboard, inspectRunning, launchSubject, readJournal } from "./run-inspection/exercise"
 
 test.setTimeout(120_000)
 test.use({ actionTimeout: 20_000 })
@@ -422,11 +422,13 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
       expect(result.output.reproduction).toBeNull()
     }
     const expected = moduleMeaning(rows)
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) {
-      expect(expected.frames.length).toBeGreaterThanOrEqual(2)
-    }
-    const rendered = await compareMeaning(subject.card, subject.trace, expected)
-    await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal })
+    // A host that carries the producer must record this module's steps; only an older one may read empty.
+    if (hostContains(host.sourceCommit, MODULE_COMMIT)) expect(expected.frames.length).toBeGreaterThanOrEqual(2)
+    const rendered = expected.frames.length === 0
+      ? await compareEmptyTimeline(subject.card, subject.trace, expected)
+      : await compareMeaning(subject.card, subject.trace, expected)
+    await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal,
+      recordedFrames: expected.frames.length, hostRevision: host.sourceCommit })
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-module.png") })
     await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
   } finally {

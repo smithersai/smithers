@@ -68,6 +68,23 @@ export const compareMeaning = async (card: Locator, trace: Locator, meaning: Mea
     status: await card.locator(".run-outcome-words").textContent(), goals: [] }
 }
 
+/**
+ * A journal that opened no frame has no timeline to place a moment on, so the
+ * card must draw no strip at all rather than invent one. The caller reaches
+ * this only on a host that predates the producer; a host that carries it
+ * requires recorded frames instead.
+ */
+export const compareEmptyTimeline = async (card: Locator, trace: Locator, meaning: Meaning) => {
+  expect(meaning.frames, "an empty timeline is only the reading for a journal with no recorded frames").toEqual([])
+  await expect(phaseStrip(trace)).toHaveCount(0)
+  expect(await readLines(trace)).toEqual([])
+  await expect.soft(card.locator(".run-outcome-words")).toHaveText(meaning.status)
+  await expect(card.locator("[data-goal]")).toHaveCount(0)
+  await expect(card.locator(".run-outcome-condition")).toHaveCount(0)
+  await expect(card.locator(".run-outcome").getByRole("button")).toHaveCount(0)
+  return { bands: [], lines: [], pins: [], status: await card.locator(".run-outcome-words").textContent() }
+}
+
 /** One DOM read captures the header and strip at the same rendered journal boundary. */
 const liveDom = (card: Locator) => card.evaluate(element => {
   const text = (node: Element | null) => (node?.textContent ?? "").trim()
