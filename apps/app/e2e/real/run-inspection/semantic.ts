@@ -11,7 +11,12 @@ export class TimelineEvidenceError extends Error {
   constructor(readonly code: "unsupported-evidence" | "missing-later-phase" | "edit-not-proven", message: string) { super(message) }
 }
 
-type Call = { seq: number; name: string; id?: string; input: Fields; result?: Fields; outcome?: string; message?: string }
+type Call = { seq: number; name: string; id?: string; scope?: string; input: Fields; result?: Fields; outcome?: string; message?: string }
+const scope = (p: Fields): string | undefined => {
+  if (p.step === undefined) return undefined
+  const step = fields(p.step)
+  return JSON.stringify([step.executionId, step.stepId, step.attempt, step.ask, step.retry, step.scope, step.generation])
+}
 type Frame = { frame: number; node: string; opens: number; at: number; calls: Call[]; changed: boolean; blocked: boolean }
 export type ExpectedBand = { phase: string; seq: number }
 export type ExpectedLine = { node: string; number: string; verb: string; subject: string; result: string }
@@ -64,7 +69,7 @@ const callRecords = (rows: readonly JournalRow[]): readonly JournalRow[] => {
   const native = new Map<string, JournalRow>()
   const key = (row: JournalRow): string | undefined => {
     const { kind: journalKind } = row, p = fields(row.payload)
-    return (journalKind === READ || journalKind === RESULT) && typeof p.callId === "string" ? `${journalKind}:${p.callId}` : undefined
+    return (journalKind === READ || journalKind === RESULT) && typeof p.callId === "string" ? JSON.stringify([journalKind, p.callId, scope(p)]) : undefined
   }
   const decoded = rows.map<JournalRow>(row => {
     const p = fields(row.payload)
@@ -114,13 +119,15 @@ export const journalMeaning = (rows: ReadonlyArray<JournalRow>, cursor = Infinit
       const name = word(p.flowName)
       if (name === "checkpoint") continue
       if (!Object.hasOwn(verbs, name)) throw new TimelineEvidenceError("unsupported-evidence", `No independent oracle for ${name} at #${seq}.`)
-      const call: Call = { name, seq, input: fields(p.input), ...(typeof p.callId === "string" ? { id: p.callId } : {}) }
+      const call: Call = { name, seq, input: fields(p.input), ...(scope(p) === undefined ? {} : { scope: scope(p) }),
+        ...(typeof p.callId === "string" ? { id: p.callId } : {}) }
       frame?.calls.push(call); open.push(call)
       status = activity(call)
     }
     if (kind === RESULT) {
       if (p.outcome !== "success" && p.outcome !== "failure") throw new TimelineEvidenceError("unsupported-evidence", `Missing call outcome at #${seq}.`)
-      const index = open.findIndex(call => typeof p.callId === "string" ? call.id === p.callId : call.id === undefined && call.name === p.flowName)
+      const index = open.findIndex(call => call.scope === scope(p) &&
+        (typeof p.callId === "string" ? call.id === p.callId : call.id === undefined && call.name === p.flowName))
       if (index < 0) continue
       const call = open.splice(index, 1)[0]!
       call.result = fields(p.value); call.outcome = word(p.outcome); call.message = word(p.message)

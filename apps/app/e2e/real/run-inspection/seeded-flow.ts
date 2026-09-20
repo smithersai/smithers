@@ -44,12 +44,28 @@ export const readWorkspaceText = async (page: Page, request: APIRequestContext, 
 
 /** Await the new session's receipt; command submission alone does not replace the prior terminal. */
 const openOwnedTerminal = async (page: Page, repo: string, workspaceId: string) => {
+  type Session = { id: string; workspace_id: string }
+  const sessions = async (): Promise<Session[]> => {
+    const response = await realApi(page, page.request, "GET", cloudRepoPath(repo, "/workspace/sessions"))
+    expect(response.status()).toBe(200)
+    const body = await response.json()
+    const rows: Session[] = Array.isArray(body) ? body : body.sessions ?? body.items
+    expect(Array.isArray(rows)).toBe(true)
+    return rows.filter(row => row.workspace_id === workspaceId)
+  }
+  const before = new Set((await sessions()).map(row => row.id))
   const created = page.waitForResponse(response => response.request().method() === "POST" &&
     new URL(response.url()).pathname === cloudRepoPath(repo, "/workspace/sessions") &&
     response.request().postDataJSON()?.workspace_id === workspaceId && response.status() === 201)
   void created.catch(() => undefined)
   await command(page, `/workspace.terminal ${workspaceId}`)
-  const receipt = await (await created).json() as { id: string; workspace_id: string }
+  await created
+  let receipts: Session[] = []
+  await expect.poll(async () => {
+    receipts = (await sessions()).filter(row => !before.has(row.id))
+    return receipts.length
+  }, { timeout: 30000 }).toBe(1)
+  const receipt = receipts[0]!
   expect(receipt.workspace_id).toBe(workspaceId)
   expect(receipt.id).toMatch(/^[0-9a-f-]{36}$/)
   await closeComposer(page)

@@ -57,6 +57,13 @@ describe("ordinary module journal evidence", () => {
     expect(moduleMeaning(rows).lines.map(line => line.subject)).toEqual(["one.txt", "two.txt", "three.txt"])
   })
 
+  test("anonymous module calls settle only within the recorded step", () => {
+    const rows = [moduleFact(1, opened, {}), moduleFact(2, started, { flowName: "read", input: { path: "one.txt" } }),
+      moduleFact(3, opened, {}, "b"), moduleFact(4, started, { flowName: "read", input: { path: "two.txt" } }, "b"),
+      moduleFact(5, settled, { flowName: "read", outcome: "success", value: { startLine: 1, endLine: 2 } }, "b")]
+    expect(moduleMeaning(rows).status).toBe("Reading one.txt")
+  })
+
   test("a mismatched module execution is unsupported evidence", () => {
     const row = moduleFact(1, opened, {})
     expect(() => moduleRows([{ ...row, payload: { ...row.payload, executionId: "another" } }])).toThrow(TimelineEvidenceError)

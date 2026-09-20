@@ -55,11 +55,6 @@ export const moduleMeaning = (rows: readonly JournalRow[], cursor = Infinity): M
     return { ...meaning, frames: meaning.frames.map(frame => ({ ...frame, node: `${prefix}${frame.node}` })),
       lines: meaning.lines.map(line => ({ ...line, node: `${prefix}${line.node}` })) }
   })
-  const statusRows = decoded.map(row => {
-    const payload = object(row.payload), scope = scopeOf(row)
-    return scope === undefined || typeof payload.callId !== "string" ? row
-      : { ...row, payload: { ...payload, callId: JSON.stringify([scope, payload.callId]) } }
-  })
   const frames = meanings.flatMap(one => one.frames).sort((a, b) => a.at - b.at || a.opens - b.opens)
   const position = new Map(frames.map((frame, index) => [frame.node, index]))
   const at = new Map(frames.map(frame => [frame.opens, frame.at]))
@@ -68,6 +63,6 @@ export const moduleMeaning = (rows: readonly JournalRow[], cursor = Infinity): M
     bands: meanings.flatMap(one => one.bands).sort((a, b) => (at.get(a.seq) ?? a.seq) - (at.get(b.seq) ?? b.seq) || a.seq - b.seq),
     pins: meanings.flatMap(one => one.pins).sort((a, b) => a.seq - b.seq),
     lines: meanings.flatMap(one => one.lines).sort((a, b) => position.get(a.node)! - position.get(b.node)!),
-    status: journalMeaning(statusRows).status, goals: []
+    status: journalMeaning(decoded).status, goals: []
   }
 }
