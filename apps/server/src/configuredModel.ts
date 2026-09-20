@@ -5,7 +5,13 @@ import type { ModelBinding, ModelTestFailure } from "@smthrs/rpc/ConfiguredModel
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
-import { CLOUD_ROLE_MAX_TOKENS, CLOUD_ROLE_TEMPERATURE, CLOUD_ROLE_TIMEOUT_MS, cloudRoleMessages } from "./cloudRoleTurn"
+import {
+  CLOUD_ROLE_MAX_TOKENS,
+  CLOUD_ROLE_REASONING_EFFORT,
+  CLOUD_ROLE_TEMPERATURE,
+  CLOUD_ROLE_TIMEOUT_MS,
+  cloudRoleMessages
+} from "./cloudRoleTurn"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { ServerConfig } from "./Config"
 import type { ServerConfigShape } from "./Config"
@@ -127,7 +133,8 @@ export const handleConfiguredModelTurn = (
       model: plan.modelId,
       messages,
       maxTokens: CLOUD_ROLE_MAX_TOKENS,
-      temperature: CLOUD_ROLE_TEMPERATURE
+      temperature: CLOUD_ROLE_TEMPERATURE,
+      reasoningEffort: CLOUD_ROLE_REASONING_EFFORT
     }, deadlineMs, "manual")
     if (!answer.ok) {
       switch (answer.reason) {

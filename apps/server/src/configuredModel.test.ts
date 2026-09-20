@@ -4,7 +4,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
-import { CLOUD_ROLE_MAX_TOKENS, CLOUD_ROLE_TIMEOUT_MS } from "./cloudRoleTurn"
+import { CLOUD_ROLE_MAX_TOKENS, CLOUD_ROLE_REASONING_EFFORT, CLOUD_ROLE_TIMEOUT_MS } from "./cloudRoleTurn"
 import { planDecisionModel } from "./configuredModel"
 import { testConfig, testConfigLayer } from "./Config"
 import type { ServerConfigShape } from "./Config"
@@ -192,6 +192,8 @@ describe("a sealed turn that binds a model", () => {
     expect(served.calls[0]!.headers.get("authorization")).toBe(`Bearer ${SECRET}`)
     expect(sent.model).toBe("qwen-3-coder-480b")
     expect(sent.max_tokens).toBe(CLOUD_ROLE_MAX_TOKENS)
+    // Never the provider's own default, which on Cerebras is `high`.
+    expect(sent.reasoning_effort).toBe(CLOUD_ROLE_REASONING_EFFORT)
     expect(sent.messages).toEqual([
       { role: "system", content: "You are the Explainer." },
       { role: "user", content: "Why did the build fail?" }

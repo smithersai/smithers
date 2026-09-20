@@ -170,10 +170,14 @@ describe("POST /api/model/test, a generation model", () => {
     expect(sent.redirect).toBe("manual")
     expect(sent.headers.get("authorization")).toBe(`Bearer ${CEREBRAS_SECRET}`)
     expect(sent.headers.get("content-type")).toBe("application/json")
+    // `reasoning_effort` is stated, never left out: the Cerebras default is
+    // `high`, and a Test that spent its whole budget reasoning would report a
+    // latency and an empty answer for a key that is perfectly good.
     expect(await sent.json()).toEqual({
       model: "gpt-oss-120b",
       stream: false,
       max_tokens: MODEL_TEST_MAX_TOKENS,
+      reasoning_effort: "none",
       messages: [{ role: "user", content: MODEL_TEST_PROMPT }]
     })
   })
@@ -189,6 +193,7 @@ describe("POST /api/model/test, a generation model", () => {
       model: "gpt-oss-120b",
       stream: false,
       max_tokens: 64,
+      reasoning_effort: "none",
       temperature: 0.2,
       messages: [{ role: "system", content: "Answer tersely." }, { role: "user", content: "ping?" }]
     })

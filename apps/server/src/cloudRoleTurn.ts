@@ -49,6 +49,13 @@ export const CLOUD_ROLE_TIMEOUT_MS = 30_000
 export const CLOUD_ROLE_MAX_TOKENS = 1024
 /** Low, not zero: the answer is prose a person reads, not JSON a parser does. */
 export const CLOUD_ROLE_TEMPERATURE = 0.2
+/**
+ * Low, not unset: the default Cerebras model reasons at `high` when the body
+ * says nothing, and these are short answers off a supplied context, so an
+ * unstated effort would spend the 1024-token budget thinking instead of
+ * answering. Stated here so the cost does not move when the model does.
+ */
+export const CLOUD_ROLE_REASONING_EFFORT = "low" as const
 /** The most characters a `purpose` hint may carry; longer is dropped, never refused. */
 export const TURN_PURPOSE_MAX_CHARS = 200
 /** The most characters a `role` hint may carry (AGENT_ROLE_ID allows 41); longer is dropped, never refused. */
@@ -179,7 +186,8 @@ export const handleCloudRoleTurn = (
       model,
       messages,
       maxTokens: CLOUD_ROLE_MAX_TOKENS,
-      temperature: CLOUD_ROLE_TEMPERATURE
+      temperature: CLOUD_ROLE_TEMPERATURE,
+      reasoningEffort: CLOUD_ROLE_REASONING_EFFORT
     }, CLOUD_ROLE_TIMEOUT_MS)
     if (!answer.ok) {
       switch (answer.reason) {

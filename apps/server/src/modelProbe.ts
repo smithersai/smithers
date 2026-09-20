@@ -67,6 +67,14 @@ const MODEL_TEST_SEAM = "model test"
 /** The most bytes of a provider's answer this route reads for its sample. */
 const ANSWER_MAX_BYTES = 64 * 1024
 
+/**
+ * A Test proves the key, the address and the wire, and a person is watching
+ * the latency it reports. The Cerebras default reasons at `high` when the
+ * body says nothing, which would spend the whole answer budget and most of
+ * the deadline before a word arrives, so this probe asks for none.
+ */
+const MODEL_TEST_REASONING_EFFORT = "none" as const
+
 /** The model keys this deployment holds, by credential name. Closed: a name absent here is never read. */
 const WORKER_MODEL_KEYS = {
   CEREBRAS_API_KEY: (config: ServerConfigShape) => config.cerebrasApiKey,
@@ -158,6 +166,7 @@ const chatProbe = (
         model: plan.modelId,
         stream: false,
         max_tokens: input.maxTokens,
+        reasoning_effort: MODEL_TEST_REASONING_EFFORT,
         ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
         messages: [
           ...(input.system.trim() === "" ? [] : [{ role: "system", content: input.system }]),

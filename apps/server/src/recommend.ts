@@ -649,7 +649,12 @@ export interface CerebrasChatRequest {
   readonly messages: ReadonlyArray<CerebrasChatMessage>
   readonly maxTokens: number
   readonly temperature: number
-  readonly reasoningEffort?: "low" | "medium" | "high"
+  /**
+   * How much reasoning the completion may spend. Cerebras's default is
+   * `high`, so every call site here states its own: an omitted effort is not
+   * "the cheap one", it is the most expensive one.
+   */
+  readonly reasoningEffort?: "none" | "low" | "medium" | "high"
   /** The provider's `response_format` object, when the caller wants structured output. */
   readonly responseFormat?: Record<string, unknown>
 }
