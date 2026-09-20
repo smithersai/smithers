@@ -146,24 +146,48 @@ test("missing real WASM artifact fails the executable campaign before native or 
 
 // Subscribe before checking so an atomic ready-file rename cannot fall
 // between the observation and the wait. The test's cancellation closes it.
-const whenCreated = (path, signal) => new Promise((resolve, reject) => {
+//
+// The subscription is an accelerator, not the contract. macOS delivers a
+// directory watch through an FSEvents stream whose first event can arrive
+// seconds after the write while other work touches the same volume, and the
+// process cases below budget 20 s for three real scenarios: readiness
+// detection alone spent 2.5 s to 19.9 s of that and cancelled them. The poll
+// bounds detection at `pollMs` no matter what the stream delivers, and the
+// injectable watcher lets a case prove the poll carries the contract alone.
+const whenCreated = (path, signal, { watcher = watch, pollMs = 50 } = {}) => new Promise((resolve, reject) => {
   signal.throwIfAborted()
   // Callback-style watch subscribes synchronously. An async iterator would
   // not subscribe until next(), leaving a gap after a failed initial read.
-  const changes = watch(dirname(path), { signal }, () => { void check() })
-  const failed = (error) => { changes.close(); reject(error) }
+  const changes = watcher(dirname(path), { signal }, () => { void check() })
+  const polling = setInterval(() => { void check() }, pollMs)
+  const stop = () => { clearInterval(polling); changes.close() }
+  const failed = (error) => { stop(); reject(error) }
   changes.once("error", failed)
-  changes.once("close", () => { if (signal.aborted) reject(signal.reason) })
+  changes.once("close", () => { if (signal.aborted) failed(signal.reason) })
   async function check() {
+    if (signal.aborted) return failed(signal.reason)
     try {
       const contents = await readFile(path, "utf8")
-      changes.close()
+      stop()
       resolve(contents)
     } catch (error) {
       if (error.code !== "ENOENT") failed(error)
     }
   }
   void check()
+})
+
+test("readiness survives a watch that never delivers an event", { timeout: 10_000 }, async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "smithers-abi-readiness-"))
+  try {
+    const target = join(root, "ready")
+    // A stalled FSEvents stream, exactly: subscribed, never delivering. Only
+    // the poll can see a file that appears after the subscription.
+    const stalled = { once: () => {}, close: () => {} }
+    const created = whenCreated(target, context.signal, { watcher: () => stalled, pollMs: 5 })
+    await writeFile(target, "ready")
+    assert.equal(await created, "ready")
+  } finally { await rm(root, { recursive: true, force: true }) }
 })
 const alive = async (pid) => {
   try { process.kill(pid, 0) }
