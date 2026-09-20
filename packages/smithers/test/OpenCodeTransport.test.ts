@@ -85,7 +85,9 @@ describe("smithers opencode model transport", () => {
         const turn = () => Effect.scoped(Stream.runCollect(seat.model.stream(prompt)))
         const forbidden = () =>
           turn().pipe(
-            CapabilitySet.attenuate([new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/other-model" })]),
+            CapabilitySet.attenuate([
+              new CapabilityPattern({ action: "model:call", resource: "api.cerebras.ai/other-model" })
+            ]),
             Effect.flip
           )
         expect(yield* forbidden()).toMatchObject({ code: "permission_denied", reason: "outside capability ceiling" })
