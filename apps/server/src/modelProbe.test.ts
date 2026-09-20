@@ -4,7 +4,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
-import { MODEL_CATALOG_PATH, MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { MODEL_CATALOG_PATH, MODEL_TEST_PATH, MODEL_CREDENTIAL_PATH, MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import {
   MODEL_TEST_BODY_MAX_BYTES,
   MODEL_TEST_DEADLINE_MS,
@@ -457,6 +457,20 @@ describe("the model routes behind the session and the login's budget", () => {
     })
   const SIGNED_IN = { cookie: "smithers_session=abc" }
   const codeOf = async (response: Response): Promise<string> => ((await response.json()) as { code: string }).code
+
+  test("enrollment is explicitly local-only, session gated, and never forwarded", async () => {
+    const { provider } = seams(session("alice", true))
+    const env = gatedEnv()
+    const response = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, {
+      method: "POST", headers: SIGNED_IN, body: JSON.stringify({ value: "private-provider-fixture" })
+    }), env)
+    expect(await response.json()).toEqual({ ok: false, failure: { code: "local_host_required" }, fault: "user" })
+    const receipt = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_RECEIPT_PATH}?id=some-request`, { headers: SIGNED_IN }), env)
+    expect(await receipt.json()).toEqual({ state: "unknown" })
+    expect(provider).toHaveLength(0)
+    seams(() => new Response("{}", { status: 401 }))
+    expect((await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, { method: "POST" }), env)).status).toBe(401)
+  })
 
   test("a signed-out caller is sign_in_required on both, and no key is spent", async () => {
     const { provider } = seams(() => new Response("{}", { status: 401 }))

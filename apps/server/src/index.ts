@@ -16,6 +16,8 @@ import {
   IDENTITY_ROUTE_PREFIX,
   JEV_PATH,
   MODEL_CATALOG_PATH,
+  MODEL_CREDENTIAL_PATH,
+  MODEL_CREDENTIAL_RECEIPT_PATH,
   MODEL_STREAM_PATH,
   MODEL_TEST_PATH,
   RECOMMEND_OUTCOME_PATH,
@@ -398,6 +400,14 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     // The Models surface (src/modelProbe.ts). Both sit behind the session:
     // the catalog names what this deployment holds, and a Test spends a
     // deployment key, so it spends one turn of the login's budget first.
+    if (url.pathname === MODEL_CREDENTIAL_PATH || url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH) {
+      if (request.method !== (url.pathname === MODEL_CREDENTIAL_PATH ? "POST" : "GET")) return methodNotAllowed()
+      const gate = yield* requireTurnSession(request)
+      if (gate instanceof Response) return gate
+      return json(200, url.pathname === MODEL_CREDENTIAL_PATH
+        ? { ok: false, failure: { code: "local_host_required" }, fault: "user" }
+        : { state: "unknown" })
+    }
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)

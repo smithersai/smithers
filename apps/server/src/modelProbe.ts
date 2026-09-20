@@ -120,7 +120,8 @@ export const handleModelCatalog = (): Effect.Effect<Response, never, ServerConfi
     const catalog: ModelCatalog = {
       models: [...workerBuiltinModels(config)],
       credentials: [...workerModelCredentials(config)],
-      seats: [...modelSeatsOf("cloud")]
+      seats: [...modelSeatsOf("cloud")],
+      enrollment: { available: false, reason: "local_host_required" }
     }
     return json(200, catalog)
   })
