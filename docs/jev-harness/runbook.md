@@ -4,7 +4,7 @@ This is the page to read before the first run of `smithers opencode` against the
 
 ## Export two keys, not one
 
-The harness asks Jev about every completion. It fails a run it cannot judge at all, and it fails a run whose sentence reports work the run never did: a claim Jev reads as reporting a command it never ran, or a result it never got, is handed back for a frame, up to three times, and a claim that comes back the same way ends the turn instead of standing as its answer. That judgement rides on the Vercel AI Gateway, so a gateway key is required in addition to a model seat key. The turn ends with no answer, the dot goes red reading `stopped: the run reported work it never recorded`, and the completion it refused is kept in the transcript on the `demand` card, whose title starts `claim ·`, for you to read.
+The harness asks Jev about every completion. It fails a run it cannot judge at all, and it fails a run whose sentence reports work the run never did: a claim Jev reads as reporting a command it never ran, or a result it never got, is handed back for a frame, up to three times, and a claim that comes back the same way ends the turn instead of standing as its answer. That judgement rides on the Vercel AI Gateway, so a gateway key is required in addition to a model seat key. The turn ends with no answer, the dot goes red naming the refusal and what to do about it, and the completion it refused is kept in the transcript on the `demand` card, whose title starts `claim ·`, for you to read.
 
 What it does not do is refuse a completion for being thin. A run that answers a question, reports what a command printed, or says plainly that it could not check something is handed back at most once and then its answer stands. That is a change of 2026-09-19 and it is the difference between this page and the one before it. The brake used to refuse on two further questions, "is the task as stated done" and "does the claim assert more than the evidence shows", and both destroyed true answers: across sixteen live turns on 2026-09-18 it killed two runs that had the answer in hand (`add(2, 3) returns -1` over a repository where `add` subtracts, and `planted` as the name field in `package.json`), zero of five question-shaped turns answered at all, and one live CI dispatch of the planted one-character bug in four ended the same way at `complete 0.35, overclaims 0.89`.
 
@@ -35,6 +35,12 @@ Keep the default port. The hosted app looks for `http://localhost:4096` and noth
 
 ```
 Serving /Users/you/some-repo at http://127.0.0.1:4096. Open https://app.opencode.ai and allow the local network permission. Seat: cerebras:gpt-oss-120b. Jev judges every completion; a claim reporting work the run never recorded ends the turn.
+```
+
+The banner is printed once the socket is bound, so a banner is a server that is up. A port another program already holds fails before it, naming the port and the way out:
+
+```
+Port 4096 on 127.0.0.1 is already in use, so nothing is being served. Another program holds it, which is usually a server of this one already running here: stop it, or serve on another port with --port.
 ```
 
 State lives in `<directory>/.smithers/opencode.sqlite`. One server serves one directory.
@@ -101,17 +107,19 @@ The dot sits in front of the session title. One Jev evaluation runs per frame, f
 
 The facts beat the answers, and a finished run beats both. A confident `done`, or a turn that resolved, reads green even when Jev calls the run repetitive: a run that re-read a file on its way to a correct answer is not stuck. The dot a finished session keeps is the color its last state earned, so a session that parked on a permission you answered ends green and stays green rather than keeping "waiting for approval" over an empty permission list.
 
-A red `stopped:` line names what ended the run. These are the ones you will meet, and each names what to do next.
+A red `stopped:` line names what ended the run and what to do about it. The remedy is on the dot itself, after the fault, so this table is the long form of a line you can already read on the screen.
 
 | Reason line | What ended the run | What to do |
 | --- | --- | --- |
 | `stopped: cerebras:gpt-oss-120b is out of quota` | The seat's provider refused on a usage limit. | Raise the limit, or run on another seat. |
-| `stopped: the run reported work it never recorded` | The completion brake read the run's own record against its claim, found it reporting a command the run never ran or a result it never got, and refused it with no bounce left. | Read the refused completion on the `demand` card titled `claim · ...` and decide for yourself; re-prompt with the missing part, or allow the call the run needs. |
-| `stopped: the frame budget of 40 is exhausted` | The run spent every frame it had without finishing. | Raise `--max-frames`, or split the task. |
-| `stopped: nothing could judge the completion` | The gateway would not answer whether the completion stands. | Check `AI_GATEWAY_API_KEY` and the gateway; the run's own seat is not the problem. |
-| `stopped: the model call failed` | The seat's own transport failed, most often `ERR_HTTP2_INVALID_SESSION` from the provider. | Send the prompt again. The server throws the dead connection pool away after three failed calls in a row and builds another, so the next call runs on a new one; no restart. A second turn that fails the same way is a provider that is down, not a pool that is dead. |
+| `stopped: cerebras:gpt-oss-120b could not be reached` | The network between this machine and the provider refused the connection. Nothing the person did. | Check that this machine has a network and that the provider is reachable from it, then send the prompt again. |
+| `stopped: cerebras:gpt-oss-120b did not answer in time` | The call outran the budget the server declared for it, so nothing about it is known. | Send the prompt again; if it keeps timing out, shorten it or serve a faster seat with `--seat`. |
+| `stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove` | The completion brake read the run's own record against its claim, found it reporting a command the run never ran or a result it never got, and refused it with no bounce left. | Read the refused completion on the `demand` card titled `claim · ...` and decide for yourself; re-prompt with the missing part, or allow the call the run needs. |
+| `stopped: the frame budget of 40 is exhausted. Raise it with --max-frames, or split the task` | The run spent every frame it had without finishing. | Raise `--max-frames`, or split the task. |
+| `stopped: nothing could judge the completion. Check AI_GATEWAY_API_KEY and the gateway; the seat's own key is not the problem` | The gateway would not answer whether the completion stands. | Check `AI_GATEWAY_API_KEY` and the gateway; the run's own seat is not the problem. |
+| `stopped: the model call failed. Send the prompt again; a second turn that fails the same way is a provider that is down, so serve another seat with --seat` | The seat's own transport failed, most often `ERR_HTTP2_INVALID_SESSION` from the provider. | Send the prompt again. The server throws the dead connection pool away after three failed calls in a row and builds another, so the next call runs on a new one; no restart. A second turn that fails the same way is a provider that is down, not a pool that is dead. |
 
-Every other rule the harness stops a run on reads the same way, one line per code, and a body that failed with no code at all reads `stopped: the turn failed` with the words on the message.
+Every other rule the harness stops a run on reads the same way, one line per code, and a body that failed with no code at all reads `stopped: the turn failed. Send the prompt again, and read the message on the answer for what happened` with the words on the message.
 
 Measured on 2026-09-19, six live states on `cerebras:gpt-oss-120b`, one per fresh server.
 
@@ -174,7 +182,7 @@ That is the failure the review named a launch blocker on 2026-09-19: a restart l
 
 ## The frame budget
 
-A turn gets 40 frames by default from the CLI. Raise it for a long task with `--max-frames 120`. When the budget runs out the turn stops and says so: `The frame budget of 40 is exhausted. The run stops here; the last transition was a request to continue.` That notice is the whole answer and the finish reason is `stop`, but the dot goes red reading `stopped: the frame budget of 40 is exhausted`, so the color and the notice say the same thing. A run that completed on its last frame is green as usual: what tells the two apart is whether the run said it was done, not how many frames it used.
+A turn gets 40 frames by default from the CLI. Raise it for a long task with `--max-frames 120`. When the budget runs out the turn stops and says so: `The frame budget of 40 is exhausted. The run stops here; the last transition was a request to continue.` That notice is the whole answer and the finish reason is `stop`, but the dot goes red reading `stopped: the frame budget of 40 is exhausted. Raise it with --max-frames, or split the task`, so the color and the notice say the same thing. A run that completed on its last frame is green as usual: what tells the two apart is whether the run said it was done, not how many frames it used.
 
 ## What a working classify call looks like
 
@@ -198,7 +206,7 @@ Counted on the wire on 2026-09-18, against every request fifteen turns sent to `
 
 **`A completion reporting work this run never recorded: invented 0.95 (complete 0.07, overclaims 0.93, neither of which decides this). The claim was handed back for a frame and came back still unrecorded.`** The turn ended because the run's sentence reported a command it ran, or a result it got, that nothing in the run's record carries. `invented` is the number that decided; the other two are journaled for the record and named in the line as deciding nothing. The run was told what was missing and given up to three frames to answer; what came back said the same thing. There is no answer to read, by design: the alternative is a sentence nothing supports, returned with a green finish on it.
 
-This is the refusal you will meet most often. The finish reason is `error`, the dot is red reading `stopped: the run reported work it never recorded`, and the transcript carries a `demand` card titled with the probability that decided and the two that did not, for example `claim · invented 0.95 (complete 0.07, overclaims 0.93)`. That card's body carries the completion the brake handed back, word for word, so you can read the answer it refused and judge it yourself. It refuses "the tests pass" over a repository whose one test exits 1 with every shell call denied, and it refuses "I ran `node test.mjs` and it printed ok" from a run that ran nothing. It does not refuse a run for answering a question, for reporting what a command printed, or for saying it could not check something. Read the refused completion, then either allow the call the run needs to prove its work, or restate the task so it ends in a check the run can run.
+This is the refusal you will meet most often. The finish reason is `error`, the dot is red reading `stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove`, and the transcript carries a `demand` card titled with the probability that decided and the two that did not, for example `claim · invented 0.95 (complete 0.07, overclaims 0.93)`. That card's body carries the completion the brake handed back, word for word, so you can read the answer it refused and judge it yourself. It refuses "the tests pass" over a repository whose one test exits 1 with every shell call denied, and it refuses "I ran `node test.mjs` and it printed ok" from a run that ran nothing. It does not refuse a run for answering a question, for reporting what a command printed, or for saying it could not check something. Read the refused completion, then either allow the call the run needs to prove its work, or restate the task so it ends in a check the run can run.
 
 **`A completion no evaluator could judge (refused): The gateway answered 503`** The turn ended because Jev could not judge its completion. The gateway is retried up to three times over eight seconds first, so this means the gateway was down or the key was rejected, not that one request was slow. A 401 or 403 is answered once, because a second request reaches the same sentence. The server logs **`The completion judge vercel-gateway:typesafe-ai/jev refused the call (authentication, HTTP 401): ... Check AI_GATEWAY_API_KEY and the gateway's status; the run's own seat is not the problem.`** The way out is the gateway key, never another seat, and the app shows it as an authentication failure rather than an unknown one.
 

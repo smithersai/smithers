@@ -494,7 +494,10 @@ describe("Projection", () => {
     // name. It is still a run that is over, and the harness code it came
     // wrapped in says which rule ended it.
     const broke = Projection.close(ctx, start.state, refused("provider_internal", "Internal server error", 500))
-    expect([dotOf(broke), cardOf(broke)]).toEqual(["🔴", "stopped: the model call failed"])
+    expect([dotOf(broke), cardOf(broke)]).toEqual([
+      "🔴",
+      "stopped: the model call failed. Send the prompt again; a second turn that fails the same way is a provider that is down, so serve another seat with --seat"
+    ])
     expect(broke.state.facts.stoppedBy).toBeUndefined()
     // And the words are not the contract: a refusal whose sentence says "cap"
     // and whose code says otherwise is that same ordinary failure.
@@ -504,7 +507,10 @@ describe("Projection", () => {
       refused("provider_internal", "The concurrency cap for this account was hit", 503)
     )
     expect(capInProse.state.facts.stoppedBy).toBeUndefined()
-    expect([dotOf(capInProse), cardOf(capInProse)]).toEqual(["🔴", "stopped: the model call failed"])
+    expect([dotOf(capInProse), cardOf(capInProse)]).toEqual([
+      "🔴",
+      "stopped: the model call failed. Send the prompt again; a second turn that fails the same way is a provider that is down, so serve another seat with --seat"
+    ])
     // The rule replays the same decision off the facts the projection kept,
     // so a reload and the live stream read the same dot.
     expect(Health.decide(noQuota.state.facts, undefined)).toEqual({
@@ -513,7 +519,8 @@ describe("Projection", () => {
     })
     expect(Health.decide(capInProse.state.facts, undefined)).toEqual({
       color: "red",
-      reason: "stopped: the model call failed"
+      reason:
+        "stopped: the model call failed. Send the prompt again; a second turn that fails the same way is a provider that is down, so serve another seat with --seat"
     })
   })
 
@@ -1087,7 +1094,8 @@ describe("Projection", () => {
     ])
     expect(thenClosed.state.health).toEqual({
       color: "red",
-      reason: `stopped: the frame budget of ${Projection.defaultMaxFrames} is exhausted`
+      reason:
+        `stopped: the frame budget of ${Projection.defaultMaxFrames} is exhausted. Raise it with --max-frames, or split the task`
     })
     const closedFirst = Projection.fold(ctx, frame.state, closeResolved)
     expect(closedFirst.state.closed).toBe(false)
@@ -1538,7 +1546,10 @@ describe("Projection: classify, health, cost, and the run summary", () => {
         "A completion the run's own record does not support (overclaimed): complete 0.08, overclaims 0.89."
       )
     )
-    expect([dotOf(unproven), cardOf(unproven)]).toEqual(["🔴", "stopped: the run reported work it never recorded"])
+    expect([dotOf(unproven), cardOf(unproven)]).toEqual([
+      "🔴",
+      "stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove"
+    ])
     expect(unproven.state.facts.endedBy).toEqual({ code: "claim_unproven" })
     // The words are still the header's, verbatim, so the sentence a person
     // acts on is not paraphrased by the dot.
@@ -1548,17 +1559,27 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     expect(header.error?.data.message).toContain("complete 0.08, overclaims 0.89")
     // Every other rule the harness stops a run on reads the same way.
     const cap = Projection.close(ctx, start.state, killed("read_only_cap", "12 frames, no write"))
-    expect([dotOf(cap), cardOf(cap)]).toEqual(["🔴", "stopped: the run read for too many frames without writing"])
+    expect([dotOf(cap), cardOf(cap)]).toEqual([
+      "🔴",
+      "stopped: the run read for too many frames without writing. Tell it what to change and send the prompt again"
+    ])
     const unjudged = Projection.close(ctx, start.state, killed("completion_unjudged", "The gateway answered 503"))
-    expect([dotOf(unjudged), cardOf(unjudged)]).toEqual(["🔴", "stopped: nothing could judge the completion"])
+    expect([dotOf(unjudged), cardOf(unjudged)]).toEqual([
+      "🔴",
+      "stopped: nothing could judge the completion. Check AI_GATEWAY_API_KEY and the gateway; the seat's own key is not the problem"
+    ])
     // A body that failed with nothing typed in it is still a run that is over.
     const bare = Projection.close(ctx, start.state, { _tag: "failed", message: "boom" })
-    expect([dotOf(bare), cardOf(bare)]).toEqual(["🔴", "stopped: the turn failed"])
+    expect([dotOf(bare), cardOf(bare)]).toEqual([
+      "🔴",
+      "stopped: the turn failed. Send the prompt again, and read the message on the answer for what happened"
+    ])
     // A reload reads the dot back off the facts, so the stream and the
     // history agree about a session nobody is watching any more.
     expect(Health.decide(unproven.state.facts, undefined)).toEqual({
       color: "red",
-      reason: "stopped: the run reported work it never recorded"
+      reason:
+        "stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove"
     })
     // The operator's own Stop stays gray: nothing about it is theirs to fix.
     const stopped = Projection.close(ctx, start.state, { _tag: "interrupted" })
@@ -1593,7 +1614,10 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     // `complete`. The run answered nothing.
     const spent = drive(new Cell.Continue({}))
     expect(Projection.budgetEnded(spent)).toBe(true)
-    expect(spent.health).toEqual({ color: "red", reason: "stopped: the frame budget of 2 is exhausted" })
+    expect(spent.health).toEqual({
+      color: "red",
+      reason: "stopped: the frame budget of 2 is exhausted. Raise it with --max-frames, or split the task"
+    })
     expect(spent.session.title.startsWith("🔴 ")).toBe(true)
     expect(spent.facts.endedBy).toEqual({ code: Health.frameBudget, maxFrames: 2 })
     // The same frame count, the same notice-shaped answer, and a run that
@@ -1618,7 +1642,10 @@ describe("Projection: classify, health, cost, and the run summary", () => {
     ) atTop = Projection.fold(ctx, atTop, event).state
     expect(atTop.closed).toBe(false)
     const closed = Projection.close(ctx, atTop, { _tag: "failed", message: "The turn ended without an answer" })
-    expect(closed.state.health).toEqual({ color: "red", reason: "stopped: the frame budget of 2 is exhausted" })
+    expect(closed.state.health).toEqual({
+      color: "red",
+      reason: "stopped: the frame budget of 2 is exhausted. Raise it with --max-frames, or split the task"
+    })
   })
 
   it("names what ended a turn that was already red, on the resolve and on the close", () => {
@@ -1673,7 +1700,9 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       resolved = Projection.fold(ctx, spending, event)
       spending = resolved.state
     }
-    expect(reasons(resolved)).toEqual(["stopped: the frame budget of 2 is exhausted"])
+    expect(reasons(resolved)).toEqual([
+      "stopped: the frame budget of 2 is exhausted. Raise it with --max-frames, or split the task"
+    ])
     // The same short-circuit masked every other terminal reason a red turn
     // could end on: a seat out of quota, and a harness that stopped the run.
     const quota = Projection.close(ctx, parked(), {
@@ -1687,7 +1716,9 @@ describe("Projection: classify, health, cost, and the run summary", () => {
       message: "the run reported work it never recorded",
       harness: { code: "claim_unproven" }
     })
-    expect(reasons(refused)).toEqual(["stopped: the run reported work it never recorded"])
+    expect(reasons(refused)).toEqual([
+      "stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove"
+    ])
   })
 
   it("gives a turn that finishes in one frame a color, because a resolved turn needs no answers to have one", () => {

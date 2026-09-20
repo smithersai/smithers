@@ -228,14 +228,14 @@ describe("Health", () => {
         facts({ endedBy: { code: "claim_unproven" } }),
         undefined,
         "red",
-        "stopped: the run reported work it never recorded"
+        "stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove"
       ],
       [
         "the frame budget ended the run",
         facts({ endedBy: { code: Health.frameBudget, maxFrames: 40 } }),
         answers({ progress: { value: 2, label: "progressing", probabilities: { progressing: 0.9 }, confidence: 0.9 } }),
         "red",
-        "stopped: the frame budget of 40 is exhausted"
+        "stopped: the frame budget of 40 is exhausted. Raise it with --max-frames, or split the task"
       ],
       // A usage limit is the provider's and beats it, because what the
       // operator does about it is at the provider.
@@ -271,12 +271,20 @@ describe("Health", () => {
       expect(Health.endedReason({ code }), code).toBe(Health.endedReasons[code])
       expect(Health.endedReason({ code }), code).toMatch(/^stopped: /)
     }
-    expect(Health.endedReason({ code: "unknown" })).toBe("stopped: the turn failed")
+    expect(Health.endedReason({ code: "unknown" })).toBe(
+      "stopped: the turn failed. Send the prompt again, and read the message on the answer for what happened"
+    )
     // The budget raises nothing, so it has a code of its own and a reason
     // that names the number the operator raises.
     expect(Health.endedReason({ code: Health.frameBudget, maxFrames: 40 })).toBe(
-      "stopped: the frame budget of 40 is exhausted"
+      "stopped: the frame budget of 40 is exhausted. Raise it with --max-frames, or split the task"
     )
+    // Every one of them names what to do next as well as what happened: a
+    // sentence that stops at the fault leaves the person to work the rest
+    // out, and the dot is where they read it.
+    const remedied = /^stopped: [^.]+\. [A-Z][^.]+$/
+    for (const [code, reason] of Object.entries(Health.endedReasons)) expect(reason, code).toMatch(remedied)
+    expect(Health.endedReason({ code: Health.frameBudget, maxFrames: 40 })).toMatch(remedied)
   })
 
   it("keeps one missed deadline off the dot and says so when three are missed running", () => {

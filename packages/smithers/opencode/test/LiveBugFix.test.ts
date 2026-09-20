@@ -200,7 +200,9 @@ const assertSettledAttempt = (assistant: Item | undefined): void => {
 /** Checks the terminal reading against design section 3.3, independently of server code. */
 const assertFinalHealth = (metadata: ToolPart["state"]["metadata"], spent: boolean): string => {
   let color = spent ? "red" : "green"
-  let reason = spent ? `stopped: the frame budget of ${maxFrames} is exhausted` : "answered"
+  let reason = spent
+    ? `stopped: the frame budget of ${maxFrames} is exhausted. Raise it with --max-frames, or split the task`
+    : "answered"
   const answers = metadata?.answers
   if (!spent && answers !== undefined) {
     const progress = answers["progress"]
@@ -405,7 +407,7 @@ const driveOneTurn = async (attempt: number): Promise<string | undefined> => {
     //    The final color is checked separately against the whole ordered rule.
     //    Stale approval and repetition colors still fail the first attempt.
     const spent = health.map((part) => part.state.metadata?.reason)
-      .includes(`stopped: the frame budget of ${maxFrames} is exhausted`)
+      .includes(`stopped: the frame budget of ${maxFrames} is exhausted. Raise it with --max-frames, or split the task`)
     const seatFailure = spent
       ? `the turn ran out of frames: ${
         health.map((part) => `${part.state.metadata?.color} ${part.state.metadata?.reason}`).join(" | ")
@@ -503,7 +505,12 @@ describe("a live turn on a real seat", () => {
   })
 
   it("requires the budget reason when a normally settled turn exhausted its frames", () => {
-    expect(assertFinalHealth({ color: "red", reason: `stopped: the frame budget of ${maxFrames} is exhausted` }, true))
+    expect(
+      assertFinalHealth({
+        color: "red",
+        reason: `stopped: the frame budget of ${maxFrames} is exhausted. Raise it with --max-frames, or split the task`
+      }, true)
+    )
       .toBe("red")
     expect(() => assertFinalHealth({ color: "red", reason: "waiting for approval" }, true)).toThrow()
   })

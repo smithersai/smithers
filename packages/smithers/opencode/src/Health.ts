@@ -233,20 +233,32 @@ export type Ended =
  * `HarnessError.HarnessErrorCode`, so a code the harness adds is a type error
  * here rather than a run that ends with no reason a person can read.
  *
+ * Every one of them names what to do next as well as what happened. They are
+ * true and they blame the right thing, but a sentence that stops at the fault
+ * leaves the person to work the rest out: the operator page carries a remedy
+ * for each, and the dot is where they are read.
+ *
  * @category constants
  * @since 1.0.0
  */
 export const endedReasons: Readonly<Record<HarnessError.HarnessErrorCode | "unknown", string>> = {
-  assembly_failed: "stopped: the run could not be assembled",
-  incompatible_journal: "stopped: the journal is from another version",
-  render_failed: "stopped: the frame could not be rendered",
-  model_failed: "stopped: the model call failed",
-  engine_failed: "stopped: the engine failed",
-  read_only_cap: "stopped: the run read for too many frames without writing",
-  completion_unjudged: "stopped: nothing could judge the completion",
-  claim_unproven: "stopped: the run reported work it never recorded",
-  suspended: "stopped: the run suspended",
-  unknown: "stopped: the turn failed"
+  assembly_failed:
+    "stopped: the run could not be assembled. Send the prompt again, and report it with the server's log if it repeats",
+  incompatible_journal:
+    "stopped: the journal is from another version. Start a new session; this one's journal was written by another build",
+  render_failed:
+    "stopped: the frame could not be rendered. Send the prompt again, and report it with the server's log if it repeats",
+  model_failed:
+    "stopped: the model call failed. Send the prompt again; a second turn that fails the same way is a provider that is down, so serve another seat with --seat",
+  engine_failed: "stopped: the engine failed. Send the prompt again, and report it with the server's log if it repeats",
+  read_only_cap:
+    "stopped: the run read for too many frames without writing. Tell it what to change and send the prompt again",
+  completion_unjudged:
+    "stopped: nothing could judge the completion. Check AI_GATEWAY_API_KEY and the gateway; the seat's own key is not the problem",
+  claim_unproven:
+    "stopped: the run reported work it never recorded. Read the refused answer on the demand card, then allow the call it needs or say what to prove",
+  suspended: "stopped: the run suspended. Answer the card it is waiting on, or send the prompt again",
+  unknown: "stopped: the turn failed. Send the prompt again, and read the message on the answer for what happened"
 }
 
 /**
@@ -261,7 +273,7 @@ export const endedReasons: Readonly<Record<HarnessError.HarnessErrorCode | "unkn
  */
 export const endedReason = (ended: Ended): string =>
   ended.code === frameBudget
-    ? `stopped: the frame budget of ${ended.maxFrames} is exhausted`
+    ? `stopped: the frame budget of ${ended.maxFrames} is exhausted. Raise it with --max-frames, or split the task`
     : endedReasons[ended.code]
 
 /**
