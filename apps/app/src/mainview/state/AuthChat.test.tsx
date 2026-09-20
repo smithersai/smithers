@@ -19,9 +19,14 @@ const createAppController = scopedControllers()
 /*
  * One page: the chat. Auth is a conversation state, never a view — these pin
  * that a definitive signed-out or non-allowlisted answer renders THE CHAT
- * (transcript + composer) whose opening Smithers message carries the one
- * available action, that there is no second surface anywhere, and that the
- * composer's attempted send resolves to the calm one-line reply.
+ * (transcript + composer) carrying the one available action, that there is no
+ * second surface anywhere, and that the composer's attempted send resolves to
+ * the calm one-line reply.
+ *
+ * Since the signup (apps/app/AGENTS.md, Will 2026-09-20) the landing entry's
+ * one action is the signup's GitHub door; a repository URL keeps the opening
+ * message and its CTA, and is built here the way the one composition root
+ * builds it (ControllerBoot.client.ts: `repositoryApp` is the requested repo).
  */
 
 GlobalRegistrator.register({ url: "https://smithers.sh/" })
@@ -175,12 +180,12 @@ describe("auth is a conversation state — the chat is the only page", () => {
     expect(pills).toEqual([])
   })
 
-  test("signed-out on the web (host cloud): the transcript is the one opening message whose action is sign-in", async () => {
+  test("signed-out on the web (host cloud): the landing transcript is the signup, whose GitHub door is auth.sign-in", async () => {
     /*
-     * docs/web-mode/PLAN.md §3: on the cloud host a signed-out visitor reads
-     * what this is and the one act that is theirs. The card is the auth-state
-     * shape auth.prompt renders (message + CTA bound to auth.sign-in); the
-     * transcript holds nothing else — no opening read, no pills.
+     * The signup (apps/app/AGENTS.md, Will 2026-09-20) took docs/web-mode/
+     * PLAN.md §3's place on the landing entry: a visitor with no account reads
+     * the hero and the doors, and the GitHub door is still auth.sign-in. The
+     * transcript holds nothing else — no opening read, no checklist, no pills.
      */
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
@@ -194,13 +199,17 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await settled()
 
     const { host, markup } = mount(controller)
-    const messages = [...host.querySelectorAll<HTMLElement>(".smithers-chat-message")]
     expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(false)
-    expect(messages.map((message) => message.textContent?.includes(WEB_OPENING))).toEqual([true])
-    const cta = messages[0]?.querySelector<HTMLButtonElement>(".message-cta")
-    expect(cta?.dataset.flow).toBe("auth.sign-in")
-    expect(cta?.textContent).toBe("Sign in with GitHub")
+    expect(host.querySelector('[data-testid="signup"]')?.getAttribute("data-stage")).toBe("sign-in")
+    expect(host.querySelector(".signup h1")?.textContent).toBe("Automate your codebase today")
+    const door = host.querySelector<HTMLButtonElement>('.signup-door[data-flow="auth.sign-in"]')
+    expect(door?.dataset.testid).toBe("signup-github")
+    expect(door?.textContent).toBe("Continue with GitHub")
     expect(controller.commands.find("auth.sign-in")).toBeDefined()
+    expect([...host.querySelectorAll(".smithers-chat-message")]).toEqual([])
+    expect(markup()).not.toContain(WEB_OPENING)
+    expect(host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+    expect(host.querySelector('[data-testid="first-run-actions"]')).toBeNull()
     expect(markup()).not.toContain("Smithers initialized")
     expect([...host.querySelectorAll(".smithers-suggestion")]).toEqual([])
     // The chat is still the only page: transcript and composer, no takeover.
@@ -228,7 +237,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await controller.loadSession()
     await settled()
     const { host } = mount(controller)
-    expect(host.querySelector<HTMLButtonElement>('.message-cta[data-flow="auth.sign-in"]')?.textContent).toBe("Sign in with GitHub")
+    expect(host.querySelector<HTMLButtonElement>('.signup-door[data-flow="auth.sign-in"]')?.textContent).toBe("Continue with GitHub")
     expect(store.session().activeRepoKey ?? null).toBeNull()
 
     const parked = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -271,8 +280,11 @@ describe("auth is a conversation state — the chat is the only page", () => {
         "/api/auth/scopes": json(200, { scopes: [] }),
         "/api/public/repos": json(200, { repos: [{ name: "smithersai/smithers" }] })
       })
+      // ControllerBoot.client.ts passes the requested repository; that is what
+      // tells the transcript this page is about a repository, not the signup.
       const controller = createAppController(store, unavailableRepositories, silentAgent, {
         bootstrap: WEB,
+        repositoryApp: requestedRepo(window.location) ?? undefined,
         ...http
       })
       await controller.loadSession()
@@ -299,6 +311,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: WEB,
+      repositoryApp: requestedRepo(window.location) ?? undefined,
       ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) })
     })
     await controller.loadSession()
@@ -405,7 +418,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
     expect(host.querySelector(".smithers-composer")).not.toBeNull()
   })
 
-  test("signed-out on the web with a repository the catalog did not supply: the gate stands exactly as before", async () => {
+  test("signed-out at the landing entry with a repository the catalog did not supply: the signup opens and the write gate stands", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: WEB,
@@ -424,9 +437,13 @@ describe("auth is a conversation state — the chat is the only page", () => {
     await settled()
 
     const { host, markup } = mount(controller)
-    const messages = [...host.querySelectorAll<HTMLElement>(".smithers-chat-message")]
+    // The landing entry belongs to the signup; a remembered selection the
+    // catalog never supplied does not open that repository to this visitor.
     expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(false)
-    expect(messages.map((message) => message.textContent?.includes(WEB_OPENING))).toEqual([true])
+    expect(host.querySelector('[data-testid="signup"]')?.getAttribute("data-stage")).toBe("sign-in")
+    expect(host.querySelector('.signup-door[data-flow="auth.sign-in"]')).not.toBeNull()
+    expect([...host.querySelectorAll(".smithers-chat-message")]).toEqual([])
+    expect(markup()).not.toContain(WEB_OPENING)
     expect(markup()).not.toContain("You are exploring")
     expect(controller.commands.state().publicRepo).toBe(false)
   })
@@ -577,17 +594,21 @@ test("the expanded empty wiki carries the current repository through Create Wiki
 })
 
 
-test("the derived web opening sign-in door closes when its identity requirement is met", async () => {
+test("the signup's sign-in door closes when its identity requirement is met", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
     fetchImpl: async () => Response.json({}, { status: 404 }) })
   await controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
   const { host } = mount(controller)
-  expect(host.querySelector('.message-cta[data-flow="auth.sign-in"]')).not.toBeNull()
+  expect(host.querySelector('.signup-door[data-flow="auth.sign-in"]')).not.toBeNull()
   await controller.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
   await settled()
   flushSync(() => {})
+  expect(host.querySelectorAll('.signup-door[data-flow="auth.sign-in"]').length).toBe(0)
   expect(host.querySelectorAll('.message-cta[data-flow="auth.sign-in"]').length).toBe(0)
+  // The door closes onto the next stage, carrying the login (state/Signup.ts).
+  expect(host.querySelector('[data-testid="signup"]')?.getAttribute("data-stage")).toBe("account")
+  expect(host.querySelector<HTMLInputElement>('[data-testid="signup-account"]')?.value).toBe("codeplanesmithers")
   // This opening is a live projection, never an appended transcript row.
   expect(store.collections.messages.get("auth-state")).toBeUndefined()
 })
