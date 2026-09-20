@@ -128,6 +128,23 @@ export interface Options {
   readonly abandonedParkAfter?: Duration.Duration | undefined
   /** Refuse resume delegation for a run routed to another workspace host. */
   readonly canExecute?: ((runId: string) => Effect.Effect<boolean>) | undefined
+  /**
+   * Holds a terminal control status until the host has copied this run's
+   * native evidence into the control journal.
+   *
+   * The two writes are independent: this executor journals
+   * `control.run.completed` from the flow body's exit, while the
+   * `flows.engine.run-decision` carrying the run's output is committed by the
+   * engine after the handler returns and copied afterwards. A reader folding
+   * the control journal between them saw `completed` with no output. A host
+   * that runs a native journal supervisor supplies its wait here.
+   *
+   * Absent, the terminal status is written from the body's exit exactly as it
+   * was, which is what every composition with nothing to copy wants.
+   *
+   * @since 1.0.0-rc.0
+   */
+  readonly orderTerminalStatus?: ((runId: string) => Effect.Effect<void>) | undefined
   /** Host executable-flow sources composed into every run's catalog. */
   readonly flows?: ReadonlyArray<FlowBinding.Source> | undefined
   /** Runs rendered markdown children; the host closes over their runtime dependencies. */
@@ -1741,6 +1758,60 @@ export const make = (
       ControlFacts.commitRun(journal, runtime.resume(runId), sourceId, "control.run.claimed")
 
     /**
+     * Every terminal control write this executor makes, for as long as it owes
+     * one. The scope waits for them the way it waits for a drive.
+     */
+    const terminalWrites = new Map<object, Fiber.Fiber<unknown, unknown>>()
+
+    /**
+     * Writes one terminal control status, after the host's ordering has let it.
+     *
+     * It cannot be awaited where it is called. `settle` runs inside the engine's
+     * registered handler, and what {@link Options.orderTerminalStatus} waits for
+     * — the engine's own terminal commit, and the decision copied from it — is
+     * written only after that handler returns. Awaiting it here would be the run
+     * waiting for itself, so the write leaves on its own fiber and the session's
+     * scope carries it.
+     *
+     * With no ordering to observe there is nothing to wait for and nothing to
+     * detach: the status is written inline, exactly as it was.
+     */
+    const settleTerminal = (runId: string, status: RunStatus, detail?: string) => {
+      const order = options.orderTerminalStatus
+      if (order === undefined) return writeStatus(runId, status, detail)
+      return Effect.sync(() => {
+        const key = {}
+        terminalWrites.set(
+          key,
+          Effect.runForkWith(services)(
+            order(runId).pipe(
+              // The ordering is a wait, never a veto. A host whose observation
+              // dies still owes this run a terminal status, so a refusal is
+              // recorded and the write goes on; only the scope closing under it
+              // stops it, and the finalizer below gives that its own grace.
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.annotateLogs(
+                  Effect.logWarning("A terminal control status was ordered by a host that stopped answering"),
+                  { runId, status, cause: Cause.pretty(cause) }
+                )
+              ),
+              Effect.andThen(writeStatus(runId, status, detail)),
+              // Nothing joins this fiber, so an unwritten terminal status would
+              // otherwise be silent. It is the run's outcome of record.
+              Effect.catchCause((cause) =>
+                Effect.annotateLogs(
+                  Effect.logError("A terminal control status could not be written"),
+                  { runId, status, cause: Cause.pretty(cause) }
+                )
+              ),
+              Effect.ensuring(Effect.sync(() => terminalWrites.delete(key)))
+            )
+          )
+        )
+      })
+    }
+
+    /**
      * Settles the control-plane status from one execution attempt's exit. A
      * suspension surfaces as an interrupt-only cause — the engine parked the
      * frame — and every re-executed attempt settles again, so the resumed
@@ -1753,7 +1824,7 @@ export const make = (
       waitingReason?: string
     ) =>
       Exit.isSuccess(exit)
-        ? writeStatus(runId, "completed")
+        ? settleTerminal(runId, "completed")
         // Flow suspension deliberately interrupts the user body. Process
         // shutdown and Control.cancel do too, but neither sets the durable
         // execution's suspension bit; reporting those as an approval wait
@@ -1774,7 +1845,7 @@ export const make = (
           Effect.suspend(() => {
             const detail = failureSummary(settlementFailure(Cause.squash(exit.cause)))
             const cause = Cause.pretty(exit.cause)
-            return writeStatus(runId, "failed", detail === undefined ? cause : `${detail}\n${cause}`)
+            return settleTerminal(runId, "failed", detail === undefined ? cause : `${detail}\n${cause}`)
           })
         )
 
@@ -2120,6 +2191,25 @@ export const make = (
         )
       )
     )
+    // A detached terminal write is the run's outcome of record, so a closing
+    // scope gives it the same bounded chance `releaseDrive` gives the engine's
+    // own terminal write. Its ordering releases when the host's observation
+    // ends, and closing the host ends every observation, so this waits for a
+    // write that is already on its way rather than for a projection.
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.suspend(() =>
+        Effect.forEach(
+          Array.from(terminalWrites.values()),
+          (fiber) =>
+            Effect.andThen(
+              Effect.ignore(Effect.timeout(Fiber.await(fiber), settlementGrace)),
+              Fiber.interrupt(fiber)
+            ),
+          { discard: true, concurrency: "unbounded" }
+        )
+      )
+    )
 
     const driver = (runId: string, planId: string) =>
       Effect.gen(function*() {
@@ -2173,7 +2263,7 @@ export const make = (
         )
       }).pipe(
         Effect.catchCause((cause) =>
-          settleDriverFailure(cause, runId, (detail) => writeStatus(runId, "failed", detail))
+          settleDriverFailure(cause, runId, (detail) => settleTerminal(runId, "failed", detail))
         )
       )
 

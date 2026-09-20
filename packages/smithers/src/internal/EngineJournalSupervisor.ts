@@ -11,7 +11,7 @@ import { RunState } from "@smthrs/engine-store/RunState"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { Cause, Effect, Fiber, Option, Schema, Scope, Semaphore } from "effect"
+import { Cause, Deferred, Duration, Effect, Fiber, Option, Schema, Scope, Semaphore } from "effect"
 import * as Projection from "./EngineJournalProjection.ts"
 
 /**
@@ -51,6 +51,20 @@ const producer = (identity: ReadonlyArray<unknown>): JournalEvent.SourceId =>
 const terminalControl = new Set(["completed", "failed", "cancelled"])
 
 /**
+ * How long a terminal control write waits for this run's projection before it
+ * proceeds anyway, naming in the journal what it waited for.
+ *
+ * Every ordinary release is prompt: the wait ends on the observation itself,
+ * and an observation ends when it settles, when it records a gap, and when its
+ * fiber is interrupted with the host scope. The bound exists for the one case
+ * none of those cover — a wedged store holding the follower open — so that a
+ * stuck projection costs a late terminal status rather than a run that never
+ * ends.
+ */
+const orderingGrace = Duration.seconds(30)
+const orderingPhase = "terminal-ordering"
+
+/**
  * Construct in the host scope, outside an admission transaction. No new service,
  * table or checkpoint: recovery reads native wrapper identity and existing markers.
  * @since 1.0.0
@@ -63,6 +77,8 @@ export const make = (options: Options) =>
     const gate = yield* Semaphore.make(1)
     interface Active {
       readonly generation: number
+      /** Completed when this observation ends, however it ends. */
+      readonly ended: Deferred.Deferred<void>
       fiber?: Fiber.Fiber<void, never>
     }
     const active = new Map<string, Active>()
@@ -250,11 +266,16 @@ export const make = (options: Options) =>
         // A delayed older admission callback must not replace a newer observer.
         if (previous !== undefined && previous.generation >= generation) return
         if (previous?.fiber !== undefined) yield* Fiber.interrupt(previous.fiber)
-        const entry: Active = { generation }
+        const entry: Active = { generation, ended: yield* Deferred.make<void>() }
         active.set(id, entry)
         entry.fiber = yield* Effect.forkIn(
+          // The release is in the finalizer, not after `observe`, because a
+          // caller held by {@link awaitSettled} must also be released when this
+          // fiber is interrupted or dies — otherwise a supervisor that goes away
+          // leaves the run it was observing with no terminal status at all.
           observe(id, generation).pipe(Effect.ensuring(Effect.sync(() => {
             if (active.get(id) === entry) active.delete(id)
+            Deferred.doneUnsafe(entry.ended, Effect.void)
           }))),
           scope
         )
@@ -279,6 +300,46 @@ export const make = (options: Options) =>
         }
       }).pipe(Effect.catchCause((cause) => report(id, null, "admission", cause)))
 
+    /**
+     * Holds one terminal control write until this run's native evidence has
+     * been copied into the control journal.
+     *
+     * The control plane writes `control.run.completed` from the flow body's
+     * exit, inside the engine's registered handler; the `flows.engine.run-decision`
+     * that CARRIES the run's output is committed only after that handler
+     * returns, and copied here after that. A reader folding the control journal
+     * between the two saw `completed` with no output — two production runs of
+     * `repository-jobs/issues` differed by exactly that. This is the wait that
+     * closes the gap.
+     *
+     * The caller must not hold the engine's handler open on it. What this waits
+     * for is the native terminal commit, which only that handler's return
+     * produces, so awaiting it in the handler would be the run waiting for
+     * itself. `AgentSession` writes the status on its own fiber for that reason.
+     *
+     * A run this process does not observe has nothing to order against and is
+     * not held at all.
+     */
+    const awaitSettled = (id: string): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        const entry = active.get(id)
+        if (entry === undefined) return Effect.void
+        return Effect.raceFirst(
+          Deferred.await(entry.ended),
+          Effect.sleep(orderingGrace).pipe(
+            Effect.andThen(
+              gap(
+                id,
+                entry.generation,
+                orderingPhase,
+                `No ${settledKind} within ${Duration.format(orderingGrace)}`
+              )
+            ),
+            Effect.ignore
+          )
+        )
+      })
+
     /** Accepted work retains its actual acceptance even if observation fails. */
     const start = (id: string) => admit(id, true)
     const wrap = (executor: ControlExecutor.Service): ControlExecutor.Service => ({
@@ -299,5 +360,5 @@ export const make = (options: Options) =>
         Effect.forEach(runs, (run) => admit(run.runId, false), { concurrency: 8, discard: true })
       )
     )
-    return { start, wrap, recover }
+    return { start, wrap, recover, awaitSettled }
   })

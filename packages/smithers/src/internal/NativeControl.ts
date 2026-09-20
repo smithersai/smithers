@@ -755,14 +755,6 @@ export const make = (
             Fiber.join,
             Fiber.interrupt
           )
-        const session = AgentSession.make({
-          requestNativeCancel,
-          canExecute,
-          flows: sources,
-          limits: cellLimits,
-          quotaPolicy,
-          budget: Budget.layerFromEnvelope
-        })
         // Lifecycle, steering and approval belong to the control journal. The
         // registration phase otherwise inherits the engine's separate journal.
         // Select only Journal: an unmaterialized engine.journal layer can also
@@ -771,12 +763,26 @@ export const make = (
         // Capture the original native services before selecting the control
         // journal for AgentSession. This observer lives in the same host scope,
         // outside admission transactions; it opens no persistence of its own.
+        //
+        // It is built before the session because the session's terminal control
+        // writes are ordered against it: on this host a run's output reaches a
+        // reader only as the decision this observer copies, so `completed` must
+        // not be journaled before that copy exists.
         const supervisor = yield* EngineJournalSupervisor.make({
           engineJournal: yield* Journal.Journal,
           controlJournal,
           engineState: yield* DurableEngineState.DurableEngineState,
           runs: yield* RunStore.RunStore,
           control: yield* ControlRuntime.ControlRuntime
+        })
+        const session = AgentSession.make({
+          requestNativeCancel,
+          canExecute,
+          flows: sources,
+          limits: cellLimits,
+          quotaPolicy,
+          budget: Budget.layerFromEnvelope,
+          orderTerminalStatus: supervisor.awaitSettled
         })
         const executor = yield* (catalog === undefined ? session : session.pipe(
           Effect.provideService(Executable.Catalog, catalog)

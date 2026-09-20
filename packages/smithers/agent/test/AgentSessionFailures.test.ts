@@ -298,6 +298,7 @@ interface ScenarioOptions {
   readonly registry?: Partial<Registry.Registry> | undefined
   readonly catalog?: Executable.Catalog | undefined
   readonly engine?: ((service: EngineService) => EngineService) | undefined
+  readonly orderTerminalStatus?: AgentSession.Options["orderTerminalStatus"]
 }
 
 const engineLayer = (
@@ -330,6 +331,7 @@ const withExecutor = <A>(
     const executor = yield* AgentSession.make({
       canExecute: options.canExecute,
       abandonedParkAfter: options.abandonedParkAfter,
+      orderTerminalStatus: options.orderTerminalStatus,
       limits: { calls: 4 },
       maxFrames: 2,
       quotaPolicy: Safety.quotaPolicy,
@@ -1694,5 +1696,113 @@ describe("the settlement a failure is persisted as", () => {
     expect(AgentSession.settlementFailure(true)).toBe(true)
     expect(AgentSession.settlementFailure(null)).toBe(null)
     expect(AgentSession.settlementFailure(Object.create(null) as Record<string, unknown>)).toEqual({})
+  })
+})
+
+/**
+ * The ordering a native host puts between its two independent writers.
+ *
+ * This executor journals `control.run.completed` from the flow body's exit,
+ * inside the engine's registered handler. On the coding host the run's OUTPUT
+ * reaches a reader by a second route entirely: the engine commits the round
+ * after that handler returns, and a follower copies its
+ * `flows.engine.run-decision` into the control journal afterwards. A gateway
+ * folding the control journal between the two saw `completed` with no output,
+ * which is how two production runs of `repository-jobs/issues` differed.
+ *
+ * `orderTerminalStatus` is the host's wait between them. Nothing here sleeps:
+ * the hook IS the gate, so while it is parked the executor provably has no
+ * other path to a terminal status, and the journal stub below signals the
+ * exact write rather than a moment after it.
+ */
+describe("the executor's terminal ordering", () => {
+  /** A journal that records as the default one does and names the write. */
+  const journalWatching = (record: Recorder, wrote: Deferred.Deferred<void>): Partial<Journal.Service> => ({
+    emitDurableUnfenced: (input) =>
+      Effect.sync(() => {
+        record.journaled.push({ eventType: input.eventType, payload: input.payload })
+        if (input.eventType.startsWith("control.run.")) Deferred.doneUnsafe(wrote, Effect.void)
+        return accepted
+      })
+  })
+
+  it("journals no terminal status while the host's ordering holds it", async () => {
+    const record = recorder()
+    const entered = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const wrote = Deferred.makeUnsafe<void>()
+    const ordered: Array<string> = []
+
+    const observed = await withExecutor(record, {
+      journal: journalWatching(record, wrote),
+      orderTerminalStatus: (id) =>
+        Effect.andThen(
+          Effect.sync(() => {
+            ordered.push(id)
+            Deferred.doneUnsafe(entered, Effect.void)
+          }),
+          Deferred.await(release)
+        )
+    }, (executor) =>
+      Effect.gen(function*() {
+        const acceptance = yield* executor.launch(launchInput)
+        // Whichever happens first is the whole finding: a terminal status that
+        // reaches the journal before the host's ordering is entered is the
+        // unordered write the production runs made.
+        const first = yield* Effect.raceFirst(
+          Effect.as(Deferred.await(wrote), "status-written"),
+          Effect.as(Deferred.await(entered), "ordering-entered")
+        ).pipe(Effect.timeout(Duration.seconds(10)))
+        const heldStatuses = [...record.statuses]
+        const heldEvents = record.journaled.map((entry) => entry.eventType)
+        yield* Deferred.succeed(release, void 0)
+        yield* Deferred.await(wrote).pipe(Effect.timeout(Duration.seconds(10)))
+        return {
+          acceptance,
+          first,
+          heldStatuses,
+          heldEvents,
+          statuses: [...record.statuses],
+          settledEvents: record.journaled.map((entry) => entry.eventType)
+        }
+      }))
+
+    expect(observed.acceptance).toBe("accepted")
+    expect(observed.first).toBe("ordering-entered")
+    expect(ordered).toEqual([runId])
+    // The run has finished and its status is still unwritten: that is the whole
+    // point. A reader folding the journal here cannot see a terminal status.
+    expect(observed.heldStatuses).toEqual([])
+    expect(observed.heldEvents.filter((kind) => kind.startsWith("control.run."))).toEqual([])
+    expect(observed.statuses).toEqual(["completed"])
+    expect(observed.settledEvents).toContain("control.run.completed")
+  })
+
+  it("still ends the run when the ordering dies instead of answering", async () => {
+    const record = recorder()
+    const wrote = Deferred.makeUnsafe<void>()
+
+    const observed = await withExecutor(record, {
+      journal: journalWatching(record, wrote),
+      orderTerminalStatus: () => Effect.die("the host's observation is gone")
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        yield* Deferred.await(wrote).pipe(Effect.timeout(Duration.seconds(10)))
+        return { statuses: [...record.statuses], events: record.journaled.map((entry) => entry.eventType) }
+      }))
+
+    expect(observed.statuses).toEqual(["completed"])
+    expect(observed.events).toContain("control.run.completed")
+  })
+
+  it("writes the terminal status inline when no host orders it", async () => {
+    const record = recorder()
+
+    const observed = await launched(record)
+
+    expect(observed.acceptance).toBe("accepted")
+    expect(observed.status).toBe("completed")
+    expect(record.statuses).toEqual(["completed"])
   })
 })
