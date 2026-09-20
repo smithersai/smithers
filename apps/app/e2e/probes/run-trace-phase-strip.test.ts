@@ -231,6 +231,21 @@ test("interleaved native steps keep every pin, cluster member and slider positio
   } finally { await page.close() }
 }, 30000)
 
+test("the band a moment is in is the one that recorded it, not the one that started last", async () => {
+  const page = await open("interleaved")
+  try {
+    const current = page.locator("[data-phase-band][aria-current=location]")
+    await page.locator('.run-phase-pin[aria-label="read-only · #3"]').click()
+    await settled(page, "3")
+    expect(await current.count()).toBe(1)
+    expect(await current.getAttribute("data-phase-band")).toBe("researching")
+    await page.locator('.run-phase-pin[aria-label="repeat · #4"]').click()
+    await settled(page, "4")
+    expect(await current.count()).toBe(1)
+    expect(await current.getAttribute("data-phase-band")).toBe("implementing")
+  } finally { await page.close() }
+}, 30000)
+
 test("a band door commits its own sequence, including the band the journal's last record opened", async () => {
   const page = await open("tail")
   try {

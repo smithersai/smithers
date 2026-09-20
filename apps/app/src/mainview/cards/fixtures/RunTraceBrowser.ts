@@ -37,7 +37,11 @@ const events = scenario === "interleaved" ? [
   native(4, "control.agent.repeat-demanded", RIGHT, 1000, { frames: 4, cap: 4 }),
   native(5, "control.agent.narrow-only-demanded", LEFT, 1000, { flow: "bash", targets: ["tests"], nextFrame: 2 }),
   native(6, "control.agent.sufficiency-observed", RIGHT, 1000, { flow: "bash", failed: "a", passed: "b", nextFrame: 2 }),
-  stamp(7, "run.completed", 5000)
+  // One step reads while the other writes, on one stamp: the two bands cover
+  // the same ground, so only the recorded step says which one a moment is in.
+  native(7, "control.agent.cell-call-started", LEFT, 1000, { callId: "a1", flowName: "read", input: { path: "src/a.ts" } }),
+  native(8, "control.agent.cell-call-started", RIGHT, 1000, { callId: "b1", flowName: "write", input: { path: "src/b.ts" } }),
+  stamp(9, "run.completed", 5000)
 ] : scenario === "cluster" ? [
   stamp(1, "agent.turn-opened", 1000),
   stamp(2, "agent.read-only-demand-issued", 1200),
