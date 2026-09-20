@@ -301,8 +301,36 @@ describe("§3 the keyboard contract", () => {
     await press(view, "k", { meta: true })
     await view.act(() => view.controller.changeDraft("/issues"))
     await press(view, "Enter")
-    expect(invoked(view.store).map(row => row.name)).toContain("issues.list")
+    // The bare door named outright is the act, not whichever issues.* row the menu led with.
+    expect(invoked(view.store).map(row => row.name)).toContain("issues")
     expect(invoked(view.store).some(row => row.name === "chat.send" || row.name.startsWith("search."))).toBe(false)
+  })
+
+  /*
+   * Will typed `/model` on production and got the Models card AND an Add
+   * credential form: the menu for "model" led with `/model.credential.new`
+   * and Enter ran that row. A whole name typed outright is that flow.
+   */
+  test("/model named outright runs the bare door, never the row the menu led with", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/model"))
+    expect(highlighted(view.host)?.getAttribute("data-flow")).toBe("model.credential.new")
+    await press(view, "Enter")
+    expect(invoked(view.store).map(row => row.name)).toContain("model")
+    expect(invoked(view.store).some(row => row.name.startsWith("model.credential"))).toBe(false)
+  })
+
+  test("a highlight the person moved is their choice: Enter runs that row, not the outright name", async () => {
+    const view = await mount()
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/model"))
+    await press(view, "ArrowDown")
+    const chosen = highlighted(view.host)?.getAttribute("data-flow")
+    expect(chosen).toBe("model.credential.enroll")
+    await press(view, "Enter")
+    expect(invoked(view.store).map(row => row.name)).toContain(chosen!)
+    expect(invoked(view.store).some(row => row.name === "model")).toBe(false)
   })
 
   test("Escape dismisses the slash overlay, then closes the composer on the next press", async () => {

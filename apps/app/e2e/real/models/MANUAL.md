@@ -148,7 +148,9 @@ a provider that is down). The failed toast carries the same button.
 
 From here on there are more than four models, and the card in the transcript
 shows four. Find a row in the maximized card (`/model.list`, `Maximize card`),
-which lists every model. `Edit` and `Compose` return to the transcript.
+which lists every model. A pane row carries `Test` and `Compose`; click the row
+and its facts carry `Edit` and `Remove` too. `Edit` and `Compose` return to the
+transcript.
 
 | # | Create this model (other fields as in step 3) | Click `Test`. See on the row | Journal |
 | --- | --- | --- | --- |

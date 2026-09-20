@@ -46,8 +46,12 @@ test("the bare /model door opens the models card", scenario("models.bare-door", 
   coverage: ["action:model", "host:local", "path:success", "door:slash", "evidence:models-card-readback"]
 }), async ({ page }) => {
   await boot(page)
+  const forms = page.locator('.smithers-card[data-kind="flow-form"]')
+  const before = await forms.count()
   const card = await listModels(page, "/model")
   await expect(card.getByTestId("model-new")).toBeVisible()
+  // The whole name is the act: the menu led with `/model.credential.new`, and Enter must not open its form.
+  await expect(forms).toHaveCount(before)
 })
 
 test("a model saved past the embedded card's few rows is still the row in view", scenario("models.embedded-overflow", {
@@ -265,7 +269,9 @@ test("Edit changes a model in place and the change survives a reload", scenario(
   await createModel(page, chat(name))
   // Pressed in the pane: the form is a card in the transcript, so the pane gives way to it.
   await maximize(page)
-  await modelRow(page, name).getByRole("button", { name: "Edit", exact: true }).click()
+  // A pane row carries Test and Compose; Edit and Remove are the selected model's acts, beside its facts.
+  await modelRow(page, name).locator(".models-row-select").click()
+  await modelDetail(page).getByRole("button", { name: "Edit", exact: true }).click()
   await expect(modelsCard(page)).toHaveAttribute("data-maximized", "false")
   await fillModelForm(page, { modelId: PROVIDER_MODEL.garbled })
   await maximize(page)
@@ -292,7 +298,8 @@ test("Remove deletes a model for good and hands its seat back to the host", scen
   await maximize(page)
   await seatSelect(page, "explainer").selectOption(name)
   await expect(seatSelect(page, "explainer")).toHaveValue(name)
-  await modelRow(page, name).getByRole("button", { name: "Remove", exact: true }).click()
+  await modelRow(page, name).locator(".models-row-select").click()
+  await modelDetail(page).getByRole("button", { name: "Remove", exact: true }).click()
   await expect(modelRow(page, name)).toHaveCount(0)
   await expect(seatSelect(page, "explainer")).toHaveValue("default")
   await expect(seatSelect(page, "explainer").locator(`option[value="${name}"]`)).toHaveCount(0)

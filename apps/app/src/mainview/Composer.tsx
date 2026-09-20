@@ -845,7 +845,7 @@ export function Composer({
    * hides until the draft changes), which the palette's Escape reuses.
    */
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const [slashMenu, setSlashMenu] = useState<{ draft: string; index: number; dismissed: boolean; resultSelected?: boolean }>({
+  const [slashMenu, setSlashMenu] = useState<{ draft: string; index: number; dismissed: boolean; resultSelected?: boolean; moved?: boolean }>({
     draft: "",
     index: 0,
     dismissed: false
@@ -926,7 +926,7 @@ export function Composer({
         inputRef.current?.focus()
         return true
       case "move":
-        setSlashMenu({ draft: sourceKey, index: decision.index, dismissed: false, resultSelected: decision.resultSelected })
+        setSlashMenu({ draft: sourceKey, index: decision.index, dismissed: false, resultSelected: decision.resultSelected, moved: true })
         return true
       case "open-namespace":
         openNamespace(decision.id)
@@ -1020,6 +1020,17 @@ export function Composer({
       }
       return
     }
+    /*
+     * `/model` names a hidden door outright while the menu lists its namespace,
+     * so the first row is another flow (`/model.credential.new`); Enter used
+     * to run that row and open a form nobody asked for. The whole name wins
+     * unless the person moved the highlight to a row of their own.
+     */
+    const outright = inputAnswer.parsed.mode === "flows" && inputQuery !== undefined && inputQuery !== "" &&
+        !inputSlashRows.some((row) => row.kind === "flow" && row.flow.name.toLowerCase() === inputQuery) &&
+        controller.commands.find(inputQuery) !== undefined
+      ? inputQuery
+      : undefined
     const decision = paletteKey({
       key: event.key,
       meta: event.metaKey || event.ctrlKey,
@@ -1029,6 +1040,8 @@ export function Composer({
       rows: inputRows,
       highlighted: changed ? 0 : slashHighlighted,
       resultSelected: !changed && slashMenuLive.resultSelected === true,
+      outright,
+      moved: !changed && slashMenuLive.moved === true,
       slashBranch: changed ? (inputQuery !== undefined && /^[a-z0-9_-]+\.$/.test(inputQuery) ? inputQuery.slice(0, -1) : undefined) : slashBranch
     })
     const performed = perform(decision, inputDraft)
@@ -1076,7 +1089,7 @@ export function Composer({
             rows={rows}
             highlighted={slashHighlighted}
             slashBranch={slashBranch}
-            onHighlight={(index) => setSlashMenu({ draft: overlayKey, index, dismissed: false })}
+            onHighlight={(index) => setSlashMenu({ draft: overlayKey, index, dismissed: false, moved: true })}
             onChoose={chooseRow}
           />
         ) :

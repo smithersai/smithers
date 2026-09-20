@@ -109,6 +109,14 @@ export interface PaletteKeyInput {
   readonly resultSelected: boolean
   /** The draft is inside a `/ns.` branch (the slash tree's own back key). */
   readonly slashBranch: string | undefined
+  /**
+   * The flow the draft names OUTRIGHT (`/model`) when no row carries that name:
+   * a hidden door whose namespace the menu lists instead. Enter on a whole name
+   * is that flow, never the row the menu happened to lead with.
+   */
+  readonly outright?: string
+  /** The person moved the highlight (arrows or pointer) since the draft last changed: the row is their choice. */
+  readonly moved?: boolean
 }
 
 const wrap = (index: number, length: number): number => (length === 0 ? 0 : (index + length) % length)
@@ -144,6 +152,7 @@ export const paletteKey = (input: PaletteKeyInput): PaletteDecision => {
     return draft === "" ? { kind: "close", overlayOnly: false } : { kind: "none" }
   }
   if (key === "Enter" && !shift) {
+    if (input.outright !== undefined && input.moved !== true) return { kind: "run-flow", name: input.outright }
     const chosen = rows.rows.length === 1 ? rows.rows[0] : row
     if (chosen?.kind === "ask" || (answer.parsed.prefix === "" && !input.resultSelected)) return { kind: "send" }
     if (chosen?.kind === "slash") {

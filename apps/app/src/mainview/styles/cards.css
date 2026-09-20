@@ -1404,6 +1404,15 @@
 	gap: 0.75rem;
 	min-width: 0;
 }
+/* A pane row is one line: the name gives way with an ellipsis, the acts never wrap under it. */
+.models-pane .models-row {
+	flex-wrap: nowrap;
+}
+.models-pane .workflow-list-text > strong {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 @media (max-width: 600px) {
 	.models-pane { grid-template-columns: 1fr; }
 }

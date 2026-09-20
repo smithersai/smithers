@@ -69,13 +69,17 @@ const TestMark = ({ test, running }: { readonly test: ModelTestRecord | undefine
   </span>
 )
 
-/** Test and Compose for every model; Edit and Remove only for a record the user owns. */
-const ModelActs = ({ model, running, onRunCommand }: { readonly model: Model; readonly running: boolean; readonly onRunCommand: RunCommand }) => (
+/**
+ * Test and Compose for every model; Edit and Remove only for a record the user
+ * owns, and only where the row has the width: a `brief` row (the pane's list,
+ * a column beside the facts) leaves them to the facts of the selected model.
+ */
+const ModelActs = ({ model, running, onRunCommand, brief = false }: { readonly model: Model; readonly running: boolean; readonly onRunCommand: RunCommand; readonly brief?: boolean }) => (
   <>
     <Button size="sm" variant="outline" disabled={running} {...flowAction(onRunCommand, "model.test", model.id)}>Test</Button>
     <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.compose", model.id)}>Compose</Button>
-    {model.builtin === true ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.edit", model.id)}>Edit</Button>}
-    {model.builtin === true ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.remove", model.id)}>Remove</Button>}
+    {model.builtin === true || brief ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.edit", model.id)}>Edit</Button>}
+    {model.builtin === true || brief ? null : <Button size="sm" variant="ghost" {...flowAction(onRunCommand, "model.remove", model.id)}>Remove</Button>}
   </>
 )
 
@@ -86,7 +90,8 @@ const ModelRow = ({
   onRunCommand,
   selected,
   selectable,
-  acts
+  acts,
+  brief
 }: {
   readonly model: Model
   readonly card: ModelsCard
@@ -94,6 +99,7 @@ const ModelRow = ({
   readonly selected: boolean
   readonly selectable: boolean
   readonly acts: boolean
+  readonly brief?: boolean
 }) => {
   const test = card.payload.tests.find((record) => record.id === model.id)
   const running = card.payload.testing.includes(model.id)
@@ -120,7 +126,7 @@ const ModelRow = ({
         <button type="button" className="models-row-select" aria-pressed={selected} {...flowAction(onRunCommand, "model.show", model.id)}>{text}</button> :
         text}
       <TestMark test={test} running={running} />
-      {acts ? <span className="flow-run-actions"><ModelActs model={model} running={running} onRunCommand={onRunCommand} /></span> : null}
+      {acts ? <span className="flow-run-actions"><ModelActs model={model} running={running} onRunCommand={onRunCommand} brief={brief} /></span> : null}
     </li>
   )
 }
@@ -303,7 +309,7 @@ export const ModelsCardBody = ({
         {models.length === 0 ? empty : (
           <ul className="workflow-list" data-testid="models-list">
             {models.map((model) => (
-              <ModelRow key={model.id} model={model} card={card} onRunCommand={onRunCommand} selected={model.id === current?.id} selectable acts />
+              <ModelRow key={model.id} model={model} card={card} onRunCommand={onRunCommand} selected={model.id === current?.id} selectable acts brief />
             ))}
           </ul>
         )}
