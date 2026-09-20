@@ -1,5 +1,5 @@
 import { scenario } from "./coverage/types"
-import { closeComposer, command, expect, openComposer, test } from "./support/test"
+import { closeComposer, command, expect, openComposer, reloadApp, test } from "./support/test"
 import {
   decodedFramePath,
   enterCanonicalRepositoryApp,
@@ -59,7 +59,7 @@ test("a portable form card keeps its component and unfinished value through keyb
   await cancel.focus()
   await cancel.press("Enter")
   await expect(card).toHaveCount(0)
-  await page.reload()
+  await reloadApp(page)
   await expect(page.getByTestId(WIKI_FORM_CARD_ID)).toHaveCount(0)
 })
 
@@ -101,14 +101,14 @@ test("URL-pointer mode traverses browser history and restores its maximized form
   await page.goForward()
   await expect(page).toHaveURL(maximizedUrl)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await page.reload()
+  await reloadApp(page)
   await expect(page).toHaveURL(maximizedUrl)
   await expect(card).toHaveAttribute("data-maximized", "true")
   await expect(path).toHaveValue(marker)
 
   await card.getByRole("button", { name: "Restore", exact: true }).click()
   await expect(page).toHaveURL(rootUrl)
-  await page.reload()
+  await reloadApp(page)
   await expect(card).toHaveAttribute("data-maximized", "false")
   await expect(path).toHaveValue(marker)
 })
@@ -147,7 +147,7 @@ test("canonical slashless repository navigation keeps the URL fixed and persists
   expect(maximized).toMatchObject({ workspaceId: root.workspaceId, branchId: root.branchId })
   expect(maximized.frameId).not.toBe(root.frameId)
   await expect(card).toHaveAttribute("data-maximized", "true")
-  await page.reload()
+  await reloadApp(page)
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(maximized)
   await expect(card).toHaveAttribute("data-maximized", "true")
@@ -244,7 +244,7 @@ test("open in tab shares unfinished wiki state and persists both the session and
   await expect(page).toHaveURL(repositoryUrl)
 
   await tabCard.getByTestId("flow-form-path").fill(second)
-  await page.reload()
+  await reloadApp(page)
   // The durable tab restores active; the shared form record keeps the edit.
   await expect(page.getByTestId(`tab-body-${WIKI_FORM_CARD_ID}`)).toBeVisible()
   await expect(tabCard.getByTestId("flow-form-path")).toHaveValue(second)
@@ -284,7 +284,7 @@ test("the shipped practice issue card keeps local history, reloads it, and disca
 
   await card.getByRole("button", { name: "Back in frame", exact: true }).click()
   await expect(card).toHaveAttribute("data-kind", "issue-list")
-  await page.reload()
+  await reloadApp(page)
   await expect(card).toHaveAttribute("data-kind", "issue-list")
   await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeEnabled()
 
@@ -294,7 +294,7 @@ test("the shipped practice issue card keeps local history, reloads it, and disca
   await card.locator('[data-issue="2"] button[data-flow="issues.view"]').click()
   await expect(card.locator('article[data-issue="2"]')).toBeVisible()
   await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeDisabled()
-  await page.reload()
+  await reloadApp(page)
   await expect(card.locator('article[data-issue="2"]')).toBeVisible()
 })
 
@@ -355,7 +355,7 @@ test("forking a historical form frame restores its recorded draft and isolates l
 
   await path.fill(forkOnly)
   await expect(path).toHaveValue(forkOnly)
-  await page.reload()
+  await reloadApp(page)
   await expect(page).toHaveURL(repositoryUrl)
   await expect.poll(() => frameLocation(page)).toEqual(forkFrame)
   await expect(path).toHaveValue(forkOnly)
@@ -407,7 +407,7 @@ test("the practice issue payload also isolates historical fork state and preserv
 
   await card.locator('[data-issue="2"] button[data-flow="issues.view"]').click()
   await expect(card.locator('article[data-issue="2"]')).toBeVisible()
-  await page.reload()
+  await reloadApp(page)
   await expect(page).toHaveURL(forkUrl)
   await expect(card.locator('article[data-issue="2"]')).toBeVisible()
 
@@ -448,14 +448,14 @@ test("archive creates a durable new conversation whose recovery link restores th
   const freshUrl = page.url()
   await closeComposer(page)
 
-  await page.reload()
+  await reloadApp(page)
   await expect(page).toHaveURL(freshUrl)
   await expect(recoveryLink).toBeVisible()
   await recoveryLink.click()
   await expect(page).toHaveURL(archivedUrl)
   await expect(card).toBeVisible()
   await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await page.reload()
+  await reloadApp(page)
   await expect(card.locator('article[data-issue="3"]')).toBeVisible()
 
   await page.goBack()
@@ -482,7 +482,7 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
 }), async ({ page, context }) => {
   const marker = "physical-opfs-schema-stamp.md"
   const opened = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
-  await page.reload()
+  await reloadApp(page)
   await expect(opened.path).toHaveValue(marker)
 
   const database = await takeDatabaseControl(page, context)
@@ -535,7 +535,7 @@ test("a future-schema physical OPFS database fails closed, exports exact rows, a
   const marker = "physical-opfs-recovery.md"
   const futureVersion = "2147483647"
   const opened = await openWikiForm(page, marker, enterCanonicalRepositoryApp)
-  await page.reload()
+  await reloadApp(page)
   await expect(opened.path).toHaveValue(marker)
   await command(page, "/storage.recovery")
   await expect(page.getByRole("button", { name: "Download local recovery file" })).toHaveAttribute("data-flow", "storage.recovery.export")
