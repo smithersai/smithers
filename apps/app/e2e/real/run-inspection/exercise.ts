@@ -263,9 +263,23 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     await at(later.seq, "later phase Space")
     const positions = [...new Set(rows.map(row => Number(row.sequence)))].sort((a, b) => a - b)
     const slider = trace.getByRole("slider", { name: "Run position" })
-    for (const [key, index] of [["Home", 0], ["ArrowRight", 1], ["PageUp", 11], ["PageDown", 1], ["End", positions.length - 1], ["ArrowLeft", positions.length - 2]] as const) {
+    const valuenow = async () => Number(await slider.getAttribute("aria-valuenow"))
+    /*
+     * The card's own stops are the records it holds, which is a subset of the
+     * journal read here: its last stop was two sequences behind the projection.
+     * Counting stops off the journal therefore names a position the card never
+     * had. Each key is required instead to land on a recorded position, in its
+     * own direction, and `at` then checks the exact cursor and log cap there.
+     */
+    for (const [key, forward] of [["Home", false], ["ArrowRight", true], ["PageUp", true], ["PageDown", false], ["End", true], ["ArrowLeft", false]] as const) {
+      const before = await valuenow()
       await press(slider, key)
-      await at(positions[Math.min(Math.max(index, 0), positions.length - 1)]!, `slider ${key}`)
+      const moved = expect.poll(valuenow, { message: `${key} must move the cursor`, timeout: 15_000 })
+      if (forward) await moved.toBeGreaterThan(before)
+      else await moved.toBeLessThan(before)
+      const landed = await valuenow()
+      expect(positions, `${key} must land on a recorded position`).toContain(landed)
+      await at(landed, `slider ${key}`)
     }
     await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
     await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
