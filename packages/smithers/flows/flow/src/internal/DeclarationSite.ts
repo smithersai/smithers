@@ -87,6 +87,36 @@ const normalize = (path: string): string =>
   path.startsWith("file://") ? decodeURIComponent(path.slice("file://".length)) : path
 
 /**
+ * Where bytes a host evaluated from one file were read from. @private
+ *
+ * Keyed by the file that was evaluated, which a loader makes unique per load.
+ */
+const sources = new Map<string, string>()
+
+/**
+ * States that a file this runtime is about to evaluate holds bytes read from
+ * another, so declarations inside it report the file an author can open.
+ *
+ * A host that verifies a flow's source has to evaluate THE BYTES IT MEASURED,
+ * and the only way to evaluate bytes in this runtime is to write them
+ * somewhere and import that path. `@smthrs/registry` `Executable` writes them
+ * as a scratch sibling of the entry and removes it as soon as the load is
+ * over, so without this every declaration in an agent-authored flow reports a
+ * path nothing holds — a Code tab that can never be opened (D-068).
+ *
+ * The loader states this BEFORE the import, because a declaration's site is
+ * captured while the module is evaluated and is never rewritten afterwards.
+ * One entry is kept per load: a scratch path is unique and gone, so no later
+ * file can take a stale entry's name.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const evaluatedFrom = (evaluated: string, entry: string): void => {
+  sources.set(normalize(evaluated), normalize(entry))
+}
+
+/**
  * The position one stack frame names, in the V8 and JavaScriptCore spellings.
  *
  * V8 writes `    at name (/path/file.ts:12:5)` and, for a top-level frame,
@@ -103,7 +133,10 @@ export const parseFrame = (frame: string): DeclaredAt | undefined => {
   const position = /^(.*):(\d+):(\d+)$/.exec(text)
   if (position === null) return undefined
   const line = Number(position[2])
-  return { path: normalize(position[1]!), line }
+  // A frame naming a file a host evaluated measured bytes into reports the
+  // entry those bytes were read from; every other frame reports itself.
+  const path = normalize(position[1]!)
+  return { path: sources.get(path) ?? path, line }
 }
 
 /**

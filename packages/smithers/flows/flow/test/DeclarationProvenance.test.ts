@@ -121,6 +121,35 @@ describe("declaration provenance parsing", () => {
     })
   })
 
+  /*
+   * A host that verifies a flow's source evaluates the bytes it measured, and
+   * evaluating bytes here means writing them somewhere and importing that
+   * path. The scratch file is removed when the load is over, so a declaration
+   * captured in it would name a file nothing holds. The loader says which
+   * entry the bytes came from and a capture answers with that instead — and
+   * only for that file: every other frame reports itself, including one that
+   * merely sits beside it.
+   */
+  it("answers with the entry a host evaluated measured bytes from", () => {
+    const scratch = "/repo/flows/review/.smithers-8d9-b-3ktz.ts"
+    expect(DeclarationSite.parseFrame(`    at declare (${scratch}:9:3)`)).toEqual({ path: scratch, line: 9 })
+    // Through the public module, which is the one a host holds.
+    Graph.evaluatedFrom(scratch, "/repo/flows/review/flow.ts")
+    expect(DeclarationSite.parseFrame(`    at declare (${scratch}:9:3)`)).toEqual({
+      path: "/repo/flows/review/flow.ts",
+      line: 9
+    })
+    // A url frame for the same file is the same file.
+    expect(DeclarationSite.parseFrame(`    at declare (file://${scratch}:4:1)`)).toEqual({
+      path: "/repo/flows/review/flow.ts",
+      line: 4
+    })
+    expect(DeclarationSite.parseFrame("    at declare (/repo/flows/review/other.ts:9:3)")).toEqual({
+      path: "/repo/flows/review/other.ts",
+      line: 9
+    })
+  })
+
   it("reports nothing rather than guessing at a frame it cannot read", () => {
     expect(DeclarationSite.parseFrame("Error: boom")).toBeUndefined()
     expect(DeclarationSite.parseFrame("    at native")).toBeUndefined()

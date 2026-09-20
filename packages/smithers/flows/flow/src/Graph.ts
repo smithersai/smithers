@@ -1667,6 +1667,29 @@ export const nodes = (graph: Graph): ReadonlyArray<GraphNode> => graph.nodes
 export const edges = (graph: Graph): ReadonlyArray<Edge> => graph.edges
 
 /**
+ * States that a file this runtime is about to evaluate holds bytes read from
+ * another, so the declarations inside it are reported at the file an author
+ * can open.
+ *
+ * A host that verifies a flow's source evaluates THE BYTES IT MEASURED, and
+ * the only way to evaluate bytes here is to write them somewhere and import
+ * that path: `@smthrs/registry` `Executable` writes them as a scratch sibling
+ * of the entry and removes it when the load is over. Without this, every node
+ * of an agent-authored flow names that scratch file, and a reader offered its
+ * path is offered a file nothing holds (D-068).
+ *
+ * The loader states this BEFORE it imports, because a declaration captures its
+ * site while the module is evaluated and never rewrites it. Both sides hold
+ * the same module: a loaded flow is recognized by this package's own type id,
+ * so a graph file resolving a second copy of `@smthrs/flow` is refused as not
+ * a flow at all rather than registered with a site nothing corrected.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const evaluatedFrom = (evaluated: string, entry: string): void => DeclarationSite.evaluatedFrom(evaluated, entry)
+
+/**
  * The drafts, in node order, ready for `Plan.compile` or `Plan.append`
  * unchanged.
  *

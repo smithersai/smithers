@@ -25,9 +25,15 @@ importing it: a `description`, its `payload` and `success` schemas, and the
 `capabilities` it needs.
 
 ```ts
-import { Flow } from "@smthrs/flow"
+import { Action, Flow } from "@smthrs/flow"
 import { Schema } from "effect"
-// Review is one of the actions from step 2.
+
+// One of the actions from step 2. A declaration carries no code: the host
+// resolves the implementation by name when the step is dispatched.
+const Review = Action.make("example/Review/Read", {
+  payload: { change: Schema.String },
+  success: Schema.String
+})
 
 class ReviewFailure extends Schema.TaggedError<ReviewFailure>()(
   "example/ReviewFailure",

@@ -55,6 +55,7 @@ import * as Action from "@smthrs/flow/Action"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import * as RuntimeFlow from "@smthrs/flow/Flow"
 import { FlowInstance, type FlowRuntime } from "@smthrs/flow/FlowRuntime"
+import * as Graph from "@smthrs/flow/Graph"
 import * as Interpreter from "@smthrs/flow/Interpreter"
 import type * as FileSet from "@smthrs/plan/FileSet"
 import * as PlanNode from "@smthrs/plan/Node"
@@ -495,6 +496,10 @@ const importModule = (
       (reserved) => fs.remove(reserved).pipe(Effect.orDie)
     )
     yield* fs.writeFile(modulePath, source.bytes)
+    // Said before the import, because a declaration captures its site while
+    // the module is evaluated: without it every node of this flow would name
+    // the scratch file removed on the line above's release (D-068).
+    Graph.evaluatedFrom(modulePath, sourcePath)
     return yield* Effect.tryPromise({
       try: () => import(/* @vite-ignore */ fileSpecifier(modulePath)) as Promise<unknown>,
       catch: (cause) => cause

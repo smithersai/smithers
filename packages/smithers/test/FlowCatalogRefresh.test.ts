@@ -25,7 +25,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, type FileSystem, Layer, Stream } from "effect"
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { mkdir, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -37,6 +37,35 @@ const modulesRoot = fileURLToPath(new URL("../agent/node_modules", import.meta.u
 
 /** The registry entry the run writes, named by the directory it sits in. */
 const AUTHORED = "flows/authored/flow.ts"
+
+/**
+ * The `@smthrs/flow` GRAPH file a run writes, named by the directory it sits
+ * in. A declaration names a delegate the host already holds; a graph file IS
+ * the body, and nothing has a delegate for it.
+ */
+const GRAPH = "flows/review/flow.ts"
+
+/** The action that file's body names. The project implements it by name. */
+const REVIEW_STEP = "example/Review/Read"
+
+/**
+ * That file, lifted out of the instructions an authoring agent is given.
+ *
+ * `flows/create-flow/scaffold/flow.mdx` is the whole of what the scaffolder
+ * reads before it writes `flows/<name>/flow.ts`. If its one example and this
+ * host's loader drift apart, every agent-written flow is refused and the
+ * document is what taught the refusal. Reading the fence rather than a copy of
+ * it is what keeps the two together.
+ */
+const scaffoldExample = (): string => {
+  const document = readFileSync(
+    fileURLToPath(new URL("../../../flows/create-flow/scaffold/flow.mdx", import.meta.url)),
+    "utf8"
+  )
+  const fence = /```ts\n([\s\S]*?)\n```/.exec(document)
+  if (fence === null) throw new Error("flows/create-flow/scaffold/flow.mdx no longer holds a TypeScript example")
+  return `${fence[1]!}\n`
+}
 
 /**
  * What a discovered module flow is: a declaration naming the delegate that
@@ -102,6 +131,22 @@ const Write = Action.make("catalog/Write", {
   idempotencyKey: ({ revision }) => "author-" + revision
 })
 
+const WriteGraph = Action.make("catalog/WriteGraph", {
+  payload: { text: Schema.String },
+  success: Schema.String,
+  implementationVersion: "1",
+  fileBoundary: { readSet: [], writeSet: [${JSON.stringify(GRAPH)}], boundaryMode: "hard" },
+  idempotencyKey: () => "author-graph"
+})
+
+/** The delegate that writes a @smthrs/flow graph file rather than a declaration. */
+export const AuthorGraph = Flow.make("catalog/AuthorGraph", {
+  payload: Executable.Invocation,
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ input }) => WriteGraph.call({ text: (input as { readonly text: string }).text })
+})
+
 /** The delegate the authoring flow names: one sealed write of one entry file. */
 export const Author = Flow.make("catalog/Author", {
   payload: Executable.Invocation,
@@ -117,9 +162,22 @@ export const Author = Flow.make("catalog/Author", {
 /** Everything this project registers with the host it runs on. */
 export const registrations = Layer.mergeAll(
   Interpreter.layer(Author),
+  Interpreter.layer(AuthorGraph),
   Interpreter.layer(Authored),
   Interpreter.layer(Revised),
   Probe.toLayer(({ step }) => Effect.succeed(step)),
+  Action.make(${JSON.stringify(REVIEW_STEP)}, { payload: { change: Schema.String }, success: Schema.String })
+    .toLayer(({ change }) => Effect.succeed("reviewed " + change)),
+  WriteGraph.toLayer(
+    ({ text }) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        yield* fs.makeDirectory("flows/review", { recursive: true })
+        yield* fs.writeFileString(${JSON.stringify(GRAPH)}, text)
+        return ${JSON.stringify(GRAPH)}
+      }).pipe(Effect.orDie),
+    { implementationVersion: "1" }
+  ),
   Write.toLayer(
     ({ text }) =>
       Effect.gen(function*() {
@@ -158,6 +216,7 @@ const project = async (authored?: string) => {
  */
 interface Delegates {
   readonly Author: Executable.Delegate
+  readonly AuthorGraph: Executable.Delegate
   readonly Authored: Executable.Delegate
   readonly Revised: Executable.Delegate
   readonly registrations: Layer.Layer<never, never, Executable.Registration | FileSystem.FileSystem>
@@ -452,6 +511,102 @@ it("leaves a flow its run wrote unplannable until it is started again, when the 
       )
     ))
     expect(restarted.nodes.length).toBeGreaterThan(1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 300_000)
+
+/**
+ * The same loop, over the file the scaffold actually teaches an agent to write.
+ *
+ * The two cases above author a `@smthrs/core` DECLARATION: metadata naming a
+ * delegate the host already registered, whose nodes are declared in the
+ * project's own `delegate.ts`. `flows/create-flow/scaffold/flow.mdx` teaches
+ * the author to write a `@smthrs/flow` GRAPH instead — one flow,
+ * default-exported, whose body is the whole of what runs — so the file a real
+ * builder loop produces is one nothing has a delegate for. It is its own
+ * delegate, and its nodes are declared in IT.
+ *
+ * The bytes are LIFTED OUT of that document rather than copied into this file,
+ * because the document and the loader drifting apart is the defect: an example
+ * the loader refuses is an instruction to write flows this host cannot run,
+ * and nothing else in the repository reads it.
+ *
+ * Which is also what makes the declaration sites the property under test. A
+ * reader of this plan opens the code it will run (D-068), so every site has to
+ * name the entry file on disk.
+ */
+it("plans and runs the @smthrs/flow graph file the scaffold teaches, whose nodes name that file", async () => {
+  const root = await project()
+  try {
+    // The authoring half: a declaration naming the delegate that writes a
+    // graph file, standing where the project's own flows stand.
+    await mkdir(join(root, "flows", "author-graph"), { recursive: true })
+    await writeFile(join(root, "flows", "author-graph", "flow.ts"), declaration("catalog/AuthorGraph", ["flows/**"]))
+    const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates
+    const registry = NodeControl.layerRegistry(root)
+    const modules = Executable.layer({
+      delegates: [registered.Author, registered.AuthorGraph, registered.Authored, registered.Revised]
+    }).pipe(Layer.provideMerge(registered.registrations), Layer.orDie)
+
+    const observed = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        const launch = (planId: string, digest: string, envelope: never, key: string) =>
+          Effect.gen(function*() {
+            const receipt = yield* control.run({ _tag: "Plan", planId, digest, envelope, idempotencyKey: key })
+            if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+              return yield* Effect.die(`launch refused: ${JSON.stringify(receipt)}`)
+            }
+            return receipt.runId
+          })
+        const settle = (runId: string) =>
+          control.watch({ runId, follow: true }).pipe(
+            Stream.takeUntil((event) => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+            Stream.runCollect
+          )
+        const plan = (flowId: string, input: unknown, key: string) =>
+          Effect.gen(function*() {
+            const card = yield* control.plan({ flowId, input })
+            yield* control.approve(card.approval)
+            return { card, events: yield* settle(yield* launch(card.planId, card.digest, card.envelope as never, key)) }
+          })
+
+        // Nothing on disk names it, so the host refuses by name.
+        const before = yield* Effect.flip(control.plan({ flowId: "review", input: { change: "one line" } }))
+        yield* plan("author-graph", { text: scaffoldExample() }, "author-graph")
+        const after = yield* plan("review", { change: "one line" }, "review")
+        return {
+          before: before._tag,
+          nodes: after.card.nodes.map((node) => node.id),
+          sites: (after.card.graph?.nodes ?? []).map((node) => node.declaredAt?.path),
+          actions: after.events.filter((event) => event.kind === "control.engine.event")
+            .map((event) => event.payload as { readonly eventType: string; readonly payload: Record<string, unknown> })
+            .filter((row) => row.eventType === "flows.engine.node-settled" && row.payload["outcome"] === "built")
+            .map((row) => row.payload["action"])
+            .filter((action) => action !== null && action !== undefined),
+          status: after.events.filter((event) => event.kind.startsWith("control.run.")).map((event) => event.kind)
+        }
+      }).pipe(
+        Effect.provide(
+          NodeControl.layerControl(
+            { root, rebuildAuthoredFlows: true, evaluator: ScriptedJudge.layer },
+            registry,
+            undefined,
+            modules
+          )
+        )
+      )
+    ))
+
+    expect(observed.before).toBe("/control/FlowNotFound")
+    // A plan of the file's OWN graph: the step its body names, keyed.
+    expect(observed.nodes.length).toBeGreaterThan(1)
+    // Every node that names a declaration names the entry file the run wrote.
+    expect(new Set(observed.sites)).toEqual(new Set([GRAPH, undefined]))
+    // And the host really ran it: the step the document's example declares.
+    expect(observed.actions).toContain(REVIEW_STEP)
+    expect(observed.status).toContain("control.run.completed")
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
