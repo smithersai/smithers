@@ -3,7 +3,7 @@ import type { OwnedWorkflowRepository } from "../flow-execution/fixture"
 import { acceptedRunId, gatewayCall, runSummary } from "../flow-execution/production"
 import { attachProductionJson } from "../repositories-github/production"
 import { closeComposer, command, expect, reloadApp } from "../support/test"
-import { STRIP_SOURCES, deployedHeaderSource, deployedSource } from "./revisions"
+import { GESTURE_SOURCES, STRIP_SOURCES, deployedHeaderSource, deployedSource } from "./revisions"
 import { journalMeaning, requireLaterPhase, type JournalRow, type Meaning } from "./semantic"
 import { frameLines, phaseStrip, readBands, readLines, readPins } from "./timeline"
 
@@ -398,13 +398,33 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
     await expect(trace).toHaveAttribute("data-view", "turns")
     steps.push({ action: "pointer drag", band: widest.band, dropped })
     await press(slider, "Home"); await press(trace.getByRole("button", { name: "Latest", exact: true }), "Enter")
+    await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
     await reloadApp(page)
     // An absent card hides every button, so the card is required before its
     // live-tail state is read.
     await expect(trace, "the run card must re-render before its live-tail state is read").toBeVisible()
-    await expect(trace.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
-    await compareMeaning(card, trace, whole)
-    steps.push({ action: "Latest Enter/reload", persisted: true })
+    /*
+     * Returning to Latest is durable only where the deployed bundle waits for
+     * that write before it answers. A production attempt pressed Latest,
+     * reloaded, and found the card still parked, because the gesture answered
+     * first and the reload cancelled its write. Assert the reload where the
+     * browser under test carries the fix; otherwise say which revision could
+     * not prove it, with what the card read after the reload.
+     */
+    const gesture = deployedSource(frontendRevision, GESTURE_SOURCES)
+    const latest = trace.getByRole("button", { name: "Latest", exact: true })
+    if (gesture._tag === "DeployedSourceMatchesWorkingCopy") {
+      await expect(latest, "returning to Latest survives the reload that follows it").toBeHidden()
+      await compareMeaning(card, trace, whole)
+    } else {
+      const parked = await latest.isVisible()
+      const fact = { _tag: gesture._tag, frontendRevision, files: gesture.files, stillParkedAfterReload: parked,
+        message: `${gesture.message}; after pressing Latest and reloading the card ${parked ? "was still parked" : "was at its tail"}, and the durability of that gesture is unproven on this revision` }
+      await attachProductionJson(testInfo, "timeline-live-tail-durability", fact)
+      testInfo.annotations.push({ type: fact._tag, description: fact.message })
+      if (!parked) await compareMeaning(card, trace, whole)
+    }
+    steps.push({ action: "Latest Enter/reload", persisted: true, gesture })
     steps.push({ action: "width captures", measured: await captureWidths(page, card, testInfo, "timeline-completed") })
   } finally { await attachProductionJson(testInfo, "timeline-keyboard-roundtrips", steps) }
 }

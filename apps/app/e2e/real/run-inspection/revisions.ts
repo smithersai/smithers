@@ -15,6 +15,8 @@ export type HostManifest = { sourceCommit: string; sha256: string; object: strin
 export const HEADER_SOURCES = ["apps/app/src/mainview/cards/RunTraceStatus.ts"] as const
 /** The source whose deployed bytes decide where a pointer release commits. */
 export const STRIP_SOURCES = ["apps/app/src/mainview/cards/RunTracePhaseStrip.tsx"] as const
+/** The source whose deployed bytes decide whether a reader gesture is durable before it answers. */
+export const GESTURE_SOURCES = ["apps/app/src/mainview/state/controller/runs.ts"] as const
 /** Playwright transpiles this tier without import.meta, so the root is the first ancestor that owns the app. */
 export const repositoryRoot = (): string => {
   for (let directory = process.cwd(), previous = ""; directory !== previous; previous = directory, directory = resolve(directory, "..")) {
