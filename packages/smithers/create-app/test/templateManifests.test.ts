@@ -69,6 +69,21 @@ const smthrsSpecifiers = (manifest: Manifest): ReadonlyArray<readonly [string, s
 
 const publishedTemplates = new Set(["default"])
 
+const allSpecifiers = (manifest: Manifest): Readonly<Record<string, string>> => ({
+  ...manifest.dependencies,
+  ...manifest.devDependencies
+})
+
+/**
+ * The Effect host adapters that reach the shared adapter through a caret range.
+ *
+ * Each of these depends on `@effect/platform-node-shared` at `^<its own
+ * version>`, so a resolver may select the next shared RC, whose `effect` peer
+ * is that next RC and conflicts with the exact `effect` a template pins.
+ */
+const shared = "@effect/platform-node-shared"
+const adaptersNeedingShared = ["@effect/platform-node", "@effect/platform-bun"]
+
 describe.each(templates)("template/%s", (template) => {
   const manifest = read(join(templateRoot, template, "package.json"))
   const specifiers = smthrsSpecifiers(manifest)
@@ -101,6 +116,30 @@ describe.each(templates)("template/%s", (template) => {
       .filter((name) => workspaceManifests.get(name)?.private === true)
     if (publishedTemplates.has(template)) expect(privateNames).toEqual([])
     else expect(privateNames).toEqual(["@smthrs/ui"])
+  })
+
+  // The workspace pins the shared adapter in its root `overrides`, and a
+  // scaffolded app is not a workspace member, so it inherits nothing: naming
+  // the adapter without naming what it floats to is what made
+  // `npm install --strict-peer-deps` and `pnpm install --strict-peer-dependencies`
+  // exit 1 on a generated app. A direct pin rather than an `overrides` entry,
+  // because the cell above forbids overrides and because pnpm reads
+  // `pnpm.overrides` and would ignore npm's field anyway. The real install is
+  // `scripts/check-template-peers.test.mjs`; this cell is what makes the
+  // omission fail before anything reaches a registry.
+  it("names the shared adapter alongside every Effect host adapter it pins", () => {
+    const pins = allSpecifiers(manifest)
+    const adapters = adaptersNeedingShared.filter((name) => pins[name] !== undefined)
+    if (adapters.length === 0) {
+      expect(pins[shared], `template/${template} pins ${shared} with no adapter that needs it`).toBeUndefined()
+      return
+    }
+    for (const adapter of adapters) {
+      expect(
+        pins[shared],
+        `template/${template} pins ${adapter}, which floats ${shared}; pin ${shared} at the same version`
+      ).toBe(pins[adapter])
+    }
   })
 })
 

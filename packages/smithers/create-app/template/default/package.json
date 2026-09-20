@@ -40,6 +40,7 @@
     "vitest": "5.0.0",
     "wrangler": "^4.129.0",
     "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
     "@smthrs/testing": "1.0.0-rc.0"
   }
 }
