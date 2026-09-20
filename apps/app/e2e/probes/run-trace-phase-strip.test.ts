@@ -195,3 +195,38 @@ test("dragging within one phase commits once on release, caps the log, reloads a
     expect(await page.locator("[data-frame-line]").count()).toBe(4)
   } finally { await page.close() }
 }, 30000)
+
+test("interleaved native steps keep every pin, cluster member and slider position on its own step", async () => {
+  const page = await open("interleaved")
+  try {
+    // The scope word comes from the fixture's own step coordinates, so a
+    // selection that names it is evidence independent of the fold's ids.
+    const owner = async () => {
+      const selection = await page.evaluate(() => window.runTraceBrowser.selection)
+      return [selection.includes(encodeURIComponent('"left"')), selection.includes(encodeURIComponent('"right"'))]
+    }
+    await page.locator('.run-phase-pin[aria-label="read-only · #3"]').click()
+    await settled(page, "3")
+    expect(await owner()).toEqual([true, false])
+    await page.locator('.run-phase-pin[aria-label="repeat · #4"]').click()
+    await settled(page, "4")
+    expect(await owner()).toEqual([false, true])
+    const cluster = page.locator(".run-phase-cluster")
+    await cluster.locator("summary").click()
+    await cluster.locator('button[aria-label="sufficiency · #6"]').click()
+    await settled(page, "6")
+    expect(await owner()).toEqual([false, true])
+    const slider = page.getByRole("slider", { name: "Run position" })
+    await slider.focus()
+    await page.keyboard.press("Home")
+    await settled(page, "1")
+    expect(await owner()).toEqual([true, false])
+    await page.keyboard.press("ArrowRight")
+    await settled(page, "2")
+    expect(await owner()).toEqual([false, true])
+    // The persisted cursor and its owning frame both survive a reload.
+    await page.reload()
+    await settled(page, "2")
+    expect(await owner()).toEqual([false, true])
+  } finally { await page.close() }
+}, 30000)

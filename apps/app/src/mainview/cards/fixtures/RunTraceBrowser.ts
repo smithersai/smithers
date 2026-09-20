@@ -11,8 +11,34 @@ import { RunTraceBody } from "../RunTraceCard.tsx"
 const stamp = (sequence: number, kind: string, at: number, payload = {}) => ({
   sequence, kind: `control.${kind}`, occurredAt: at, payload: { ...payload, at }
 })
+/** Two module steps in one journal, in the producer's own outbox envelope. */
+const step = (scope: string, letter: string) => ({
+  executionId: "execution", stepId: letter.repeat(64), action: "coding/edit", attempt: 1, ask: 0, retry: 1, scope, generation: 0
+})
+const LEFT = step("left", "a")
+const RIGHT = step("right", "b")
+const native = (sequence: number, kind: string, owner: typeof LEFT, at: number, payload = {}) => ({
+  sequence, kind: "control.engine.event", occurredAt: at,
+  payload: {
+    version: 1, executionId: owner.executionId, generation: 1, sequence, emittedAtMs: at,
+    sourceId: `step-fact-v1:${owner.stepId}:${owner.attempt}:${owner.ask}:${owner.retry}`,
+    sourceSequence: sequence, eventType: "flows.harness.step-fact.v1",
+    payload: { version: 1, step: owner, generation: 0, frame: 0, ordinal: 0, cell: "", at, eventType: kind, sourceSequence: sequence, payload }
+  }
+})
+
 const scenario = new URLSearchParams(location.search).get("scenario")
-const events = scenario === "cluster" ? [
+const events = scenario === "interleaved" ? [
+  // Both steps open before either records a moment, and every moment shares
+  // one stamp: nothing but the recorded step can say whose frame it is.
+  native(1, "control.agent.turn-opened", LEFT, 1000),
+  native(2, "control.agent.turn-opened", RIGHT, 1000),
+  native(3, "control.agent.read-only-demand-issued", LEFT, 1000, { streak: 4, cap: 4, nextFrame: 2 }),
+  native(4, "control.agent.repeat-demanded", RIGHT, 1000, { frames: 4, cap: 4 }),
+  native(5, "control.agent.narrow-only-demanded", LEFT, 1000, { flow: "bash", targets: ["tests"], nextFrame: 2 }),
+  native(6, "control.agent.sufficiency-observed", RIGHT, 1000, { flow: "bash", failed: "a", passed: "b", nextFrame: 2 }),
+  stamp(7, "run.completed", 5000)
+] : scenario === "cluster" ? [
   stamp(1, "agent.turn-opened", 1000),
   stamp(2, "agent.read-only-demand-issued", 1200),
   stamp(3, "agent.repeat-demanded", 1201, { frames: 4, cap: 4 }),
