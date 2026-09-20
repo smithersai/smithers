@@ -3,13 +3,14 @@ import { timingSafeEqual } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import { LiveTutorialOperationSchema, LiveTutorialStartSchema } from "@smthrs/rpc/LiveTutorial"
 import { ensure } from "../../tutorial-executor/src/KubernetesExecutor"
-import { runAgent } from "./agent"
+import { hostEvaluator, runAgent } from "./agent"
 import { Coordinator } from "./coordinator"
 import { modelSettings } from "./model"
 import { prepareSubscription } from "./subscription"
 import { proxySettings } from "./proxy"
 import { providerRelay } from "./providerRelay"
 
+const evaluator=hostEvaluator(process.env)
 const directory=process.env.TUTORIAL_DATA_DIR??"/data"
 const settings=modelSettings(process.env)
 const proxy=proxySettings(process.env)
@@ -17,7 +18,7 @@ const token=process.env.TUTORIAL_SERVICE_TOKEN
 if(!token)throw new Error("Configure tutorial service authentication before starting")
 await mkdir(directory,{recursive:true})
 if(settings.provider==="chatgpt")await prepareSubscription(settings.authFile,process.env.TUTORIAL_CHATGPT_BOOTSTRAP_FILE)
-const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context,proxy)})
+const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context,proxy,evaluator)})
 coordinator.resume()
 setInterval(()=>{void coordinator.prune().catch(()=>console.error("Tutorial artifact cleanup failed"))},5*60*1000).unref()
 createServer(async(request,response)=>{

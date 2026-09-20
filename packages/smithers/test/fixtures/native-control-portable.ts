@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
@@ -177,7 +178,7 @@ export default Flow.make({ description: "Portable native delegate", input: Schem
       assert.equal(events[0]?.kind, "control.run.completed")
       assert.deepEqual(calls, ["native-executed"])
       yield* observe(control, receipt.runId)
-    }).pipe(Effect.provide(host.layerHost({ root }, modules)))
+    }).pipe(Effect.provide(host.layerHost({ root, evaluator: ScriptedJudge.layer }, modules)))
   ))
   trace("configured host closed")
   if (recovery || drift) {
@@ -224,7 +225,7 @@ export default Flow.make({ description: "Changed after approval", input: Schema.
         yield* Effect.sleep("2 seconds")
         assert.equal(read().status, "suspended", "ordinary executor must leave a configured module parked")
         assert.deepEqual(calls, [])
-      }).pipe(Effect.provide(host.layerHost({ root })))
+      }).pipe(Effect.provide(host.layerHost({ root, evaluator: ScriptedJudge.layer })))
     ))
     trace("ordinary host closed")
     const poll: Effect.Effect<void> = Effect.suspend(() =>
@@ -245,7 +246,7 @@ export default Flow.make({ description: "Changed after approval", input: Schema.
           assert(steeringSeen[0]!.includes("Keep the durable root steering"))
           yield* observe(control, runId!)
           trace("native observation settled")
-        }).pipe(Effect.provide(host.layerHost({ root }, modules)))
+        }).pipe(Effect.provide(host.layerHost({ root, evaluator: ScriptedJudge.layer }, modules)))
       ))
     }
   }

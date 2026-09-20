@@ -129,13 +129,12 @@ export const assessScore = (test: typeof EvalCase.Type, observed: JobResult, sco
   if (!score.evidenceIds.length || score.evidenceIds.some(id => !Number.isSafeInteger(id) || id < 0 || refs[id] === undefined)) return row("review", "The evaluator did not cite the recorded execution evidence.")
   return row(score.verdict === "pass" ? "passed" : score.verdict === "fail" ? "failed" : "review", score.reason)
 }
-/** `evaluator` is the whole model behind every row's verdict. A composition
- * that names none keeps `layerUnavailable`, so a score fails as unavailable
- * rather than recording a verdict nothing answered. */
-export const evaluationLayers = (options: { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> } = {}) => Layer.mergeAll(
+/** Every composition must supply its judge. Omitting it is a type error;
+ * an offline fixture supplies an evidence-based script, never a gateway key. */
+export const evaluationLayers = (options: { readonly evaluator: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   Interpreter.layer(ScoreExecution), Interpreter.layer(CaptureCase),
   JevScore.toLayer(({ test, observed }) => jevScore(test, observed)).pipe(
-    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
+    Layer.provide(options.evaluator)),
   RetainScore.toLayer(({ test, observed, score }) => Effect.gen(function*() {
     const assessment = assessScore(test, observed, score)
     return { caseId: test.id, ...assessment, executionId: yield* currentExecutionId }

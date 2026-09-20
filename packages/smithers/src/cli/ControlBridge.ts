@@ -8,6 +8,7 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { ApprovalAuthority, Control } from "@smthrs/control"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Registry from "@smthrs/registry/Registry"
 import { Cause, Console, Effect, Exit, Layer, Logger, References, Stream } from "effect"
 import { Command } from "effect/unstable/cli"
@@ -53,6 +54,8 @@ export type ConnectionOptions = z.output<typeof connectionOptions>
  * @since 1.0.0
  */
 export interface Runtime extends RuntimeConfig {
+  /** Explicit judge for an embedded or offline CLI host; otherwise select the gateway. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Host-owned delegation for local commands and the served gateway, never a request argument. */
   readonly approvalAuthority?: ApprovalAuthority.Service | undefined
   readonly executionRoot?: string | undefined
@@ -114,6 +117,7 @@ export const configuration = (options: ConnectionOptions, runtime: Runtime) => {
   if (config.remote === undefined) Project.assertRoot(config.root ?? process.cwd())
   return {
     ...config,
+    ...(runtime.evaluator === undefined ? {} : { evaluator: runtime.evaluator }),
     executionRoot: runtime.executionRoot,
     approvalAuthority: runtime.approvalAuthority,
     principal: Presentation.current()?.transport === "mcp" ? { id: "mcp", kind: "agent" as const } : undefined

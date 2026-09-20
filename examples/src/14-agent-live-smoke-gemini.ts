@@ -128,9 +128,9 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
     // The completion brake judges every claim through Jev and never falls back
-    // to the model. Without `AI_GATEWAY_API_KEY` this smoke run fails at its
-    // first completion with `completion_unjudged`.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // to the model. Without `AI_GATEWAY_API_KEY` this smoke refuses composition
+    // before any host resource is opened.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/14-agent-live-smoke-gemini").pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

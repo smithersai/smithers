@@ -14,7 +14,7 @@ In this tutorial you'll build an agent flow two ways. First, a markdown flow tha
 
 - The Smithers CLI: `npm install --global @smthrs/cli@next`. The `@next` suffix is required while 1.0 is a release candidate.
 - A provider credential in the environment: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. [Configure model seats](/docs/guides/model-seats/) explains how a seat resolves from environment keys.
-- `AI_GATEWAY_API_KEY` for the completion evaluator in the live markdown run. Part 3 scripts both the seat and evaluator and needs no key.
+- `AI_GATEWAY_API_KEY` for Jev, the completion judge. The CLI refuses to boot without it. The offline module below deliberately binds a scripted judge instead.
 - A git repository to work in. Part 2 reviews its uncommitted change.
 - Node.js {versions.node} or later for part 3.
 
@@ -119,13 +119,13 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as Capability from "@smthrs/capability/Capability"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj, type ChangeId } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -272,13 +272,9 @@ const program = Effect.gen(function*() {
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
     // This offline run has no approved plan envelope to derive a ceiling from.
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-    // This offline example supplies a scripted completion judge.
-    Layer.provideMerge(Evaluator.layerScripted(() => ({
-      complete: { probability: 0.99 },
-      overclaims: { probability: 0.01 },
-      invented: { probability: 0.01 }
-    }))),
-    // QuickJS and the default steering source.
+    // The QuickJS sandbox the cell's code runs in, and the steering source it
+    // drains. Both are browser-safe defaults.
+    Layer.provideMerge(ScriptedJudge.layer),
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),

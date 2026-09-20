@@ -9,17 +9,14 @@
  *
  * @since 1.0.0-rc.0
  */
-import type * as Agent from "@smthrs/agent/Agent"
-import type * as AgentAction from "@smthrs/agent/AgentAction"
-import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import type { Action } from "@smthrs/flow"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
-import type * as Sandbox from "@smthrs/harness/Sandbox"
-import type * as Steering from "@smthrs/harness/Steering"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Clock from "effect/Clock"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
+import type * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import { resolve } from "node:path"
@@ -76,11 +73,6 @@ export type Requirements =
   | FlowRuntime.FlowRuntime
   | Action.Implementations
   | MigrateFlow.Requires
-  | Agent.Agent
-  | AgentAction.Host
-  | SeatResolver.SeatResolver
-  | Sandbox.Sandbox
-  | Steering.Source
 
 /**
  * What the read-only survey found: the scan, the plan-time unit outlines, the
@@ -282,6 +274,7 @@ export const launch = (
  */
 export const layerNode = (config: {
   readonly root: string
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly seat?: string | undefined
   readonly flowsDir?: string | undefined
@@ -291,6 +284,7 @@ export const layerNode = (config: {
 }) =>
   Layers.layerNodeScanned({
     root: config.root,
+    ...(config.evaluator === undefined ? {} : { evaluator: config.evaluator }),
     ...(config.environment === undefined ? {} : { environment: config.environment }),
     ...(config.seat === undefined ? {} : { seat: config.seat }),
     ...(config.flowsDir === undefined ? {} : { flowsDir: config.flowsDir }),
@@ -391,32 +385,40 @@ export const reportDirectory = (options: MigrateOptions): string => `${options.r
 export const runNode = (
   options: MigrateOptions,
   config: {
+    readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
     readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   } = {}
-): Effect.Effect<Report.MigrationReport, MigrateError> =>
-  Effect.provide(
-    run(options),
-    layerNode({
-      root: options.root,
-      flowsDir: Options.flowsDir(options),
-      reportDir: Options.reportDir(options),
-      // The same state paths the flow's own scan reads, so the host's grant
-      // rules deny the same run-state paths the report names.
-      ...(options.state === undefined ? {} : { state: options.state }),
-      ...(options.seat === undefined ? {} : { seat: options.seat }),
-      ...(config.environment === undefined ? {} : { environment: config.environment }),
-      // The host verifies and spawns with the same commands the units do.
-      ...(options.commands === undefined ? {} : { commands: options.commands })
-    })
-  ).pipe(
-    // The composition itself can refuse to build: the scan it derives the
-    // grant rules from can fail, and so can the sandbox. Both are this tool
-    // failing to start, which is an `io` failure with the cause attached
-    // rather than a defect nobody can act on.
-    Effect.mapError((error) =>
-      isMigrateError(error) ? error : make("io", "the migration could not build its runtime", String(error))
+): Effect.Effect<Report.MigrationReport, MigrateError> => {
+  try {
+    return Effect.provide(
+      run(options),
+      options.mode !== "apply" ? Layers.layerPlan : layerNode({
+        root: options.root,
+        ...(config.evaluator === undefined ? {} : { evaluator: config.evaluator }),
+        flowsDir: Options.flowsDir(options),
+        reportDir: Options.reportDir(options),
+        // The same state paths the flow's own scan reads, so the host's grant
+        // rules deny the same run-state paths the report names.
+        ...(options.state === undefined ? {} : { state: options.state }),
+        ...(options.seat === undefined ? {} : { seat: options.seat }),
+        ...(config.environment === undefined ? {} : { environment: config.environment }),
+        // The host verifies and spawns with the same commands the units do.
+        ...(options.commands === undefined ? {} : { commands: options.commands })
+      })
+    ).pipe(
+      // The composition itself can refuse to build: the scan it derives the
+      // grant rules from can fail, and so can the sandbox. Both are this tool
+      // failing to start, which is an `io` failure with the cause attached
+      // rather than a defect nobody can act on.
+      Effect.mapError((error) =>
+        isMigrateError(error) ? error : make("io", "the migration could not build its runtime", String(error))
+      )
     )
-  )
+  } catch (error) {
+    if (error instanceof Evaluator.EvaluatorError) return Effect.fail(make("io", error.message))
+    throw error
+  }
+}
 
 /**
  * What the `smithers-migrate` bin and the `smithers migrate` verb parse into.

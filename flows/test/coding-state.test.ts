@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -55,10 +56,10 @@ test("an explicit state directory is honored, and an in-root one is refused by n
 
 test("the configured host refuses an in-root state directory before it opens a database", () => {
   const repositoryPath = "/home/developer/workspace"
-  assert.throws(() => layer(platform, { ...options, repositoryPath, stateRoot: `${repositoryPath}/.flows` }), /inside the served working copy/)
-  assert.throws(() => layer(platform, { ...options, repositoryPath, stateRoot: repositoryPath }), /stale_revision|freshness check/)
-  assert.doesNotThrow(() => layer(platform, { ...options, repositoryPath }))
-  assert.doesNotThrow(() => layer(platform, { ...options, repositoryPath, stateRoot: "/srv/coding-state" }))
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, repositoryPath, stateRoot: `${repositoryPath}/.flows` }), /inside the served working copy/)
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, repositoryPath, stateRoot: repositoryPath }), /stale_revision|freshness check/)
+  assert.doesNotThrow(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, repositoryPath }))
+  assert.doesNotThrow(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, repositoryPath, stateRoot: "/srv/coding-state" }))
 })
 
 const jjAvailable = (() => {

@@ -53,9 +53,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import legacyCompaction from "./fixtures/legacyCompaction.json" with { type: "json" }
 import * as Safety from "./Safety.ts"
 
@@ -318,7 +318,7 @@ const stack = (options: StackOptions) => {
     // The agent and the seat resolver are the executor's own dependencies;
     // everything else in its `Services` union comes from the engine stack.
     Layer.provide(
-      Layer.mergeAll(Agent.layer, SeatResolver.layer({ resolve: options.resolve }), confidentEvaluator).pipe(
+      Layer.mergeAll(Agent.layer, SeatResolver.layer({ resolve: options.resolve }), scriptedCompletionJudge).pipe(
         Layer.provide(Safety.layer)
       )
     )

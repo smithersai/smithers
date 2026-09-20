@@ -16,6 +16,7 @@
  * dead one. Under a constant `hostId` every row read as foreign, the probe
  * declined to answer, and BOTH were stolen.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import { Effect, Layer } from "effect"
 import { type ChildProcess, spawn, spawnSync } from "node:child_process"
@@ -105,7 +106,10 @@ const livePeer = (): ChildProcess => {
 const projectRoot = (root: string) => {
   const registry = NodeControl.layerRegistry(root)
   const engine = NodeControl.engineDurable(root, registry)
-  const executor = NodeControl.layerExecutor(registry, engine, root, { environment: {} })
+  const executor = NodeControl.layerExecutor(registry, engine, root, {
+    evaluator: ScriptedJudge.layer,
+    environment: {}
+  })
   const composition = Application.layer({}, registry, engine, executor) as Layer.Layer<Control.Control>
   return <A, E>(use: Effect.Effect<A, E, Control.Control>) =>
     Effect.runPromise(use.pipe(Effect.provide(composition), Effect.scoped, Effect.orDie))

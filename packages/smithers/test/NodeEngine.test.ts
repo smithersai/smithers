@@ -7,6 +7,7 @@
  * second, independent engine over the same directory — which is what "the CLI
  * is no longer a demo" actually has to mean.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { PlanCard } from "@smthrs/control/ControlSchema"
@@ -62,7 +63,7 @@ describe("NodeControl.engineDurable", () => {
             const databases = [NodeControl.databasePath(isolated), NodeControl.executionDatabasePath(isolated)]
             return databases.flatMap((file) => [file, `${file}-wal`, `${file}-shm`])
               .filter(existsSync).map((file) => [file, statSync(file).mode & 0o777] as const)
-          }).pipe(Effect.provide(NodeControl.layer({ root: isolated })), Effect.scoped)
+          }).pipe(Effect.provide(NodeControl.layer({ root: isolated, evaluator: ScriptedJudge.layer })), Effect.scoped)
         )
         expect(modes.map(([file]) => file)).toContain(NodeControl.executionDatabasePath(isolated))
         for (const [file, mode] of modes) expect([file, mode]).toEqual([file, 0o600])

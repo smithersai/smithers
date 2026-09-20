@@ -145,6 +145,8 @@ function mutatingGit(): { dir: string; counter: string } {
   dirs.push(dir);
   const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   const counter = join(dir, "reads");
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const originalPath = process.env.PATH ?? "";
   fs.writeFileSync(join(dir, "git"), [
     "#!/bin/sh",
     'if [ -n "$REVIEW_MUTATE_REPO" ]; then',
@@ -157,7 +159,10 @@ function mutatingGit(): { dir: string; counter: string } {
     "      ;;",
     "  esac",
     "fi",
-    `exec ${realGit} "$@"`,
+    // A guarded git launcher may resolve the real executable through PATH.
+    // Restore its original search path so it cannot select this shim again.
+    `export PATH=${quote(originalPath)}`,
+    `exec ${quote(realGit)} "$@"`,
     "",
   ].join("\n"), { mode: 0o755 });
   return { dir, counter };

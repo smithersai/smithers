@@ -8,6 +8,7 @@
  *
  * @since 1.0.0
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as Agent from "@smthrs/agent/Agent"
@@ -85,21 +86,22 @@ const withDeadline = <I, R>(action: {
  * @since 1.0.0
  * @category layers
  */
-export const declarations = Layer.mergeAll(
+const walkthroughDeclarations = Layer.mergeAll(
   prepareReviewLayer,
   mergeFileBatchLayer,
   finalizeReviewLayer,
   applyVerdictsLayer,
   renderWalkthroughLayer,
-  withDeadline(ReviewFile),
-  withDeadline(VerifyFindings),
-  withDeadline(NarrateChanges),
-  withDeadline(QuizChanges),
   Interpreter.layer(Review),
   Interpreter.layer(ReviewFiles),
   Interpreter.layer(VerifyReview),
   Interpreter.layer(NarrateReview)
 )
+
+/** All registrations, including the agent actions. */
+export const declarations = Layer.mergeAll(walkthroughDeclarations,
+  withDeadline(ReviewFile), withDeadline(VerifyFindings), withDeadline(NarrateChanges), withDeadline(QuizChanges))
+
 
 /**
  * The agent host: an empty catalog, an explicit cell budget, and the one
@@ -144,13 +146,13 @@ const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbou
  *
  * The brake never falls back, so a claim nothing could judge fails the run
  * rather than standing. Without `AI_GATEWAY_API_KEY` this is
- * `Evaluator.layerUnavailable()` and the review fails at its first completion.
+ * a startup refusal before a database, socket or child process opens.
  */
 const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
-  Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, "smithers-review").pipe(Layer.provide(NodeHttpClient.layerUndici))
 
 /**
- * The judge an offline case binds: a reading that lets the claim stand, so a
+ * The judge an offline case binds: a reading of recorded commands, so a
  * scripted seat's completion is judged by the same brake without reaching a
  * gateway. A case about the brake itself binds `Evaluator.layerUnavailable()`.
  *
@@ -158,11 +160,7 @@ const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
  * @category layers
  */
 export const scriptedEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerScripted(() => ({
-    complete: { probability: 0.99 },
-    overclaims: { probability: 0.01 },
-    invented: { probability: 0.01 }
-  }))
+  ScriptedJudge.layer
 
 /**
  * Builds the review workflow over a caller-supplied seat resolver and the
@@ -208,30 +206,47 @@ export const layerMemory = (
  * @since 1.0.0
  * @category layers
  */
-export const layerNode = (options: {
+export interface NodeOptions {
   readonly filename: string
+  /** False registers only the walkthrough path, which cannot start an agent. */
+  readonly agents?: boolean
   readonly seats: Layer.Layer<SeatResolver.SeatResolver>
   /** The environment the reachable model hosts are read from. */
   readonly environment?: Readonly<Record<string, string | undefined>>
   /** The completion brake's judge; read from `environment` when omitted. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator>
-}) => {
+}
+
+const nodeHost = (options: NodeOptions) => ({
+  filename: options.filename,
+  workspaceRoot: process.cwd(),
+  owner: { hostId: "smithers-review" },
+  rules: modelCallRules(options.environment ?? process.env)
+})
+
+const layerNodeAgents = (options: NodeOptions) => {
   const environment = options.environment ?? process.env
-  return NodeRuntime.layerHost(
-    {
-      filename: options.filename,
-      workspaceRoot: process.cwd(),
-      owner: { hostId: "smithers-review" },
-      rules: modelCallRules(environment)
-    },
-    declarations.pipe(
-      Layer.provideMerge(Layer.mergeAll(agentHost(environment), options.seats, Agent.layer)),
-      Layer.provideMerge(agentPolicy),
-      Layer.provideMerge(Agent.layerDefaults),
-      Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(options.evaluator ?? evaluator(environment))
-    )
-  )
+  return NodeRuntime.layerHost(nodeHost(options), declarations.pipe(
+    Layer.provideMerge(Layer.mergeAll(agentHost(environment), options.seats, Agent.layer)),
+    Layer.provideMerge(agentPolicy),
+    Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(options.evaluator ?? evaluator(environment))
+  ))
+}
+
+const layerNodeWalkthrough = (options: NodeOptions) =>
+  NodeRuntime.layerHost(nodeHost(options), walkthroughDeclarations.pipe(Layer.provideMerge(Action.layerImplementations)))
+
+/** A walkthrough exports no agent implementations; a normal host exports all of them. */
+export function layerNode(options: NodeOptions & { readonly agents: false }): ReturnType<typeof layerNodeWalkthrough>
+/** Compose every agent action after choosing the host judge. */
+export function layerNode(options: NodeOptions & { readonly agents?: true }): ReturnType<typeof layerNodeAgents>
+/** Preserve the runtime choice when the caller holds general options. */
+export function layerNode(options: NodeOptions): ReturnType<typeof layerNodeAgents> | ReturnType<typeof layerNodeWalkthrough>
+/** Select the agent or walkthrough-only composition before acquiring resources. */
+export function layerNode(options: NodeOptions) {
+  return options.agents === false ? layerNodeWalkthrough(options) : layerNodeAgents(options)
 }
 
 /** Refuses a composition root that still owes a service. */

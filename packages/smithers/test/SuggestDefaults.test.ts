@@ -15,6 +15,7 @@
  * real and the refusal arrives before any request is signed. Nothing here
  * reaches a model or a network.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Effect, Option } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -58,6 +59,7 @@ const base = {
   list: false,
   json: false,
   environment: {},
+  evaluator: ScriptedJudge.layer,
   repository: project
 } satisfies Partial<Suggest.Options>
 

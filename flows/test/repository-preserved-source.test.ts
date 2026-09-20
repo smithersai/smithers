@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -197,7 +198,7 @@ for (const mode of ["land", "ai-only-land", "ai-only-blocked", "ai-only-fix", "f
       return { verdict: mode === "fresh-check-failed" && input.comparison.candidate === f.child.commitId ? "uncertain" as const : "pass" as const,
         summary: "Scripted semantic review; commands measure actual bytes", examinedPaths: input.comparison.paths, findings: [] } }), { override: true })
     const runtime = ManagedRuntime.make(scriptedJev.pipe(
-      Layer.provideMerge(Layer.mergeAll(changeLayers(f.options), checkLayers(f.options), deliveryLayers,
+      Layer.provideMerge(Layer.mergeAll(changeLayers(f.options), checkLayers({ ...f.options, evaluator: makeHostJudge().layer }), deliveryLayers,
         DraftChange.toLayer(author => Effect.sync(() => { calls.push("draft"); assert.equal(author.evidence.source.commitId, f.base.commitId)
           return { summary: "Update the implementation", question: "", children: [], baseline: [], proposal: [{ path: "code.txt", beforeDigest: digest("original\n"), content: "checked implementation\n" }] } })))),
       Layer.provide(Layer.mergeAll(f.platform, Layer.succeed(NativeCoding, native), Layer.succeed(Landing, landing))),

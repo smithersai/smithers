@@ -74,7 +74,8 @@ describe("case14 gateway RPC round trip", () => {
     expect(parentPid(server.pid)).toBe(process.pid)
     expect(isAlive(server.pid)).toBe(true)
     expect(server.argv).toContain("serve")
-    expect(server.argv[0]?.endsWith("bin/smithers.mjs")).toBe(true)
+    expect(server.argv.slice(0, 2)).toEqual(["--import", expect.stringContaining("scripted-native-host.ts")])
+    expect(server.argv[2]?.endsWith("bin/smithers.mjs")).toBe(true)
 
     // And it chose where the run went. `.flows/control.db` under the project
     // root is the verb's decision, not a path this suite handed it.

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url"
 import { test, type TestContext } from "node:test"
 import * as Seat from "@smthrs/agent/Seat"
 import { Control, ControlRpcs } from "@smthrs/control"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Schema, Stream } from "effect"
@@ -77,21 +77,8 @@ const scriptedSeats = () => {
     : Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `Set a provider key to run the ${id} seat` })) }
 }
 
-/** The one judge this host runs with, and the only reader it answers.
- *
- * The harness's completion brake never falls back: a claim no evaluator could
- * judge fails the run as `completion_unjudged`, so a host bound to
- * `Evaluator.layerUnavailable()` — which is what a machine with no
- * `AI_GATEWAY_API_KEY` binds — cannot finish the scripted `ctx.done` below.
- * This reads that one claim as done and modest so the completion stands, and
- * refuses every other question with the transport's own `unreachable`, which
- * is exactly what a keyless host answers each of them: no case here asserts
- * anything a judge decides, and none may start passing because a fixture
- * said yes. */
-const scriptedEvaluator = Evaluator.layerScripted(request =>
-  "complete" in request.questions && "overclaims" in request.questions
-    ? { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
-    : Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "No evaluator is installed on this host" })))
+/** This trigger fixture scripts completion evidence and refuses other question sets. */
+const scriptedEvaluator = ScriptedJudge.layer
 
 interface Probe {
   readonly register: (request: Record<string, unknown>) => Promise<{ failure?: string; output?: any }>

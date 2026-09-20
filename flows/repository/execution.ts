@@ -135,15 +135,14 @@ export const captureJobSource = (options: ImmutableSourceOptions, input: typeof 
     return { ...evidence, subject: screened.payload, intake: screened.screening }
   }).pipe(Effect.timeoutOrElse({ duration: Math.max(1, (input.deadlineAt ?? Date.now() + input.configuration.budgetMinutes * 60_000) - Date.now()),
     orElse: () => Effect.fail(new CodingError({ code: "source_unavailable", message: "Source capture reached this job's configured deadline" })) }))
-/** `evaluator` is the whole model behind the duplicates step and the
- * reproduction review. A composition that names none keeps `layerUnavailable`,
- * so both fail as unavailable rather than reporting an answer they never got. */
-export const executionLayers = (options: ImmutableSourceOptions & { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
+/** Every composition must supply its judge. Omitting it is a type error;
+ * an offline fixture supplies an evidence-based script, never a gateway key. */
+export const executionLayers = (options: ImmutableSourceOptions & { readonly evaluator: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   CaptureJob.toLayer(input => captureJobSource(options, input)),
   JevDuplicates.toLayer(({ work, classification }) => jevDuplicates(work, classification)).pipe(
-    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
+    Layer.provide(options.evaluator)),
   JevReproduction.toLayer(({ work, observation, result }) => jevReproduction(work, observation, result.output)).pipe(
-    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
+    Layer.provide(options.evaluator)),
   RetainObservation.toLayer(({ work, observation }) => Effect.gen(function*() {
     yield* Effect.try({ try: () => verifyObservation(work, observation), catch: error => error instanceof CodingError ? error : invalid("Invalid step evidence") })
     return result(work, observation, yield* currentExecutionId)

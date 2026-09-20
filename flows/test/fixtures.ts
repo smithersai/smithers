@@ -1,10 +1,11 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
-import { Effect, Stream } from "effect"
-import { templates } from "../release-content/jev-template.ts"
+import { Effect, Schema, Stream } from "effect"
+import { templates, TemplateState } from "../release-content/jev-template.ts"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -25,20 +26,22 @@ export const analysis: Analysis = {
 export const outline = { angle: "Durable approvals", outline: ["Resume an approval"] }
 /** Jev's narrative beside the writer's outline, the way the flow assembles it. */
 export const brief = { template: "reliability report", ...outline }
-/** A scripted Jev that confidently names the fixture's narrative, so a flow
- * test exercises the real pick step without a gateway key. It answers the
- * harness completion brake too, because a composition holds ONE `Evaluator`
- * and a script that answers only its own question hands the brake an answer
- * its question cannot decode. */
-export const scriptedTemplate = Evaluator.layerScripted((request) =>
-  "template" in request.questions
-    ? {
-      template: {
-        choice: brief.template,
-        probabilities: Object.fromEntries(templates.map((name) => [name, name === brief.template ? 0.95 : 0.05 / 3]))
-      }
-    }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
+/** One offline judge dispatches narrative and completion questions. Narrative
+ * selection reads the supplied ledger and evidence; completion reads its own
+ * recorded work through the limited completion fixture. */
+export const scriptedTemplate = Evaluator.layerScripted((request) => {
+  if (Object.keys(request.questions).length === 1 && "template" in request.questions) {
+    const state = Schema.decodeUnknownSync(TemplateState)(request.state)
+    const prose = `${state.ledger} ${state.evidence}`.toLowerCase()
+    const template = /migration|breaking|removed/.test(prose) ? "migration guide"
+      : /fix|restart|durab|approval/.test(prose) ? "reliability report"
+      : /feature|new capability/.test(prose) ? "feature deep dive" : "release roundup"
+    return { template: { choice: template,
+      probabilities: Object.fromEntries(templates.map((name) => [name, name === template ? 0.95 : 0.05 / 3])) } }
+  }
+  return Effect.flatMap(Evaluator.Evaluator, judge => judge.evaluate(request)).pipe(
+    Effect.provide(ScriptedJudge.layer), Effect.map(result => result.answers))
+})
 export const copy = { text: "Release approvals resume after a process restart.", claimIds: ["approval"] }
 export const draft: Draft = { changelog: copy, blog: copy, thread: { tweets: [copy] } }
 export const review = { passed: true, score: 0.95, feedback: [] }

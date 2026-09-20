@@ -9,6 +9,7 @@ import { ControlClient, ControlRuntime } from "@smthrs/control"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import type * as McpClient from "@smthrs/mcp/McpClient"
+import type * as Evaluator from "@smthrs/model/Evaluator"
 import type { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Layer } from "effect"
@@ -31,6 +32,8 @@ import * as LocalControl from "./internal/LocalControl.ts"
  * @since 0.1.0
  */
 export interface Config {
+  /** An explicitly supplied judge; otherwise the native host requires its gateway key. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */
   readonly health?: Health.HealthConfig | undefined
   /** Trusted local host configuration, never decoded from command arguments. */

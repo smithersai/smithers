@@ -1,4 +1,5 @@
 /** The shipped CLI executor must contain descendants after an MCP server exits. */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import { Effect, Layer } from "effect"
 import { execFileSync } from "node:child_process"
@@ -79,6 +80,7 @@ describe.skipIf(process.platform === "win32")("NodeControl executor process grou
         const registry = NodeControl.layerRegistry(root)
         const engine = NodeControl.engineDurable(root, registry)
         const executor = NodeControl.layerExecutor(registry, engine, root, {
+          evaluator: ScriptedJudge.layer,
           environment: {},
           mcpServers: [{ server: "containment", command: process.execPath, args: ["-e", server] }]
         })

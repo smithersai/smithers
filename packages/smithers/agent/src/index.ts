@@ -130,3 +130,9 @@ export * as QuotaPolicy from "./QuotaPolicy.ts"
  * @since 0.1.0
  */
 export * as Budget from "./Budget.ts"
+
+/**
+ * @category testing
+ * @since 1.0.0-rc.0
+ */
+export * as ScriptedJudge from "./ScriptedJudge.ts"

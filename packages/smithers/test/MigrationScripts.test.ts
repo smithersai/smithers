@@ -19,9 +19,12 @@ const fixture = fileURLToPath(new URL("../migrate/test/fixtures/jsx-single.migra
 
 const execute = (root: string, command: string, input: string) =>
   new Promise<{ code: number | null; signal: string | null; stdout: string; stderr: string }>((resolve, reject) => {
-    // Only the executable lookup is supplied by the harness; no command parser,
-    // argument splitter, control adapter, approval or persistence port is mocked.
-    const child = spawn("/bin/sh", ["-c", "smthrs() { \"$MIGRATION_NODE\" \"$MIGRATION_BIN\" \"$@\"; }\n" + command], {
+    // Supply the executable lookup and an explicit offline completion judge;
+    // command parsing, control, approval and persistence still run as shipped.
+    const child = spawn("/bin/sh", [
+      "-c",
+      "smthrs() { \"$MIGRATION_NODE\" --import \"$MIGRATION_JUDGE\" \"$MIGRATION_BIN\" \"$@\"; }\n" + command
+    ], {
       cwd: root,
       env: {
         // Deliberate allowlist: a developer's ambient model credentials,
@@ -31,6 +34,7 @@ const execute = (root: string, command: string, input: string) =>
         LANG: "C.UTF-8",
         MIGRATION_NODE: process.execPath,
         MIGRATION_BIN: executable,
+        MIGRATION_JUDGE: new URL("./fixtures/scripted-native-host.ts", import.meta.url).href,
         INPUT: input,
         SMITHERS_REMOTE: "",
         SMITHERS_API_KEY: "",

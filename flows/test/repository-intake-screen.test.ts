@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
@@ -55,7 +56,7 @@ const runSteps = (payload: Schema.Json, intake: typeof IntakeScreening.Type) => 
   const fs = yield* FileSystem.FileSystem
   // Step selection reaches neither native source capture nor the repository,
   // so those two services stay absent and throw if that ever changes.
-  yield* Layer.build(executionLayers({ repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } } as never).pipe(
+  yield* Layer.build(executionLayers({ evaluator: makeHostJudge().layer, repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } } as never).pipe(
     Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never),
       Layer.succeed(Jj.Jj, undefined as never), Layer.succeed(NativeCoding, undefined as never)])))
   const handler = handlers.get("repository/run-steps")

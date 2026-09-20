@@ -399,13 +399,12 @@ export const checksSummary = (plan: typeof CheckPlan.Type, results: readonly (ty
     ? ` Searched for workflow files, manifests and scripts in ${searched.map(source => source.path).join(", ")}: ${found.length ? `found ${found.join(", ")}` : "none present"}.` : ""}`
 }
 
-/** `evaluator` is the whole Jev binding. A composition that names none keeps
- * `layerUnavailable`, so every AI check errors with that typed failure: there
- * is no other model to ask. */
-export const checkLayers = (options: ImmutableSourceOptions & { readonly evaluator?: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
+/** Every composition must supply its judge. Omitting it is a type error;
+ * an offline fixture supplies an evidence-based script, never a gateway key. */
+export const checkLayers = (options: ImmutableSourceOptions & { readonly evaluator: Layer.Layer<Evaluator.Evaluator> }) => Layer.mergeAll(
   Interpreter.layer(CheckStep), Interpreter.layer(CommandCheck), Interpreter.layer(AICheck),
   JevSemanticCheck.toLayer(({ check, comparison }) => jevSemanticCheck(comparison, check)).pipe(
-    Layer.provide(options.evaluator ?? Evaluator.layerUnavailable())),
+    Layer.provide(options.evaluator)),
   CaptureChecks.toLayer(({ work }) => captureChecks(options, work)),
   ExecuteCommand.toLayer(({ plan, check }) => currentExecutionId.pipe(Effect.flatMap(id => executeCommand(options, plan, check, id)))),
   RetainSemantic.toLayer(({ plan, check, comparison, verdict, decidedBy }) => Effect.gen(function* () {

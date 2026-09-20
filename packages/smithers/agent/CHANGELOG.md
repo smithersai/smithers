@@ -4,7 +4,12 @@
 
 ### Added
 
-- `StandardFlows.classify(services, options?)`: the cell's doors to Jev as the source `std/classify`, binding the ad-hoc `classify` flow and one `classify/<id>` flow per curated classifier (the three from `@smthrs/std` by default) over the `Evaluator` service. A host without a gateway key binds `Evaluator.layerUnavailable()` and every call resolves `{ ok: false, error: { code: "flow_failed", message } }` with a message containing `unreachable:` after the binding's `Flow classify failed:` prefix.
+- `ScriptedJudge.layer` is an explicit completion-only offline fixture that
+  compares command claims with recorded evidence and refuses other questions.
+  Whole-host scripts must dispatch all their classifier question IDs; see
+  `flows/test/fixtures/scripted-judge.ts`.
+
+- `StandardFlows.classify(services, options?)`: the cell's doors to Jev as the source `std/classify`, binding the ad-hoc `classify` flow and one `classify/<id>` flow per curated classifier (the three from `@smthrs/std` by default) over the `Evaluator` service. An explicit classifier outage fixture binds `Evaluator.layerUnavailable()` and every call resolves `{ ok: false, error: { code: "flow_failed", message } }` with a message containing `unreachable:` after the binding's `Flow classify failed:` prefix.
 
 ### Changed
 
@@ -17,9 +22,9 @@
   completion never falls back: a claim nothing could judge fails the run as
   `HarnessError` `completion_unjudged` rather than standing, so a host that
   binds no transport does not compile instead of quietly losing the brake.
-  Bind `Evaluator.layerFromEnvironment(process.env)`; a host without
-  `AI_GATEWAY_API_KEY` gets `Evaluator.layerUnavailable()` and its runs fail
-  at their first completion, by design. `Agent.layerDefaults` is unchanged and
+  Bind `Evaluator.layerFromEnvironment(process.env, "my host")` before opening
+  resources, or deliberately bind an evidence-based scripted judge. A host
+  missing `AI_GATEWAY_API_KEY` now fails to boot instead of every completion. `Agent.layerDefaults` is unchanged and
   still supplies only the sandbox and the steering source: the evaluator is a
   decision about where the host's key comes from, not a default.
 - `SeatResolver.contextWindowTokensFor` now re-exports

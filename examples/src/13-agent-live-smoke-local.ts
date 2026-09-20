@@ -159,8 +159,8 @@ export const liveLayer = (baseUrl: string) =>
     Layer.provideMerge(Agent.layerDefaults),
     // The completion brake judges every claim through Jev and never falls back
     // to the model. A local provider does not change that: without
-    // `AI_GATEWAY_API_KEY` this run fails at its first completion.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // `AI_GATEWAY_API_KEY` this host refuses composition before opening resources.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)

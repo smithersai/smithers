@@ -140,8 +140,9 @@
  * transport is down — is the brake being loudest exactly when it works and
  * silent exactly when it does not, which is the shape of a control nobody can
  * rely on. So `Evaluator` is a required service of this module and of every
- * turn above it, and a host without `AI_GATEWAY_API_KEY` binds
- * `Evaluator.layerUnavailable()` and fails at its first completion, by design.
+ * turn above it. A host selects a real or evidence-based scripted judge before
+ * opening resources; missing gateway configuration refuses startup. A judge
+ * that later becomes unavailable still fails the completion closed.
  *
  * @since 1.0.0-rc.0
  */

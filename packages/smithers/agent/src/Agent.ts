@@ -354,8 +354,7 @@ export interface Service {
     | QuotaPolicy.QuotaClassifier
     // The completion brake never falls back: a claim nothing could judge
     // fails the run. So every host that runs a loop binds a transport, and
-    // one without `AI_GATEWAY_API_KEY` binds `Evaluator.layerUnavailable()`
-    // and fails at its first completion. See `@smthrs/harness`'s
+    // one without a gateway key or an explicit scripted judge refuses startup. See `@smthrs/harness`'s
     // `CompletionClaim`.
     | Evaluator.Evaluator
   >

@@ -5,9 +5,8 @@
  * The service is the seam. `layerVercelGateway` speaks Jev's wire protocol
  * through the Vercel AI Gateway over the kernel `HttpClient`; `layerScripted`
  * answers from a function so a test never touches the network; and
- * `layerUnavailable` fails every request as `unreachable`, which is what a
- * host without a key installs so a missing transport answers instead of
- * hanging. `Classifier` decodes the raw answers this module returns into typed
+ * `layerUnavailable` simulates an unreachable transport for classifier tests.
+ * A host without a key refuses composition. `Classifier` decodes the raw answers this module returns into typed
  * ones; this module never interprets them.
  *
  * @since 1.0.0-rc.0
@@ -696,36 +695,45 @@ export const layerScripted = (script: Script): Layer.Layer<Evaluator> =>
 export const environmentKey = "AI_GATEWAY_API_KEY"
 
 /**
- * The evaluator a host binds from its own environment: Jev through the
- * Vercel gateway when {@link environmentKey} is set, and
- * {@link layerUnavailable} when it is not.
+ * The evaluator a named host binds from its environment: Jev through the
+ * Vercel gateway, or a synchronous startup refusal when the key is missing.
  *
- * Every host that runs an agent loop binds this one, because the harness's
- * completion brake never falls back: a claim nothing could judge fails the
- * run as `completion_unjudged`. So a host without the key does not quietly
- * lose its sixth brake — it fails at its first completion, naming
- * `unreachable`, which is the outcome a missing key is supposed to have.
+ * The agent's required `Evaluator` already makes omission a type error. The
+ * old environment factory defeated that contract by providing an evaluator
+ * that could answer nothing. Refuse here, while the host assembles its layers,
+ * rather than in an effect that can race a sibling database or socket layer.
+ * Hosts that defer assembly until after startup must select this layer first.
+ * An offline host deliberately binds {@link layerScripted} instead.
  *
- * The layer needs the kernel `HttpClient` only on the configured arm, and
- * the unconfigured arm needs nothing; both are typed as needing it so one
- * call site serves both and a host provides its own client once.
+ * `host` is required so a newly authored composition cannot omit the name in
+ * its refusal. No colon follows the variable name: the journal redactor would
+ * consume the next word as a secret. This checks configuration, not future
+ * availability; a judge that goes down still fails the completion closed.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
 export const layerFromEnvironment = (
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  host: string
 ): Layer.Layer<Evaluator, never, KernelHttpClient.HttpClient> => {
   const apiKey = environment[environmentKey]
-  return apiKey === undefined || apiKey === ""
-    ? layerUnavailable()
-    : layerVercelGateway({ apiKey: Redacted.make(apiKey) })
+  if (apiKey === undefined || apiKey.trim() === "") {
+    throw new EvaluatorError({
+      code: "unreachable",
+      message:
+        `${host} needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge. Export AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or deliberately bind Evaluator.layerScripted with an evidence-based judge.`
+    })
+  }
+  return layerVercelGateway({ apiKey: Redacted.make(apiKey) })
 }
 
 /**
  * An evaluator with no transport behind it: every request fails as
- * `unreachable`. A host without a gateway key installs this so a classifier
- * reports the missing transport instead of hanging or inventing an answer.
+ * `unreachable`. This is an outage fixture for classifiers, not a host's
+ * missing-key default. A completion-capable host must bind a live or scripted
+ * judge before it opens resources; {@link layerFromEnvironment} enforces the
+ * environment choice at composition time.
  *
  * @category layers
  * @since 1.0.0-rc.0

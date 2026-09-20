@@ -127,11 +127,13 @@ export const roleResolver = (base: SeatResolver.Service, implementationModel: st
 /** Both platform entries call this one recipe; no second executor or store. */
 export const layer = (platform: NativeControl.Platform, options: Options, suppliedSeats?: SeatResolver.Service) => {
   configured(options)
+  // Refuse before provisioning builtins, starting native processes or opening stores.
+  const evaluator = platform.evaluator ?? evaluatorLayer(process.env, "smithers coding/repository host")
   // Resolved before any layer is built, so an in-root state directory is a
   // named startup refusal rather than a stale_revision three seconds into the
   // first plan. The engine writes to this tree on every step.
   const stateRoot = CodingState.resolveStateRoot({ root: options.repositoryPath, explicit: options.stateRoot, environment: process.env })
-  const native = NativeControl.make({ ...platform,
+  const native = NativeControl.make({ ...platform, evaluator,
     jj: root => Snapshots.layerAt({ ...options, repositoryPath: root }),
     filesystem: (root, fs, spawner) => fs.realPath(root).pipe(
       Effect.map(canonicalRoot => CodingFileSystem.make({ ...options, repositoryPath: root }, fs, spawner, canonicalRoot)),
@@ -151,7 +153,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const wikiReviewer = !wikiEnabled ? undefined : Digest.canonical({ policy: options.planning!.reviewer,
       model: options.wikiModel ?? options.implementationModel, gateway: options.gatewayId, hostPolicy: reviewerPolicy })
     const wikiOptions = !wikiEnabled ? undefined : { ...options.planning!, pages: options.planning!.pages!, wikiOutput: wikiOutput!,
-      repositoryPath: options.repositoryPath, reviewer: wikiReviewer!, hostPolicy: reviewerPolicy! }
+      repositoryPath: options.repositoryPath, reviewer: wikiReviewer!, hostPolicy: reviewerPolicy!, evaluator }
     const repositoryBundle = yield* runningRepositoryPolicy
     const repositoryPolicy = Digest.digest(Digest.canonical({ bundle: repositoryBundle, implementationModel: options.implementationModel,
       researchModel: options.planningModel ?? options.implementationModel, gateway: options.gatewayId }))
@@ -174,13 +176,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // makes: the intake screen over each inbound event, the duplicates step,
     // each AI check's changed hunks, a reproduction review's verdict and an
     // evaluation row's verdict. It is the only model that answers any of them.
-    // A host without AI_GATEWAY_API_KEY installs the unavailable transport, so
-    // each of those fails with that typed error, by design: nothing falls back
-    // to a frontier seat and no unscreened text reaches a model prompt. A
-    // platform that names its own judge binds that one here too, so this host
-    // never runs two: the agent loop's completion brake and these repository
-    // readers ask the same Jev.
-    const evaluator = platform.evaluator ?? evaluatorLayer(process.env)
+    // Selection happened before startup. The same real or scripted evaluator
+    // serves the agent completion brake and every repository classifier.
     const repository = Layer.mergeAll(evaluator, inspectionLayers({ repositoryPath: options.repositoryPath, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       jobFlows, failureLayer, executionLayers({ repositoryPath: options.repositoryPath, fs,
         exporterPath: options.exporterPath, environment: options.checkEnvironment, evaluator }), evaluationLayers({ evaluator }),

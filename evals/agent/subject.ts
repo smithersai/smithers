@@ -28,6 +28,7 @@
  *
  * @since 0.1.0
  */
+import * as ScriptedJudge from "../../packages/smithers/agent/src/ScriptedJudge.ts"
 import * as Cause from "effect/Cause"
 import * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
@@ -53,7 +54,6 @@ import { Action, Flow, FlowRuntime, Interpreter } from "../../packages/smithers/
 import type { AgentEvent } from "../../packages/smithers/agent/harness/src/index.ts"
 import { FlowBinding } from "../../packages/smithers/agent/harness/src/index.ts"
 import {
-  Evaluator,
   Model,
   ModelEvent,
   type ModelRequest,
@@ -79,14 +79,10 @@ const hostCrypto = Layer.succeed(
 const offlinePolicy = Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())
 
 // The completion brake never falls back: a claim nothing judged fails the run
-// as `completion_unjudged`. This suite is offline, so the judge is scripted and
-// answers the `completion/claim` classifier's questions with the confidence
-// a stated completion has always carried here.
-const offlineEvaluator = Evaluator.layerScripted(() => ({
-  complete: { probability: 0.99 },
-  overclaims: { probability: 0.01 },
-  invented: { probability: 0.01 }
-}))
+// as `completion_unjudged`. This suite explicitly binds an offline judge that
+// compares claimed commands with recorded checks, answers all three completion
+// questions from that evidence, and refuses questions it does not understand.
+const offlineEvaluator = ScriptedJudge.layer
 
 /**
  * What one scenario run reports, and the only thing the scorers read.

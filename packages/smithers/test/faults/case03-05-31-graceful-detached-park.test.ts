@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 
 const executable = fileURLToPath(new URL("../../src/bin.ts", import.meta.url))
+const judge = new URL("../fixtures/scripted-native-host.ts", import.meta.url).href
 const project = realpathSync(mkdtempSync(join(tmpdir(), "smithers-graceful-park-")))
 const home = join(project, "isolated-home")
 
@@ -29,7 +30,7 @@ interface Invocation {
 }
 
 const smithers = (...args: ReadonlyArray<string>): Invocation => {
-  const result = spawnSync(process.execPath, ["--no-warnings", executable, "--json", ...args], {
+  const result = spawnSync(process.execPath, ["--import", judge, "--no-warnings", executable, "--json", ...args], {
     cwd: project,
     encoding: "utf8",
     env: { ...process.env, SMITHERS_HOME: home },

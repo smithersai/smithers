@@ -66,15 +66,36 @@ wires its `ask` through the control plane this way; see
 
 ## Jev needs a transport
 
-**`AI_GATEWAY_API_KEY` is required to run an agent.** The harness's sixth
-brake on a completion asks Jev whether the claim the run wrote matches the
-evidence the run produced, and it never falls back: a completion nothing
-could judge fails the run as `HarnessError` `completion_unjudged` carrying the
-reason. `Agent.run` and every `AgentAction` layer therefore require
-`Evaluator.Evaluator`, so a composition that binds none does not compile.
-Bind `Evaluator.layerFromEnvironment(process.env)`; without the key that is
-`Evaluator.layerUnavailable()` and every run fails at its first completion, by
-design. See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
+**`AI_GATEWAY_API_KEY` is required to run an agent unless the host deliberately
+binds a scripted judge.** The harness asks Jev whether each completion claim
+matches the recorded evidence. If that evaluation fails, the run still fails
+as `completion_unjudged`; the brake never falls back.
+
+`Agent.run` and every `AgentAction` layer require `Evaluator.Evaluator`, so
+omitting the service is a type error. Select the judge while composing the host,
+before any database, socket or process is opened:
+
+```ts
+const judge = Evaluator.layerFromEnvironment(process.env, "my host")
+```
+
+Missing, empty or blank `AI_GATEWAY_API_KEY` now **fails to boot**, with a
+refusal naming the host and both remedies. This blocks a bad deployment
+immediately instead of accepting work that fails at every completion. A
+configured gateway that later stops answering still fails the run closed.
+`Evaluator.layerUnavailable()` is a classifier outage fixture, never a host default.
+
+For an offline host, deliberately bind `Evaluator.layerScripted(request => ...)`.
+Dispatch by question id and compute answers from the supplied evidence. One
+composition shares one evaluator across its classifiers, so a completion-only
+answer map cannot answer an intake screen or citation check. Unknown question
+sets must refuse, and a constant yes is a disabled brake. See the repository's
+[whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+`@smthrs/agent/ScriptedJudge.layer` is a deliberately limited completion-only
+fixture: it checks named commands against the record and refuses other questions.
+It is not a production default or a general language judge.
+
+See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
 
 The same service answers the cell's own classify doors, which fail softly
 instead:
@@ -83,8 +104,8 @@ instead:
 takes any JSON state and model-authored questions, and one `classify/<id>` flow
 per curated classifier, which takes the classifier's own state. The one service
 is the `Evaluator` from [`@smthrs/model`](/api/model). A host with a Vercel AI
-Gateway key binds `Evaluator.layerVercelGateway({ apiKey })`; a host without
-one binds `Evaluator.layerUnavailable()`, and every classify call then resolves
+Gateway key binds `Evaluator.layerVercelGateway({ apiKey })`. A transport outage
+makes a classify call resolve
 in the cell as `{ ok: false, error: { code: "flow_failed", message } }` with a
 message containing `unreachable:` after the binding's `Flow <name> failed:`
 prefix, so the cell carries on instead of hanging. Grant `model:call:*` in the

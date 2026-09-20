@@ -4,17 +4,14 @@
  *
  * These fixtures build a whole configured host — plan, cell, guarded writes,
  * checks, repository jobs — and every one of those readers asks Jev. A host
- * that binds `Evaluator.layerFromEnvironment(process.env)` on a machine with no
- * `AI_GATEWAY_API_KEY` gets `Evaluator.layerUnavailable()`, and then the
- * harness's completion brake, which never falls back, ends the run at its first
- * completion as `completion_unjudged`. That is the right behaviour for a
- * deployed host and the wrong dependency for a fixture: a test host should not
- * need a network service to decide whether its own scripted cell did what the
- * fixture told it to do.
+ * must select a real or deliberately scripted judge before startup. An
+ * environment-backed host with no `AI_GATEWAY_API_KEY` now refuses to boot.
+ * These fixtures deliberately script every classifier the host reaches, so
+ * the completion brake and repository decisions still read their evidence.
  *
  * `81bca45092e9` fixed the same problem for the offline examples by binding
  * `Evaluator.layerScripted` where they used to bind
- * `Evaluator.layerFromEnvironment(process.env)`. This is that mechanism, at the
+ * `Evaluator.layerFromEnvironment(process.env, "host")`. This is that mechanism, at the
  * seam a host already has: `NativeControl.Platform.evaluator`, which
  * `flows/coding/host.ts` prefers over `evaluatorLayer(process.env)` for the
  * agent loop and for every repository reader, so a host never runs two judges.
@@ -39,7 +36,7 @@
  * classifier asked fails the whole evaluation as `invalid_answer`, which
  * reaches the brake as `completion_unjudged` and reads like a defect in
  * whatever the case was actually about. Question ids this fixture scripts no
- * answer for keep the keyless host's own reply, `unreachable`, so no assertion
+ * answer for fail with the explicit outage reply, `unreachable`, so no assertion
  * anywhere starts passing because a fixture said yes.
  *
  * @since 1.0.0-rc.0
@@ -53,8 +50,7 @@ const object = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown): string => typeof value === "string" ? value : ""
 const list = (value: unknown): ReadonlyArray<unknown> => Array.isArray(value) ? value : []
 
-/** What a keyless host answers, and what this fixture answers to any question
- * it does not script. The message is the transport's own so a journal line, a
+/** What this fixture answers to any question it does not script. The message is the transport's own so a journal line, a
  * refused check row and a test all read the same words. */
 export const unscripted = (detail: string): Evaluator.EvaluatorError =>
   new Evaluator.EvaluatorError({ code: "unreachable", message: `No evaluator is installed on this host (${detail})` })
@@ -291,7 +287,7 @@ export interface HostJudge {
  * The judge a native test host binds through `NativeControl.Platform.evaluator`.
  *
  * One layer, every classifier this host asks, dispatched by question id. A
- * question set this fixture does not script keeps the keyless host's answer.
+ * question set this fixture does not script fails closed.
  * One per host, so what one case asked is not another's.
  *
  * @category fixtures

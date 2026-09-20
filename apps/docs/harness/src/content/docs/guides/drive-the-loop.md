@@ -104,7 +104,7 @@ const program = CellTurn.run({ state, flows }).pipe(
   Effect.provide(engineLayer),
   Effect.provide(QuickJSSandbox.layer),
   Effect.provide(Steering.layerNoop()),
-  Effect.provide(Evaluator.layerFromEnvironment(process.env))
+  Effect.provide(Evaluator.layerFromEnvironment(process.env, "my host"))
 )
 ```
 
@@ -118,11 +118,12 @@ The stream requires four services:
   adapts the durable notification queue of
   [`@smthrs/notifications`](https://notifications.smithers.sh/reference/api/) for one run lineage.
 - `Evaluator.Evaluator` from [`@smthrs/model`](https://model.smithers.sh/reference/api/): the transport the
-  completion brake asks. **`AI_GATEWAY_API_KEY` is required to run an
-  agent.** `Evaluator.layerFromEnvironment(process.env)` reads it and falls
-  to `Evaluator.layerUnavailable()` when it is unset, and a run without the
-  key then fails at its first completion with `completion_unjudged`, because
-  the brake never falls back. A test binds `Evaluator.layerScripted` instead.
+  completion brake asks. **Export `AI_GATEWAY_API_KEY` or deliberately bind a
+  scripted judge.** `Evaluator.layerFromEnvironment(process.env, "my host")`
+  refuses composition without a key, before a database, socket or process opens.
+  A judge that later fails still ends the run as `completion_unjudged`.
+  A scripted judge must read evidence and dispatch by question id; see the
+  [whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
 
 The controller also reads `CellHistory.CellHistory` optionally: provide the
 service when the host offers a way to save a flow, and the controller appends

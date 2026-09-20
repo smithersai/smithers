@@ -2,6 +2,7 @@
 import { NodeCrypto } from "@effect/platform-node"
 import * as Budget from "@smthrs/agent/Budget"
 import * as EventSink from "@smthrs/agent/EventSink"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control, ControlRuntime } from "@smthrs/control"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -171,7 +172,12 @@ export default Flow.make({
             )
           }).pipe(
             Effect.provide(
-              NodeControl.layerControl({ root }, registry, mode === "sql" ? engine : { ...engine, runtime }, modules)
+              NodeControl.layerControl(
+                { root, evaluator: ScriptedJudge.layer },
+                registry,
+                mode === "sql" ? engine : { ...engine, runtime },
+                modules
+              )
             ),
             Effect.scoped
           )

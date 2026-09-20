@@ -18,7 +18,11 @@ import * as Layer from "effect/Layer"
 import { CliConfig, Command } from "effect/unstable/cli"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { afterEach, beforeEach, vi } from "vitest"
 import { copyFixture, hashTree } from "../fixtures/helpers.ts"
+
+beforeEach(() => vi.stubEnv("AI_GATEWAY_API_KEY", ""))
+afterEach(() => vi.unstubAllEnvs())
 
 const services = Layer.mergeAll(NodeServices.layer, CliConfig.layer())
 
@@ -58,18 +62,18 @@ describe("the smithers-migrate command in process", () => {
       expect(hashTree(root)).toEqual(before)
     }))
 
-  it.live("parks an apply over run state with exit 3 and touches nothing", () =>
+  it.live("refuses a keyless apply over run state with exit 1 and touches nothing", () =>
     Effect.gen(function*() {
       const root = copyFixture("persisted-db")
       const before = hashTree(root)
 
       const status = yield* run(["--root", root, "--apply", "--report-dir", ".out"])
 
-      expect(status).toBe(3)
+      expect(status).toBe(1)
       expect(hashTree(root)).toEqual(before)
     }))
 
-  it.live("parks a second apply over a live lock with exit 3 and touches nothing", () =>
+  it.live("refuses a keyless apply before looking at a live lock and touches nothing", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       // Held by this process, which is alive: exactly what a concurrent apply
@@ -79,11 +83,10 @@ describe("the smithers-migrate command in process", () => {
         () =>
           Effect.gen(function*() {
             const before = hashTree(root)
-            // This fixture has no VCS. Pass that earlier guard so the command
-            // reaches the live-lock refusal without taking a file-copy backup.
+            // Startup refuses before inspecting the lock or creating a backup.
             const status = yield* run(["--root", root, "--apply", "--allow-no-vcs", "--report-dir", ".out"])
 
-            expect(status).toBe(3)
+            expect(status).toBe(1)
             expect(hashTree(root)).toEqual(before)
           }),
         Lock.release

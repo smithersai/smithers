@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -31,14 +32,8 @@ const answers = (template: ReleaseTemplate, confidence: number) => {
 const scriptedJev = (template: ReleaseTemplate, confidence: number) =>
   Evaluator.layerScripted(() => answers(template, confidence))
 
-/** The judge behind the harness completion brake, scripted to let a seat's
- * completion stand, so these tests read the template decision and nothing
- * else. */
-const scriptedCompletion = Evaluator.layerScripted(() => ({
-  complete: { probability: 0.99 },
-  overclaims: { probability: 0.01 },
-  invented: { probability: 0.01 }
-}))
+/** The completion fixture reads the evidence independently of the template probe. */
+const scriptedCompletion = ScriptedJudge.layer
 
 test("the classifier asks one closed question over the four narratives and nothing else", () => {
   assert.equal(templateClassifier.id, "release/template")

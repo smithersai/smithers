@@ -45,9 +45,9 @@ import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InternalFlowEngineLike from "../src/internal/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -253,7 +253,7 @@ const memory = <ROut, RIn>(
   step.pipe(
     Layer.provideMerge(AgentAction.layerHost(composition)),
     Layer.provideMerge(seats(model)),
-    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
     // Stated rather than inherited: a correction ladder is not the place to
     // discover which ceiling a run is under.
     Layer.provideMerge(Safety.layer),
@@ -470,7 +470,7 @@ const incarnation = (
     return Layer.mergeAll(Inheriting.layer, Interpreter.layer(InheritingFlow)).pipe(
       Layer.provideMerge(AgentAction.layerHost(composition)),
       Layer.provideMerge(seats(model)),
-      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
       Layer.provideMerge(classifier),
       Layer.provideMerge(Budget.layerUnbounded()),
       Layer.provideMerge(Action.layerImplementations),

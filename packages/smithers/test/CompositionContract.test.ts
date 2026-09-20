@@ -9,6 +9,7 @@
 import { NodeHttpClient } from "@effect/platform-node"
 import { MockAgent } from "@effect/platform-node/Undici"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Application, NodeControl } from "@smthrs/cli"
 import { Control, type ControlSchema } from "@smthrs/control"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -73,6 +74,7 @@ const composition = (
   // identity, through the same composition used by the shipped CLI.
   const engine = NodeControl.engineDurable(root, registry)
   const runs = NodeControl.layerExecutor(registry, engine, root, {
+    evaluator: ScriptedJudge.layer,
     environment: { OPENAI_API_KEY: "test-key" },
     // This is the deliberately permissive TEST input. Production takes the
     // executor's real store default.

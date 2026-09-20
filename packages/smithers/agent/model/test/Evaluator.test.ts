@@ -516,9 +516,16 @@ describe("Evaluator.layerUnavailable", () => {
 })
 
 describe("Evaluator.layerFromEnvironment", () => {
+  it("requires the composing host's name in its type contract", () => {
+    if (false) {
+      // @ts-expect-error a composition must name the host in its startup refusal
+      Evaluator.layerFromEnvironment({})
+    }
+  })
+
   it("reaches the gateway with the key the environment carries", async () => {
     const sent: Array<Sent> = []
-    const layer = Evaluator.layerFromEnvironment({ [Evaluator.environmentKey]: "vck_env" }).pipe(
+    const layer = Evaluator.layerFromEnvironment({ [Evaluator.environmentKey]: "vck_env" }, "test host").pipe(
       Layer.provide(httpLayer(sent, () => json(recorded)))
     )
 
@@ -528,11 +535,12 @@ describe("Evaluator.layerFromEnvironment", () => {
 
   it.each([
     ["no key at all", {}],
-    ["an empty key", { [Evaluator.environmentKey]: "" }]
-  ])("is unavailable with %s, so a run fails at its first judgement rather than skipping it", async (_, env) => {
-    const layer = Evaluator.layerFromEnvironment(env).pipe(Layer.provide(httpLayer([], () => json(recorded))))
-
-    expect(failure(await evaluate(layer))).toMatchObject({ code: "unreachable" })
+    ["an empty key", { [Evaluator.environmentKey]: "" }],
+    ["a blank key", { [Evaluator.environmentKey]: " \t" }]
+  ])("refuses composition with %s before a layer can open resources", (_, env) => {
+    expect(() => Evaluator.layerFromEnvironment(env, "test host")).toThrow(
+      "test host needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge. Export AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or deliberately bind Evaluator.layerScripted with an evidence-based judge."
+    )
   })
 })
 

@@ -36,8 +36,8 @@ import * as Agent from "../src/Agent.ts"
 import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -187,7 +187,7 @@ const collect = (options: RunOptions) =>
       })
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-      Effect.provide(Layer.merge(Agent.layerDefaults, confidentEvaluator))
+      Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
     )
     return events
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))

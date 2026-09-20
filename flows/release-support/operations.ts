@@ -514,10 +514,9 @@ const attempt = <A>(step: string, work: (signal: AbortSignal) => Promise<A>) => 
 })
 
 /**
- * Jev through the Vercel gateway when `AI_GATEWAY_API_KEY` is set, else one
- * that answers `unreachable`. The key is required to choose a release
- * narrative at all: without it the step fails instead of letting a writer seat
- * pick one. A test supplies its own scripted evaluator.
+ * Select the release narrative's judge while assembling the host. A missing
+ * gateway key refuses startup; an offline test deliberately scripts this
+ * classifier and the completion brake through the same evaluator.
  */
 export const actionLayers = (options: Options & {
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
@@ -526,7 +525,7 @@ export const actionLayers = (options: Options & {
   return Layer.mergeAll(
     Content.Outcome.toLayer(Effect.succeed),
     Content.PickTemplate.toLayer(({ input, evidence, analysis }) => chooseTemplate(input, evidence, analysis))
-      .pipe(Layer.provide(options.evaluator ?? evaluatorLayer(process.env))),
+      .pipe(Layer.provide(options.evaluator ?? evaluatorLayer(process.env, "smithers release-support"))),
     Release.Outcome.toLayer(Effect.succeed),
     Content.Collect.toLayer((value) => attempt("collect", (signal) => ops.collect(value, signal))),
     Content.RecordUi.toLayer(({ input, evidence }) => input.recording === null ? Effect.succeed(evidence) : attempt("record-ui", (signal) => recordUi(options.root, input.recording!, evidence, signal))),

@@ -65,9 +65,9 @@ import * as AgentSession from "../src/AgentSession.ts"
 import * as CellPlugin from "../src/CellPlugin.ts"
 import * as ChildFlows from "../src/ChildFlows.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 /**
@@ -348,7 +348,7 @@ const collect = (options: {
       maxFrames: 3
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
-      Effect.provide(Layer.merge(Agent.layerDefaults, confidentEvaluator))
+      Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
     )
     return collected
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))

@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -94,7 +95,7 @@ const runReviewStep = (options: ImmutableSourceOptions, verdict: typeof Semantic
     }
   }
   return Effect.gen(function*() {
-    yield* Layer.build(checkLayers(options).pipe(Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never), Action.layerImplementations])))
+    yield* Layer.build(checkLayers({ ...options, evaluator: makeHostJudge().layer }).pipe(Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never), Action.layerImplementations])))
     const captured = Schema.decodeUnknownSync(RunChecks.payloadSchema)(
       yield* handlers.get(CaptureChecks.name)!(Schema.decodeUnknownSync(CaptureChecks.payloadSchema)({ work })).execute)
     const plan = extra.expired ? { ...captured, work: { ...captured.work, deadlineAt: Date.now() - 1 } } : captured

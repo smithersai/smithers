@@ -7,9 +7,11 @@ sidebar:
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components"
 
-In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and completion evaluator are scripted. A live host must replace both with provider-backed layers.
+In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and evidence-based completion judge are scripted.
 
 A declared `output` schema is rendered into the step's system teaching as JSON Schema. The model's final answer is decoded against it, with one correction re-prompt before the step fails. [Agent runtime](/docs/concepts/agent-runtime/) explains the loop.
+
+The offline host explicitly binds `ScriptedJudge.layer`, which reads completion evidence and rejects unrecorded command claims. A live host selects `Evaluator.layerFromEnvironment(process.env, "my host")` before opening resources, or deliberately scripts every classifier it uses. A missing gateway key now prevents that host from booting.
 
 ## Before you begin
 
@@ -30,8 +32,8 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Flow } from "@smthrs/flow"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -131,11 +133,7 @@ export const seats = SeatResolver.layer({
 
 export const agentHost = Layer.mergeAll(host, seats, Agent.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
-  Layer.provideMerge(Evaluator.layerScripted(() => ({
-    complete: { probability: 0.99 },
-    overclaims: { probability: 0.01 },
-    invented: { probability: 0.01 }
-  }))),
+  Layer.provideMerge(ScriptedJudge.layer),
   Layer.provideMerge(Agent.layerDefaults)
 )
 ```

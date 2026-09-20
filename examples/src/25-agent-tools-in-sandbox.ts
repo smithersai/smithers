@@ -11,6 +11,7 @@
  * during the run; this is not an OS boundary against concurrent host mutations.
  * The scripted seat makes the test deterministic and requires no API key.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Agent from "@smthrs/agent/Agent"
@@ -293,13 +294,9 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // The completion brake judges every claim, and never falls back to the
       // model. This example scripts the judge the way it scripts the seat, so it
       // still needs no key. A host with a gateway key binds
-      // `Evaluator.layerFromEnvironment(process.env)` instead.
+      // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({
-          complete: { probability: 0.99 },
-          overclaims: { probability: 0.01 },
-          invented: { probability: 0.01 }
-        }))
+        ScriptedJudge.layer
       ),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))

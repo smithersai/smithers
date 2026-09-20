@@ -26,9 +26,9 @@ import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as EventSink from "../src/EventSink.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -143,7 +143,7 @@ const run = (
       Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
         Layer.provideMerge(AgentAction.layerHost(host)),
         Layer.provideMerge(seats(scripted(cells, requests))),
-        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
         Layer.provideMerge(Safety.layer),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
@@ -255,7 +255,7 @@ describe("AgentAction.make", () => {
               Layer.provideMerge(
                 seats(scripted([""], requests))
               ),
-              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
@@ -303,7 +303,7 @@ const stack = <ROut, RIn>(
   step.pipe(
     Layer.provideMerge(AgentAction.layerHost(host)),
     Layer.provideMerge(seats(model)),
-    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+    Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
     Layer.provideMerge(Safety.layer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -660,7 +660,7 @@ describe("AgentAction refusals that never reach the provider", () => {
             Layer.mergeAll(Checked.layer, Interpreter.layer(CheckedFlow)).pipe(
               Layer.provideMerge(AgentAction.layerHost(host)),
               Layer.provideMerge(seats(scripted([answering(`{"approved":true,"issues":[]}`)], requests))),
-              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
@@ -688,7 +688,7 @@ describe("AgentAction refusals that never reach the provider", () => {
                   resolve: (id) => Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "No API key" }))
                 })
               ),
-              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+              Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
@@ -1060,7 +1060,7 @@ describe("AgentAction payload-chosen seats", () => {
           Layer.mergeAll(Dispatched.layer, Interpreter.layer(DispatchedFlow)).pipe(
             Layer.provideMerge(AgentAction.layerHost(host)),
             Layer.provideMerge(recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)),
-            Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+            Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
@@ -1084,7 +1084,7 @@ describe("AgentAction payload-chosen seats", () => {
       Layer.provideMerge(
         recordingSeats(scripted([answering(`{"approved":true,"issues":[]}`)], requests), asked)
       ),
-      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confidentEvaluator)),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),

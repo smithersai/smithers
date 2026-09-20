@@ -19,6 +19,7 @@
  * run points it at a provider this machine has no key for, so the step fails
  * where a seat is resolved and no request is ever prepared.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Effect, Option } from "effect"
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -248,7 +249,7 @@ describe("where a --json document goes when the verb is handed no emitter", () =
 })
 
 describe("the implementing step the verb builds when nobody supplies one", () => {
-  it("runs the bundled flow, and reports the seat the operator named as unreachable", async () => {
+  it.each([false, true])("chooses its judge before resolving a missing seat (scripted: %s)", async (hasJudge) => {
     const root = directory("smthrs-suggest-root-")
     const home = directory("smthrs-suggest-home-")
     const ui = scripted("test-target")
@@ -263,6 +264,7 @@ describe("the implementing step the verb builds when nobody supplies one", () =>
           list: false,
           json: false,
           environment: keyed,
+          evaluator: hasJudge ? ScriptedJudge.layer : undefined,
           homeDirectory: home,
           repository: project
         }).pipe(Effect.provideService(Ui.Ui, ui.service))
@@ -273,7 +275,12 @@ describe("the implementing step the verb builds when nobody supplies one", () =>
     // The step that failed is named first, then the seat resolver's own
     // sentence: an operator learns which suggestion stopped and what to set.
     expect(error.message).toContain("A test target that reruns only what changed:")
-    expect(error.message).toContain("Set GEMINI_API_KEY or GOOGLE_API_KEY to run the gemini:gemini-2.5-pro seat")
+    if (hasJudge) {
+      expect(error.message).toContain("Set GEMINI_API_KEY or GOOGLE_API_KEY to run the gemini:gemini-2.5-pro seat")
+    } else {
+      expect(error.message).toContain("smithers suggest needs AI_GATEWAY_API_KEY")
+      expect(error.message).toContain("deliberately bind Evaluator.layerScripted")
+    }
     expect(ui.lines).toContain("spinner error: A test target that reruns only what changed: failed")
     // A step that could not start wrote nothing under the root it was pinned
     // to, which is the promise the verb makes about a failed implementation.

@@ -6,6 +6,7 @@ import { NodeHttpClient } from "@effect/platform-node"
 import type * as Undici from "@effect/platform-node/Undici"
 import { MockAgent } from "@effect/platform-node/Undici"
 import { Seat } from "@smthrs/agent"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Layer, Stream } from "effect"
@@ -66,7 +67,10 @@ describe("NodeControl.seatResolver", () => {
     try {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
-      const executor = NodeControl.layerExecutor(registry, engine, root, { environment: {} })
+      const executor = NodeControl.layerExecutor(registry, engine, root, {
+        evaluator: ScriptedJudge.layer,
+        environment: {}
+      })
       // Building this layer migrates the durable engine, registers the agent
       // flow, starts the resume bridge, and migrates the memory store over the
       // control database — the whole local `smthrs run` composition, minus a
@@ -123,6 +127,7 @@ describe("NodeControl.seatResolver", () => {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
       const executor = NodeControl.layerExecutor(registry, engine, root, {
+        evaluator: ScriptedJudge.layer,
         environment: {},
         mcpServers: [{ server: "ping", command: process.execPath, args: ["-e", server] }]
       })

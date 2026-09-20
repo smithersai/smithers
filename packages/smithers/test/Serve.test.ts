@@ -5,6 +5,7 @@
  * laptop's LAN address can launch agents with the operator's credentials, and
  * nothing about the running server says so.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { ApprovalAuthority, Control, ControlRpcs } from "@smthrs/control"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import { Cause, Effect, Exit, Layer } from "effect"
@@ -196,6 +197,7 @@ describe("the serve command", () => {
     const abort = new AbortController()
     const running = Bridge.host(bind({ port, credential }), { root, credential, quiet: true }, {
       environment: {},
+      evaluator: ScriptedJudge.layer,
       approvalAuthority,
       signal: abort.signal
     }).catch((cause: unknown) => {
@@ -247,7 +249,7 @@ describe("the serve command", () => {
         // The local operator can still decide the unchanged pending approval.
         await Effect.runPromise(
           Effect.flatMap(Control.Control, (control) => control.approve(card.approval)).pipe(
-            Effect.provide(NodeControl.layerControl({ root })),
+            Effect.provide(NodeControl.layerControl({ root, evaluator: ScriptedJudge.layer })),
             Effect.scoped
           )
         )
@@ -265,6 +267,8 @@ describe("the serve command", () => {
     const credential = "gateway-alias-test-credential"
     const child = spawn(process.execPath, [
       "--no-warnings",
+      "--import",
+      new URL("./fixtures/scripted-native-host.ts", import.meta.url).href,
       new URL("../src/bin.ts", import.meta.url).pathname,
       "--root",
       root,

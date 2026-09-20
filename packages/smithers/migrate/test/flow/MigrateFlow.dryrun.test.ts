@@ -12,6 +12,7 @@
  * @since 0.1.0
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Command from "@smthrs/migrate/flow/Command"
 import * as Effect from "effect/Effect"
 import { join } from "node:path"
@@ -38,7 +39,7 @@ const changedOutside = (
 }
 
 const plan = (root: string, overrides: Partial<Command.MigrateOptions> = {}) =>
-  Command.runNode(options(root, overrides), { environment: {} })
+  Command.runNode(options(root, overrides), { environment: {}, evaluator: ScriptedJudge.layer })
 
 describe("plan over a single-file JSX project", () => {
   it.effect("names its three units and changes nothing but the report", () =>

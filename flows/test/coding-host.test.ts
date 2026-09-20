@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Effect, Layer } from "effect"
@@ -15,20 +16,20 @@ const landing = Layer.succeed(Landing, { binding: { repositoryId: 1, workspaceId
 
 test("coding deployment requires an explicit model and owning gateway before opening services", () => {
   const options = { repositoryPath: "/unused", gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "" }
-  assert.throws(() => layer(platform, options), /explicit provider:model/)
-  assert.throws(() => layer(platform, { ...options, implementationModel: "implicit-model" }), /explicit provider:model/)
-  assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", gatewayId: "" }), /owning SMITHERS_GATEWAY_ID/)
-  assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", gatewayId: "00000000-0000-0000-0000-000000000000" }), /owning SMITHERS_GATEWAY_ID/)
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, options), /explicit provider:model/)
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "implicit-model" }), /explicit provider:model/)
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", gatewayId: "" }), /owning SMITHERS_GATEWAY_ID/)
+  assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", gatewayId: "00000000-0000-0000-0000-000000000000" }), /owning SMITHERS_GATEWAY_ID/)
   for (const credential of [undefined, "", "  "]) {
-    assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", credential }), /SMITHERS_API_KEY or an explicit approval authority/)
+    assert.throws(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", credential }), /SMITHERS_API_KEY or an explicit approval authority/)
   }
-  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key" }))
-  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", approvalAuthority: ApprovalAuthority.local }))
+  assert.doesNotThrow(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", credential: "operator-key" }))
+  assert.doesNotThrow(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", approvalAuthority: ApprovalAuthority.local }))
   // A landing binding alone is a supported deployment: repository automation
   // consumes Landing without the prompt route. `coding/vibe` stays out of the
   // catalog until the project configuration is present too, so this configures
   // rather than refuses (b1aebc1a19a6; flows/coding/finalization.md).
-  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key", landing }))
+  assert.doesNotThrow(() => layer({ ...platform, evaluator: makeHostJudge().layer }, { ...options, implementationModel: "test:model", credential: "operator-key", landing }))
 })
 
 test("the coding role reuses the existing seat resolver and keeps the approved role identity", async () => {

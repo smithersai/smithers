@@ -8,6 +8,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as EventSink from "@smthrs/agent/EventSink"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Capability from "@smthrs/capability/Capability"
 import { Interpreter } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -54,6 +55,22 @@ describe("materializeFlow", () => {
 })
 
 describe("layer inputs", () => {
+  it("requires a judge choice and refuses an empty environment before acquiring host resources", () => {
+    const options = {
+      agent,
+      sandbox: defineSandbox({ limits: {} }),
+      tools: defineTools({ sources: [] }),
+      seats: { resolve: () => Effect.die("must not resolve a seat") },
+      crypto: NodeCrypto.layer
+    }
+    expect(() => layerFor({ ...options, environment: {} })).toThrow("create-app agent host needs AI_GATEWAY_API_KEY,")
+    const omitted = () => {
+      // @ts-expect-error a host must choose its environment or an explicit evaluator
+      return layerFor(options)
+    }
+    expect(omitted).toThrow("create-app agent host needs AI_GATEWAY_API_KEY,")
+  })
+
   for (
     const { name, declaredAgent, sandbox, limits, maxFrames } of [
       {
@@ -86,6 +103,7 @@ describe("layer inputs", () => {
           sandbox,
           tools: defineTools({ sources: [] }),
           seats: { resolve: () => Effect.die("host inspection must not resolve a seat") },
+          evaluator: ScriptedJudge.layer,
           crypto: NodeCrypto.layer
         })))
       )
@@ -101,6 +119,7 @@ describe("layer inputs", () => {
       sandbox: defineSandbox({ limits: {} }),
       tools: defineTools({ sources: [] }),
       seats: { resolve: () => Effect.die("host inspection must not resolve a seat") },
+      evaluator: ScriptedJudge.layer,
       crypto: NodeCrypto.layer
     }
     const named = await Effect.runPromise(
@@ -173,6 +192,7 @@ describe("runtime budget boundaries", () => {
         sandbox: defineSandbox({ limits: { heapBytes: 32 * 1024 * 1024, wallClockMs: 10_000 } }),
         tools: defineTools({ sources: [FlowBinding.source("test", [tool])] }),
         seats: { resolve: () => Effect.succeed({ model, route: { prepare: () => Effect.succeed(preparedRequest) } }) },
+        evaluator: ScriptedJudge.layer,
         crypto: NodeCrypto.layer
       })
       const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow)).pipe(
@@ -256,6 +276,7 @@ describe("defineTools default envelope", () => {
       sandbox: defineSandbox({ limits: { heapBytes: 32 * 1024 * 1024, wallClockMs: 10_000 } }),
       tools: grant === undefined ? defineTools({ sources }) : defineTools({ sources, grant }),
       seats: { resolve: () => Effect.succeed({ model, route: { prepare: () => Effect.succeed(preparedRequest) } }) },
+      evaluator: ScriptedJudge.layer,
       crypto: NodeCrypto.layer
     })
     const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow)).pipe(
@@ -311,6 +332,7 @@ describe("grant refusals", () => {
       sandbox,
       tools,
       seats,
+      evaluator: ScriptedJudge.layer,
       crypto: NodeCrypto.layer
     })
   }

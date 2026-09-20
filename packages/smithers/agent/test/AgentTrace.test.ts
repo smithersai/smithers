@@ -1006,6 +1006,7 @@ describe("what survives the journal's own redaction", () => {
     )
     // The whole judgement is that THIS call had already been watched passing.
     // Redacted, the row says a call was, and names none.
+    expect(projected).toBeDefined()
     expect(Redaction.make()(projected!.payload)).toEqual({
       flow: "bash",
       check: "{\"command\":\"run the whole check\"}",

@@ -57,7 +57,8 @@
     "./StandardFlows": "./src/StandardFlows.ts",
     "./WorkspaceObservation": "./src/WorkspaceObservation.ts",
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./ScriptedJudge": "./src/ScriptedJudge.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -296,6 +297,16 @@
         "require": {
           "types": "./dist/cjs/index.d.ts",
           "default": "./dist/cjs/index.js"
+        }
+      },
+      "./ScriptedJudge": {
+        "import": {
+          "types": "./dist/esm/ScriptedJudge.d.ts",
+          "default": "./dist/esm/ScriptedJudge.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScriptedJudge.d.ts",
+          "default": "./dist/cjs/ScriptedJudge.js"
         }
       }
     }

@@ -1515,6 +1515,22 @@ export const flow = Flow.make(tag, {
 })
 
 /**
+ * Planning registrations contain no agent actions or unit interpreter. A
+ * caller cannot turn this keyless composition into an agent run.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerPlan = Layer.mergeAll(
+  scanLayer,
+  gateLayer,
+  sealLayer,
+  settleLayer,
+  writeReportLayer,
+  Interpreter.layer(flow)
+).pipe(Layer.provideMerge(Action.layerImplementations))
+
+/**
  * Every action implementation and both flow registrations, over the table the
  * implementations file themselves in.
  *
@@ -1535,13 +1551,8 @@ export const layer = Layer.mergeAll(
   Verify.layer,
   Archive.layer,
   finishLayer,
-  scanLayer,
-  gateLayer,
-  sealLayer,
-  settleLayer,
-  writeReportLayer,
-  Interpreter.layer(unit),
-  Interpreter.layer(flow)
+  layerPlan,
+  Interpreter.layer(unit)
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 
 /**

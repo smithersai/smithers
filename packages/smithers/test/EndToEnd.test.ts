@@ -35,6 +35,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as Detached from "../src/Detached.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
+const scriptedHost = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
 const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 
 // Outside the repository: `Project.root` walks up for `.flows/`, and this
@@ -52,7 +53,7 @@ interface Invocation {
 }
 
 const smithers = (...args: ReadonlyArray<string>): Invocation => {
-  const result = spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+  const result = spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd: project,
     encoding: "utf8",
     timeout: 240_000

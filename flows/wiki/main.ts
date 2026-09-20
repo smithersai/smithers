@@ -23,7 +23,7 @@ if (values.help) {
   if (!destination || destination === ".." || destination.startsWith(`..${sep}`) || isAbsolute(destination)) {
     throw new Error("Generation output must be a dedicated directory inside --root. Publish the resulting immutable snapshot separately; --check can inspect an exported snapshot.")
   }
-  const [{ Action, Interpreter }, { Capability }, { Wiki }, { actionLayers, agentLayers }] = await Promise.all([
+  const [{ Action, Interpreter }, { Capability }, { Wiki }, { actionLayers, agentLayers, hostEvaluator }] = await Promise.all([
     import("@smthrs/flow"), import("@smthrs/flows"), import("./workflow.ts"), import("./runtime.ts")
   ])
   const incremental = values["reuse-run"] ? await import("./reuse.ts") : undefined
@@ -36,11 +36,12 @@ if (values.help) {
   const input: Input = { pages, mode: values.verified ? "verified" : "preview", reviewer }
   // A preflight source capture validates the declared evidence before admission;
   // actions independently recapture and the write gate rechecks it after review.
-  await Effect.runPromise(Effect.forEach(pages, (page) => operations({ root, output }).collect(page)).pipe(Effect.provide(NodeServices.layer)))
-  const layers = Layer.mergeAll(actionLayers({ root, output }), Interpreter.layer(Wiki),
+  const evaluator = values.verified ? hostEvaluator() : undefined
+  const layers = Layer.mergeAll(actionLayers({ root, output, verify: !!values.verified, evaluator }), Interpreter.layer(Wiki),
     ...(incremental ? [incremental.reuseLayers({ root, output })] : []),
-    ...(values.verified ? [agentLayers((await import("../release-support/runtime.ts")).liveSeats(values.model), 900_000)] : []))
+    ...(values.verified ? [agentLayers((await import("../release-support/runtime.ts")).liveSeats(values.model), 900_000, evaluator)] : []))
     .pipe(Layer.provideMerge(Action.layerImplementations))
+  await Effect.runPromise(Effect.forEach(pages, (page) => operations({ root, output }).collect(page)).pipe(Effect.provide(NodeServices.layer)))
   const rule = (action: "fs:read" | "fs:write", resource: string) => new Capability.Permission.Rule({ effect: "allow", pattern: new Capability.Capability.CapabilityPattern({ action, resource }) })
   const rules = [
     ...[...new Set([root, ...sourceFiles.map((file) => resolve(root, file)), output, `${output}/**`, resolve(output, "..")])].map((resource) => rule("fs:read", resource)),

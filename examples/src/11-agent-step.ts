@@ -10,6 +10,7 @@
  * `SeatResolver` supplies a scripted model, so this example needs no provider
  * credential.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -192,13 +193,9 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // The completion brake judges every claim, and never falls back to the
     // model. This example scripts the judge the way it scripts the seat, so it
     // still needs no key. A host with a gateway key binds
-    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
     Layer.provideMerge(
-      Evaluator.layerScripted(() => ({
-        complete: { probability: 0.99 },
-        overclaims: { probability: 0.01 },
-        invented: { probability: 0.01 }
-      }))
+      ScriptedJudge.layer
     ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),

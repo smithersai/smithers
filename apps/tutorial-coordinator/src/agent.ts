@@ -45,6 +45,9 @@ export const TutorialAgent = Flow.make("tutorial/agent-flow",{
 })
 
 const transport = (proxy:TutorialProxySettings) => Layer.effect(RequestExecutor.RequestExecutor)(RequestExecutor.make.pipe(Effect.map(executor=>throughProxy(executor,proxy)))).pipe(Layer.provide(KernelHttpClient.layer),Layer.provide(GrantStore.layerNoop),Layer.provide(NodeHttpClient.layerUndici))
+/** Select once at server startup, before its database and socket exist. */
+export const hostEvaluator = (environment: Readonly<Record<string, string | undefined>>) =>
+  Evaluator.layerFromEnvironment(environment, "tutorial-coordinator").pipe(Layer.provide(NodeHttpClient.layerUndici))
 export function agentLayer(filename:string,settings:TutorialModelSettings, suppliedSeats?:Layer.Layer<SeatResolver.SeatResolver>,proxy?:TutorialProxySettings,suppliedEvaluator?:Layer.Layer<Evaluator.Evaluator>) {
   if(!suppliedSeats&&!proxy)throw new Error("Live tutorial models require the Cloudflare provider proxy")
   const forbidden=()=>Effect.die(new Error("The tutorial model cannot mutate coordinator files; mutations belong to its isolated executor."))
@@ -55,10 +58,10 @@ export function agentLayer(filename:string,settings:TutorialModelSettings, suppl
     Layer.provideMerge(Layer.mergeAll(host,suppliedSeats??Layer.effect(SeatResolver.SeatResolver)(modelSeats(settings)).pipe(Layer.provide(transport(proxy!))),Agent.layer)),
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(),Budget.layer({tokens:{max:32000,onExceeded:"fail"},latency:{maxMillis:120000,onExceeded:"fail"}}))),
     Layer.provideMerge(Agent.layerDefaults),Layer.provideMerge(Action.layerImplementations),Layer.provideMerge(durable),
-    Layer.provideMerge(suppliedEvaluator??Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    Layer.provideMerge(suppliedEvaluator??hostEvaluator(process.env)),
   )
 }
-export const runAgent = (filename:string,settings:TutorialModelSettings,executionId:string,instructions:string,context:unknown,proxy:TutorialProxySettings) => {
+export const runAgent = (filename:string,settings:TutorialModelSettings,executionId:string,instructions:string,context:unknown,proxy:TutorialProxySettings,evaluator?:Layer.Layer<Evaluator.Evaluator>) => {
   const observations:string[]=[]
   const sink=AgentEventSink.layer({emit:event=>Effect.sync(()=>{
     if(observations.length>=100)return
@@ -68,7 +71,7 @@ export const runAgent = (filename:string,settings:TutorialModelSettings,executio
   })})
   return Effect.runPromise(
     TutorialAgent.execute({instructions,context:JSON.stringify(context)},{executionId}).pipe(
-      Effect.provide(agentLayer(filename,settings,undefined,proxy)),Effect.provide(sink),Effect.timeout(120000),
+      Effect.provide(agentLayer(filename,settings,undefined,proxy,evaluator)),Effect.provide(sink),Effect.timeout(120000),
       Effect.map(answer=>({...answer,observations})),
       Effect.mapError(error=>new Error(error._tag==="TimeoutError"?"The live agent timed out after two minutes. Try this action again.":error._tag==="/harness/HarnessError"&&error.code==="model_failed"?"The live model provider could not complete this request. Try again shortly.":error instanceof Error?error.message:"The live agent failed")),
       Effect.ensuring(Effect.promise(()=>writeFile(`${filename}.${executionId}.observations.json`,JSON.stringify(observations))).pipe(Effect.ignore)),Effect.orDie)

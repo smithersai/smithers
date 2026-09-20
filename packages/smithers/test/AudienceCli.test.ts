@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Audience from "@smthrs/build-cli/Audience"
 import { mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -34,7 +35,7 @@ const invoke = async (args: Array<string>, env: Record<string, string>, terminal
   const exit = (code: number) => {
     if (code !== 0) result.code = code
   }
-  await makeCli({ environment: env, presentation, stdout, stderr, exit }).serve(
+  await makeCli({ evaluator: ScriptedJudge.layer, environment: env, presentation, stdout, stderr, exit }).serve(
     Audience.incurArguments(args, presentation),
     {
       env,

@@ -71,6 +71,7 @@ import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
 import { join, resolve } from "node:path"
 import type * as Application from "../Application.ts"
+import * as CliError from "../CliError.ts"
 import * as Serve from "../Serve.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as EngineJournalSupervisor from "./EngineJournalSupervisor.ts"
@@ -118,6 +119,8 @@ export type ModuleRegistration = Layer.Layer<
  * @private
  */
 export interface ExecutorOptions {
+  /** An explicit host judge, including an evidence-based offline script. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Where seat credentials and the host's test declaration are read from. */
   readonly environment: Readonly<Record<string, string | undefined>>
   /**
@@ -173,10 +176,9 @@ export interface Platform {
    * names.
    *
    * A deployed host leaves this out and gets
-   * `Evaluator.layerFromEnvironment(process.env)` over
+   * `Evaluator.layerFromEnvironment(process.env, "smithers run/serve")` over
    * {@link Platform.httpClient}: Jev through the Vercel gateway when
-   * `AI_GATEWAY_API_KEY` is set, and a transport that refuses every
-   * evaluation when it is not. An offline composition names a scripted
+   * `AI_GATEWAY_API_KEY` is set, and a startup refusal when it is not. An offline composition names a scripted
    * reading here instead, because the completion brake never falls back: a
    * claim nothing could judge fails the run, so a keyless host cannot finish
    * an agent turn at all, and `process.env` is not a seam a test owns.
@@ -219,6 +221,22 @@ export const make = (
     { source: "project", root: join(root, "flows"), naming: "path" }
   ]
 
+  // Select before materializeEngine: a failed sibling layer is too late to
+  // prevent database acquisition. Every classifier and the brake share it.
+  const evaluatorFor = (
+    environment: Readonly<Record<string, string | undefined>>,
+    supplied?: Layer.Layer<Evaluator.Evaluator>
+  ) => {
+    try {
+      return supplied ?? native.evaluator ?? Evaluator.layerFromEnvironment(environment, "smithers run/serve").pipe(
+        Layer.provide(native.httpClient)
+      )
+    } catch (error) {
+      if (error instanceof Evaluator.EvaluatorError) throw new CliError.UsageError({ message: error.message })
+      throw error
+    }
+  }
+
   /**
    * The raw host platform: the selected platform services plus the descriptor-relative,
    * no-follow filesystem the kernel needs underneath it. `NodeServices` alone is
@@ -241,6 +259,7 @@ export const make = (
    * @category layers
    * @since 0.1.0
    */
+
   const layerHostPlatform = native.host
 
   /**
@@ -541,7 +560,8 @@ export const make = (
     registry: Layer.Layer<Registry.Registry>,
     engine: EngineDurable,
     root: string,
-    options: ExecutorOptions
+    options: ExecutorOptions,
+    evaluator: Layer.Layer<Evaluator.Evaluator>
   ): Layer.Layer<
     ControlExecutor.ControlExecutor,
     never,
@@ -611,15 +631,8 @@ export const make = (
       // eslint-disable-next-line no-restricted-syntax -- no envelope exists until AgentSession starts a run
       Layer.provide(Layer.mergeAll(quotaPolicy, Budget.layerUnbounded()))
     )
-    // The one judge this host builds, for the two readers that ask one:
-    // the completion brake, which never falls back, so a claim nothing could
-    // judge fails the run instead of standing; and the `test` flow, which
-    // attributes a non-zero exit with it. Without `AI_GATEWAY_API_KEY` this
-    // is `layerUnavailable()` and both say so. The client is the platform's
-    // own, so the Bun host does not reach for undici, and a platform that
-    // names its own judge is taken at its word.
-    const evaluator = native.evaluator ??
-      Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(native.httpClient))
+    // The judge was selected before the control stores were materialized.
+    // Every classifier and the completion brake below share that binding.
     // The dispatcher must live as long as the executor. A model captures this
     // service and uses it after seat resolution has returned.
     //
@@ -848,12 +861,17 @@ export const make = (
    * @since 1.0.0
    */
   const layerExecutor = (
-    ...[registry, engine, ...options]: Parameters<typeof executorFromEngine>
-  ): ReturnType<typeof executorFromEngine> =>
-    Layer.unwrap(Effect.map(
+    registry: Layer.Layer<Registry.Registry>,
+    engine: EngineDurable,
+    root: string,
+    options: ExecutorOptions
+  ): ReturnType<typeof executorFromEngine> => {
+    const evaluator = evaluatorFor(options.environment, options.evaluator)
+    return Layer.unwrap(Effect.map(
       materializeEngine(engine),
-      (materialized) => executorFromEngine(registry, materialized, ...options)
+      (materialized) => executorFromEngine(registry, materialized, root, options, evaluator)
     ))
+  }
 
   const layerControlFromEngine = (
     config: Application.Config,
@@ -867,6 +885,7 @@ export const make = (
       engine,
       layerExecutor(registry, engine, root, {
         environment: process.env,
+        evaluator: config.evaluator,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
@@ -886,6 +905,7 @@ export const make = (
     suppliedEngine?: EngineDurable,
     modules?: ModuleRegistration
   ) => {
+    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator) }
     const root = config.root ?? process.cwd()
     const registry = suppliedRegistry ?? layerRegistry(root)
     const engine = suppliedEngine ?? engineDurable(root, registry, config)
@@ -929,6 +949,7 @@ export const make = (
     modules?: ModuleRegistration,
     suppliedRegistry?: Layer.Layer<Registry.Registry>
   ) => {
+    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator) }
     const root = config.root ?? process.cwd()
     const registry = suppliedRegistry ?? layerRegistry(root)
     return Layer.unwrap(Effect.map(materializeEngine(engineDurable(root, registry, config)), (engine) => {
@@ -937,6 +958,7 @@ export const make = (
     }))
   }
   return {
+    evaluatorFor,
     projectSources,
     layerHostPlatform,
     layerGrantStore,

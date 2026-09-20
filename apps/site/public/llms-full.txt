@@ -2315,7 +2315,7 @@ In this tutorial you'll build an agent flow two ways. First, a markdown flow tha
 
 - The Smithers CLI: `npm install --global @smthrs/cli@next`. The `@next` suffix is required while 1.0 is a release candidate.
 - A provider credential in the environment: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. [Configure model seats](/docs/guides/model-seats/) explains how a seat resolves from environment keys.
-- `AI_GATEWAY_API_KEY` for the completion evaluator in the live markdown run. Part 3 scripts both the seat and evaluator and needs no key.
+- `AI_GATEWAY_API_KEY` for Jev, the completion judge. The CLI refuses to boot without it. The offline module below deliberately binds a scripted judge instead.
 - A git repository to work in. Part 2 reviews its uncommitted change.
 - Node.js 22.19.0 or later for part 3.
 
@@ -2420,13 +2420,13 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as Capability from "@smthrs/capability/Capability"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj, type ChangeId } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -2573,13 +2573,9 @@ const program = Effect.gen(function*() {
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
     // This offline run has no approved plan envelope to derive a ceiling from.
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-    // This offline example supplies a scripted completion judge.
-    Layer.provideMerge(Evaluator.layerScripted(() => ({
-      complete: { probability: 0.99 },
-      overclaims: { probability: 0.01 },
-      invented: { probability: 0.01 }
-    }))),
-    // QuickJS and the default steering source.
+    // The QuickJS sandbox the cell's code runs in, and the steering source it
+    // drains. Both are browser-safe defaults.
+    Layer.provideMerge(ScriptedJudge.layer),
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -2627,9 +2623,11 @@ through the write tool, and every call ran inside the sandbox budget.
 # Pass typed outputs between agent steps
 https://smithers.sh/docs/tutorials/agent-outputs/
 
-In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and completion evaluator are scripted. A live host must replace both with provider-backed layers.
+In this tutorial you'll build a two-step research-then-write flow. The first step's answer must decode against a schema you declare, and the second reads its typed fields. You will run the chain in memory, then persist it over SQLite. It takes about 15 minutes and needs no provider key: the model responses and evidence-based completion judge are scripted.
 
 A declared `output` schema is rendered into the step's system teaching as JSON Schema. The model's final answer is decoded against it, with one correction re-prompt before the step fails. [Agent runtime](/docs/concepts/agent-runtime/) explains the loop.
+
+The offline host explicitly binds `ScriptedJudge.layer`, which reads completion evidence and rejects unrecorded command claims. A live host selects `Evaluator.layerFromEnvironment(process.env, "my host")` before opening resources, or deliberately scripts every classifier it uses. A missing gateway key now prevents that host from booting.
 
 ## Before you begin
 
@@ -2650,8 +2648,8 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Flow } from "@smthrs/flow"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -2751,11 +2749,7 @@ export const seats = SeatResolver.layer({
 
 export const agentHost = Layer.mergeAll(host, seats, Agent.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
-  Layer.provideMerge(Evaluator.layerScripted(() => ({
-    complete: { probability: 0.99 },
-    overclaims: { probability: 0.01 },
-    invented: { probability: 0.01 }
-  }))),
+  Layer.provideMerge(ScriptedJudge.layer),
   Layer.provideMerge(Agent.layerDefaults)
 )
 ```
@@ -2973,6 +2967,8 @@ In this tutorial you'll build a notebook step that records three facts in one ru
 
 A memory policy decides which namespace a flow tree reads and writes, whether recall runs at all, the budget recall answers within, and whether writes are kept. It is attached to the flow declaration with `WithMemory.withMemory`, and every flow that declaration names inherits it. [Memory](/docs/concepts/memory/) explains the model.
 
+The offline host explicitly binds `ScriptedJudge.layer`, which reads completion evidence and rejects unrecorded command claims. A live host selects `Evaluator.layerFromEnvironment(process.env, "my host")` before opening resources, or deliberately scripts every classifier it uses. A missing gateway key now prevents that host from booting.
+
 ## Before you begin
 
 - The Smithers CLI and a project: run `smthrs init notes` in a fresh directory. The project gives you the `.flows/` state directory this tutorial's facts live in.
@@ -2983,7 +2979,7 @@ A memory policy decides which namespace a flow tree reads and writes, whether re
 pnpm add @smthrs/agent@next @smthrs/flow@next @smthrs/engine@next @smthrs/memory@next @smthrs/harness@next @smthrs/model@next @smthrs/registry@next @smthrs/database@next @smthrs/platform-node@next @smthrs/control@next @smthrs/time-travel@next effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
-You need no provider key: both the model and the completion evaluator are scripted, so the runs are deterministic. A live host supplies a provider-backed seat and a real evaluator; the scripted completion probabilities below are only for this tutorial.
+You need no provider key: both the model and the completion judge are scripted, so the runs are deterministic. A live host must choose its own seat and completion judge before opening resources.
 
 ## 1. Write facts in one run
 
@@ -3001,6 +2997,7 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { DurableWriter } from "@smthrs/database"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as ControlMigrations from "@smthrs/control/Migrations"
@@ -3014,7 +3011,6 @@ import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -3202,11 +3198,7 @@ const program = Effect.gen(function*() {
         Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
         // This offline run has no approved plan envelope to derive a ceiling from.
         Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-        Layer.provideMerge(Evaluator.layerScripted(() => ({
-          complete: { probability: 0.99 },
-          overclaims: { probability: 0.01 },
-          invented: { probability: 0.01 }
-        }))),
+        Layer.provideMerge(ScriptedJudge.layer),
         Layer.provideMerge(Agent.layerDefaults),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
@@ -12984,9 +12976,10 @@ classifier's digest into its declaration, so a changed question is a new call
 identity and a resumed run never replays an answer to a question that has
 since changed.
 
-The one service is the `Evaluator` from [`@smthrs/model`](/docs/reference/api/model/). A host
-without a gateway key binds `Evaluator.layerUnavailable()`, and every call then
-resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
+The one service is the `Evaluator` from [`@smthrs/model`](/docs/reference/api/model/). An agent
+host binds a gateway judge or deliberately scripts every classifier it reaches;
+a missing gateway key refuses startup. If an installed judge becomes unavailable,
+a classifier call resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
 with a message containing `unreachable:` after the binding's
 `Flow <name> failed:` prefix; the batch shape reports the same code per state. Nothing hangs and nothing is invented.
 
@@ -13688,6 +13681,17 @@ recreate the replay divergence the adapter exists to prevent.
 harness's `contextWindowTokensFor(seat)` callback. The session and action
 adapters use it when steering, so logical seats such as `reviewer` retain the
 host's context budget. A refused seat becomes a typed harness assembly failure.
+
+## ScriptedJudge
+
+`import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"`
+
+`layer` is an explicit offline completion fixture. It reads a claim's named
+commands against `checksRun` and `lastCheck`, rejects commands absent from the
+record, and refuses question sets other than `complete`, `overclaims`, and
+`invented`. Its command syntax is deliberately limited; it is not a general
+language judge or a production default. A whole host must dispatch its other
+classifiers too; see [the whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
 
 ---
 
@@ -25690,14 +25694,17 @@ delivered no transport, and the evaluator's own `unreachable`, `refused`,
 `timeout`, `empty`, `invalid_answer` or `invalid_question` otherwise. So
 `Evaluator.Evaluator` is a **required service** of `read`, of
 `judgeCompletion`, of `CellTurn.run` and of `Agent.run` above them, and every
-host binds one. A host without `AI_GATEWAY_API_KEY` binds
-`Evaluator.layerUnavailable()` and its runs fail at their first completion,
-by design: a brake that goes quiet when its model is down is a brake that is
-only there when it is not needed. Bind the transport with
-`Evaluator.layerFromEnvironment(process.env)` from `@smthrs/model/Evaluator`,
-which reads `AI_GATEWAY_API_KEY` and falls to `layerUnavailable()` when it is
-unset. A claim one of the five deterministic brakes bounced never reaches
-Jev, so a host without a key still gets all five.
+host binds a real or deliberately scripted judge at composition time.
+`Evaluator.layerFromEnvironment(process.env, "my host")` refuses synchronously
+when `AI_GATEWAY_API_KEY` is missing, empty or blank. Select it before opening
+a database, socket or process. A host missing a judge fails to boot; a configured
+judge that fails during a run still produces `completion_unjudged`.
+
+Offline hosts bind `Evaluator.layerScripted` and compute answers from the actual
+evidence, dispatched by question id. One evaluator serves every classifier in
+a composition. See the [whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+Constant approval is not a judge. `layerUnavailable()` is an explicit outage
+fixture for classifier tests. The five deterministic brakes still run unchanged.
 
 ## Sufficiency
 
@@ -32039,12 +32046,12 @@ never name an option the question did not offer.
 | `Evaluator`                                                                                     | service interface and tag | `evaluate({ state, questions }) => Effect<{ answers, confidence?, usage?, latencyMs }, EvaluatorError>`. `confidence` is the provider's own number per question, read from `providerMetadata.typesafe.confidence` and absent when the transport sent none. Tag id `/model/Evaluator`.                                                                                                                          |
 | `layerVercelGateway(options)`                                                                   | layer                     | Jev through the Vercel AI Gateway over the kernel `HttpClient`. One POST per evaluation, one deadline over the whole call, no retries. Options: `apiKey` (a `Redacted` or a `Config` read at construction), `model` (`typesafe-ai/jev`), `timeoutMs` (1500), `zeroDataRetention` (true), `baseUrl` (`https://ai-gateway.vercel.sh/v4/ai/evaluation-model`). Every request runs as a `model:call` on the model. |
 | `layerScripted(script)`                                                                         | layer                     | Answers from `(request) => answers` or `(request) => Effect<answers, EvaluatorError>`. A scripted answer may omit its `type`; the layer fills it from the question and decodes the result like a gateway body, so a script answering the wrong shape fails as `invalid_answer`.                                                                                                                                |
-| `layerFromEnvironment(environment)`                                                             | layer                     | The evaluator a host binds from its own environment: `layerVercelGateway` when `AI_GATEWAY_API_KEY` holds a value, `layerUnavailable()` when it is unset or empty. Every host that runs an agent loop binds this, because the harness's completion brake never falls back. Needs the kernel `HttpClient`.                                                                                                      |
+| `layerFromEnvironment(environment, host)`                                                       | layer                     | Selects `layerVercelGateway` or throws an `EvaluatorError` at composition time when `AI_GATEWAY_API_KEY` is missing, empty or blank. Requires a host name for the refusal. Call before opening databases, sockets or processes. An offline host deliberately binds `layerScripted` with an evidence-based judge. Needs the kernel `HttpClient`.                                                                |
 | `environmentKey`                                                                                | constant                  | `"AI_GATEWAY_API_KEY"`, the variable `layerFromEnvironment` reads.                                                                                                                                                                                                                                                                                                                                             |
-| `layerUnavailable()`                                                                            | layer                     | Fails every request as `unreachable`, for a host without a key.                                                                                                                                                                                                                                                                                                                                                |
+| `layerUnavailable()`                                                                            | layer                     | Fails every request as `unreachable`; an explicit classifier outage fixture, never an agent host default.                                                                                                                                                                                                                                                                                                      |
 | `Question`, `RawAnswer`, `RawAnswers`                                                           | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                  |
 | `EvaluatorErrorCode`                                                                            | schema                    | `unreachable` (no response), `refused` (a status other than 200, 400 or 422, kept in `status`), `empty` (a 200 whose body carried no answers or could not be read), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                             |
-| `EvaluatorError`                                                                                | error                     | `{ code, status?, message }`. Typed, never thrown.                                                                                                                                                                                                                                                                                                                                                             |
+| `EvaluatorError`                                                                                | error                     | `{ code, status?, message }`. Evaluation failures are typed; missing host configuration is thrown synchronously by `layerFromEnvironment`.                                                                                                                                                                                                                                                                     |
 | `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                          |
 
 The wire protocol is the AI SDK gateway provider's own, as recorded on
@@ -50344,6 +50351,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/11-agent-step.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -50526,13 +50534,9 @@ const SimpleWorkflowLayer = (model: Model.Model) =>
     // The completion brake judges every claim, and never falls back to the
     // model. This example scripts the judge the way it scripts the seat, so it
     // still needs no key. A host with a gateway key binds
-    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
     Layer.provideMerge(
-      Evaluator.layerScripted(() => ({
-        complete: { probability: 0.99 },
-        overclaims: { probability: 0.01 },
-        invented: { probability: 0.01 }
-      }))
+      ScriptedJudge.layer
     ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -50717,9 +50721,9 @@ export const liveLayer = (apiKey: string) =>
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
     // The completion brake judges every claim through Jev and never falls back
-    // to the model. Without `AI_GATEWAY_API_KEY` this smoke run fails at its
-    // first completion with `completion_unjudged`.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // to the model. Without `AI_GATEWAY_API_KEY` this smoke refuses composition
+    // before any host resource is opened.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/12-agent-live-smoke").pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -50923,8 +50927,8 @@ export const liveLayer = (baseUrl: string) =>
     Layer.provideMerge(Agent.layerDefaults),
     // The completion brake judges every claim through Jev and never falls back
     // to the model. A local provider does not change that: without
-    // `AI_GATEWAY_API_KEY` this run fails at its first completion.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // `AI_GATEWAY_API_KEY` this host refuses composition before opening resources.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/13-agent-live-smoke-local").pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -51100,9 +51104,9 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
     Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provideMerge(Agent.layerDefaults),
     // The completion brake judges every claim through Jev and never falls back
-    // to the model. Without `AI_GATEWAY_API_KEY` this smoke run fails at its
-    // first completion with `completion_unjudged`.
-    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))),
+    // to the model. Without `AI_GATEWAY_API_KEY` this smoke refuses composition
+    // before any host resource is opened.
+    Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "examples/14-agent-live-smoke-gemini").pipe(Layer.provide(NodeHttpClient.layerUndici))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(NodeCrypto.layer)
@@ -52607,6 +52611,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/20-child-flows.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -52939,13 +52944,9 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // The completion brake judges every claim, and never falls back to the
               // model. This example scripts the judge the way it scripts the seat, so
               // it still needs no key. A host with a gateway key binds
-              // `Evaluator.layerFromEnvironment(process.env)` instead.
+              // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
               Layer.provideMerge(
-                Evaluator.layerScripted(() => ({
-                  complete: { probability: 0.99 },
-                  overclaims: { probability: 0.01 },
-                  invented: { probability: 0.01 }
-                }))
+                ScriptedJudge.layer
               )
             )
           )
@@ -53505,6 +53506,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/22-mcp-tools.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
@@ -53750,13 +53752,9 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               // The completion brake judges every claim, and never falls back to the
               // model. This example scripts the judge the way it scripts the seat, so
               // it still needs no key. A host with a gateway key binds
-              // `Evaluator.layerFromEnvironment(process.env)` instead.
+              // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
               Layer.provideMerge(
-                Evaluator.layerScripted(() => ({
-                  complete: { probability: 0.99 },
-                  overclaims: { probability: 0.01 },
-                  invented: { probability: 0.01 }
-                }))
+                ScriptedJudge.layer
               ),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(durableEngine(filename, "examples-mcp"))
@@ -54258,6 +54256,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/25-agent-tools-in-sandbox.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Agent from "@smthrs/agent/Agent"
@@ -54540,13 +54539,9 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       // The completion brake judges every claim, and never falls back to the
       // model. This example scripts the judge the way it scripts the seat, so it
       // still needs no key. A host with a gateway key binds
-      // `Evaluator.layerFromEnvironment(process.env)` instead.
+      // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({
-          complete: { probability: 0.99 },
-          overclaims: { probability: 0.01 },
-          invented: { probability: 0.01 }
-        }))
+        ScriptedJudge.layer
       ),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(filename, "examples-sandbox"))
@@ -54604,6 +54599,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/26-memory-recall.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Agent from "@smthrs/agent/Agent"
@@ -54867,13 +54863,9 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                 // The completion brake judges every claim, and never falls back to
                 // the model. This example scripts the judge the way it scripts the
                 // seat, so it still needs no key. A host with a gateway key binds
-                // `Evaluator.layerFromEnvironment(process.env)` instead.
+                // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
                 Layer.provideMerge(
-                  Evaluator.layerScripted(() => ({
-                    complete: { probability: 0.99 },
-                    overclaims: { probability: 0.01 },
-                    invented: { probability: 0.01 }
-                  }))
+                  ScriptedJudge.layer
                 ),
                 Layer.provideMerge(Action.layerImplementations)
               )
@@ -57017,6 +57009,7 @@ Vitest reports the assertions that passed, failed, or were skipped. Examples tha
 ## Source
 
 ```ts title="examples/src/39-agent-policies.ts"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -57168,13 +57161,9 @@ const policies = (calls: Array<string>) =>
     // The completion brake judges every claim, and never falls back to the
     // model. This example scripts the judge the way it scripts the seat, so it
     // still needs no key. A host with a gateway key binds
-    // `Evaluator.layerFromEnvironment(process.env)` instead.
+    // `Evaluator.layerFromEnvironment(process.env, "my host")` instead.
     Layer.provideMerge(
-      Evaluator.layerScripted(() => ({
-        complete: { probability: 0.99 },
-        overclaims: { probability: 0.01 },
-        invented: { probability: 0.01 }
-      }))
+      ScriptedJudge.layer
     )
   )
 

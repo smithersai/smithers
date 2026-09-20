@@ -230,15 +230,9 @@ export const jevSemanticCheck = (
     return jevVerdict(comparison, check, states, answers)
   })
 
-/** The evaluator a repository check host runs with: Jev through the Vercel
- * gateway when `AI_GATEWAY_API_KEY` is set, else one that answers
- * `unreachable`. Without a key every AI check errors, by design: the key is
- * required to run AI checks at all. */
+/** Select the repository host's judge before it opens resources. */
 export const evaluatorLayer = (
-  environment: Readonly<Record<string, string | undefined>>
-): Layer.Layer<Evaluator.Evaluator> => {
-  const key = environment["AI_GATEWAY_API_KEY"]
-  return key === undefined || key === ""
-    ? Evaluator.layerUnavailable()
-    : Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(Layer.provide(NodeHttpClient.layerUndici))
-}
+  environment: Readonly<Record<string, string | undefined>>,
+  host = "smithers repository host"
+): Layer.Layer<Evaluator.Evaluator> =>
+  Evaluator.layerFromEnvironment(environment, host).pipe(Layer.provide(NodeHttpClient.layerUndici))

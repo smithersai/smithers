@@ -137,12 +137,13 @@ export const main = async (argv: readonly string[]) => {
     process.stdout.write(JSON.stringify({ kind: stored.kind, input: stored.input, nodes: [...Graph.nodes(graph)].map((node) => ({ kind: node.kind, ast: node.ast })) }, null, 2) + "\n")
     return
   }
+  const host = runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens })
   const previous = await maybeRead(await inside(root, path.record))
   if (previous && !isDeepStrictEqual(Schema.decodeUnknownSync(StoredRun)(JSON.parse(previous)), stored)) throw new Error("Run ID already belongs to different input/settings; use --resume or a new ID")
   await mkdir(await inside(root, path.directory), { recursive: true })
   if (!previous) await atomicWrite(root, path.record, JSON.stringify(Schema.encodeSync(StoredRun)(stored), null, 2) + "\n")
   process.stdout.write(`Run ${id}; state ${path.directory}\n`)
-  const result = await Effect.runPromise(Effect.scoped(drive(stored).pipe(Effect.provide(runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens })))))
+  const result = await Effect.runPromise(Effect.scoped(drive(stored).pipe(Effect.provide(host))))
   await report(id, result)
 }
 

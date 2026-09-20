@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control, ControlRuntime } from "@smthrs/control"
 import { Deferred, Effect, Layer } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -59,7 +60,7 @@ it("Application.Config.health reaches the real scoped native control host and cl
     }
     await Effect.runPromise(
       Deferred.await(began).pipe(
-        Effect.provide(NodeControl.layerControl(config, registry, engine)),
+        Effect.provide(NodeControl.layerControl({ ...config, evaluator: ScriptedJudge.layer }, registry, engine)),
         Effect.scoped,
         Effect.timeout("30 seconds")
       )

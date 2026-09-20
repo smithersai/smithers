@@ -9,7 +9,7 @@ import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import { Ownership } from "@smthrs/run-store"
@@ -28,11 +28,8 @@ import { ReviewPage } from "../wiki/workflow.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const input = { prompt: "Add the next feature from verified current documentation.", feedback: "" }
-/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
-const citationsSupported = Evaluator.layerScripted((request) =>
-  "support" in request.questions
-    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
+/** One evidence judge dispatches citation and completion questions for this host. */
+const citationsSupported = makeHostJudge().layer
 test("wiki generation precedes planning, reuses exact reviews, rechecks changed pages and refuses unsupported prose", {
   skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to the existing native Plue adapter" : false,
   timeout: 600_000

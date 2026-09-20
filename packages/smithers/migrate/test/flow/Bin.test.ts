@@ -86,16 +86,18 @@ describe("smithers-migrate", () => {
     ])
   })
 
-  it("parks an apply that would run beside 0.x run state, exits 3, and touches nothing", () => {
+  it("refuses a keyless apply before scanning run state and touches nothing", () => {
     const root = copyFixture("persisted-db")
     const before = hashTree(root)
 
-    const result = runBin(["--root", root, "--apply", "--report-dir", ".out"])
+    const result = runBin(["--root", root, "--apply", "--report-dir", ".out"], {
+      ...process.env,
+      AI_GATEWAY_API_KEY: undefined
+    })
 
-    // Exit 3 is "the project is intact and the operator has a decision".
-    expect(result.status).toBe(3)
+    expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs migrate:")
-    expect(result.stderr.toLowerCase()).toContain("run")
+    expect(result.stderr).toContain("smithers migrate needs AI_GATEWAY_API_KEY,")
     expect(hashTree(root)).toEqual(before)
   })
 

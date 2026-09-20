@@ -37,13 +37,10 @@ export const liveSeats = (model: string) => Layer.effect(SeatResolver.SeatResolv
     return SeatResolver.make({ resolve: () => resolver.resolve(model) })
   }))
 
-/** The evaluator a host runs with when it names none: Jev through the gateway
- * when `AI_GATEWAY_API_KEY` is set, and the unavailable transport when it is
- * not. The completion brake never falls back, so without the key a writer run
- * fails at its first completion instead of standing unjudged. An offline test
- * names a scripted one. */
+/** Select a real judge or refuse composition before opening host resources.
+ * Offline hosts pass an evidence-based scripted evaluator explicitly. */
 export const hostEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(process.env).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(process.env, "smithers release-support").pipe(Layer.provide(NodeHttpClient.layerUndici))
 
 export const agentLayers = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,
@@ -80,9 +77,10 @@ export const runtime = (options: {
   readonly model: string
   readonly maxTokens: number
 }) => {
+  const evaluator = hostEvaluator()
   const registration = Layer.mergeAll(
-    actionLayers({ root: options.root, reviewDirectory: relativePath(options.root, dirname(options.filename)) }),
-    agentLayers(liveSeats(options.model), options.maxTokens),
+    actionLayers({ root: options.root, evaluator, reviewDirectory: relativePath(options.root, dirname(options.filename)) }),
+    agentLayers(liveSeats(options.model), options.maxTokens, evaluator),
     HumanTask.layer,
     Interpreter.layer(Content.ReleaseContent),
     Interpreter.layer(Release.Release)

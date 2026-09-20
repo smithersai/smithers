@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { NodeServices } from "@effect/platform-node"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -9,7 +10,6 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as CoreFlow from "@smthrs/core/Flow"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
@@ -228,7 +228,7 @@ const fixture = async (t: TestContext, contributed = false) => {
       // falls back. This suite is offline, so the judge is scripted and lets a
       // stated completion stand.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({ complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }))
+        ScriptedJudge.layer
       ),
       Layer.provideMerge(Layer.mergeAll(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
       // This authority test never exercises rollback; the separate native JJ

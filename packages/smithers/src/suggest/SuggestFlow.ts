@@ -25,6 +25,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
@@ -270,12 +271,12 @@ const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = Layer.su
  *
  * The brake never falls back: a claim nothing could judge fails the run
  * instead of standing. Without `AI_GATEWAY_API_KEY` this is
- * `layerUnavailable()` and the run fails at its first completion.
+ * a synchronous startup refusal. Offline hosts script their own judge.
  */
 const evaluatorFrom = (
   environment: Readonly<Record<string, string | undefined>>
 ): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(environment).pipe(Layer.provide(NodeHttpClient.layerUndici))
+  Evaluator.layerFromEnvironment(environment, "smithers suggest").pipe(Layer.provide(NodeHttpClient.layerUndici))
 
 const composed = (
   root: string,
@@ -301,6 +302,8 @@ const composed = (
  * @since 1.0.0-rc.0
  */
 export interface NodeConfig {
+  /** Explicit offline judge; otherwise select the gateway before acquiring resources. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly root: string
   /** The `provider:model` seat the role resolves to. */
   readonly seat: string
@@ -315,8 +318,9 @@ export interface NodeConfig {
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerNode = (config: NodeConfig) =>
-  Layer.unwrap(Effect.gen(function*() {
+export const layerNode = (config: NodeConfig) => {
+  const evaluator = isAbsolute(config.root) ? config.evaluator ?? evaluatorFrom(config.environment) : undefined
+  return Layer.unwrap(Effect.gen(function*() {
     if (!isAbsolute(config.root)) return yield* Effect.fail(new RelativeRoot(config.root))
     const executor = RequestExecutor.layer.pipe(
       Layer.provide(KernelHttpClient.layer),
@@ -329,8 +333,9 @@ export const layerNode = (config: NodeConfig) =>
         return SeatResolver.make({ resolve: () => resolver.resolve(config.seat) })
       })
     ).pipe(Layer.provide(executor))
-    return composed(config.root, seats, evaluatorFrom(config.environment))
+    return composed(config.root, seats, evaluator!)
   }))
+}
 
 /**
  * The cell a scripted model answers one frame with.
@@ -407,16 +412,11 @@ export const layerScripted = (config: { readonly root: string; readonly script: 
         )
     })
     // The model is scripted, so the judge is too: this composition reaches
-    // no network, and a reading that lets the claim stand keeps the brake
-    // out of the way of what these cases are about.
+    // no network, and the judge reads the commands recorded for the claim.
     return composed(
       config.root,
       seats,
-      Evaluator.layerScripted(() => ({
-        complete: { probability: 0.99 },
-        overclaims: { probability: 0.01 },
-        invented: { probability: 0.01 }
-      }))
+      ScriptedJudge.layer
     )
   }))
 

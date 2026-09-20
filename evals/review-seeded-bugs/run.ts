@@ -89,11 +89,10 @@ function materializeFixture(label: PlantedBugLabel, workRoot: string): string {
   return repoDir;
 }
 
-async function runFixture(label: PlantedBugLabel, live: boolean): Promise<FixtureRun> {
+async function runFixture(label: PlantedBugLabel, layer: ReturnType<typeof layerMemory>): Promise<FixtureRun> {
   const workRoot = mkdtempSync(join(tmpdir(), `review-seeded-${label.fixture}-`));
   try {
     const repoDir = materializeFixture(label, workRoot);
-    const seats = live ? reviewSeatResolver(resolveReviewSeats()) : scriptedSeats(answerReview);
     const result = await Effect.runPromise(
       Review.execute(
         {
@@ -107,10 +106,7 @@ async function runFixture(label: PlantedBugLabel, live: boolean): Promise<Fixtur
           out: join(workRoot, "walkthrough.html"),
         } as never,
         { executionId: `review-seeded-${label.fixture}-${Date.now()}` },
-      ).pipe(
-        Effect.provide(live ? layerMemory(seats) : layerMemory(seats, {}, scriptedEvaluator())),
-        Effect.orDie,
-      ),
+      ).pipe(Effect.provide(layer), Effect.orDie),
     );
     return {
       fixture: label.fixture,
@@ -186,12 +182,15 @@ function renderScorecard(labels: readonly PlantedBugLabel[], score: CorpusScore,
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const live = argv.includes("--live");
   const update = argv.includes("--update");
+  // Decide the judge before any fixture directory or Git process exists.
+  const seats = live ? reviewSeatResolver(resolveReviewSeats()) : scriptedSeats(answerReview);
+  const layer = live ? layerMemory(seats) : layerMemory(seats, {}, scriptedEvaluator());
   const labels = loadCorpus();
 
   const runs: FixtureRun[] = [];
   const findingsByFixture: Record<string, ReviewFinding[]> = {};
   for (const label of labels) {
-    const fixtureRun = await runFixture(label, live);
+    const fixtureRun = await runFixture(label, layer);
     runs.push(fixtureRun);
     findingsByFixture[label.fixture] = fixtureRun.findings;
   }

@@ -1,4 +1,5 @@
 import { NodeHttpClient, NodeSocket } from "@effect/platform-node"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control/Control"
 import type { PlanCard } from "@smthrs/control/ControlSchema"
 import { ModelError } from "@smthrs/model/ModelError"
@@ -31,11 +32,14 @@ const transport = Layer.succeed(RequestExecutor, {
       )
     })
 })
-const executor = action === "plan" ? undefined : NodeControl.layerExecutor(registry, engine, root, {
-  environment: { ANTHROPIC_API_KEY: "synthetic-offline-test", OPENAI_API_KEY: "synthetic-offline-test" },
-  grants: NodeControl.layerGrantStore(root),
-  requestExecutor: transport
-})
+const executor = action === "plan" ?
+  undefined :
+  NodeControl.layerExecutor(registry, engine, root, {
+    evaluator: ScriptedJudge.layer,
+    environment: { ANTHROPIC_API_KEY: "synthetic-offline-test", OPENAI_API_KEY: "synthetic-offline-test" },
+    grants: NodeControl.layerGrantStore(root),
+    requestExecutor: transport
+  })
 // The parent starts its operation deadline at this barrier, after the fresh
 // process has loaded modules and constructed the layer declarations.
 process.stdout.write(`APPROVAL_CONTENT_READY:${process.uptime()}\n`)

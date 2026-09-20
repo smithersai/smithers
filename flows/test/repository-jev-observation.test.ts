@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
@@ -47,7 +48,7 @@ const runStep = async (work: typeof Work.Type, answer: typeof Finding.Type = ans
   const options = { repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } }
   const runtime = ManagedRuntime.make(Layer.mergeAll(
     Interpreter.layer(InvestigateStep), failureLayer, HumanTask.layer, inspectionLayers(options),
-    executionLayers(options),
+    executionLayers({ ...options, evaluator: makeHostJudge().layer }),
     Research.toLayer(() => seatOnly(Research.name)), ProposeRepro.toLayer(() => seatOnly(ProposeRepro.name)),
     Review.toLayer(() => seatOnly(Review.name))
   ).pipe(Layer.provide([Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)]),
@@ -124,7 +125,7 @@ const runRepro = async (classification: typeof Observation.Type["classification"
     reproduction: { files: [{ path: "repro.mjs", content: "import { greeting } from './greeting.mjs'\n" }],
       argv: [process.execPath, "repro.mjs"], cwd: ".", expected: "km", failureContains: "km", timeoutMs: 5000 } }
   return Effect.runPromise(Effect.gen(function*() {
-    yield* Layer.build(executionLayers({ repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } })
+    yield* Layer.build(executionLayers({ evaluator: makeHostJudge().layer, repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } })
       .pipe(Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never), Action.layerImplementations,
         Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)])))
     return yield* handlers.get(ExecuteRepro.name)!({ work, observation }).execute.pipe(

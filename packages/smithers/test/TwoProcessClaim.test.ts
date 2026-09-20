@@ -33,6 +33,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 
+const scriptedHost = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
 const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 // Outside the repository, for the reason `test/Bin.test.ts` states: this
 // checkout grows a `.flows/` the moment any command runs in it, and a working
@@ -53,7 +54,7 @@ const project = (): string => {
 }
 
 const smithers = (cwd: string, args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,

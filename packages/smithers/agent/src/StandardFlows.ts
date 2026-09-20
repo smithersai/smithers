@@ -291,8 +291,9 @@ export interface ClassifyOptions {
  * is a new call identity and a resumed run never replays an answer to a
  * question that has since changed.
  *
- * The one service is the `Evaluator`. A host without a gateway key binds
- * `Evaluator.layerUnavailable()`, and every call then resolves in the cell as
+ * The one service is the `Evaluator`. Agent hosts select a real or deliberately
+ * scripted judge before startup. If that judge becomes unavailable, a call
+ * resolves in the cell as
  * `{ ok: false, error: { code: "flow_failed", message } }` whose message
  * contains `unreachable:` after the binding's `Flow <name> failed:` prefix
  * (the other evaluator codes, `timeout:`, `refused:`, `empty:`,

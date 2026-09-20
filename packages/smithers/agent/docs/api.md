@@ -1244,9 +1244,10 @@ classifier's digest into its declaration, so a changed question is a new call
 identity and a resumed run never replays an answer to a question that has
 since changed.
 
-The one service is the `Evaluator` from [`@smthrs/model`](/api/model). A host
-without a gateway key binds `Evaluator.layerUnavailable()`, and every call then
-resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
+The one service is the `Evaluator` from [`@smthrs/model`](/api/model). An agent
+host binds a gateway judge or deliberately scripts every classifier it reaches;
+a missing gateway key refuses startup. If an installed judge becomes unavailable,
+a classifier call resolves in the cell as `{ ok: false, error: { code: "flow_failed", message } }`
 with a message containing `unreachable:` after the binding's
 `Flow <name> failed:` prefix; the batch shape reports the same code per state. Nothing hangs and nothing is invented.
 
@@ -1948,3 +1949,14 @@ recreate the replay divergence the adapter exists to prevent.
 harness's `contextWindowTokensFor(seat)` callback. The session and action
 adapters use it when steering, so logical seats such as `reviewer` retain the
 host's context budget. A refused seat becomes a typed harness assembly failure.
+
+## ScriptedJudge
+
+`import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"`
+
+`layer` is an explicit offline completion fixture. It reads a claim's named
+commands against `checksRun` and `lastCheck`, rejects commands absent from the
+record, and refuses question sets other than `complete`, `overclaims`, and
+`invented`. Its command syntax is deliberately limited; it is not a general
+language judge or a production default. A whole host must dispatch its other
+classifiers too; see [the whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).

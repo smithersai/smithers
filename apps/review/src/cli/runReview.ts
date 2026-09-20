@@ -105,6 +105,16 @@ export async function runReview(args: ReviewArgs): Promise<void> {
     }
   }
 
+  // Compose before git/gh processes, artifact directories or the database.
+  let runtime: ReturnType<typeof layerNode>;
+  try {
+    runtime = layerNode({ filename: dbPath, seats: reviewSeatResolver(seats), agents: needsAgents });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+    return;
+  }
+
   let pr: PullRequestTarget | null = null;
   if (args.pr) {
     if (!whichBinary(ghBin())) {
@@ -196,7 +206,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
       // replays the prepared snapshot and settled batches from this database.
       Review.execute(input, { executionId: runId }).pipe(
         Effect.provide(
-          layerNode({ filename: dbPath, seats: reviewSeatResolver(seats) }).pipe(
+          runtime.pipe(
             Layer.provideMerge(reporter.layer),
           ),
         ),

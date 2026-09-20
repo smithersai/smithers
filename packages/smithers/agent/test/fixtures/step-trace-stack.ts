@@ -17,9 +17,9 @@ import * as AgentAction from "../../src/AgentAction.ts"
 import * as Budget from "../../src/Budget.ts"
 import * as EventSink from "../../src/EventSink.ts"
 import * as QuotaPolicy from "../../src/QuotaPolicy.ts"
+import * as ScriptedJudge from "../../src/ScriptedJudge.ts"
 import * as Seat from "../../src/Seat.ts"
 import * as SeatResolver from "../../src/SeatResolver.ts"
-import { confident } from "./evaluator.ts"
 
 export const Step = AgentAction.make("agent/test/trace/Step", {
   payload: { input: Schema.String },
@@ -177,7 +177,7 @@ export const incarnation = (
               })
             )
         })),
-        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, confident)),
+        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, ScriptedJudge.layer)),
         Layer.provideMerge(options.quota ? QuotaPolicy.layerDefault() : QuotaPolicy.layerUnclassified()),
         Layer.provideMerge(Budget.layerUnbounded()),
         Layer.provideMerge(Action.layerImplementations),

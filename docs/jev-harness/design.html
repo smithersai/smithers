@@ -229,7 +229,7 @@ const scripted = Evaluator.layerScripted((request) => ({ relevant: { probability
 <tr><td><code>Classifier.Question</code>, <code>Classifier.Answer</code></td><td>Effect Schemas for the ad-hoc path, so a model-authored question is decoded before it reaches the transport.</td></tr>
 <tr><td><code>Evaluator.Evaluator</code></td><td>Service with one method <code>evaluate({ state, questions }) → Effect&lt;{ answers, usage?, latencyMs }, EvaluatorError&gt;</code>.</td></tr>
 <tr><td><code>Evaluator.layerVercelGateway(options)</code></td><td>The wire protocol from <code>apps/server/src/jev.ts</code> over <code>@smthrs/kernel/HttpClient</code>. Options: <code>apiKey</code>, <code>model</code>, <code>timeoutMs</code>, <code>zeroDataRetention</code> (default true), <code>baseUrl</code>.</td></tr>
-<tr><td><code>Evaluator.layerScripted(fn)</code>, <code>Evaluator.layerUnavailable()</code></td><td>Tests and hosts without a key.</td></tr>
+<tr><td><code>Evaluator.layerScripted(fn)</code>, <code>Evaluator.layerUnavailable()</code></td><td>Evidence-based offline scripts and explicit classifier outage tests. Agent hosts must select a real or scripted judge before resources open; a missing gateway key refuses startup.</td></tr>
 <tr><td><code>ClassifierError</code></td><td><code>{ code: "unreachable" | "refused" | "empty" | "timeout" | "invalid_answer" | "invalid_question", status?, message }</code>. Typed, never thrown.</td></tr>
 <tr><td><code>Classifier.confident(answer, floor)</code></td><td><code>Option</code> of the value when confidence (or the boolean's distance from 0.5, doubled) is at or above the floor.</td></tr>
 </table>

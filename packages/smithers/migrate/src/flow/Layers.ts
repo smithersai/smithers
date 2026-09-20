@@ -31,6 +31,7 @@ import type * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
 import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { FlowEngine } from "@smthrs/engine"
@@ -339,12 +340,28 @@ export const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = L
 })
 
 /**
+ * A deterministic scan/plan host. No model, sandbox or agent is registered,
+ * so planning remains keyless without installing an unavailable judge.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerPlan = MigrateFlow.layerPlan.pipe(
+  Layer.provideMerge(FlowEngine.layerMemory),
+  Layer.provideMerge(layerSnapshotBoundary),
+  Layer.provideMerge(NodeCrypto.layer),
+  Layer.provideMerge(NodeServices.layer)
+)
+
+/**
  * What a Node host needs told.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
 export interface NodeConfig {
+  /** Explicit judge for an offline host; otherwise require the gateway key. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly root: string
   readonly commands: Contract.Commands
   readonly runStatePaths: ReadonlyArray<string>
@@ -397,15 +414,20 @@ const hostFor = (
  * derive one from, and inventing a ceiling here would refuse a repair round on
  * a number nobody chose. The evaluator is the completion brake's judge, and the
  * brake never falls back: a claim nothing could judge fails the unit instead of
- * standing, so a host without `AI_GATEWAY_API_KEY` binds
- * `Evaluator.layerUnavailable()` and fails at its first completion. Those are
+ * standing. A host without `AI_GATEWAY_API_KEY` or an explicit judge refuses
+ * composition before scanning or starting processes. Those are
  * decisions, spelled out, not defaults.
  */
 const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
 
 /** The judge, read from the same environment the seat resolver reads. */
-const evaluatorFor = (config: ValidatedConfig): Layer.Layer<Evaluator.Evaluator, never, never> =>
-  Evaluator.layerFromEnvironment(config.environment ?? {}).pipe(Layer.provide(NodeHttpClient.layerUndici))
+const evaluatorFor = (
+  config: Pick<NodeConfig, "environment" | "evaluator">
+): Layer.Layer<Evaluator.Evaluator, never, never> =>
+  config.evaluator ??
+    Evaluator.layerFromEnvironment(config.environment ?? {}, "smithers migrate").pipe(
+      Layer.provide(NodeHttpClient.layerUndici)
+    )
 
 // The credentialed half answers to the same store as the filesystem and the
 // shell, for the reason `hostFor` gives: a second store is a fail-open the
@@ -425,8 +447,9 @@ const executorFor = (config: ValidatedConfig): Layer.Layer<RequestExecutor.Reque
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerNode = (config: NodeConfig) =>
-  Layer.unwrap(Effect.gen(function*() {
+export const layerNode = (config: NodeConfig) => {
+  const evaluator = isAbsolute(config.root) ? evaluatorFor(config) : undefined
+  return Layer.unwrap(Effect.gen(function*() {
     // A relative root is refused, not thrown at. `MigrateError` is this
     // package's single failure type so an entry point maps a code onto an exit
     // status without walking a cause chain, and a library caller passing a
@@ -452,9 +475,10 @@ export const layerNode = (config: NodeConfig) =>
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(evaluatorFor(validated))
+      Layer.provideMerge(evaluator!)
     )
   }))
+}
 
 /**
  * What a Node host needs told when it derives the rest from the project.
@@ -463,6 +487,8 @@ export const layerNode = (config: NodeConfig) =>
  * @since 1.0.0-rc.0
  */
 export interface ScannedConfig {
+  /** Select before the scan, which may start native processes. */
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly root: string
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly seat?: string | undefined
@@ -526,8 +552,10 @@ export const commandsFor = (
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerNodeScanned = (config: ScannedConfig) =>
-  Layer.unwrap(
+export const layerNodeScanned = (config: ScannedConfig) => {
+  // Scanning may start native processes. Select the judge before the scan.
+  const evaluator = isAbsolute(config.root) ? evaluatorFor(config) : undefined
+  return Layer.unwrap(
     Effect.gen(function*() {
       // Before the scan, not after it: a relative root is refused without
       // reading the project at all.
@@ -541,6 +569,7 @@ export const layerNodeScanned = (config: ScannedConfig) =>
       })
       return layerNode({
         root: config.root,
+        evaluator,
         ...(config.environment === undefined ? {} : { environment: config.environment }),
         ...(config.seat === undefined ? {} : { seat: config.seat }),
         runStatePaths: Transform.runStatePaths(result),
@@ -548,6 +577,7 @@ export const layerNodeScanned = (config: ScannedConfig) =>
       })
     })
   ).pipe(Layer.provide(NodeServices.layer))
+}
 
 /**
  * The cell a scripted model answers one frame with.
@@ -649,11 +679,7 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       // never falls back, and a scripted composition that reached for a
       // gateway key would either fail every unit or leave the shell.
       Layer.provideMerge(
-        Evaluator.layerScripted(() => ({
-          complete: { probability: 0.99 },
-          overclaims: { probability: 0.01 },
-          invented: { probability: 0.01 }
-        }))
+        ScriptedJudge.layer
       )
     )
   }))

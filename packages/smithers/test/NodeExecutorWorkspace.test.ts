@@ -5,6 +5,7 @@
  * the `test` flow runs against files the forked agent never touched and reports
  * the result as the fork's own.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import type * as TestRunner from "@smthrs/std/TestRunner"
 import { Effect, Layer } from "effect"
@@ -42,6 +43,7 @@ describe("NodeControl.layerExecutor over a fork's checkout", () => {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
       const executor = NodeControl.layerExecutor(registry, engine, root, {
+        evaluator: ScriptedJudge.layer,
         environment: { SMITHERS_TEST_COMMAND: "project-test-command" },
         executionRoot: workspace
       })

@@ -15,6 +15,7 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Checkpoint from "@smthrs/migrate/flow/Checkpoint"
 import * as Command from "@smthrs/migrate/flow/Command"
 import * as Layers from "@smthrs/migrate/flow/Layers"
@@ -97,7 +98,7 @@ const apply = (
     const written: Array<string> = []
     const chosen = options(root, overrides)
     const surveyed = yield* Command.survey(chosen).pipe(
-      Effect.provide(Layers.layerNodeScanned({ root }))
+      Effect.provide(Layers.layerNodeScanned({ root, evaluator: ScriptedJudge.layer }))
     )
     const report = yield* Command.run(chosen).pipe(
       Effect.provide(Layers.layerScripted({

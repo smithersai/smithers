@@ -146,9 +146,9 @@
   `invalid_answer` or `invalid_question` otherwise. `Evaluator.Evaluator` is
   therefore a **required service** of `CompletionClaim.read`,
   `judgeCompletion` and `CellTurn.run`, so a composition that binds none does
-  not compile; a host without `AI_GATEWAY_API_KEY` binds
-  `Evaluator.layerUnavailable()` and its runs fail at their first completion,
-  by design. The five deterministic brakes run first and unchanged, so a
+  not compile. A host chooses a gateway or deliberately scripted judge before
+  opening resources. Missing `AI_GATEWAY_API_KEY` now refuses host composition
+  instead of dooming every completion. The five deterministic brakes run first and unchanged, so a
   claim they bounced never reaches Jev.
 
   Adding `completion_unjudged` to `HarnessErrorCode` moves every sealed step

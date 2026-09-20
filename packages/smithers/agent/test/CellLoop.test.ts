@@ -34,7 +34,7 @@ import { describe, expect, it } from "vitest"
 import type * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import type * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -255,7 +255,7 @@ const loop = (options: {
     yield* CellTurn.run({ state: options.state ?? state, flows }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
       Effect.provide(QuickJSSandbox.layer),
-      Effect.provide(confidentEvaluator),
+      Effect.provide(scriptedCompletionJudge),
       Effect.provideService(Steering.Source, options.steering ?? Steering.makeNoop()),
       Effect.provideService(EngineLike.EngineLike, port)
     )
@@ -325,7 +325,7 @@ describe("the cell loop on the durable engine", () => {
             })
           ),
           Effect.provide(QuickJSSandbox.layer),
-          Effect.provide(confidentEvaluator),
+          Effect.provide(scriptedCompletionJudge),
           Effect.provideService(Steering.Source, Steering.makeNoop()),
           Effect.provideService(EngineLike.EngineLike, port)
         )

@@ -1068,7 +1068,13 @@ describe("a real stdio round trip", () => {
           const client = yield* McpClient.connect({
             server: "smithers",
             command: process.execPath,
-            args: ["--no-warnings", entry, "--mcp"],
+            args: [
+              "--no-warnings",
+              "--import",
+              new URL("./fixtures/scripted-native-host.ts", import.meta.url).href,
+              entry,
+              "--mcp"
+            ],
             cwd,
             // The child boots the whole command tree through tsx before it can
             // answer, and the client's 10 s default is a boot budget this case

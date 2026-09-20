@@ -112,6 +112,8 @@ The root entry point exports the following namespaces; each is also available fr
 
 The existing Effect embedding API remains supported:
 
+Local agent hosts require `AI_GATEWAY_API_KEY` for their completion judge, or an explicitly supplied evidence-based evaluator on the host configuration. Missing configuration now refuses startup before opening the stores; it no longer boots a host that fails every completion. Remote clients use the server's judge.
+
 ```ts
 import { Command, NodeControl, Version } from "@smthrs/cli"
 import { Effect } from "effect"

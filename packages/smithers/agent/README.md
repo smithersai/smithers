@@ -105,9 +105,8 @@ const run = Effect.gen(function*() {
   Effect.provide(QuotaPolicy.layerDefault()),
   Effect.provide(Budget.layerUnbounded()),
   // The completion brake never falls back, so every host binds a transport.
-  // Without `AI_GATEWAY_API_KEY` this is `Evaluator.layerUnavailable()` and
-  // the run fails at its first completion.
-  Effect.provide(Evaluator.layerFromEnvironment(process.env))
+  // Select before opening host resources; missing configuration refuses startup.
+  Effect.provide(Evaluator.layerFromEnvironment(process.env, "my host"))
 )
 ```
 
@@ -121,12 +120,16 @@ host that accepts mid-run messages provides its own `Steering.layer` instead.
 
 The third service a run leaves to the host is the `Evaluator` from
 [`@smthrs/model`](/api/model), and it is not in `layerDefaults` because it is
-a decision about where the host's gateway key comes from. **`AI_GATEWAY_API_KEY`
-is required to run an agent**: the harness's completion brake never falls back,
-so a claim nothing could judge fails the run as `completion_unjudged`.
-`Evaluator.layerFromEnvironment(process.env)` reads the key and binds
-`Evaluator.layerUnavailable()` when it is unset, and runs on that host fail at
-their first completion, by design.
+a host-owned judge decision. Export `AI_GATEWAY_API_KEY` or deliberately bind
+`Evaluator.layerScripted` with an evidence-based judge. Select
+`Evaluator.layerFromEnvironment(process.env, "my host")` before opening any
+database, socket or process: a missing key now fails to boot instead of failing
+every completion. A gateway outage during a run still fails as
+`completion_unjudged`. Scripts must dispatch by question id and read the
+supplied evidence; see the [whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+The completion-only `ScriptedJudge.layer` fixture rejects named commands missing
+from the record and refuses questions it does not understand. Neither it nor
+`Evaluator.layerUnavailable()` is a production default.
 
 `Agent.layerDefaultsWithVariant` is the same pair over the QuickJS build the
 host names, taken from `QuickJSSandbox.Variant`. A runtime that refuses to
@@ -365,7 +368,7 @@ const layer = Layer.mergeAll(
   // The transport the completion brake asks. It never falls back, so without
   // `AI_GATEWAY_API_KEY` this is unavailable and a run fails at its first
   // completion.
-  Layer.provideMerge(Evaluator.layerFromEnvironment(process.env)),
+  Layer.provideMerge(Evaluator.layerFromEnvironment(process.env, "my host")),
   // Ordinary flow composition: action implementations, a durable engine, crypto.
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),

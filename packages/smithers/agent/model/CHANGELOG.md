@@ -4,11 +4,12 @@
 
 ### Added
 
-- `Evaluator.layerFromEnvironment(environment)` and `Evaluator.environmentKey`:
+- `Evaluator.layerFromEnvironment(environment, host)` and `Evaluator.environmentKey`:
   the evaluator a host binds from its own environment, `layerVercelGateway`
-  when `AI_GATEWAY_API_KEY` is set and `layerUnavailable()` when it is not.
-  Every host that runs an agent loop binds this one, because the harness's
-  completion brake never falls back.
+  when `AI_GATEWAY_API_KEY` is nonblank, or an immediate startup refusal
+  naming the host and both remedies. Offline hosts deliberately bind an
+  evidence-based `layerScripted` judge. Missing configuration now fails boot
+  instead of every completion; later transport failures still fail closed.
 
 - `Classifier.fromEvaluatorError`: the conversion from an evaluator failure to
   a classifier failure, which `@smthrs/std`'s `classify` flow used to copy.

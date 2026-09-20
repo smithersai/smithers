@@ -80,7 +80,9 @@ The sixth brake on a completion asks Jev, TypeSafe's decision model, whether the
 
 It never goes quiet either. Every completion with a claim is read, `claimCap` (3) is the number of frames the run is given to prove one, and a claim with no bounce left fails the turn as `claim_unproven` carrying both probabilities. The cap used to end the brake instead of the run, so the second claim stood unread: on a real seat a run bounced once re-claimed the identical sentence and finished `stop` on it while the served repository's own test exited 1.
 
-So `Evaluator.Evaluator` is a required service of `CellTurn.run` and of `Agent.run` above it, and every host binds one. `Evaluator.layerFromEnvironment(process.env)` reads `AI_GATEWAY_API_KEY` and binds `Evaluator.layerUnavailable()` when it is unset, so a run without the key fails at its first completion, by design. The five deterministic brakes run first and unchanged, and a claim they bounced never reaches Jev.
+So `Evaluator.Evaluator` is a required service of `CellTurn.run` and of `Agent.run` above it. Every host chooses a real or deliberately scripted judge at composition time. `Evaluator.layerFromEnvironment(process.env, "my host")` reads `AI_GATEWAY_API_KEY` and refuses immediately when it is missing, empty or blank, before databases, sockets or processes open. A host missing a judge now fails to boot instead of failing every completion. This blocks a bad deployment loudly and immediately. A judge that later stops answering still ends the run as `completion_unjudged`; that disposition is unchanged. The five deterministic brakes run first, and a claim they bounced never reaches Jev.
+
+An offline host binds `Evaluator.layerScripted` deliberately, dispatches by question id, and computes answers from the evidence. Constant approval disarms the brake. One evaluator serves all the host's classifiers; see the [whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts). `Evaluator.layerUnavailable()` remains an outage fixture for classifier tests, not a host default.
 
 ## Public API
 

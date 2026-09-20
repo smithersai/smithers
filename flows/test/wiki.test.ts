@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, realpath, symlink } from "node
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { NodeServices } from "@effect/platform-node"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import { Effect, FileSystem, Schema } from "effect"
 import { operations } from "../wiki/operations.ts"
 import { reviewEvidence } from "../wiki/evidence.ts"
@@ -24,16 +24,8 @@ const fixture = async (t: TestContext) => {
 const run = <A, E>(effect: Effect.Effect<A, E, import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto>) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))
 const supported = (evidence: ReviewedPage["evidence"]): Review => ({ sections: evidence.sections.map((section) => ({ id: section.id, verdict: "supported", explanation: "The exported constant supports the explanation.", citations: [{ path: "src/answer.ts", line: 1, quote: "export const answer = 42" }] })) })
 
-/** Jev answers every citation of this fixture supported, and lets a seat's
- * completion stand. One layer answers both because a composition holds ONE
- * `Evaluator`: the citation check and the harness completion brake ask the
- * same service, so a script that answers only its own question hands the
- * other an answer its question cannot decode. `wiki-jev-citations.test.ts`
- * owns the citation check's own behavior. */
-const citationsSupported = Evaluator.layerScripted((request) =>
-  "support" in request.questions
-    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
+/** One evidence judge dispatches citation and completion questions for this host. */
+const citationsSupported = makeHostJudge().layer
 
 test("host-owned wiki operations retain their injected filesystem under a different action context", async t => {
   const f = await fixture(t), fs = await run(FileSystem.FileSystem)

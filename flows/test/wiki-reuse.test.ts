@@ -10,7 +10,7 @@ import { Capability } from "@smthrs/flows"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Effect, Layer, Schema, Stream } from "effect"
@@ -20,11 +20,8 @@ import { actionLayers, agentLayers } from "../wiki/runtime.ts"
 import { Collect, Wiki } from "../wiki/workflow.ts"
 import { type Input, PageSpec, WikiError } from "../wiki/schema.ts"
 
-/** Jev answers every citation of this fixture supported; `wiki-jev-citations.test.ts` owns the citation check's own behavior. */
-const citationsSupported = Evaluator.layerScripted((request) =>
-  "support" in request.questions
-    ? { support: { choice: "supports", probabilities: { supports: 0.95, contradicts: 0.03, unrelated: 0.02 } } }
-    : { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } })
+/** One evidence judge dispatches citation and completion questions for this host. */
+const citationsSupported = makeHostJudge().layer
 
 // Simulate a section parser change that preserves ids, source and body hashes.
 const SectionsProbe = Flow.make("wiki/test/changed-sections", {

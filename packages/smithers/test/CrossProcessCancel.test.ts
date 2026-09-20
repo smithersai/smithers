@@ -13,6 +13,7 @@
  * only because the cancel is recorded durably on the engine's row and the
  * owning driver acts on it at its next tick.
  */
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control } from "@smthrs/control"
 import { Effect, Layer } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -64,7 +65,10 @@ describe("cancelling a run from a second process", () => {
     try {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
-      const executor = NodeControl.layerExecutor(registry, engine, root, { environment: {} })
+      const executor = NodeControl.layerExecutor(registry, engine, root, {
+        evaluator: ScriptedJudge.layer,
+        environment: {}
+      })
       const composition = Application.layer({}, registry, engine, executor) as Layer.Layer<Control.Control>
       const open = <A, E>(use: Effect.Effect<A, E, Control.Control>) =>
         Effect.runPromise(use.pipe(Effect.provide(composition), Effect.scoped, Effect.orDie))

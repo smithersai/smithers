@@ -1,3 +1,4 @@
+import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import assert from "node:assert/strict"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -385,7 +386,7 @@ test("a continuation replayed after the deadline keeps the last round it publish
     }) }
   await Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    yield* Layer.build(executionLayers({ repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } } as never).pipe(
+    yield* Layer.build(executionLayers({ evaluator: makeHostJudge().layer, repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! } } as never).pipe(
       Layer.provide([Layer.succeed(FlowRuntime.FlowRuntime, runtime as never),
         Layer.succeed(Jj.Jj, undefined as never), Layer.succeed(NativeCoding, undefined as never)])))
     const handler = handlers.get("repository/continue-author")

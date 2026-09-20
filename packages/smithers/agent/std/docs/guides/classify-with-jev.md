@@ -15,8 +15,9 @@ ten frames.
 
 The flow needs one host service, the `Evaluator` from
 [`@smthrs/model`](/api/model), which is Jev through the Vercel AI Gateway. A
-host without a gateway key binds `Evaluator.layerUnavailable()`, and every
-call then resolves as `{ ok: false, error: { code: "flow_failed", message } }`
+host selects a gateway judge or deliberately scripts every classifier it reaches.
+A missing gateway key refuses startup. If an installed judge becomes unavailable,
+a classifier call resolves as `{ ok: false, error: { code: "flow_failed", message } }`
 whose message contains `unreachable:` after the binding's `Flow <name> failed:`
 prefix. The cell carries on; nothing hangs and nothing is invented.
 

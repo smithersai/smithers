@@ -53,9 +53,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
-import { confident as confidentEvaluator } from "./fixtures/evaluator.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -194,7 +194,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost = "approval-res
     maxFrames: 4
   }).pipe(
     Layer.provide(
-      Layer.mergeAll(Agent.layer, SeatResolver.layer({ resolve: seat }), confidentEvaluator).pipe(
+      Layer.mergeAll(Agent.layer, SeatResolver.layer({ resolve: seat }), scriptedCompletionJudge).pipe(
         Layer.provide(Safety.layer)
       )
     )

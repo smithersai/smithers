@@ -34,6 +34,7 @@ import * as Unsupported from "../src/Unsupported.ts"
 import * as Verb from "../src/Verb.ts"
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
+const scriptedHost = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
 const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const binDirectory = fileURLToPath(new URL("../bin", import.meta.url))
 const shim = join(binDirectory, "smithers.mjs")
@@ -68,7 +69,7 @@ const waitOut = (milliseconds: number): void => {
 const run = (args: ReadonlyArray<string>, environment: Readonly<Record<string, string>> = {}) => {
   const cwd = mkdtempSync(temporaryDirectoryPrefix)
   try {
-    return spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+    return spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 180_000,
@@ -84,7 +85,7 @@ const runIn = (
   args: ReadonlyArray<string>,
   environment: Readonly<Record<string, string>> = {}
 ) =>
-  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -102,6 +103,24 @@ const inEmptyDirectory = <A>(use: (cwd: string) => A): A => {
     rmSync(cwd, { recursive: true, force: true })
   }
 }
+
+describe("keyless host startup", processBudget, () => {
+  it("refuses the real serve entry before creating state", () => {
+    inEmptyDirectory((cwd) => {
+      // Deliberately omit the offline fixture's --import for this process.
+      const result = spawnSync(process.execPath, ["--no-warnings", executable, "serve", "--port", "5308"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...process.env, AI_GATEWAY_API_KEY: "" }
+      })
+      expect(result.status, result.stdout + result.stderr).toBe(2)
+      expect(result.stdout + result.stderr).toContain("smithers run/serve needs AI_GATEWAY_API_KEY,")
+      expect(result.stdout + result.stderr).toContain("deliberately bind Evaluator.layerScripted")
+      expect(readdirSync(cwd)).toEqual([])
+    })
+  })
+})
 
 describe("canonical verb ownership", processBudget, () => {
   it("documents run as the default approval scope in the executable schema", () => {
@@ -283,7 +302,7 @@ describe("smithers executable", processBudget, () => {
   it("answers --version without discovery or a database, from a directory with no project marker", () => {
     const home = stageHomeProject(24)
     try {
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "--version"], {
+      const result = spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, "--version"], {
         cwd: join(home, "deep", "nested"),
         encoding: "utf8",
         timeout: 30_000,
@@ -302,7 +321,7 @@ describe("smithers executable", processBudget, () => {
   it("answers --help without discovery or a database, from a directory with no project marker", () => {
     const home = stageHomeProject(24)
     try {
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "--help"], {
+      const result = spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, "--help"], {
         cwd: join(home, "deep", "nested"),
         encoding: "utf8",
         timeout: 30_000,
@@ -779,7 +798,15 @@ describe("the SQLite-only database contract", processBudget, () => {
       zeroX.exec("CREATE TABLE _smithers_runs (id TEXT PRIMARY KEY)")
       zeroX.close()
 
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "runs", "list", "--json"], {
+      const result = spawnSync(process.execPath, [
+        "--no-warnings",
+        "--import",
+        scriptedHost,
+        executable,
+        "runs",
+        "list",
+        "--json"
+      ], {
         cwd,
         encoding: "utf8",
         timeout: 180_000,
@@ -805,7 +832,15 @@ describe("the served gateway", processBudget, () => {
 
   it.each(["serve", "gateway"])("%s answers every mount and starts the scheduler", async (verb) => {
     const cwd = mkdtempSync(temporaryDirectoryPrefix)
-    const child = spawn(process.execPath, ["--no-warnings", executable, verb, "--port", String(port)], {
+    const child = spawn(process.execPath, [
+      "--no-warnings",
+      "--import",
+      scriptedHost,
+      executable,
+      verb,
+      "--port",
+      String(port)
+    ], {
       cwd,
       env: { ...process.env }
     })
@@ -896,10 +931,14 @@ describe("the signal exit codes", processBudget, () => {
   const interrupted = async (signal: "SIGINT" | "SIGTERM") => {
     const cwd = mkdtempSync(temporaryDirectoryPrefix)
     try {
-      const child = spawn(process.execPath, ["--no-warnings", executable, "logs", "--follow"], {
-        cwd,
-        stdio: ["ignore", "pipe", "pipe"]
-      })
+      const child = spawn(
+        process.execPath,
+        ["--no-warnings", "--import", scriptedHost, executable, "logs", "--follow"],
+        {
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"]
+        }
+      )
       const exited = new Promise<{ readonly status: number | null; readonly signal: string | null }>((resolve) => {
         child.on("exit", (status, killedBy) => resolve({ status, signal: killedBy }))
       })
@@ -1032,13 +1071,28 @@ const stageLegacyProject = (directory: string): string => {
   return directory
 }
 
-/** One `smithers` process, run from inside a staged project. */
-const inProject = (cwd: string, args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+/**
+ * One `smithers` process, run from inside a staged project.
+ *
+ * `environment` is merged over this process's own, because a verb that
+ * composes its own agent host reads `AI_GATEWAY_API_KEY` from it and a case
+ * about a migration gate must not pass or fail on whether the developer
+ * running it happens to export a gateway key.
+ */
+const inProject = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  environment: Readonly<Record<string, string>> = {}
+) =>
+  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
-    timeout: 180_000
+    timeout: 180_000,
+    env: { ...process.env, ...environment }
   })
+
+/** A gateway key no case here spends: every migration gate below refuses before a judge is asked anything. */
+const unspentGatewayKey = { AI_GATEWAY_API_KEY: "gateway-key-no-migration-gate-spends" }
 
 /**
  * The release policy detection, at the process boundary.
@@ -1294,7 +1348,7 @@ describe("the migrate verb's option surface", processBudget, () => {
   it("reaches apply mode with --apply, where plan mode never writes", () => {
     const cwd = stageTerminal()
     try {
-      const result = inProject(cwd, ["migrate", "--apply", "--json"])
+      const result = inProject(cwd, ["migrate", "--apply", "--json"], unspentGatewayKey)
       const output = `${result.stdout}${result.stderr}`
 
       expect(output).not.toContain("Unrecognized flag")
@@ -1305,6 +1359,25 @@ describe("the migrate verb's option surface", processBudget, () => {
       expect(result.status).toBe(3)
       expect(output).toContain("--acknowledge-run-state")
       expect(JSON.parse(result.stdout).code).toBe("run-state-blocked")
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it("refuses an apply with no judge before it reaches the run-state gate", () => {
+    const cwd = stageTerminal()
+    try {
+      // Apply composes its own agent host, so the control fixture's judge does
+      // not authorize the migration's. With no key it refuses ahead of the
+      // gate the case above parks at, which is what makes it a startup contract
+      // rather than one more gate.
+      const result = inProject(cwd, ["migrate", "--apply", "--json"], { AI_GATEWAY_API_KEY: "" })
+      const output = `${result.stdout}${result.stderr}`
+
+      expect(result.status).toBe(1)
+      expect(output).toContain("smithers migrate needs AI_GATEWAY_API_KEY")
+      expect(output).toContain("deliberately bind Evaluator.layerScripted")
+      expect(output).not.toContain("--acknowledge-run-state")
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }
@@ -1357,12 +1430,38 @@ describe("the migrate verb's target", processBudget, () => {
       // The gate refuses before anything is written, and the refusal quotes the
       // directory the migration would have rewritten, so it reports the target
       // without producing one.
-      const result = inProject(project, ["migrate", "--apply", "--acknowledge-run-state", "--json"])
+      const result = inProject(
+        project,
+        ["migrate", "--apply", "--acknowledge-run-state", "--json"],
+        unspentGatewayKey
+      )
 
       expect(result.status).toBe(1)
       expect(JSON.parse(result.stdout).message).toContain(`"${project}" is under no version control`)
       expect(JSON.parse(result.stdout).message).not.toContain(`"${ancestor}" is under no version control`)
       // The read-only VCS preflight precedes even lock metadata creation.
+      expect(existsSync(join(ancestor, ".smithers-migrate"))).toBe(false)
+      expect(existsSync(join(project, ".smithers-migrate"))).toBe(false)
+      expect(readFileSync(join(project, ".smithers/workflows/ship.tsx"), "utf8")).toBe("export default null\n")
+      expect(readFileSync(join(project, "package.json"), "utf8")).toBe(JSON.stringify({ name: "legacy" }))
+    } finally {
+      rmSync(ancestor, { recursive: true, force: true })
+    }
+  })
+
+  it("refuses an unjudged apply without rewriting either nested project", () => {
+    const { ancestor, project } = stageNested()
+    try {
+      // The judge decision precedes the version-control gate and all writes.
+      const result = inProject(
+        project,
+        ["migrate", "--apply", "--acknowledge-run-state", "--json"],
+        { AI_GATEWAY_API_KEY: "" }
+      )
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout).message).toContain("smithers migrate needs AI_GATEWAY_API_KEY")
+      // Missing judge configuration precedes even lock metadata creation.
       expect(existsSync(join(ancestor, ".smithers-migrate"))).toBe(false)
       expect(existsSync(join(project, ".smithers-migrate"))).toBe(false)
       expect(readFileSync(join(project, ".smithers/workflows/ship.tsx"), "utf8")).toBe("export default null\n")
@@ -1419,7 +1518,7 @@ const stageUnservableSeat = (): string => {
 }
 
 const launch = (cwd: string, args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -1694,7 +1793,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     args: ReadonlyArray<string>,
     environment: Record<string, string>
   ) =>
-    spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+    spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 600_000,
@@ -1845,7 +1944,15 @@ describe.skipIf(!chatgptSeat)("the smthrs init scaffold on a funded seat", { tim
     expect(spawnSync("git", ["init", "--quiet"], { cwd, encoding: "utf8" }).status).toBe(0)
     try {
       const environment = { ...process.env } as Record<string, string>
-      const initialized = spawnSync(process.execPath, ["--no-warnings", executable, "init", "hello", "--json"], {
+      const initialized = spawnSync(process.execPath, [
+        "--no-warnings",
+        "--import",
+        scriptedHost,
+        executable,
+        "init",
+        "hello",
+        "--json"
+      ], {
         cwd,
         encoding: "utf8",
         timeout: 600_000,
@@ -1854,7 +1961,15 @@ describe.skipIf(!chatgptSeat)("the smthrs init scaffold on a funded seat", { tim
       expect(initialized.status).toBe(0)
       expect((JSON.parse(initialized.stdout) as { readonly seat: string }).seat).toBe("openai:gpt-5.6-sol")
 
-      const launched = spawnSync(process.execPath, ["--no-warnings", executable, "up", "hello", "--json"], {
+      const launched = spawnSync(process.execPath, [
+        "--no-warnings",
+        "--import",
+        scriptedHost,
+        executable,
+        "up",
+        "hello",
+        "--json"
+      ], {
         cwd,
         encoding: "utf8",
         timeout: 800_000,

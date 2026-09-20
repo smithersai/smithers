@@ -12,6 +12,8 @@ it(
     const root = await mkdtemp(join(tmpdir(), "smthrs-unified-mcp-"))
     const child = spawn(process.execPath, [
       "--no-warnings",
+      "--import",
+      new URL("./fixtures/scripted-native-host.ts", import.meta.url).href,
       fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
       "--mcp"
     ], {

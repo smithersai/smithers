@@ -1,3 +1,4 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Audience from "@smthrs/build-cli/Audience"
 import { makeCli } from "../../src/Cli.ts"
 import { normalizeArguments } from "../../src/cli/Arguments.ts"
@@ -13,6 +14,7 @@ export const invokeCanonical = async (args: ReadonlyArray<string>, overrides: Br
   }
   await makeCli({
     environment,
+    evaluator: ScriptedJudge.layer,
     presentation,
     stdout: {
       isTTY: false,

@@ -24,10 +24,11 @@ const initialize = async (root: string, name: string) => {
   expect(result.code, result.stdout + result.stderr).toBe(0)
   return JSON.parse(result.stdout) as { retained: Array<string> }
 }
+const scriptedHost = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
 const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const run = (root: string, args: Array<string>, environment: Record<string, string> = {}) =>
   new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(process.execPath, ["--no-warnings", executable, ...args], {
+    const child = spawn(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
       cwd: root,
       env: { ...process.env, SMITHERS_REMOTE: "", ...environment }
     })

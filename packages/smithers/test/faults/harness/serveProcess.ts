@@ -49,6 +49,8 @@ export const smithersBin: string = (() => {
   return resolve(dirname(manifest), bin)
 })()
 
+const judge = new URL("../../fixtures/scripted-native-host.ts", import.meta.url).href
+
 /** Runs a real local operator command against the server's workspace. */
 export const localDecision = (root: string, decision: "approve" | "deny", approval: unknown): Promise<{
   readonly status: number
@@ -58,7 +60,7 @@ export const localDecision = (root: string, decision: "approve" | "deny", approv
   new Promise((resolveDecision, reject) => {
     execFile(
       process.execPath,
-      [smithersBin, "approvals", decision, JSON.stringify(approval), "--root", root, "--json"],
+      ["--import", judge, smithersBin, "approvals", decision, JSON.stringify(approval), "--root", root, "--json"],
       {
         cwd: root,
         env: { ...process.env, SMITHERS_REMOTE: undefined, SMITHERS_API_KEY: undefined },
@@ -167,7 +169,7 @@ export const startServe = async (root: string, options: ServeOptions = {}): Prom
   const token = options.credential ?? `e2e-${randomUUID()}`
   const timeoutMs = options.timeoutMs ?? 120_000
   const port = await freePort()
-  const argv = [smithersBin, "serve", "--root", root, "--port", String(port)]
+  const argv = ["--import", judge, smithersBin, "serve", "--root", root, "--port", String(port)]
   if (options.credentialSource !== "environment") argv.push("--credential", token)
   const process_ = spawn(process.execPath, argv, {
     stdio: ["ignore", "pipe", "pipe"],

@@ -116,6 +116,8 @@ export interface Options {
   readonly list: boolean
   readonly json: boolean
   readonly environment: Environment.Source
+  /** Explicit judge for an embedded or offline implementation host. */
+  readonly evaluator?: SuggestFlow.NodeConfig["evaluator"]
   readonly homeDirectory?: string | undefined
   /** How the seat scan reads a credential store. Defaults to the real one. */
   readonly readFile?: ((path: string) => string | undefined) | undefined
@@ -245,9 +247,22 @@ export const wroteNote = (implemented: SuggestFlow.Implemented): string =>
 const failed = (message: string): CliError.UnsupportedError => new CliError.UnsupportedError({ message })
 
 const nodeImplement = (options: Options, seat: string): Implement => (brief) =>
-  SuggestFlow.run(brief).pipe(
-    Effect.provide(SuggestFlow.layerNode({ root: options.root, seat, environment: options.environment })),
-    Effect.mapError((error) => new Error(SuggestFlow.failureMessage(error)))
+  Effect.try({
+    try: () =>
+      SuggestFlow.layerNode({
+        root: options.root,
+        seat,
+        environment: options.environment,
+        evaluator: options.evaluator
+      }),
+    catch: (error) => new Error(SuggestFlow.failureMessage(error))
+  }).pipe(
+    Effect.flatMap((host) =>
+      SuggestFlow.run(brief).pipe(
+        Effect.provide(host),
+        Effect.mapError((error) => new Error(SuggestFlow.failureMessage(error)))
+      )
+    )
   )
 
 /** Collects the scan without a renderer, for the `--json` and listing paths. */

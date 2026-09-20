@@ -7,6 +7,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as Undici from "@effect/platform-node/Undici"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import { Control as ControlService } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
@@ -439,12 +440,12 @@ describe("NodeControl.testRunner", () => {
         return bound.flat().map((binding) => binding.descriptor.name)
       }).pipe(
         // The judge the flow attributes a non-zero exit with, built the one
-        // way every host builds it. A host without `AI_GATEWAY_API_KEY` binds
-        // exactly this, and the completion brake asks the same binding.
+        // classifier outage fixture. This case only inspects a flow catalog;
+        // no agent host or completion is started.
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
-            Evaluator.layerFromEnvironment({}).pipe(Layer.provide(NodeHttpClient.layerUndici))
+            Evaluator.layerUnavailable()
           )
         ),
         Effect.orDie
@@ -777,7 +778,7 @@ describe("NodeControl.layer", () => {
           const ownsExecutor = yield* ExecutorOwnership.ExecutorOwnership
           return { flowId: card.flowId, ownsExecutor, rendered: rendered.text.length }
         }).pipe(
-          Effect.provide(NodeControl.layer({})),
+          Effect.provide(NodeControl.layer({ evaluator: ScriptedJudge.layer })),
           Effect.scoped,
           Effect.orDie
         )
@@ -807,7 +808,7 @@ describe("NodeControl.layer", () => {
           yield* MemoryStore.MemoryStore
           return openHandles(NodeControl.databasePath(project))
         }).pipe(
-          Effect.provide(NodeControl.layer({ root: project })),
+          Effect.provide(NodeControl.layer({ root: project, evaluator: ScriptedJudge.layer })),
           Effect.scoped,
           Effect.orDie
         )
