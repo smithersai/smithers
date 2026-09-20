@@ -279,7 +279,9 @@ const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = Layer.su
 const evaluatorFrom = (
   environment: Readonly<Record<string, string | undefined>>
 ): Layer.Layer<Evaluator.Evaluator> =>
-  Evaluator.layerFromEnvironment(environment, "smithers suggest").pipe(Layer.provide(EgressHttpClient.layer(environment)))
+  Evaluator.layerFromEnvironment(environment, "smithers suggest").pipe(
+    Layer.provide(EgressHttpClient.layer(environment))
+  )
 
 const composed = (
   root: string,
