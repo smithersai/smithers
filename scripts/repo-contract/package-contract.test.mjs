@@ -348,4 +348,36 @@ describe("the workspace package contract", () => {
     )
     assert.equal(createApp.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
   })
+
+  it("declares the shared Node adapter beside the OpenCode server's Node adapter peer", () => {
+    const opencode = publishable.find((entry) => entry.manifest.name === "@smthrs/opencode")
+    assert.ok(opencode, "@smthrs/opencode must be publishable")
+    // The server names @effect/platform-node as a required peer and runs on
+    // its Node socket. A consumer that installs exactly the declared peers
+    // still gets the shared adapter through that package's caret, which
+    // admits a later RC whose own Effect peer this release does not satisfy.
+    assert.equal(opencode.manifest.peerDependencies?.["@effect/platform-node-shared"], effectVersion)
+    assert.notEqual(opencode.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional, true)
+    assert.equal(
+      opencode.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional,
+      opencode.manifest.peerDependenciesMeta?.["@effect/platform-node"]?.optional
+    )
+    assert.equal(opencode.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
+  })
+
+  it("declares the shared Node adapter beside the gateway's two optional platform peers", () => {
+    const gateway = publishable.find((entry) => entry.manifest.name === "@smthrs/gateway")
+    assert.ok(gateway, "@smthrs/gateway must be publishable")
+    // Both of the gateway's platform peers reach the same sibling: the Node
+    // adapter through its own caret, and the Bun adapter through the caret it
+    // carries on the shared Node adapter. One declaration closes both, at the
+    // same exact version and at the optionality they share.
+    assert.equal(gateway.manifest.peerDependencies?.["@effect/platform-node-shared"], effectVersion)
+    assert.equal(gateway.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional, true)
+    assert.equal(
+      gateway.manifest.peerDependenciesMeta?.["@effect/platform-node"]?.optional,
+      gateway.manifest.peerDependenciesMeta?.["@effect/platform-bun"]?.optional
+    )
+    assert.equal(gateway.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
+  })
 })

@@ -5610,6 +5610,9 @@ importers:
 
   packages/smithers/gateway:
     dependencies:
+      '@effect/platform-node-shared':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@smthrs/control':
         specifier: 1.0.0-rc.0
         version: link:../control
@@ -5960,6 +5963,9 @@ importers:
 
   packages/smithers/opencode:
     dependencies:
+      '@effect/platform-node-shared':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@smthrs/agent':
         specifier: 1.0.0-rc.0
         version: link:../agent

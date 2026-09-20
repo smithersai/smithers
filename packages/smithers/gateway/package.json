@@ -247,11 +247,15 @@
   },
   "peerDependencies": {
     "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
     "effect": "4.0.0-rc.115",
     "@effect/platform-bun": "4.0.0-rc.115"
   },
   "peerDependenciesMeta": {
     "@effect/platform-node": {
+      "optional": true
+    },
+    "@effect/platform-node-shared": {
       "optional": true
     },
     "@effect/platform-bun": {

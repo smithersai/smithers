@@ -1,9 +1,12 @@
 # @smthrs/gateway
 
-This package declares `effect`, `@effect/platform-node`, and `@effect/platform-bun`
-as exact `4.0.0-rc.115` peers; `@effect/platform-node` is optional for the Node
-host, and `@effect/platform-bun` is optional for the Bun host. Keep the
-application on that version so all Smithers packages share one Effect runtime.
+This package declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
+`4.0.0-rc.115` peers; `@effect/platform-node` is optional for the Node host,
+`@effect/platform-bun` is optional for the Bun host, and
+`@effect/platform-node-shared` is optional beside them, since it is the sibling
+both of those adapters pull in. Keep the application on that version so all
+Smithers packages share one Effect runtime.
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 

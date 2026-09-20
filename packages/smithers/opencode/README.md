@@ -1,6 +1,6 @@
 # @smthrs/opencode
 
-This package declares `effect`, `@effect/platform-node`, and `@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Keep the application on that version so all Smithers packages share one Effect runtime.
+This package declares `effect`, `@effect/platform-node`, `@effect/platform-node-shared`, and `@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers; the shared adapter is the sibling `@effect/platform-node` pulls in, declared so it cannot float to a later release. Keep the application on that version so all Smithers packages share one Effect runtime.
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 

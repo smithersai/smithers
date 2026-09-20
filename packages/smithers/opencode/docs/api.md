@@ -3,8 +3,10 @@ title: "API reference"
 description: "Every public export of @smthrs/opencode: the server assembly and bind rule, the claim on the served directory, the routes, the event hub, the store, the projection, the health color, the turn composition, the driver seam, the engine driver and the scripted driver, identifiers, CORS, and basic authentication."
 ---
 
-The package declares `effect`, `@effect/platform-node` and
-`@effect/sql-sqlite-node` as exact `4.0.0-rc.115` peers. Use the same Effect
+The package declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared` and `@effect/sql-sqlite-node` as exact
+`4.0.0-rc.115` peers; the shared adapter is the sibling `@effect/platform-node`
+pulls in, declared so it cannot float to a later release. Use the same Effect
 version in the host.
 
 The root entry point exports one namespace per module, and every module is
