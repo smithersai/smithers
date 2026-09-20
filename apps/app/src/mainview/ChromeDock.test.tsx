@@ -175,8 +175,10 @@ describe("the dock", () => {
       expect(button.getAttribute("aria-label")?.toLowerCase() ?? "").not.toContain("workflow")
     }
     // The theme toggle closes the row; sign-in lives in the header, never the dock.
-    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]:not(.help-bubble-dismiss)")].map((el) => el.dataset.flow)
+    const flows = [...host.querySelectorAll<HTMLElement>("[data-testid=chrome-actions] [data-flow]")].map((el) => el.dataset.flow)
     expect(flows.at(-1)).toBe("appearance.dark-mode")
+    // The dock carries no first-sight hint: its icons are never covered at launch.
+    expect(host.querySelector("[data-testid=chrome-actions] [data-first-sight-hint]")).toBeNull()
     expect(flows).not.toContain("auth.sign-in")
     expect(host.querySelector("[data-testid=chrome-sign-in]")).toBeNull()
   })

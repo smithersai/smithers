@@ -1,7 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { BookOpen,Download,History,KeyRound,Moon,RotateCcw,Sun,Timer,UserRound,Workflow } from "lucide-react"
 import { useController } from "./ControllerContext"
-import { FirstSightHint } from "./FirstSightHint"
 import { flowAction } from "./flows/FlowAction"
 
 /*
@@ -59,7 +58,7 @@ export function ChromeDock() {
       {/* Wiki: the button door of the `wiki` surface switch; the pane opens beside the chat, signed in or out. */}
       {canWiki ?
         (
-          <FirstSightHint placement="above" id="chrome-wiki" content="Read and edit your Wiki."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="Wiki"
@@ -68,13 +67,13 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "wiki")}
           >
             <BookOpen size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* Dispatcher: the button door of triggers.list; readable signed out from the declaration on the public mirror. */}
       {canDispatcher ?
         (
-          <FirstSightHint placement="above" id="chrome-dispatcher" content="Manage scheduled and triggered work."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="Dispatcher"
@@ -83,13 +82,13 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "triggers.list")}
           >
             <Timer size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* Flows: the button door of the `flows` surface switch; signed out the pane states that flows run on your own workspace. */}
       {canFlows ?
         (
-          <FirstSightHint placement="above" id="chrome-flows" content="Browse and run flows."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="Flows"
@@ -98,13 +97,13 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "flows")}
           >
             <Workflow size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* Secrets: the button door of secrets.list; signed out, the run path defers it behind the sign-in step. */}
       {canSecrets ?
         (
-          <FirstSightHint placement="above" id="chrome-secrets" content="Manage credentials for your flows."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="Secrets"
@@ -113,13 +112,13 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "secrets.list")}
           >
             <KeyRound size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* History: the button door of history.show; readable signed out through the public mirror. */}
       {canHistory ?
         (
-          <FirstSightHint placement="above" id="chrome-history" content="Browse previous work."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="History"
@@ -128,13 +127,13 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "history.show")}
           >
             <History size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* Account: the button door of account.show; signed out, the same flow renders the sign-in step. */}
       {canAccount ?
         (
-          <FirstSightHint placement="above" id="chrome-account" content="Manage your account."><button
+          <button
             type="button"
             className="chrome-icon-action"
             aria-label="Account"
@@ -143,7 +142,7 @@ export function ChromeDock() {
             {...flowAction(controller.runCommand, "account.show")}
           >
             <UserRound size={14} aria-hidden="true" />
-          </button></FirstSightHint>
+          </button>
         ) :
         null}
       {/* The bare reset is admin-only dev tooling (§2); users get /clear. */}
