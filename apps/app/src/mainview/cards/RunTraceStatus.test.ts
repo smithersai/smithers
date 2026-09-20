@@ -123,6 +123,21 @@ describe("recorded goal progress", () => {
       codingDecision(8, "check", "coding/CommandCheck", { parent: "correct", status: "completed", input: { flow: check.flow, input: { implementation, check } }, value: receipt })]
     expect(state(concurrent)).toBe("stale")
   })
+  test("a receipt outranks a later command that only matched the same target", () => {
+    const change = CODING_PLAN.changes[0]!, check = change.checks[0]!
+    const implementation = { change: change.id, parent: CODING_PLAN.base, head: CODING_PLAN.base, atoms: [CODING_PLAN.base], reads: [], writes: ["src/memory.ts"] }
+    const receipt = { checkId: check.id, target: check.target, tier: check.tier, change: change.id, commitId: implementation.head.commitId,
+      treeId: implementation.head.treeId, inputDigest: checkInputDigest(implementation, check), status: "passed", evidence: "", findings: [] }
+    const certified = [...preparedCodingJournal(), codingDecision(6, "check", "coding/CommandCheck", {
+      parent: "correct", status: "completed", input: { flow: check.flow, input: { implementation, check } }, value: receipt
+    })]
+    const ran = call(7, "bash", { command: `bun run check ${check.target}` })
+    const state = (records: ReadonlyArray<JournalRecord>) => traceGoals(model(records), CODING_PLAN)[0]!.checks[0]!.state
+    expect(state(certified)).toBe("passed")
+    expect(state([...certified, ...ran])).toBe("passed")
+    // A change the check covers still invalidates the receipt.
+    expect(state([...certified, ...ran, event(9, "agent.mutation-observed", { basis: "observed", mutated: true, paths: ["src/memory.ts"] })])).toBe("stale")
+  })
   test("a goal is verified only when every required check carries its own matching receipt", () => {
     const change = CODING_PLAN.changes[0]!
     const implementation = { change: change.id, parent: CODING_PLAN.base, head: CODING_PLAN.base, atoms: [CODING_PLAN.base], reads: [], writes: ["src/memory.ts"] }

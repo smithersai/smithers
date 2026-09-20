@@ -197,7 +197,10 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
   return plan.changes.map(change => {
     const paths = change.atoms.flatMap(atom => [...atom.reads, ...atom.writes])
     const checks = change.checks.map(check => {
-      let state: GoalState = "pending", invalidated = 0, resultSequence = 0
+      // Whether a receipt bound to this check has already answered it. Unbound
+      // evidence never replaces a bound answer; only a change to the tree the
+      // receipt covered, or a newer receipt, moves it.
+      let state: GoalState = "pending", invalidated = 0, resultSequence = 0, certified = false
       let checkedTree: string | undefined
       const nativeChecks = native.executions.flatMap(execution => {
         const wrapper = record(execution.input), input = record(wrapper.input ?? wrapper)
@@ -236,7 +239,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           const matched = activity === undefined || activity === "checks" || activity === "tests"
             ? match(checkSelection(flowName, p.input), check.target) : undefined
           open.push({ flowName, activity, callId: text(p.callId), scope: callScope(row), input: p.input, sequence: seq, match: matched })
-          if (matched !== undefined) { state = matched === "full" ? "running" : "narrowed"; resultSequence = seq }
+          if (matched !== undefined && !certified) { state = matched === "full" ? "running" : "narrowed"; resultSequence = seq }
         }
         if (row.kind === "control.agent.cell-call-settled") {
           const index = openCallIndex(open, text(p.callId), text(p.flowName), callScope(row))
@@ -249,7 +252,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
             const patchPaths = typeof input.input === "string" ? [...input.input.matchAll(/^\*\*\* (?:(?:Add|Delete|Update) File|Move to): (.+)$/gm)].map(hit => hit[1]!) : []
             invalidate(seq, text(input.path) === undefined ? patchPaths : [input.path as string])
           }
-          if (call.match === undefined || call.sequence < resultSequence) continue
+          if (call.match === undefined || call.sequence < resultSequence || certified) continue
           resultSequence = call.sequence
           const value = record(p.value)
           state = invalidated >= call.sequence ? "stale" : p.outcome === "failure" || value.invalidProbe !== undefined ? "failed"
@@ -266,7 +269,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
             if (typeof value !== "string") return value
             try { return JSON.parse(value) as unknown } catch { return { command: value } }
           })
-          if (inputs.some(input => match(checkSelection(text(p.flow) ?? "", input), check.target) !== undefined) || strings(p.targets).includes(check.target)) {
+          if (!certified && (inputs.some(input => match(checkSelection(text(p.flow) ?? "", input), check.target) !== undefined) || strings(p.targets).includes(check.target))) {
             state = "narrowed"; resultSequence = seq
           }
         }
@@ -278,7 +281,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
         }
         for (const { execution, implementation, opened } of nativeChecks) {
           if (opened < resultSequence) continue
-          if (execution.failure?.sequence === seq) { state = "failed"; resultSequence = opened }
+          if (execution.failure?.sequence === seq) { state = "failed"; resultSequence = opened; certified = true }
           if (execution.result?.sequence !== seq) continue
           const receipt = decodeReceipt(execution.result.value)
           if (Option.isNone(receipt) || !receiptMatches(implementation, check, receipt.value)) {
@@ -288,6 +291,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           state = invalidated >= opened || receipt.value.status === "superseded" ? "stale" : receipt.value.status
           checkedTree = implementation.head.treeId
           resultSequence = opened
+          certified = true
         }
       }
       return { id: check.id, target: check.target, required: check.required, state }
