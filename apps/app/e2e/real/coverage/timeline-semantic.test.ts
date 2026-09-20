@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { journalMeaning, assertSuccessfulEdit, requireLaterPhase, TimelineEvidenceError } from "../run-inspection/semantic"
 import { moduleMeaning, moduleRows } from "../run-inspection/module-evidence"
-import { deployedHeaderSource } from "../run-inspection/revisions"
+import { deployedHeaderSource, HEADER_SOURCES, repositoryRoot } from "../run-inspection/revisions"
+import { existsSync } from "node:fs"
+import { resolve } from "node:path"
 
 const event = (sequence: number, kind: string, payload: Record<string, unknown> = {}) => ({ sequence, kind, payload })
 const opened = "control.agent.turn-opened"
@@ -87,6 +89,11 @@ describe("the deployed header source comparison", () => {
     "%p is not a revision this comparison will read", revision => {
       expect(() => deployedHeaderSource(revision)).toThrow("Invalid deployed frontend revision")
     })
+
+  test("every declared header source exists under the resolved repository root", () => {
+    expect(HEADER_SOURCES.length).toBeGreaterThan(0)
+    for (const path of HEADER_SOURCES) expect(existsSync(resolve(repositoryRoot(), path))).toBe(true)
+  })
 })
 
 describe("the independent timeline evidence oracle", () => {

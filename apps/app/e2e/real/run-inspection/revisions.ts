@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
 import { attachProductionJson } from "../repositories-github/production"
 import { expect } from "../support/test"
@@ -13,7 +13,13 @@ export type HostManifest = { sourceCommit: string; sha256: string; object: strin
 
 /** The card sources whose deployed bytes decide the run header this tier reads. */
 export const HEADER_SOURCES = ["apps/app/src/mainview/cards/RunTraceStatus.ts"] as const
-const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
+/** Playwright transpiles this tier without import.meta, so the root is the first ancestor that owns the app. */
+export const repositoryRoot = (): string => {
+  for (let directory = process.cwd(), previous = ""; directory !== previous; previous = directory, directory = resolve(directory, "..")) {
+    if (existsSync(resolve(directory, HEADER_SOURCES[0]))) return directory
+  }
+  throw new Error(`No repository root above ${process.cwd()} owns ${HEADER_SOURCES[0]}`)
+}
 
 export type DeployedSourceFact =
   | { _tag: "DeployedSourceMatchesWorkingCopy"; frontendRevision: string; files: readonly string[] }
@@ -27,10 +33,11 @@ export type DeployedSourceFact =
  */
 export const deployedHeaderSource = (frontendRevision: string): DeployedSourceFact => {
   if (!/^[0-9a-f]{40}$/.test(frontendRevision)) throw new Error("Invalid deployed frontend revision")
+  const root = repositoryRoot()
   const differing = HEADER_SOURCES.filter(path => {
     const deployed = execFileSync("jj", ["file", "show", "--ignore-working-copy", "-r", frontendRevision, path],
-      { encoding: "utf8", cwd: repositoryRoot, timeout: 30000 })
-    return deployed !== readFileSync(`${repositoryRoot}${path}`, "utf8")
+      { encoding: "utf8", cwd: root, timeout: 30000 })
+    return deployed !== readFileSync(resolve(root, path), "utf8")
   })
   return differing.length === 0
     ? { _tag: "DeployedSourceMatchesWorkingCopy", frontendRevision, files: HEADER_SOURCES }

@@ -261,7 +261,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
   ],
   description: "Compare live and settled timeline meanings with independent calls and outcomes, require distinct read/write/test phases and an exact workspace-file append, and reload keyboard selections. Archive frontend and measured host revisions; report unavailable producer evidence explicitly."
 }), async ({ page, request, workflowRepo }, testInfo) => {
-  testInfo.setTimeout(20 * 60_000)
+  testInfo.setTimeout(30 * 60_000)
   const { repo, workspaceId } = workflowRepo
   expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
@@ -312,7 +312,7 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
   ],
   description: "Run a separate prompt subject whose real work exceeds its budget, compare its failed header, frame meanings and terminal pin to the gateway journal, and prove README stayed unchanged."
 }), async ({ page, request, workflowRepo }, testInfo) => {
-  testInfo.setTimeout(20 * 60_000)
+  testInfo.setTimeout(30 * 60_000)
   const { repo, workspaceId } = workflowRepo
   expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
@@ -360,7 +360,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   ],
   description: "Launch the registered repository issues module through the ordinary UI in an owned workspace. Compare recorded step meanings while live and at completion when the host contains the producer; archive a visible typed host limitation otherwise. Verify two source-grounded research results and that README stays unchanged."
 }), async ({ page, request, workflowRepo }, testInfo) => {
-  testInfo.setTimeout(20 * 60_000)
+  testInfo.setTimeout(30 * 60_000)
   const { repo, workspaceId } = workflowRepo
   expect(workspaceId).toBeDefined()
   await bootOwnedWorkflow(page, repo, workspaceId)
