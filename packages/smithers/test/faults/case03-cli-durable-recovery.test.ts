@@ -1,4 +1,4 @@
-/** Real CLI + real engine/store; only the provider's HTTP response is recorded. */
+/** Real CLI + real engine/store; model and completion-evaluator HTTP responses are recorded. */
 import { isAlive } from "@smthrs/testing/Faults"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -23,7 +23,8 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
     NODE_OPTIONS: `--import=${preload}`,
     SMITHERS_TEST_RECORDING: recording,
     SMITHERS_OPENAI_AUTH: "api-key",
-    OPENAI_API_KEY: "recorded-fixture-not-a-real-key"
+    OPENAI_API_KEY: "recorded-fixture-not-a-real-key",
+    AI_GATEWAY_API_KEY: "recorded-fixture-not-a-real-key"
   })
   const invoke = (...args: Array<string>) => {
     const result = spawnSync(process.execPath, [executable, ...args, "--json"], {
@@ -202,6 +203,13 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
     expect(engineRow()).toMatchObject({ status: "completed", waiting_reason: null, cancel_requested_at_ms: null })
     expect(json("run", "--resume", receipt.runId)).toMatchObject({ _tag: "Terminal", status: "completed" })
     expect(readFileSync(join(recording, "requests.jsonl"), "utf8").trim().split("\n")).toHaveLength(1)
+    expect(
+      readFileSync(join(recording, "evaluations.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    )
+      .toEqual([{
+        pid: expect.any(Number),
+        questions: { complete: "boolean", overclaims: "boolean", invented: "boolean" }
+      }])
     const settled = json("logs", receipt.runId)
     const resolved = settled.filter((event: { kind: string }) => event.kind === "control.agent.resolved")
     expect(resolved).toHaveLength(1)
@@ -252,7 +260,7 @@ it("blocks unrecorded provider requests in the child-process fixture", () => {
       "import assert from \"node:assert/strict\"",
       "const agent = new Agent()",
       "try {",
-      "  for (const origin of [\"https://api.openai.com\", \"https://unexpected.invalid\"]) {",
+      "  for (const origin of [\"https://api.openai.com\", \"https://ai-gateway.vercel.sh\", \"https://unexpected.invalid\"]) {",
       "    await assert.rejects(agent.request({ origin, path: \"/unrecorded\", method: \"GET\" }),",
       "      { code: \"UND_MOCK_ERR_MOCK_NOT_MATCHED\" })",
       "  }",
@@ -268,6 +276,7 @@ it("blocks unrecorded provider requests in the child-process fixture", () => {
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
     expect(existsSync(join(recording, "requests.jsonl"))).toBe(false)
+    expect(existsSync(join(recording, "evaluations.jsonl"))).toBe(false)
   } finally {
     rmSync(recording, { recursive: true, force: true })
   }
