@@ -5,31 +5,23 @@
  *
  * @since 0.1.0
  */
-import type * as PlanEffects from "@smthrs/plan/Effects"
-import * as FileSet from "@smthrs/plan/FileSet"
+import * as PlanEffects from "@smthrs/plan/Effects"
+import * as PlanPlacement from "@smthrs/plan/Placement"
+import * as Plan from "@smthrs/plan/Plan"
 import * as Context from "effect/Context"
 import { constFalse, constTrue } from "effect/Function"
-import * as Schema from "effect/Schema"
-import { BoundaryMode } from "../Action/BoundaryMode.ts"
 
 /**
- * Declared filesystem effects copied from the plan node effect contract.
+ * Declared filesystem effects: the plan node effect contract itself.
+ *
+ * This is `@smthrs/plan`'s `Plan.NodeEffects`, not a copy of it. The two were
+ * field-for-field identical structs in two packages, which meant a change to
+ * one silently stopped `Plan.compile` decoding what this package wrote.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Effects = Schema.Struct({
-  reads: Schema.Array(FileSet.ReadDeclaration),
-  writes: Schema.Array(FileSet.Declaration),
-  /**
-   * Paths the flow declares it will DELETE. Optional with an empty default:
-   * an absent declared write is a defect, and a declared removal is what makes
-   * an absent path legitimate instead. Workspace-relative like every other
-   * declared path, because replay acts on a removal by deleting it.
-   */
-  removes: Schema.optional(Schema.Array(FileSet.Pattern)),
-  boundaryMode: BoundaryMode
-})
+export const Effects = Plan.NodeEffects
 
 /**
  * The value form of {@link Effects}.
@@ -37,23 +29,19 @@ export const Effects = Schema.Struct({
  * @category models
  * @since 0.1.0
  */
-export type Effects = typeof Effects.Type
+export type Effects = Plan.NodeEffects
 
 /**
- * Schema-encodable placement directive retained opaquely until planning.
+ * A directive naming where a node runs, carried unchanged until planning.
  *
- * @category schemas
- * @since 0.1.0
- */
-export const PlacementDirective = Schema.Unknown
-
-/**
- * The value form of {@link PlacementDirective}.
+ * This is `@smthrs/plan`'s `Placement.Placement`, the one typed model. It was
+ * `Schema.Unknown` here while `@smthrs/core` held a four-variant enum of the
+ * same thing, which made every crossing a cast.
  *
  * @category models
  * @since 0.1.0
  */
-export type PlacementDirective = typeof PlacementDirective.Type
+export type PlacementDirective = PlanPlacement.Placement
 
 /**
  * Capability names a flow may require, defaulting to none.
@@ -92,7 +80,7 @@ export const EffectsDeclaration = Context.Service<Effects>("@smthrs/flow/Flow/Ef
  * @category annotations
  * @since 0.1.0
  */
-export const EffectEnvelope = Context.Service<PlanEffects.Declaration>("@smthrs/flow/Flow/EffectEnvelope")
+export const EffectEnvelope = PlanEffects.Envelope
 
 /**
  * Required annotation key for a flow's schema-encodable placement directive.
@@ -100,7 +88,7 @@ export const EffectEnvelope = Context.Service<PlanEffects.Declaration>("@smthrs/
  * @category annotations
  * @since 0.1.0
  */
-export const Placement = Context.Service<PlacementDirective>("@smthrs/flow/Flow/Placement")
+export const Placement = PlanPlacement.Annotation
 
 /**
  * Captures defects for a flow and includes them in the result of the flow or its actions.

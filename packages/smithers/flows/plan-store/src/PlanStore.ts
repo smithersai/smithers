@@ -15,6 +15,7 @@
  */
 import { affectedRows, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { StoredKey } from "@smthrs/keys"
+import * as Plan from "@smthrs/plan/Plan"
 import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
@@ -23,7 +24,6 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as SqlError from "effect/unstable/sql/SqlError"
-import * as Plan from "./Plan.ts"
 
 /**
  * Stable error codes returned by plan persistence operations.
@@ -56,7 +56,7 @@ export type PlanStoreErrorCode = typeof PlanStoreErrorCode.Type
  * @category errors
  * @slop
  */
-export class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan/PlanStoreError", {
+export class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan-store/PlanStoreError", {
   code: PlanStoreErrorCode,
   message: Schema.String,
   cause: Schema.optional(Schema.Unknown)
@@ -100,7 +100,7 @@ export interface Service {
  * @category services
  * @slop
  */
-export class PlanStore extends Context.Service<PlanStore, Service>()("@smthrs/plan/PlanStore") {}
+export class PlanStore extends Context.Service<PlanStore, Service>()("@smthrs/plan-store/PlanStore") {}
 
 const error = (code: PlanStoreErrorCode, message: string, cause: unknown): PlanStoreError =>
   new PlanStoreError({ code, message, cause })

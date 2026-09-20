@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs"
 import { runInNewContext } from "node:vm"
 import * as ts from "typescript"
 import * as Plan from "../src/Plan.ts"
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const guide = readFileSync(new URL("../docs/guides/declare-file-effects.md", import.meta.url), "utf8")
 const concept = readFileSync(new URL("../docs/concepts/effects-and-conflicts.md", import.meta.url), "utf8")
@@ -48,7 +48,6 @@ describe("plan node order documentation", () => {
     const path of [
       "guides/compile-a-plan.md",
       "concepts/plan-value.md",
-      "guides/persist-a-plan.md",
       "api.md"
     ]
   ) {

@@ -4,8 +4,8 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it, vi } from "vitest"
 
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const glob: FileSet.Glob = { _tag: "Glob", include: ["src/**/*.ts"], exclude: ["src/**/skip.ts"] }
 const tree: FileSet.TreeArtifact = { _tag: "TreeArtifact", path: "dist" }

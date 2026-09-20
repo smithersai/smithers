@@ -8,13 +8,13 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) · [package docs](https://plan.smithers.sh)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/keys`](/docs/reference/api/keys/)
 
-`@smthrs/plan` exports twelve modules from its root entry point, and each is also
+`@smthrs/plan` exports eleven modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
-import { FileSet, Node, Plan, PlanStore } from "@smthrs/plan"
+import { FileSet, Node, Plan, PlanDiff } from "@smthrs/plan"
 // or
 import * as Plan from "@smthrs/plan/Plan"
 ```
@@ -33,15 +33,14 @@ import * as Plan from "@smthrs/plan/Plan"
 | `StepKey`         | The compiler that turns material plus resolved dependency digests into a [`@smthrs/keys`](/docs/reference/api/keys/) key. |
 | `Plan`            | `compile`, `append`, the node and conflict schemas, and the digest an approval binds to.                  |
 | `PlanDiff`        | A plan comparison as a value: added, removed, re-keyed with attribution, unchanged.                       |
-| `PlanStore`       | Append-only SQL persistence, enforced by triggers rather than by convention.                              |
+| `Placement`       | Where a node runs: the four directives, their host-selection detail, and the annotation key.              |
 | `Scheduling`      | The pure admission policy a scheduler consults: concurrency, priority order, and the halt rule.           |
-| `Migrations`      | The namespaced migration set that owns the three plan tables in id block `4000`.                          |
 
 The shortest composition that reaches every layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Plan, PlanStore } from "@smthrs/plan"
+import { Plan, PlanDiff } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 
 const program = Effect.gen(function*() {
@@ -76,12 +75,11 @@ const program = Effect.gen(function*() {
     ]
   })
 
-  const store = yield* PlanStore.PlanStore
-  return yield* store.record(plan, Date.now())
+  return PlanDiff.diff(plan, plan)
 }).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
-Compiling needs Effect's `Crypto` service and nothing else. Recording additionally needs `PlanStore.layer` over a `DurableWriter` and a `SqlClient`. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/database`](/docs/reference/api/database/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, and is browser-safe.
+Compiling needs Effect's `Crypto` service and nothing else. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/canonical`](/docs/reference/api/canonical/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, performs no I/O, and is browser-safe. Persisting a compiled plan is [`@smthrs/plan-store`](/docs/reference/api/plan-store/), which is where the database dependency lives.
 
 ## Entry point
 
@@ -569,7 +567,7 @@ Reconstructs an imported plan using compiler key, dependency, conflict and gener
 const isVerified: (input: unknown) => input is Plan
 ```
 
-Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets `PlanStore.append` skip re-decoding them.
+Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets [`@smthrs/plan-store`](/docs/reference/api/plan-store/)'s `PlanStore.append` skip re-decoding them.
 
 ### Plan.prefixDigest
 
@@ -1222,6 +1220,50 @@ builder-owned data and throws the caller's own refusal before the copy grows
 past `limit`, past `maximumPathLength` code units in one path, or past
 `maximumGlobs` patterns in one list.
 
+## Placement
+
+[src/Placement.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Placement.ts)
+
+The one placement model. [`@smthrs/core`](/docs/reference/api/core/) re-exports it as `Placement`, [`@smthrs/flow`](/docs/reference/api/flow/) annotates with it as `Flow.PlacementDirective`, and `@smthrs/registry` lowers a descriptor's frontmatter literal into it. A directive is serializable detail identifying a host profile; it never carries a host implementation, credentials, or any other runtime handle.
+
+The four tags read `flows/core/Placement/...` because they are hashed into `KeyMaterial.placement`, and therefore into the step key of every node that declares a placement. Retagging them would re-key recorded work and miss its cached results, so the tag is treated as a wire value rather than as a location.
+
+### Placement.Placement and Placement.Options
+
+```ts
+type Placement = Data.TaggedEnum<{
+  readonly "flows/core/Placement/Local": Readonly<Record<never, never>>
+  readonly "flows/core/Placement/Client": Readonly<Record<never, never>>
+  readonly "flows/core/Placement/Sandbox": Options
+  readonly "flows/core/Placement/Remote": Options
+}>
+
+interface Options {
+  readonly image?: string | undefined
+  readonly profile?: string | undefined
+  readonly target?: string | undefined
+}
+```
+
+### Placement.local, client, sandbox and remote
+
+```ts
+const local: () => Placement
+const client: () => Placement
+const sandbox: (options?: Options) => Placement
+const remote: (options?: Options) => Placement
+```
+
+The local process host, the viewer's browser, an isolated sandbox, and a remote control plane. `sandbox` and `remote` copy the options they are given, so a later mutation of the caller's object cannot change a recorded directive.
+
+### Placement.Annotation
+
+```ts
+const Annotation: Context.Key<Placement, Placement>
+```
+
+The annotation key a declared placement is carried under, identified by `"@smthrs/plan/Placement"`. One key: `@smthrs/core`'s `Annotations.Placement` and `@smthrs/flow`'s `Flow.Placement` are both this object.
+
 ## GraphBuildError
 
 [src/GraphBuildError.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/GraphBuildError.ts)
@@ -1322,123 +1364,3 @@ const diff: (previous: Plan.Plan, next: Plan.Plan) => PlanDiff
 ```
 
 Compares a plan against the last plan for the same flow. Pure, total, and free of requirements.
-
-## PlanStore
-
-[src/PlanStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/PlanStore.ts)
-
-`record` is first-writer-wins: an identical re-record is not an error, and a different plan under the same id is a `Conflict` carrying the stored digest rather than a silent overwrite. It accepts generation 0 only, whose `baseDigest` equals its `digest` and every one of whose nodes is at generation 0. `get` returns the verified immutable plan with nodes in recorded order. Admission and reads recompute keys, approval digests, topology, effect ordering and generation relationships. A forged incoming plan fails with `invalid_plan` before writes; corrupt stored content fails with `decode_failed`, including on duplicate admission. Envelope and nodes are read in one SQL statement to avoid mixed generations during concurrent appends.
-
-`append` advances the plan row with a compare-and-swap on the previous generation, the flow, the approved base digest, and the approval digest of the append's already-verified prefix, and it refuses an append that adds no nodes. Matching the prefix digest proves the recorded prefix is the caller's without re-reading the stored rows. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. New ordinals continue the recorded prefix, whose length the matched digest proves equal to the caller's prefix.
-
-Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`, `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
-
-### PlanStore.Service
-
-```ts
-interface Service {
-  /** Records generation 0 of a plan. */
-  readonly record: (plan: Plan.Plan, createdAtMs: number) => Effect.Effect<RecordResult, PlanStoreError>
-  /** Appends the newest generation's nodes and edges and advances the digest. */
-  readonly append: (plan: Plan.Plan) => Effect.Effect<void, PlanStoreError>
-  /** Reads the whole plan back, nodes in recorded order. */
-  readonly get: (planId: string) => Effect.Effect<Option.Option<Plan.Plan>, PlanStoreError>
-}
-```
-
-`createdAtMs` comes from the caller's clock. Constructing the store requires `Crypto.Crypto` alongside SQL and the durable writer; individual operations use that captured implementation.
-
-### PlanStore.RecordResult
-
-```ts
-type RecordResult =
-  | { readonly _tag: "Recorded" }
-  | { readonly _tag: "ExistingSame" }
-  | { readonly _tag: "Conflict"; readonly digest: string }
-```
-
-`Conflict.digest` is the digest already stored under that plan id. Nothing was written.
-
-### PlanStore.PlanStore
-
-```ts
-class PlanStore extends Context.Service<PlanStore, Service>()("@smthrs/plan/PlanStore") {}
-```
-
-The service tag.
-
-### PlanStore.make
-
-```ts
-const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
-```
-
-Builds the SQL-backed store.
-
-### PlanStore.layer
-
-```ts
-const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
-```
-
-Provides `make`.
-
-### PlanStore.PlanStoreError
-
-```ts
-class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan/PlanStoreError", {
-  code: typeof PlanStoreErrorCode
-  message: Schema.String
-  cause: Schema.optional<Schema.Unknown>
-})
-```
-
-| `code`               | Meaning                                                                                   |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| `invalid_plan`       | the plan does not satisfy what the operation requires, or a node is not encodable         |
-| `constraint`         | the compare-and-swap matched nothing, the persisted prefix diverged, or SQL refused a row |
-| `decode_failed`      | a stored row did not decode                                                               |
-| `persistence_failed` | the SQL layer failed for a reason that is not a constraint violation                      |
-| `unknown`            | anything else, with `cause` carrying the original                                         |
-
-`PlanStoreErrorCode` is exported as both a schema and a type.
-
-## Migrations
-
-[src/Migrations.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Migrations.ts)
-
-The namespaced set owns `flows_plans`, `flows_plan_nodes`, and `flows_plan_edges`
-in id block `4000`, after journal (`0`), run store (`1000`), step cache (`2000`),
-and engine store (`3000`). [`@smthrs/engine-store`](/docs/reference/api/engine-store/)'s
-`Migrations.sets` composes all five. The database loader handles forward
-additions to already installed lower blocks before the ordinary migration pass;
-earlier holes and entirely new lower blocks are refused rather than skipped.
-
-The ordered steps live under `src/internal/migrations`, which the export map blocks, so `set` is the only way to reach them; a step imported on its own would run outside the namespaced ordering that migrator relies on.
-
-### Migrations.set
-
-```ts
-const set: DatabaseMigrations.MigrationSet // namespace "plan", idOffset 4000
-```
-
-The namespaced migration set, for composition with the other storage packages.
-
-### Migrations.run and Migrations.layer
-
-```ts
-const run: Effect.Effect<void, ..., SqlClient.SqlClient>
-const layer: Layer.Layer<never, ..., SqlClient.SqlClient>
-```
-
-`run` creates the plan schema. `layer` runs the migrations before exposing the database to the plan store, which is what a standalone composition uses.
-
-### The migrations
-
-Append-only is enforced in SQL rather than by convention.
-
-| Step                         | What it does                                                                                                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_initial`               | Creates the three tables, the `flows_plan_nodes_order` index, and triggers that raise on any UPDATE or DELETE of a node or edge row and on any backward move of a plan row.     |
-| `0002_append_only_hardening` | Forbids deleting a plan row, extends the forward-only trigger to pin `flow` and `created_at_ms`, and makes `(plan_id, ordinal)` unique so recorded node order is deterministic. |
-| `0003_forward_only_identity` | Recreates the forward-only trigger with `plan_id` pinned, so a forward UPDATE cannot rename a plan and strand its immortal node and edge rows under the old id.                 |

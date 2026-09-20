@@ -3,9 +3,14 @@
 /**
  * Defines filesystem boundary enforcement modes.
  *
+ * The schema itself is `@smthrs/plan`'s `FileSet.BoundaryMode`, because the
+ * same two words are what a plan node's `effects.boundaryMode` carries. This
+ * module is the name an action reaches for; there is one declaration behind
+ * both.
+ *
  * @since 0.1.0
  */
-import * as Schema from "effect/Schema"
+import * as FileSet from "@smthrs/plan/FileSet"
 
 /**
  * Schema for how strictly an action's filesystem boundary is enforced.
@@ -16,7 +21,7 @@ import * as Schema from "effect/Schema"
  * @category models
  * @since 0.1.0
  */
-export const BoundaryMode = Schema.Literals(["hard", "expected"])
+export const BoundaryMode = FileSet.BoundaryMode
 
 /**
  * How strictly an action's filesystem boundary is enforced.
@@ -24,4 +29,4 @@ export const BoundaryMode = Schema.Literals(["hard", "expected"])
  * @category models
  * @since 0.1.0
  */
-export type BoundaryMode = typeof BoundaryMode.Type
+export type BoundaryMode = FileSet.BoundaryMode

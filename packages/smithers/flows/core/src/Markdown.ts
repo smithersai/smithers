@@ -48,9 +48,9 @@ export interface MarkdownFrontmatter {
   readonly effects?: {
     readonly reads?: ReadonlyArray<string> | undefined
     readonly writes?: ReadonlyArray<string> | undefined
-    readonly mode?: "hermetic" | "expected" | undefined
-    readonly onConflict?: "serialize" | "lane" | "fail" | undefined
-    readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
+    readonly mode?: Effects.Declaration["mode"] | undefined
+    readonly onConflict?: Effects.Declaration["onConflict"] | undefined
+    readonly tier?: Effects.Declaration["tier"]
   } | undefined
   readonly placement?: "sandbox" | "remote" | "client" | "local" | undefined
 }

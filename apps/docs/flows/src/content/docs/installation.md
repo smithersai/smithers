@@ -22,7 +22,7 @@ it:
 }
 ```
 
-Depending on the barrel brings in the nineteen engine packages it re-exports,
+Depending on the barrel brings in the twenty engine packages it re-exports,
 `effect`, and `esbuild`, which `SandboxedFlow` uses to bundle a guest entry
 module. Node host and SQLite adapters are optional and are selected below.
 
@@ -116,7 +116,7 @@ usually wants the narrower dependency: depend on
 [`@smthrs/engine`](https://engine.smithers.sh/reference/api/) and
 [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) to execute them. Reach for
 `@smthrs/flows` in the program that composes the whole engine, which is where
-one dependency saves you nineteen.
+one dependency saves you twenty.
 
 ## Next step
 

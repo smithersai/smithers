@@ -571,18 +571,6 @@ higher number first, and children inherit the value lexically. Priority never
 enters key material. A value that is not a safe integer raises
 `NodeBuildError` with code `invalid_priority`.
 
-### Node.lane
-
-```ts
-const lane: {
-  (options: Annotations.LaneOptions): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, options: Annotations.LaneOptions): Node<A, E>
-}
-```
-
-Adds a worktree lane annotation. Lanes are plan-time vocabulary; no runtime in
-this release executes one.
-
 ### Node.withEffects
 
 ```ts
@@ -708,7 +696,7 @@ interface GraphNode {
   readonly declaredEffects: Effects.Declaration | undefined
   readonly effectiveEffects: Effects.Declaration | undefined
   readonly placement: Placement.Placement | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Graph.Lane | undefined
   readonly priority: number | undefined
   readonly capabilities: ReadonlyArray<string>
   readonly annotations: AnnotationsProjection
@@ -721,13 +709,25 @@ traversal data and never reaches a step key. `kind` is the AST tag, or
 `LaneMerge` for a merge node this package synthesized. `effectiveEffects` is
 populated for work nodes only.
 
+### Graph.Lane
+
+```ts
+interface Lane {
+  readonly id: string
+}
+```
+
+The worktree lane the write-conflict pass assigns to a laned writer, named
+after the node it belongs to. Nothing declares one: this is the only thing that
+produces a lane.
+
 ### Graph.AnnotationsProjection
 
 ```ts
 interface AnnotationsProjection {
   readonly placement: Placement.Placement | undefined
   readonly effects: Effects.Declaration | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Graph.Lane | undefined
   readonly priority: number | undefined
 }
 ```
@@ -990,27 +990,26 @@ const getOption: <I, S>(context: Context.Context<never>, key: Context.Key<I, S>)
 combines a parent and a child bag, with the child's values winning.
 `getOption` returns `Option.none()` when the key is absent.
 
-### The four keys
+### The three keys
 
 ```ts
-const Placement: Context.Service<PlacementModel.Placement>
-const Effects: Context.Service<EffectsModel.Declaration>
-const Lane: Context.Service<LaneOptions>
+const Placement: Context.Key<Placement.Placement, Placement.Placement>
+const Effects: Context.Key<Effects.Declaration, Effects.Declaration>
 const Priority: Context.Service<number>
 ```
 
-These are the four keys `Graph.build` projects onto each node. `Priority` is a
-signed integer ordering ready work; it is never part of step identity, so
-raising it never invalidates a cached step.
+These are the three keys `Graph.build` projects onto each node. `Placement` and
+`Effects` are not declared here: they are [`@smthrs/plan`](https://plan.smithers.sh/reference/api/)'s
+`Placement.Annotation` and `Effects.Envelope`, the same objects
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) publishes as `Flow.Placement` and
+`Flow.EffectEnvelope`, so a flow annotated for one graph builder is visible to
+the other. `Priority` is a signed integer ordering ready work; it is never part
+of step identity, so raising it never invalidates a cached step.
 
-### Annotations.LaneOptions
-
-```ts
-interface LaneOptions {
-  readonly id: string
-  readonly landing?: "merge-queue" | "manual" | undefined
-}
-```
+A fourth key, `Lane`, and its `LaneOptions` are gone. They were a second
+spelling of `Effects.Declaration.onConflict: "lane"` with no caller outside
+this package's own tests; the lane a node carries is now only the one the
+write-conflict pass assigns it, typed as `Graph.Lane`.
 
 ## KeyMaterial
 

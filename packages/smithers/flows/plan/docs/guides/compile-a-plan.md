@@ -138,7 +138,7 @@ than raising it: a plan that large is also a plan no operator can review.
 
 ## Next
 
-- [Persist a plan](./persist-a-plan.md): record the compiled value and read it
+- [Persist a plan](https://plan-store.smithers.sh/guides/persist-a-plan/): record the compiled value and read it
   back.
 - [Declare the files a node touches](./declare-file-effects.md): the vocabulary
   behind step 4 and step 5.

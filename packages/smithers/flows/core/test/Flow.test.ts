@@ -276,7 +276,7 @@ describe("Flow", () => {
       flows: [first, "by-name"]
     }).pipe(
       Flow.within(placement),
-      Flow.annotate(Annotations.Lane, { id: "lane-1" })
+      Flow.annotate(Annotations.Priority, 3)
     )
 
     const rebound = Flow.withFlows(original, [second, "by-name"])
@@ -304,9 +304,7 @@ describe("Flow", () => {
     expect(rebound.description).toBe("declares collaborators")
     expect(rebound.capabilities).toEqual(["net"])
     expect(Option.getOrUndefined(Annotations.getOption(rebound.annotations, Annotations.Placement))).toEqual(placement)
-    expect(Option.getOrUndefined(Annotations.getOption(rebound.annotations, Annotations.Lane))).toEqual({
-      id: "lane-1"
-    })
+    expect(Option.getOrUndefined(Annotations.getOption(rebound.annotations, Annotations.Priority))).toBe(3)
     // The body the rebuild produces declares the new collaborators, not the old ones.
     const dynamicNode = Graph.nodes(Graph.build(rebound, "x")).find((node) => node.kind === "Dynamic")
     expect(JSON.stringify(dynamicNode?.keyMaterial)).toContain("shell")

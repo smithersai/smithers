@@ -54,6 +54,18 @@ const wired = (
 
 const isSuspended = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
 
+/**
+ * A placement value that is not one of the four directives.
+ *
+ * `Flow.PlacementDirective` is `@smthrs/plan`'s typed model now, but a type is
+ * erased: an annotation bag assembled at run time, or a declaration loaded from
+ * a file flow, still carries whatever the caller put there. These cases drive
+ * exactly that, which is what `Graph`'s bounded placement rendering and its
+ * structural identity check exist for, so the cast is the point rather than a
+ * way around the type.
+ */
+const opaque = (value: unknown): Flow.PlacementDirective => value as Flow.PlacementDirective
+
 describe("Graph.build keeps a child boundary as a leaf", () => {
   it("records one node for the whole callee, with its tag, payload, and declared envelope", () => {
     const graph = Graph.build(Parent, { value: 4 })
@@ -79,7 +91,7 @@ describe("Graph.build keeps a child boundary as a leaf", () => {
 
   it("summarizes the callee's declared capabilities, effects, and placement in the material", () => {
     const effects: Flow.Effects = { reads: ["counter.txt"], writes: [], boundaryMode: "hard" }
-    const placement: Flow.PlacementDirective = { host: "sandbox" }
+    const placement = opaque({ host: "sandbox" })
     const Sealed = Flow.make("child/sealed", {
       payload: { value: Schema.Number },
       success: Schema.Number,
@@ -129,14 +141,14 @@ describe("Graph.build placement refusal", () => {
     payload: { value: Schema.Number },
     success: Schema.Number,
     body: ({ value }) => Bump.call({ value })
-  }).annotate(Flow.Placement, { host: "sandbox" })
+  }).annotate(Flow.Placement, opaque({ host: "sandbox" }))
 
   it("refuses an inline call the enclosing flow cannot host, and directs to the boundary", () => {
     const Local = Flow.make("child/local", {
       payload: {},
       success: Schema.Number,
       body: () => Remote.call({ value: 1 })
-    }).annotate(Flow.Placement, { host: "worker" })
+    }).annotate(Flow.Placement, opaque({ host: "worker" }))
 
     expect(() => Graph.build(Local, {})).toThrowError(expect.objectContaining({
       _tag: "@smthrs/plan/GraphBuildError",
@@ -157,12 +169,12 @@ describe("Graph.build placement refusal", () => {
       payload: {},
       success: Schema.Number,
       body: () => Bump.call({ value: 1 })
-    }).annotate(Flow.Placement, new HostilePlacement())
+    }).annotate(Flow.Placement, opaque(new HostilePlacement()))
     const Local = Flow.make("child/local-hostile-placement", {
       payload: {},
       success: Schema.Number,
       body: () => Hostile.call({})
-    }).annotate(Flow.Placement, { host: "worker" })
+    }).annotate(Flow.Placement, opaque({ host: "worker" }))
 
     expect(() => Graph.build(Local, {})).toThrowError(expect.objectContaining({
       _tag: "@smthrs/plan/GraphBuildError",
@@ -175,7 +187,7 @@ describe("Graph.build placement refusal", () => {
       payload: {},
       success: Schema.Number,
       body: () => Remote.child({ value: 1 })
-    }).annotate(Flow.Placement, { host: "worker" })
+    }).annotate(Flow.Placement, opaque({ host: "worker" }))
 
     expect(node(Graph.build(Local, {}), "root.flow").draft.material.placement).toEqual({ host: "sandbox" })
   })
@@ -199,12 +211,12 @@ describe("Graph.build placement refusal", () => {
       payload: { value: Schema.Number },
       success: Schema.Number,
       body: ({ value }) => Bump.call({ value })
-    }).annotate(Flow.Placement, { host: "sandbox", pool: "a" })
+    }).annotate(Flow.Placement, opaque({ host: "sandbox", pool: "a" }))
     const Same = Flow.make("child/same-placement", {
       payload: {},
       success: Schema.Number,
       body: () => Placed.call({ value: 1 })
-    }).annotate(Flow.Placement, { pool: "a", host: "sandbox" })
+    }).annotate(Flow.Placement, opaque({ pool: "a", host: "sandbox" }))
 
     expect(Graph.nodes(Graph.build(Same, {})).map((observed) => observed.id)).toEqual([
       "root.flow.flow",
@@ -223,7 +235,7 @@ describe("Graph.build placement refusal", () => {
       payload: {},
       success: Schema.Number,
       body: () => Middle.call({})
-    }).annotate(Flow.Placement, { host: "worker" })
+    }).annotate(Flow.Placement, opaque({ host: "worker" }))
 
     // `Middle` declares nothing, so the refusal is raised against `Outer`'s
     // placement two levels down rather than being lost at the first hop.

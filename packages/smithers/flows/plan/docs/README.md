@@ -1,13 +1,13 @@
 ---
 title: "@smthrs/plan"
-description: "Compile what a run intends to do into one keyed, content-addressed graph, record it in an append-only SQLite store, and grow it later without rewriting a single row."
+description: "Compile what a run intends to do into one keyed, content-addressed graph, grow it later without rewriting a node, and diff two graphs to say exactly what changed."
 ---
 
 `@smthrs/plan` turns a description of work into one durable value. It compiles a
 list of declared steps into a graph in which every node carries a content key
-derived from what that node declares, records that graph in a SQLite store that
-only ever grows, and compares two graphs to say exactly what changed. It runs
-nothing itself.
+derived from what that node declares, grows that graph a generation at a time
+without rewriting a node, and compares two graphs to say exactly what changed.
+It runs nothing itself and performs no I/O at all.
 
 ## What it solves
 
@@ -22,12 +22,12 @@ its layers, and its capabilities, so an edit re-keys that node and the nodes
 that depend on it, and leaves every other key untouched. Renaming a node changes
 no key at all, because ids are lookup addresses rather than identity.
 
-The second is whether what executed is what somebody approved. A plan is
-recorded before it runs and carries two digests: `digest`, which moves as the
-plan elaborates, and `baseDigest`, which still names the shape a reviewer signed
-off on. The store keeps that honest in SQL rather than by convention: rewriting
-a recorded node, deleting a plan, or moving a generation backwards is refused by
-a trigger, so growth is the only way a recorded plan can change.
+The second is whether what executed is what somebody approved. A plan carries
+two digests: `digest`, which moves as the plan elaborates, and `baseDigest`,
+which still names the shape a reviewer signed off on. `Plan.append` is the only
+way a plan changes, and it leaves every earlier node byte for byte.
+[`@smthrs/plan-store`](/api/plan-store) keeps that honest in SQL rather than by
+convention, with triggers that refuse a rewritten node.
 
 Reach for this package when you are building a scheduler, a cache, or an
 approval flow over declared work and you need step identity, declared file
@@ -49,8 +49,8 @@ supplies:
 pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
-[Installation](./installation.md) covers the import forms, the extra packages
-persistence needs, and browser support.
+[Installation](./installation.md) covers the import forms, the package
+persistence lives in, and browser support.
 
 ## Compile a plan
 
@@ -130,22 +130,22 @@ does.
 | `FileSet`     | Patterns, globs, tree artifacts, and filegroups: the vocabulary `effects` uses. |
 | `Plan`        | `compile`, `append`, the node schemas, and the digest an approval binds to.     |
 | `PlanDiff`    | A comparison of two plans as a value, with each re-key attributed to a field.   |
-| `PlanStore`   | Append-only SQL persistence, enforced by triggers.                              |
-| `Migrations`  | The migration set that creates the three plan tables.                           |
+| `Placement`   | Where a node runs: four directives, their host detail, and the annotation key.  |
 
 The [API reference](./api.md) documents every export.
 
 ## Where this sits
 
 `@smthrs/plan` is one package of the Smithers durable flow engine, and it owns
-the plan phase: step identity, graph compilation, declared file effects, and
-plan storage. [`@smthrs/flows`](/api/flows) is the whole engine as a single
-dependency, and it re-exports this package as its `Plan` namespace, so
-`Plan.compile` there is `Plan.Plan.compile` and `PlanStore.layer` is
-`Plan.PlanStore.layer`. If you are writing an application rather than a
-scheduler, install `@smthrs/flows` and reach for this package's names through
-it; install `@smthrs/plan` on its own when you want the plan value without the
-engine that executes it.
+the plan phase: step identity, graph compilation, and declared file effects.
+Storing a plan is [`@smthrs/plan-store`](/api/plan-store), which is a separate
+package so that compiling does not drag a database in.
+[`@smthrs/flows`](/api/flows) is the whole engine as a single dependency, and it
+re-exports this package as its `Plan` namespace, so `Plan.compile` there is
+`Plan.Plan.compile`. If you are writing an application rather than a scheduler,
+install `@smthrs/flows` and reach for this package's names through it; install
+`@smthrs/plan` on its own when you want the plan value without the engine that
+executes it.
 
 Nothing here executes a node. A compiled plan is inert until a scheduler drives
 it, which is [`@smthrs/engine-store`](/api/engine-store)'s `PlanScheduler`.
@@ -156,15 +156,15 @@ runs, and inspects flows for someone who never imports a package at all.
 
 ## Next
 
-- [Quickstart](./quickstart.md): compile a plan, record it in SQLite, append a
-  generation, and read the keyed graph back.
+- [Quickstart](./quickstart.md): compile a plan, append a generation, and diff
+  the two graphs.
 - [The plan value](./concepts/plan-value.md): generations, the two digests, and
   why a plan grows instead of being rewritten.
 - [Step keys](./concepts/step-keys.md): what goes into a key, what deliberately
   stays out, and why invalidation is re-keying.
 - [Declared effects and conflicts](./concepts/effects-and-conflicts.md): how
   reads and writes become ordering edges.
-- [Persist a plan](./guides/persist-a-plan.md): the store composition and every
-  outcome `record` can answer with.
+- [Persist a plan](https://plan-store.smithers.sh/guides/persist-a-plan/): the
+  store composition and every outcome `record` can answer with.
 - [Troubleshooting](./troubleshooting.md): every refusal this package raises and
   what to change.

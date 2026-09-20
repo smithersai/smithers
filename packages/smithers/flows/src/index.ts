@@ -64,6 +64,7 @@ export * as Kernel from "@smthrs/kernel"
 export * as Keys from "@smthrs/keys"
 export * as Observability from "@smthrs/observability"
 export * as Plan from "@smthrs/plan"
+export * as PlanStore from "@smthrs/plan-store"
 export * as RunStore from "@smthrs/run-store"
 export * as Sandbox from "@smthrs/sandbox"
 export * as StepCache from "@smthrs/step-cache"
@@ -111,6 +112,7 @@ export const namespaces = [
   "Keys",
   "Observability",
   "Plan",
+  "PlanStore",
   "Poll",
   "RetryPolicy",
   "RunStore",

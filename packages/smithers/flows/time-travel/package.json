@@ -206,6 +206,7 @@
     "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/kernel": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",
+    "@smthrs/plan-store": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -5,6 +5,7 @@
  *
  * @since 0.1.0
  */
+import * as Effects from "@smthrs/plan/Effects"
 import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Context from "effect/Context"
@@ -23,10 +24,14 @@ import type { TypeId } from "./TypeId.ts"
 /**
  * The durability and retry semantics of an action.
  *
+ * The schema is `@smthrs/plan`'s `Effects.Tier`: an action's durability, a
+ * declared envelope's ceiling and `KeyMaterial.kind` are the same three words,
+ * and they are declared once.
+ *
  * @category models
  * @since 0.1.0
  */
-export const Tier = Schema.Literals(["sealed", "compensable", "irreversible"])
+export const Tier = Effects.Tier
 
 /**
  * The durability and retry semantics of an action.
@@ -34,7 +39,7 @@ export const Tier = Schema.Literals(["sealed", "compensable", "irreversible"])
  * @category models
  * @since 0.1.0
  */
-export type Tier = typeof Tier.Type
+export type Tier = Effects.Tier
 
 /**
  * Schema for caller-declared sealed action identity.

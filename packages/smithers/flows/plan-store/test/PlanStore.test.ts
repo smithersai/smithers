@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as Plan from "@smthrs/plan/Plan"
+import { compile, draft } from "@smthrs/plan/test/PlanFixtures"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -7,10 +9,8 @@ import * as Schema from "effect/Schema"
 import * as Tracer from "effect/Tracer"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
-import * as Plan from "../src/Plan.ts"
 import * as PlanStore from "../src/PlanStore.ts"
 import { withCrypto } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const stores = Layer.provideMerge(PlanStore.layer, Layer.provideMerge(Migrations.layer, TestDatabase.layer))
 

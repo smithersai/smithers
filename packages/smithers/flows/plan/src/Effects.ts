@@ -16,7 +16,86 @@
  *
  * @since 0.0.0
  */
+import * as Context from "effect/Context"
+import * as Schema from "effect/Schema"
 import * as Index from "./internal/effects.ts"
+
+/**
+ * How reversible the work beneath a declaration is.
+ *
+ * This is the ONE tier vocabulary. `KeyMaterial.kind` is this schema, and so
+ * is `@smthrs/flow`'s `Action.Tier`: an action's durability and a declared
+ * envelope's ceiling are the same three words, and a fourth spelling of them
+ * in one of the three places would fork identity silently.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const Tier = Schema.Literals(["sealed", "compensable", "irreversible"])
+
+/**
+ * The value form of {@link Tier}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Tier = typeof Tier.Type
+
+/**
+ * How hermetic the work beneath a declaration is.
+ *
+ * This is the ONE mode vocabulary: the two words were written out in
+ * `Declaration`, in `MakeOptions`, and twice more inside the matcher.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const Mode = Schema.Literals(["hermetic", "expected"])
+
+/**
+ * The value form of {@link Mode}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Mode = typeof Mode.Type
+
+/**
+ * What a plan does when two nodes write the same path.
+ *
+ * This is the ONE conflict vocabulary: `Declaration.onConflict` declares it and
+ * `Plan.PairStrategy` is this same schema, resolved per pair by
+ * `Plan.compile`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const ConflictStrategy = Schema.Literals(["serialize", "lane", "fail"])
+
+/**
+ * The value form of {@link ConflictStrategy}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ConflictStrategy = typeof ConflictStrategy.Type
+
+/**
+ * The annotation key a flow's declared effect ENVELOPE is carried under.
+ *
+ * One key, here, because two graph builders read it: `@smthrs/flow`'s
+ * `Graph.build` enforces the envelope it names, and `@smthrs/core` re-exports
+ * this key as `Annotations.Effects`. While they were separate keys a flow
+ * annotated for one builder was invisible to the other.
+ *
+ * It is a `Context` key, not hashed material: annotating a flow with an
+ * envelope changes what a build ADMITS, and the declaration reaches identity
+ * only through `KeyMaterial.kind`.
+ *
+ * @category annotations
+ * @since 1.0.0-rc.0
+ */
+export const Envelope = Context.Service<Declaration>("@smthrs/plan/Effects/Envelope")
 
 /**
  * The prepared matching API: what a graph builder needs to check one envelope
@@ -68,9 +147,9 @@ export {
 export interface Declaration {
   readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
-  readonly mode: "hermetic" | "expected"
-  readonly onConflict: "serialize" | "lane" | "fail"
-  readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
+  readonly mode: Mode
+  readonly onConflict: ConflictStrategy
+  readonly tier?: Tier | undefined
 }
 
 /**
@@ -88,9 +167,9 @@ export interface Declaration {
 export interface MakeOptions {
   readonly reads: Iterable<string>
   readonly writes: Iterable<string>
-  readonly mode: "hermetic" | "expected"
-  readonly onConflict: "serialize" | "lane" | "fail"
-  readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
+  readonly mode: Mode
+  readonly onConflict: ConflictStrategy
+  readonly tier?: Tier | undefined
 }
 
 /**

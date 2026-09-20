@@ -148,6 +148,7 @@
     "@smthrs/keys": "1.0.0-rc.0",
     "@smthrs/observability": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",
+    "@smthrs/plan-store": "1.0.0-rc.0",
     "@smthrs/run-store": "1.0.0-rc.0",
     "@smthrs/sandbox": "1.0.0-rc.0",
     "@smthrs/step-cache": "1.0.0-rc.0",

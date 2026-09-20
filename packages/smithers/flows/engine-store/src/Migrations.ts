@@ -17,7 +17,7 @@
  */
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
-import * as PlanMigrations from "@smthrs/plan/Migrations"
+import * as PlanMigrations from "@smthrs/plan-store/Migrations"
 import * as RunStoreMigrations from "@smthrs/run-store/Migrations"
 import * as StepCacheMigrations from "@smthrs/step-cache/Migrations"
 import * as Layer from "effect/Layer"

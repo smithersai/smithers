@@ -3,6 +3,7 @@ title: "Persist a plan"
 description: "Compose PlanStore over SQLite, record generation 0 first-writer-wins, handle every RecordResult, and read the whole graph back."
 sidebar:
   order: 3
+editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/plan-store/docs/guides/persist-a-plan.md"
 ---
 
 `PlanStore` keeps a compiled plan: nodes, edges, computed keys, effect
@@ -13,14 +14,14 @@ back.
 ## Compose the store
 
 The store needs a `SqlClient` and a `DurableWriter` from
-[`@smthrs/database`](/api/database), and it needs this package's three tables to
+[`@smthrs/database`](https://database.smithers.sh/reference/api/), and it needs this package's three tables to
 exist. `Migrations.layer` runs them before the store is exposed:
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as Migrations from "@smthrs/plan/Migrations"
-import * as PlanStore from "@smthrs/plan/PlanStore"
+import * as Migrations from "@smthrs/plan-store/Migrations"
+import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import * as Layer from "effect/Layer"
 
 const database = Layer.provideMerge(
@@ -36,8 +37,8 @@ export const planStore = Layer.provideMerge(
 
 A host that already composes the other storage packages should compose
 `Migrations.set` with theirs instead, through
-[`@smthrs/engine-store`](/api/engine-store)'s `Migrations.sets`, rather than
-running this set on its own. [Append a generation](./append-a-generation.md)
+[`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/)'s `Migrations.sets`, rather than
+running this set on its own. [Append a generation](/guides/append-a-generation/)
 covers why the ordering matters.
 
 ## Record generation 0
@@ -132,11 +133,11 @@ history.
 
 Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`,
 `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
-[Troubleshooting](../troubleshooting.md) states what causes each and what to
+[Troubleshooting](/troubleshooting/) states what causes each and what to
 change.
 
 ## Next
 
-- [Append a generation](./append-a-generation.md): grow a recorded plan without
+- [Append a generation](/guides/append-a-generation/): grow a recorded plan without
   rewriting it.
-- [Diff two plans](./diff-two-plans.md): report what a re-plan changed.
+- [Diff two plans](https://plan.smithers.sh/guides/diff-two-plans/): report what a re-plan changed.

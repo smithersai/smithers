@@ -1,11 +1,12 @@
 /**
- * The persisted plan: a keyed action graph, its append-only store, its diff,
- * and the step-key compiler that gives every node its identity.
+ * The plan value: a keyed action graph, its diff, and the step-key compiler
+ * that gives every node its identity.
  *
  * A plan is a `Node` graph with every key computed, produced by the plan phase
- * and inert until run. This package is that value made durable and nothing
- * more: it performs no I/O beyond the database and never executes anything.
- * Driving a plan is `@smthrs/engine-store`'s `PlanScheduler`.
+ * and inert until run. This package is that value and nothing more: it
+ * performs no I/O at all and never executes anything. Persisting a plan is
+ * `@smthrs/plan-store`; driving one is `@smthrs/engine-store`'s
+ * `PlanScheduler`.
  *
  * Above the persisted form sits the authoring AST: `Node` describes a plan as
  * pure data, and `Planned` is the placeholder a body sees where a step result
@@ -64,11 +65,10 @@ export * as Plan from "./Plan.ts"
 export * as PlanDiff from "./PlanDiff.ts"
 
 /**
- * @since 0.1.0
- * @category services
- * @slop
+ * @since 1.0.0
+ * @category models
  */
-export * as PlanStore from "./PlanStore.ts"
+export * as Placement from "./Placement.ts"
 
 /**
  * @since 0.1.0
@@ -89,10 +89,3 @@ export * as StepKey from "./StepKey.ts"
  * @category constructors
  */
 export * as Scheduling from "./Scheduling.ts"
-
-/**
- * @since 0.1.0
- * @category migrations
- * @slop
- */
-export * as Migrations from "./Migrations.ts"

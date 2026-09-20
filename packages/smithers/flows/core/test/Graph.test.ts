@@ -61,17 +61,20 @@ describe("Graph", () => {
     ])
   })
 
-  it("uses the same lane projection for explicit and conflict-derived lanes", () => {
+  it("derives every lane from the write conflict, because nothing declares one", () => {
+    // `Node.lane` and `Annotations.Lane` are gone: they were a second spelling
+    // of `onConflict: "lane"` with no caller. The pass names a lane after the
+    // node it belongs to, for both writers, and no unlaned node gains one.
     const writes = effect({ writes: ["out/result"], onConflict: "lane" })
     const graph = Graph.build(Node.all({
-      explicit: Node.lane(Node.withEffects(Node.dynamic({}), writes), { id: "lane:explicit" }),
-      implicit: Node.withEffects(Node.dynamic({}), writes)
+      left: Node.withEffects(Node.dynamic({}), writes),
+      right: Node.withEffects(Node.dynamic({}), writes)
     }))
-    const [root, explicit, implicit] = Graph.nodes(graph)
+    const [root, left, right] = Graph.nodes(graph)
 
-    expect(root).toBeDefined()
-    expect(explicit?.annotations.lane).toEqual({ id: "lane:explicit" })
-    expect(implicit?.annotations.lane).toEqual({ id: "lane:root.all.implicit" })
+    expect(root?.annotations.lane).toBeUndefined()
+    expect(left?.annotations.lane).toEqual({ id: "lane:root.all.left" })
+    expect(right?.annotations.lane).toEqual({ id: "lane:root.all.right" })
   })
 
   it("reports envelope escapes as diagnostics", () => {

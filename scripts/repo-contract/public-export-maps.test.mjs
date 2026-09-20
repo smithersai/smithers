@@ -37,10 +37,12 @@ describe("explicit public entrypoints", () => {
   })
 
   it("preserves every reviewed runtime contract except the confirmed implementation paths", () => {
-    assert.equal(baseline.packages.length, 47)
+    assert.equal(baseline.packages.length, 48)
     assert.deepEqual(baseline.removed.map(({ name, subpath }) => `${name}${subpath.slice(1)}`), [
       "@smthrs/integrations/core/migrations/0001_integration_cursors",
-      "@smthrs/build-cli/effect-resolution.d"
+      "@smthrs/build-cli/effect-resolution.d",
+      "@smthrs/plan/Migrations",
+      "@smthrs/plan/PlanStore"
     ])
     let retained = 0
     for (const previous of baseline.packages) {
@@ -63,12 +65,12 @@ describe("explicit public entrypoints", () => {
       }
       retained += previous.subpaths.length - removed.length
     }
-    assert.equal(retained, 771)
+    assert.equal(retained, 774)
   })
 
   it("admits only explicitly reviewed additions without rewriting the original surface", () => {
     assert.deepEqual(baseline.added.map(({ name, subpath }) => `${name}${subpath.slice(1)}`).sort(), [
-      "@smthrs/build-cli/TargetIndex", "@smthrs/canonical/BoundedJson", "@smthrs/canonical/IssuePath", "@smthrs/canonical/ReadonlyMap", "@smthrs/canonical/Record", "@smthrs/canonical/Serializer", "@smthrs/control/ApprovalAuthority", "@smthrs/control/DispatchReader", "@smthrs/control/Health", "@smthrs/database/bun/BunDatabase", "@smthrs/engine-store/EventTypes", "@smthrs/engine-store/ExecutionSnapshot", "@smthrs/engine-store/PlanInputStore", "@smthrs/engine-store/PlanMergeStore", "@smthrs/engine-store/RunChangeFeed", "@smthrs/flows/BunRuntime", "@smthrs/flows/Runtime", "@smthrs/gateway/bun/BunGateway", "@smthrs/journal/EngineEvent", "@smthrs/journal/JournalGeneration", "@smthrs/kernel/ChildProcessEnvironment", "@smthrs/memory/Migrations", "@smthrs/model/Classifier", "@smthrs/model/Evaluator", "@smthrs/model/ModelCatalog", "@smthrs/plan/Scheduling", "@smthrs/platform-node/EgressHttpClient", "@smthrs/platform-node/ScopedProcess", "@smthrs/scorers/ScoreGate", "@smthrs/std/Classifiers", "@smthrs/std/Classify", "@smthrs/std/Relocate", "@smthrs/testing/ProcessTable", "@smthrs/triggers/DispatchReader"
+      "@smthrs/build-cli/TargetIndex", "@smthrs/canonical/BoundedJson", "@smthrs/canonical/IssuePath", "@smthrs/canonical/ReadonlyMap", "@smthrs/canonical/Record", "@smthrs/canonical/Serializer", "@smthrs/control/ApprovalAuthority", "@smthrs/control/DispatchReader", "@smthrs/control/Health", "@smthrs/database/bun/BunDatabase", "@smthrs/engine-store/EventTypes", "@smthrs/engine-store/ExecutionSnapshot", "@smthrs/engine-store/PlanInputStore", "@smthrs/engine-store/PlanMergeStore", "@smthrs/engine-store/RunChangeFeed", "@smthrs/flows/BunRuntime", "@smthrs/flows/Runtime", "@smthrs/gateway/bun/BunGateway", "@smthrs/journal/EngineEvent", "@smthrs/journal/JournalGeneration", "@smthrs/kernel/ChildProcessEnvironment", "@smthrs/memory/Migrations", "@smthrs/model/Classifier", "@smthrs/model/Evaluator", "@smthrs/model/ModelCatalog", "@smthrs/plan/Effects", "@smthrs/plan/Placement", "@smthrs/plan/Scheduling", "@smthrs/plan/test/PlanFixtures", "@smthrs/platform-node/EgressHttpClient", "@smthrs/platform-node/ScopedProcess", "@smthrs/scorers/ScoreGate", "@smthrs/std/Classifiers", "@smthrs/std/Classify", "@smthrs/std/Relocate", "@smthrs/testing/ProcessTable", "@smthrs/triggers/DispatchReader"
     ])
     for (const entry of baseline.added) {
       const manifest = current.get(entry.name).manifest

@@ -129,16 +129,6 @@ describe("Node", () => {
     )
   })
 
-  it("supports data-first and data-last lane", () => {
-    const source = Node.succeed("value")
-    const options = { id: "review", landing: "merge-queue" } as const
-    const dataFirst = Node.lane(source, options)
-    const dataLast = source.pipe(Node.lane(options))
-
-    expect(Option.getOrUndefined(Annotations.getOption(dataFirst.ast.annotations, Annotations.Lane))).toBe(options)
-    expect(Option.getOrUndefined(Annotations.getOption(dataLast.ast.annotations, Annotations.Lane))).toBe(options)
-  })
-
   it("supports data-first and data-last withEffects", () => {
     const source = Node.succeed("value")
     const dataFirst = Node.withEffects(source, declaration)

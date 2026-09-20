@@ -1,6 +1,7 @@
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { KeyMaterial, Plan, PlanStore, StepKey } from "@smthrs/plan"
+import { KeyMaterial, Plan, StepKey } from "@smthrs/plan"
+import { PlanStore } from "@smthrs/plan-store"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
 import * as Crypto from "effect/Crypto"

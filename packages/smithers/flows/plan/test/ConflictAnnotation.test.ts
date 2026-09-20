@@ -9,8 +9,8 @@ import * as Effect from "effect/Effect"
 import * as Conflicts from "../src/internal/ConflictAnnotation.ts"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
 import * as Plan from "../src/Plan.ts"
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const keyOf = (plan: Plan.Plan, id: string) => plan.nodes.find((node) => node.id === id)!.key
 

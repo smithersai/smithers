@@ -20,8 +20,8 @@ calls, which is what lets the engine cache them, retry them, replay them, and
 put one of them on another machine without the flow's author arranging any of
 it.
 
-The engine behind that is nineteen packages, each with its own seam. Wiring
-nineteen dependencies by hand is the boring part of composing a host, so this
+The engine behind that is twenty packages, each with its own seam. Wiring
+twenty dependencies by hand is the boring part of composing a host, so this
 package collapses it: one dependency, one import, and one call that builds the
 whole composition.
 

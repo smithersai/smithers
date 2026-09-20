@@ -379,6 +379,39 @@
         "require": "./dist/cjs/EgressHttpClient.js"
       },
       "reason": "The one constructor for the outbound Undici client a Node process should use: it routes through the egress proxy HTTP_PROXY/HTTPS_PROXY/NO_PROXY name and is the plain pool when they name none. Every host composition installs it instead of NodeHttpClient.layerUndici, whose bare Agent dials every origin directly and is dropped by a default-deny sandbox. A separate subpath keeps it reachable without importing the jj-bearing host bundle."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Effects",
+      "development": "./src/Effects.ts",
+      "published": {
+        "types": "./dist/esm/Effects.d.ts",
+        "import": "./dist/esm/Effects.js",
+        "require": "./dist/cjs/Effects.js"
+      },
+      "reason": "The one effect envelope model, relocated here from @smthrs/core so a single declaration serves the plan compiler, the flow graph builder and the pattern library."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Placement",
+      "development": "./src/Placement.ts",
+      "published": {
+        "types": "./dist/esm/Placement.d.ts",
+        "import": "./dist/esm/Placement.js",
+        "require": "./dist/cjs/Placement.js"
+      },
+      "reason": "The one placement model and its annotation key, relocated here from @smthrs/core so the typed directive and the key @smthrs/flow annotates with are the same declaration."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./test/PlanFixtures",
+      "development": "./src/test/PlanFixtures.ts",
+      "published": {
+        "types": "./dist/esm/test/PlanFixtures.d.ts",
+        "import": "./dist/esm/test/PlanFixtures.js",
+        "require": "./dist/cjs/test/PlanFixtures.js"
+      },
+      "reason": "Draft and compile fixtures shared with @smthrs/plan-store, which drives them against the persisted form. The same test-support convention as @smthrs/database's ./test/TestDatabase."
     }
   ],
   "removed": [
@@ -391,6 +424,16 @@
       "name": "@smthrs/build-cli",
       "subpath": "./effect-resolution.d",
       "reason": "Declaration-only source file; no corresponding emitted runtime module. Preserve the explicit ./effect-resolution JavaScript hook and its declaration."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./Migrations",
+      "reason": "The plan schema moved to @smthrs/plan-store with the store it belongs to, so compiling a plan no longer installs a database. Import @smthrs/plan-store/Migrations."
+    },
+    {
+      "name": "@smthrs/plan",
+      "subpath": "./PlanStore",
+      "reason": "Append-only plan persistence moved to @smthrs/plan-store, so compiling a plan no longer installs a database. Import @smthrs/plan-store/PlanStore."
     }
   ],
   "packages": [
@@ -2799,6 +2842,39 @@
         "./pins/Interrupt",
         "./pins/Race",
         "./pins/Replay"
+      ]
+    },
+    {
+      "name": "@smthrs/plan-store",
+      "directory": "packages/smithers/flows/plan-store",
+      "development": {
+        "./package.json": "./package.json",
+        ".": "./src/index.ts",
+        "./*": "./src/*.ts",
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "published": {
+        "./package.json": "./package.json",
+        ".": {
+          "types": "./dist/esm/index.d.ts",
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.js"
+        },
+        "./*": {
+          "types": "./dist/esm/*.d.ts",
+          "import": "./dist/esm/*.js",
+          "require": "./dist/cjs/*.js"
+        },
+        "./internal/*": null,
+        "./*/index": null
+      },
+      "subpaths": [
+        ".",
+        "./Migrations",
+        "./PlanStore",
+        "./index",
+        "./package.json"
       ]
     }
   ]

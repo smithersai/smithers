@@ -58,6 +58,7 @@ const entries = [
   ["observability", "@smthrs/observability", "packages/smithers/flows/observability"],
   ["smithers-patterns", "@smthrs/patterns", "packages/smithers/flows/patterns"],
   ["plan", "@smthrs/plan", "packages/smithers/flows/plan"],
+  ["plan-store", "@smthrs/plan-store", "packages/smithers/flows/plan-store"],
   ["platform-browser", "@smthrs/platform-browser", "packages/smithers/flows/platform-browser"],
   ["platform-bun", "@smthrs/platform-bun", "packages/smithers/flows/platform-bun"],
   ["platform-node", "@smthrs/platform-node", "packages/smithers/flows/platform-node"],

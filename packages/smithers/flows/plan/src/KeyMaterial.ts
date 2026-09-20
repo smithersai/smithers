@@ -14,6 +14,7 @@
  * @since 0.1.0
  */
 import * as Schema from "effect/Schema"
+import * as Effects from "./Effects.ts"
 
 /**
  * A reference to one declared input of a node: a value hashed inline, or the
@@ -65,7 +66,7 @@ export const version = "flows/key-material/v2"
  */
 export const KeyMaterial = Schema.Struct({
   version: Schema.Literal(version),
-  kind: Schema.Literals(["sealed", "compensable", "irreversible"]),
+  kind: Effects.Tier,
   // Absence claims determinism; only the explicit declaration changes identity.
   nondeterministic: Schema.optional(Schema.Literal(true)),
   body: Schema.Unknown,

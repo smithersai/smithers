@@ -4,8 +4,8 @@ import { expect, it, vi } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
 import * as Candidates from "../src/internal/EffectCandidates.ts"
 import * as Plan from "../src/Plan.ts"
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const tree = (path: string): FileSet.Entry => ({ _tag: "TreeArtifact", path })
 const glob = (include: string, exclude?: Array<string>): FileSet.Glob => ({

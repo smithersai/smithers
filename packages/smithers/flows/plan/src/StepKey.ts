@@ -242,7 +242,7 @@ export interface ContentIdentity {
     readonly readSet: ReadonlyArray<{ readonly path: string; readonly digest: string }>
     readonly writeSet: ReadonlyArray<FileSet.Entry>
     readonly removes?: ReadonlyArray<string> | undefined
-    readonly boundaryMode: "hard" | "expected"
+    readonly boundaryMode: FileSet.BoundaryMode
   } | undefined
 }
 

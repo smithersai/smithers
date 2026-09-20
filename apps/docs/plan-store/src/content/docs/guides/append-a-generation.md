@@ -3,7 +3,7 @@ title: "Append a generation"
 description: "Grow a recorded plan: pre-key a subgraph against what is already there, advance the plan row with a compare-and-swap, and keep the approved base digest intact."
 sidebar:
   order: 4
-editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/plan/docs/guides/append-a-generation.md"
+editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/plan-store/docs/guides/append-a-generation.md"
 ---
 
 A plan elaborates. A step that discovers the shape of its own follow-on work
@@ -17,9 +17,9 @@ and `PlanStore.append` writes the rows it added.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
-import * as PlanStore from "@smthrs/plan/PlanStore"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
@@ -121,6 +121,6 @@ would be assumed done and silently skipped.
 
 ## Next
 
-- [Diff two plans](/guides/diff-two-plans/): show what a re-plan changed.
-- [The plan value](/concepts/plan-value/): why growth is the only move
+- [Diff two plans](https://plan.smithers.sh/guides/diff-two-plans/): show what a re-plan changed.
+- [The plan value](https://plan.smithers.sh/concepts/plan-value/): why growth is the only move
   available.

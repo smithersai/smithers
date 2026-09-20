@@ -76,6 +76,7 @@ export const publishedPackages = [
   "@smthrs/opencode",
   "@smthrs/patterns",
   "@smthrs/plan",
+  "@smthrs/plan-store",
   "@smthrs/platform-browser",
   "@smthrs/platform-bun",
   "@smthrs/platform-node",

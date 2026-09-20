@@ -209,7 +209,7 @@ export const SHARED_CODES = {
     "flows/registry/RegistryError",
     "@smthrs/journal/JournalError",
     "@smthrs/run-store/AttemptStoreError",
-    "@smthrs/plan/PlanStoreError",
+    "@smthrs/plan-store/PlanStoreError",
     "@smthrs/sandbox/RemoteChildProcessSpawner/ProviderError",
     "@smthrs/jj/JjError",
     "@smthrs/sync/SyncError",

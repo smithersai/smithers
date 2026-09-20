@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/plan, satisfy its peer requirements, and add the packages a persisting composition needs."
+description: "Install @smthrs/plan and satisfy its peer requirements."
 sidebar:
   order: 1
 ---
@@ -28,25 +28,26 @@ asks for Effect's `Crypto` service, which a platform package supplies:
 pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
 ```
 
+`@smthrs/crypto`, `@smthrs/canonical` and [`@smthrs/keys`](/api/keys) arrive as
+dependencies of this package; you do not install them yourself unless you use
+them directly.
+
 ## What persistence adds
 
-`PlanStore` writes to SQL. A composition that records plans also needs
-[`@smthrs/database`](/api/database) for the SQLite client and the durable
-writer:
+This package performs no I/O. Recording a compiled plan is
+[`@smthrs/plan-store`](/api/plan-store), which owns the SQL and brings
+[`@smthrs/database`](/api/database) with it:
 
 ```bash
-pnpm add @smthrs/database@next @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @smthrs/plan-store@next @smthrs/database@next @effect/sql-sqlite-node@4.0.0-rc.115
 ```
-
-`@smthrs/crypto` and [`@smthrs/keys`](/api/keys) arrive as dependencies of this
-package; you do not install them yourself unless you use them directly.
 
 ## Import forms
 
 The root entry point re-exports every module as a namespace:
 
 ```ts
-import { FileSet, Node, Plan, PlanStore } from "@smthrs/plan"
+import { FileSet, Node, Plan, PlanDiff } from "@smthrs/plan"
 ```
 
 Each module is also its own entry point. Prefer this form: it keeps a bundle to
@@ -61,27 +62,20 @@ Both forms resolve to the same values.
 
 ## What you cannot import
 
-The ordered migration steps live under `src/internal/migrations`, and the
-export map blocks that prefix. `@smthrs/plan/Migrations` is the only way to
-reach them.
+`@smthrs/plan/internal/*` is blocked by the export map, and so is
+`@smthrs/plan/<Module>/index`. Node reports `ERR_PACKAGE_PATH_NOT_EXPORTED` for
+either.
 
-```ts
-import * as Migrations from "@smthrs/plan/Migrations"
-// Migrations.set is the namespaced set; the steps inside it are not addressable.
-```
-
-A step imported on its own would run outside the namespaced ordering that
-[`@smthrs/database`](/api/database)'s migrator relies on to decide what has
-already been applied. Node reports `ERR_PACKAGE_PATH_NOT_EXPORTED` for the
-internal path, and `ERR_MODULE_NOT_FOUND` for the path the steps shipped from
-before 1.0.
+`@smthrs/plan/test/PlanFixtures` is the exception that is meant for test code:
+it builds drafts and compiles them, and
+[`@smthrs/plan-store`](/api/plan-store) drives the same fixtures against the
+persisted form.
 
 ## Browser support
 
-The package is browser-safe: it resolves no `node:` built-in. Compiling,
-diffing, and building node graphs all work in a browser. `PlanStore` needs a
-SQL client, so persistence is where a platform choice enters.
+The package is browser-safe: it resolves no `node:` built-in and binds no
+database. Compiling, diffing, and building node graphs all work in a browser.
 
 ## Next
 
-[Quickstart](./quickstart.md) compiles a plan, records it, and reads it back.
+[Quickstart](./quickstart.md) compiles a plan, appends to it, and diffs it.

@@ -26,18 +26,10 @@ Those two helpers are the whole harness. No clock, no filesystem, and no fake
 anything: a plan is a pure function of its declarations, so a plan test is an
 ordinary value test.
 
-Testing persistence adds a database. [`@smthrs/database`](/api/database) ships a
-real in-memory SQLite layer for exactly this, so a store test exercises the
-append-only triggers rather than a mock that cannot raise them:
-
-```ts
-import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import * as Migrations from "@smthrs/plan/Migrations"
-import * as PlanStore from "@smthrs/plan/PlanStore"
-import * as Layer from "effect/Layer"
-
-const stores = Layer.provideMerge(PlanStore.layer, Layer.provideMerge(Migrations.layer, TestDatabase.layer))
-```
+Testing persistence is [`@smthrs/plan-store`](/api/plan-store)'s
+[testing page](https://plan-store.smithers.sh/testing/). It drives the same
+fixtures this package ships at `@smthrs/plan/test/PlanFixtures`, so a draft
+builder is written once and used on both sides.
 
 ### Assert on keys, not on shape
 
@@ -70,18 +62,6 @@ The package runs files serially, including the dense compiler cases with their
 original graph sizes, digest and edge-order assertions. FileSet's synchronous
 adversarial matcher tests charge thread CPU time against the existing 100 ms
 budget, excluding descheduling and work on other threads.
-
-The append regression observes real SQLite query spans through 300 generations.
-Each successful append must authenticate the stored envelope and insert one new
-node and edge without reading or rewriting stored node rows. The complete ordered
-statement list must match the envelope CAS and those two inserts, so unexpected
-queries cannot escape through quoted identifiers or alternate SQL syntax. A
-negative control reads, decodes and verifies all 45,150 prefix rows across the
-same 300 generations using SQLite's quoted identifier helper; the shared query
-assertion must reject every injected read. A final verifying read in both cases
-must reproduce the complete plan. This checks the persistence work directly;
-a wall-time ratio between early and late appends also measures unrelated machine
-load, while prefix hashing still depends on the plan's size.
 
 The planned-value lint test builds a dedicated consumer fixture project against
 the real Node types. It asserts the exact conditional-truthiness diagnostics

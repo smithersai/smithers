@@ -1,5 +1,5 @@
 import { Journal } from "@smthrs/journal"
-import { PlanStore } from "@smthrs/plan"
+import { PlanStore } from "@smthrs/plan-store"
 import { Effect, Fiber, Latch, Option } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"

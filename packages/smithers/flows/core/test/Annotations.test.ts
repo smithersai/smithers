@@ -30,9 +30,9 @@ describe("Annotations", () => {
 
   it("returns Option values for annotation hits and misses", () => {
     const Other = Context.Service<string>("flows/core/test/Other")
-    const context = Annotations.add(Annotations.empty, Annotations.Lane, { id: "review" })
+    const context = Annotations.add(Annotations.empty, Annotations.Priority, 7)
 
-    expect(Annotations.getOption(context, Annotations.Lane)).toEqual(Option.some({ id: "review" }))
+    expect(Annotations.getOption(context, Annotations.Priority)).toEqual(Option.some(7))
     expect(Annotations.getOption(context, Other)).toEqual(Option.none())
   })
 })

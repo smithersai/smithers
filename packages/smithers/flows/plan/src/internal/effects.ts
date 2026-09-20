@@ -378,8 +378,8 @@ export const covered = (prepared: Prepared, path: string): boolean => {
 export interface DeclarationLike {
   readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
-  readonly mode: "hermetic" | "expected"
-  readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
+  readonly mode: Effects.Mode
+  readonly tier?: Effects.Tier | undefined
 }
 
 /**
@@ -391,8 +391,8 @@ export interface DeclarationLike {
 export interface PreparedEnvelope {
   readonly reads: Prepared
   readonly writes: Prepared
-  readonly mode: "hermetic" | "expected"
-  readonly tier: "sealed" | "compensable" | "irreversible"
+  readonly mode: Effects.Mode
+  readonly tier: Effects.Tier
 }
 
 /**
@@ -402,13 +402,7 @@ export interface PreparedEnvelope {
  * @since 1.0.0-rc.0
  * @private
  */
-export type NarrowOutcome =
-  | { readonly ok: true }
-  | {
-    readonly ok: false
-    readonly code: "effect_outside_envelope" | "effect_mode_widening" | "effect_tier_widening"
-    readonly paths: ReadonlyArray<string>
-  }
+export type NarrowOutcome = Effects.NarrowResult
 
 /**
  * Prepares both lists of an envelope.

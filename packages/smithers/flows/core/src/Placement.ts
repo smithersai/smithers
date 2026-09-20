@@ -1,77 +1,31 @@
 /**
  * Serializable placement annotations for flow graph values.
  *
+ * The model itself is `@smthrs/plan`'s `Placement`, the lowest package this
+ * one, `@smthrs/flow` and `@smthrs/registry` all depend on, and the package
+ * that owns the `KeyMaterial.placement` field a directive ends up in. This
+ * module is the name `@smthrs/core` consumers reach it through and carries no
+ * logic of its own.
+ *
  * Governing contract: `packages/smithers/flows/core/docs/api.md`, published as
  * https://smithers.sh/docs/reference/api/core.
  *
  * @since 0.0.0
  */
-import { Data } from "effect"
 
 /**
- * Serializable host-selection details. These fields identify a host profile;
- * they never contain a host implementation, credentials, or other runtime
- * handle.
+ * The directive and its host-selection detail.
  *
  * @category models
  * @since 0.0.0
- * @slop
  */
-export interface Options {
-  readonly image?: string | undefined
-  readonly profile?: string | undefined
-  readonly target?: string | undefined
-}
+export type { Options, Placement } from "@smthrs/plan/Placement"
 
 /**
- * A serializable directive describing where a flow node should run.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export type Placement = Data.TaggedEnum<{
-  readonly "flows/core/Placement/Local": Readonly<Record<never, never>>
-  readonly "flows/core/Placement/Client": Readonly<Record<never, never>>
-  readonly "flows/core/Placement/Sandbox": Options
-  readonly "flows/core/Placement/Remote": Options
-}>
-
-const constructors = Data.taggedEnum<Placement>()
-
-/**
- * Creates a placement directive for the local process host.
+ * The four directives: local process, viewer's browser, sandbox, remote
+ * control plane.
  *
  * @category constructors
  * @since 0.0.0
- * @slop
  */
-export const local = (): Placement => constructors["flows/core/Placement/Local"]()
-
-/**
- * Creates a placement directive for the viewer's browser host.
- *
- * @category constructors
- * @since 0.0.0
- * @slop
- */
-export const client = (): Placement => constructors["flows/core/Placement/Client"]()
-
-/**
- * Creates a placement directive for an isolated sandbox host.
- *
- * @category constructors
- * @since 0.0.0
- * @slop
- */
-export const sandbox = (options: Options = {}): Placement =>
-  constructors["flows/core/Placement/Sandbox"]({ ...options })
-
-/**
- * Creates a placement directive for a remote control-plane host.
- *
- * @category constructors
- * @since 0.0.0
- * @slop
- */
-export const remote = (options: Options = {}): Placement => constructors["flows/core/Placement/Remote"]({ ...options })
+export { client, local, remote, sandbox } from "@smthrs/plan/Placement"

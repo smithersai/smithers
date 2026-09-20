@@ -12,6 +12,29 @@
 import * as Schema from "effect/Schema"
 
 /**
+ * How strictly a declared file set is enforced at the boundary.
+ *
+ * `hard` rejects undeclared access. `expected` records access for validation
+ * after execution without requiring the sandbox to reject it immediately.
+ *
+ * This is the ONE spelling of the pair. `Plan.NodeEffects.boundaryMode` is this
+ * schema and so is `@smthrs/flow`'s `Action.BoundaryMode`; the literal used to
+ * be written out in all three places.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const BoundaryMode = Schema.Literals(["hard", "expected"])
+
+/**
+ * The value form of {@link BoundaryMode}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type BoundaryMode = typeof BoundaryMode.Type
+
+/**
  * The canonical spelling of a declared path or pattern: every separator is
  * `/`, and Unicode is normalized to NFC.
  *

@@ -138,6 +138,7 @@
 - [@smthrs/opencode](https://smithers.sh/docs/reference/api/opencode/): OpenCode protocol server over the Smithers agent loop, for the hosted OpenCode app
 - [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/core and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
 - [@smthrs/plan](https://smithers.sh/docs/reference/api/plan/): The persisted flows plan: a keyed action graph, its append-only store, and its diff
+- [@smthrs/plan-store](https://smithers.sh/docs/reference/api/plan-store/): The persisted plan's append-only SQLite store and the migrations that own its tables
 - [@smthrs/platform-browser](https://smithers.sh/docs/reference/api/platform-browser/): Browser implementations of Effect platform services backed by ZenFS and just-bash
 - [@smthrs/platform-bun](https://smithers.sh/docs/reference/api/platform-bun/): Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface
 - [@smthrs/platform-node](https://smithers.sh/docs/reference/api/platform-node/): Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface

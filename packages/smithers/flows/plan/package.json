@@ -43,13 +43,15 @@
     "./Effects": "./src/Effects.ts",
     "./FileSet": "./src/FileSet.ts",
     "./KeyMaterial": "./src/KeyMaterial.ts",
-    "./Migrations": "./src/Migrations.ts",
+    "./Migrations": null,
     "./Plan": "./src/Plan.ts",
+    "./Placement": "./src/Placement.ts",
     "./PlanDiff": "./src/PlanDiff.ts",
-    "./PlanStore": "./src/PlanStore.ts",
+    "./PlanStore": null,
     "./StepKey": "./src/StepKey.ts",
     "./Scheduling": "./src/Scheduling.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./test/PlanFixtures": "./src/test/PlanFixtures.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -140,16 +142,7 @@
           "default": "./dist/cjs/KeyMaterial.js"
         }
       },
-      "./Migrations": {
-        "import": {
-          "types": "./dist/esm/Migrations.d.ts",
-          "default": "./dist/esm/Migrations.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Migrations.d.ts",
-          "default": "./dist/cjs/Migrations.js"
-        }
-      },
+      "./Migrations": null,
       "./Plan": {
         "import": {
           "types": "./dist/esm/Plan.d.ts",
@@ -158,6 +151,16 @@
         "require": {
           "types": "./dist/cjs/Plan.d.ts",
           "default": "./dist/cjs/Plan.js"
+        }
+      },
+      "./Placement": {
+        "import": {
+          "types": "./dist/esm/Placement.d.ts",
+          "default": "./dist/esm/Placement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Placement.d.ts",
+          "default": "./dist/cjs/Placement.js"
         }
       },
       "./PlanDiff": {
@@ -170,16 +173,7 @@
           "default": "./dist/cjs/PlanDiff.js"
         }
       },
-      "./PlanStore": {
-        "import": {
-          "types": "./dist/esm/PlanStore.d.ts",
-          "default": "./dist/esm/PlanStore.js"
-        },
-        "require": {
-          "types": "./dist/cjs/PlanStore.d.ts",
-          "default": "./dist/cjs/PlanStore.js"
-        }
-      },
+      "./PlanStore": null,
       "./StepKey": {
         "import": {
           "types": "./dist/esm/StepKey.d.ts",
@@ -209,6 +203,16 @@
           "types": "./dist/cjs/index.d.ts",
           "default": "./dist/cjs/index.js"
         }
+      },
+      "./test/PlanFixtures": {
+        "import": {
+          "types": "./dist/esm/test/PlanFixtures.d.ts",
+          "default": "./dist/esm/test/PlanFixtures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/PlanFixtures.d.ts",
+          "default": "./dist/cjs/test/PlanFixtures.js"
+        }
       }
     }
   },
@@ -223,7 +227,6 @@
   },
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.0",
-    "@smthrs/database": "1.0.0-rc.0",
     "@smthrs/keys": "1.0.0-rc.0",
     "@smthrs/canonical": "1.0.0-rc.0"
   },

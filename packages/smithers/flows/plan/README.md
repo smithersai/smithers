@@ -40,8 +40,8 @@ pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-r
 ```
 
 Node.js 22.19.0 or later, and `effect` 4.0.0-rc.115 as a peer. Recording a plan
-additionally needs [`@smthrs/database`](https://database.smithers.sh) for the
-SQL client and the durable writer.
+is [`@smthrs/plan-store`](https://plan-store.smithers.sh), which owns the SQL
+and brings [`@smthrs/database`](https://database.smithers.sh) with it.
 
 ## Compile a plan
 
@@ -104,8 +104,9 @@ and a key can never disagree about what a node consumes. Change `pr: 4821` to
 another number and both keys move; rename `read-pr` to `fetch-pr` and neither
 does.
 
-Recording that plan needs `PlanStore.layer` over a durable writer and a SQL
-client. [Quickstart](https://plan.smithers.sh/quickstart/) builds the whole
+Recording that plan is
+[`@smthrs/plan-store`](https://plan-store.smithers.sh), whose
+[quickstart](https://plan-store.smithers.sh/quickstart/) builds the whole
 composition against an in-memory database.
 
 ## What is in here
@@ -120,8 +121,7 @@ composition against an in-memory database.
 | `StepKey`         | The compiler that turns material plus resolved dependency digests into a `@smthrs/keys` `Key`       |
 | `Plan`            | `compile`, `append`, the node/edge/conflict schemas, and the digest an approval binds to            |
 | `PlanDiff`        | A comparison of two plans as a value: added, removed, re-keyed with attribution, unchanged          |
-| `PlanStore`       | Append-only SQL persistence, migration block `4000`, enforced by triggers rather than by convention |
-| `Migrations`      | The namespaced migration set; its ordered steps are internal and are not importable                 |
+| `Placement`       | Where a node runs: the four directives, their host-selection detail, and the annotation key         |
 
 Every module is its own entry point, so
 `import * as Plan from "@smthrs/plan/Plan"` keeps a bundle to what you reach
@@ -186,10 +186,9 @@ stable codes: `cycle`, `unknown_dependency`, `duplicate_node`,
 effects, or ordering do not match its content. A plan-time build refuses
 through `GraphBuildError`, whose closed code set names the site and the fix;
 `unstable_callback` in that set is raised by `@smthrs/flow` when a stable build
-meets a callback without a `Node.capture` declaration. `PlanStore.record` answers with a `RecordResult`
-(`Recorded`, `ExistingSame`, or `Conflict` carrying the digest already stored),
-and every store failure is a `PlanStoreError` coded `invalid_plan`,
-`constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
+meets a callback without a `Node.capture` declaration. Persistence has its own
+refusals, all of them
+[`@smthrs/plan-store`](https://plan-store.smithers.sh)'s.
 
 [Troubleshooting](https://plan.smithers.sh/troubleshooting/) lists every code
 with the change that clears it.
@@ -220,14 +219,16 @@ refused with `graph_too_large` before any pair is compared.
 
 ## Browser support
 
-Browser-safe: the package resolves no `node:` built-in, so compiling, diffing,
-and building node graphs all work in a browser. `PlanStore` needs a SQL client,
-so persistence is where a platform choice enters.
+Browser-safe: the package resolves no `node:` built-in and binds no database,
+so compiling, diffing, and building node graphs all work in a browser.
+Persistence is a separate package, which is where a platform choice enters.
 
 ## Links
 
 - [Documentation](https://plan.smithers.sh)
 - [API reference](https://plan.smithers.sh/reference/api/)
+- [`@smthrs/plan-store`](https://plan-store.smithers.sh), the append-only store
+  a compiled plan is recorded in
 - [`@smthrs/flows`](https://flows.smithers.sh), the whole engine as a single
   dependency, which re-exports this package as its `Plan` namespace
 - [License: MIT](./LICENSE)

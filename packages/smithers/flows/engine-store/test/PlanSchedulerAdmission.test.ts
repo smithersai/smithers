@@ -1,6 +1,7 @@
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { KeyMaterial, Plan, PlanStore } from "@smthrs/plan"
+import { KeyMaterial, Plan } from "@smthrs/plan"
+import { PlanStore } from "@smthrs/plan-store"
 import type * as FileSet from "@smthrs/plan/FileSet"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { Effect, Exit, FileSystem, Latch, Layer, PlatformError } from "effect"

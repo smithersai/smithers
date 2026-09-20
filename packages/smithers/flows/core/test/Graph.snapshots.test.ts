@@ -35,12 +35,10 @@ describe("Graph metadata snapshots", () => {
       onConflict: "serialize"
     })
     const placement = Placement.sandbox({ profile: "initial" })
-    const lane = { id: "lane-a", landing: "manual" as const }
     const graph = Graph.build(
       Node.dynamic({}).pipe(
         Node.withEffects(declaration),
-        Node.within(placement),
-        Node.lane(lane)
+        Node.within(placement)
       )
     )
     const before = {
@@ -52,10 +50,8 @@ describe("Graph metadata snapshots", () => {
     expect(Object.isFrozen(declaration)).toBe(false)
     expect(Object.isFrozen(declaration.writes)).toBe(false)
     expect(Object.isFrozen(placement)).toBe(false)
-    expect(Object.isFrozen(lane)).toBe(false)
     ;(declaration.writes as Array<string>).push("b")
     ;(placement as { profile?: string }).profile = "changed"
-    lane.id = "lane-b"
 
     expect(Digest.canonical(Graph.nodes(graph))).toBe(before.nodes)
     expect(Digest.canonical(Graph.effects(graph))).toBe(before.effects)

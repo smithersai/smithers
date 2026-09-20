@@ -43,6 +43,7 @@ import {
   Journal as JournalPackage,
   Kernel,
   Plan as PlanPackage,
+  PlanStore as PlanStorePackage,
   RunStore as RunStorePackage,
   Sleep,
   StepCache,
@@ -55,7 +56,8 @@ import {
  * rest of this file read like the sibling suites, which import those modules
  * from their own packages directly.
  */
-const { GraphBuildError, Node, Plan, PlanDiff, PlanStore } = PlanPackage
+const { GraphBuildError, Node, Plan, PlanDiff } = PlanPackage
+const { PlanStore } = PlanStorePackage
 const { DurableEngineState, EngineStore, Migrations, OwnerIdentity, StepBoundary } = EngineStorePackage
 const { AttemptStore, RunStore } = RunStorePackage
 const { SqlJournal } = JournalPackage

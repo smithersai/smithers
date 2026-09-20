@@ -3,6 +3,18 @@ import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Schema } from "effect"
 
+/**
+ * A placement value that is not one of the four directives.
+ *
+ * `Flow.PlacementDirective` is `@smthrs/plan`'s typed model now, but a type is
+ * erased: an annotation bag assembled at run time, or a declaration loaded from
+ * a file flow, still carries whatever the caller put there. These cases drive
+ * exactly that, which is what `Graph`'s bounded placement rendering and its
+ * structural identity check exist for, so the cast is the point rather than a
+ * way around the type.
+ */
+const opaque = (value: unknown): Flow.PlacementDirective => value as Flow.PlacementDirective
+
 describe("Flow body and calls", () => {
   it("stores a plan-time body typed with the decoded payload", () => {
     const body = (payload: { readonly count: number }) => {
@@ -186,7 +198,7 @@ describe("Flow authoring annotations", () => {
       writes: ["dist/**"],
       boundaryMode: "hard"
     }
-    const placement: Flow.PlacementDirective = { host: "sandbox" }
+    const placement = opaque({ host: "sandbox" })
     const original = Flow.make("Authoring/annotations", { payload: {}, body: () => Node.succeed(undefined) })
     const annotated = original
       .annotate(Flow.Capabilities, ["fs:read"])

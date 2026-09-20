@@ -3,9 +3,9 @@ import * as FastCheck from "fast-check"
 import { describe, expect, it, vi } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
 import { params } from "./FastCheckParams.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const tree = (path: string): FileSet.Entry => ({ _tag: "TreeArtifact", path })
 const glob = (...include: Array<string>): FileSet.Entry => ({

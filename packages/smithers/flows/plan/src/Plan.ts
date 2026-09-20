@@ -21,6 +21,7 @@ import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Inspectable from "effect/Inspectable"
 import * as Schema from "effect/Schema"
+import * as Effects from "./Effects.ts"
 import * as FileSet from "./FileSet.ts"
 import { GraphBuildError } from "./GraphBuildError.ts"
 import * as Conflicts from "./internal/ConflictAnnotation.ts"
@@ -45,7 +46,7 @@ export const NodeEffects = Schema.Struct({
    * conflict pass and the reader-after-writer pass see them as one set.
    */
   removes: Schema.optional(Schema.Array(FileSet.Pattern)),
-  boundaryMode: Schema.Literals(["hard", "expected"])
+  boundaryMode: FileSet.BoundaryMode
 })
 
 /**
@@ -64,7 +65,7 @@ export type NodeEffects = typeof NodeEffects.Type
  * @category schemas
  * @slop
  */
-export const PairStrategy = Schema.Literals(["serialize", "lane", "fail"])
+export const PairStrategy = Effects.ConflictStrategy
 
 /**
  * The value form of {@link PairStrategy}.

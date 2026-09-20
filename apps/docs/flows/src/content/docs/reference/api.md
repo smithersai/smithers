@@ -6,13 +6,13 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 `@smthrs/flows` has three public entry points.
 
-| Entry point                   | Contents                                                                           |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| `@smthrs/flows`               | The barrel: nineteen engine packages re-exported, plus `namespaces`. Browser-safe. |
-| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.      |
-| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                              |
-| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                  |
-| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.           |
+| Entry point                   | Contents                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `@smthrs/flows`               | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
+| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.    |
+| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                            |
+| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                |
+| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.         |
 
 ```ts
 import { Action, Flow, Kernel, RunStore } from "@smthrs/flows"
@@ -50,6 +50,7 @@ one level below it (`Journal.SqlJournal.layer`).
 | `Keys`          | [`@smthrs/keys`](https://keys.smithers.sh/reference/api/)                   |
 | `Observability` | [`@smthrs/observability`](https://observability.smithers.sh/reference/api/) |
 | `Plan`          | [`@smthrs/plan`](https://plan.smithers.sh/reference/api/)                   |
+| `PlanStore`     | [`@smthrs/plan-store`](https://plan-store.smithers.sh/reference/api/)       |
 | `RunStore`      | [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/)         |
 | `Sandbox`       | [`@smthrs/sandbox`](https://sandbox.smithers.sh/reference/api/)             |
 | `StepCache`     | [`@smthrs/step-cache`](https://step-cache.smithers.sh/reference/api/)       |
@@ -58,8 +59,9 @@ one level below it (`Journal.SqlJournal.layer`).
 Namespacing is what preserves constructors like
 `Kernel.ChildProcessSpawner.layerNoop` and `RunStore.RunStore.layer`. The
 `Capability` namespace owns exact-resource bounds, the pattern grammar, and
-permission failures; `Plan` owns step identity, graph compilation, static effect
-declarations, and plan storage; `Journal` owns the append-only event record
+permission failures; `Plan` owns step identity, graph compilation, and static
+effect declarations, with `PlanStore` holding the append-only rows they are
+recorded in; `Journal` owns the append-only event record
 every durable run replays from and the redaction rules that keep a credential
 out of both a committed row and a log line.
 

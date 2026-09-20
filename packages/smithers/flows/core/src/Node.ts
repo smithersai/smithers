@@ -481,21 +481,6 @@ export const priority: {
 )
 
 /**
- * Adds a worktree lane annotation to a node without changing the original.
- *
- * @category annotations
- * @since 0.0.0
- * @slop
- */
-export const lane: {
-  (options: Annotations.LaneOptions): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, options: Annotations.LaneOptions): Node<A, E>
-} = dual(
-  2,
-  <A, E>(self: Node<A, E>, options: Annotations.LaneOptions): Node<A, E> => annotate(self, Annotations.Lane, options)
-)
-
-/**
  * Adds an effect declaration annotation to a node without changing the
  * original.
  *

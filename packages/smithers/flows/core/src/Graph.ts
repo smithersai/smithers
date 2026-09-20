@@ -52,6 +52,21 @@ interface InternalEdge {
   readonly reason: EdgeReason
 }
 
+/**
+ * The worktree lane the write-conflict pass assigns to a laned writer.
+ *
+ * Nothing declares one any more: `Node.lane` and `Annotations.Lane` were a
+ * second spelling of `Effects.Declaration.onConflict: "lane"` with zero
+ * non-test callers, so the only lane a node carries is the one a synthesized
+ * merge gives it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Lane {
+  readonly id: string
+}
+
 interface InternalNode {
   id: string
   kind: NodeAst["_tag"] | "LaneMerge"
@@ -59,7 +74,7 @@ interface InternalNode {
   declaredEffects: Effects.Declaration | undefined
   effectiveEffects: Effects.Declaration | undefined
   placement: Placement.Placement | undefined
-  lane: Annotations.LaneOptions | undefined
+  lane: Lane | undefined
   priority: number | undefined
   capabilities: ReadonlyArray<string>
   annotations: AnnotationsProjection
@@ -82,7 +97,7 @@ interface VisitResult {
 export interface AnnotationsProjection {
   readonly placement: Placement.Placement | undefined
   readonly effects: Effects.Declaration | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Lane | undefined
   readonly priority: number | undefined
 }
 
@@ -100,7 +115,7 @@ export interface GraphNode {
   readonly declaredEffects: Effects.Declaration | undefined
   readonly effectiveEffects: Effects.Declaration | undefined
   readonly placement: Placement.Placement | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Lane | undefined
   readonly priority: number | undefined
   readonly capabilities: ReadonlyArray<string>
   readonly annotations: AnnotationsProjection
@@ -130,7 +145,7 @@ export interface Edge {
 export interface Conflict {
   readonly nodes: readonly [string, string]
   readonly paths: ReadonlyArray<string>
-  readonly strategy: "serialize" | "lane" | "fail"
+  readonly strategy: Effects.Declaration["onConflict"]
   readonly mergeNodeId?: string | undefined
 }
 
@@ -331,16 +346,14 @@ const option = <I, S>(context: Context.Context<never>, key: Context.Key<I, S>): 
 const snapshotPlacement = (placement: Placement.Placement | undefined): Placement.Placement | undefined =>
   placement === undefined ? undefined : { ...placement }
 
-const snapshotLane = (lane: Annotations.LaneOptions | undefined): Annotations.LaneOptions | undefined =>
-  lane === undefined ? undefined : { ...lane }
-
 const annotationProjection = (
   context: Context.Context<never>,
   effects: Effects.Declaration | undefined
 ): AnnotationsProjection => ({
   placement: snapshotPlacement(option(context, Annotations.Placement)),
   effects,
-  lane: snapshotLane(option(context, Annotations.Lane)),
+  // No annotation declares a lane; the write-conflict pass assigns one.
+  lane: undefined,
   priority: option(context, Annotations.Priority)
 })
 

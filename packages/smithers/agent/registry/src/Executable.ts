@@ -34,8 +34,8 @@
  *   The rc.0 `up` path settles a flow through `@smthrs/flow` `Interpreter`,
  *   which admits every ready node at once, so the priority orders scheduled
  *   plans and nothing else;
- * - the placement directive becomes both the flow's opaque
- *   `@smthrs/flow` placement annotation and a field of the
+ * - the placement directive becomes both the flow's placement annotation,
+ *   which is the one key `@smthrs/plan` declares, and a field of the
  *   {@link Invocation} the delegate reads, which is what a host selects a
  *   spawn target with.
  *
@@ -574,8 +574,11 @@ const captured = (lowered: Lowered): Readonly<Record<string, unknown>> => ({
 /**
  * The annotation bag the bridged flow carries.
  *
- * Placement is stored under `@smthrs/flow`'s own placement key, which
- * `@smthrs/flow` `Graph` reads while building the plan. The cache policy is
+ * Placement is stored under the one placement key, `@smthrs/plan`'s
+ * `Placement.Annotation`, which `@smthrs/core` publishes as
+ * `Annotations.Placement` and `@smthrs/flow` as `Flow.Placement`, and which
+ * `@smthrs/flow` `Graph` reads while building the plan. The two used to be
+ * separate keys over separate value types and this line was a cast. The cache policy is
  * stored under `CacheEnvironment.CachePolicyAnnotation`, the identifier
  * `@smthrs/patterns`' `withCache` writes on a flow, so a host reading the
  * bridged flow back sees the same declaration the descriptor made.
@@ -589,7 +592,7 @@ const annotationsOf = (lowered: Lowered): Context.Context<never> => {
   let bag = Context.empty()
   if (lowered.cache !== undefined) bag = Context.add(bag, CacheEnvironment.CachePolicyAnnotation, lowered.cache)
   if (lowered.placement !== undefined) {
-    bag = Context.add(bag, RuntimeFlow.Placement, lowered.placement as RuntimeFlow.PlacementDirective)
+    bag = Context.add(bag, RuntimeFlow.Placement, lowered.placement)
   }
   return bag
 }

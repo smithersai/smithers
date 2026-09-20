@@ -1,18 +1,22 @@
+/**
+ * `Plan.verify` and the three accessors a store reads it through.
+ *
+ * These cases used to live beside the store, in `PlanVerification.test.ts`,
+ * because the store is what calls them. They need no database at all: verify
+ * is a pure function of the plan value, and leaving it covered only from
+ * `@smthrs/plan-store` made this package's own public surface depend on
+ * another package's suite.
+ */
 import { describe, expect, it } from "@effect/vitest"
-import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Effect, Layer, Option, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Effect from "effect/Effect"
 import * as Plan from "../src/Plan.ts"
-import * as PlanStore from "../src/PlanStore.ts"
+import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
-import { compile, draft } from "./PlanFixtures.ts"
 
 const serialized = (plan: Plan.Plan): Plan.Plan => JSON.parse(JSON.stringify(plan))
-const stores = PlanStore.layer.pipe(Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))))
 const key = `key1_${"0".repeat(64)}`
 
-describe("plan integrity admission", () => {
+describe("plan integrity", () => {
   it.effect("verifies ordinary, empty, and multi-generation plans without changing identities", () =>
     withCrypto(
       Effect.gen(function*() {
@@ -94,68 +98,40 @@ describe("plan integrity admission", () => {
       })
     ))
 
-  it.effect("refuses forged store admission without writing or misreporting ExistingSame", () =>
+  it.effect("names the newest generation's nodes, and only those", () =>
     withCrypto(
       Effect.gen(function*() {
-        const plan = yield* compile([draft("a")])
-        const store = yield* PlanStore.PlanStore
-        const sql = yield* SqlClient.SqlClient
-        const forged = { ...plan, digest: key, baseDigest: key } as Plan.Plan
-        expect((yield* Effect.flip(store.record(forged, 0))).code).toBe("invalid_plan")
-        expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plans`)[0]!.count).toBe(0)
-        expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_nodes`)[0]!.count).toBe(0)
-        expect(yield* store.record(plan, 0)).toEqual({ _tag: "Recorded" })
-        const changed = {
-          ...plan,
-          nodes: [{ ...plan.nodes[0]!, material: { ...plan.nodes[0]!.material, body: "changed" } }]
+        const base = yield* compile([draft("one"), draft("two")])
+        expect(Plan.generationNodes(base).map((node) => node.id)).toEqual(["one", "two"])
+        const grown = yield* Plan.append(base, [draft("three")])
+        expect(Plan.generationNodes(grown).map((node) => node.id)).toEqual(["three"])
+      })
+    ))
+
+  it.effect("recognises a compiler-owned snapshot and nothing else", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const plan = yield* compile([draft("one")])
+        expect(Plan.isVerified(plan)).toBe(true)
+        expect(Plan.isVerified(serialized(plan))).toBe(false)
+        for (const candidate of [undefined, null, 0, "plan", {}]) {
+          expect(Plan.isVerified(candidate), String(candidate)).toBe(false)
         }
-        expect((yield* Effect.flip(store.record(changed, 1))).code).toBe("invalid_plan")
-        expect(Option.getOrThrow(yield* store.get(plan.planId))).toEqual(plan)
-      }).pipe(Effect.provide(stores))
+      })
     ))
 
-  it.effect("detects schema-valid stored corruption on read and duplicate admission", () =>
+  it.effect("derives the prefix digest a stored envelope is matched against", () =>
     withCrypto(
       Effect.gen(function*() {
-        const plan = yield* compile([draft("a")])
-        const store = yield* PlanStore.PlanStore
-        const sql = yield* SqlClient.SqlClient
-        yield* store.record(plan, 0)
-        yield* sql`DROP TRIGGER flows_plan_nodes_append_only`
-        const json = yield* Schema.encodeEffect(Schema.fromJsonString(Plan.PlanNode))({
-          ...plan.nodes[0]!,
-          key: key as Plan.PlanNode["key"]
-        })
-        yield* sql`UPDATE flows_plan_nodes SET node_json = ${json}`
-        expect((yield* Effect.flip(store.get(plan.planId))).code).toBe("decode_failed")
-        expect((yield* Effect.flip(store.record(plan, 1))).code).toBe("decode_failed")
-      }).pipe(Effect.provide(stores))
-    ))
-
-  it.effect("round-trips an empty plan and rolls back rejected storage metadata", () =>
-    withCrypto(
-      Effect.gen(function*() {
-        const empty = yield* compile([])
-        const store = yield* PlanStore.PlanStore
-        expect((yield* Effect.flip(store.record(empty, -1))).code).toBe("constraint")
-        expect(Option.isNone(yield* store.get(empty.planId))).toBe(true)
-        yield* store.record(empty, 0)
-        expect(Option.getOrThrow(yield* store.get(empty.planId))).toEqual(empty)
-      }).pipe(Effect.provide(stores))
-    ))
-
-  it.effect("rolls back the envelope when SQL refuses a verified node", () =>
-    withCrypto(
-      Effect.gen(function*() {
-        const plan = yield* compile([draft("a")])
-        const store = yield* PlanStore.PlanStore
-        const sql = yield* SqlClient.SqlClient
-        yield* sql`CREATE TRIGGER refuse_plan_node BEFORE INSERT ON flows_plan_nodes
-        BEGIN SELECT RAISE(ABORT, 'storage constraint'); END`
-        const failure = yield* Effect.flip(store.record(plan, 0))
-        expect(failure.code).toBe("constraint")
-        expect(Option.isNone(yield* store.get(plan.planId))).toBe(true)
-        expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_nodes`)[0]!.count).toBe(0)
-      }).pipe(Effect.provide(stores))
+        const base = yield* compile([draft("one")])
+        const grown = yield* Plan.append(base, [draft("two")])
+        // The prefix of generation 1 is generation 0, so its digest is the
+        // digest the plan carried before the append: what a compare-and-swap
+        // matches the stored row against.
+        expect(yield* Plan.prefixDigest(grown)).toEqual(base.digest)
+        // Generation 0 has no prefix, so the digest is the empty plan's.
+        const empty = yield* compile([], base.planId)
+        expect(yield* Plan.prefixDigest(base)).toEqual(empty.digest)
+      })
     ))
 })

@@ -115,7 +115,7 @@ the plan card and the approval payload that [`smthrs approve`](https://smithers.
 
 `compile` produces generation 0. Every `append` produces the next one, and
 `Plan.generationNodes` reads back only the nodes the newest generation added,
-which is exactly what `PlanStore.append` inserts.
+which is exactly what [`@smthrs/plan-store`](https://plan-store.smithers.sh/reference/api/)'s `PlanStore.append` inserts.
 
 A generation exists because plans elaborate. A step that discovers the shape of
 its own follow-on work cannot state that work up front, so the plan grows to

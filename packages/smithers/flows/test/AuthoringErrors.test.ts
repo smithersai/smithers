@@ -15,6 +15,7 @@ import {
   Journal as JournalPackage,
   Kernel,
   Plan as PlanPackage,
+  PlanStore as PlanStorePackage,
   RunStore as RunStorePackage,
   StepCache
 } from "../src/index.ts"
@@ -22,7 +23,8 @@ import {
 const { DurableEngineState, EngineStore, Migrations, OwnerIdentity, StepBoundary } = EngineStorePackage
 const { SqlJournal } = JournalPackage
 const { Jj } = Kernel
-const { Node, PlanStore } = PlanPackage
+const { Node } = PlanPackage
+const { PlanStore } = PlanStorePackage
 const { AttemptStore, RunStore } = RunStorePackage
 const { CacheStore } = StepCache
 

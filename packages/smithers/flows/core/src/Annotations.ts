@@ -6,21 +6,9 @@
  *
  * @since 0.0.0
  */
+import * as PlanEffects from "@smthrs/plan/Effects"
+import * as PlanPlacement from "@smthrs/plan/Placement"
 import { Context, type Option } from "effect"
-import type * as EffectsModel from "./Effects.ts"
-import type * as PlacementModel from "./Placement.ts"
-
-/**
- * Options identifying a worktree lane for a node.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export interface LaneOptions {
-  readonly id: string
-  readonly landing?: "merge-queue" | "manual" | undefined
-}
 
 /**
  * The empty annotation bag.
@@ -64,29 +52,30 @@ export const getOption = <I, S>(context: Context.Context<never>, key: Context.Ke
 /**
  * Annotation key for a node's placement directive.
  *
+ * This is `@smthrs/plan`'s `Placement.Annotation`, the ONE key, which
+ * `@smthrs/flow` also publishes as `Flow.Placement`. While the two packages
+ * each declared a key with its own value type, crossing between them cost a
+ * cast in `@smthrs/registry`.
+ *
  * @category annotations
  * @since 0.0.0
  * @slop
  */
-export const Placement = Context.Service<PlacementModel.Placement>("flows/core/Annotations/Placement")
+export const Placement = PlanPlacement.Annotation
 
 /**
  * Annotation key for a flow or node effect declaration.
  *
- * @category annotations
- * @since 0.0.0
- * @slop
- */
-export const Effects = Context.Service<EffectsModel.Declaration>("flows/core/Annotations/Effects")
-
-/**
- * Annotation key for a node's explicit worktree lane.
+ * This is `@smthrs/plan`'s `Effects.Envelope`, the ONE key, which
+ * `@smthrs/flow` also publishes as `Flow.EffectEnvelope`. While the two
+ * packages each declared their own key a flow annotated for one graph builder
+ * was invisible to the other.
  *
  * @category annotations
  * @since 0.0.0
  * @slop
  */
-export const Lane = Context.Service<LaneOptions>("flows/core/Annotations/Lane")
+export const Effects = PlanEffects.Envelope
 
 /**
  * Annotation key for a node's scheduling priority.

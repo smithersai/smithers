@@ -7810,7 +7810,7 @@ The package index re-exports fourteen namespaces:
 
 | Name                 | Kind            | Summary                                                                                                                                                                                                                                                                                             |
 | -------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Tier`               | Schema and type | The durability and retry semantics of an action: `"sealed"`, `"compensable"`, or `"irreversible"`.                                                                                                                                                                                                  |
+| `Tier`               | Schema and type | The durability and retry semantics of an action: `"sealed"`, `"compensable"`, or `"irreversible"`. It IS `@smthrs/plan`'s `Effects.Tier`.                                                                                                                                                           |
 | `IdempotencyKey`     | Schema and type | Caller-declared sealed action identity: a string, or a record of JSON values.                                                                                                                                                                                                                       |
 | `PlannedPayload`     | Type            | Recursively permits planned references wherever a declared action payload accepts a concrete value.                                                                                                                                                                                                 |
 | `Requirement`        | Interface       | The requirement one declared action mints for itself, identified by its tag.                                                                                                                                                                                                                        |
@@ -7818,7 +7818,7 @@ The package index re-exports fourteen namespaces:
 | `Action`             | Interface       | An inline durable action that is itself an `Effect`. It carries `name`, `successSchema`, `errorSchema`, `exitSchema`, `exitSchemaPartial`, `annotations`, `tier`, `idempotencyKey`, `nondeterministic`, `metadata`, and `retryPolicy`.                                                              |
 | `Any`                | Interface       | Type-erased action shape carrying only identity, name, annotations, and encoded execution.                                                                                                                                                                                                          |
 | `AnyWithProps`       | Interface       | Type-erased action shape that also exposes success and error schemas.                                                                                                                                                                                                                               |
-| `BoundaryMode`       | Schema and type | How strictly an action's filesystem boundary is enforced: `"hard"` or `"expected"`.                                                                                                                                                                                                                 |
+| `BoundaryMode`       | Schema and type | How strictly an action's filesystem boundary is enforced: `"hard"` or `"expected"`. It IS `@smthrs/plan`'s `FileSet.BoundaryMode`.                                                                                                                                                                  |
 | `CacheEnvironment`   | Schema and type | The complete runtime environment included in every cross-run cache key: `layers` and `capabilities`.                                                                                                                                                                                                |
 | `CacheScope`         | Schema and type | How far a recorded sealed result may travel: `"run"`, `"flow"`, or `"shared"`.                                                                                                                                                                                                                      |
 | `CachePolicy`        | Schema and type | The caller's declaration about the decay and the reach of a sealed action's recorded result.                                                                                                                                                                                                        |
@@ -8258,8 +8258,8 @@ The layer form of `DurableQueue.makeWorker`, forking the worker into the layer's
 
 | Name                  | Kind                 | Summary                                                                                                                                                                                                                                                                                                                       |
 | --------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes` (workspace-relative patterns, as on an action boundary), and `boundaryMode`.                                                                                                                                                                 |
-| `PlacementDirective`  | Schema and type      | A schema-encodable placement directive, held as `Schema.Unknown` until planning reads it.                                                                                                                                                                                                                                     |
+| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes` (workspace-relative patterns, as on an action boundary), and `boundaryMode`. It IS `@smthrs/plan`'s `Plan.NodeEffects`, not a copy of it.                                                                                                    |
+| `PlacementDirective`  | Type                 | Where a node runs. It IS `@smthrs/plan`'s `Placement.Placement`, the one typed model, carried unchanged until planning reads it.                                                                                                                                                                                              |
 | `ExecutionIdSource`   | Interface            | Mints the execution id of an invocation that named none, through `mint(flow, payload)`.                                                                                                                                                                                                                                       |
 | `BodySuccess`         | Type                 | The values a flow body may settle one round with: a decoded success, a planned reference, or an `Outcome`.                                                                                                                                                                                                                    |
 | `Flow`                | Interface            | A durable flow definition. It carries `_tag`, `payloadSchema`, `successSchema`, `errorSchema`, `annotations`, `body`, `idempotencyKey`, `suspendedRetryPolicy`, and `maxRounds`, and exposes `call`, `child`, `to`, `annotate`, `annotateMerge`, `execute`, `poll`, `interrupt`, `resume`, `executionId`, and `withRollback`. |
@@ -8292,12 +8292,21 @@ The capability names a flow may require. Its identifier is `"@smthrs/flow/Flow/C
 
 The annotation key for a flow's declared filesystem effects. Its identifier is `"@smthrs/flow/Flow/EffectsDeclaration"`.
 
-### `Flow.Placement`
+### `Flow.EffectEnvelope`
 
-- **Type:** `Context.Service<PlacementDirective>`
+- **Type:** `Context.Key<Effects.Declaration, Effects.Declaration>`
 - **Since:** `0.1.0`
 
-The annotation key for a flow's schema-encodable placement directive. Its identifier is `"@smthrs/flow/Flow/Placement"`.
+The annotation key for the effect AUTHORITY a flow declares: the ceiling every step spliced beneath it must stay inside. It IS `@smthrs/plan`'s `Effects.Envelope`, identified by `"@smthrs/plan/Effects/Envelope"`, which `@smthrs/core` also publishes as `Annotations.Effects`, so a flow annotated for either graph builder is visible to the other. Its value is the one envelope model from `@smthrs/plan/Effects`, and `Flow.make`'s `effects` literal writes it.
+
+It answers a different question from `Flow.EffectsDeclaration`. That one says which FILES a node touches, so a plan can order writers and a sandbox can enforce a boundary at run time. This one says how much a flow is ALLOWED to touch, so `Graph.build` can refuse a composition that claims more than its caller granted, with `effect_outside_envelope`, `effect_mode_widening`, `effect_tier_widening`, or the advisory `capability_outside_grant`.
+
+### `Flow.Placement`
+
+- **Type:** `Context.Key<PlacementDirective, PlacementDirective>`
+- **Since:** `0.1.0`
+
+The annotation key for a flow's placement directive. It IS `@smthrs/plan`'s `Placement.Annotation`, identified by `"@smthrs/plan/Placement"`, which `@smthrs/core` also publishes as `Annotations.Placement`. Crossing between the two used to be a cast in `@smthrs/registry`.
 
 ### `Flow.CaptureDefects`
 
@@ -8355,12 +8364,14 @@ Declares the host's execution-id source as a layer. Callers that name an `execut
 
 ### `Flow.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
+- **Signature:** `make(tag: Tag, options: { payload, description?, capabilities?, effects?, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
 - **Default:** `success` is `Schema.Void`, `error` is `Schema.Never`, `annotations` is `Context.empty()`
 - **Required:** `payload` and `body`
 - **Since:** `0.1.0`
 
 Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A flow with nothing to plan is an action instead. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer.
+
+`description`, `capabilities`, and `effects` are declared as literals and lowered into the annotation bag, so a catalog reading the source text projects the same values `Graph.build` enforces. `effects` takes `{ reads, writes, mode, onConflict, tier? }` and is normalized by `Effects.make`.
 
 ### `Flow.MaxRoundsExceeded`
 
@@ -18829,18 +18840,6 @@ higher number first, and children inherit the value lexically. Priority never
 enters key material. A value that is not a safe integer raises
 `NodeBuildError` with code `invalid_priority`.
 
-### Node.lane
-
-```ts
-const lane: {
-  (options: Annotations.LaneOptions): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, options: Annotations.LaneOptions): Node<A, E>
-}
-```
-
-Adds a worktree lane annotation. Lanes are plan-time vocabulary; no runtime in
-this release executes one.
-
 ### Node.withEffects
 
 ```ts
@@ -18966,7 +18965,7 @@ interface GraphNode {
   readonly declaredEffects: Effects.Declaration | undefined
   readonly effectiveEffects: Effects.Declaration | undefined
   readonly placement: Placement.Placement | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Graph.Lane | undefined
   readonly priority: number | undefined
   readonly capabilities: ReadonlyArray<string>
   readonly annotations: AnnotationsProjection
@@ -18979,13 +18978,25 @@ traversal data and never reaches a step key. `kind` is the AST tag, or
 `LaneMerge` for a merge node this package synthesized. `effectiveEffects` is
 populated for work nodes only.
 
+### Graph.Lane
+
+```ts
+interface Lane {
+  readonly id: string
+}
+```
+
+The worktree lane the write-conflict pass assigns to a laned writer, named
+after the node it belongs to. Nothing declares one: this is the only thing that
+produces a lane.
+
 ### Graph.AnnotationsProjection
 
 ```ts
 interface AnnotationsProjection {
   readonly placement: Placement.Placement | undefined
   readonly effects: Effects.Declaration | undefined
-  readonly lane: Annotations.LaneOptions | undefined
+  readonly lane: Graph.Lane | undefined
   readonly priority: number | undefined
 }
 ```
@@ -19248,27 +19259,26 @@ const getOption: <I, S>(context: Context.Context<never>, key: Context.Key<I, S>)
 combines a parent and a child bag, with the child's values winning.
 `getOption` returns `Option.none()` when the key is absent.
 
-### The four keys
+### The three keys
 
 ```ts
-const Placement: Context.Service<PlacementModel.Placement>
-const Effects: Context.Service<EffectsModel.Declaration>
-const Lane: Context.Service<LaneOptions>
+const Placement: Context.Key<Placement.Placement, Placement.Placement>
+const Effects: Context.Key<Effects.Declaration, Effects.Declaration>
 const Priority: Context.Service<number>
 ```
 
-These are the four keys `Graph.build` projects onto each node. `Priority` is a
-signed integer ordering ready work; it is never part of step identity, so
-raising it never invalidates a cached step.
+These are the three keys `Graph.build` projects onto each node. `Placement` and
+`Effects` are not declared here: they are [`@smthrs/plan`](/docs/reference/api/plan/)'s
+`Placement.Annotation` and `Effects.Envelope`, the same objects
+[`@smthrs/flow`](/docs/reference/api/flow/) publishes as `Flow.Placement` and
+`Flow.EffectEnvelope`, so a flow annotated for one graph builder is visible to
+the other. `Priority` is a signed integer ordering ready work; it is never part
+of step identity, so raising it never invalidates a cached step.
 
-### Annotations.LaneOptions
-
-```ts
-interface LaneOptions {
-  readonly id: string
-  readonly landing?: "merge-queue" | "manual" | undefined
-}
-```
+A fourth key, `Lane`, and its `LaneOptions` are gone. They were a second
+spelling of `Effects.Declaration.onConflict: "lane"` with no caller outside
+this package's own tests; the lane a node carries is now only the one the
+write-conflict pass assigns it, typed as `Graph.Lane`.
 
 ## KeyMaterial
 
@@ -20941,7 +20951,7 @@ https://smithers.sh/docs/reference/api/engine-store/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) · [package docs](https://engine-store.smithers.sh)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plan-store`](/docs/reference/api/plan-store/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/)
 
 The durable `FlowEngine`. It claims a run before driving it, fences every write
 against the current owner, and persists attempts, waits, and terminal results
@@ -21018,12 +21028,13 @@ handoffs; explicit cancellation still cascades to linked children.
 
 ### EngineStore.Options
 
-| Field                  | Type                                    | Meaning                                                                                                                                                                                |
-| ---------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `owner.hostId`         | `string`                                | This engine's stable host identity. Which host a store speaks for is a composition decision, not a host fact.                                                                          |
-| `journalSource`        | `string`                                | The source id every record this engine writes carries.                                                                                                                                 |
-| `isAlive`              | `Ownership.LivenessCheck` (optional)    | Liveness arbitration consulted before stealing a run whose lease expired. Answering `true` refuses the takeover. Defaults to `Ownership.leaseLiveness(Ownership.heartbeatStaleAfter)`. |
-| `clockFireRetryPolicy` | `Schedule<unknown, unknown>` (optional) | Redispatch policy for a durable clock whose fire failed. Defaults to exponential from 100ms capped at 30s, forever, the same option shape as the engine's `suspendedRetryPolicy`.      |
+| Field                  | Type                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner.hostId`         | `string`                                           | This engine's stable host identity. Which host a store speaks for is a composition decision, not a host fact.                                                                                                                                                                                                                                                                           |
+| `journalSource`        | `string`                                           | The source id every record this engine writes carries.                                                                                                                                                                                                                                                                                                                                  |
+| `isAlive`              | `Ownership.LivenessCheck` (optional)               | Liveness arbitration consulted before stealing a run whose lease expired. Answering `true` refuses the takeover. Defaults to `Ownership.leaseLiveness(Ownership.heartbeatStaleAfter)`.                                                                                                                                                                                                  |
+| `clockFireRetryPolicy` | `Schedule<unknown, unknown>` (optional)            | Redispatch policy for a durable clock whose fire failed. Defaults to exponential from 100ms capped at 30s, forever, the same option shape as the engine's `suspendedRetryPolicy`.                                                                                                                                                                                                       |
+| `requestResume`        | `(executionId, reason) => Effect<void>` (optional) | Called for every wake this engine initiates against a PARKED execution: `"deferred"` (a durable deferred completed), `"clock"` (a durable clock fired), `"parent"` (a child settled under a parent parked on it). An operator's own resume is not reported. A host that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
 
 ### Required services
 
@@ -23037,17 +23048,17 @@ https://smithers.sh/docs/reference/api/flows/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) · [package docs](https://flows.smithers.sh)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plan-store`](/docs/reference/api/plan-store/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/)
 
 `@smthrs/flows` has three public entry points.
 
-| Entry point                   | Contents                                                                           |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| `@smthrs/flows`               | The barrel: nineteen engine packages re-exported, plus `namespaces`. Browser-safe. |
-| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.      |
-| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                              |
-| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                  |
-| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.           |
+| Entry point                   | Contents                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `@smthrs/flows`               | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
+| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.    |
+| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                            |
+| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                |
+| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.         |
 
 ```ts
 import { Action, Flow, Kernel, RunStore } from "@smthrs/flows"
@@ -23085,6 +23096,7 @@ one level below it (`Journal.SqlJournal.layer`).
 | `Keys`          | [`@smthrs/keys`](/docs/reference/api/keys/)                   |
 | `Observability` | [`@smthrs/observability`](/docs/reference/api/observability/) |
 | `Plan`          | [`@smthrs/plan`](/docs/reference/api/plan/)                   |
+| `PlanStore`     | [`@smthrs/plan-store`](/docs/reference/api/plan-store/)       |
 | `RunStore`      | [`@smthrs/run-store`](/docs/reference/api/run-store/)         |
 | `Sandbox`       | [`@smthrs/sandbox`](/docs/reference/api/sandbox/)             |
 | `StepCache`     | [`@smthrs/step-cache`](/docs/reference/api/step-cache/)       |
@@ -23093,8 +23105,9 @@ one level below it (`Journal.SqlJournal.layer`).
 Namespacing is what preserves constructors like
 `Kernel.ChildProcessSpawner.layerNoop` and `RunStore.RunStore.layer`. The
 `Capability` namespace owns exact-resource bounds, the pattern grammar, and
-permission failures; `Plan` owns step identity, graph compilation, static effect
-declarations, and plan storage; `Journal` owns the append-only event record
+permission failures; `Plan` owns step identity, graph compilation, and static
+effect declarations, with `PlanStore` holding the append-only rows they are
+recorded in; `Journal` owns the append-only event record
 every durable run replays from and the redaction rules that keep a credential
 out of both a committed row and a log line.
 
@@ -23162,12 +23175,14 @@ that path. Keeping the database outside a served checkout prevents engine
 writes from changing the working-copy tree. `workspaceRoot` still confines
 flow file actions; the database path is trusted host configuration.
 
-| Field           | Type                      | Meaning                                                                                                                                                                                                                                    |
-| --------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `filename`      | `string`                  | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                           |
-| `workspaceRoot` | `string`                  | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                   |
-| `owner`         | `{ hostId: string }`      | Stable identity of this engine host.                                                                                                                                                                                                       |
-| `isAlive`       | `Ownership.LivenessCheck` | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner. |
+| Field           | Type                                               | Meaning                                                                                                                                                                                                                                      |
+| --------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`      | `string`                                           | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                             |
+| `workspaceRoot` | `string`                                           | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                     |
+| `owner`         | `{ hostId: string }`                               | Stable identity of this engine host.                                                                                                                                                                                                         |
+| `isAlive`       | `Ownership.LivenessCheck`                          | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.   |
+| `canExecute`    | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                               |
+| `requestResume` | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
 
 `Ownership.sameHostPidProbe` from [`@smthrs/run-store`](/docs/reference/api/run-store/) probes
 the process table only for the claim context's host (`context.claimant.hostId`).
@@ -34108,13 +34123,13 @@ https://smithers.sh/docs/reference/api/plan/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) · [package docs](https://plan.smithers.sh)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/keys`](/docs/reference/api/keys/)
 
-`@smthrs/plan` exports twelve modules from its root entry point, and each is also
+`@smthrs/plan` exports eleven modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
-import { FileSet, Node, Plan, PlanStore } from "@smthrs/plan"
+import { FileSet, Node, Plan, PlanDiff } from "@smthrs/plan"
 // or
 import * as Plan from "@smthrs/plan/Plan"
 ```
@@ -34133,15 +34148,14 @@ import * as Plan from "@smthrs/plan/Plan"
 | `StepKey`         | The compiler that turns material plus resolved dependency digests into a [`@smthrs/keys`](/docs/reference/api/keys/) key. |
 | `Plan`            | `compile`, `append`, the node and conflict schemas, and the digest an approval binds to.                  |
 | `PlanDiff`        | A plan comparison as a value: added, removed, re-keyed with attribution, unchanged.                       |
-| `PlanStore`       | Append-only SQL persistence, enforced by triggers rather than by convention.                              |
+| `Placement`       | Where a node runs: the four directives, their host-selection detail, and the annotation key.              |
 | `Scheduling`      | The pure admission policy a scheduler consults: concurrency, priority order, and the halt rule.           |
-| `Migrations`      | The namespaced migration set that owns the three plan tables in id block `4000`.                          |
 
 The shortest composition that reaches every layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Plan, PlanStore } from "@smthrs/plan"
+import { Plan, PlanDiff } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 
 const program = Effect.gen(function*() {
@@ -34176,12 +34190,11 @@ const program = Effect.gen(function*() {
     ]
   })
 
-  const store = yield* PlanStore.PlanStore
-  return yield* store.record(plan, Date.now())
+  return PlanDiff.diff(plan, plan)
 }).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
-Compiling needs Effect's `Crypto` service and nothing else. Recording additionally needs `PlanStore.layer` over a `DurableWriter` and a `SqlClient`. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/database`](/docs/reference/api/database/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, and is browser-safe.
+Compiling needs Effect's `Crypto` service and nothing else. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/canonical`](/docs/reference/api/canonical/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, performs no I/O, and is browser-safe. Persisting a compiled plan is [`@smthrs/plan-store`](/docs/reference/api/plan-store/), which is where the database dependency lives.
 
 ## Entry point
 
@@ -34669,7 +34682,7 @@ Reconstructs an imported plan using compiler key, dependency, conflict and gener
 const isVerified: (input: unknown) => input is Plan
 ```
 
-Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets `PlanStore.append` skip re-decoding them.
+Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets [`@smthrs/plan-store`](/docs/reference/api/plan-store/)'s `PlanStore.append` skip re-decoding them.
 
 ### Plan.prefixDigest
 
@@ -35322,6 +35335,50 @@ builder-owned data and throws the caller's own refusal before the copy grows
 past `limit`, past `maximumPathLength` code units in one path, or past
 `maximumGlobs` patterns in one list.
 
+## Placement
+
+[src/Placement.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Placement.ts)
+
+The one placement model. [`@smthrs/core`](/docs/reference/api/core/) re-exports it as `Placement`, [`@smthrs/flow`](/docs/reference/api/flow/) annotates with it as `Flow.PlacementDirective`, and `@smthrs/registry` lowers a descriptor's frontmatter literal into it. A directive is serializable detail identifying a host profile; it never carries a host implementation, credentials, or any other runtime handle.
+
+The four tags read `flows/core/Placement/...` because they are hashed into `KeyMaterial.placement`, and therefore into the step key of every node that declares a placement. Retagging them would re-key recorded work and miss its cached results, so the tag is treated as a wire value rather than as a location.
+
+### Placement.Placement and Placement.Options
+
+```ts
+type Placement = Data.TaggedEnum<{
+  readonly "flows/core/Placement/Local": Readonly<Record<never, never>>
+  readonly "flows/core/Placement/Client": Readonly<Record<never, never>>
+  readonly "flows/core/Placement/Sandbox": Options
+  readonly "flows/core/Placement/Remote": Options
+}>
+
+interface Options {
+  readonly image?: string | undefined
+  readonly profile?: string | undefined
+  readonly target?: string | undefined
+}
+```
+
+### Placement.local, client, sandbox and remote
+
+```ts
+const local: () => Placement
+const client: () => Placement
+const sandbox: (options?: Options) => Placement
+const remote: (options?: Options) => Placement
+```
+
+The local process host, the viewer's browser, an isolated sandbox, and a remote control plane. `sandbox` and `remote` copy the options they are given, so a later mutation of the caller's object cannot change a recorded directive.
+
+### Placement.Annotation
+
+```ts
+const Annotation: Context.Key<Placement, Placement>
+```
+
+The annotation key a declared placement is carried under, identified by `"@smthrs/plan/Placement"`. One key: `@smthrs/core`'s `Annotations.Placement` and `@smthrs/flow`'s `Flow.Placement` are both this object.
+
 ## GraphBuildError
 
 [src/GraphBuildError.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/GraphBuildError.ts)
@@ -35423,9 +35480,88 @@ const diff: (previous: Plan.Plan, next: Plan.Plan) => PlanDiff
 
 Compares a plan against the last plan for the same flow. Pure, total, and free of requirements.
 
+---
+
+# @smthrs/plan-store
+https://smithers.sh/docs/reference/api/plan-store/
+
+> **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/api.md) · [package docs](https://plan-store.smithers.sh)
+
+> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+
+`@smthrs/plan-store` exports two modules from its root entry point, and each is
+also importable from `@smthrs/plan-store/<Module>`:
+
+```ts
+import { Migrations, PlanStore } from "@smthrs/plan-store"
+// or
+import * as PlanStore from "@smthrs/plan-store/PlanStore"
+```
+
+`@smthrs/plan-store/internal/*` and `@smthrs/plan-store/*/index` are not public.
+`@smthrs/plan-store/package.json` is exported.
+
+| Namespace    | What it is                                                                       |
+| ------------ | -------------------------------------------------------------------------------- |
+| `PlanStore`  | Append-only SQL persistence, enforced by triggers rather than by convention.     |
+| `Migrations` | The namespaced migration set that owns the three plan tables in id block `4000`. |
+
+The shortest composition that records a compiled plan:
+
+```ts
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as Migrations from "@smthrs/plan-store/Migrations"
+import * as PlanStore from "@smthrs/plan-store/PlanStore"
+import * as Plan from "@smthrs/plan/Plan"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+
+const layer = PlanStore.layer.pipe(
+  Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
+  Layer.provideMerge(NodeCrypto.layer)
+)
+
+const program = Effect.gen(function*() {
+  const plan = yield* Plan.compile({
+    planId: "review-4821",
+    flow: "example/Review",
+    nodes: [
+      {
+        id: "read-pr",
+        material: {
+          version: "flows/key-material/v2",
+          kind: "sealed",
+          body: { action: "read-pr", pr: 4821 },
+          inputs: [],
+          layers: [],
+          capabilities: ["net:get"]
+        },
+        effects: { reads: [], writes: ["pr.json"], boundaryMode: "hard" }
+      }
+    ]
+  })
+
+  const store = yield* PlanStore.PlanStore
+  return yield* store.record(plan, Date.now())
+}).pipe(Effect.provide(layer))
+```
+
+Recording needs `PlanStore.layer` over a `DurableWriter`, a `SqlClient`, and
+Effect's `Crypto` service. The package depends on
+[`@smthrs/plan`](/docs/reference/api/plan/), [`@smthrs/database`](/docs/reference/api/database/) and
+[`@smthrs/keys`](/docs/reference/api/keys/), names no database driver, and is browser-safe.
+Compiling a plan without persisting one needs none of those services.
+
+## Entry point
+
+| Import               | Source                                                                                                           | Platform         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `@smthrs/plan-store` | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/index.ts) | Node and browser |
+
 ## PlanStore
 
-[src/PlanStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/PlanStore.ts)
+[src/PlanStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/PlanStore.ts)
 
 `record` is first-writer-wins: an identical re-record is not an error, and a different plan under the same id is a `Conflict` carrying the stored digest rather than a silent overwrite. It accepts generation 0 only, whose `baseDigest` equals its `digest` and every one of whose nodes is at generation 0. `get` returns the verified immutable plan with nodes in recorded order. Admission and reads recompute keys, approval digests, topology, effect ordering and generation relationships. A forged incoming plan fails with `invalid_plan` before writes; corrupt stored content fails with `decode_failed`, including on duplicate admission. Envelope and nodes are read in one SQL statement to avoid mixed generations during concurrent appends.
 
@@ -35462,7 +35598,7 @@ type RecordResult =
 ### PlanStore.PlanStore
 
 ```ts
-class PlanStore extends Context.Service<PlanStore, Service>()("@smthrs/plan/PlanStore") {}
+class PlanStore extends Context.Service<PlanStore, Service>()("@smthrs/plan-store/PlanStore") {}
 ```
 
 The service tag.
@@ -35486,7 +35622,7 @@ Provides `make`.
 ### PlanStore.PlanStoreError
 
 ```ts
-class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan/PlanStoreError", {
+class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan-store/PlanStoreError", {
   code: typeof PlanStoreErrorCode
   message: Schema.String
   cause: Schema.optional<Schema.Unknown>
@@ -35505,7 +35641,7 @@ class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan/
 
 ## Migrations
 
-[src/Migrations.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Migrations.ts)
+[src/Migrations.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/Migrations.ts)
 
 The namespaced set owns `flows_plans`, `flows_plan_nodes`, and `flows_plan_edges`
 in id block `4000`, after journal (`0`), run store (`1000`), step cache (`2000`),

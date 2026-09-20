@@ -82,6 +82,18 @@ const buildWithPlacements = (enclosing: unknown, callee: unknown): Graph.Graph =
   return Graph.build(Caller, {})
 }
 
+/**
+ * A placement value that is not one of the four directives.
+ *
+ * `Flow.PlacementDirective` is `@smthrs/plan`'s typed model now, but a type is
+ * erased: an annotation bag assembled at run time, or a declaration loaded from
+ * a file flow, still carries whatever the caller put there. These cases drive
+ * exactly that, which is what `Graph`'s bounded placement rendering and its
+ * structural identity check exist for, so the cast is the point rather than a
+ * way around the type.
+ */
+const opaque = (value: unknown): Flow.PlacementDirective => value as Flow.PlacementDirective
+
 describe("Graph.build topology", () => {
   it("expands every node variant, entering the flow as a call to itself", () => {
     const graph = Graph.build(Parent, { path: "counter.txt" })
@@ -518,7 +530,7 @@ describe("Graph.build composition", () => {
 describe("Graph.build annotations", () => {
   it("carries declared effects, placement, tier, and resolved layers into the material", () => {
     const effects: Flow.Effects = { reads: ["counter.txt"], writes: ["counter.txt"], boundaryMode: "hard" }
-    const placement: Flow.PlacementDirective = { host: "sandbox" }
+    const placement = opaque({ host: "sandbox" })
     const Risky = Action.make("counter/risky", {
       payload: { path: Schema.String },
       success: Schema.Number,

@@ -19,9 +19,9 @@ import * as Plan from "../src/Plan.ts"
 import * as PlanDiff from "../src/PlanDiff.ts"
 import * as Planned from "../src/Planned.ts"
 import * as StepKey from "../src/StepKey.ts"
+import { compile, draft, effects } from "../src/test/PlanFixtures.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"
 import { params } from "./FastCheckParams.ts"
-import { compile, draft, effects } from "./PlanFixtures.ts"
 
 const prop = effectProperty(it.effect)
 

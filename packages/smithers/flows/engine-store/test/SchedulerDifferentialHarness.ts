@@ -1,6 +1,7 @@
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { KeyMaterial, Plan, PlanStore } from "@smthrs/plan"
+import { KeyMaterial, Plan } from "@smthrs/plan"
+import { PlanStore } from "@smthrs/plan-store"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"

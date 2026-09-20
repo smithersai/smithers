@@ -406,6 +406,7 @@
     "@smthrs/engine-store": "1.0.0-rc.0",
     "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/jj": "1.0.0-rc.0",
+    "@smthrs/plan-store": "1.0.0-rc.0",
     "@smthrs/step-cache": "1.0.0-rc.0",
     "@smthrs/time-travel": "1.0.0-rc.0",
     "@types/node": "26.4.1",

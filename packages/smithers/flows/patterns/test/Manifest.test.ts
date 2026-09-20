@@ -42,6 +42,7 @@ const importedPackages = (): ReadonlySet<string> => {
 // effect envelope model, which `@smthrs/core` re-exports and `@smthrs/flow`
 // enforces. Reading it through core's alias would hide which package owns it,
 // and the import is already in the install graph through core either way.
+// `@smthrs/plan` brings no database: its store lives in `@smthrs/plan-store`.
 const declared = ["@smthrs/core", "@smthrs/plan"]
 
 describe("package manifest", () => {
@@ -63,7 +64,12 @@ describe("package manifest", () => {
     expect(workspaceImports).toEqual(declared)
   })
 
-  it("takes only the effect model from @smthrs/plan, never its SQL surface", () => {
+  // `@smthrs/plan` no longer HAS a SQL surface: `PlanStore` and `Migrations`
+  // moved to `@smthrs/plan-store`, which is why neither this package nor
+  // `@smthrs/core` carries `@smthrs/database` in its dependency closure any
+  // more. This case keeps the import narrow anyway, so a future plan module
+  // cannot arrive here unnoticed.
+  it("takes only the effect model from @smthrs/plan", () => {
     const specifiers = new Set<string>()
     for (const file of sourceFiles(sourceDirectory)) {
       for (const match of readFileSync(file, "utf8").matchAll(/from\s+"(@smthrs\/plan[^"]*)"/g)) {
