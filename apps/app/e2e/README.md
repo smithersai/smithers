@@ -64,6 +64,36 @@ between the page and its host, or the provider's journal, which holds a sha256.
 Those scenarios are `host:local` only: a deployed Worker cannot reach a
 loopback provider. `real/models/MANUAL.md` is the same walk by hand.
 
+### Waiting after a reload
+
+`page.reload` resolves while the app is still fetching its view chunk and
+opening its store, so an assertion made straight after one spends its budget
+inside the boot skeleton and then reports the element it wanted as missing.
+Use `reloadApp(page)` from `real/support/index.ts`: it reloads, waits up to
+120 s for the booted transcript, and records how long that took.
+`reloadBootTimings()` returns every time this worker measured.
+
+Measured 2026-09-20 against the canary from the persistent production profile
+`~/.multi-e2e-profile`, build 9eefdba7:
+
+| Sample | Reload to booted transcript |
+| --- | --- |
+| First scenario invocation, 4 reloads | 12.3, 12.6, 18.8, 20.9 s |
+| One scenario walk, 14 reloads, two canary redeploys under it | 16.8 s min, 45.8 s median, 72.5 s max |
+| 12 idle reloads, no scenario activity | 12.3 s min, 18.3 s median, 24.9 s max |
+
+The idle series climbed from 12.3 s to 24.9 s while the profile's stored bytes
+stayed at 91.9 MB, so the boot slows with the age of the browser session
+rather than with the size of the store, and a scenario's own activity
+multiplies it. A budget under 90 s is a coin toss late in a walk.
+
+Choose a post-reload budget from the measurement, and re-measure when the
+profile's store is pruned.
+
+A raw `page.reload` remains correct where the next step navigates again, as
+`boot` and `bootPracticeIssues` do, or reads only an API response. Those sites
+never assert against the reloaded document.
+
 `contracts/` holds the assertion contracts both tiers share: pure predicates
 that decide what counts as evidence, each with its own Bun test.
 `assistantReplyEvidence.ts` requires a completed assistant bubble rendered
