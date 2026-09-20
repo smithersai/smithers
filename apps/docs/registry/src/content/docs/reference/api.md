@@ -1074,7 +1074,7 @@ replace an admitted declaration with whatever is on disk. Every flow is
 refreshable by default.
 
 The default loader writes the verified bytes to a private sibling of the
-source file, named by their content digest, and imports that — so new bytes
+source file, named by their content digest, and imports that, so new bytes
 are a new module specifier and the ESM cache cannot answer with the previous
 body. The sibling is created exclusively, so a name another writer already
 holds costs the load one attempt and is never written through.
@@ -1092,7 +1092,7 @@ const layerRefreshable: (built: Catalog, options: RefreshOptions) => Layer.Layer
 Serves a catalog the host already built, and keeps one entry rebuildable.
 `layer` is this plus the initial registrations, and is what a host with no
 catalog of its own wants. Reach for this one when the host assembles the
-catalog itself — several sources, or a loader per source — and registers the
+catalog itself (several sources, or a loader per source) and registers the
 result its own way: it adds the live `Catalog` and the `Refresh` beside it
 without registering anything twice.
 

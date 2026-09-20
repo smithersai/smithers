@@ -96,8 +96,17 @@ The members and the value each one carries across the seam:
 | `deferredDone`          | no       | Encoded. `makeUnsafe` encodes the exit before the call.                                                                                    |
 | `deferredDoneIfWaiting` | yes      | Encoded, encoded before the call the same way.                                                                                             |
 | `scheduleClock`         | no       | None.                                                                                                                                      |
+| `nodeRecordBytes`       | yes      | None.                                                                                                                                      |
+| `recordNode`            | yes      | None.                                                                                                                                      |
 
 `executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `round` on `execute` is required: `makeUnsafe` supplies round zero for a fresh execution and the advanced round after a handoff, with `previousExecutionId` naming the round it continues. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
+
+`recordNode` takes the records a driven graph makes about itself: the plan it was built from, and every node it scheduled and settled. It is optional because a store that keeps no history has nothing to record and skips journal preflight; a recording store can refuse oversized topology before the walk starts. A store that implements it MUST address the entry by the `sourceId` the record carries, never a minted one: a resumed walk re-derives the same ids, and that is what makes a journal keyed by `(run, source, sequence)` hold one row per node across a resume instead of one per observation.
+
+`nodeRecordBytes` measures the complete encoded UTF-8 journal envelope before the
+interpreter pages the graph. It must reserve allocated sequence/time fields
+deterministically, so a resume keeps exactly the same page identities. The
+interpreter refuses a node that cannot fit alone before recording any page.
 
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 

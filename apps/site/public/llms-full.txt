@@ -7807,7 +7807,7 @@ The package index re-exports fourteen namespaces:
 
 ## Action
 
-`Action` exports 43 symbols. Its models and schemas are listed in one table, and constructors, combinators, layers, context references, services, and errors get their own entries:
+`Action` exports 45 symbols. Its models and schemas are listed in one table, and constructors, combinators, layers, context references, services, and errors get their own entries:
 
 | Name                 | Kind            | Summary                                                                                                                                                                                                                                                                                             |
 | -------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -8027,6 +8027,27 @@ Retries an effect with `Effect.retry` while updating `CurrentAttempt` on each at
 - **Since:** `0.1.0`
 
 The interpreter graph site the running dispatch is scoped to. Distinct graph sites refine the allocation scope, so they do not contend for one ordinal counter.
+
+### `Action.DispatchOutcome`
+
+- **Type:** `interface DispatchOutcome { readonly outcome: "executed" | "replayed"; readonly stepKeyDigest?: string | undefined; readonly attempt?: number | undefined }`
+- **Since:** `1.0.0`
+
+What one dispatch tells the node that drove it. `outcome` says whether the body ran or a durable record answered. `stepKeyDigest` is the identity the rest of the engine addresses that dispatch by, the digest `flows.engine.attempt-started` carries, and `attempt` is the durable attempt it ran as. Both are optional, because a runtime that keeps no attempt rows has neither.
+
+### `Action.DispatchReport`
+
+- **Type:** `Context.Service<DispatchReport, { readonly dispatched: (dispatch: DispatchOutcome) => Effect.Effect<void> }>` keyed `"@smthrs/flow/Action/DispatchReport"`
+- **Since:** `1.0.0`
+
+Where the dispatches of one interpreter node report what happened to them. The interpreter installs one per node and reads the report back when the node settles: it is how a replayed node is told apart from one that did the work again, how a node names the step keys its attempt records were written under, and how a node's real attempt count reaches its settlement. Absent by default: a dispatch outside an interpreted graph reports to nobody, and reporting stays a side channel rather than a change to what `actionExecute` returns.
+
+### `Action.reportDispatch`
+
+- **Signature:** `reportDispatch(dispatch: DispatchOutcome): Effect.Effect<void>`
+- **Since:** `1.0.0`
+
+Reports one dispatch to the node that drove it, and does nothing where no node did.
 
 ### `Action.allocationScope`
 
@@ -8545,7 +8566,37 @@ The result of atomically completing a deferred only while its run is parked.
 - **Type:** `Context.Service` keyed `"@smthrs/flow/FlowRuntime"`
 - **Since:** `0.1.0`
 
-The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, and `scheduleClock`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
+The port the authoring APIs are written against. It exposes `register`, `execute`, `poll`, `interrupt`, `interruptUnsafe`, `resume`, `actionExecute`, `deferredResult`, `deferredDone`, `deferredDoneIfWaiting`, `scheduleClock`, and the optional `recordNode` and `nodeRecordBytes`. This package declares the port and depends on nothing that implements it, so the dependency direction runs from `@smthrs/flow` to `@smthrs/engine` to the durable stores.
+
+`recordNode(record: NodeRecord): Effect.Effect<void, never, FlowInstance>` is optional in the strong sense: a runtime that keeps no history leaves it absent and skips journal preflight. A recording runtime can refuse oversized node topology before the walk starts. An implementation must write the record under the record's own `sourceId` rather than minting an identity per observation, because that is what makes a resumed walk collapse onto the rows the first walk wrote instead of doubling every node.
+
+### `FlowRuntime.NodeRecord`
+
+- **Type:** `PlanRecorded | SubgraphAppended | NodeScheduled | NodeSettled`
+- **Since:** `1.0.0`
+
+What a driven graph tells its runtime about itself, and the only thing this package says about where the records go. Every record carries its own replay-stable `sourceId`, which is its producer identity. `PlanRecorded` carries `flow`, `generation`, `page`, `pages`, the whole graph's `nodeCount`, and this page's `nodes` and `edges`. `SubgraphAppended` is one further page of the same graph and carries everything but `nodeCount`. `NodeScheduled` carries `nodeId`, `kind`, `attempt`, and the optional `action`; no step key digest rides there, because the engine allocates a dispatch's ordinal when the dispatch happens, which is after the record is written. `NodeSettled` carries `nodeId`, `outcome`, `attempts`, `stepKeyDigests`, the optional `action`, and the `value` the node settled with. `attempts` is the highest durable attempt any of the node's dispatches ran as, so a node whose action was retried says two; `stepKeyDigests` names the distinct dispatches it drove, which is what joins `flows.engine.attempt-started` back to a plan node; `value` is handed over whole and unbounded, and bounding and redacting it belongs to the writer that knows where it is going. A large graph is paged rather than truncated, because a journal entry has a byte bound and a projection that clipped one would lose nodes silently.
+
+### `FlowRuntime.NodeSummary`
+
+- **Type:** `interface NodeSummary { readonly id: string; readonly kind: string; readonly dependsOn: ReadonlyArray<string>; readonly tier: "sealed" | "compensable" | "irreversible"; readonly action?: string | undefined; readonly effects?: Plan.NodeEffects | undefined; readonly declaredAt?: { readonly path: string; readonly line: number } | undefined }`
+- **Since:** `1.0.0`
+
+One node of the graph a run was driven from. `tier` and `effects` are the declaration's own and `dependsOn` is the material dependency set the plan compiles edges from. `action` is the tag the node dispatches, absent on every node that dispatches nothing. `declaredAt` is provenance and never identity: it is outside key material by construction, so a node recorded with it is keyed exactly as the same node without it.
+
+### `FlowRuntime.EdgeSummary`
+
+- **Type:** `interface EdgeSummary { readonly from: string; readonly to: string; readonly reason: "value" | "continuation" | "failure" }`
+- **Since:** `1.0.0`
+
+One edge of the recorded graph, with the reason the builder drew it. A page carries the edges that END on its nodes, so an assembled set of pages is the whole graph and no page names an edge whose destination is missing.
+
+### `FlowRuntime.NodeOutcome`
+
+- **Type:** `"built" | "clean" | "failed" | "skipped"`
+- **Since:** `1.0.0`
+
+How a node left the walk. `built` ran, `clean` was served entirely from durable records, `failed` raised, and `skipped` is a node the walk never reached: an untaken branch arm, or a dependent of something that failed.
 
 ### `FlowRuntime.WaitingAnnotation`
 
@@ -8582,10 +8633,10 @@ A dependency edge, pointing from the node that produces to the node that consume
 
 ### `Graph.GraphNode`
 
-- **Type:** `interface GraphNode` with `id`, `kind`, `dependencies`, `capabilities`, `placement`, `draft`, and the authoring node it was observed at
+- **Type:** `interface GraphNode` with `id`, `kind`, `dependencies`, `capabilities`, `placement`, `draft`, the authoring node it was observed at, and `declaredAt?: { readonly path: string; readonly line: number } | undefined`
 - **Since:** `0.1.0`
 
-One observed node: its structural address, the authoring variant it came from, and the `Plan.NodeDraft` the plan is compiled from. `kind` is the authoring variant, not the plan's node kind. Every draft a graph produces is a plan `step`.
+One observed node: its structural address, the authoring variant it came from, and the `Plan.NodeDraft` the plan is compiled from. `kind` is the authoring variant, not the plan's node kind. Every draft a graph produces is a plan `step`. `declaredAt` is where the declaration this node was observed at was written, when the runtime's stack format says so: it is provenance outside `KeyMaterial`, so a node carrying it is byte-identical to the same node without it, and it is absent for a node with no declaration to read and for a declaration the framework itself made.
 
 ### `Graph.LayerRequest`
 
@@ -8871,7 +8922,7 @@ Gives an answer the caller's own type. The schema here and the question's own sc
 - **Type:** `Schema.TaggedError` with fields `code`, `flow: string`, `node: string`, and `message: string`
 - **Since:** `0.1.0`
 
-A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, or `missing_operation`.
+A graph the interpreter refuses to drive. The `code` is one of `incomplete_graph`, `duplicate_node_id`, `unresolved_action`, `implementation_version_mismatch`, `missing_implementation_version`, `unresolved_reference`, `unsupported_call`, `missing_operation`, or `node_record_too_large`.
 
 ### `Interpreter.Interpretation`
 
@@ -8887,12 +8938,29 @@ What one interpretation produced: the root's value, every node that settled with
 
 The execution id a `child` boundary runs its child under, derived from the parent execution id, the node id, the callee tag, and the payload digest.
 
+### `Interpreter.maximumPageBytes`
+
+- **Type:** `number`
+- **Default:** `12_000`
+- **Since:** `1.0.0`
+
+The largest UTF-8 encoded plan page, including its envelope. The runtime's
+optional `nodeRecordBytes` hook measures a conservative complete journal entry;
+without a writer hook the interpreter measures the whole node record. Pages
+keep nodes and their incoming edges together. If one node cannot fit alone,
+`node_record_too_large` refuses the graph before any page or action is written.
+Every page has a deterministic source id across resume. The gateway refuses a
+bridged graph event exceeding 16 KiB including its control envelope; it never
+clips topology.
+
 ### `Interpreter.interpret`
 
 - **Signature:** `interpret(flowOrNode: Flow.Any | Node.Any, payload?: unknown, options: Graph.BuildOptions = {}): Effect.Effect<Interpretation, unknown, Services>`
 - **Since:** `0.1.0`
 
 Builds and walks the graph of a flow body, or of a bare node, against real values. The walk is demand-driven from the root rather than a sweep over the node list, because dependency order puts both branch arms before the branch that chooses between them.
+
+One call is one interpretation of one execution. A runtime that implements `recordNode` addresses the records of a call by the graph's own ids under the current execution, so calling `interpret` twice inside a single execution would address the second graph's records exactly as the first graph's, and a journal that dedupes on identity would keep the first. `Interpreter.layer` gives every trampoline round its own execution id and never does this; a direct caller that wants two graphs recorded separately runs them under separate executions.
 
 ### `Interpreter.layer`
 
@@ -9157,6 +9225,27 @@ The sleep implementation: arm the durable clock, park under `timer`, wake. Provi
 
 The interpreter graph site the running dispatch is scoped to.
 
+### `StepIdentity.DispatchOutcome`
+
+- **Type:** `interface DispatchOutcome { readonly outcome: "executed" | "replayed"; readonly stepKeyDigest?: string | undefined; readonly attempt?: number | undefined }`
+- **Since:** `1.0.0`
+
+What one dispatch tells the node that drove it: whether the body ran, the step key digest it ran under, and the durable attempt it was.
+
+### `StepIdentity.DispatchReport`
+
+- **Type:** `Context.Service<DispatchReport, { readonly dispatched: (dispatch: DispatchOutcome) => Effect.Effect<void> }>` keyed `"@smthrs/flow/Action/DispatchReport"`
+- **Since:** `1.0.0`
+
+Where the dispatches of one interpreter node report what happened to them.
+
+### `StepIdentity.reportDispatch`
+
+- **Signature:** `reportDispatch(dispatch: DispatchOutcome): Effect.Effect<void>`
+- **Since:** `1.0.0`
+
+Reports one dispatch to the node that drove it, and does nothing where no node did.
+
 ### `StepIdentity.AllocationIdentity`
 
 - **Type:** `interface AllocationIdentity { readonly kind: "action" | "internal"; readonly name: string; readonly idempotency?: string | Schema.JsonObject | undefined; readonly site?: string | undefined }`
@@ -9376,8 +9465,17 @@ The members and the value each one carries across the seam:
 | `deferredDone`          | no       | Encoded. `makeUnsafe` encodes the exit before the call.                                                                                    |
 | `deferredDoneIfWaiting` | yes      | Encoded, encoded before the call the same way.                                                                                             |
 | `scheduleClock`         | no       | None.                                                                                                                                      |
+| `nodeRecordBytes`       | yes      | None.                                                                                                                                      |
+| `recordNode`            | yes      | None.                                                                                                                                      |
 
 `executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `round` on `execute` is required: `makeUnsafe` supplies round zero for a fresh execution and the advanced round after a handoff, with `previousExecutionId` naming the round it continues. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
+
+`recordNode` takes the records a driven graph makes about itself: the plan it was built from, and every node it scheduled and settled. It is optional because a store that keeps no history has nothing to record and skips journal preflight; a recording store can refuse oversized topology before the walk starts. A store that implements it MUST address the entry by the `sourceId` the record carries, never a minted one: a resumed walk re-derives the same ids, and that is what makes a journal keyed by `(run, source, sequence)` hold one row per node across a resume instead of one per observation.
+
+`nodeRecordBytes` measures the complete encoded UTF-8 journal envelope before the
+interpreter pages the graph. It must reserve allocated sequence/time fields
+deterministically, so a resume keeps exactly the same page identities. The
+interpreter refuses a node that cannot fit alone before recording any page.
 
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 
@@ -17504,7 +17602,18 @@ schema constant and a type of the same name unless noted.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PlanNodeStatus` | `"cached" \| "run"`. The two outcomes a step key already decides: reuse the cached result, or run the step. A card reports nothing else.                                             |
 | `PlanNode`       | The persisted plan node's fields plus `status`. `key` is the step key [`@smthrs/plan`](/docs/reference/api/plan/) compiled, so a node named here and a node in the persisted plan are the same node. |
-| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.      |
+| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, graph?, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.      |
+| `PlanEdgeReason` | `"value" \| "continuation" \| "failure" \| "conflict" \| "lane-merge"`. Why one node waits for another, in the vocabulary of whichever graph builder the host planned with. |
+| `PlanEdge`       | `{ from, to, reason: PlanEdgeReason }`. One labelled edge of the graph the plan was built from. |
+| `PlanGraphNode`  | `{ id, declaredAt?: { path, line } }`. Where one node was declared, repo-relative under `@smthrs/journal`'s own rule, which refuses an absolute path. A host that cannot make a path relative to its root omits it. |
+| `PlanGraph`      | `{ edges: PlanEdge[], nodes?: PlanGraphNode[], sourceRevision?: string }`. A `PlanNode` carries `dependsOn`, one unlabelled edge set that cannot tell a value dependency from a recovery arm or from an ordering edge a write conflict added; a host that graphs a flow reports the reasons here instead, and the declaration sites the key material deliberately does not carry. `sourceRevision` is the immutable name of the tree those sites were read out of: a jj working-copy commit id, or a git commit for a tree that still matches one, so a reader can ask for the file AT that revision instead of whatever is on disk now. A host that cannot name one omits it. |
+
+`graph` sits deliberately OUTSIDE the digest an approval binds to. The edges
+and the declaration sites describe the plan a reader draws, and nothing in
+them changes what will run,
+so a host that starts reporting them re-plans to the digest it planned to
+before and every parked approval still validates. A host that graphs nothing
+omits the field, and a card stored before the field existed still decodes.
 
 `executionDigest` binds a discovery-based host's measured source and metadata
 to the approved card digest. It is optional for generic control-plane hosts,
@@ -17794,7 +17903,7 @@ requested while one is being taken up is not lost with it.
 | `PlanOutcome`    | `{ card: PlanCard; created: boolean }`. `created` is what lets `plan` journal one creation per plan rather than one per retry.                                                                                                   |
 | `MutationRecord` | `{ fingerprint: string; receipt: Receipt }`                                                                                                                                                                                      |
 | `PendingResume`  | `{ runId: RunId; sequence: number; requestedAtMs: number }`                                                                                                                                                                      |
-| `MemoryFlow`     | `{ flowId; description; deployClass; envelope; executionDigest?; decode?; plan? }`. The optional execution identity is included in the approved card; `decode` validates input and `plan` projects it into the keyed node graph. |
+| `MemoryFlow`     | `{ flowId; description; deployClass; envelope; executionDigest?; decode?; plan? }`. The optional execution identity is included in the approved card; `decode` validates input and `plan` projects it into the keyed node graph, answering `{ plan, statuses?, graph? }`. |
 | `MemoryOptions`  | `{ flows?: MemoryFlow[]; now?: () => number; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }`                                                                                          |
 
 `layerMemory` models the production fence and approval ordering seams but keeps
@@ -23181,14 +23290,16 @@ that path. Keeping the database outside a served checkout prevents engine
 writes from changing the working-copy tree. `workspaceRoot` still confines
 flow file actions; the database path is trusted host configuration.
 
-| Field           | Type                                               | Meaning                                                                                                                                                                                                                                      |
-| --------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`      | `string`                                           | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                             |
-| `workspaceRoot` | `string`                                           | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                     |
-| `owner`         | `{ hostId: string }`                               | Stable identity of this engine host.                                                                                                                                                                                                         |
-| `isAlive`       | `Ownership.LivenessCheck`                          | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.   |
+| Field              | Type                                    | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`         | `string`                                | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                                                                                                                                                                                                                      |
+| `workspaceRoot`    | `string`                                | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                                                                                                                                                                                                              |
+| `owner`            | `{ hostId: string }`                    | Stable identity of this engine host.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `isAlive`          | `Ownership.LivenessCheck`               | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.                                                                                                                                                                                            |
 | `canExecute`    | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                               |
 | `requestResume` | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
+| `cacheEnvironment` | `Action.CacheEnvironment`               | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
+| `sourceRevision`   | `string \| (() => string \| undefined)` | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 
 `Ownership.sameHostPidProbe` from [`@smthrs/run-store`](/docs/reference/api/run-store/) probes
 the process table only for the claim context's host (`context.claimant.hostId`).
@@ -23199,6 +23310,29 @@ from [`@smthrs/platform-node`](/docs/reference/api/platform-node/), which return
 foreign hosts, or supply a distributed liveness check. `HostLiveness.isAlive`
 is the `layerHost` default and refuses foreign-host takeover even after lease
 expiry. A multi-process deployment answers from its supervisor or lease system.
+
+#### Cross-run step cache reuse
+
+A sealed action that declares an idempotency key, an implementation version and
+a `hard` `fileBoundary` publishes its result to the step cache. Whether a later
+run can read that result back is decided by `cacheEnvironment`.
+
+While it is absent the engine folds the execution id into the step key, so each
+run records its result under an address no other run can spell and nothing is
+reused across runs. This is the default because the engine cannot derive the
+value: it names the semantic runtime layers and the effective capability groups
+a result was computed under, and only the host knows both. Declare it and a
+second run addresses the first run's row, replays the recorded outputs, and
+never enters the body again.
+
+Declare it only when every machine that shares this database would have
+produced the same bytes under the layers named. The engine still re-measures a
+step's declared read set before serving a hit and refuses one whose declaration
+no longer matches the host, but it cannot check a claim about a toolchain, a
+model route, or a code version that the layers failed to name. A host that
+cannot enumerate its environment leaves the field out. An incomplete value is
+refused with `RuntimeConfigurationError` at construction, because it is cache
+key material.
 
 ### `RuntimeConfigurationError`
 
@@ -24376,7 +24510,7 @@ gateway mints, reads, or answers with each one.
 
 | Export                  | Shape                                    |
 | ----------------------- | ---------------------------------------- |
-| `ProjectionName`        | the seven served projection names        |
+| `ProjectionName`        | the eight served projection names        |
 | `WorkspaceRunsSelector` | `{ _tag: "workspace-runs" }`             |
 | `RunSummarySelector`    | `{ _tag: "run-summary", runId }`         |
 | `RunEventsSelector`     | `{ _tag: "run-events", runId }`          |
@@ -24384,11 +24518,17 @@ gateway mints, reads, or answers with each one.
 | `RunTreeSelector`       | `{ _tag: "run-tree", runId }`            |
 | `ApprovalsSelector`     | `{ _tag: "approvals", runId? }`          |
 | `NodeOutputSelector`    | `{ _tag: "node-output", runId, nodeId }` |
-| `ProjectionSelector`    | the union of the seven                   |
+| `FlowDurationsSelector` | `{ _tag: "flow-durations", flowId }`     |
+| `ProjectionSelector`    | the union of the eight                   |
 
 `ApprovalsSelector` without `runId` lists the workspace's pending gates, which
 is the approvals inbox. With one it lists that run's gates including the decided
 ones, which is what a run card renders.
+
+`FlowDurationsSelector` is the one selector scoped to a flow rather than to a
+run. It ranks the durations the flow's newest finished runs measured, so a
+client reads it once when it opens a card and again when a run finishes, never
+inside a poll loop.
 
 `rowSchemaFor<S extends ProjectionSelector>(selector: S)` answers the schema of
 the rows that selector projects, so a client decodes a snapshot instead of
@@ -38199,19 +38339,87 @@ rebuilding the catalog and hoping the two agree.
 ### Executable.layer
 
 ```ts
-const layer: (options: Options) => Layer.Layer<
-  Catalog,
+const layer: (options: RefreshOptions) => Layer.Layer<
+  Catalog | Refresh,
   RegistryError | DiscoveryError,
   Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
 >
 ```
 
-Registers every runnable discovered flow with the runtime. This is the layer a
-host passes as the durable runtime's registration phase.
+Registers every runnable discovered flow with the runtime, and provides the
+[`Refresh`](#executablerefresh-executablerefreshed-and-executablerefreshoptions)
+that rebuilds one of them later. This is the layer a host passes as the durable
+runtime's registration phase.
 
 A refusal is never silent: each one is logged as a warning naming the flow, the
 code, the delegate it wanted, and what is registered instead, and the whole
 `Catalog` is provided as a service.
+
+The `Catalog` service object never changes identity. A reader that took it
+while the host was composed keeps reading it after a rebuild, because a
+rebuild swaps the snapshot behind the service rather than the service.
+
+### Executable.Refresh, Executable.Refreshed and Executable.RefreshOptions
+
+```ts
+interface Refresh {
+  readonly flow: (name: string) => Effect.Effect<Refreshed, RegistryError | DiscoveryError>
+}
+
+const Refresh: Context.Service<Refresh, Refresh>
+
+type Refreshed =
+  | { readonly _tag: "Registered"; readonly executable: Executable }
+  | { readonly _tag: "Refused"; readonly error: ExecutableError }
+  | { readonly _tag: "Removed" }
+  | { readonly _tag: "Fixed" }
+
+interface RefreshOptions extends Options {
+  readonly refreshable?: ((descriptor: Descriptor.FlowDescriptor) => boolean) | undefined
+}
+```
+
+Rebuilds one entry of a catalog the host is already serving from: rescan
+discovery, load that flow's body from the bytes now on disk, register it with
+the runtime, and swap it into the snapshot. No restart, and the previous body
+stays registered until the new one is, so an execution dispatched across the
+swap reaches one of them and never an unregistered tag. Refreshes are
+serialized, so two rebuilds of one name cannot interleave.
+
+`Refreshed` has four cases because a caller that cannot tell them apart cannot
+say anything honest about the flow afterwards: `Registered` (runnable now),
+`Refused` (this host will not run it, with the code and the delegate it
+wanted), `Removed` (discovery no longer finds it), and `Fixed` (this host
+holds that entry and left the catalog alone).
+
+`refreshable` is what answers `Fixed`. A host serving part of its catalog out
+of its own measured bundle answers `false` for those entries: their bytes are
+the image it was shipped as, and rebuilding one from the working tree would
+replace an admitted declaration with whatever is on disk. Every flow is
+refreshable by default.
+
+The default loader writes the verified bytes to a private sibling of the
+source file, named by their content digest, and imports that, so new bytes
+are a new module specifier and the ESM cache cannot answer with the previous
+body. The sibling is created exclusively, so a name another writer already
+holds costs the load one attempt and is never written through.
+
+### Executable.layerRefreshable
+
+```ts
+const layerRefreshable: (built: Catalog, options: RefreshOptions) => Layer.Layer<
+  Catalog | Refresh,
+  never,
+  Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
+>
+```
+
+Serves a catalog the host already built, and keeps one entry rebuildable.
+`layer` is this plus the initial registrations, and is what a host with no
+catalog of its own wants. Reach for this one when the host assembles the
+catalog itself (several sources, or a loader per source) and registers the
+result its own way: it adds the live `Catalog` and the `Refresh` beside it
+without registering anything twice.
 
 ### Executable.Registration
 

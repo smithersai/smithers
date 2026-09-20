@@ -1350,7 +1350,7 @@ export interface RefreshOptions extends Options {
  *
  * {@link layer} is this plus the initial registrations, and is what a host
  * that has no catalog of its own wants. Reach for this one when the host
- * assembles the catalog itself — several sources, or a loader per source —
+ * assembles the catalog itself (several sources, or a loader per source)
  * and registers the result its own way: this adds the live `Catalog` service
  * and the {@link Refresh} beside it without registering anything twice.
  *
