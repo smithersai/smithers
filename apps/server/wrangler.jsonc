@@ -72,14 +72,17 @@
 			// digest, the ordered answer, the command the user ran next), a ring
 			// of the newest 5000, read back at GET /api/admin/recommend/log for
 			// scoring (src/recommend.ts). Needs the AI_GATEWAY_API_KEY secret below.
-			{ "name": "RECOMMEND_LOG", "class_name": "RecommendLog" }
+			{ "name": "RECOMMEND_LOG", "class_name": "RecommendLog" },
+			// Account-scoped ciphertext and immutable provider pins. MODEL_VAULT_KEY is optional.
+			{ "name": "MODEL_VAULTS", "class_name": "AccountModelVault" }
 		]
 	},
 	"migrations": [
 		{ "tag": "v1", "new_sqlite_classes": ["TurnCancelRegistry"] },
 		{ "tag": "v2", "new_sqlite_classes": ["GatewaySessionRegistry"] },
 		{ "tag": "v3", "new_sqlite_classes": ["TurnRateLimiter", "ClientErrorLog"] },
-		{ "tag": "v4", "new_sqlite_classes": ["RecommendLog"] }
+		{ "tag": "v4", "new_sqlite_classes": ["RecommendLog"] },
+		{ "tag": "v5", "new_sqlite_classes": ["AccountModelVault"] }
 	],
 	"vars": {
 		// Wave 7 canary upstreams. identity lives on workers.dev until will
@@ -134,6 +137,8 @@
 		//                              Jev is the main model and there is no fallback: unset, or a Jev that refuses
 		//                              or misses its 1.5 s deadline, and both answer a typed refusal rather than
 		//                              asking an LLM instead. The client keeps its own rule-based pills.
+		//   MODEL_VAULT_KEY          (secret, OPTIONAL) base64 of 32 random bytes for AES-256-GCM account values.
+		//                              Unset/malformed = vault_unavailable; all deployment credentials still work.
 		//   SMITHERS_GITHUB_APP_ID   (secret, SET) the numeric id of the GitHub App smitherspreviewrelease
 		//                              (4163546, owned by the smithersai org). With the private key below,
 		//                              GET /api/public/repos authenticates its api.github.com stats reads as

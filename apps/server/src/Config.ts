@@ -40,6 +40,8 @@ export interface ServerEnvVars {
   readonly CEREBRAS_MODEL_LIBRARIAN?: string
   readonly CEREBRAS_MODEL_FLOWS?: string
   readonly AI_GATEWAY_API_KEY?: string
+  /** Optional: base64 of 32 random bytes. Unset disables only account credential enrollment. */
+  readonly MODEL_VAULT_KEY?: string
   readonly SMITHERS_GITHUB_APP_ID?: string
   readonly SMITHERS_GITHUB_APP_PRIVATE_KEY?: string
   readonly GITHUB_TOKEN?: string
@@ -77,6 +79,7 @@ export interface ServerConfigShape {
   readonly cerebrasModelFlows: string | undefined
   /** The Vercel AI Gateway key the composer pills and the turn route's front door spend on Jev. Unset, both refuse. */
   readonly aiGatewayApiKey: Redacted.Redacted<string> | undefined
+  readonly modelVaultKey: Redacted.Redacted<string> | undefined
   readonly githubAppId: string | undefined
   readonly githubAppPrivateKey: Redacted.Redacted<string> | undefined
   readonly githubToken: Redacted.Redacted<string> | undefined
@@ -133,6 +136,7 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   cerebrasModelLibrarian: text(env.CEREBRAS_MODEL_LIBRARIAN),
   cerebrasModelFlows: text(env.CEREBRAS_MODEL_FLOWS),
   aiGatewayApiKey: secret(env.AI_GATEWAY_API_KEY),
+  modelVaultKey: secret(env.MODEL_VAULT_KEY),
   githubAppId: text(env.SMITHERS_GITHUB_APP_ID),
   githubAppPrivateKey: secret(env.SMITHERS_GITHUB_APP_PRIVATE_KEY),
   githubToken: secret(env.GITHUB_TOKEN)

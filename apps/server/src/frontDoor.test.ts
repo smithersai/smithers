@@ -1,3 +1,4 @@
+import { modelVaultLayer } from "./modelVault"
 import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -175,6 +176,7 @@ const turn = async (
   const response = await Effect.runPromise(
     handleTurn(post(body)).pipe(
       Effect.provide(Layer.mergeAll(
+    modelVaultLayer(undefined),
         transport,
         testConfigLayer({ chatUrl: "https://upstream.test/chat", upstreamTimeoutMs: 5_000, ...GATEWAY_KEY, ...options.config }),
         turnCancelsLayer(memoryCancels()),

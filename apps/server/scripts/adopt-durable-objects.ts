@@ -74,6 +74,13 @@ export const compareDurableObjects = (
   for (const binding of declared) {
     const liveClass = liveByName.get(binding.binding)
     if (liveClass === undefined) {
+      // Authorized additive v5 cutover (DEPLOY.md). No existing class, rename
+      // or removal is exempted. This lets main deploy before the vault exists.
+      if (scriptName === WORKER_IDENTITY.name && binding.binding === "MODEL_VAULTS" && binding.className === "AccountModelVault" &&
+        WORKER_IDENTITY.migrations.some(migration => migration.tag === "v5" && migration.newSqliteClasses.includes(binding.className))) {
+        findings.push({ level: "INFO", check: "binding MODEL_VAULTS", detail: "Authorized v5 addition: creates AccountModelVault; existing namespaces are unchanged (DEPLOY.md)." })
+        continue
+      }
       findings.push({
         level: "FAIL",
         check: `binding ${binding.binding} exists on the live script`,

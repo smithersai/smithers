@@ -12,6 +12,13 @@ const live: ReadonlyArray<LiveBinding> = WORKER_IDENTITY.durableObjects.map((bin
 }))
 
 describe("compareDurableObjects", () => {
+  test("the authorized v5 vault addition is allowed before it exists live; existing storage still cannot disappear", () => {
+    const findings = compareDurableObjects(WORKER_IDENTITY.durableObjects, live.filter(binding => binding.name !== "MODEL_VAULTS"), "smithers-mvp-web")
+    expect(findings.some(f => f.level === "FAIL")).toBe(false)
+    expect(findings.find(f => f.check.includes("MODEL_VAULTS"))?.level).toBe("INFO")
+    const renamed = live.map(b => b.name === "MODEL_VAULTS" ? { ...b, class_name: "OtherVault" } : b)
+    expect(compareDurableObjects(WORKER_IDENTITY.durableObjects, renamed, "smithers-mvp-web").some(f => f.level === "FAIL")).toBe(true)
+  })
   test("the live script matching the declaration is all PASS", () => {
     const findings = compareDurableObjects(WORKER_IDENTITY.durableObjects, live, "smithers-mvp-web")
     expect(findings.map((f) => f.level)).toEqual(WORKER_IDENTITY.durableObjects.map(() => "PASS"))
@@ -44,6 +51,11 @@ describe("compareDurableObjects", () => {
 
 describe("compareVars", () => {
   const plain: ReadonlyArray<LiveBinding> = Object.entries(WORKER_IDENTITY.vars).map(([name, text]) => ({ type: "plain_text", name, text }))
+  test("the optional vault key is named and cannot block the first deployment", () => {
+    expect(WORKER_IDENTITY.secrets).not.toContain("MODEL_VAULT_KEY")
+    expect(WORKER_IDENTITY.optionalVars).toContain("MODEL_VAULT_KEY")
+    expect(compareVars(plain).filter(f => f.check.includes("MODEL_VAULT_KEY")).every(f => f.level !== "FAIL")).toBe(true)
+  })
 
   /*
    * wrangler uploads with `keep_bindings: ["secret_text"]`, so a live secret

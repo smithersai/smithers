@@ -541,13 +541,13 @@ describe("the model routes, the public catalog and the gated Test", () => {
   const SIGNED_IN = { cookie: "smithers_session=abc" }
   const codeOf = async (response: Response): Promise<string> => ((await response.json()) as { code: string }).code
 
-  test("enrollment is explicitly local-only, session gated, and never forwarded", async () => {
+  test("enrollment without the optional key is unavailable, session gated, and never forwarded", async () => {
     const { provider } = seams(session("alice", true))
     const env = gatedEnv()
     const response = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, {
       method: "POST", headers: SIGNED_IN, body: JSON.stringify({ value: "private-provider-fixture" })
     }), env)
-    expect(await response.json()).toEqual({ ok: false, failure: { code: "local_host_required" }, fault: "user" })
+    expect(await response.json()).toEqual({ ok: false, failure: { code: "vault_unavailable" }, fault: "infra" })
     const receipt = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_RECEIPT_PATH}?id=some-request`, { headers: SIGNED_IN }), env)
     expect(await receipt.json()).toEqual({ state: "unknown" })
     expect(provider).toHaveLength(0)

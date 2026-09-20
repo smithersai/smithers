@@ -46,6 +46,7 @@ import { Assets, BrowserEgress, DeploymentBindings, ExecutionContext, executionC
 import type { NativeExecutionContext, RequestServices, WorkerEnv } from "./Environment"
 import { discardBody, readJsonOrUndefined } from "./Http"
 import { GatewaySessionRegistry } from "./gateway"
+import { AccountModelVault, accountModelCredentials, handleModelCredential } from "./modelVault"
 import { handleAuthNavigation, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
 import {
   CLIENT_ERRORS_PATH,
@@ -102,7 +103,7 @@ import { handleRepositorySetup } from "./repositorySetup"
  */
 
 /* The five Durable Object classes wrangler binds, under their frozen names. */
-export { ClientErrorLog, GatewaySessionRegistry, RecommendLog, TurnCancelRegistry, TurnRateLimiter }
+export { AccountModelVault, ClientErrorLog, GatewaySessionRegistry, RecommendLog, TurnCancelRegistry, TurnRateLimiter }
 /* The route tables the host parity matrix and the identity test read. */
 export { PLATFORM_PROXY_RULES }
 export type { WorkerEnv }
@@ -398,20 +399,24 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       return yield* handleModelStream(request, gate)
     }
     // The Models surface (src/modelProbe.ts). Naming what this deployment
-    // holds spends nothing, so the catalog is public; a Test spends a
-    // deployment key, so it sits behind the session and spends one turn of
-    // the login's budget first.
+    // holds spends nothing, so the catalog is public; a valid session adds only
+    // that account's names and pins. Account data and every mutation require
+    // identity; a Test or an Ask spends a key, so it sits behind the session and
+    // spends one turn of the login's budget first.
     if (url.pathname === MODEL_CREDENTIAL_PATH || url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH) {
       if (request.method !== (url.pathname === MODEL_CREDENTIAL_PATH ? "POST" : "GET")) return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate
-      return json(200, url.pathname === MODEL_CREDENTIAL_PATH
-        ? { ok: false, failure: { code: "local_host_required" }, fault: "user" }
-        : { state: "unknown" })
+      if (!gate) return refuse("sign_in_required", "Sign in to use this credential.")
+      return yield* handleModelCredential(request, gate.login, url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH ? url.searchParams.get("id") ?? "" : undefined)
     }
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
-      return yield* handleModelCatalog()
+      const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
+      const login = validation?.status === "valid" && validation.identity.allowlisted ? validation.identity.login : undefined
+      const account = login === undefined ? undefined : yield* accountModelCredentials(request, login)
+      if (account && (yield* account.current)) return yield* handleModelCatalog(undefined, false)
+      return yield* handleModelCatalog(account, login !== undefined)
     }
     if (url.pathname === MODEL_TEST_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
@@ -421,7 +426,8 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
         const refused = yield* loginBudget(gate.login)
         if (refused !== undefined) return refused
       }
-      return yield* handleModelTest(request)
+      const account = gate === undefined ? undefined : yield* accountModelCredentials(request, gate.login)
+      return yield* handleModelTest(request, account)
     }
     if (url.pathname.startsWith("/api/repository-setup/")) return yield* handleRepositorySetup(request)
     if (url.pathname === WORKFLOW_PROVISION_PATH) {

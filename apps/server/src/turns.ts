@@ -17,6 +17,7 @@ import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { runDurable } from "./Boundary"
 import { handleCloudRoleTurn, isCloudRoleTurn, turnHints } from "./cloudRoleTurn"
 import { handleConfiguredModelTurn } from "./configuredModel"
+import type { ModelVault } from "./modelVault"
 import { handleFrontDoor } from "./frontDoor"
 import type { RecommendLogStore } from "./recommend"
 import type { TurnRequest } from "./cloudRoleTurn"
@@ -689,7 +690,7 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
     } as const
   })
 
-export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext | RecommendLogStore
+export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext | RecommendLogStore | ModelVault
 
 /**
  * One turn: registered under its runId, forwarded to the chat upstream with a
@@ -714,7 +715,7 @@ const handleTransientTurn = (
       if (session === undefined && (yield* ServerConfig).identityUpstreamUrl !== undefined) {
         return refuse("sign_in_required", "Sign in to use a configured model.")
       }
-      return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS)
+      return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS, session ? { request, login: session.login } : undefined)
     }
     // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.
     if (isCloudRoleTurn(body)) return yield* handleCloudRoleTurn(body, ISOLATION_HEADERS)

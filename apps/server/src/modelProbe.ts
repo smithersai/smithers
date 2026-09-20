@@ -6,7 +6,6 @@ import {
   decodeModelAnswers,
   failedModelTest,
   MODEL_CALL_TEXT_MAX,
-  MODEL_CREDENTIALS,
   MODEL_TEST_BODY_MAX_BYTES,
   MODEL_TEST_DEADLINE_MS,
   modelCallDefault,
@@ -22,7 +21,6 @@ import type {
   ModelCallInput,
   ModelCallOutput,
   ModelCatalog,
-  ModelCredentialListing,
   ModelPlan,
   ModelTestFailure,
   ModelTestResult
@@ -37,6 +35,10 @@ import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, JEV_EVALUATE_URL, jevEvaluate } from "./jev"
 import { bodyRefusal, json, refuse } from "./Responses"
+import { accountModelCall } from "./accountModelCall"
+import { deploymentModelSecret, isDeploymentCredential as isWorkerModelCredential, workerModelCredentials } from "./modelVault"
+import type { AccountCredentials } from "./modelVault"
+export { workerModelCredentials } from "./modelVault"
 
 /*
  * The Worker's half of the Models surface: GET /api/model/catalog says which
@@ -49,13 +51,13 @@ import { bodyRefusal, json, refuse } from "./Responses"
  * any address the named credential is not pinned to before a value is read,
  * so a record filed by a prompt-injected agent cannot send the deployment's
  * key anywhere but its provider. This host resolves exactly the two model
- * keys `ServerConfig` holds and reads nothing else by name: every other name
- * is `credential_unknown` here, whatever the environment contains.
+ * keys `ServerConfig` holds, plus the authenticated account vault. Undeclared
+ * names are unknown; an account failure never selects a deployment key.
  *
  * Those two keys need one wire each: a non-streaming chat completion, built
  * like `cerebrasChat` in recommend.ts, and the evaluation `jev.ts` already
- * speaks. The other protocols are the local host's; here they answer
- * `invalid` naming the protocol. The request is the fixed Test unless the
+ * speaks. Account credentials use `accountModelCall` for all four protocol
+ * wires, on the account's immutable pin. The request is the fixed Test unless the
  * caller composed one (the model-call card). One Test is one request under
  * one deadline, never retried and never redirected, and no provider text but
  * the generated words, with the key cut out, is read: a failure is a code
@@ -75,27 +77,6 @@ const ANSWER_MAX_BYTES = 64 * 1024
  * Cerebras model id, and gpt-oss-120b accepts only low, medium and high.
  */
 const MODEL_TEST_REASONING_EFFORT = "low" as const
-
-/** The model keys this deployment holds, by credential name. Closed: a name absent here is never read. */
-const WORKER_MODEL_KEYS = {
-  CEREBRAS_API_KEY: (config: ServerConfigShape) => config.cerebrasApiKey,
-  AI_GATEWAY_API_KEY: (config: ServerConfigShape) => config.aiGatewayApiKey
-} as const
-
-type WorkerModelCredentialName = keyof typeof WORKER_MODEL_KEYS
-
-const WORKER_MODEL_CREDENTIAL_NAMES = Object.keys(WORKER_MODEL_KEYS) as ReadonlyArray<WorkerModelCredentialName>
-
-const isWorkerModelCredential = (name: string): name is WorkerModelCredentialName =>
-  (WORKER_MODEL_CREDENTIAL_NAMES as ReadonlyArray<string>).includes(name)
-
-/** This host's credential table: the two names, whether each is set, and the origins the contract pins it to. */
-export const workerModelCredentials = (config: ServerConfigShape): ReadonlyArray<ModelCredentialListing> =>
-  WORKER_MODEL_CREDENTIAL_NAMES.map((name) => ({
-    name,
-    present: WORKER_MODEL_KEYS[name](config) !== undefined,
-    origins: [...(MODEL_CREDENTIALS.find((row) => row.name === name)?.origins ?? [])]
-  }))
 
 /** A record id for a provider's model id, or undefined when the id does not fit one. */
 const builtinRow = (prefix: string, model: Omit<ConfiguredModel, "id" | "builtin">): ConfiguredModel | undefined => {
@@ -127,17 +108,19 @@ export const workerBuiltinModels = (config: ServerConfigShape): ReadonlyArray<Co
   return servableModels([...listed.values()], workerModelCredentials(config))
 }
 
-/** GET /api/model/catalog. Public: naming what this host holds spends nothing. Names and presence only, never a value. */
-export const handleModelCatalog = (): Effect.Effect<Response, never, ServerConfig> =>
+/** Public deployment metadata plus the optional validated account listing. Never a value. */
+export const handleModelCatalog = (account?: AccountCredentials, signedIn = true): Effect.Effect<Response, never, ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
     const catalog: ModelCatalog = {
       models: [...workerBuiltinModels(config)],
-      credentials: [...workerModelCredentials(config)],
+      credentials: [...workerModelCredentials(config), ...(account?.listings ?? [])],
       seats: [...modelSeatsOf("cloud")],
-      enrollment: { available: false, reason: "local_host_required" }
+      enrollment: !signedIn ? { available: false, reason: "sign_in_required" } : account?.available ? { available: true } : { available: false, reason: "vault_unavailable" }
     }
-    return json(200, catalog)
+    const response = json(200, catalog)
+    response.headers.set("cache-control", "no-store")
+    return response
   })
 
 type Outcome = { readonly output: ModelCallOutput } | { readonly failure: ModelTestFailure }
@@ -236,7 +219,7 @@ const probe = (model: ConfiguredModel, input: ModelCallInput | undefined): Effec
     // This host's chat wire is Cerebras's. The gateway key buys evaluations only, so it is never read for a completion.
     if (plan.protocol === "openai-chat" && plan.credential !== "CEREBRAS_API_KEY") return failed({ code: "model_not_allowed" })
     // The planner admitted the name from this host's own table, and found it set.
-    const secret = isWorkerModelCredential(plan.credential) ? WORKER_MODEL_KEYS[plan.credential](config) : undefined
+    const secret = deploymentModelSecret(config, plan.credential)
     if (secret === undefined) return failed({ code: "credential_missing", credential: plan.credential })
     switch (request.kind) {
       case "decision":
@@ -252,7 +235,7 @@ const probe = (model: ConfiguredModel, input: ModelCallInput | undefined): Effec
  * the login's budget. A Test that ran answers 200 whatever it found; only a
  * body this route will not run is a refusal.
  */
-export const handleModelTest = (request: Request): Effect.Effect<Response, never, Transport | ServerConfig> =>
+export const handleModelTest = (request: Request, account?: AccountCredentials): Effect.Effect<Response, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const body = yield* readBoundedJson(request, MODEL_TEST_BODY_MAX_BYTES).pipe(
       Effect.catch((failure) => Effect.succeed(bodyRefusal(failure)))
@@ -262,10 +245,13 @@ export const handleModelTest = (request: Request): Effect.Effect<Response, never
     if (!parsed.success) return refuse("request_invalid", "Body must be { model }.")
     const started = yield* Clock.currentTimeMillis
     const config = yield* ServerConfig
-    const outcome = yield* probe(parsed.data.model, parsed.data.input)
+    const outcome = yield* (!isWorkerModelCredential(parsed.data.model.credential) && account
+      ? accountModelCall(bindingOf(parsed.data.model), parsed.data.input, account)
+      : probe(parsed.data.model, parsed.data.input))
+    if (outcome instanceof Response) return outcome
     const latencyMs = Math.max(0, Math.round((yield* Clock.currentTimeMillis) - started))
     // The sample is cut with this deployment's key for the record's name; the words were already cut when read.
-    const secret = isWorkerModelCredential(parsed.data.model.credential) ? WORKER_MODEL_KEYS[parsed.data.model.credential](config) : undefined
+    const secret = deploymentModelSecret(config, parsed.data.model.credential)
     const result: ModelTestResult = "output" in outcome
       ? { ok: true, latencyMs, sample: modelCallSample(outcome.output, secret === undefined ? "" : Redacted.value(secret)), output: outcome.output }
       : failedModelTest(outcome.failure, latencyMs, "cloud")

@@ -106,6 +106,7 @@ handler declares what it needs in its `R`:
 | `TerminalSockets` | `src/terminalRelay.ts` | `terminalSocketsLayer` | workerd WebSocketPair and upgrade response; relay listeners live until either peer closes |
 | `Assets`, `BrowserEgress` | `src/Environment.ts` | `assetsLayer`, `browserEgressLayer` | the `ASSETS` and `BROWSER_EGRESS` fetchers |
 | `TurnCancels`, `GatewaySessions`, `TurnLimits`, `ClientErrors`, `RecommendLogStore` | their modules | `<x>Layer(namespace \| undefined)` | one Durable Object namespace each |
+| `ModelVault` | `src/modelVault.ts` | `modelVaultLayer(namespace \| undefined)` | login-keyed encrypted provider records and safe receipts; absent disables enrollment only |
 | `EdgeCache`, `GithubAppAuth` | `src/githubApp.ts` | `edgeCacheLayer(cache)`, `githubAppAuthLayer` | the Cache API and the single-flight App mint |
 | `DeploymentBindings` | `src/Environment.ts` | `deploymentBindingsLayer(env)` | which optional bindings this deployment has, so admin reads answer honestly |
 | `ExecutionContext` | `src/Environment.ts` | `Effect.provideService(ExecutionContext, executionContextFrom(ctx))` | this request's `waitUntil`; provided by the adapter, never by `layersFromEnv` |
@@ -121,6 +122,15 @@ env bags never share a credential. Tests provide what they need directly:
 `Effect.runPromise(effect.pipe(Effect.provide(testConfigLayer({...}))))`,
 with `transportLayer(fakeFetch)` instead of patching `globalThis.fetch` and
 `memoryStorage()` for a Durable Object body.
+
+`AccountModelVault` constructs one semaphore in its native class, shared by every
+request. The full document read/modify/write holds that permit; the atomic write
+commits encrypted value, immutable pin and receipt together. The object receives
+only ciphertext. WebCrypto encryption/decryption happens at the Worker through
+`Effect.tryPromise`, and vault failures discard platform causes before the public
+boundary can log them. `MODEL_VAULT_KEY` is optional and has no effect on the
+deployment's two existing credentials. Test, Ask and bound Explainer share
+`accountModelCall`; Front door and Recommend retain their deployment allowlist.
 
 Failures are typed in `src/Failures.ts` (`UpstreamTimeout`,
 `UpstreamUnreachable`, `BodyTooLarge`, `BodyNotJson`, `StorageFailure`,

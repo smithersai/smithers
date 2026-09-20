@@ -41,13 +41,14 @@ describe("the Worker identity stays frozen", () => {
     expect(WORKER_IDENTITY.workersDev).toBe(false)
   })
 
-  test("the five Durable Object bindings and their classes, both names frozen", () => {
+  test("the six Durable Object bindings and their classes, both names frozen", () => {
     expect(WORKER_IDENTITY.durableObjects).toEqual([
       { binding: "TURN_CANCELS", className: "TurnCancelRegistry" },
       { binding: "GATEWAY_SESSIONS", className: "GatewaySessionRegistry" },
       { binding: "TURN_LIMITS", className: "TurnRateLimiter" },
       { binding: "CLIENT_ERRORS", className: "ClientErrorLog" },
-      { binding: "RECOMMEND_LOG", className: "RecommendLog" }
+      { binding: "RECOMMEND_LOG", className: "RecommendLog" },
+      { binding: "MODEL_VAULTS", className: "AccountModelVault" }
     ])
   })
 
@@ -56,7 +57,8 @@ describe("the Worker identity stays frozen", () => {
       { tag: "v1", newSqliteClasses: ["TurnCancelRegistry"] },
       { tag: "v2", newSqliteClasses: ["GatewaySessionRegistry"] },
       { tag: "v3", newSqliteClasses: ["TurnRateLimiter", "ClientErrorLog"] },
-      { tag: "v4", newSqliteClasses: ["RecommendLog"] }
+      { tag: "v4", newSqliteClasses: ["RecommendLog"] },
+      { tag: "v5", newSqliteClasses: ["AccountModelVault"] }
     ])
     const migrated = WORKER_IDENTITY.migrations.flatMap((migration) => migration.newSqliteClasses)
     expect(new Set(migrated)).toEqual(new Set(WORKER_IDENTITY.durableObjects.map((binding) => binding.className)))

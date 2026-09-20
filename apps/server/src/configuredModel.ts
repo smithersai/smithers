@@ -19,19 +19,19 @@ import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, JEV_EVALUATE_URL } from "./jev"
 import { workerModelCredentials } from "./modelProbe"
 import { CEREBRAS_CHAT_COMPLETIONS_URL, cerebrasChat } from "./recommend"
+import { accountModelCall } from "./accountModelCall"
+import { accountModelCredentials, isDeploymentCredential } from "./modelVault"
+import type { ModelVault } from "./modelVault"
 
 /*
  * The Worker's seat consumers (@smthrs/rpc/ConfiguredModel MODEL_SEATS): what
  * a request's model binding becomes here before anything is spent on it.
  *
  * A binding names a credential and never carries one. Every binding goes
- * through the shared planner against THIS host's two-name credential table
- * (modelProbe.ts), so an address the named credential is not pinned to is
- * refused before a key is read. The Worker then serves a planned binding only
- * through the two clients it already has, each of which holds its own URL and
- * its own key: `cerebrasChat` for the `explainer` seat, `jevEvaluate` for the
- * `front-door` and `recommend` seats. A plan neither client's URL answers is
- * refused; it is never served somewhere else, and never on a default.
+ * through the shared planner against deployment metadata or the validated
+ * account's vault. Explainer uses the same account resolver as Test and Ask;
+ * deployment turns keep `cerebrasChat`. Front door and Recommend plan only
+ * against the deployment table and Jev allowlist. No refusal selects a default.
  */
 
 /** A binding this host will not serve, as the refusal names it: the code and its field or credential NAME. */
@@ -108,8 +108,9 @@ const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, s
  */
 export const handleConfiguredModelTurn = (
   body: TurnRequest & { readonly model: ModelBinding },
-  headers: Record<string, string>
-): Effect.Effect<Response, never, Transport | ServerConfig> =>
+  headers: Record<string, string>,
+  accountRequest?: { readonly request: Request; readonly login: string }
+): Effect.Effect<Response, never, Transport | ServerConfig | ModelVault> =>
   Effect.gen(function*() {
     if (body.tools !== undefined && body.tools.length > 0) {
       return refusal("tools_not_supported", "A configured model answers one sealed turn and runs no tools; send this turn without tools.", headers)
@@ -119,6 +120,14 @@ export const handleConfiguredModelTurn = (
       return refusal("tools_not_supported", "A configured model runs no tools, so it cannot continue a tool call; send plain messages only.", headers)
     }
     const config = yield* ServerConfig
+    if (!isDeploymentCredential(body.model.credential) && accountRequest) {
+      const account = yield* accountModelCredentials(accountRequest.request, accountRequest.login)
+      const answer = yield* accountModelCall(body.model, { kind: "generation", system: "", prompt: "", maxTokens: CLOUD_ROLE_MAX_TOKENS, temperature: CLOUD_ROLE_TEMPERATURE }, account, messages)
+      if (answer instanceof Response) return answer
+      if ("failure" in answer) return modelRefusal(answer.failure, headers)
+      if (answer.output.kind !== "generation") return modelRefusal({ code: "invalid", field: "protocol" }, headers)
+      return ndjson([{ runId: body.runId, type: "delta", kind: "text", text: answer.output.text }, { runId: body.runId, type: "done", reason: "stop" }], headers)
+    }
     const planned = planModelBinding(body.model, workerModelCredentials(config), { kind: "generation" })
     if (!planned.ok) return modelRefusal(planned.failure, headers)
     const plan = planned.plan

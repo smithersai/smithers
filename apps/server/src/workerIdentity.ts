@@ -57,7 +57,7 @@ export const WORKER_IDENTITY = {
     runWorkerFirst: ["/*"] as ReadonlyArray<string>
   },
   /**
-   * The five Durable Objects, binding name and class name both frozen. A
+   * The six Durable Objects, binding name and class name both frozen. A
    * declared binding the live script lacks deploys as a fresh, empty class; a
    * live binding this list lacks is deleted with its storage; a class renamed
    * under the same binding is a migration. Every one is data loss, so
@@ -69,7 +69,8 @@ export const WORKER_IDENTITY = {
     { binding: "GATEWAY_SESSIONS", className: "GatewaySessionRegistry" },
     { binding: "TURN_LIMITS", className: "TurnRateLimiter" },
     { binding: "CLIENT_ERRORS", className: "ClientErrorLog" },
-    { binding: "RECOMMEND_LOG", className: "RecommendLog" }
+    { binding: "RECOMMEND_LOG", className: "RecommendLog" },
+    { binding: "MODEL_VAULTS", className: "AccountModelVault" }
   ] as ReadonlyArray<DurableObjectIdentity>,
   /**
    * The migration history wrangler.jsonc carries. wrangler sends only the
@@ -81,7 +82,8 @@ export const WORKER_IDENTITY = {
     { tag: "v1", newSqliteClasses: ["TurnCancelRegistry"] },
     { tag: "v2", newSqliteClasses: ["GatewaySessionRegistry"] },
     { tag: "v3", newSqliteClasses: ["TurnRateLimiter", "ClientErrorLog"] },
-    { tag: "v4", newSqliteClasses: ["RecommendLog"] }
+    { tag: "v4", newSqliteClasses: ["RecommendLog"] },
+    { tag: "v5", newSqliteClasses: ["AccountModelVault"] }
   ] as ReadonlyArray<MigrationIdentity>,
   /** The plain vars, bound as `plain_text` (wrangler.jsonc `vars`). */
   vars: {
@@ -97,8 +99,9 @@ export const WORKER_IDENTITY = {
    * after that: wrangler uploads with `keep_bindings: ["secret_text"]`, so a
    * deploying shell never needs to carry a value, and the preflight only
    * reports each name as live or not. All are optional to the code (an unset
-   * one makes its route answer an honest 501 or 503); none is optional to a
-   * working canary. `AI_GATEWAY_API_KEY` joined the list when Jev became the
+   * one makes its route answer an honest refusal). MODEL_VAULT_KEY is OPTIONAL
+   * even on production: absent disables account enrollment alone with
+   * vault_unavailable, never deployment or identity. `AI_GATEWAY_API_KEY` joined the list when Jev became the
    * only model behind the composer pills and the turn route's front door
    * (src/recommend.ts, src/frontDoor.ts): without it both refuse, because
    * neither has an LLM to fall back to.
@@ -127,6 +130,8 @@ export const WORKER_IDENTITY = {
    * these names would be replaced by the `vars` above.
    */
   optionalVars: [
+    // Optional secret, base64 of 32 random bytes; never a required preflight binding.
+    "MODEL_VAULT_KEY",
     "SMITHERS_BUILD_SHA",
     "TUTORIAL_SERVICE_URL",
     "UPSTREAM_TIMEOUT_MS",

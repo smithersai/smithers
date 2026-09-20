@@ -20,14 +20,14 @@ deploying shell never carries a value ("Secrets" below).
 ## Frozen identity — read this before touching `src/workerIdentity.ts`
 
 The Worker's `name` (`smithers-mvp-web`), its custom domain
-(`canary.smithers.sh`), its apex route, and its five Durable Objects are
+(`canary.smithers.sh`), its apex route, and its six Durable Objects are
 deliberately frozen in `src/workerIdentity.ts` (`WORKER_IDENTITY`), and
 `src/workerIdentity.test.ts` pins every field:
 
-- Five Durable Objects (`TURN_CANCELS`, `GATEWAY_SESSIONS`, `TURN_LIMITS`,
-  `CLIENT_ERRORS`, `RECOMMEND_LOG`; classes `TurnCancelRegistry`,
+- Six Durable Objects (`TURN_CANCELS`, `GATEWAY_SESSIONS`, `TURN_LIMITS`,
+  `CLIENT_ERRORS`, `RECOMMEND_LOG`, `MODEL_VAULTS`; classes `TurnCancelRegistry`,
   `GatewaySessionRegistry`, `TurnRateLimiter`, `ClientErrorLog`,
-  `RecommendLog`) hold state keyed to this Worker's identity. Renaming the
+  `RecommendLog`, `AccountModelVault`) hold state keyed to this Worker's identity. Renaming the
   Worker, or deploying under a different name, creates a **fresh** Worker
   with **fresh, empty** Durable Object storage: the existing state is
   orphaned, not migrated. Renaming a class or a binding is a migration, and
@@ -81,6 +81,20 @@ or roll the Worker back to the prior version id from the last receipt (see
 restores the previous build without a rebuild.
 
 ### Cutover log
+
+- Account provider vault (2026-09-20): append `MODEL_VAULTS=AccountModelVault`
+  and migration `v5`; preserve every existing namespace and migration.
+  Preflight permits only this named additive cutover when missing live, and
+  still rejects renames and deletions. OPTIONAL secret `MODEL_VAULT_KEY` is
+  base64 of 32 random bytes for AES-256-GCM. Without it (or if malformed),
+  enrollment reports `vault_unavailable`; deployment models and identity work
+  unchanged. Install once, interactively from `apps/server`:
+  `pnpm exec wrangler secret put MODEL_VAULT_KEY --name smithers-mvp-web`.
+  Keep the encryption key backed up; provider rotation uses the product's
+  Rotate operation, not replacement of this key. Encryption-key replacement
+  requires a separate ciphertext migration; a wrong key fails closed.
+  Rollback: disable the optional secret or roll back the Worker version;
+  retain the namespace and `v5`, never delete stored pins to roll back code.
 
 - Worker routing and headers (2026-09-14, pending release-owner deployment):
   `run_worker_first` now claims `/*` so any GitHub repository slug, case
@@ -225,6 +239,9 @@ bun x wrangler secret list                         # names only
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
 way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`,
 `CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`.
+`MODEL_VAULT_KEY` is also an optional secret (base64 of 32 random bytes), not
+a deployment requirement: unset disables account enrollment alone. See the v5
+cutover entry for the one-time installation command and encryption-key backup.
 `SMITHERS_BUILD_SHA` is
 not a binding: `scripts/deploy.ts` bakes it into the site build as
 `/__build.json`. The frozen vars (`IDENTITY_UPSTREAM_URL`,

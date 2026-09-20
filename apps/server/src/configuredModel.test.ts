@@ -1,3 +1,4 @@
+import { modelVaultLayer } from "./modelVault"
 import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -90,6 +91,7 @@ const layers = (
   config: Partial<ServerConfigShape>
 ) =>
   Layer.mergeAll(
+    modelVaultLayer(undefined),
     transportLayer(async (input, init) => {
       const request = new Request(input as string, init)
       calls.push(request)
@@ -206,6 +208,7 @@ describe("a sealed turn that binds a model", () => {
     const response = await Effect.runPromise(
       handleTurn(post(body), SESSION).pipe(
         Effect.provide(Layer.mergeAll(
+    modelVaultLayer(undefined),
           transportLayer(async (input, init) => {
             calls.push(new Request(input as string, init))
             return new Response(`${JSON.stringify({ type: "done", reason: "stop" })}\n`, {
