@@ -140,13 +140,13 @@ describe("WithMemory", () => {
       output: Schema.Unknown,
       model: "smart",
       flows: [child]
-    }).pipe(Flow.within(Placement.local()), Flow.annotate(Annotations.Lane, { id: "lane-1" }))
+    }).pipe(Flow.within(Placement.local()), Flow.annotate(Annotations.Priority, 7))
 
     const scoped = WithMemory.withMemory(parent, policy)
     const scopedChild = WithMemory.children(scoped)[0] as Flow.Any
 
     expect(annotation(scoped, Annotations.Placement)).toEqual(Placement.local())
-    expect(annotation(scoped, Annotations.Lane)).toEqual({ id: "lane-1" })
+    expect(annotation(scoped, Annotations.Priority)).toEqual(7)
     expect(annotation(scopedChild, Annotations.Placement)).toEqual(Placement.local())
     expect(WithMemory.policyOf(scoped)).toEqual(policy)
     expect(WithMemory.policyOf(scopedChild)).toEqual(policy)

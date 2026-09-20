@@ -1,11 +1,11 @@
 ---
 title: "Annotate a node"
-description: "Attach placement, scheduling priority, a worktree lane, or an effect declaration to a node, and read the resolved values back from the built graph."
+description: "Attach placement, scheduling priority, or an effect declaration to a node, and read the resolved values back from the built graph."
 sidebar:
   order: 6
 ---
 
-Annotations are metadata a host or a decorator reads. Four of them have named
+Annotations are metadata a host or a decorator reads. Three of them have named
 combinators, they are inherited lexically, and a child's value overrides its
 parent's. Every combinator returns a fresh node; the original is unchanged.
 
@@ -14,8 +14,7 @@ import { Node, Placement } from "@smthrs/core"
 
 const step = Node.dynamic({ model: "smart", prompt: "Build the report." }).pipe(
   Node.within(Placement.remote({ target: "builder" })),
-  Node.priority(10),
-  Node.lane({ id: "lane:docs", landing: "merge-queue" })
+  Node.priority(10)
 )
 ```
 
@@ -72,12 +71,11 @@ A value that is not a safe integer raises `NodeBuildError` at declaration time:
 flows/core/NodeBuildError: Node.priority expects a safe integer, received 1.5
 ```
 
-## Name a worktree lane
+## Read a worktree lane
 
-`Node.lane` takes an `id` and an optional `landing` of `"merge-queue"` or
-`"manual"`. A node that declares no lane but ends up in a `lane` write conflict
-gets an implicit lane derived from its node id, such as `lane:root.all.a`, so
-explicit and derived lanes read the same way from the graph.
+A node never declares a lane. Two writers whose effect declarations conflict
+under `onConflict: "lane"` each get a lane derived from their node id, such as
+`lane:root.all.a`, and the graph reports it on `GraphNode.lane`.
 
 Lanes are plan-time vocabulary. No runtime in this release executes one. Treat
 a lane as a declaration a future scheduler may honor.
