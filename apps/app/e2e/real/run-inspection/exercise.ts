@@ -250,6 +250,12 @@ export const inspectKeyboard = async (page: Page, subject: Awaited<ReturnType<ty
         .toEqual(whole.bands.map(band => ({ ...band, reached: String(band.seq <= seq), current: band.seq === current ? "location" : null })))
     }
     await check()
+    // The card's durable write is asynchronous and unobservable from here, and a
+    // reload issued in the same tick cancels it: three stops in one production run
+    // survived and the fourth did not. This settles the write, and the reload below
+    // still has to find the cursor for the stop to count as persisted.
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await page.waitForTimeout(1_000)
     await page.reload({ waitUntil: "domcontentloaded" })
     await check()
     steps.push({ action, seq, selected, current, persisted: true })
