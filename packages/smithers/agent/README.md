@@ -146,11 +146,9 @@ fail composition rather than dispatching one descriptor to another
 implementation.
 
 - `StandardFlows` — `filesystem`, `shell`, `memory`, `clock` (a durable wait on
-  the engine's `DurableClock`), `approval` (a narrow injected `Asker` port,
+  the engine's `DurableClock`), and `approval` (a narrow injected `Asker` port,
   because a host with nobody to ask should refuse honestly rather than fake an
-  answer), and `classify` (the cell's doors to Jev over the `Evaluator`
-  service: the ad-hoc `classify` flow plus one `classify/<id>` flow per curated
-  classifier).
+  answer).
 - `ChildFlows` — subagents. An attached child needs nothing here: a dynamic or
   markdown flow called with `ctx.call` already runs inside its own durable
   boundary. Detached lifecycle — `agent/spawn`, `agent/send`, `agent/await` — is

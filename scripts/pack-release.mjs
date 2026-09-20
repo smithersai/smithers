@@ -73,7 +73,6 @@ export const publishedPackages = [
   "@smthrs/model",
   "@smthrs/notifications",
   "@smthrs/observability",
-  "@smthrs/opencode",
   "@smthrs/patterns",
   "@smthrs/plan",
   "@smthrs/plan-store",

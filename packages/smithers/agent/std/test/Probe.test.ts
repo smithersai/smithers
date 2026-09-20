@@ -11,7 +11,6 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Classifiers from "../src/Classifiers.ts"
 import * as Probe from "../src/Probe.ts"
 
 /** An evaluator that answers one attribution, with the confidence it is given. */
@@ -205,21 +204,15 @@ describe("Probe.posix", () => {
 
 describe("the probe/attribution classifier", () => {
   it("offers the tree beside every reason, and asks whether tests ran", () => {
-    expect(Classifiers.probeAttribution.id).toBe("probe/attribution")
-    expect(Object.keys(Classifiers.probeAttribution.questions)).toEqual(["attribution", "executed"])
-    expect(Object.keys(Classifiers.probeAttribution.questions.attribution.criteria)).toEqual([
+    expect(Probe.probeAttribution.id).toBe("probe/attribution")
+    expect(Object.keys(Probe.probeAttribution.questions)).toEqual(["attribution", "executed"])
+    expect(Object.keys(Probe.probeAttribution.questions.attribution.criteria)).toEqual([
       "tree",
       ...Probe.Reason.literals
     ])
-    for (const question of Object.values(Classifiers.probeAttribution.questions)) {
+    for (const question of Object.values(Probe.probeAttribution.questions)) {
       expect(question.instructions).toMatch(/^[A-Z].*\?$/)
       expect(question.instructions).not.toContain(" and ")
     }
-  })
-
-  it("stays out of the catalog a host binds", () => {
-    // The `test` flow asks it. A door for the model to ask the same thing
-    // would be a door onto a judgment the flow has already made.
-    expect(Classifiers.all.map((classifier) => classifier.id)).not.toContain("probe/attribution")
   })
 })

@@ -193,7 +193,7 @@ export const legacyDatabases = (
 const buildDefinitionFiles = new Set(["WORKSPACE.ts", "FACTORY.ts", "factory.json", "home.json", "target-index.json"])
 
 /**
- * What `smithers opencode` keeps under `.smithers`: its database, the
+ * What a directory-serving host keeps under `.smithers`: its database, the
  * sidecars an open database has, and the record naming the server that holds
  * the directory. All of it is a current server's state, not a 0.x run store,
  * so none of it makes the directory legacy state. A server that was killed
@@ -234,7 +234,7 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
  * every command forever.
  *
  * A `.smithers` directory containing only current build definitions, only
- * what `smithers opencode` keeps there, or both, is also excluded. Unknown files, subdirectories and unreadable metadata remain
+ * what a directory-serving host keeps there, or both, is also excluded. Unknown files, subdirectories and unreadable metadata remain
  * legacy markers.
  *
  * @category getters

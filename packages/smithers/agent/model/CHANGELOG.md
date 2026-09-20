@@ -14,9 +14,10 @@
 - `Classifier.fromEvaluatorError`: the conversion from an evaluator failure to
   a classifier failure, which `@smthrs/std`'s `classify` flow used to copy.
 
-- Added `Classifier` and `Evaluator`, the typed-question API over Jev described in
-  section 4 of the repository's Jev harness design doc (docs/jev-harness/design.html
-  at the repository root). `Classifier.make` declares an id, a
+- Added `Classifier` and `Evaluator`, the typed-question API over Jev. The
+  design doc they were specified against was retired with the Jev harness
+  ([#1654](https://github.com/smithersai/smithers/issues/1654)); these two
+  modules stayed. `Classifier.make` declares an id, a
   state schema and a map of `boolean`, `choice` and `score` questions, and
   infers the answer types: a choice's options become a literal union, a score's
   rungs its labels. `evaluate` sends one state and decodes the raw answers

@@ -36,8 +36,6 @@
     "./ApplyPatch": "./src/ApplyPatch.ts",
     "./Bash": "./src/Bash.ts",
     "./Checkpoints": "./src/Checkpoints.ts",
-    "./Classifiers": "./src/Classifiers.ts",
-    "./Classify": "./src/Classify.ts",
     "./Container": "./src/Container.ts",
     "./Edit": "./src/Edit.ts",
     "./ExaWebSearch": "./src/ExaWebSearch.ts",
@@ -126,26 +124,6 @@
         "require": {
           "types": "./dist/cjs/Checkpoints.d.ts",
           "default": "./dist/cjs/Checkpoints.js"
-        }
-      },
-      "./Classifiers": {
-        "import": {
-          "types": "./dist/esm/Classifiers.d.ts",
-          "default": "./dist/esm/Classifiers.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Classifiers.d.ts",
-          "default": "./dist/cjs/Classifiers.js"
-        }
-      },
-      "./Classify": {
-        "import": {
-          "types": "./dist/esm/Classify.d.ts",
-          "default": "./dist/esm/Classify.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Classify.d.ts",
-          "default": "./dist/cjs/Classify.js"
         }
       },
       "./Container": {

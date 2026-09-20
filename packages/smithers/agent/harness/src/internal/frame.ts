@@ -600,7 +600,7 @@ const lastCheck = (calls: ReadonlyArray<ObservedCall>): CompletionClaim.Check | 
  * run died with the fix on disk. Asked with the list, the same claim reads
  * 0.40; asked with an empty one, 0.93.
  *
- * The cause is the host, not the ledger. `smithers opencode` serves a
+ * The cause is the host, not the ledger. A host that serves a
  * directory and keeps the run's own journal at `<directory>/.smithers`, which
  * `WorkspaceObservation.defaultPrune` does not prune, so the digest moves on
  * every frame with no call declaring a write. Every frame therefore reads as

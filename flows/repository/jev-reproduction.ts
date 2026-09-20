@@ -12,7 +12,7 @@ import type { Observation, Reproduction, ReproductionReview, Work } from "./jobs
  * How sure the verdict must be before it is the review's verdict.
  *
  * TypeSafe reports Jev agreeing with a frontier model on about 76% of
- * judgments (`docs/jev-harness/research.html`), so an ordinary answer is a
+ * judgments on its best-reported task, a ceiling and not an average, since its other published tasks run 61.7 to 71.6 (https://github.com/smithersai/smithers/issues/1654), so an ordinary answer is a
  * hint and not a verdict. `demonstrates` closes a bug report as reproduced and
  * `unrelated` closes it as not reproduced; both are read as facts downstream,
  * while `uncertain` only sends the run to a maintainer. Only the top of the

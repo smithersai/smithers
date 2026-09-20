@@ -26,7 +26,6 @@ import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
-import * as Classifiers from "@smthrs/std/Classifiers"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
 import { Context, Effect, FileSystem, Layer, Option, Path } from "effect"
@@ -91,11 +90,7 @@ const promised: ReadonlyArray<{
   { source: StandardFlows.tests(testServices), flows: ["test"] },
   { source: StandardFlows.memory(memoryServices), flows: ["remember", "recall"] },
   { source: StandardFlows.clock(clockServices), flows: ["wait"] },
-  { source: StandardFlows.approval(StandardFlows.askerNoop()), flows: ["ask"] },
-  {
-    source: StandardFlows.classify(evaluatorServices(Evaluator.layerUnavailable())),
-    flows: ["classify", "classify/triage/relevance", "classify/check/verdict", "classify/edit/risk"]
-  }
+  { source: StandardFlows.approval(StandardFlows.askerNoop()), flows: ["ask"] }
 ]
 
 /** One synthetic call, so a binding runs without the controller around it. */
@@ -243,79 +238,8 @@ describe("the standard capability catalog", () => {
       "std/tests",
       "memory",
       "engine/clock",
-      "host/approval",
-      "std/classify"
+      "host/approval"
     ])
-  })
-
-  it("binds the ad-hoc classify flow alone when the host names no classifiers", async () => {
-    const bindings = await Effect.runPromise(
-      StandardFlows.classify(evaluatorServices(Evaluator.layerUnavailable()), { classifiers: [] }).bindings()
-    )
-    expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["classify"])
-  })
-
-  it("names a curated classify flow after its classifier and folds the digest into the declaration", async () => {
-    const bindings = await Effect.runPromise(
-      StandardFlows.classify(evaluatorServices(Evaluator.layerUnavailable()), {
-        classifiers: [Classifiers.checkVerdict]
-      }).bindings()
-    )
-    const curated = bindings[1]!.descriptor
-    expect(curated.name).toBe("classify/check/verdict")
-    expect(curated.description).toContain(Classifiers.checkVerdict.description)
-    expect(curated.description).toContain("rightReason boolean { value, probability }")
-    expect(curated.body.contentDigest).toBe(Classifiers.checkVerdict.digest)
-    expect(curated.effects.tier).toBe("sealed")
-    expect(curated.capabilities).toEqual(["model:call:*"])
-  })
-
-  it("publishes the evaluator's code first when a classify call is refused", async () => {
-    const unavailable = StandardFlows.classify(evaluatorServices(Evaluator.layerUnavailable()))
-    const bindings = await Effect.runPromise(unavailable.bindings())
-    const byName = new Map(bindings.map((binding) => [binding.descriptor.name, binding]))
-    const questions = { ok: { type: "boolean", instructions: "Is it done?" } }
-    const refused = await Effect.runPromise(byName.get("classify")!.run(callOf("classify", { state: 1, questions })))
-    expect(refused).toMatchObject({
-      outcome: "failure",
-      code: "flow_failed",
-      message: "Flow classify failed: unreachable: No evaluator is installed on this host"
-    })
-    const curated = await Effect.runPromise(
-      byName.get("classify/check/verdict")!.run(
-        callOf("classify/check/verdict", { task: "keep km", command: "pytest", exitCode: 1, output: "E assert" })
-      )
-    )
-    expect(curated).toMatchObject({
-      outcome: "failure",
-      code: "flow_failed",
-      message: /^Flow classify\/check\/verdict failed: unreachable:/
-    })
-  })
-
-  it("answers a classify call through the evaluator the host supplied", async () => {
-    const scripted = Evaluator.layerScripted(() => ({
-      rightReason: { probability: 0.9 },
-      invalidProbe: { probability: 0.1 }
-    }))
-    const bindings = await Effect.runPromise(StandardFlows.classify(evaluatorServices(scripted)).bindings())
-    const byName = new Map(bindings.map((binding) => [binding.descriptor.name, binding]))
-    const answered = await Effect.runPromise(
-      byName.get("classify/check/verdict")!.run(
-        callOf("classify/check/verdict", {
-          states: [{ task: "keep km", command: "pytest", exitCode: 1, output: "E assert" }]
-        })
-      )
-    )
-    expect(answered).toMatchObject({
-      outcome: "success",
-      value: {
-        results: [{
-          ok: true,
-          answers: { rightReason: { value: true, probability: 0.9 }, invalidProbe: { value: false, probability: 0.1 } }
-        }]
-      }
-    })
   })
 
   it("hands glob and grep the search the host supplied, not the bare filesystem context", async () => {

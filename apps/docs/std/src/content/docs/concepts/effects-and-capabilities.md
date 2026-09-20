@@ -44,12 +44,10 @@ Here is what each flow declares at registry time, before any input is known:
 | `bash`          | `irreversible` | `expected` | nothing                   | `proc:spawn:*`                |
 | `test`          | `irreversible` | `expected` | nothing                   | `proc:spawn:*`                |
 | `shell_command` | `irreversible` | `expected` | nothing                   | `proc:spawn:*`                |
-| `classify`      | `sealed`       | `expected` | nothing                   | `model:call:*`                |
 
 `fetch` is `sealed` even though it leaves the machine, because a retrieval
-leaves no durable state behind, and `classify` is `sealed` for the same reason:
-a judgment read from Jev changes nothing. `http-post` is `irreversible` because the remote
-side may already have acted.
+leaves no durable state behind. `http-post` is `irreversible` because the
+remote side may already have acted.
 
 ## Narrowing to one call
 
@@ -76,7 +74,7 @@ smaller than their declaration:
 | `glob`, `grep` | reads the `root` subtree, or `/**` when no root is given                                                                    |
 | `bash`         | in `hermetic` mode, `compensable` with the caller's own `reads` and `writes`; in `unhermetic` mode, the declared worst case |
 
-The other eleven return their static envelope, and each says why in its own doc
+The other ten return their static envelope, and each says why in its own doc
 comment. `apply_patch` is the interesting one: a patch names its files inside
 its own text rather than in a decoded field, and the parse that finds them is
 the parse that can fail, so the static envelope is the honest answer.

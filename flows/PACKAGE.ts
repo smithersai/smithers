@@ -96,7 +96,6 @@ const codingPackages = [
   "packages/smithers/mcp",
   "packages/smithers/migrate",
   "packages/smithers/notifications",
-  "packages/smithers/opencode",
   "packages/smithers/ui",
   "packages/smithers/ui/ui-styleguide"
 ] as const

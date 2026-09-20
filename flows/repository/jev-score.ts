@@ -11,7 +11,7 @@ import type { EvalCase, JobResult } from "./schema.ts"
  * How sure the verdict must be before it is the row's verdict.
  *
  * TypeSafe reports Jev agreeing with a frontier model on about 76% of
- * judgments (`docs/jev-harness/research.html`), so an ordinary answer is a
+ * judgments on its best-reported task, a ceiling and not an average, since its other published tasks run 61.7 to 71.6 (https://github.com/smithersai/smithers/issues/1654), so an ordinary answer is a
  * hint and not a verdict. `pass` and `fail` are read as the candidate's own
  * score and gate whether a maintainer ships a configuration; `review` only
  * asks a person to read the row. Only the top of the confidence range may

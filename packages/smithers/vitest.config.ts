@@ -39,7 +39,6 @@ export default defineConfig({
         "mcp/**",
         "migrate/**",
         "notifications/**",
-        "opencode/**",
         "ui/**"
       ],
       // Measured (96.42 / 91.61 / 96.46 / 96.84 over 933 cases), then floored

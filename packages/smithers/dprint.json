@@ -29,7 +29,6 @@
     "mcp",
     "migrate",
     "notifications",
-    "opencode",
     "ui"
   ],
   "plugins": [

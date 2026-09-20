@@ -74,7 +74,7 @@ unoccupied. This is the candidate differentiator.
 finished diff.
 
 ### D-009 — Docs live in `docs/flow-builder/` as Markdown. RULED (Claude, low stakes)
-Follows `docs/jev-harness/` and `docs/mvp/` precedent. Markdown rather than HTML
+Follows `docs/mvp/` precedent. Markdown rather than HTML
 because these are append-heavy and LLM-read. Mockups will be self-contained HTML
 under `docs/flow-builder/mockups/` when we get there.
 

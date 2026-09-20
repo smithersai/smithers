@@ -6892,7 +6892,6 @@
       "apps/site/src/content/docs/docs/reference/api/model.mdx",
       "apps/site/src/content/docs/docs/reference/api/notifications.mdx",
       "apps/site/src/content/docs/docs/reference/api/observability.mdx",
-      "apps/site/src/content/docs/docs/reference/api/opencode.mdx",
       "apps/site/src/content/docs/docs/reference/api/patterns.mdx",
       "apps/site/src/content/docs/docs/reference/api/plan.mdx",
       "apps/site/src/content/docs/docs/reference/api/platform-browser.mdx",
@@ -6954,7 +6953,6 @@
       "//packages/smithers/mcp:docsFiles",
       "//packages/smithers/migrate:docsFiles",
       "//packages/smithers/notifications:docsFiles",
-      "//packages/smithers/opencode:docsFiles",
       "//packages/smithers:docsFiles",
       "//packages/testing:docsFiles"
     ],
@@ -7522,10 +7520,6 @@
       {
         "kind": "file",
         "path": "packages/smithers/notifications/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/package.json"
       },
       {
         "kind": "file",
@@ -8815,10 +8809,6 @@
       {
         "kind": "file",
         "path": "packages/smithers/notifications/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/package.json"
       },
       {
         "kind": "file",
@@ -28094,267 +28084,6 @@
     ],
     "source": {
       "file": "packages/smithers/notifications/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:check",
-    "package": "packages/smithers/opencode",
-    "name": "check",
-    "rule": "Typecheck",
-    "kinds": [
-      "build"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/test/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/repo-targets/test-utils/effect-property.*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/tsconfig.test.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [
-      "//packages/smithers/opencode:lib"
-    ],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:circular",
-    "package": "packages/smithers/opencode",
-    "name": "circular",
-    "rule": "NodeTest",
-    "kinds": [
-      "test"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/scripts/circular.mjs"
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/tsconfig.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:docs",
-    "package": "packages/smithers/opencode",
-    "name": "docs",
-    "rule": "DocsParity",
-    "kinds": [
-      "docs"
-    ],
-    "cacheable": true,
-    "inputs": [
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/README.md"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:docsFiles",
-    "package": "packages/smithers/opencode",
-    "name": "docsFiles",
-    "rule": "Filegroup",
-    "kinds": [],
-    "cacheable": true,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/docs/**/*.md",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/README.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/package.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:fmt",
-    "package": "packages/smithers/opencode",
-    "name": "fmt",
-    "rule": "Dprint",
-    "kinds": [
-      "lint"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/test/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/dprint.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:lib",
-    "package": "packages/smithers/opencode",
-    "name": "lib",
-    "rule": "TsBuild",
-    "kinds": [
-      "build"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/repo-targets/scripts/build-library.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/scripts/compile-commonjs.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/src/index.ts"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/tsconfig.json"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/scripts/build.mjs"
-      }
-    ],
-    "outputs": [
-      "packages/smithers/opencode/dist/cjs",
-      "packages/smithers/opencode/dist/esm"
-    ],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:lint",
-    "package": "packages/smithers/opencode",
-    "name": "lint",
-    "rule": "EsLint",
-    "kinds": [
-      "lint"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/eslint.config.js"
-      },
-      {
-        "kind": "file",
-        "path": "eslint.jsdoc.js"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//packages/smithers/opencode:test",
-    "package": "packages/smithers/opencode",
-    "name": "test",
-    "rule": "Vitest",
-    "kinds": [
-      "test"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/test/**/*.test.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/opencode/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/repo-targets/test-utils/effect-property.*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/opencode/vitest.config.ts"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [
-      "//packages/smithers/opencode:lib"
-    ],
-    "source": {
-      "file": "packages/smithers/opencode/PACKAGE.ts"
     }
   },
   {

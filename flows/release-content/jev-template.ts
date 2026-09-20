@@ -12,7 +12,7 @@ import { ReleaseError, type Analysis, type ContentInput, type Evidence } from ".
  *
  * The vendor publishes no calibration curve, and the one agreement figure it
  * does publish is 76.0% against frontier reference labels on its
- * best-reported task (`docs/jev-harness/research.html`), so the bar is the top
+ * best-reported task, a ceiling and not an average, since its other published tasks run 61.7 to 71.6 (https://github.com/smithersai/smithers/issues/1654), so the bar is the top
  * of the range on purpose: the narrative decides what every published channel
  * of the release claims to be about, and a release announced as the wrong kind
  * of thing is read by every user before anyone corrects it.

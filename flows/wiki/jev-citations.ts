@@ -16,7 +16,7 @@ import { type Evidence, type Review, WikiError } from "./schema.ts"
  *
  * The vendor publishes no calibration curve, and the one agreement figure it
  * does publish is 76.0% against frontier reference labels on its
- * best-reported task (`docs/jev-harness/research.html`), so the bar is the top
+ * best-reported task, a ceiling and not an average, since its other published tasks run 61.7 to 71.6 (https://github.com/smithersai/smithers/issues/1654), so the bar is the top
  * of the range on purpose: refusing a page is visible to whoever wrote it,
  * while a wrong decisive answer either publishes an unsupported claim or
  * blocks a sound one. Anything below this is Jev saying it is unsure, and an

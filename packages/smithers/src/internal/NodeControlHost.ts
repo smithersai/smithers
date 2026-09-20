@@ -88,8 +88,8 @@ export const rebuildableTransport = (
  * agent the run may replace.
  *
  * It is one constructor rather than one per host because the repair it carries
- * is not specific to any of them. `smithers run` had it and `smithers opencode`
- * did not, and the difference was one line: the server bound
+ * is not specific to any of them. `smithers run` had it and a second host once
+ * did not, and the difference was one line: that host bound
  * `RequestExecutor.layer` over `NodeHttpClient.layerUndici`, whose transport is
  * {@link RequestExecutor.fixed} and whose rebuild hands back the pool that just
  * failed. A server whose provider session the peer destroyed therefore failed

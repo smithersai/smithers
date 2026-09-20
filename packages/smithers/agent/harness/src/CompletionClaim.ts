@@ -47,8 +47,8 @@
  * then no completion is read, no `ClaimDemanded` is journaled and nothing here
  * can fail a run. It is a composition-time choice a host makes for a path it
  * does not want a model in, not a fallback the brake takes on its own, and no
- * shipped host makes it: `smithers run` and `smithers opencode` both leave the
- * cap at `CellTurn.defaultClaimDemands`. Prose saying every completion of
+ * shipped host makes it: `smithers run` leaves the cap at
+ * `CellTurn.defaultClaimDemands`. Prose saying every completion of
  * every run is read means every run under the default cap.
  *
  * ## What that verdict may be about, and why it is not {@link Probabilities.complete}
@@ -562,8 +562,8 @@ export const unjudged = (
  *
  * Two kibibytes, which is less than {@link proseBytes} because these bytes go
  * somewhere else: the failure message is what a host puts on the run's own
- * ending, and `smithers opencode` puts it on the assistant message a person
- * reads in the app. A claim that is longer than this has its head kept, where
+ * ending, and a serving host puts it on the assistant message a person
+ * reads. A claim that is longer than this has its head kept, where
  * a completion states what it did, and the run record still holds all of it.
  *
  * @category constants

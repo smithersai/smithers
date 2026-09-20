@@ -30,12 +30,10 @@ const LADDER = [
   { id: "control", offset: 6000, applied: 11, head: "control_signal_commands", tone: "ok" as const },
   { id: "memory", offset: 7000, applied: 8, head: "memory_vectors", tone: "ok" as const },
   { id: "integrations", offset: 8000, applied: 2, head: "integrations_cursors", tone: "warn" as const },
-  { id: "history", offset: 8000, applied: 0, head: "—", tone: "bad" as const },
-  { id: "opencode", offset: 9000, applied: 5, head: "opencode_permissions", tone: "ok" as const }
+  { id: "history", offset: 8000, applied: 0, head: "—", tone: "bad" as const }
 ]
 
 const APPLIED = [
-  { id: "9004", name: "opencode_permissions", at: "2026-09-18 04:12:07" },
   { id: "8001", name: "integrations_cursors", at: "2026-09-18 04:12:07" },
   { id: "7007", name: "memory_vectors", at: "2026-09-16 21:40:55" },
   { id: "6010", name: "control_signal_commands", at: "2026-09-16 21:40:55" },

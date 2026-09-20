@@ -237,21 +237,6 @@ because a host that calls the handler directly never decodes.
 **What to change.** Mark one step `in_progress` and leave the rest `pending` or
 `completed`.
 
-## unreachable: No evaluator is installed on this host
-
-**What happened.** `classify` or a `classify/<id>` flow ran with
-an explicitly unavailable evaluator bound, or its scripted judge had no answer
-for these question ids. Production agent hosts refuse startup when their gateway
-key is missing. The cell saw `{ ok: false, error: { code: "flow_failed", message } }`
-with a message containing `unreachable:` after the binding's
-`Flow <name> failed:` prefix; the call never left the host.
-
-**What to change.** Bind `Evaluator.layerVercelGateway({ apiKey })` from
-`@smthrs/model` with a Vercel AI Gateway key, or deliberately bind an
-evidence-based scripted judge for every classifier the host reaches. Grant
-`model:call:*` in the run's capability envelope. See
-[Judge state with classify](/guides/classify-with-jev/).
-
 ## invalid_input: a patch names one file twice
 
 **What happened.** An `apply_patch` input with two sections for the same path.

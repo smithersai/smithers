@@ -43,7 +43,6 @@ export const EXPERIMENTAL_MANIFEST: ReadonlyArray<PaneManifestRow> = [
   { file: "Models", id: "models", title: "Models and seats", summary: "Which model each role uses, its credential and its route", packages: ["@smthrs/model", "@smthrs/harness-detect"] },
   { file: "Notifications", id: "notifications", title: "Notifications", summary: "The queue, its admission policy and its sinks", packages: ["@smthrs/notifications"] },
   { file: "Observability", id: "observability", title: "Observability", summary: "Metric handles, the OTLP target and the trace out", packages: ["@smthrs/observability"] },
-  { file: "OpenCode", id: "opencode", title: "OpenCode server", summary: "Protocol v1 sessions, parts and permission cards", packages: ["@smthrs/opencode"] },
   { file: "Patterns", id: "patterns", title: "Patterns", summary: "The composition patterns, each as the graph it declares", packages: ["@smthrs/patterns"] },
   { file: "Plan", id: "plan", title: "Plan and step keys", summary: "The keyed action graph, its step keys and the diff between revisions", packages: ["@smthrs/plan", "@smthrs/core"] },
   { file: "Plugins", id: "plugins", title: "Plugin kernel", summary: "Hook order and which plugin won a resolution", packages: ["@smthrs/plugin"] },

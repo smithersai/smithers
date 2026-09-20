@@ -20,8 +20,9 @@ export interface Hunk {
 /** At or above this probability the hunk violates the rule and becomes a
  * finding. The vendor publishes no calibration curve, and the one agreement
  * figure it does publish is 76.0% against frontier reference labels on its
- * best-reported task, recorded under "Vendor calibration, preserved because
- * production code depends on it" in
+ * best-reported task, a ceiling and not an average, since its other
+ * published tasks run 61.7 to 71.6. The figure is recorded under "Vendor
+ * calibration, preserved because production code depends on it" in
  * https://github.com/smithersai/smithers/issues/1654, so the band is wide
  * on purpose: an indecisive hunk makes the check uncertain, which is an
  * errored check, while a wrong decisive answer costs a wrong lint verdict on

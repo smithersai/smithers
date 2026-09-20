@@ -14,7 +14,7 @@ import type { Record } from "./schema.ts"
  * duplicate.
  *
  * TypeSafe reports Jev agreeing with a frontier model on about 76% of
- * judgments (`docs/jev-harness/research.html`), so an ordinary answer is a
+ * judgments on its best-reported task, a ceiling and not an average, since its other published tasks run 61.7 to 71.6 (https://github.com/smithersai/smithers/issues/1654), so an ordinary answer is a
  * hint and not a verdict. A wrong match sends a maintainer to close a live
  * report as a duplicate of an unrelated one, which the author has to reopen
  * and argue back; a missed match costs one extra triage read. Only the top of

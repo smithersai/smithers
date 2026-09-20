@@ -1,6 +1,6 @@
 ---
 title: "Give a run capabilities"
-description: "Bind the standard capability flows (filesystem, shell, tests, memory, durable wait, approval, classify), order them with plugin contributions, and gate calls with authorize."
+description: "Bind the standard capability flows (filesystem, shell, tests, memory, durable wait, and approval), order them with plugin contributions, and gate calls with authorize."
 sidebar:
   order: 5
 ---
@@ -28,21 +28,19 @@ const run = agent.run({
     StandardFlows.shell(shellServices), // ChildProcessSpawner | Path
     StandardFlows.tests(testServices), // ChildProcessSpawner | Evaluator | TestRunner
     StandardFlows.memory(memoryServices), // MemoryStore | Recall
-    StandardFlows.classify(evaluatorServices), // Evaluator
     ChildFlows.source(children)
   ]
 })
 ```
 
-| Helper       | Flows bound                                                                             | Context it takes                                 |
-| ------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`                            | `FileSystem \| Path`                             |
-| `shell`      | `bash`                                                                                  | `ChildProcessSpawner \| Path`                    |
-| `tests`      | the project's test runner                                                               | `ChildProcessSpawner \| Evaluator \| TestRunner` |
-| `memory`     | `remember`, `recall`                                                                    | `MemoryStore \| Recall`                          |
-| `clock`      | `wait`                                                                                  | `Crypto \| FlowRuntime \| FlowInstance`          |
-| `approval`   | `ask`                                                                                   | an `Asker` port, not a context                   |
-| `classify`   | `classify`, `classify/triage/relevance`, `classify/check/verdict`, `classify/edit/risk` | `Evaluator`                                      |
+| Helper       | Flows bound                                                  | Context it takes                                 |
+| ------------ | ------------------------------------------------------------ | ------------------------------------------------ |
+| `filesystem` | `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `FileSystem \| Path`                             |
+| `shell`      | `bash`                                                       | `ChildProcessSpawner \| Path`                    |
+| `tests`      | the project's test runner                                    | `ChildProcessSpawner \| Evaluator \| TestRunner` |
+| `memory`     | `remember`, `recall`                                         | `MemoryStore \| Recall`                          |
+| `clock`      | `wait`                                                       | `Crypto \| FlowRuntime \| FlowInstance`          |
+| `approval`   | `ask`                                                        | an `Asker` port, not a context                   |
 
 All seven filesystem flows are bound, not just `read` and `write`: a host that
 offers whole-file writes and nothing else forces every edit through "read the
@@ -96,23 +94,6 @@ fixture: it checks named commands against the record and refuses other questions
 It is not a production default or a general language judge.
 
 See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
-
-The same service answers the cell's own classify doors, which fail softly
-instead:
-
-`classify` binds the cell's doors to Jev: the ad-hoc `classify` flow, which
-takes any JSON state and model-authored questions, and one `classify/<id>` flow
-per curated classifier, which takes the classifier's own state. The one service
-is the `Evaluator` from [`@smthrs/model`](/api/model). A host with a Vercel AI
-Gateway key binds `Evaluator.layerVercelGateway({ apiKey })`. A transport outage
-makes a classify call resolve
-in the cell as `{ ok: false, error: { code: "flow_failed", message } }` with a
-message containing `unreachable:` after the binding's `Flow <name> failed:`
-prefix, so the cell carries on instead of hanging. Grant `model:call:*` in the
-capability envelope beside `fs:read:/**` and the rest, or the boundary refuses
-the call before it reaches the transport. Pass `{ classifiers: [] }` to offer
-the ad-hoc door alone, or your own `Classifier.make` declarations to add doors
-the catalog describes by name.
 
 ## How the catalog is composed
 

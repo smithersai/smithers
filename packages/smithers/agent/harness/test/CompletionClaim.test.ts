@@ -642,7 +642,7 @@ describe("the claim brake", () => {
     // The tree stamps are deliberately not read. This fixture is the reason in
     // miniature: its frame moves the workspace with a declared write, so a
     // reading taken against a checkpoint is stamped with no digest at all, and
-    // `smithers opencode` moves the digest on every frame by writing its own
+    // a serving host moves the digest on every frame by writing its own
     // journal inside the directory it serves. A tree filter over that reported
     // "this run checked nothing" about a live run that checked twice, and
     // killed it. See `Frame.checksRun`.

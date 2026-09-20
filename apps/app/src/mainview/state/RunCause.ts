@@ -12,8 +12,8 @@
  * either one, so every code in both vocabularies flattened into the lead.
  *
  * This is the table that answers the ones it can. Three rules hold it honest,
- * and the third is why it answers all nine of the harness's codes but one and
- * only five of the model's.
+ * and the third is why it answers all nine of the harness's codes and only
+ * five of the model's.
  *
  * - A code is never read off prose, and prose is never rendered at a person.
  *   The harness writes run ids into its own messages (`The agent session
@@ -183,7 +183,6 @@ export type ModelCode = (typeof MODEL_CODES)[number]
  * literals its own `new` sites pass.
  */
 export const SHARED_CODES = {
-  engine_failed: ["/harness/HarnessError", "@smthrs/opencode/DriverError"],
   invalid_request: [
     "flows/model/ModelError",
     "flows/scorers/ScorerError",
@@ -311,8 +310,8 @@ export interface RunCauseRow {
 
 /**
  * The sentence for each code. Total over both vocabularies minus
- * {@link SHARED_CODES} plus {@link SHARED_ANSWERED}, which today leaves eight
- * of the harness's nine codes and five of the model's twelve; a code added to
+ * {@link SHARED_CODES} plus {@link SHARED_ANSWERED}, which today leaves all
+ * nine of the harness's codes and five of the model's twelve; a code added to
  * either declaration is a red
  * in `RunCause.test.ts` until it is answered or shown to be shared.
  *
@@ -348,7 +347,19 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
     message:
       "A turn opened and the model never answered, so the run stopped with no result. Not your fault — the turns it finished stand, and it's worth asking again."
   },
-  /* `engine_failed` has no row: `@smthrs/opencode/DriverError` spells it too. */
+  /*
+   * The engine under the turn rather than the model in it: a sandbox that
+   * failed, a cell call that could not be made, an engine operation with
+   * nothing behind it. The harness is this code's only author, so one sentence
+   * is true of every site that raises it. It says the run stopped without
+   * saying which piece of machinery stopped it, because the journal does not
+   * carry that either.
+   */
+  engine_failed: {
+    fault: "infra",
+    message:
+      "The engine underneath this run failed before a turn could finish, so the run stopped. Not your fault, and the turns it finished stand; it's worth starting it again."
+  },
   read_only_cap: {
     fault: "user",
     message:
@@ -453,9 +464,6 @@ export const RUN_CAUSE_COPY: Readonly<Record<RunCauseCode, RunCauseRow>> = {
    * HTTP classifier returns nothing — while `jj`, the sandbox, sync, the
    * registry and four stores raise it routinely. "The model call failed"
    * beside a `run.calls` of 0 is the lie this table exists to stop telling.
-   *
-   * `engine_failed` is the harness's own loss, to
-   * `@smthrs/opencode/DriverError`.
    */
 }
 

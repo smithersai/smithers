@@ -846,6 +846,7 @@ test("a fault that is not the person's says so, and one that is names the act", 
 test("the late-turn conditions are different sentences, not one lead", () => {
   const distinct = [
     /* A turn opened and nothing came back. */ "model_failed",
+    /* The engine under the turn, rather than the model in it. */ "engine_failed",
     /* The brake, both halves, which mean different things since 46fcc61722f5. */ "claim_unproven",
     "completion_unjudged",
     /* Nothing was assembled, versus a turn that could not be built to send. */ "assembly_failed",

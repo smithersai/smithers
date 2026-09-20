@@ -288,7 +288,6 @@ describe("launch-law parity: every affordance is a command", () => {
       "../experimental/panes/Models.tsx": 2,
       "../experimental/panes/Notifications.tsx": 1,
       "../experimental/panes/Observability.tsx": 1,
-      "../experimental/panes/OpenCode.tsx": 2,
       "../experimental/panes/Patterns.tsx": 2,
       "../experimental/panes/Plan.tsx": 1,
       "../experimental/panes/Plugins.tsx": 1,

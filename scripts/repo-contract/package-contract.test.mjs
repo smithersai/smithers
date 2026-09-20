@@ -349,22 +349,6 @@ describe("the workspace package contract", () => {
     assert.equal(createApp.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
   })
 
-  it("declares the shared Node adapter beside the OpenCode server's Node adapter peer", () => {
-    const opencode = publishable.find((entry) => entry.manifest.name === "@smthrs/opencode")
-    assert.ok(opencode, "@smthrs/opencode must be publishable")
-    // The server names @effect/platform-node as a required peer and runs on
-    // its Node socket. A consumer that installs exactly the declared peers
-    // still gets the shared adapter through that package's caret, which
-    // admits a later RC whose own Effect peer this release does not satisfy.
-    assert.equal(opencode.manifest.peerDependencies?.["@effect/platform-node-shared"], effectVersion)
-    assert.notEqual(opencode.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional, true)
-    assert.equal(
-      opencode.manifest.peerDependenciesMeta?.["@effect/platform-node-shared"]?.optional,
-      opencode.manifest.peerDependenciesMeta?.["@effect/platform-node"]?.optional
-    )
-    assert.equal(opencode.manifest.dependencies?.["@effect/platform-node-shared"], undefined)
-  })
-
   it("declares the shared Node adapter beside the gateway's two optional platform peers", () => {
     const gateway = publishable.find((entry) => entry.manifest.name === "@smthrs/gateway")
     assert.ok(gateway, "@smthrs/gateway must be publishable")

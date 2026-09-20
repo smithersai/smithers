@@ -25,7 +25,6 @@ import * as DoctorCmd from "./commands/Doctor.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
-import * as OpenCodeCmd from "./commands/OpenCode.ts"
 import * as UpdateCmd from "./commands/Update.ts"
 import { didYouMean } from "./DidYouMean.ts"
 import * as Doctor from "./Doctor.ts"
@@ -178,36 +177,6 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
                 listen: c.options.listen,
                 credential: c.options.credential ?? (config.environment ?? process.env)["SMITHERS_API_KEY"]
               },
-              c.options,
-              config
-            )
-        )
-    })
-    .command("opencode", {
-      description:
-        "Serve the OpenCode protocol over the agent loop for the hosted OpenCode app; needs AI_GATEWAY_API_KEY unless --scripted",
-      mcp: false,
-      args: z.object({ directory: z.string().optional().describe("Directory to serve; defaults to the current one") }),
-      options: options.extend({
-        port: z.number().int().min(0).max(65535).default(4096).describe("Port to listen on"),
-        hostname: z.string().default("127.0.0.1").describe("Address to bind; loopback unless --listen"),
-        listen: z.boolean().default(false).describe("Allow a non-loopback bind; needs OPENCODE_SERVER_PASSWORD"),
-        cors: z.array(z.string()).default([]).describe("Extra browser origins to allow"),
-        seat: z.string().optional().describe("Model seat as provider:model"),
-        maxFrames: z.number().int().positive().default(40).describe(
-          "Frame budget per turn; forty suits a prompt in the app, raise it for a long task"
-        ),
-        scripted: z.boolean().default(false).describe(
-          "Replay the recorded turn instead of running a model; runs without AI_GATEWAY_API_KEY"
-        )
-      }),
-      run: (c) =>
-        Presentation.guard(
-          c,
-          () =>
-            OpenCodeCmd.host(
-              { ...c.options, directory: c.args.directory },
-              globalsOf(c.options, config),
               c.options,
               config
             )

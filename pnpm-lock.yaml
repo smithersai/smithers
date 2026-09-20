@@ -2169,9 +2169,6 @@ importers:
       '@smthrs/notifications':
         specifier: 1.0.0-rc.0
         version: link:notifications
-      '@smthrs/opencode':
-        specifier: 1.0.0-rc.0
-        version: link:opencode
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.0
         version: link:flows/platform-node
@@ -6062,121 +6059,6 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
-  packages/smithers/opencode:
-    dependencies:
-      '@effect/platform-node-shared':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
-      '@smthrs/agent':
-        specifier: 1.0.0-rc.0
-        version: link:../agent
-      '@smthrs/capability':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/capability
-      '@smthrs/database':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/database
-      '@smthrs/engine-store':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/engine-store
-      '@smthrs/flow':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/flow
-      '@smthrs/flows':
-        specifier: 1.0.0-rc.0
-        version: link:../flows
-      '@smthrs/harness':
-        specifier: 1.0.0-rc.0
-        version: link:../agent/harness
-      '@smthrs/jj':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/jj
-      '@smthrs/kernel':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/kernel
-      '@smthrs/model':
-        specifier: 1.0.0-rc.0
-        version: link:../agent/model
-      '@smthrs/notifications':
-        specifier: 1.0.0-rc.0
-        version: link:../notifications
-      '@smthrs/plan':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/plan
-      '@smthrs/platform-node':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/platform-node
-      '@smthrs/registry':
-        specifier: 1.0.0-rc.0
-        version: link:../agent/registry
-      '@smthrs/run-store':
-        specifier: 1.0.0-rc.0
-        version: link:../flows/run-store
-    devDependencies:
-      '@effect/language-service':
-        specifier: 0.87.2
-        version: 0.87.2
-      '@effect/platform-node':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@effect/sql-sqlite-node':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
-      '@effect/vitest':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.0)
-      '@eslint/js':
-        specifier: 9.39.5
-        version: 9.39.5
-      '@opencode-ai/sdk':
-        specifier: 1.18.31
-        version: 1.18.31
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      '@vitest/coverage-v8':
-        specifier: 5.0.0
-        version: 5.0.0(vitest@5.0.0)
-      dprint:
-        specifier: 0.57.1
-        version: 0.57.1
-      effect:
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      eslint:
-        specifier: 9.39.5
-        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
-      eslint-import-resolver-typescript:
-        specifier: 4.4.5
-        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-import:
-        specifier: 2.32.0
-        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-jsdoc:
-        specifier: 64.3.4
-        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-unicorn:
-        specifier: 65.0.0
-        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
-      fast-check:
-        specifier: 4.9.0
-        version: 4.9.0
-      madge:
-        specifier: 8.0.0
-        version: 8.0.0(supports-color@10.2.2)
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      typescript-eslint:
-        specifier: 8.69.0
-        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      vitest:
-        specifier: 5.0.0
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-
   packages/smithers/ui:
     dependencies:
       '@milkdown/crepe':
@@ -8459,9 +8341,6 @@ packages:
   '@octokit/webhooks@14.2.0':
     resolution: {integrity: sha512-da6KbdNCV5sr1/txD896V+6W0iamFWrvVl8cHkBSPT+YlvmT3DwXa4jxZnQc+gnuTEqSWbBeoSZYTayXH9wXcw==}
     engines: {node: '>= 20'}
-
-  '@opencode-ai/sdk@1.18.31':
-    resolution: {integrity: sha512-Raouthf8Lhe9edjvYeeSK7SgvdoU6bBjH9qV3f70dHoa6h+z0X2TMz/e22/wKp/StlFUZ4kIRpYYxFnY8/k01w==}
 
   '@opentelemetry/api-logs@0.222.0':
     resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
@@ -17540,10 +17419,6 @@ snapshots:
       '@octokit/openapi-webhooks-types': 12.1.0
       '@octokit/request-error': 7.1.2
       '@octokit/webhooks-methods': 6.0.0
-
-  '@opencode-ai/sdk@1.18.31':
-    dependencies:
-      cross-spawn: 7.0.6
 
   '@opentelemetry/api-logs@0.222.0':
     dependencies:

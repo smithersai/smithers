@@ -19,8 +19,7 @@ const expectedNames = [
   "explore",
   "webfetch",
   "websearch",
-  "lsp",
-  "classify"
+  "lsp"
 ] as const
 
 const forbiddenActions = ["fs:write", "net:post", "proc:spawn"] as const
@@ -76,8 +75,7 @@ describe("Manifest", () => {
       "fetch",
       "explore",
       "webfetch",
-      "lsp",
-      "classify"
+      "lsp"
     ])
     expect(Manifest.readOnly).not.toContain("websearch")
     expect(Object.isFrozen(Manifest.readOnly)).toBe(true)

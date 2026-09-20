@@ -60,7 +60,6 @@ import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKA
 import { Package as mcpPackage } from "../../packages/smithers/mcp/PACKAGE.ts"
 import { Package as migratePackage } from "../../packages/smithers/migrate/PACKAGE.ts"
 import { Package as notificationsPackage } from "../../packages/smithers/notifications/PACKAGE.ts"
-import { Package as opencodePackage } from "../../packages/smithers/opencode/PACKAGE.ts"
 import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import { workspacePackages } from "../../scripts/workspace-packages.mjs"
@@ -222,7 +221,6 @@ const apiPackages = {
   model: modelPackage,
   notifications: notificationsPackage,
   observability: observabilityPackage,
-  opencode: opencodePackage,
   patterns: patternsPackage,
   plan: planPackage,
   "platform-browser": platformBrowserPackage,

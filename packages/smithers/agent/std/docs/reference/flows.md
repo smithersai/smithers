@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Eighteen flows are declared, and seventeen of them have a handler. Each section
+Seventeen flows are declared, and sixteen of them have a handler. Each section
 names the module that exports the flow, the registry name a model calls it by,
 the fields of `Input` and `Output`, and the failures the handler produces.
 
@@ -35,7 +35,6 @@ and capabilities in one table, see
 | `webfetch`      | `WebFetch`     | `HttpClient`                                              |
 | `websearch`     | `WebSearch`    | `WebSearch`                                               |
 | `lsp`           | `Lsp`          | `LanguageServer`                                          |
-| `classify`      | `Classify`     | `Evaluator` from `@smthrs/model`                          |
 
 ## read
 
@@ -445,41 +444,6 @@ Fails with `invalid_input` for a missing or non-absolute path or a missing
 position, and with whatever the bound `LanguageServer` reports: `unsupported`
 from the refusal implementation, or `timeout`, `request_failed`, and
 `command_failed` from `NodeLanguageServer`.
-
-## classify
-
-Asks Jev typed questions about one JSON state, or about up to 64 of them in
-one call. The input is one of two shapes.
-
-| Input       | Type                         | Meaning                                                           |
-| ----------- | ---------------------------- | ----------------------------------------------------------------- |
-| `state`     | any JSON, at most 32 KiB     | The value the questions are about.                                |
-| `states`    | array of 1 to 64 such values | The values to judge with the same questions, one result each.     |
-| `questions` | record of id to question     | At least one; `boolean`, `choice` (2 to 255 options), or `score`. |
-
-With `state`, the output is one verdict:
-
-| Output       | Type                   | Meaning                                                                                                                               |
-| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `answers`    | record of id to answer | Boolean `{ value, probability }`, choice `{ value, probabilities, confidence }`, score `{ value, label, probabilities, confidence }`. |
-| `confidence` | record of id to number | How sure each answer is, from 0 to 1.                                                                                                 |
-| `latencyMs`  | integer                | Wall-clock milliseconds the evaluation took.                                                                                          |
-
-With `states`, the output is `results` and `latencyMs`: one entry per state, in
-the order given, each `{ ok: true, state, answers, confidence }` or
-`{ ok: false, state, error: { code, message } }`, and the wall-clock
-milliseconds the whole batch took. Eight states are in flight at once. When no
-state at all was answered the call fails with the first failure instead.
-
-A curated flow `classify/<id>`, declared by `Classify.curated(classifier)`,
-takes the classifier's own state, or `{ states }`, and answers in the same two
-shapes. Its description is the classifier's.
-
-Fails with a `ClassifierError` from `@smthrs/model` rather than a `StdError`:
-`unreachable` when no transport answered (what `Evaluator.layerUnavailable()`
-answers), `refused` with the gateway's status, `empty`, `timeout`,
-`invalid_answer`, or `invalid_question`. The input schema refuses more than 64
-states, an empty batch, a state over 32 KiB, and an empty question map.
 
 ## Failures
 

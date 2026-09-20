@@ -2,23 +2,15 @@
 
 ## [Unreleased]
 
-### Changed
+### Removed
 
-- `smithers opencode` says what its brake does: the start banner reads "Jev
-  judges every completion, and an unproven claim ends the turn." The first half
-  alone was a promise the harness cap did not keep, and this release's harness
-  change makes both halves true.
-
-### Added
-
-- `smithers opencode [directory]`: serves OpenCode protocol v1 over the agent
-  loop for the hosted OpenCode app, through `@smthrs/opencode`. Flags: `--port`,
-  `--hostname`, `--listen`, `--cors`, `--seat`, `--max-frames`, and `--scripted`,
-  which replays the recorded turn instead of running a model; every other turn
-  runs on the durable engine driver under `<directory>/.smithers`.
-  A SIGINT or SIGTERM ends the server with the line `Stopped serving
-  <directory>.` and nothing else: the interrupted fiber was reported as
-  `command_failed` with "All fibers interrupted without error" on stderr.
+- The Jev harness is retired
+  ([#1654](https://github.com/smithersai/smithers/issues/1654)). The
+  `smithers opencode` verb, the `@smthrs/opencode` package it served through,
+  and the `classify` standard flow with its `StandardFlows.classify` bindings
+  are gone. Nothing of the verb shipped in a release, so no released spelling
+  changes. The evaluator and classifier types, the completion brake and the
+  `flows/` judges that use them are unaffected.
 
 ### Fixed
 
