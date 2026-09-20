@@ -24,8 +24,8 @@ import * as Workspace from "@smthrs/kernel/Workspace"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Classifiers from "@smthrs/std/Classifiers"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
@@ -196,9 +196,13 @@ describe("the standard capability catalog", () => {
   it("declares what a call to each standard flow does and how it reads", async () => {
     const bound = await Effect.runPromise(
       Effect.forEach(
-        [StandardFlows.filesystem(filesystemServices), StandardFlows.shell(shellServices), StandardFlows.tests(
-          testServices
-        )],
+        [
+          StandardFlows.filesystem(filesystemServices),
+          StandardFlows.shell(shellServices),
+          StandardFlows.tests(
+            testServices
+          )
+        ],
         (source) => source.bindings()
       )
     )
@@ -208,9 +212,11 @@ describe("the standard capability catalog", () => {
         [binding.descriptor.activity, binding.descriptor.presentation] as const
       ])
     )
-    expect([...declared].map(([name, [activity, presentation]]) =>
-      [name, activity, presentation?.verb.success, presentation?.subject, presentation?.result]
-    )).toEqual([
+    expect(
+      [...declared].map((
+        [name, [activity, presentation]]
+      ) => [name, activity, presentation?.verb.success, presentation?.subject, presentation?.result])
+    ).toEqual([
       ["read", "reads", "read", "path", "read"],
       ["write", "writes", "wrote", "path", "write"],
       ["edit", "writes", "edited", "path", "edit"],
