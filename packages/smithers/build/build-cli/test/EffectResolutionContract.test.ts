@@ -125,6 +125,16 @@ describe("declaration dependency preflight", () => {
     expect(() => assertDeclarationDependencies([file], { bootstrap: false })).not.toThrow()
   })
 
+  it.runIf(process.platform === "win32")(
+    "accepts the extended Windows spelling of a shared package declaration",
+    () => {
+      const manifest = findPackageJSON("@smthrs/targets", import.meta.url)!
+      const file = Path.toNamespacedPath(Path.join(Path.dirname(manifest), "PACKAGE.ts"))
+      expect(file.startsWith("\\\\?\\")).toBe(true)
+      expect(() => assertDeclarationDependencies([file], { bootstrap: false })).not.toThrow()
+    }
+  )
+
   it("refuses a foreign installation even when its metadata cannot be parsed", async () => {
     const directory = await fixture(false)
     await Fs.mkdir(Path.join(directory, "node_modules/effect"), { recursive: true })

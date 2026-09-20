@@ -59,7 +59,10 @@ export const assertDeclarationDependencies = (
       try {
         const cli = findPackageJSON(dependency, import.meta.url)
         if (cli === undefined) throw new Error(`the CLI cannot locate ${dependency}`)
-        expected = realpathSync(cli)
+        // Self-resolution can return an extended Windows path. Node's
+        // JavaScript realpath walker misreads its drive root on supported
+        // releases; the native resolver preserves the physical-file check.
+        expected = realpathSync.native(cli)
         let declared: string | undefined
         try {
           declared = findPackageJSON(dependency, pathToFileURL(file))
@@ -74,7 +77,7 @@ export const assertDeclarationDependencies = (
           if (options.bootstrap) continue
           throw new Error(`the declaration cannot locate ${dependency}`)
         }
-        actual = realpathSync(declared)
+        actual = realpathSync.native(declared)
       } catch (cause) {
         throw new PackageError(
           "declaration_dependency_unresolved",
