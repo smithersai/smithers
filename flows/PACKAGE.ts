@@ -83,6 +83,7 @@ const codingPackages = [
   "packages/smithers/flows/observability",
   "packages/smithers/flows/patterns",
   "packages/smithers/flows/plan",
+  "packages/smithers/flows/plan-store",
   "packages/smithers/flows/platform-browser",
   "packages/smithers/flows/platform-bun",
   "packages/smithers/flows/platform-node",
