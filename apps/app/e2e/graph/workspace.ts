@@ -12,9 +12,28 @@ export const GRAPH_REPO = "codeplanesmithers/smithers-demo"
 /** The one flow that workspace declares (`packages/smithers/test/BridgedEngineRun.ts`). */
 export const GRAPH_FLOW = "gateway/GraphFixture"
 
-/** Source-writing fixture node addresses, asserted against its real compiler. */
-export const AUTHORING_READ = "root.flow.all.read"
-export const AUTHORING_VALIDATE = "root.flow.all.validate"
+/**
+ * The flow the authoring run writes, named the way discovery names one: after
+ * the directory its entry file sits in, `flows/authoring-demo/flow.ts`.
+ *
+ * Nothing on the box holds it until a run writes that file, which is what the
+ * listing before and after the run says
+ * (`packages/smithers/test/FlowAuthoringRun.test.ts` says the same thing to
+ * the control plane, where the refusal is typed).
+ */
+export const AUTHORED_FLOW = "authoring-demo"
+
+/**
+ * The two node addresses the authored file's own graph carries.
+ *
+ * They are the file's body walked through the registry's executable, which is
+ * one call deep inside the wrapper, so `all.read` sits under `root.flow.flow`.
+ * Written down rather than derived, for the reason the fixture ids are:
+ * `packages/smithers/test/FlowAuthoringRun.test.ts` drives the same plan on
+ * the same stack.
+ */
+export const AUTHORING_READ = "root.flow.flow.all.read"
+export const AUTHORING_VALIDATE = "root.flow.flow.all.validate"
 
 /**
  * The eleven nodes that flow's plan keys, in the order the control plane

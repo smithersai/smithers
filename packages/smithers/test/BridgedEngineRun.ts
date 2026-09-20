@@ -60,6 +60,8 @@ import { NotificationQueue } from "@smthrs/notifications"
 import * as Node from "@smthrs/plan/Node"
 import * as Plan from "@smthrs/plan/Plan"
 import { Registry } from "@smthrs/registry"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Executable from "@smthrs/registry/Executable"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import * as RunStoreMigrations from "@smthrs/run-store/Migrations"
 import * as RunStore from "@smthrs/run-store/RunStore"
@@ -70,11 +72,12 @@ import * as TriggersDispatchReader from "@smthrs/triggers/DispatchReader"
 import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import type * as Trigger from "@smthrs/triggers/Trigger"
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import * as AuthoredRebuild from "../src/internal/AuthoredRebuild.ts"
 import * as EngineJournalSupervisor from "../src/internal/EngineJournalSupervisor.ts"
 import * as SourceRevision from "../src/internal/SourceRevision.ts"
 import { makeAuthoringFixture, ScriptedAuthor } from "./AuthoringFixture.ts"
@@ -284,13 +287,29 @@ export const GraphFixture = Flow.make(flowId, {
  * `planId`, and it has no parent. `@smthrs/agent` `AgentSession` drives the
  * same wrapper for every agent run, so a fixture that skipped it would be
  * observed by nothing.
+ *
+ * It carries the plan's flow and the plan's input rather than one fixture
+ * field, because it dispatches WHATEVER the approved plan named: one of the
+ * flows this composition registered by hand, or — once the host has one — the
+ * flow a run of this host wrote into its own `flows/` directory, resolved from
+ * the live `Executable.Catalog` the way `AgentSession.approvedModule` resolves
+ * it. Nothing about the authored flow is known here before a run writes it.
  */
-const Wrapper = Flow.make("agent/run", {
-  payload: { runId: Schema.String, planId: Schema.String, label: Schema.String },
-  success: Schema.Unknown,
-  error: Schema.Unknown,
-  body: ({ label }) => GraphFixture.child({ label })
-})
+const wrapperOver = (
+  resolve: (flowId: string, executionDigest: string | null, input: unknown) => Node.Node<unknown, unknown, never>
+) =>
+  Flow.make("agent/run", {
+    payload: {
+      runId: Schema.String,
+      planId: Schema.String,
+      flowId: Schema.String,
+      executionDigest: Schema.NullOr(Schema.String),
+      input: Schema.Json
+    },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: ({ executionDigest, flowId, input }) => resolve(flowId, executionDigest, input)
+  })
 
 /**
  * The schedule this host's dispatcher holds.
@@ -513,7 +532,24 @@ export interface Dispatches {
  */
 export class Engine extends Context.Service<Engine, {
   /** Starts the wrapper execution under `runId`, the way a driver starts one. */
-  readonly start: (runId: string, planId: string, label: string) => Effect.Effect<void>
+  readonly start: (
+    runId: string,
+    planId: string,
+    flowId: string,
+    executionDigest: string | null,
+    input: unknown
+  ) => Effect.Effect<void>
+  /**
+   * The live catalog of the flows THIS HOST discovered, or nothing when the
+   * composition serves no project.
+   *
+   * The service object never changes identity; a rebuild swaps the snapshot
+   * behind it (`Executable.layerRefreshable`), which is what lets the control
+   * plane read a flow a run wrote without the host being restarted.
+   */
+  readonly catalog: Executable.Catalog | undefined
+  /** Rebuilds one catalog entry from the bytes now on disk, or nothing. */
+  readonly refresh: Executable.Refresh | undefined
   /** The engine's own journal, which the bridge reads and nothing else may. */
   readonly journal: Journal.Service
   /** The engine's own run store, which the bridge reads wrapper identity from. */
@@ -598,37 +634,82 @@ export interface StackOptions {
   readonly authoring?: boolean
 }
 
-/*
- * WHY THE AUTHORING HALF STILL HAS A WRAPPER.
+/**
+ * The catalog this composition serves discovered flows out of, and the seam
+ * that rebuilds one entry of it while the host is running.
  *
- * Not the loader. D-076 closed that: discovery and `Executable` accept an
- * agent-authored `@smthrs/flow` graph, and the plan a production host answers
- * with for one is the file's own nodes. What this stack cannot do is REGISTER
- * one. Its engine layer registers every flow when it is built, so a flow
- * discovered after startup has nowhere to go; a production host composes
- * `Executable.layerRefreshable`, which registers a rebuilt body into a
- * running runtime, and this fixture composes its flows by hand. Replacing the
- * wrapper therefore means giving this stack that registration, not deleting
- * three lines.
+ * This is the production registration path, not a fixture one: a real
+ * `Registry` scans the project's `flows/` directory, `Executable` loads and
+ * measures the entry a run wrote, and `Executable.layerRefreshable`'s
+ * {@link Executable.Refresh} registers the rebuilt body with the RUNNING
+ * engine runtime. Nothing here knows the authored flow before a run writes
+ * it, which is the whole point (D-081).
+ *
+ * The filesystem is the host's own, not the workspace-scoped one the engine
+ * gives an action: discovery walks absolute paths under the project root, and
+ * the loader writes and imports a digest-named sibling beside the entry.
  */
-const engineLayer = (filename: string, dispatches: Dispatches, options: StackOptions, authoring?: ReturnType<typeof makeAuthoringFixture>) => {
-  const wrapper = authoring === undefined ? Wrapper : Flow.make("agent/run", {
-    payload: { runId: Schema.String, planId: Schema.String, label: Schema.String }, success: Schema.Unknown, error: Schema.Unknown,
-    body: ({ planId, label }) => authoring.node(planId) ?? GraphFixture.child({ label })
-  })
+const catalogLayer = (authoring: ReturnType<typeof makeAuthoringFixture>) =>
+  Executable.layer({ delegates: [] }).pipe(
+    Layer.provide(authoring.registry),
+    Layer.provide(authoring.platform),
+    Layer.orDie
+  )
+
+const engineLayer = (
+  filename: string,
+  dispatches: Dispatches,
+  options: StackOptions,
+  authoring?: ReturnType<typeof makeAuthoringFixture>
+) => {
+  /**
+   * The catalog this engine serves, filled while its layer builds and read
+   * when a run dispatches. The wrapper has to exist before the layer that
+   * registers it, and the catalog only exists once that layer has been built.
+   */
+  const held: { catalog: Executable.Catalog | undefined } = { catalog: undefined }
+  /**
+   * One resolution rule for every flow this host can run: the flows this
+   * composition registered itself, then whatever discovery found.
+   */
+  const resolve = (named: string, executionDigest: string | null, input: unknown) => {
+    if (named === flowId) return GraphFixture.child({ label: inputOf(input).label })
+    if (named === ScriptedAuthor._tag) {
+      return ScriptedAuthor.child({ args: String((input as { readonly args?: unknown } | undefined)?.args ?? "") })
+    }
+    const executable = held.catalog?.executables.find((entry) => entry.descriptor.name === named)
+    if (executable === undefined) return Node.fail(`this host holds no executable for ${named}`)
+    // The identity check `AgentSession.approvedModule` performs before it
+    // dispatches: a card approved against one body must not run another. An
+    // edited file is a different execution identity, so a plan approved before
+    // the edit is refused rather than silently running code nobody approved.
+    if (executionDigest === null || Descriptor.executionDigest(executable.descriptor) !== executionDigest) {
+      return Node.fail(`${named} changed or has no approved executable identity`)
+    }
+    // The registered body, dispatched as its own child execution, exactly as
+    // `AgentSession` dispatches an approved module flow.
+    return executable.flow.child({ input: input as never })
+  }
+  const wrapper = wrapperOver(resolve)
   return Layer.effect(Engine)(
     Effect.gen(function*() {
       const state = yield* DurableEngineState.DurableEngineState
       const journal = yield* Journal.Journal
       const runs = yield* RunStore.RunStore
-      const services = yield* Effect.context<Effect.Services<ReturnType<typeof Wrapper.execute>>>()
+      // Read the way `AgentSession` reads it: optional, because a composition
+      // that serves no project holds no catalog and runs only what it
+      // registered by hand.
+      held.catalog = Option.getOrUndefined(yield* Effect.serviceOption(Executable.Catalog))
+      const refresh = Option.getOrUndefined(yield* Effect.serviceOption(Executable.Refresh))
+      const services = yield* Effect.context<Effect.Services<ReturnType<typeof wrapper.execute>>>()
       const settled = (runId: string, attempts = 20_000): Effect.Effect<string> =>
         Effect.gen(function*() {
           // Control accepts before the forked engine launch creates its row.
           // Absence is still launching, not a failed execution or a reason to
           // repeat the launch. Other storage errors must remain failures.
-          const row = yield* runs.get(runId).pipe(Effect.catch(error =>
-            error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error)))
+          const row = yield* runs.get(runId).pipe(
+            Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
+          )
           if (row !== undefined && !["suspended", "running", "pending"].includes(row.status)) return row.status
           if (attempts <= 0) return yield* Effect.die(`execution ${runId} did not settle`)
           yield* Effect.sleep("2 millis")
@@ -647,11 +728,18 @@ const engineLayer = (filename: string, dispatches: Dispatches, options: StackOpt
           return yield* parkedBelow(runId, attempts - 1)
         })
       return {
-        start: (runId: string, planId: string, label: string) =>
+        start: (runId: string, planId: string, flowId: string, executionDigest: string | null, input: unknown) =>
           Effect.provideContext(
-            Effect.asVoid(wrapper.execute({ runId, planId, label }, { executionId: runId, discard: true })),
+            Effect.asVoid(
+              wrapper.execute(
+                { runId, planId, flowId, executionDigest, input: input as never },
+                { executionId: runId, discard: true }
+              )
+            ),
             services
           ) as Effect.Effect<void>,
+        catalog: held.catalog,
+        refresh,
         observe: (runId: string) =>
           Effect.orDie(
             AgentSession.readExecution(runId).pipe(
@@ -679,7 +767,7 @@ const engineLayer = (filename: string, dispatches: Dispatches, options: StackOpt
       Layer.mergeAll(
         HumanTask.layer,
         Interpreter.layer(wrapper),
-        ...(authoring === undefined ? [] : [Interpreter.layer(ScriptedAuthor)]),
+        ...(authoring === undefined ? [] : [Interpreter.layer(ScriptedAuthor), catalogLayer(authoring)]),
         Interpreter.layer(GraphFixture),
         Interpreter.layer(Gate),
         Interpreter.layer(Ask)
@@ -697,7 +785,9 @@ const engineLayer = (filename: string, dispatches: Dispatches, options: StackOpt
             isAlive: () => Effect.succeed(false)
           })
         ),
-        Layer.provideMerge(Layer.mergeAll(authoring?.filesystem ?? StepBoundary.layerTest(), stubJj, OwnerIdentity.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(authoring?.filesystem ?? StepBoundary.layerTest(), stubJj, OwnerIdentity.layer)
+        ),
         // The declaration a host makes about the machine its results were
         // computed on, or nothing at all. `Dispatch.ts:69` reads it off the
         // context the engine captures here, so it has to sit under the engine
@@ -735,7 +825,14 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
       controlJournal: yield* Journal.Journal,
       engineState: engine.state,
       runs: engine.runs,
-      control: yield* ControlRuntime
+      control: yield* ControlRuntime,
+      // What a host does when one of its own runs has written a flow file:
+      // rebuild that one catalog entry from the bytes that reached the
+      // workspace, before the run's receipt is readable. `NativeControl`
+      // installs the same reaction from `Application.Config.rebuildAuthoredFlows`,
+      // and a composition whose runs may write arbitrary code into the
+      // directory it serves is the case D-078 permits it for.
+      ...(engine.refresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(engine.refresh) })
     })
     yield* Effect.forkScoped(supervisor.recover)
     return supervisor.wrap(ControlExecutor.makeNoop({
@@ -749,7 +846,9 @@ const executor = Layer.effect(ControlExecutor.ControlExecutor)(
             engine.start(
               input.run.runId,
               input.run.planId ?? "",
-              inputOf((input.plan as { readonly decodedInput?: unknown }).decodedInput).label
+              input.plan.card.flowId,
+              input.plan.card.executionDigest ?? null,
+              input.plan.decodedInput
             ),
             scope
           ),
@@ -780,6 +879,92 @@ const dispatcher = TriggersDispatchReader.layer.pipe(
 )
 
 /**
+ * One flow THIS HOST discovered, projected into the shape the durable control
+ * runtime plans from.
+ *
+ * `@smthrs/cli` `NativeControl.durableFlow` and `planExecutable` are the same
+ * two functions over the same two values: the descriptor answers the envelope
+ * and the approved execution identity, and the executable's own flow answers
+ * the nodes. The graph carries each node's declaration site made relative to
+ * the project root, and a site of an authored flow names the file the run
+ * WROTE: `Executable`'s loader says `Graph.evaluatedFrom(sibling, entry)`
+ * before it imports, so a declaration captured while that module evaluates is
+ * reported against `flows/<id>/flow.ts` and never against the digest-named
+ * scratch module it was actually imported from.
+ *
+ * No revision is reported, because this project is a scratch directory under
+ * no version control and can name none. A reader of such a node is shown no
+ * code rather than a file it cannot bind (D-068), which is why the drawer's
+ * Code tab is absent for it.
+ *
+ * No cache is probed, so every node reports `run`: this host cannot say a key
+ * would hit, and a verdict it has not checked would be a claim about work
+ * nothing looked for.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+const discoveredFlow = (executable: Executable.Executable, root: string): DurableFlow => ({
+  flowId: executable.descriptor.name,
+  description: executable.descriptor.description,
+  deployClass: false,
+  executionDigest: Descriptor.executionDigest(executable.descriptor),
+  envelope: {
+    capabilities: executable.descriptor.capabilities,
+    flows: executable.descriptor.flows,
+    budget: Descriptor.budgetOf(executable.descriptor)
+  },
+  plan: (input, planId) =>
+    Effect.suspend(() => {
+      const built = Graph.build(executable.flow, { input: input as never })
+      return Plan.compile({ planId, flow: executable.descriptor.name, nodes: Graph.drafts(built) }).pipe(
+        Effect.map((compiled) => ({
+          plan: compiled,
+          graph: {
+            edges: Graph.edges(built),
+            nodes: Graph.nodes(built).map((node) => {
+              const path = node.declaredAt === undefined
+                ? undefined
+                : EngineEvent.relativePath(root, node.declaredAt.path)
+              return {
+                id: node.id,
+                ...(path === undefined ? {} : { declaredAt: { path, line: node.declaredAt!.line } })
+              }
+            })
+          }
+        }))
+      )
+    }).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
+})
+
+/**
+ * The durable control runtime this stack plans from.
+ *
+ * With no project to serve it is the fixture's own flow and nothing else. With
+ * one, the catalog is read PER PLAN rather than once while the host starts,
+ * which is the only reason a flow one of this host's own runs wrote can be
+ * planned without a restart (`SqlControlRuntime.Options.loadFlows`, as
+ * `NativeControl` supplies it).
+ */
+const controlRuntime = (authoring?: ReturnType<typeof makeAuthoringFixture>) =>
+  authoring === undefined
+    ? SqlControlRuntime.layer({ flows: [durableFlow], approvalAuthority }).pipe(Layer.orDie)
+    : Layer.effect(ControlRuntime)(
+      Effect.gen(function*() {
+        const engine = yield* Engine
+        return yield* SqlControlRuntime.make({
+          approvalAuthority,
+          loadFlows: () =>
+            Effect.succeed([
+              durableFlow,
+              ...authoring.flows,
+              ...(engine.catalog?.executables ?? []).map((executable) => discoveredFlow(executable, authoring.root))
+            ])
+        })
+      })
+    ).pipe(Layer.orDie)
+
+/**
  * The bridged stack: the gateway read path, a control plane whose executor is
  * the engine, and the supervisor that copies the engine's journal into the
  * control journal.
@@ -806,7 +991,7 @@ export const stackWith = (options: StackOptions = {}) =>
           executor.pipe(
             Layer.provideMerge(
               Layer.mergeAll(
-                SqlControlRuntime.layer({ flows: [durableFlow, ...(authoring?.flows ?? [])], approvalAuthority }).pipe(Layer.orDie),
+                controlRuntime(authoring),
                 NotificationQueue.layer,
                 Registry.layerNoop(),
                 dispatcher

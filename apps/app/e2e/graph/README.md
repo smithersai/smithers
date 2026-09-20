@@ -29,12 +29,18 @@ in [MANUAL-TEST.md](./MANUAL-TEST.md) for the create → edit → replan → run
 and the remaining production/provider limitations. Local chat dispatches
 commands; it is not a model-backed assistant.
 
-The authoring half keeps its own `agent/run` wrapper and its own plan hooks.
-That is a property of THIS engine, which registers flows when it is built: a
-flow discovered after startup needs the refreshable registration a production
-host composes. The loader gap D-075 recorded is closed — discovery and
-`Executable` accept an agent-authored `@smthrs/flow` graph, by `main`'s
-implementation of that bridge rather than this lane's (D-079).
+The authored half is the production path and nothing is registered for it
+(D-081). The `create-flow` run writes a real `@smthrs/flow` graph file, shaped
+the way `flows/create-flow/scaffold/flow.mdx` teaches, into the scratch project
+this box serves. A real registry discovers it, `@smthrs/registry` `Executable`
+measures and loads it, and `Executable.Refresh` registers the rebuilt body with
+the running engine before the run's receipt is readable — the same reaction
+`NativeControl` installs from `Application.Config.rebuildAuthoredFlows`, which
+D-078 permits for a disposable host like this one. So `/flow.list` holds the
+flow only after a run has written its entry file, and the plan the card
+redraws is that file's own graph, with its nodes naming it. The drawer's Code
+TAB stays absent for those nodes: a scratch project under no version control
+can name no revision, and a site without one shows no code (D-068).
 
 ## Stop it
 
@@ -67,7 +73,9 @@ The contents route is what makes a node's Code tab openable: the fixture flow
 is a file in this repository, the engine records which line of it each action
 was declared on, and `files.read` reads that file back through the route every
 other file read in the app uses. A path that climbs out of the checkout is
-answered not found.
+answered not found. A flow one of this box's runs AUTHORED is not in that
+checkout — it is in the scratch project — and no reader asks the route for it,
+because its nodes carry no revision and so have no Code tab (D-068).
 
 Two processes because `@smthrs/database` `NodeDatabase` refuses Bun and the
 local origin is a Bun server. The origin uses native fetch with
@@ -77,10 +85,12 @@ and the host does not retry that failure or fabricate its receipt.
 
 The bridged stack is `packages/smithers/test/BridgedEngineRun.ts`: a real
 control plane and a real engine over two SQLite files, with the
-`EngineJournalSupervisor` bridge `NativeControl` wires. The authoring decisions,
-action results, Jujutsu snapshot adapter and workspace/identity relay are
-scripted. Source writes, diff-bundle/copy-back receipts and engine/control
-journals are real. A
+`EngineJournalSupervisor` bridge `NativeControl` wires, and — when it serves a
+project — the real registry, executable catalog and catalog refresh that host
+composes. The authoring decisions, action results, Jujutsu snapshot adapter
+and workspace/identity relay are scripted. Source writes, discovery, the
+module load, diff-bundle/copy-back receipts and engine/control journals are
+real. A
 spec written against this host intercepts no browser request: Playwright's
 routing call appears nowhere under this directory, and L8's gate greps for it.
 
@@ -135,7 +145,9 @@ instead of becoming a fact the UI believes.
 
 ## The Chromium tier
 
-`playwright.graph.config.ts` drives this host from `e2e/graph/flow-graph.spec.ts`:
+`playwright.graph.config.ts` drives this host from `e2e/graph/flow-graph.spec.ts`,
+`flow-graph-a11y.spec.ts`, `flow-graph-reload.spec.ts` and
+`flow-authoring.spec.ts`:
 
 ```sh
 cd apps/app && pnpm exec playwright test --config playwright.graph.config.ts

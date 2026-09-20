@@ -31,7 +31,8 @@ reuses `apps/app/dist`.
 ```
 
 Find `gateway/GraphFixture`, with a **Run** door and a **Plan** door. The
-scripted authoring entries are also listed.
+scripted `create-flow` is listed beside it. `authoring-demo` is NOT: nothing
+on disk names it until a run writes it.
 
 **2. Plan it.** Press **Plan**. The card draws 11 nodes with the count `11`
 beside them. Each node is titled by the action it dispatches
@@ -204,20 +205,29 @@ cd apps/app && SMITHERS_FLOW_GRAPH_PORT=47371 bun scripts/flow-graph-e2e-host.ts
 5. The same plan card gains `authoring/Validate`, retaining Read's selection.
    Read's Declaration says `unchanged`; Validate's says `added`. These compare
    keys, with no claim of cached execution or time saved.
-6. Reload: the edited plan and its selected node remain. Press the plan's **Run**. The new flow executes both actions; open its graph
-   and inspect Validate's actual `built` settlement.
+6. Send `/flow.list codeplanesmithers/smithers-demo` again: `authoring-demo`
+   is listed now and was not in step 1. That listing is the registry's own
+   answer, so it is the box having discovered the file.
+7. Reload: the edited plan and its selected node remain. Press the plan's
+   **Run**. The new flow executes both actions; open its graph and inspect
+   Validate's actual `built` settlement.
 
 The local chat is a command dispatcher, not Jev or an LLM. `/flow.*` uses the
 app's real registry; ordinary text says that local chat accepts commands. The
 fixture's `create-flow` is scripted: a real engine action writes TypeScript,
 the sandbox copies it into an isolated workspace, and the second chat request
 runs another action that writes version two. Real diff-bundle/copy-back records
-reach the app through the journal bridge. Planning reads those bytes and imports
-a module pinned by their hash; execution retains the module for that plan.
-The gateway runs as ESM so imported source and the engine share one declaration
-registry; its former CommonJS entry is a compatibility loader. Read and Validate
-return fixture constants. The existing Jujutsu adapter supplies fixture snapshot
-metadata; it does not perform real Jujutsu operations. Source-change detection
+reach the app through the journal bridge. What happens next is the host's, not
+the fixture's: the observer that copies those records across rebuilds that one
+catalog entry (`Executable.Refresh`), so the registry discovers the file, the
+loader measures its bytes and imports them, and the plan the card redraws is
+the FILE's own graph. Nothing is registered for the authored flow, and running
+it dispatches the registered body under the execution identity its card was
+approved against. The gateway runs as ESM so imported source and the engine
+share one declaration registry; its former CommonJS entry is a compatibility
+loader. Read and Validate return fixture constants. The existing Jujutsu
+adapter supplies fixture snapshot metadata; it does not perform real Jujutsu
+operations. Source-change detection
 uses the filesystem diff-bundle and copy-back receipts, not that metadata.
 No source-change receipt is manufactured, and no browser response is intercepted.
 
@@ -253,17 +263,24 @@ plan a host answers with is the FILE's own graph: the author's actions, under
 their own node ids. It delegates to nothing, so it runs on a host that
 registers no delegate. That loader is `main`'s, not this lane's (D-079): its
 tests are `registry/test/Executable.test.ts` and
-`registry/test/ModuleClosure.test.ts`, and no test lifts the scaffold
-instructions' own example out of the document, which is the drift D-075
-measured and D-079 leaves open.
+`registry/test/ModuleClosure.test.ts`, and
+`packages/smithers/test/FlowCatalogRefresh.test.ts` lifts the scaffold
+instructions' own example out of the document and drives discovery, the
+executable and the plan over it, which closes the drift D-075 measured.
 
-**What this fixture still is.** This stack keeps its `agent/run` wrapper and
-its own plan hooks: its engine registers flows when it is built, so running a
-flow discovered AFTER startup needs the refreshable registration a production
-host composes and this fixture does not. The wrapper is therefore a fixture
-mechanism, not the loader gap D-075 recorded — that gap is closed. What is
-still unproven HERE, on this host, is a browser walking an agent-authored
-graph through the production registry.
+**What this fixture is.** It composes that registration (D-081). Serving a
+project gives this stack a real `Registry` over the project's `flows/`
+directory, an `Executable` catalog built from it, and the `Executable.Refresh`
+the observer calls when one of its own runs has applied a flow file. Its
+control runtime reads that catalog PER PLAN
+(`SqlControlRuntime.Options.loadFlows`, as `NativeControl` supplies it), and
+its `agent/run` wrapper resolves what the approved plan named — the flows this
+composition registered by hand, then whatever discovery found, refusing a card
+whose approved execution identity the host no longer holds, which is the check
+`AgentSession.approvedModule` makes. Nothing is pre-registered for an authored
+flow. `e2e/graph/flow-authoring.spec.ts` is a browser walking that loop and
+`packages/smithers/test/FlowAuthoringRun.test.ts` is the same loop without
+one.
 
 **What is off by default.** A production host does NOT import a flow file its
 own runs write while it serves. `rebuildAuthoredFlows` is off unless a
@@ -272,12 +289,26 @@ the serving process with the host's credentials and nothing approves it
 (D-078). With it off, an authored flow is plannable the next time the host
 starts and `plan` answers `FlowNotFound` until then.
 
-**What a graph flow's Code tab cannot do.** Its nodes' declaration sites name
-the verified sibling the loader imported, not `flow.ts`: the loader imports
-the bytes discovery measured from a private, digest-named copy, and a stack
-frame names the module that was imported. The line is the author's, the
-directory is the author's, and the file name is the loader's. D-076 names the
-two ways to close it and why neither is free.
+**What a graph flow's Code tab does, and what it still cannot.** Its nodes'
+declaration sites name `flows/<id>/flow.ts`, not the digest-named sibling the
+loader actually imported: `Executable`'s loader says
+`Graph.evaluatedFrom(sibling, entry)` before it imports, so a declaration
+captured while that module evaluates is reported against the entry file. Both
+this fixture and `NativeControl` make the site relative to the project root
+before publishing it, and a site outside that root is dropped rather than
+published as somebody's home directory.
+`packages/smithers/test/FlowAuthoringRun.test.ts` asserts both sites of the
+authored plan name that file.
+
+The tab itself does not open for a flow a run authored, on this host or on a
+deployed one. It needs a REVISION as well as a site (D-068), and
+`PlanGraph.sourceRevision` is forty hex digits a content route spawns `jj` or
+`git` with. This fixture's project is a scratch directory under no version
+control, so it names none and the tab is absent — which is the rule working.
+Read, not measured: a deployed box names one, but `NativeControl` takes
+`hostRevision` ONCE while it starts, so the revision a rebuilt entry's plan
+carries is the one taken before its run wrote the file. Nobody has run that
+host to see what its Code tab then does (D-081).
 
 A live provider canary and execution-bound source identity (D-068) remain
 required before claiming the full D-029 loop works on a deployed box.
@@ -310,6 +341,11 @@ files go with the temporary directory that held them.
   so there is nothing to read that could be called the source the plan was
   built from (D-068). `jj log -r @` answers one for a jj workspace; a git
   checkout answers one only while `git status --porcelain` is empty.
+- **The Code tab is missing on every node of an AUTHORED flow.** Expected, for
+  the same reason: that flow's file is in the scratch project this box serves,
+  which is under no version control and names no revision. Its nodes still
+  carry their site, `flows/<id>/flow.ts`
+  (`packages/smithers/test/FlowAuthoringRun.test.ts`).
 - **`curl` against the origin answers `local_session_required`.** The local
   session token reaches the browser with the page. Drive the stack through a
   browser, or the relay URL directly.

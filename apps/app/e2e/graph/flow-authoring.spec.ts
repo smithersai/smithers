@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { GRAPH_REPO, AUTHORING_READ, AUTHORING_VALIDATE } from "./workspace"
+import { AUTHORED_FLOW, AUTHORING_READ, AUTHORING_VALIDATE, GRAPH_FLOW, GRAPH_REPO } from "./workspace"
 
 const command = async (page: Page, text: string) => {
   const composer = page.getByTestId("composer-input")
@@ -8,10 +8,25 @@ const command = async (page: Page, text: string) => {
   await composer.press("Enter")
 }
 
-// The author is scripted. Its source writes, copy-back, journal, compiler,
-// control approvals, execution and browser are real; no provider is involved.
+/*
+ * The builder loop, end to end, on the production path.
+ *
+ * The author is scripted — no provider is involved — and nothing under it is.
+ * The run writes a real `@smthrs/flow` graph file, shaped the way
+ * `flows/create-flow/scaffold/flow.mdx` teaches one, through the engine's
+ * workspace sandbox and copy-back. The box then DISCOVERS it: a real registry,
+ * a real measured module load, and the catalog refresh that registers the
+ * rebuilt body with the running engine. Nothing is registered on the authored
+ * flow's behalf, which is what the listing that does not hold it, the plan
+ * this card redraws, and the run it launches are evidence of (D-081).
+ */
 test("authors, edits, replans and runs the written source from chat", async ({ page }) => {
   await page.goto("/")
+  // Nothing on this host names the authored flow yet: its entry file has not
+  // been written, and the registry lists what is on disk.
+  await command(page, `/flow.list ${GRAPH_REPO}`)
+  await expect(page.locator(`[data-flow="flow.run"][data-flow-args="${GRAPH_FLOW}"]`)).toBeVisible()
+  await expect(page.locator(`[data-flow="flow.run"][data-flow-args="${AUTHORED_FLOW}"]`)).toHaveCount(0)
   const request = `/flow.create Build a flow ${GRAPH_REPO}`
   await command(page, request)
   const author = page.locator('.smithers-card[data-kind="run-trace"]').first()
@@ -57,6 +72,15 @@ test("authors, edits, replans and runs the written source from chat", async ({ p
   await expect(plan).toHaveAttribute("data-testid", planId!)
   await expect(plan.locator(".flow-graph-drawer")).toHaveAttribute("data-node", AUTHORING_VALIDATE)
   await expect(plan.locator(".flow-graph-drawer")).toContainText("added")
+
+  /*
+   * And the box really DISCOVERED it. The listing is the registry's own
+   * answer, so a flow appearing in it after a run wrote its entry file — and
+   * nowhere in it before — is the whole claim: nothing on this host was
+   * registered for `authoring-demo` until discovery found the file.
+   */
+  await command(page, `/flow.list ${GRAPH_REPO}`)
+  await expect(page.locator(`[data-flow="flow.run"][data-flow-args="${AUTHORED_FLOW}"]`)).toBeVisible()
 
   await plan.locator('[data-flow="flow.run"]').click()
   await expect(page.locator('.smithers-card[data-kind="run-trace"]')).toHaveCount(3)

@@ -797,8 +797,9 @@ engine's declaration registry. Its command chat is not Jev. This proves the rece
 not provider reasoning. The production native executable catalog is no longer a
 startup snapshot: D-073 rebuilds the entry a matched receipt names, and
 `packages/smithers/test/FlowCatalogRefresh.test.ts` plans and runs a flow a
-native host's own run wrote. The browser scenario still reaches its authored
-flow through the fixture wrapper, for the reason D-075 gives. An
+native host's own run wrote. The browser scenario reached its authored flow
+through a fixture wrapper when this was written; D-081 replaced that with the
+host's own registry, catalog and refresh. An
 execution-bound source identity (D-068) and a real-provider canary remain
 blockers for claiming the complete D-029 goal. No Anthropic or gateway key was
 available in this lane.
@@ -1193,7 +1194,7 @@ re-raised instead of reported as a rebuild that finished, so a host shutting
 down does not leave a log line claiming a rebuild that never ran.
 `packages/smithers/test/AuthoredRebuild.test.ts` is those four endings.
 
-### D-079 — `main` landed the graph-flow loader first; this lane's bridge was dropped, not merged. RULED (integration)
+### D-079 — `main` landed the graph-flow loader first; this lane's bridge was dropped, not merged. RULED (integration). Its "the browser fixture keeps its wrapper" ruling is SUPERSEDED by D-081
 D-076's eleven commits are not in the integrated tree. While this lane was
 building them, `main@origin` `137cebd5cc52` ("a flow file that default-exports
 a `@smthrs/flow` flow runs its own graph") landed an independent
@@ -1287,3 +1288,76 @@ contract and the remedy rather than the rung.
 *Falsified if:* a reader on smithers.sh reaches a plan or graph surface that
 refuses, which would mean a gate survived the removal;
 `grep -rn 'flowBuilder\|FLOW_BUILDER' apps packages .github` finds one.
+
+### D-081 — The browser fixture composes the refreshable registration; the authoring wrapper is deleted. RULED (integration)
+D-079 said the authoring half of the browser stack keeps a pre-registered
+`agent/run` wrapper, because "this stack cannot REGISTER" a flow discovered
+after startup. That was true of the composition, not of the repository:
+`Executable.layer` provides a live `Catalog` and the `Refresh` beside it,
+`SqlControlRuntime.Options.loadFlows` reads a catalog per plan rather than
+once, and `EngineJournalSupervisor.onSourceApplied` is the hook `NativeControl`
+installs `AuthoredRebuild.rebuild` on. Those three seams are all a fixture
+needs to be the production path, and `packages/smithers/test/BridgedEngineRun.ts`
+now composes them.
+
+What it does now. Serving a project (`stackWith({ authoring: true })`) builds a
+real `Registry` over that project's `flows/` directory and an `Executable`
+catalog from it, registered with the ENGINE's runtime. The control runtime
+reads the catalog per plan, so a flow that did not exist when the host started
+is plannable the moment its entry is registered — and `plan` answers
+`FlowNotFound` until then, which is the typed refusal, not a plan of no nodes.
+The observer that copies the engine's records into the control journal calls
+`Refresh.flow(<id>)` when one of its own runs has applied `flows/<id>/flow.ts`,
+before the record it acted on is copied, so a reader of the receipt can replan
+at once. The `agent/run` wrapper resolves whatever the approved plan named: the
+flows this composition registered by hand, then the catalog — and it refuses a
+card whose approved execution identity the host no longer holds, which is the
+check `AgentSession.approvedModule` makes before it dispatches a module flow.
+Nothing is registered on an authored flow's behalf.
+
+What the author writes. A `@smthrs/flow` GRAPH file in the shape
+`flows/create-flow/scaffold/flow.mdx` teaches: one default-exported flow
+stating its `description`, `payload`, `success` and `capabilities` literally,
+dispatching actions the host resolves by name, importing nothing but bare
+specifiers. It is measured, loaded and registered by the same code a deployed
+box uses, and its plan's nodes carry `flows/authoring-demo/flow.ts` as their
+declaration site — the loader says `Graph.evaluatedFrom(sibling, entry)` before
+it imports, so a site names the file the run wrote rather than the
+digest-named scratch module. MANUAL-TEST.md's paragraph claiming the opposite
+was stale and is corrected.
+
+What is still missing, measured while doing this. The drawer's Code TAB needs
+a revision as well as a site (D-068), and `PlanGraph.sourceRevision` is forty
+hex digits the contents route spawns `jj` or `git` with, so a content digest
+cannot stand in for one. This fixture's project is a scratch directory under
+no version control and names none, so the tab is absent — the rule working.
+Read, not measured: a deployed box does name one, but `NativeControl` takes
+`hostRevision` once while it starts (`NativeControl.ts`, the block that reads
+`revisionBefore`/`revisionAfter` around the catalog build) and
+`buildPlanGraph` publishes that value, so the revision a REBUILT entry's plan
+carries is the one taken before the run wrote the file. Nothing here ran that
+host to see what its Code tab then does. Re-reading the revision when the
+catalog is rebuilt is the candidate fix, and it is not in this change.
+The browser tier asserts discovery instead, where it can see it: the flow is
+absent from `/flow.list` before the authoring run and listed after it.
+
+Why this and not a host over `NodeControl.layerControl`. The other option was
+to move the whole browser stack onto the CLI's own composition over a scratch
+project. It renames `gateway/GraphFixture`: discovery names a flow after the
+directory its entry sits in, so the fixture flow, its eleven node ids, its
+trigger's `flowId` and its declaration sites would all move into a temporary
+directory. `flow-graph.spec.ts` EDITS `packages/smithers/test/BridgedEngineRun.ts`
+while the stack is up and reads the result back at the revision the plan
+recorded (D-068); a scratch tree is under no version control and can answer no
+revision, so that half of the tier would have had to be deleted rather than
+moved. The hand-composed half stays where it is declared, under version
+control, and only the half that has to be discovered is discovered.
+
+What this costs. The rebuild imports an agent-written file into the serving
+process. That is exactly what D-078 made an explicit, default-off host
+decision, and this stack is the case it named: a disposable fixture whose
+databases and workspace are removed when it stops.
+
+*Falsified if:* `grep -n 'authoring' packages/smithers/test/BridgedEngineRun.ts`
+shows a flow registered for the authored file, or the browser tier passes with
+the registry's discovery scan removed.
