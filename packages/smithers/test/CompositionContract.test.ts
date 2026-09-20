@@ -21,7 +21,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
-import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 
 const roots = new Set<string>()
 const agents = new Set<MockAgent>()
@@ -88,6 +87,8 @@ const composition = (
 }
 
 const terminal = new Set(["completed", "failed", "cancelled"])
+/** The control events that carry those statuses, which is what a watch closes on. */
+const terminalKinds = new Set([...terminal].map((status) => `control.run.${status}`))
 
 const run = (ordinal: number) =>
   Effect.gen(function*() {
@@ -104,14 +105,17 @@ const run = (ordinal: number) =>
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
       return yield* Effect.die("expected an accepted run")
     }
-    // AgentSession emits the control lifecycle event inside its handler, before
-    // the native wrapper commits its terminal state. list projects that native
-    // state, so await the supervisor's post-commit settlement instead. watch
-    // replays committed events before following new ones and cannot miss a
-    // settlement that happened before this subscription.
+    // Wait for the terminal control status itself, which is the last event this
+    // run writes: `EngineJournalSupervisor` holds every terminal status behind
+    // this run's `control.engine.projection-settled`, so the status and the
+    // control row it commits with are both readable once it arrives. Not that
+    // projection marker: it is written before the status rather than after, and
+    // an observation that gaps out writes no marker at all, so a watch closed on
+    // it would read the listing below mid-run or never close. `watch` replays
+    // committed events before following new ones, so a status written before
+    // this subscription is still seen.
     yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
-      Stream.filter((event) => event.kind === settledKind),
-      Stream.take(1),
+      Stream.takeUntil((event) => terminalKinds.has(event.kind)),
       Stream.runDrain
     )
     const page = yield* control.list({ _tag: "runs", filters: { runId: receipt.runId } })

@@ -612,7 +612,15 @@ async function proveRepository(t: TestContext, proof: { setup?: boolean; jobs?: 
       const launched = yield* client.Run({ _tag: "Plan", planId: plan.planId, digest: plan.digest, envelope: plan.envelope, idempotencyKey: "mutation:run" })
       assert.equal(launched._tag, "Accepted")
       const events = yield* control.watch({ runId: launched.runId!, follow: true }).pipe(Stream.tap(event => Effect.promise(() => appendFile(join(temporary, "events.ndjson"), JSON.stringify(event) + "\n"))),
-        Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect, Effect.timeout("90 seconds"))
+        // Closed on the terminal status for the same reason the setup loop
+        // above is: this host writes `completed` and `failed` behind the
+        // engine's `control.engine.projection-settled`, and a projection that
+        // gaps out never writes that marker at all. A watch closed on it can
+        // spend the whole timeout and return a short set, which the `applied`
+        // check below would read as the absence it is asserting.
+        Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+        Stream.runCollect, Effect.timeout("90 seconds"))
+      assert(!events.some(event => event.kind === "control.run.failed"), `the mutation run failed: ${JSON.stringify(events.filter(event => event.kind === "control.run.failed"))}`)
       const applied = events.flatMap(event => { const state = (event.payload as any)?.payload?.state
         return state?.flowName === "repository/ApplyChange" && state?.result?._tag === "Complete" && state.result.exit?._tag === "Success" ? [state.result.exit.value] : [] })
       assert.equal(applied.length, 0, "a local-only host must retain its draft before native mutation")

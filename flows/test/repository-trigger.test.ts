@@ -197,15 +197,41 @@ async function withHost(t: TestContext, fixture: Fixture, use: (probe: Probe) =>
     const session = Math.random().toString(36).slice(2, 8)
     const runs = (): Promise<ReadonlyArray<Record<string, unknown>>> => Effect.runPromise(Effect.map(client.List({ _tag: "runs" }),
       (listed: any) => (listed.items as ReadonlyArray<any>).map(row => ({ runId: row.runId, flowId: row.flowId, status: row.status, waitingReason: row.waitingReason, pendingWaits: row.pendingWaits }))))
+    /**
+     * Watch one run until the terminal status a reader folds, which on this
+     * host is the last event a run writes.
+     *
+     * Not `control.engine.projection-settled`. `EngineJournalSupervisor` holds
+     * every terminal status behind that marker, so a watch closed on it ends
+     * one event too early, and the marker is not guaranteed at all, so such a
+     * watch can never close. The ordering grace expiring, an observation that
+     * loses its native wrapper, and a run this host is not observing each
+     * write the status with no marker in front of it; a watch waiting for one
+     * spends its whole timeout and then answers with nothing it saw. The
+     * timeout below ends a run that writes no terminal status, and it fails.
+     * An empty event set is never an answer.
+     */
     const settle = (runId: string) => control.watch({ runId, follow: true }).pipe(
-      Stream.takeUntil(event => event.kind === "control.engine.projection-settled"), Stream.runCollect,
-      Effect.timeoutOrElse({ duration: "120 seconds", orElse: () => Effect.succeed([] as any) }))
+      Stream.takeUntil(event => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+      Stream.runCollect, Effect.timeout("120 seconds"))
     const runFlow = (flowId: string, input: unknown, key: string) => Effect.runPromise(Effect.gen(function*() {
       const planned: any = yield* client.Plan({ flowId, input: json(input), idempotencyKey: `${key}:plan` })
       yield* client.Approve({ ...planned.approval, scope: "once" })
       const launched: any = yield* client.Run({ _tag: "Plan", planId: planned.planId, digest: planned.digest, envelope: planned.envelope, idempotencyKey: `${key}:run` })
-      yield* settle(launched.runId)
-      return (yield* Effect.promise(runs)).find(row => row.runId === launched.runId)
+      const events = yield* settle(launched.runId)
+      // Two independent readers of one run, held to the same answer. The last
+      // watched event is this host's own durable fact: `ControlFacts.commitRun`
+      // writes the control row and journals the status in one transaction, so
+      // its `status` is the row. The listing is what the app's Run door reads,
+      // and `ControlLive` fills a listed status from the executor's
+      // `readExecution` rather than from that row. Asserting the two agree is
+      // what keeps the status the tests below read from being right by
+      // accident: under the projection marker this watch used to close on, the
+      // terminal fact is not in the set at all and this fails at once.
+      const journaled = (events.at(-1)?.payload as any)?.status
+      const row = (yield* Effect.promise(runs)).find(row => row.runId === launched.runId)
+      assert.equal(row?.status, journaled, `the served listing and the run's own terminal fact must agree; got ${JSON.stringify({ row, journaled, last: events.at(-1)?.kind })}`)
+      return row
     }).pipe(Effect.provideService(Control.Control, control)))
     const register = (request: Record<string, unknown>) => Effect.runPromise(Effect.gen(function*() {
       const key = `register:${session}:${String(request.slug)}:${String(request.operation ?? "register")}:${attempt++}`
