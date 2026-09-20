@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ControlExecutor.makeObserving` wraps an executor for a host that observes
+  runs and drives none: `readExecution`, `requestCancel`, `deliverSignal` and
+  `settleCancelledPark` pass through, and `launch` and `resumeRun` die. A host
+  with no completion judge composes one, so it can list and diagnose runs
+  without being able to admit one it could never judge.
+
 ### Changed
 
 - Breaking: approval decisions require an independent `ApprovalAuthority` host

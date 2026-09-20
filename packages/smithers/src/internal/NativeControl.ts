@@ -139,6 +139,12 @@ export interface ExecutorOptions {
   /** Where `engine.db` lives, when that is not the project root. */
   readonly stateRoot?: string | undefined
   /**
+   * Whether this executor may drive a run. `false` builds the observing
+   * executor described on `Application.Config.startsRuns`: no judge is
+   * required and `launch` and `resumeRun` are unreachable.
+   */
+  readonly startsRuns?: boolean | undefined
+  /**
    * Trusted native registrations using the existing executable catalog.
    * Built in the engine's registration phase with the guarded host platform;
    * every registered handler restores its owning approved control envelope.
@@ -223,13 +229,25 @@ export const make = (
 
   // Select before materializeEngine: a failed sibling layer is too late to
   // prevent database acquisition. Every classifier and the brake share it.
+  //
+  // `startsRuns` is what scopes the refusal to the hosts it protects. A host
+  // that cannot start or resume a run cannot reach a completion, so requiring
+  // its judge refused every listing, diagnosis and log read in a project with
+  // no gateway key. It takes the unreachable judge instead, and
+  // `layerExecutor` makes that unreachability structural rather than a
+  // classification anyone has to trust.
   const evaluatorFor = (
     environment: Readonly<Record<string, string | undefined>>,
-    supplied?: Layer.Layer<Evaluator.Evaluator>
+    supplied?: Layer.Layer<Evaluator.Evaluator>,
+    startsRuns = true
   ) => {
     try {
-      return supplied ?? native.evaluator ?? Evaluator.layerFromEnvironment(environment, "smithers run/serve").pipe(
-        Layer.provide(native.httpClient)
+      return supplied ?? native.evaluator ?? (
+        startsRuns
+          ? Evaluator.layerFromEnvironment(environment, "smithers run/serve").pipe(
+            Layer.provide(native.httpClient)
+          )
+          : Evaluator.layerUnavailable()
       )
     } catch (error) {
       if (error instanceof Evaluator.EvaluatorError) throw new CliError.UsageError({ message: error.message })
@@ -872,11 +890,21 @@ export const make = (
     root: string,
     options: ExecutorOptions
   ): ReturnType<typeof executorFromEngine> => {
-    const evaluator = evaluatorFor(options.environment, options.evaluator)
-    return Layer.unwrap(Effect.map(
+    const startsRuns = options.startsRuns !== false
+    const evaluator = evaluatorFor(options.environment, options.evaluator, startsRuns)
+    const built = Layer.unwrap(Effect.map(
       materializeEngine(engine),
       (materialized) => executorFromEngine(registry, materialized, root, options, evaluator)
     ))
+    if (startsRuns) return built
+    // The observing executor still reads `engine.db`, because that is where a
+    // run's current round, its waiting reason and the human waits parked below
+    // it live: a listing that dropped the port would answer about the control
+    // plane's coordination copy alone. What it cannot do is launch or resume,
+    // so the judge above it is never asked anything.
+    return Layer.effect(ControlExecutor.ControlExecutor)(
+      Effect.map(ControlExecutor.ControlExecutor, ControlExecutor.makeObserving)
+    ).pipe(Layer.provide(built))
   }
 
   const layerControlFromEngine = (
@@ -892,12 +920,14 @@ export const make = (
       layerExecutor(registry, engine, root, {
         environment: process.env,
         evaluator: config.evaluator,
+        startsRuns: config.startsRuns,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
         modules
       }),
-      decorateNotifications
+      decorateNotifications,
+      config.startsRuns !== false
     ).pipe(Layer.tap((context) =>
       config.remote !== undefined ? Effect.void : HealthHost.start(config.health).pipe(
         Effect.provideService(Control.Control, Context.get(context, Control.Control)),
@@ -911,7 +941,7 @@ export const make = (
     suppliedEngine?: EngineDurable,
     modules?: ModuleRegistration
   ) => {
-    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator) }
+    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator, config.startsRuns) }
     const root = config.root ?? process.cwd()
     const registry = suppliedRegistry ?? layerRegistry(root)
     const engine = suppliedEngine ?? engineDurable(root, registry, config)
@@ -955,7 +985,7 @@ export const make = (
     modules?: ModuleRegistration,
     suppliedRegistry?: Layer.Layer<Registry.Registry>
   ) => {
-    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator) }
+    config = { ...config, evaluator: evaluatorFor(process.env, config.evaluator, config.startsRuns) }
     const root = config.root ?? process.cwd()
     const registry = suppliedRegistry ?? layerRegistry(root)
     return Layer.unwrap(Effect.map(materializeEngine(engineDurable(root, registry, config)), (engine) => {

@@ -33,6 +33,18 @@ it("accepts an explicitly scripted judge without reading credentials", () => {
   expect(() => NodeControl.layerControl({ root: "/unused", evaluator: ScriptedJudge.layer })).not.toThrow()
 })
 
+it("does not demand a judge from a host that drives no run", () => {
+  vi.stubEnv("AI_GATEWAY_API_KEY", "")
+  // A listing, a diagnosis and a log read cannot reach a completion, so there
+  // is nothing for a judge to rule on and nothing to refuse. The executor
+  // underneath them refuses the launch instead, which is what keeps this a
+  // narrower refusal rather than a hole in it.
+  const host = NativeControl.make(platform)
+  expect(() => host.layerControl({ root: "/unused", startsRuns: false })).not.toThrow()
+  expect(() => NodeControl.layer({ root: "/unused", startsRuns: false })).not.toThrow()
+  expect(() => NodeControl.layerControl({ root: "/unused", startsRuns: false })).not.toThrow()
+})
+
 it("does not demand local credentials from a remote control client", () => {
   vi.stubEnv("AI_GATEWAY_API_KEY", "")
   expect(() => NodeControl.layerControl({ remote: "http://127.0.0.1:5300" })).not.toThrow()

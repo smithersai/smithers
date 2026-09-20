@@ -22,6 +22,22 @@
 
 ### Fixed
 
+- Only a verb that can start or resume a run needs `AI_GATEWAY_API_KEY`. The
+  judge requirement was checked for every local composition, so in a project
+  with no gateway key `smithers ls`, `ps`, `status`, `logs`, `output`, `plan`,
+  `runs list`, `approvals list`, `cancel`, `signal`, `steer` and `down` all
+  exited 2 asking for a key none of them could ever spend. Only `doctor`,
+  `gc`, `memory`, `update` and `init` survived, and only because they compose
+  no control host at all. The five verbs that reach a completion still refuse
+  before they open a store: `run`, `up`, `approve`, `deny` and `serve`, with
+  their aliases and their canonical spellings (`flow start`, `flow execute`,
+  `runs resume`, `approvals approve`, `approvals deny`), and so does the MCP
+  server, whose tools include them. Everything else composes a host that
+  observes runs and drives none: it reads the engine exactly as before, and
+  its executor refuses a launch or a resume as a defect, so a verb
+  misclassified as a read cannot admit a run that would die at its first
+  completion.
+
 - `smithers opencode` refuses to start on a directory another live server
   already serves, names that server, and exits 2, the way it refuses a missing
   `AI_GATEWAY_API_KEY`. Two servers over one directory came up with no refusal

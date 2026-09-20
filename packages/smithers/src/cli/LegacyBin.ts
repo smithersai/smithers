@@ -172,6 +172,10 @@ const main = Effect.gen(function*() {
   // `--mcp` is a mode, not a verb: every MCP client configures a launch
   // command, so the flag has to be readable before the command tree parses
   // anything. The server then talks to the same Control layer the verbs do.
+  //
+  // Every shipped verb is a tool on that server, `up` and `approve` included,
+  // so its host can start a run and needs its completion judge before it opens
+  // anything. That is the default `applicationConfig` already carries.
   if (McpServer.requested(parsed)) {
     return yield* McpServer.serve({
       ...McpServer.optionsFromArguments(parsed),
@@ -220,7 +224,19 @@ const main = Effect.gen(function*() {
       }
       // The legacy gateway alias has the same local-only approval default as
       // ControlBridge.host; configuring authentication does not delegate it.
-      return NodeControl.layer({ ...config, approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local })
+      //
+      // The verb also decides whether this host composes an executor, and so
+      // whether it needs a completion judge before it opens a store. Five
+      // verbs start or resume a run; the rest read, record a durable request,
+      // or never touch a run, and refusing those for want of a judge refused
+      // `ls`, `ps`, `status` and `logs` in every project with no gateway key.
+      // The catalog answers the question and answers an unrecognized word
+      // `true`, so drift can only bring the refusal back, never lose it.
+      return NodeControl.layer({
+        ...config,
+        startsRuns: Verb.startsRuns(Argv.words(parsed)),
+        approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local
+      })
     }),
     { version: packageVersion }
   ).pipe(

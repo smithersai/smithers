@@ -449,11 +449,12 @@ export const layerControl = (
   suppliedEngine?: EngineDurable | undefined,
   modules?: ModuleRegistration
 ) => {
-  // Refuse before materializing the local stores. A remote client owns no agent.
+  // Refuse before materializing the local stores. A remote client owns no agent,
+  // and a composition that drives no run reaches no completion to judge.
   if (applicationConfig.remote === undefined) {
     applicationConfig = {
       ...applicationConfig,
-      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator)
+      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator, applicationConfig.startsRuns)
     }
   }
   const root = applicationConfig.root ?? process.cwd()
@@ -506,11 +507,12 @@ export const layerOutput = Layer.succeed(
  * @since 0.1.0
  */
 export const layer = (applicationConfig: Application.Config, modules?: ModuleRegistration) => {
-  // Refuse before materializing the local stores. A remote client owns no agent.
+  // Refuse before materializing the local stores. A remote client owns no agent,
+  // and a composition that drives no run reaches no completion to judge.
   if (applicationConfig.remote === undefined) {
     applicationConfig = {
       ...applicationConfig,
-      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator)
+      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator, applicationConfig.startsRuns)
     }
   }
   const root = applicationConfig.root ?? process.cwd()

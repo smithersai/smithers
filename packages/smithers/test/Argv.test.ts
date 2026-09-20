@@ -125,6 +125,23 @@ describe("the shared globals", () => {
     expect(Argv.parse([])).toMatchObject({ rest: [], first: 0 })
   })
 
+  it("offers the verb lookup the words a command line leads with", () => {
+    expect(Argv.words(["ls"])).toEqual(["ls"])
+    expect(Argv.words(["--root", "/p", "--json", "ps"])).toEqual(["ps"])
+    expect(Argv.words(["--audience", "human", "resume", "fork-run"])).toEqual(["resume", "fork-run"])
+    expect(Argv.words(["workflow", "list"])).toEqual(["workflow", "list"])
+    // A valued option this pre-parser knows takes its value with it, so a
+    // message spelled like a verb is not one.
+    expect(Argv.words(["steer", "run-1", "--message", "up"])).toEqual(["steer", "run-1"])
+    expect(Argv.words(["--ui", "plain", "ls"])).toEqual(["ls"])
+    // An unknown option is a switch, because guessing an arity would swallow
+    // the verb standing behind it.
+    expect(Argv.words(["--detached", "up", "demo"])).toEqual(["up", "demo"])
+    expect(Argv.words(["--port=4096", "serve"])).toEqual(["serve"])
+    expect(Argv.words(["up", "demo", "--", "--json"])).toEqual(["up", "demo"])
+    expect(Argv.words([])).toEqual([])
+  })
+
   it("routes the agent aliases through the same table", () => {
     expect(agentArguments(["--silent", "resume", "fork-run"])).toEqual(["runs", "resume", "--silent", "fork-run"])
     expect(agentArguments(["resume", "--verbose", "fork-run"])).toEqual(["runs", "resume", "--verbose", "fork-run"])

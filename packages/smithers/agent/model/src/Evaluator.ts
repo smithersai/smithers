@@ -730,10 +730,12 @@ export const layerFromEnvironment = (
 
 /**
  * An evaluator with no transport behind it: every request fails as
- * `unreachable`. This is an outage fixture for classifiers, not a host's
- * missing-key default. A completion-capable host must bind a live or scripted
- * judge before it opens resources; {@link layerFromEnvironment} enforces the
- * environment choice at composition time.
+ * `unreachable`. It is an outage fixture for classifiers, and the binding for
+ * a host that cannot reach a completion at all: one composed to observe runs
+ * and drive none, where nothing will ever ask it anything. It is never a
+ * completion-capable host's missing-key default: such a host must bind a live
+ * or scripted judge before it opens resources, and
+ * {@link layerFromEnvironment} enforces that choice at composition time.
  *
  * @category layers
  * @since 1.0.0-rc.0

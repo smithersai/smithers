@@ -39,6 +39,25 @@ export interface Verb {
    * part of the shipped surface without being part of the command tree.
    */
   readonly builtin?: boolean | undefined
+  /**
+   * Whether this verb can start or resume a run, and therefore reaches a
+   * completion a judge has to rule on.
+   *
+   * Only five do: `run` (with its `resume` alias), `up`, `approve`, `deny`,
+   * and `serve`. A decision restarts the run it answers on this process's own
+   * executor, and `serve` hosts a gateway and a trigger scheduler that both
+   * launch runs, so every one of the five drives a run here. Everything else
+   * reads, records, or ends: `ls`, `ps`, `status`, `logs` and `output` only
+   * read; `plan` compiles a payload and hands it back without a launch;
+   * `cancel`, `down`, `signal` and `steer` write a durable request that the
+   * process driving the run picks up; `gc`, `memory`, `update`, `bug`, `init`
+   * and `doctor` never touch a run at all.
+   *
+   * {@link startsRuns} reads it, and only the composition boundary needs it:
+   * a verb that cannot reach a completion must not be refused for want of a
+   * completion judge.
+   */
+  readonly startsRuns: boolean
 }
 
 const catalogFlowId = (name: string): `system/${string}` | undefined =>
@@ -46,8 +65,14 @@ const catalogFlowId = (name: string): `system/${string}` | undefined =>
 
 const verb = (name: string, help: string, aliases: ReadonlyArray<string> = []): Verb => {
   const flowId = catalogFlowId(name)
-  return { name, help, aliases, ...(flowId === undefined ? {} : { flowId }) }
+  return { name, help, aliases, startsRuns: false, ...(flowId === undefined ? {} : { flowId }) }
 }
+
+/** One verb that starts or resumes a run; see {@link Verb.startsRuns}. */
+const driver = (name: string, help: string, aliases: ReadonlyArray<string> = []): Verb => ({
+  ...verb(name, help, aliases),
+  startsRuns: true
+})
 
 /**
  * Every retained Effect CLI command in rc.0.
@@ -57,10 +82,10 @@ const verb = (name: string, help: string, aliases: ReadonlyArray<string> = []): 
  */
 export const shipped: ReadonlyArray<Verb> = [
   verb("plan", "Render a flow plan and its complete approval payload"),
-  verb("run", "Run an approved plan payload, or resume a parked run", ["resume"]),
-  verb("up", "Plan, approve, and run one flow; -d launches it detached"),
-  verb("approve", "Approve the complete serialized approval payload"),
-  verb("deny", "Deny the complete serialized approval payload"),
+  driver("run", "Run an approved plan payload, or resume a parked run", ["resume"]),
+  driver("up", "Plan, approve, and run one flow; -d launches it detached"),
+  driver("approve", "Approve the complete serialized approval payload"),
+  driver("deny", "Deny the complete serialized approval payload"),
   verb("cancel", "Cancel a durable run"),
   verb("signal", "Deliver a durable JSON signal to a run"),
   verb("steer", "Send a durable, attributed steering message to a run"),
@@ -70,7 +95,7 @@ export const shipped: ReadonlyArray<Verb> = [
   verb("logs", "Read run events; --follow streams future events", ["events"]),
   verb("output", "Print one registered node output"),
   verb("down", "Cancel every non-terminal run"),
-  verb("serve", "Host the control server for this project", ["gateway"]),
+  driver("serve", "Host the control server for this project", ["gateway"]),
   verb("init", "Scaffold flows/<name>/flow.mdx and ignore .flows/"),
   verb("suggest", "Read the project, stream how Smithers can help, and implement the one you pick"),
   verb("doctor", "Report registry, database, runtime, and provider readiness"),
@@ -112,3 +137,42 @@ export const names: ReadonlyArray<string> = shipped.map((entry) => entry.name)
  * @since 1.0.0
  */
 export const find = (name: string): Verb | undefined => shipped.find((entry) => entry.name === name)
+
+/**
+ * Finds the shipped verb one command line selects, by canonical name or by any
+ * alias, including the two-word `workflow list`.
+ *
+ * Pass the words a command line left after the shared globals
+ * (`Argv.words`). Only the first one, or the first two together, can name a
+ * verb, so a flow or run id spelled like a verb cannot shadow the real one.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const select = (words: ReadonlyArray<string>): Verb | undefined => {
+  const [first, second] = words
+  if (first === undefined) return undefined
+  const pair = second === undefined ? undefined : `${first} ${second}`
+  return shipped.find((entry) =>
+    entry.name === first ||
+    entry.aliases.includes(first) ||
+    (pair !== undefined && entry.aliases.includes(pair))
+  )
+}
+
+/**
+ * Whether one command line can start or resume a run.
+ *
+ * A host answers `true` by composing the run executor, which needs a
+ * completion judge before it opens anything; `false` composes a host that
+ * observes runs and drives none, so it opens with no gateway key at all.
+ *
+ * A word this catalog does not know answers `true`. The unsafe direction is
+ * calling a launch a read: that host would admit a run it cannot judge and
+ * lose it at the first completion. Calling a read a launch only brings back
+ * the refusal, which is visible the moment anyone runs the verb.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const startsRuns = (words: ReadonlyArray<string>): boolean => select(words)?.startsRuns ?? true

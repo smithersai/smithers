@@ -10,10 +10,12 @@ import { Context, Layer } from "effect"
  * settlement.
  *
  * Read it to decide whether a verb may wait for a run to finish. A local
- * composition that built `NodeControl.layerExecutor` answers `true` and can
- * honestly await settlement; a `--remote` client and a control-only test
- * composition answer `false`, because the run is another process's to drive
- * and waiting here would hang on work this process never performs.
+ * composition that built a driving `NodeControl.layerExecutor` answers `true`
+ * and can honestly await settlement; a `--remote` client, a control-only test
+ * composition, and a host composed to observe runs and drive none
+ * (`Application.Config.startsRuns` is `false`) answer `false`, because the run
+ * is another process's to drive and waiting here would hang on work this
+ * process never performs.
  *
  * The default is `false` so a composition that forgets to declare ownership
  * refuses to wait rather than waiting forever.

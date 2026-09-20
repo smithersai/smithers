@@ -24,7 +24,9 @@ import { layerTriggerScheduler } from "../operator/Triggers.ts"
 import * as Project from "../Project.ts"
 import * as Serve from "../Serve.ts"
 import * as Ui from "../Ui.ts"
+import * as Verb from "../Verb.ts"
 import { packageVersion } from "../Version.ts"
+import * as Argv from "./Argv.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunProgress from "./RunProgress.ts"
 
@@ -214,7 +216,12 @@ export const invoke = async (
   const run: Effect.Effect<void, unknown, Ui.Ui> = Command.runWith(legacyCli, { version: packageVersion })(
     commandArguments
   ).pipe(
-    Effect.provide(NodeControl.layer(config)),
+    // The flat verb these arguments name is what decides whether this host
+    // composes an executor, and so whether it needs a completion judge. A
+    // canonical verb that starts a run reaches it through exactly this call
+    // (`flow start` is `up`, `approvals approve` is `approve`), so the verb
+    // catalog stays the one authority on the question.
+    Effect.provide(NodeControl.layer({ ...config, startsRuns: Verb.startsRuns(Argv.words(args)) })),
     Effect.provide(NodeServices.layer),
     Effect.provideService(Console.Console, outputConsole),
     Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
@@ -229,6 +236,13 @@ export const invoke = async (
  *
  * The host layer also carries the project references, so a verb that reads
  * `Project.ProjectRoot` or the 0.x snapshot sees the host's answer.
+ *
+ * The host observes runs and drives none, so it opens with no gateway key: a
+ * flow listing, a run diagnosis, a pending-approval listing and a bulk cancel
+ * all work in a project that has never had one. An operation that starts or
+ * resumes a run does not belong here and its launch would die on the observing
+ * executor; route one through {@link invoke}, whose verb declares the
+ * capability.
  * @category constructors
  * @since 1.0.0
  */
@@ -239,7 +253,9 @@ export const query = async <A, E>(
 ): Promise<A> =>
   settle(
     provideServices(
-      operation.pipe(Effect.provide(NodeControl.layer(configuration(options, runtime)))),
+      operation.pipe(
+        Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: false }))
+      ),
       options,
       runtime
     ),
@@ -278,6 +294,8 @@ export const local = async <A, E>(
 
 /**
  * A scoped stream closes its transports when the consumer stops following.
+ *
+ * Reading events drives nothing, so this host needs no completion judge either.
  * @category constructors
  * @since 1.0.0
  */
@@ -293,7 +311,7 @@ export const events = (
       runId,
       follow,
       ...(afterSequence === undefined ? {} : { afterSequence })
-    }))).pipe(Stream.provide(NodeControl.layer(configuration(options, runtime))))
+    }))).pipe(Stream.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: false })))
   const signal = runtime.signal
   if (signal === undefined) return Stream.toAsyncIterable(stream)
   const interrupted = Effect.callback<void>((resume) => {
@@ -319,8 +337,11 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   if (refusal !== undefined) throw refusal
   // A gateway credential authenticates callers; only the host may delegate
   // approval authority. Do not inherit NodeControl's credential-based default.
+  // A served gateway and the trigger scheduler beside it both launch runs, so
+  // this host is a run-capable one and refuses to open without a judge.
   const control = NodeControl.layer({
     ...config,
+    startsRuns: true,
     approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local
   })
   const root = Project.root(config.root, process.cwd())

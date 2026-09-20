@@ -194,3 +194,31 @@ export const parse = (args: ReadonlyArray<string> | Globals): Globals => {
     first: first ?? args.length
   }
 }
+
+/**
+ * The words one command line offers a verb lookup, in order.
+ *
+ * `rest` still holds every option the globals did not claim, so a reader that
+ * wants the verb has to step over them. A valued option this pre-parser
+ * recognizes takes its value with it; an unknown one is a switch, because
+ * guessing an arity would swallow the verb standing behind it. Everything
+ * after `--` is an argument, never a verb.
+ *
+ * @category parsing
+ * @since 1.0.0
+ */
+export const words = (args: ReadonlyArray<string> | Globals): ReadonlyArray<string> => {
+  const parsed = parse(args)
+  const found: Array<string> = []
+  for (let index = 0; index < parsed.rest.length; index++) {
+    const word = parsed.rest[index]!
+    if (word === "--") break
+    if (!word.startsWith("-")) {
+      found.push(word)
+      continue
+    }
+    if (word.includes("=")) continue
+    if (typeof parsed.options.get(word) === "string") index++
+  }
+  return found
+}

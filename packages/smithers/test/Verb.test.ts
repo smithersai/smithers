@@ -49,6 +49,76 @@ describe("the shipped surface", () => {
     ])
   })
 
+  it("names the five verbs that can start or resume a run", () => {
+    expect(Verb.shipped.filter((verb) => verb.startsRuns).map((verb) => verb.name)).toEqual([
+      "run",
+      "up",
+      "approve",
+      "deny",
+      "serve"
+    ])
+  })
+
+  it("selects a verb by canonical name, by alias, and by the two-word alias", () => {
+    expect(Verb.select(["ls"])?.name).toBe("ls")
+    expect(Verb.select(["resume", "run-1"])?.name).toBe("run")
+    expect(Verb.select(["gateway"])?.name).toBe("serve")
+    expect(Verb.select(["workflow", "list"])?.name).toBe("ls")
+    expect(Verb.select(["why", "run-1"])?.name).toBe("status")
+    expect(Verb.select([])).toBeUndefined()
+    // Only the first word, or the first two together, can name the verb, so a
+    // flow or run id spelled like one cannot shadow it.
+    expect(Verb.select(["up", "ls"])?.name).toBe("up")
+  })
+
+  it("reads a launch off the command line and a read off it", () => {
+    for (
+      const words of [["up", "demo"], ["run", "{}"], ["resume", "run-1"], ["approve", "{}"], ["deny", "{}"], [
+        "serve"
+      ], ["gateway"]]
+    ) {
+      expect(Verb.startsRuns(words), words.join(" ")).toBe(true)
+    }
+    for (
+      const words of [
+        ["ls"],
+        ["workflow", "list"],
+        ["ps"],
+        ["status", "run-1"],
+        ["logs", "run-1"],
+        ["output", "run-1"],
+        [
+          "plan",
+          "demo"
+        ],
+        ["cancel", "run-1"],
+        ["down"],
+        ["signal", "run-1", "{}"],
+        ["steer", "run-1"],
+        ["gc"],
+        ["doctor"],
+        ["memory"],
+        [
+          "update"
+        ],
+        ["bug", "text"],
+        ["init"],
+        ["claude"],
+        ["mcp", "add"]
+      ]
+    ) {
+      expect(Verb.startsRuns(words), words.join(" ")).toBe(false)
+    }
+  })
+
+  it("treats a word it does not know as a launch, and an empty line as one", () => {
+    // The unsafe direction is calling a launch a read: that host would admit a
+    // run it has no judge for. Calling a read a launch only brings the
+    // refusal back, which anyone running the verb sees at once.
+    expect(Verb.startsRuns(["lss"])).toBe(true)
+    expect(Verb.startsRuns([])).toBe(true)
+  })
+
   it("registers every shipped verb in the compatibility or canonical tree", async () => {
     let manifest = ""
     await makeCli({ environment: {} }).serve(["--llms-full", "--format", "json"], {

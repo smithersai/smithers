@@ -34,7 +34,14 @@ export const layer = (
       ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
     >
     | undefined,
-  decorateNotifications?: NotificationDecorator
+  decorateNotifications?: NotificationDecorator,
+  /**
+   * Whether the supplied executor drives runs, as opposed to only observing
+   * them. An observing executor holds the port so a listing still reads the
+   * engine, but `launch` and `resumeRun` refuse, so nothing in this process
+   * will ever settle an accepted run and no verb may wait for one.
+   */
+  drivesRuns = true
 ): Layer.Layer<Control.Control> => {
   const queue = NotificationQueue.layer.pipe(Layer.provide(engine.journal))
   const notifications = decorateNotifications === undefined ? queue : Layer.effect(
@@ -58,6 +65,6 @@ export const layer = (
         registry
       ])
     ),
-    ExecutorOwnership.layer(executor !== undefined)
+    ExecutorOwnership.layer(executor !== undefined && drivesRuns)
   )
 }

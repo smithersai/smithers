@@ -452,13 +452,14 @@ mapping.
 
 The acceptance port from the control plane into a real run executor.
 
-| Export            | Kind     | Signature                                                                                          |
-| ----------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                      |
-| `make`            | function | `(implementation: Service) => Service`                                                             |
-| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing. |
-| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                              |
-| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                         |
+| Export            | Kind     | Signature                                                                                                                                                |
+| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                            |
+| `make`            | function | `(implementation: Service) => Service`                                                                                                                   |
+| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                       |
+| `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects, for a host composed to observe runs and drive none. |
+| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                    |
+| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                               |
 
 ### Service
 

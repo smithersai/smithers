@@ -396,6 +396,40 @@ export const layer = (implementation: Service): Layer.Layer<ControlExecutor> =>
   Layer.succeed(ControlExecutor)(make(implementation))
 
 /**
+ * The same executor with the two methods that drive a run refused.
+ *
+ * A host composed to observe runs rather than drive them has no completion
+ * judge, so it must not be able to start or resume one: without this a verb
+ * misclassified as a read would admit a run and lose it at its first
+ * completion, which is the outcome the boot-time judge requirement exists to
+ * prevent. Reaching either method is a composition defect, not an operator
+ * error, so it dies rather than failing.
+ *
+ * Observation, cancellation and signal delivery stay live. A cancel and a
+ * signal record a durable request that the process driving the run picks up,
+ * so none of them reaches a completion, and refusing them would stop an
+ * operator ending a run on a host with no gateway key, which is the whole
+ * reason a read host exists.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeObserving = (service: Service): Service => {
+  const refuse = (method: string) =>
+    Effect.die(
+      new Error(
+        `This host observes runs and drives none, so ControlExecutor.${method} is unreachable on it. ` +
+          "Compose it with startsRuns to start or resume a run."
+      )
+    )
+  return make({
+    ...service,
+    launch: Effect.fn("ControlExecutor.launch")(() => refuse("launch")),
+    resumeRun: Effect.fn("ControlExecutor.resumeRun")(() => refuse("resumeRun"))
+  })
+}
+
+/**
  * Provides {@link makeNoop}.
  *
  * @category layers

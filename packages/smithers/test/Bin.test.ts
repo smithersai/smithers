@@ -104,20 +104,98 @@ const inEmptyDirectory = <A>(use: (cwd: string) => A): A => {
   }
 }
 
+/**
+ * A real process with no judge preloaded and no gateway key.
+ *
+ * Every `run`/`runIn` above preloads `scripted-native-host.ts`, which binds an
+ * explicit offline judge, so this whole file was blind to which verbs the
+ * startup contract refuses: on the landed tree `ls`, `ps`, `status` and
+ * `runs list` all exited 2 asking for a gateway key in an empty directory, and
+ * nothing here could see it. These cases are deliberately the raw executable,
+ * and `NODE_OPTIONS` is cleared so no ambient preload can put a judge back.
+ */
+const keyless = (cwd: string, args: ReadonlyArray<string>) =>
+  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+    cwd,
+    encoding: "utf8",
+    timeout: 180_000,
+    env: { ...process.env, HOME: cwd, NODE_OPTIONS: "", AI_GATEWAY_API_KEY: "", SMITHERS_REMOTE: "" }
+  })
+
+const refusal = "smithers run/serve needs AI_GATEWAY_API_KEY,"
+
 describe("keyless host startup", processBudget, () => {
   it("refuses the real serve entry before creating state", () => {
     inEmptyDirectory((cwd) => {
-      // Deliberately omit the offline fixture's --import for this process.
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "serve", "--port", "5308"], {
-        cwd,
-        encoding: "utf8",
-        timeout: 60_000,
-        env: { ...process.env, AI_GATEWAY_API_KEY: "" }
-      })
+      const result = keyless(cwd, ["serve", "--port", "5308"])
       expect(result.status, result.stdout + result.stderr).toBe(2)
-      expect(result.stdout + result.stderr).toContain("smithers run/serve needs AI_GATEWAY_API_KEY,")
+      expect(result.stdout + result.stderr).toContain(refusal)
       expect(result.stdout + result.stderr).toContain("deliberately bind Evaluator.layerScripted")
       expect(readdirSync(cwd)).toEqual([])
+    })
+  })
+
+  // A host that cannot reach a completion has nothing to judge, so a verb that
+  // lists, diagnoses, or reads a log works in a project that has never had a
+  // gateway key. The whole read surface is here rather than one sample,
+  // because the regression this replaces hit every one of them at once.
+  it.each([
+    [["ls", "--json"]],
+    [["workflow", "list", "--json"]],
+    [["ps", "--json"]],
+    [["status", "--json"]],
+    [["flow", "list", "--json"]],
+    [["runs", "list", "--json"]],
+    [["approvals", "list", "--json"]],
+    [["doctor", "--json"]],
+    [["gc", "--json"]],
+    [["down", "--json"]],
+    [["runs", "cancel-all", "--json"]]
+  ])("runs %j with no gateway key at all", (args) => {
+    inEmptyDirectory((cwd) => {
+      const result = keyless(cwd, args)
+      const output = result.stdout + result.stderr
+      expect(output).not.toContain(refusal)
+      expect(result.status, output).toBe(0)
+      expect(() => JSON.parse(result.stdout)).not.toThrow()
+    })
+  })
+
+  // The five verbs that start or resume a run, by both spellings that reach
+  // them, plus the two aliases. A decision restarts the run it answers on this
+  // process's own executor, which is why `approve` and `deny` are launches.
+  it.each([
+    [["up", "demo"]],
+    [["run", "{}"]],
+    [["run", "run-1", "--resume"]],
+    [["resume", "run-1"]],
+    [["approve", "{}"]],
+    [["deny", "{}"]],
+    [["gateway", "--port", "5309"]],
+    [["flow", "start", "demo"]],
+    [["flow", "execute", "{}"]],
+    [["runs", "resume", "run-1"]],
+    [["approvals", "approve", "{}"]],
+    [["approvals", "deny", "{}"]]
+  ])("refuses %j with the gateway sentence and exit 2", (args) => {
+    inEmptyDirectory((cwd) => {
+      const result = keyless(cwd, args)
+      const output = result.stdout + result.stderr
+      expect(result.status, output).toBe(2)
+      expect(output).toContain(refusal)
+      expect(output).toContain("deliberately bind Evaluator.layerScripted")
+      // The refusal precedes the stores, so a refused launch leaves the
+      // project exactly as it found it.
+      expect(readdirSync(cwd)).toEqual([])
+    })
+  })
+
+  it("keeps reading a project a keyless launch refused to touch", () => {
+    inEmptyDirectory((cwd) => {
+      expect(keyless(cwd, ["up", "demo"]).status).toBe(2)
+      const listed = keyless(cwd, ["ls", "--json"])
+      expect(listed.status, listed.stdout + listed.stderr).toBe(0)
+      expect(JSON.parse(listed.stdout)).toMatchObject({ _tag: "flows", items: [] })
     })
   })
 })

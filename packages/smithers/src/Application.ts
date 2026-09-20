@@ -34,6 +34,22 @@ import * as LocalControl from "./internal/LocalControl.ts"
 export interface Config {
   /** An explicitly supplied judge; otherwise the native host requires its gateway key. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /**
+   * Whether this composition may start or resume a run.
+   *
+   * `true`, the default, composes the run executor, and a local one needs a
+   * completion judge before it opens a store or a socket: a host that can
+   * reach a completion must not boot into a state where every completion is
+   * doomed.
+   *
+   * `false` composes a host that observes runs and drives none. It opens with
+   * no gateway key at all, which is what lets a listing, a diagnosis or a log
+   * read work in a project that has never had one, and its executor refuses a
+   * launch or a resume as a composition defect rather than admitting work it
+   * cannot judge. `Verb.startsRuns` is what the CLI answers this from; the
+   * default is `true` so a composition that says nothing keeps the refusal.
+   */
+  readonly startsRuns?: boolean | undefined
   /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */
   readonly health?: Health.HealthConfig | undefined
   /** Trusted local host configuration, never decoded from command arguments. */
@@ -172,7 +188,10 @@ export const layer = (
     | undefined
 ): Layer.Layer<Control.Control, never, HttpClient | RpcSerialization | Socket> =>
   config.remote === undefined
-    ? LocalControl.layer(registry, engine, executor)
+    // An executor built for a host that drives no run holds the port so a
+    // listing still reads the engine, but refuses a launch, so this process
+    // will never settle an accepted run and no verb may wait for one.
+    ? LocalControl.layer(registry, engine, executor, undefined, config.startsRuns !== false)
     : Layer.merge(
       ControlClient.layer({ url: rpcUrl(config.remote), credential: config.credential }),
       ExecutorOwnership.layer(false)

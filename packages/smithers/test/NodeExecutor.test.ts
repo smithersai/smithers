@@ -18,6 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Application from "../src/Application.ts"
+import * as ExecutorOwnership from "../src/ExecutorOwnership.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
 describe("NodeControl.seatResolver", () => {
@@ -90,6 +91,56 @@ describe("NodeControl.seatResolver", () => {
       )
       expect(flowId).toBe("system/test")
       expect(existsSync(NodeControl.executionDatabasePath(root))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("boots without a judge when it drives no run, and refuses the launch it cannot judge", async () => {
+    const root = await mkdtemp(join(tmpdir(), "flows-cli-observing-executor-"))
+    try {
+      const registry = NodeControl.layerRegistry(root)
+      const engine = NodeControl.engineDurable(root, registry)
+      // No evaluator, and the environment holds no gateway key. A host that
+      // drives no run reaches no completion, so there is nothing for a judge
+      // to rule on and the composition opens.
+      const executor = NodeControl.layerExecutor(registry, engine, root, { environment: {}, startsRuns: false })
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const control = yield* Control.Control
+          const card = yield* control.plan({ flowId: "system/test", input: {} })
+          yield* control.approve({ ...card.approval, scope: "run" })
+          // Reads answer as they always did; only the launch is unreachable,
+          // and it is a defect rather than a run admitted into a host that
+          // would lose it at its first completion.
+          const runs = yield* control.list({ _tag: "runs" })
+          // Nothing here will settle an accepted run, so no verb may wait for
+          // one: the ownership reference says so rather than hanging.
+          const ownsExecutor = yield* ExecutorOwnership.ExecutorOwnership
+          const target = card.approval.target
+          if (target._tag !== "Plan") throw new Error("expected a plan approval")
+          const launched = yield* Effect.exit(
+            control.run({
+              _tag: "Plan",
+              planId: target.planId,
+              digest: target.digest,
+              envelope: target.envelope,
+              idempotencyKey: "observing-1"
+            })
+          )
+          return { flowId: card.flowId, runs: runs._tag, ownsExecutor, launched: String(launched) }
+        }).pipe(
+          Effect.provide(
+            Application.layer({ startsRuns: false }, registry, engine, executor) as Layer.Layer<Control.Control>
+          ),
+          Effect.scoped,
+          Effect.orDie
+        )
+      )
+      expect(result.flowId).toBe("system/test")
+      expect(result.runs).toBe("runs")
+      expect(result.ownsExecutor).toBe(false)
+      expect(result.launched).toContain("This host observes runs and drives none")
     } finally {
       await rm(root, { recursive: true, force: true })
     }
