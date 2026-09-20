@@ -9,11 +9,67 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { layerAt } from "../coding/snapshots.ts"
+import { failureJson } from "../../packages/smithers/agent/src/internal/FailureJson.ts"
+import { failureSummary } from "../../packages/smithers/agent/src/internal/FailureSummary.ts"
 
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const platform = "Bun" in globalThis
   ? (await import("../../packages/smithers/flows/platform-bun/node_modules/@effect/platform-bun/dist/BunServices.js")).layer
   : NodeServices.layer
+
+/*
+ * The guest adapter's OTHER mode. `--local` answers `flows/coding/native.ts`,
+ * whose envelope is narrowed to `NativeCode`; `--engine` answers this file, and
+ * its envelope used to reach a person by a second route: `codeFor` narrowed the
+ * `JjError`'s own code, and then the raw envelope went to `Jj.jjErrorCause`,
+ * which copies any string `code` onto the cause record. `failureSummary`
+ * (`agent/src/internal/FailureSummary.ts`) prefers the INNERMOST record, so a
+ * guest answering `model_failed` put `model_failed:` on the journal's first
+ * line, and `apps/app RunCause.ts` read "a turn opened and the model never
+ * answered" off it — for a snapshot of a working copy, with no model in the run.
+ *
+ * One three-line Python adapter per envelope, spawned for real.
+ */
+test("a code the guest engine adapter invents cannot become a code this repo answers", { timeout: 60_000 }, async t => {
+  const temporary = await mkdtemp(join(tmpdir(), "coding-snapshots-envelope-"))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const root = join(temporary, "repo")
+  execFileSync("jj", ["git", "init", root], { stdio: "pipe" })
+  const adapterPath = join(temporary, "coding.py")
+  const raise = async (code: string) => {
+    await writeFile(adapterPath, `import sys,json\nsys.stdin.read()\nprint(json.dumps({"error":{"code":${JSON.stringify(code)},"message":"the guest adapter said this"}}))\nsys.exit(1)\n`)
+    const host = ManagedRuntime.make(layerAt({ repositoryPath: root, adapterPath }).pipe(
+      Layer.provide(platform), Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs, 30_000))
+    ))
+    const error = await host.runPromise(Effect.flatMap(Jj.Jj, jj => jj.snapshot().pipe(Effect.flip)), { signal: t.signal })
+    await host.dispose()
+    assert.ok(Jj.isJjError(error))
+    return error
+  }
+
+  const foreign = await raise("model_failed")
+  assert.equal(foreign.code, "unknown")
+  // Not on the record a run card reads its sentence off — not even one level
+  // down. Every code on that chain is a `JjErrorCode` this repo declares.
+  assert.equal(foreign.cause?.code, "unknown")
+  assert.match(String(failureSummary(failureJson(foreign))), /^unknown: /)
+  // The guest's own code and sentence survive, as the technical detail they are.
+  assert.match(foreign.message, /does not declare \(model_failed\): the guest adapter said this/)
+  assert.match(String(foreign.cause?.message), /the guest adapter said this \(model_failed\)/)
+
+  // A word this build does admit still maps to the public taxonomy, and the
+  // callers that branch on `JjError.code` keep working.
+  const declared = await raise("workspace_busy")
+  assert.equal(declared.code, "conflict")
+  assert.equal(declared.cause?.code, "conflict")
+  assert.equal(declared.message, "the guest adapter said this")
+  assert.match(String(failureSummary(failureJson(declared))), /^conflict: the guest adapter said this \(workspace_busy\)$/)
+
+  // A jj code the table does not admit is still not the guest's to spell.
+  const borrowed = await raise("not_installed")
+  assert.equal(borrowed.code, "unknown")
+  assert.equal(borrowed.cause?.code, "unknown")
+})
 
 test("engine preimages preserve JJ atoms across edits, historical diffs and reopened restores", {
   skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to Plue coding.py" : false,
@@ -95,7 +151,10 @@ test("engine preimages preserve JJ atoms across edits, historical diffs and reop
   const version = await call(jj => jj.snapshot().pipe(Effect.flip))
   assert.ok(Jj.isJjError(version))
   assert.equal(version.code, "unsupported_version")
-  assert.equal(version.cause?.code, "unsupported_jj")
+  // The guest's own word stays in the cause MESSAGE. The cause `code` is read
+  // as this repo's vocabulary, so it holds the code this build admitted.
+  assert.equal(version.cause?.code, "unsupported_version")
+  assert.match(String(version.cause?.message), /requires pinned JJ \(unsupported_jj\)/)
   await writeFile(adapterPath, 'import json\nprint(json.dumps({"changeId":"@"}))\n')
   const malformed = await call(jj => jj.snapshot().pipe(Effect.flip))
   assert.ok(Jj.isJjError(malformed))

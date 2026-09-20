@@ -13,17 +13,56 @@ const Diff = Schema.Struct({ diff: Schema.String })
 const NativeError = Schema.Struct({ code: Schema.String, message: Schema.String })
 type Method = "snapshot" | "restore" | "diff"
 
+/** Projects a host or guest failure onto the record a `JjError` carries,
+ * admitting only a code {@link Jj.JjErrorCode} declares.
+ *
+ * A cause record is read as a code, not only as prose:
+ * `agent/src/internal/FailureSummary.ts` walks a rendered failure to the
+ * INNERMOST record carrying a message and prefixes THAT record's `code`, and
+ * `apps/app/src/mainview/state/RunCause.ts` picks the sentence a person reads
+ * off that one line. `Jj.jjErrorCause` copies any string `code` off any object,
+ * and the objects projected here come from outside this repo's vocabulary — a
+ * guest adapter's JSON envelope, the host's own errno. Such a word does not
+ * land on the record: it is kept in the message, which is prose and is never
+ * read as a code.
+ */
+const declaredCodes = new Set<string>(Jj.JjErrorCode.literals)
+const causeOf = (cause: unknown): Jj.JjErrorCause => {
+  const projected = Jj.jjErrorCause(cause)
+  const code = projected.code
+  if (code === undefined || declaredCodes.has(code)) return projected
+  const { code: _foreign, ...rest } = projected
+  const message = `${rest.message} (${code})`
+  return { ...rest, message: message.length > Jj.causeMessageLimit ? `${message.slice(0, Jj.causeMessageLimit - 1)}…` : message }
+}
 const failure = (method: Method, code: Jj.JjErrorCode, message: string, cause?: unknown) => new Jj.JjError({
   code, module: "coding/Snapshots", method, message,
-  ...(cause === undefined ? {} : { cause: Jj.jjErrorCause(cause) })
+  ...(cause === undefined ? {} : { cause: causeOf(cause) })
 })
-const codeFor = (code: string): Jj.JjErrorCode => {
-  if (code === "invalid_ref" || code === "invalid_request") return "invalid_ref"
-  if (code === "unsupported_version" || code === "unsupported_jj") return "unsupported_version"
-  if (code === "snapshot_incomplete" || code === "snapshot_refused") return "snapshot_refused"
-  if (code === "operation_conflict" || code === "workspace_busy" || code === "revision_conflict") return "conflict"
-  return "unknown"
-}
+
+/** Every code the guest `--engine` adapter is admitted to speak, and the
+ * `JjErrorCode` each becomes here.
+ *
+ * The adapter is a Plue-owned program in the box, not a source in this repo, so
+ * its code is a string until this table admits it. A word this table does not
+ * hold never becomes a code: it would otherwise reach a person as whatever
+ * sentence some other vocabulary attaches to it. The mapping is total over its
+ * own keys, so a code added here has to be given a `JjErrorCode` to compile —
+ * the previous `if` chain silently answered "unknown" instead.
+ */
+const ENGINE_CODES = {
+  invalid_ref: "invalid_ref",
+  invalid_request: "invalid_ref",
+  unsupported_version: "unsupported_version",
+  unsupported_jj: "unsupported_version",
+  snapshot_incomplete: "snapshot_refused",
+  snapshot_refused: "snapshot_refused",
+  operation_conflict: "conflict",
+  workspace_busy: "conflict",
+  revision_conflict: "conflict"
+} as const satisfies Readonly<Record<string, Jj.JjErrorCode>>
+const codeFor = (code: string): Jj.JjErrorCode | undefined =>
+  Object.hasOwn(ENGINE_CODES, code) ? ENGINE_CODES[code as keyof typeof ENGINE_CODES] : undefined
 
 const capture = <E>(method: Method, stream: Stream.Stream<Uint8Array, E>, limit: number) =>
   Stream.runFoldEffect(stream, () => ({ text: "", bytes: 0, decoder: new TextDecoder() }), (state, chunk) => {
@@ -62,7 +101,13 @@ export const layerAt = (options: NativeOptions) => Layer.effect(Jj.Jj)(Effect.ge
       const error = yield* Schema.decodeUnknownEffect(NativeError)(result.error).pipe(
         Effect.mapError(error => failure(method, "unknown", "Native snapshot adapter returned an invalid error envelope", error))
       )
-      return yield* failure(method, codeFor(error.code), error.message, error)
+      // The guest's own code and sentence survive either way, in the message
+      // and the cause message, where a word from outside this repo belongs.
+      const admitted = codeFor(error.code)
+      const detail = { code: admitted ?? "unknown", message: `${error.message} (${error.code})` }
+      return yield* admitted === undefined
+        ? failure(method, "unknown", `Native snapshot adapter answered with a code this build does not declare (${error.code}): ${error.message}`, detail)
+        : failure(method, admitted, error.message, detail)
     }
     if (exitCode !== 0) return yield* failure(method, "unknown", "Native snapshot adapter exited without a successful result")
     return result

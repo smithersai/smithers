@@ -102,7 +102,7 @@ export type OperationResult = typeof OperationResult.Type
  * - what the guest adapter answers, as Plue's own failure registry spells it
  *   without the `coding_` prefix (`packages/rpc/src/PlueFailureCodes.ts`),
  * - and what the same adapter answers in its `--engine` mode, as
- *   `flows/coding/snapshots.ts` `codeFor` already reads it.
+ *   `flows/coding/snapshots.ts` `ENGINE_CODES` admits it.
  *
  * A code outside the set is not lost: `native.ts` raises `invalid_receipt` and
  * keeps the guest's own code and sentence in the message, which is where a
