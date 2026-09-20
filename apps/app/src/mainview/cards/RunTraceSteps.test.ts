@@ -4,6 +4,8 @@ import { frameAtSequence, phasePins } from "./RunTracePhaseStrip"
 import type { JournalRecord } from "./RunTrace"
 import { traceGoals, traceStatus } from "./RunTraceStatus"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
+import { codingDecision, preparedCodingJournal } from "./fixtures/CodingJournal"
+import { checkInputDigest } from "../../../../../flows/coding/schema"
 
 const run = { runId: "run", flowId: "module", status: "running" }
 const left = { executionId: "execution", stepId: "a".repeat(64), action: "coding/edit", attempt: 1, ask: 0, retry: 1, scope: "left", generation: 0 }
@@ -406,5 +408,34 @@ describe("recorded step identity", () => {
     ]
     expect(traceGoals(traceFromJournal(run, [...ran, ...wrote("src/memory.ts")]), CODING_PLAN)[0]!.checks[0]!.state).toBe("stale")
     expect(traceGoals(traceFromJournal(run, [...ran, ...wrote("docs/other.md")]), CODING_PLAN)[0]!.checks[0]!.state).toBe("narrowed")
+  })
+
+  test("a flow named write but recorded as a read moves no tree, so it invalidates nothing", () => {
+    const change = CODING_PLAN.changes[0]!, check = change.checks[0]!
+    const planned = change.atoms[0]!.writes[0]!
+    const inspected = (first: number) => [
+      nativeStep(first, "control.agent.cell-call-started", left, {
+        callId: "shadow", flowName: "write", input: { path: planned },
+        descriptor: { name: "write", activity: "reads" }
+      }),
+      nativeStep(first + 1, "control.agent.cell-call-settled", left, { callId: "shadow", flowName: "write", outcome: "success", value: "found" })
+    ]
+    const ran = [
+      nativeStep(1, "control.agent.turn-opened", left),
+      nativeStep(2, "control.agent.cell-call-started", left, { callId: "probe", flowName: "test", input: { selection: [check.target] } }),
+      nativeStep(3, "control.agent.cell-call-settled", left, { callId: "probe", flowName: "test", outcome: "success", value: { exitCode: 0 } })
+    ]
+    expect(traceGoals(traceFromJournal(run, [...ran, ...inspected(4)]), CODING_PLAN)[0]!.checks[0]!.state).toBe("narrowed")
+    // A receipt is bound to the tree it covered; only a recorded write moves it.
+    const implementation = { change: change.id, parent: CODING_PLAN.base, head: CODING_PLAN.base, atoms: [CODING_PLAN.base], reads: [], writes: [planned] }
+    const bound = [...preparedCodingJournal(), codingDecision(6, "check", "coding/CommandCheck", {
+      parent: "correct", status: "completed", input: { flow: check.flow, input: { implementation, check } },
+      value: { checkId: check.id, target: check.target, tier: check.tier, change: change.id, commitId: implementation.head.commitId,
+        treeId: implementation.head.treeId, inputDigest: checkInputDigest(implementation, check), status: "passed", evidence: "", findings: [] }
+    })]
+    const certified = (records: ReadonlyArray<JournalRecord>) =>
+      traceGoals(traceFromJournal({ ...run, runId: "run-1" }, records), CODING_PLAN)[0]!.checks[0]!.state
+    expect(certified(bound)).toBe("passed")
+    expect(certified([...bound, ...inspected(7)])).toBe("passed")
   })
 })

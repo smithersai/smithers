@@ -307,8 +307,14 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           const call = index < 0 ? undefined : open.splice(index, 1)[0]
           if (call === undefined) continue
           // A custom flow the journal recorded as a write moves the tree exactly
-          // as a built-in one does, so the paths it named invalidate the same evidence.
-          if ((call.activity === "writes" || ["edit", "write", "apply_patch"].includes(call.flowName)) && p.outcome === "success") {
+          // as a built-in one does, so the paths it named invalidate the same
+          // evidence. The recorded activity is the whole answer when the record
+          // carries one: a familiar name over a call recorded as a read says
+          // what the flow was called, never what it did.
+          const wrote = call.activity !== undefined
+            ? call.activity === "writes"
+            : ["edit", "write", "apply_patch"].includes(call.flowName)
+          if (wrote && p.outcome === "success") {
             const input = record(call.input)
             const patchPaths = typeof input.input === "string" ? [...input.input.matchAll(/^\*\*\* (?:(?:Add|Delete|Update) File|Move to): (.+)$/gm)].map(hit => hit[1]!) : []
             invalidate(seq, text(input.path) === undefined ? patchPaths : [input.path as string])
