@@ -14,7 +14,14 @@ import { Effect, Option, Schema } from "effect"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.ts"
 import * as ModelEvent from "./ModelEvent.ts"
-import { JsonObject, type Message, type ModelRequest, type StopReason, type ToolDefinition } from "./ModelRequest.ts"
+import {
+  JsonObject,
+  type Message,
+  type ModelRequest,
+  ReasoningEffort,
+  type StopReason,
+  type ToolDefinition
+} from "./ModelRequest.ts"
 import * as Protocol from "./Protocol.ts"
 import * as ToolStream from "./ToolStream.ts"
 
@@ -119,6 +126,7 @@ export const Body = Schema.Struct({
   messages: Schema.Array(ChatMessage),
   tools: Schema.optional(Schema.Array(FunctionTool)),
   response_format: Schema.optional(ResponseFormat),
+  reasoning_effort: Schema.optional(ReasoningEffort),
   max_tokens: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   top_p: Schema.optional(Schema.Finite),
@@ -203,6 +211,12 @@ const buildBody = (
     ? {}
     : { tools: request.tools.map(functionTool) }),
   ...(structuredOutput === undefined ? {} : { response_format: responseFormat(structuredOutput) }),
+  // The same knob `OpenAIResponses` sends as `reasoning.effort`. Cerebras's
+  // qwen-3.8-27b reasons at `high` when the body says nothing, so a stated
+  // effort that never reached the wire spent output tokens the caller had
+  // already declined. An unstated effort still leaves the body alone, and
+  // with it the provider's own default.
+  ...(request.params.reasoningEffort === undefined ? {} : { reasoning_effort: request.params.reasoningEffort }),
   ...(request.params.maxTokens === undefined ? {} : { max_tokens: request.params.maxTokens }),
   ...(request.params.temperature === undefined ? {} : { temperature: request.params.temperature }),
   ...(request.params.topP === undefined ? {} : { top_p: request.params.topP }),

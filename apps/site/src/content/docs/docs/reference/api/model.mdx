@@ -426,7 +426,7 @@ Cerebras, and most other "OpenAI-compatible" servers implement.
 
 | Export                   | Kind        | Behavior                                                                                                                                                                                         |
 | ------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Body`                   | schema      | The Chat Completions request body. `stream` is always `true` and `stream_options.include_usage` is always set, so usage arrives on the stream.                                                   |
+| `Body`                   | schema      | The Chat Completions request body. `stream` is always `true` and `stream_options.include_usage` is always set, so usage arrives on the stream. `reasoningEffort` becomes `reasoning_effort`.     |
 | `ResponseFormat`         | schema      | The `response_format` field that turns on native structured output: a named JSON Schema with a `strict` flag.                                                                                    |
 | `StructuredOutput`       | interface   | `{ name, schema, strict? }`. Presence is the toggle: a route built without it leaves schema enforcement to the prompt. `strict` defaults to `true`.                                              |
 | `State`                  | interface   | What the adapter carries between chunks: whether the single id-less text part has opened, and the in-flight tool calls keyed by stream position, because a delta only repeats the array `index`. |
@@ -447,6 +447,15 @@ never reaches the protocol. A purely numeric provider
 code in the HTTP range stands in for a missing status, which is how a gateway
 that reports `{"error":{"code":429}}` inside an HTTP 200 stream still
 classifies as `rate_limited`.
+
+`params.reasoningEffort` is sent as `reasoning_effort`, and an unstated effort
+leaves the field out so the provider's own default stands. This is a
+deliberate change to this route's canonical bytes: a request that states an
+effort now keys differently from the same request before it. Cerebras's
+`qwen-3.8-27b` reasons at `high` when the body says nothing, so until the
+field was sent a stated effort bought nothing and the caller paid for
+reasoning it had declined. `topK`, `stopSequences`, and `thinkingBudget` are
+still dropped.
 
 ## `OpenAIChatGPT`
 

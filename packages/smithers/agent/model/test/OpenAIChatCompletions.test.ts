@@ -134,6 +134,27 @@ describe("OpenAIChatCompletions.protocol.body", () => {
     expect(decoded).toMatchObject({ max_tokens: 128, temperature: 0.25, top_p: 0.9 })
   })
 
+  it("carries the stated reasoning effort, and states nothing when the request states nothing", () => {
+    // Cerebras's qwen-3.8-27b reasons at `high` when the body says nothing, so
+    // a stated effort that never reached the wire spent output tokens the
+    // caller had already refused. `reasoning_effort` is the Chat Completions
+    // field for it, the same knob `OpenAIResponses` sends as `reasoning.effort`.
+    const withEffort = (reasoningEffort?: Request.ReasoningEffort): OpenAIChatCompletions.Body =>
+      body(Request.ModelRequest.make({
+        modelId: "qwen-3.8-27b",
+        system: [],
+        messages: [Request.Message.user("hi")],
+        tools: [],
+        params: Request.GenerationParams.make(reasoningEffort === undefined ? {} : { reasoningEffort })
+      }))
+
+    for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh"] as const) {
+      expect(withEffort(effort).reasoning_effort).toBe(effort)
+    }
+    expect(withEffort().reasoning_effort).toBeUndefined()
+    expect(Object.hasOwn(withEffort(), "reasoning_effort")).toBe(false)
+  })
+
   it("omits an aborted or errored historical assistant turn", () => {
     const request = Request.ModelRequest.make({
       modelId: "gemini-2.5-flash-lite",
