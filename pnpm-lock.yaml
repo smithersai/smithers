@@ -3676,6 +3676,9 @@ importers:
 
   packages/smithers/create-app:
     dependencies:
+      '@effect/platform-node-shared':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@smthrs/agent':
         specifier: 1.0.0-rc.0
         version: link:../agent
