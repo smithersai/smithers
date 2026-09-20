@@ -73,7 +73,9 @@ describe("module agent frame ownership", () => {
     expect(new Set(frames.map((frame) => frame.id)).size).toBe(2)
     expect(frames.map((frame) => [frame.startedAt, frame.endedAt])).toEqual([[100, 800], [300, 600]])
     expect(frames.map((frame) => frame.children.find((child) => child.kind === "call")?.detail.output)).toEqual(["left", "right"])
-    expect(model.lines.map((line) => line.frame)).toEqual([1, 1])
+    // Two steps each open their first frame; the merged list numbers the rows
+    // a person reads, so no two rows wear the same number.
+    expect(model.lines.map((line) => line.frame)).toEqual([1, 2])
     expect(phaseExtent(model)).toEqual({ start: 100, end: 800 })
     expect(model.rows.filter((row) => row.kind === "call").every((call) => call.status === "completed")).toBe(true)
   })
@@ -111,7 +113,7 @@ describe("module agent frame ownership", () => {
     expect(model.bands).toHaveLength(2)
     expect(model.bands[0]?.endedAt).toBe(500)
     expect(model.lines.every((line) => line.repeatOf === undefined)).toBe(true)
-    expect(model.lines.map((line) => line.frame)).toEqual([1, 1])
+    expect(model.lines.map((line) => line.frame)).toEqual([1, 2])
     expect(model.notes).toEqual([])
   })
 
@@ -218,6 +220,25 @@ describe("module agent frame ownership", () => {
     expect(model.bands.filter((band) => band.phase === "stuck").flatMap((band) => band.frames))
       .toEqual([frames[2]!.id, frames[4]!.id])
     expect(model.lines.map((line) => line.repeatOf)).toEqual([undefined, undefined, 1, undefined, 1, undefined])
+  })
+
+  test("a merged repeat names the renumbered row of its own step", () => {
+    const rows: JournalRecord[] = []
+    let seq = 0
+    for (let frame = 0; frame < 3; frame++) {
+      for (const step of [left, right]) {
+        rows.push(
+          event(++seq, "control.agent.turn-opened", step),
+          event(++seq, "control.agent.cell-call-started", step, { flowName: "write", input: { path: `${step.scope}.ts` } }),
+          event(++seq, "control.agent.cell-call-settled", step, { flowName: "write", outcome: "success", value: { bytesWritten: 4 } }),
+          event(++seq, "control.agent.mutation-observed", step, { basis: "observed", mutated: false }),
+          event(++seq, "control.agent.turn-closed", step, { outcome: "resolved" })
+        )
+      }
+    }
+    const model = traceFromJournal(run, rows)
+    expect(model.lines.map((line) => [line.frame, line.repeatOf]))
+      .toEqual([[1, undefined], [2, undefined], [3, 1], [4, 2], [5, 1], [6, 2]])
   })
 
   test("interleaved steps keep enriched notes and pins in sequence order without empty steering", () => {

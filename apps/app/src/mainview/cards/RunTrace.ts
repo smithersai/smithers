@@ -1351,6 +1351,13 @@ export const traceFromJournal = (
   const walk = (span: TraceSpan): void => { rows.push(span); span.children.forEach(walk) }
   walk(root)
   const positions = new Map(rows.map((span, index) => [span.id, index]))
+  // Each step folds its own frames from 1, so a merged run would print two
+  // rows numbered 1 and a `same as 1` that names either. The merged list
+  // numbers the rows a person reads, and a repeat names the renumbered row of
+  // the step that recorded it.
+  const merged = lines.sort((left, right) => (positions.get(left.spanId) ?? 0) - (positions.get(right.spanId) ?? 0))
+  const stepOf = (spanId: string): string => spanId.slice(0, spanId.lastIndexOf("/") + 1)
+  const renumbered = new Map(merged.map((line, index) => [`${stepOf(line.spanId)}${line.frame}`, index + 1]))
   return {
     journal: rawOrdered,
     root, rows,
@@ -1365,7 +1372,11 @@ export const traceFromJournal = (
     },
     bands: bands.sort((left, right) => left.startedAt - right.startedAt || left.seq - right.seq),
     milestones: milestones.sort((left, right) => left.seq - right.seq),
-    lines: lines.sort((left, right) => (positions.get(left.spanId) ?? 0) - (positions.get(right.spanId) ?? 0)),
+    lines: merged.map((line, index) => ({
+      ...line,
+      frame: index + 1,
+      ...(line.repeatOf === undefined ? {} : { repeatOf: renumbered.get(`${stepOf(line.spanId)}${line.repeatOf}`) ?? line.repeatOf })
+    })),
     notes: notes.sort((left, right) => left.seq - right.seq),
     owners: owners.sort((left, right) => left.seq - right.seq)
   }
