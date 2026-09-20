@@ -82,6 +82,67 @@ export const OperationResult = Schema.Union([
   Schema.Struct({ status: Schema.Literal("unchanged"), operationId: OperationId, revision: NativeRevision })
 ])
 export type OperationResult = typeof OperationResult.Type
+/**
+ * Every code a native coding failure can carry.
+ *
+ * It used to be `Schema.String`. The guest adapter's JSON error envelope is
+ * decoded straight onto this field (`native.ts`), so an unconstrained `code`
+ * let a program outside this repo choose the code on a `{ code, message }`
+ * record — and that record is what `agent/internal/FailureSummary.ts` puts on
+ * a run's first journal line, off which a run card picks the sentence a person
+ * reads. A guest answering `{"error":{"code":"model_failed", …}}` made a
+ * `repository/inspection` run say "a turn opened and the model never answered"
+ * with no model in the run and no source change anywhere. Nothing in this repo
+ * could see it: it is not a raise site, it is a string.
+ *
+ * So the field is closed, and the boundary decodes into it. The set is the
+ * union of three declarations this repo already holds:
+ *
+ * - what this repo's own native paths raise (`native.ts`, `flows/repository`),
+ * - what the guest adapter answers, as Plue's own failure registry spells it
+ *   without the `coding_` prefix (`packages/rpc/src/PlueFailureCodes.ts`),
+ * - and what the same adapter answers in its `--engine` mode, as
+ *   `flows/coding/snapshots.ts` `codeFor` already reads it.
+ *
+ * A code outside the set is not lost: `native.ts` raises `invalid_receipt` and
+ * keeps the guest's own code and sentence in the message, which is where a
+ * foreign sentence already belonged. That is a smaller failure than the one it
+ * replaces — the adapter's word is still on the card, and it can no longer be
+ * mistaken for another vocabulary's.
+ */
+export const NativeCode = Schema.Literals([
+  "invalid_receipt",
+  "invalid_request",
+  "outcome_unknown",
+  "response_too_large",
+  "source_creation_unavailable",
+  "source_changed",
+  "source_missing",
+  "source_publication_invalid_ack",
+  "source_publication_unavailable",
+  "source_refused",
+  "file_conflict",
+  "file_recovery_required",
+  "gateway_not_configured",
+  "guest_failure",
+  "host_unavailable",
+  "host_upgrade_required",
+  "provenance_pending",
+  "provider_refresh_required",
+  "reporter_upgrade_required",
+  "unsupported_jj",
+  "workspace_busy",
+  "invalid_ref",
+  "operation_conflict",
+  "request_conflict",
+  "revision_conflict",
+  "snapshot_incomplete",
+  "snapshot_refused",
+  "unsupported_version"
+])
+export type NativeCode = typeof NativeCode.Type
+/** Whether a string the guest adapter answered is one this repo declares. */
+export const isNativeCode = Schema.is(NativeCode)
 export class NativeCodingError extends Schema.TaggedError<NativeCodingError>()("coding/NativeCodingError", {
-  code: Schema.String, message: Schema.String, recovery: Schema.optionalKey(FileRecovery)
+  code: NativeCode, message: Schema.String, recovery: Schema.optionalKey(FileRecovery)
 }) {}

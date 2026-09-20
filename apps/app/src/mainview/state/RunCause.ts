@@ -149,7 +149,13 @@ export type ModelCode = (typeof MODEL_CODES)[number]
  */
 export const SHARED_CODES = {
   engine_failed: ["/harness/HarnessError", "@smthrs/opencode/DriverError"],
-  invalid_request: ["flows/model/ModelError", "flows/scorers/ScorerError", "@smthrs/sync/SyncError", "coding/Error"],
+  invalid_request: [
+    "flows/model/ModelError",
+    "flows/scorers/ScorerError",
+    "@smthrs/sync/SyncError",
+    "coding/Error",
+    "coding/NativeCodingError"
+  ],
   no_route: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
   authentication: ["flows/model/ModelError", "librarian/ProviderUnavailable"],
   rate_limited: [

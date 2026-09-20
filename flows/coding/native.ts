@@ -6,7 +6,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
-import { CreateSource, SourceCreation, ChangeId, FileRecovery, ImportSource, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
+import { CreateSource, SourceCreation, ChangeId, FileRecovery, ImportSource, isNativeCode, NativeCode, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
 export * from "./native-schema.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow
@@ -37,7 +37,7 @@ export interface NativeOptions {
   readonly sourcePublication?: "cloud" | "local-only"
 }
 
-const failure = (code: string, message: string, recovery?: typeof FileRecovery.Type) => new NativeCodingError({ code, message, ...(recovery === undefined ? {} : { recovery }) })
+const failure = (code: NativeCode, message: string, recovery?: typeof FileRecovery.Type) => new NativeCodingError({ code, message, ...(recovery === undefined ? {} : { recovery }) })
 const capture = <E>(stream: Stream.Stream<Uint8Array, E>, limit: number) =>
   Stream.runFoldEffect(stream, () => ({ text: "", bytes: 0, decoder: new TextDecoder() }), (state, chunk) => {
     const bytes = state.bytes + chunk.length
@@ -64,7 +64,14 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
     if (result !== null && typeof result === "object" && "error" in result) {
       const error = yield* Schema.decodeUnknownEffect(Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.optionalKey(FileRecovery) }))(result.error)
         .pipe(Effect.mapError(() => failure("outcome_unknown", "Native adapter returned an invalid error envelope")))
-      return yield* failure(error.code, error.message, error.recovery)
+      // The envelope comes from a program outside this repo, so its code is a
+      // string until this repo's own vocabulary admits it. A code nothing here
+      // declares is not passed through: it would put an unauthored code on the
+      // `{ code, message }` record a run card reads its sentence off, and no
+      // source sweep can see a string. The guest's own words are kept.
+      return yield* isNativeCode(error.code)
+        ? failure(error.code, error.message, error.recovery)
+        : failure("invalid_receipt", `Native adapter answered with a code this build does not declare (${error.code}): ${error.message}`, error.recovery)
     }
     if (exitCode !== 0) return yield* failure("outcome_unknown", "Native adapter exited without an accepted receipt; retry the identical operation")
     return result

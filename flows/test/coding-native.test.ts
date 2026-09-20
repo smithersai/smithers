@@ -16,6 +16,50 @@ test("native invocation UUIDs remain stable across retry and differ between dura
   assert.notEqual(requestIdFor("execution-2", "create/database"), first)
 })
 
+/*
+ * The guest adapter is a Plue-owned program in the box, not a source in this
+ * repo, so its error envelope is the one place a code arrives on a
+ * `{ code, message }` record with no raise site anywhere. That record is what
+ * `agent/internal/FailureSummary.ts` puts on a run's first journal line, and
+ * `apps/app RunCause.ts` picks the sentence a person reads off that code — so
+ * before `NativeCode` closed the field, an adapter answering `model_failed`
+ * made a `repository/inspection` run card say "a turn opened and the model
+ * never answered", with no model in the run.
+ *
+ * Two adapters, each three lines of Python, each answering one envelope.
+ */
+test("a code the guest adapter invents cannot become a code this repo answers", { timeout: 30_000 }, async t => {
+  const temporary = await mkdtemp(join(tmpdir(), "coding-native-envelope-"))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const adapter = async (code: string) => {
+    const path = join(temporary, `${code}.py`)
+    await writeFile(path, `import sys,json\nsys.stdin.read()\nprint(json.dumps({"error":{"code":${JSON.stringify(code)},"message":"the guest adapter said so"}}))\nsys.exit(1)\n`)
+    return nativeLayer({ sourcePublication: "local-only", repositoryPath: temporary, adapterPath: path }).pipe(
+      Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
+    )
+  }
+  const read = (host: Layer.Layer<NativeCoding>) =>
+    Effect.runPromise(Effect.flatMap(NativeCoding, native => Effect.result(native.read())).pipe(Effect.provide(host)))
+
+  const foreign = await read(await adapter("model_failed"))
+  assert.equal(foreign._tag, "Failure")
+  if (foreign._tag !== "Failure") throw new Error("the adapter answered a receipt")
+  // Not `model_failed`: that code belongs to the harness, and one line of
+  // `<code>: <message>` cannot say which vocabulary wrote it.
+  assert.equal(foreign.failure.code, "invalid_receipt")
+  // The guest's own code and sentence survive, in the technical detail where a
+  // foreign sentence already belonged.
+  assert.match(foreign.failure.message, /\(model_failed\): the guest adapter said so/)
+
+  // A code this repo does declare still reaches the caller unchanged, so the
+  // retry predicates that read it keep working.
+  const declared = await read(await adapter("workspace_busy"))
+  assert.equal(declared._tag, "Failure")
+  if (declared._tag !== "Failure") throw new Error("the adapter answered a receipt")
+  assert.equal(declared.failure.code, "workspace_busy")
+  assert.equal(declared.failure.message, "the guest adapter said so")
+})
+
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 test("Effect spawner runs the real Plue adapter: native lost-ack replay, conflicts, path identity and pending provenance", {
   skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to the Plue-owned coding.py; requires native JJ 0.39" : false,

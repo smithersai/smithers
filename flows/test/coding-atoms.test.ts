@@ -11,7 +11,7 @@ import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { Effect, Layer, ManagedRuntime, SchemaIssue } from "effect"
 import { atomFlows, atomOperations, EditAtom, ImplementAtoms } from "../coding/atoms.ts"
-import { NativeCoding, NativeCodingError, nativeActions, nativeLayer, type Operation } from "../coding/native.ts"
+import { type NativeCode, NativeCoding, NativeCodingError, nativeActions, nativeLayer, type Operation } from "../coding/native.ts"
 import { Change, type Revision } from "../coding/schema.ts"
 
 // Persisted schema issues have data-only ASTs; their live formatters require
@@ -57,7 +57,7 @@ test("native atom implementation persists real files, replays, and edits old JJ 
   let edits = 0
   const attempted: Array<Operation> = []
   const readAttempts: Array<ReadonlyArray<string>> = []
-  let failWith: string | undefined
+  let failWith: NativeCode | undefined
   const recoveringNative = Layer.effect(NativeCoding)(Effect.gen(function*() {
     const service = yield* NativeCoding
     return { ...service, read: (ids: ReadonlyArray<string> = []) => Effect.gen(function*() {
