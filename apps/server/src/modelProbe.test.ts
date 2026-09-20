@@ -6,6 +6,8 @@ import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import { MODEL_CATALOG_PATH, MODEL_TEST_PATH, MODEL_CREDENTIAL_PATH, MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import {
+  MODEL_CALL_MAX_TOKENS_MAX,
+  MODEL_CALL_TEXT_MAX,
   MODEL_TEST_BODY_MAX_BYTES,
   MODEL_TEST_DEADLINE_MS,
   MODEL_TEST_MAX_TOKENS,
@@ -15,7 +17,7 @@ import {
   bindingOf,
   planModelBinding
 } from "@smthrs/rpc/ConfiguredModel"
-import type { ConfiguredModel, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
+import type { ConfiguredModel, ModelCallInput, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
 import { testConfigLayer } from "./Config"
 import type { ServerConfigShape } from "./Config"
 import { memoryStorage } from "./DurableStorage"
@@ -158,7 +160,8 @@ describe("POST /api/model/test, a generation model", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp")
     const result = resultOf(text)
-    expect(result).toEqual({ ok: true, latencyMs: result.latencyMs, sample: "ok" })
+    // The words are kept whole for the composer; the row's sample is trimmed and bounded.
+    expect(result).toEqual({ ok: true, latencyMs: result.latencyMs, sample: "ok", output: { kind: "generation", text: "  ok\n" } })
 
     expect(calls.length).toBe(1)
     const sent = calls[0]!
@@ -172,6 +175,22 @@ describe("POST /api/model/test, a generation model", () => {
       stream: false,
       max_tokens: MODEL_TEST_MAX_TOKENS,
       messages: [{ role: "user", content: MODEL_TEST_PROMPT }]
+    })
+  })
+
+  test("the fixed Test carries its text, and a composed prompt rides with its system prompt and parameters", async () => {
+    const fixed = await run({ model: chat }, { answer: async () => completion("ok") })
+    expect(resultOf(fixed.text)).toMatchObject({ ok: true, sample: "ok", output: { kind: "generation", text: "ok" } })
+    const input: ModelCallInput = { kind: "generation", system: "Answer tersely.", prompt: "ping?", maxTokens: 64, temperature: 0.2 }
+    const { text, calls } = await run({ model: chat, input }, { answer: async () => completion("pong") })
+    expect(resultOf(text)).toMatchObject({ ok: true, sample: "pong", output: { kind: "generation", text: "pong" } })
+    expect(calls.length).toBe(1)
+    expect(await calls[0]!.json()).toEqual({
+      model: "gpt-oss-120b",
+      stream: false,
+      max_tokens: 64,
+      temperature: 0.2,
+      messages: [{ role: "system", content: "Answer tersely." }, { role: "user", content: "ping?" }]
     })
   })
 
@@ -247,6 +266,27 @@ describe("POST /api/model/test, a generation model", () => {
     }
   })
 
+  test("an input of the other kind than the record's is invalid at the protocol, and no provider is asked", async () => {
+    const generation: ModelCallInput = { kind: "generation", system: "", prompt: "hi", maxTokens: 8 }
+    const composed: ModelCallInput = { kind: "decision", state: [{ key: "text", kind: "text", value: "hi" }], questions: { ok: { type: "boolean", instructions: "?" } } }
+    for (const body of [{ model: decision, input: generation }, { model: chat, input: composed }]) {
+      const { response, text, calls } = await run(body)
+      expect(response.status).toBe(200)
+      expect(failureOf(text)).toEqual({ failure: { code: "invalid", field: "protocol" }, fault: "user" })
+      expect(calls.length).toBe(0)
+    }
+  })
+
+  test("the words are cut at the wire's bound, so a long answer is a pass that parses", async () => {
+    const { text } = await run(
+      { model: chat, input: { kind: "generation", system: "", prompt: "go", maxTokens: MODEL_CALL_MAX_TOKENS_MAX } },
+      { answer: async () => completion("x".repeat(MODEL_CALL_TEXT_MAX + 1)) }
+    )
+    // resultOf parses with ModelTestResultSchema: an uncut answer fails there, as it would in the client.
+    const result = resultOf(text)
+    expect(result.ok && result.output?.kind === "generation" ? result.output.text.length : undefined).toBe(MODEL_CALL_TEXT_MAX)
+  })
+
   test("a provider that never answers is a timeout carrying the deadline that armed it, and the call is aborted", async () => {
     let aborted = false
     const net = recording((request) =>
@@ -308,6 +348,39 @@ describe("POST /api/model/test, a decision model", () => {
   test("a no is a pass too", async () => {
     const { text } = await run({ model: decision }, { answer: async () => answered({ ok: { type: "boolean", probability: 0.2 } }) })
     expect(resultOf(text)).toMatchObject({ ok: true, sample: "false 0.20" })
+  })
+
+  test("the fixed Test carries its typed answer, and a composed request carries its own state and questions", async () => {
+    const fixed = await run({ model: decision }, { answer: async () => answered({ ok: { type: "boolean", probability: 0.974 } }) })
+    expect(resultOf(fixed.text)).toMatchObject({ ok: true, output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.974 } } } })
+    const input: ModelCallInput = {
+      kind: "decision",
+      state: [{ key: "path", kind: "path", value: "src/a.ts" }, { key: "passed", kind: "boolean", value: "false" }],
+      questions: {
+        ok: { type: "boolean", instructions: "Did it pass?" },
+        which: { type: "choice", instructions: "Which?", criteria: { a: "src/a.ts", b: "src/b.ts" } },
+        risk: { type: "score", instructions: "How risky?", criteria: ["low", "high"] }
+      }
+    }
+    const { text, calls } = await run({ model: decision, input }, {
+      answer: async () => answered({ ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "b", probabilities: { b: 0.9 } }, risk: { type: "score", score: 1 } })
+    })
+    expect(resultOf(text)).toMatchObject({
+      ok: true,
+      sample: "false 0.20",
+      output: { kind: "decision", answers: {
+        ok: { type: "boolean", value: false, probability: 0.2 },
+        which: { type: "choice", value: "b", probabilities: { a: 0, b: 0.9 }, confidence: 0.9 },
+        risk: { type: "score", value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
+      } }
+    })
+    expect(calls.length).toBe(1)
+    const body = await calls[0]!.json() as { state: unknown; questions: Record<string, unknown> }
+    expect(body.state).toEqual({ path: "src/a.ts", passed: false })
+    expect(Object.keys(body.questions)).toEqual(["ok", "which", "risk"])
+    // An answer that does not fit its question is the protocol's failure, never a guessed answer.
+    const wrong = await run({ model: decision, input }, { answer: async () => answered({ ok: { type: "boolean", probability: 0.2 }, which: { type: "choice", choice: "z" }, risk: { type: "score", score: 1 } }) })
+    expect(failureOf(wrong.text).failure).toEqual({ code: "invalid", field: "protocol" })
   })
 
   test("a model off the decision allowlist is model_not_allowed", async () => {
@@ -385,7 +458,10 @@ describe("POST /api/model/test refuses a body it will not run", () => {
     { name: "an app-only field left on the record", body: { model: { ...chat, lastTest: { id: "t", testedAt: 1 } } }, status: 400, code: "request_invalid" },
     { name: "an extra top-level key", body: { model: chat, credentials: [] }, status: 400, code: "request_invalid" },
     { name: "an unknown protocol", body: { model: { ...chat, protocol: "gemini" } }, status: 400, code: "request_invalid" },
-    { name: "a body past the cap", body: { model: chat, pad: "x".repeat(MODEL_TEST_BODY_MAX_BYTES) }, status: 413, code: "request_body_too_large" }
+    { name: "a body past the cap", body: { model: chat, pad: "x".repeat(MODEL_TEST_BODY_MAX_BYTES) }, status: 413, code: "request_body_too_large" },
+    { name: "a composed request with no question", body: { model: decision, input: { kind: "decision", state: [], questions: {} } }, status: 400, code: "request_invalid" },
+    { name: "a composed choice with one option", body: { model: decision, input: { kind: "decision", state: [], questions: { q: { type: "choice", instructions: "?", criteria: { a: "" } } } } }, status: 400, code: "request_invalid" },
+    { name: "a composed prompt with no words", body: { model: chat, input: { kind: "generation", system: "", prompt: " ", maxTokens: 8 } }, status: 400, code: "request_invalid" }
   ]
 
   for (const example of cases) {
