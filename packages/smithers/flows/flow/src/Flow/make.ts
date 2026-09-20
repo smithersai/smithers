@@ -6,6 +6,7 @@
  * @since 0.1.0
  */
 import { Sha256 } from "@smthrs/crypto"
+import * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
@@ -14,7 +15,7 @@ import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import { FlowRuntime } from "../FlowRuntime/FlowRuntime.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
-import { Capabilities } from "./Annotations.ts"
+import { Capabilities, EffectEnvelope } from "./Annotations.ts"
 import { CurrentExecutionIds } from "./ExecutionIds.ts"
 import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, Flow } from "./Flow.ts"
 import type { To } from "./Outcome.ts"
@@ -220,6 +221,21 @@ interface MakeOptions<
    * an annotation built at run time is invisible to that projection.
    */
   readonly capabilities?: ReadonlyArray<string> | undefined
+  /**
+   * The effect envelope this flow's body runs under, as a literal.
+   *
+   * It is the same declaration {@link Annotations.EffectEnvelope} carries, and
+   * declaring it here is what makes it READABLE without importing the module,
+   * exactly as `capabilities` is: a catalog projects a discovered flow's
+   * authority from the source text of this literal, and an annotation built at
+   * run time is invisible to that projection.
+   *
+   * {@link module:Graph.build} refuses a composition beneath this flow that
+   * reads or writes outside the envelope, loosens `hermetic` to `expected`, or
+   * raises the tier. `reads` and `writes` are normalized to sorted,
+   * duplicate-free arrays, so two spellings of one envelope are one envelope.
+   */
+  readonly effects?: Effects.MakeOptions | undefined
   readonly idempotencyKey?:
     | ((
       payload: Payload extends Schema.Struct.Fields ? Schema.Struct.Type<Payload>
@@ -258,6 +274,33 @@ type Body<
 type PayloadSchemaOf<Payload extends Schema.Struct.Fields | AnyStructSchema> = Payload extends Schema.Struct.Fields
   ? Schema.Struct<Payload>
   : Payload
+
+/**
+ * Lowers the literal declarations a `Flow.make` call carries into the
+ * annotation bag every reader already consults.
+ *
+ * Both literals exist so a CATALOG can project them from source text without
+ * importing the module, so the lowering is the only place either spelling is
+ * turned into a value: a flow that declares `capabilities` and a flow that
+ * annotates `Annotations.Capabilities` are the same flow to `Graph.build`, and
+ * the same holds for `effects` and `Annotations.EffectEnvelope`.
+ *
+ * @private
+ */
+const lowerDeclarations = (options: {
+  readonly capabilities?: ReadonlyArray<string> | undefined
+  readonly effects?: Effects.MakeOptions | undefined
+  readonly annotations?: Context.Context<never> | undefined
+}): Context.Context<never> => {
+  let annotations = options.annotations ?? Context.empty()
+  if (options.capabilities !== undefined) {
+    annotations = Context.add(annotations, Capabilities, options.capabilities)
+  }
+  if (options.effects !== undefined) {
+    annotations = Context.add(annotations, EffectEnvelope, Effects.make(options.effects))
+  }
+  return annotations
+}
 
 /**
  * Whether a value is a flow this package made.
@@ -312,9 +355,7 @@ export const make = <
       : Schema.Struct(options.payload as any)) as PayloadSchemaOf<Payload>,
     successSchema: options.success ?? (Schema.Void as any),
     errorSchema: options.error ?? (Schema.Never as any),
-    annotations: options.capabilities === undefined
-      ? options.annotations ?? Context.empty()
-      : Context.add(options.annotations ?? Context.empty(), Capabilities, options.capabilities),
+    annotations: lowerDeclarations(options),
     body: options.body as (
       payload: PayloadSchemaOf<Payload>["Type"]
     ) => Node.Node<BodySuccess<Success["Type"]>, Error["Type"], Requires>,

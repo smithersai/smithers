@@ -12,7 +12,8 @@ Higher-order flow patterns and decorators for flows: review loops, escalation
 ladders, sagas, merge queues, check suites, and model-authored delegation. Every
 pattern declares the work as a graph before any of it runs, so a budget, a
 reviewer, or a scheduler can read the worst case in advance. It composes
-`@smthrs/core` alone and imports no Node built-ins.
+`@smthrs/core` plus the one effect model in `@smthrs/plan/Effects`, and imports
+no Node built-ins.
 
 ```sh
 pnpm add @smthrs/patterns@next

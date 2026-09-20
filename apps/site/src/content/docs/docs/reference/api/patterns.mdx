@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/patterns"
-description: "Higher-order flow patterns and decorators for flows. It composes @smthrs/core alone and imports no Node built-ins."
+description: "Higher-order flow patterns and decorators for flows. It composes @smthrs/core and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/patterns/docs/api.md"
 ---
 
@@ -8,12 +8,13 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md) · [package docs](https://smithers-patterns.smithers.sh)
 
-> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/)
+> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
-[`@smthrs/core`](/docs/reference/api/core/) alone and imports no Node built-ins. Nothing in it
-reaches the engine, the journal, or a host capability.
+[`@smthrs/core`](/docs/reference/api/core/) plus the one effect model,
+[`@smthrs/plan/Effects`](/docs/reference/api/plan/#effects), and imports no Node built-ins.
+Nothing in it reaches the engine, the journal, or a host capability.
 
 The loop, team, and delegation patterns have their own pages:
 [Loops](https://smithers-patterns.smithers.sh/loops/), [Teams](https://smithers-patterns.smithers.sh/teams/), and [Delegation](https://smithers-patterns.smithers.sh/delegation/).

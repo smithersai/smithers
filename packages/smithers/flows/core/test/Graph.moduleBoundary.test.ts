@@ -1,8 +1,8 @@
+import * as Effects from "@smthrs/plan/Effects"
 import { describe, expect, it } from "vitest"
 import * as Flow from "../src/Flow.ts"
 import * as Graph from "../src/Graph.ts"
 import * as Diagnostic from "../src/internal/diagnostic.ts"
-import * as EffectIndex from "../src/internal/effects.ts"
 import * as Reflection from "../src/internal/reflection.ts"
 import * as Node from "../src/Node.ts"
 
@@ -13,8 +13,8 @@ describe("Graph module boundary", () => {
     expect(Graph.isFatalDiagnostic).toBe(Diagnostic.isFatalDiagnostic)
     expect(Graph.maximumPayloadDepth).toBe(Reflection.maximumDepth)
     expect(Graph.maximumPayloadMembers).toBe(Reflection.maximumMembers)
-    expect(Graph.maximumEffectPathLength).toBe(EffectIndex.maximumPathLength)
-    expect(Graph.maximumEffectGlobs).toBe(EffectIndex.maximumGlobs)
+    expect(Graph.maximumEffectPathLength).toBe(Effects.maximumPathLength)
+    expect(Graph.maximumEffectGlobs).toBe(Effects.maximumGlobs)
   })
 
   it("refuses an over-deep plan value through the extracted reflection", () => {

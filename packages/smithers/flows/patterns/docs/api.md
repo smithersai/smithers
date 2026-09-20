@@ -5,8 +5,9 @@ description: "The public API of @smthrs/patterns: the two halves every pattern e
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
-[`@smthrs/core`](/api/core) alone and imports no Node built-ins. Nothing in it
-reaches the engine, the journal, or a host capability.
+[`@smthrs/core`](/api/core) plus the one effect model,
+[`@smthrs/plan/Effects`](/api/plan#effects), and imports no Node built-ins.
+Nothing in it reaches the engine, the journal, or a host capability.
 
 The loop, team, and delegation patterns have their own pages:
 [Loops](./loops.md), [Teams](./teams.md), and [Delegation](./delegation.md).

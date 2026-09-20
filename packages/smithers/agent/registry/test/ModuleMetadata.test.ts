@@ -609,3 +609,61 @@ describe("ModuleMetadata", () => {
     expect(metadata.warnings).toEqual([])
   })
 })
+
+describe("ModuleMetadata effect envelope parity", () => {
+  const literal = [
+    "  effects: {",
+    "    reads: [\"src/**\"],",
+    "    writes: [\"dist/**\"],",
+    "    mode: \"hermetic\",",
+    "    onConflict: \"lane\",",
+    "    tier: \"compensable\"",
+    "  },"
+  ]
+
+  // One literal, two declaration shapes: `@smthrs/core` takes an options object
+  // alone, `@smthrs/flow` takes a tag first and spells the schemas `payload`
+  // and `success`. Discovery reads source text, so the envelope it projects has
+  // to be the same envelope either way, or a file flow's authority would depend
+  // on which constructor its author reached for.
+  const core = ModuleMetadata.parse([
+    "export default Flow.make({",
+    "  description: \"Builds the package.\",",
+    "  input: Schema.Struct({ target: Schema.String }),",
+    "  output: Schema.Struct({ built: Schema.Boolean }),",
+    "  capabilities: [\"fs:read:.\", \"fs:write:dist\"],",
+    ...literal,
+    "  body: () => Node.succeed({ built: true })",
+    "})"
+  ].join("\n"))
+
+  const flow = ModuleMetadata.parse([
+    "export default Flow.make(\"builder/build\", {",
+    "  description: \"Builds the package.\",",
+    "  payload: { target: Schema.String },",
+    "  success: Schema.Struct({ built: Schema.Boolean }),",
+    "  capabilities: [\"fs:read:.\", \"fs:write:dist\"],",
+    ...literal,
+    "  body: () => Node.succeed({ built: true })",
+    "})"
+  ].join("\n"))
+
+  it("projects the same envelope from either constructor's literal", () => {
+    expect(flow.effects).toEqual(core.effects)
+    expect(flow.effects).toEqual({
+      reads: ["src/**"],
+      writes: ["dist/**"],
+      mode: "hermetic",
+      onConflict: "lane",
+      tier: "compensable"
+    })
+  })
+
+  it("reads the rest of the declaration from either constructor too", () => {
+    expect(flow.capabilities).toEqual(core.capabilities)
+    expect(flow.description).toEqual(core.description)
+    expect([flow.hasInput, flow.hasOutput]).toEqual([core.hasInput, core.hasOutput])
+    expect(flow.warnings).toEqual([])
+    expect(core.warnings).toEqual([])
+  })
+})

@@ -34,25 +34,43 @@ const importedPackages = (): ReadonlySet<string> => {
 }
 
 // The package description, the `src/index.ts` header, `README.md`, and
-// `docs/README.md` all promise that this package composes `@smthrs/core`
-// alone. A second workspace dependency contradicts every one of them at once,
-// so the manifest is pinned here rather than in prose.
+// `docs/README.md` all name the exact workspace packages this one composes. A
+// dependency none of them mentions contradicts every one of them at once, so
+// the manifest is pinned here rather than in prose.
+//
+// `@smthrs/plan` is here for ONE module, `@smthrs/plan/Effects`: the single
+// effect envelope model, which `@smthrs/core` re-exports and `@smthrs/flow`
+// enforces. Reading it through core's alias would hide which package owns it,
+// and the import is already in the install graph through core either way.
+const declared = ["@smthrs/core", "@smthrs/plan"]
+
 describe("package manifest", () => {
-  it("declares @smthrs/core as its only runtime dependency", () => {
-    expect(Object.keys(manifest.dependencies).sort()).toEqual(["@smthrs/core"])
+  it("declares exactly the workspace packages it composes", () => {
+    expect(Object.keys(manifest.dependencies).sort()).toEqual(declared)
   })
 
-  it("says it composes @smthrs/core alone", () => {
-    expect(manifest.description).toContain("composes @smthrs/core alone")
+  it("says what it composes", () => {
+    expect(manifest.description).toContain("composes @smthrs/core and the one effect model in @smthrs/plan/Effects")
   })
 
-  it("imports no workspace package other than @smthrs/core", () => {
+  it("imports no workspace package it did not declare", () => {
     // Doc examples inside `src` import the package by its own name, which is
     // a self-reference rather than a dependency.
     const workspaceImports = [...importedPackages()]
       .filter((name) => name.startsWith("@smthrs/") && name !== manifest.name)
       .sort()
 
-    expect(workspaceImports).toEqual(["@smthrs/core"])
+    expect(workspaceImports).toEqual(declared)
+  })
+
+  it("takes only the effect model from @smthrs/plan, never its SQL surface", () => {
+    const specifiers = new Set<string>()
+    for (const file of sourceFiles(sourceDirectory)) {
+      for (const match of readFileSync(file, "utf8").matchAll(/from\s+"(@smthrs\/plan[^"]*)"/g)) {
+        specifiers.add(match[1]!)
+      }
+    }
+
+    expect([...specifiers]).toEqual(["@smthrs/plan/Effects"])
   })
 })

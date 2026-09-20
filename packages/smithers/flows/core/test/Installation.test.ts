@@ -18,6 +18,6 @@ describe("Installation dependency contract", () => {
     const dependencies = [...section.matchAll(/^- \[`([^`]+)`\]/gm)].map((match) => match[1])
 
     expect(dependencies.sort()).toEqual(Object.keys(manifest.dependencies).sort())
-    expect(guide).toContain("Three runtime dependencies install with it:")
+    expect(guide).toContain("Four runtime dependencies install with it:")
   })
 })

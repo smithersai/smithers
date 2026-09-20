@@ -6,8 +6,9 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
-[`@smthrs/core`](https://core.smithers.sh/reference/api/) alone and imports no Node built-ins. Nothing in it
-reaches the engine, the journal, or a host capability.
+[`@smthrs/core`](https://core.smithers.sh/reference/api/) plus the one effect model,
+[`@smthrs/plan/Effects`](https://plan.smithers.sh/reference/api/#effects), and imports no Node built-ins.
+Nothing in it reaches the engine, the journal, or a host capability.
 
 The loop, team, and delegation patterns have their own pages:
 [Loops](/loops/), [Teams](/teams/), and [Delegation](/delegation/).

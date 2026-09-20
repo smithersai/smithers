@@ -84,9 +84,9 @@ export interface Policy {
  * which is the same key under the same identifier. A host must lower the flow
  * bag onto an action, as the registry bridge does for default-exported flows.
  * The key is declared twice rather than imported
- * because `@smthrs/patterns` composes over `@smthrs/core` alone and
- * `@smthrs/flow` does not depend on either, so neither package can import the
- * other. `packages/smithers/flows/patterns/test/WithCache.test.ts` pins the two halves
+ * because `@smthrs/patterns` does not depend on `@smthrs/flow` and
+ * `@smthrs/flow` does not depend on `@smthrs/core`, so neither package can
+ * import the other. `packages/smithers/flows/patterns/test/WithCache.test.ts` pins the two halves
  * together: it reads a wrapper's annotations back with `@smthrs/flow`'s reader,
  * and fails the moment the identifiers drift.
  *

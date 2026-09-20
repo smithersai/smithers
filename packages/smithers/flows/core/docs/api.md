@@ -908,91 +908,25 @@ inside it. See [Build limits](./concepts/limits.md) for the reasoning.
 
 Pure effect declarations describing read and write envelopes.
 
-### Effects.Declaration
+The model lives in [`@smthrs/plan`](/api/plan#effects), the lowest package this
+one and the library that executes a flow both depend on. `@smthrs/core/Effects`
+re-exports it and adds nothing, so a declaration narrowed here and a declaration
+narrowed by `@smthrs/flow` are narrowed by the same rule. The plan reference
+documents `Declaration`, `MakeOptions`, `make`, `covers`, `narrow`,
+`NarrowResult`, `overlaps`, `sealed`, and the prepared matching API `Graph.build`
+uses.
 
 ```ts
-interface Declaration {
-  readonly reads: ReadonlyArray<string>
-  readonly writes: ReadonlyArray<string>
-  readonly mode: "hermetic" | "expected"
-  readonly onConflict: "serialize" | "lane" | "fail"
-  readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
-}
+import { Effects } from "@smthrs/core"
+
+const envelope = Effects.make({
+  reads: ["src/**"],
+  writes: ["dist/**"],
+  mode: "hermetic",
+  onConflict: "serialize",
+  tier: "sealed"
+})
 ```
-
-`mode` says whether the declaration is complete (`hermetic`) or partial
-(`expected`). `onConflict` says what the planner should do about another writer
-of the same path. `tier` says how reversible the effect is, and an omitted tier
-reads as `sealed`.
-
-### Effects.make
-
-```ts
-const make: (input: MakeOptions) => Declaration
-```
-
-Constructs a deterministic declaration. `MakeOptions` takes `Iterable<string>`
-for `reads` and `writes` and is otherwise identical to `Declaration`.
-Normalization is sorting and deduplication only: no separator rewriting and no
-dot-segment resolution is performed, so hand it paths that are already
-normalized.
-
-### Effects.covers
-
-```ts
-const covers: (envelope: string, path: string) => boolean
-```
-
-Whether one envelope entry covers one path. The grammar is exhaustive and
-intentionally not full minimatch: an exact path matches itself, `*` and `**`
-match everything, `prefix*` matches by string prefix, and `prefix/**` matches
-`prefix/` and everything below it but not the bare path `prefix`. A path
-containing a whole `.` or `..` segment is never covered.
-
-### Effects.narrow
-
-```ts
-const narrow: (envelope: Declaration, step: Declaration) => NarrowResult
-```
-
-Verifies that a step declaration stays within an enclosing envelope. Read and
-write paths must be covered independently, `expected` may tighten to
-`hermetic` but not the reverse, and the tier may narrow from `irreversible` to
-`compensable` to `sealed`.
-
-### Effects.NarrowResult
-
-```ts
-type NarrowResult =
-  | { readonly ok: true }
-  | {
-    readonly ok: false
-    readonly code: "effect_outside_envelope" | "effect_mode_widening" | "effect_tier_widening"
-    readonly paths: ReadonlyArray<string>
-  }
-```
-
-`paths` is populated for `effect_outside_envelope` and empty for the other two.
-
-### Effects.overlaps
-
-```ts
-const overlaps: (a: Declaration, b: Declaration) => ReadonlyArray<string>
-```
-
-Returns the concrete or narrower write declarations two declarations share,
-sorted and duplicate-free. Two declarations of the same literal path always
-overlap, including a path `covers` refuses to match because it carries a `.` or
-`..` segment: glob coverage stays strict, but two writers naming the same
-unnormalized path are still writing the same resource.
-
-### Effects.sealed
-
-```ts
-const sealed: (declaration: Declaration) => Declaration
-```
-
-Returns a `hermetic`, `sealed` copy of a declaration.
 
 ## Placement
 

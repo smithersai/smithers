@@ -40,6 +40,13 @@ export * as FileSet from "./FileSet.ts"
  * @category models
  * @slop
  */
+export * as Effects from "./Effects.ts"
+
+/**
+ * @since 0.1.0
+ * @category models
+ * @slop
+ */
 export * as Node from "./Node.ts"
 
 /**

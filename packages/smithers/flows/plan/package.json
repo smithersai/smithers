@@ -40,6 +40,7 @@
     "./Planned": "./src/Planned.ts",
     "./internal/*": null,
     "./*/index": null,
+    "./Effects": "./src/Effects.ts",
     "./FileSet": "./src/FileSet.ts",
     "./KeyMaterial": "./src/KeyMaterial.ts",
     "./Migrations": "./src/Migrations.ts",
@@ -109,6 +110,16 @@
       },
       "./internal/*": null,
       "./*/index": null,
+      "./Effects": {
+        "import": {
+          "types": "./dist/esm/Effects.d.ts",
+          "default": "./dist/esm/Effects.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Effects.d.ts",
+          "default": "./dist/cjs/Effects.js"
+        }
+      },
       "./FileSet": {
         "import": {
           "types": "./dist/esm/FileSet.d.ts",

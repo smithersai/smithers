@@ -43,6 +43,17 @@ import * as Schema from "effect/Schema"
  * and refuses at a bound, rather than recursing until the native stack
  * overflows without a typed error.
  *
+ * The last four are the effect-authority refusals, raised when a declaration
+ * claims more than the declaration enclosing it granted:
+ * `effect_outside_envelope` is a read or write path the envelope does not
+ * cover, and it names those paths in `path`; `effect_mode_widening` is an
+ * `expected` declaration inside a `hermetic` envelope; `effect_tier_widening`
+ * is a tier less reversible than the envelope's; and
+ * `capability_outside_grant` is a called flow requiring a capability the caller
+ * does not hold, which names the dropped capabilities in `path`. The first
+ * three are fatal by {@link isFatalDiagnostic}; the fourth is advisory, because
+ * dropping a capability narrows authority rather than widening it.
+ *
  * @since 0.1.0
  * @category schemas
  * @slop
@@ -59,7 +70,11 @@ export const GraphBuildErrorCode = Schema.Literals([
   "duplicate_node",
   "invalid_priority",
   "invalid_payload",
-  "unstable_callback"
+  "unstable_callback",
+  "effect_outside_envelope",
+  "effect_mode_widening",
+  "effect_tier_widening",
+  "capability_outside_grant"
 ])
 
 /**
@@ -89,3 +104,27 @@ export class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smt
   path: Schema.Array(Schema.String),
   message: Schema.String
 }) {}
+
+/**
+ * The one advisory code. Everything else a build records blocks the drafts.
+ *
+ * A capability the caller does not grant is DROPPED, not granted: the callee
+ * runs with less authority than it asked for, which is the safe direction. The
+ * author still needs to know, because a flow that silently loses a capability
+ * fails later at the action that needed it, so the build records the refusal
+ * and lets the graph compile.
+ */
+const advisoryCodes: ReadonlySet<GraphBuildErrorCode> = new Set<GraphBuildErrorCode>(["capability_outside_grant"])
+
+/**
+ * Whether a recorded refusal blocks the drafts a plan is compiled from.
+ *
+ * A fatal refusal means the graph describes something no plan could execute as
+ * written, so the drafts are withheld. An advisory one reports a narrowing the
+ * author should see while the graph still compiles.
+ *
+ * @since 0.1.0
+ * @category predicates
+ * @slop
+ */
+export const isFatalDiagnostic = (diagnostic: GraphBuildError): boolean => !advisoryCodes.has(diagnostic.code)

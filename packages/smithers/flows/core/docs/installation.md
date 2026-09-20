@@ -22,12 +22,15 @@ runtime. [`effect`](https://effect.website) supplies `Schema`, `Context`,
 `Result`, and `Data`, which appear in this package's public types. Import it
 directly in your own code.
 
-Three runtime dependencies install with it:
+Four runtime dependencies install with it:
 
 - [`@smthrs/canonical`](/api/canonical) supplies the RFC 8785 canonical JSON
   serialization behind `Digest.canonical`.
 - [`@smthrs/crypto`](/api/crypto) supplies the synchronous SHA-256 behind
   `Digest.digest` and behind captured function identity.
+- [`@smthrs/plan`](/api/plan) owns the effect declaration model `Effects`
+  re-exports, so one declaration shape is narrowed by one rule wherever a flow
+  is built.
 - [`yaml`](https://eemeli.org/yaml/) parses Agent Skills frontmatter with the
   failsafe schema.
 

@@ -54,7 +54,8 @@
  *
  * @since 0.1.0
  */
-import { GraphBuildError } from "@smthrs/plan/GraphBuildError"
+import * as Effects from "@smthrs/plan/Effects"
+import { GraphBuildError, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Node from "@smthrs/plan/Node"
 import type * as Plan from "@smthrs/plan/Plan"
@@ -256,6 +257,38 @@ const declaredEffects = (annotations: Context.Context<never>): Annotations.Effec
 /** @private */
 const declaredPlacement = (annotations: Context.Context<never>): unknown =>
   Option.getOrUndefined(Context.getOption(annotations, Annotations.Placement))
+
+/** @private */
+const declaredEnvelope = (annotations: Context.Context<never>): Effects.Declaration | undefined =>
+  Option.getOrUndefined(Context.getOption(annotations, Annotations.EffectEnvelope))
+
+/**
+ * What an author reads when a declaration claimed more authority than the one
+ * enclosing it granted. Each of the three states the claim, names the flow
+ * whose envelope it escaped, and says the one thing that fixes it, because an
+ * author who widened an envelope by accident needs the narrowing, not a
+ * classification.
+ *
+ * @private
+ */
+const refusalMessage = (
+  narrowed: Extract<Effects.NarrowResult, { readonly ok: false }>,
+  site: { readonly id: string; readonly flow: string }
+): string => {
+  const at = `"${site.flow}" at "${site.id}"`
+  switch (narrowed.code) {
+    case "effect_outside_envelope":
+      return `Flow ${at} declares ${narrowed.paths.length === 1 ? "a path" : "paths"} its caller's effect ` +
+        `envelope does not cover: ${narrowed.paths.join(", ")}. Widen the caller's declared effects to cover ` +
+        "them, or narrow this declaration to what the envelope already allows."
+    case "effect_mode_widening":
+      return `Flow ${at} declares an expected effect mode inside a hermetic envelope. A hermetic envelope is ` +
+        "the claim that every effect beneath it is declared, so the callee has to declare a hermetic mode too."
+    case "effect_tier_widening":
+      return `Flow ${at} declares an effect tier its caller's envelope does not permit. A tier may only narrow ` +
+        "from irreversible to compensable to sealed, so raise the caller's tier or lower this one."
+  }
+}
 
 /**
  * The declaration identity that enters a call node's hashed body: what the
@@ -823,6 +856,13 @@ interface Visit {
    */
   readonly placement: unknown
   /**
+   * The effect authority in force here: the nearest enclosing declaration that
+   * was ACCEPTED, so a refused one does not widen what its siblings are checked
+   * against. `undefined` means nothing above this node declared an envelope,
+   * which is unconstrained rather than empty.
+   */
+  readonly envelope: Effects.Declaration | undefined
+  /**
    * The scheduling priority in force here: the nearest enclosing node's, unless
    * this node states its own. It rides the walk rather than the AST because
    * inheritance is lexical — annotating a container prioritizes everything
@@ -957,6 +997,46 @@ export const build = (
   }
 
   /**
+   * An envelope is graph-owned and reaches every node it encloses as the same
+   * object, so it is read into its prepared form once and each enclosed
+   * declaration is checked against that: a wide envelope costs its size once
+   * per build rather than once per node that narrows it.
+   */
+  const preparedEnvelopes = new Map<Effects.Declaration, Effects.PreparedEnvelope>()
+
+  /**
+   * Checks one declaration against the envelope enclosing it, recording the
+   * refusal and answering whether the declaration may become the envelope for
+   * what it encloses in turn. A refused declaration must NOT replace the last
+   * accepted one: widening beneath it would then be measured against the very
+   * claim that was just rejected.
+   */
+  const admitEnvelope = (
+    enclosing: Effects.Declaration | undefined,
+    declared: Effects.Declaration | undefined,
+    site: { readonly id: string; readonly flow: string }
+  ): Effects.Declaration | undefined => {
+    if (declared === undefined) return enclosing
+    if (enclosing === undefined) return declared
+    let prepared = preparedEnvelopes.get(enclosing)
+    if (prepared === undefined) {
+      prepared = Effects.prepareEnvelope(enclosing)
+      preparedEnvelopes.set(enclosing, prepared)
+    }
+    const narrowed = Effects.narrowPrepared(prepared, declared)
+    if (narrowed.ok) return declared
+    observedDiagnostics.push(
+      new GraphBuildError({
+        code: narrowed.code,
+        node: site.id,
+        path: [...narrowed.paths],
+        message: refusalMessage(narrowed, site)
+      })
+    )
+    return enclosing
+  }
+
+  /**
    * Expands the node a flow call becomes, shared by the entry point and by
    * every `FlowCall` in a body.
    */
@@ -971,6 +1051,8 @@ export const build = (
     readonly capabilities: ReadonlyArray<string>
     /** The placement of the flow this call is written inside. */
     readonly placement: unknown
+    /** The effect authority in force at this call, which the callee must narrow. */
+    readonly envelope: Effects.Declaration | undefined
     /** The priority in force at this call, already including the call's own. */
     readonly priority: number | undefined
     readonly substitutions: ReadonlyMap<string, string>
@@ -985,6 +1067,29 @@ export const build = (
     const target = call.mode === "inline" ? call.declaration : undefined
     const ceiling = sorted(Context.get(annotations, Annotations.Capabilities))
     const placement = declaredPlacement(annotations)
+    const envelope = declaredEnvelope(annotations)
+    // The authority checks are recorded, not thrown: a graph whose callee
+    // claimed too much is still worth inspecting, and the author needs every
+    // over-claim in the composition at once rather than the first one.
+    //
+    // They run for EVERY call mode. An explicit `.child()` boundary and a
+    // trampoline handoff give the callee its own execution, not its own
+    // authority: whoever writes the call is still the one granting it, which is
+    // the rule `@smthrs/core`'s graph applies to a call whose body it does not
+    // splice.
+    const calleeEnvelope = admitEnvelope(call.envelope, envelope, { id: call.id, flow: call.flow })
+    const dropped = ceiling.filter((capability) => !call.capabilities.includes(capability))
+    if (dropped.length > 0) {
+      observedDiagnostics.push(
+        new GraphBuildError({
+          code: "capability_outside_grant",
+          node: call.id,
+          path: dropped,
+          message: `Flow "${call.flow}" at "${call.id}" requires ${dropped.join(", ")}, which the calling flow ` +
+            "does not hold. The call runs without them, so declare them on the caller or stop requiring them here."
+        })
+      )
+    }
     // The placement refusal precedes the recursion one only in position: an
     // inline call the caller cannot host is invalid whether or not the callee's
     // declaration survived to be spliced, because inline expansion is the claim
@@ -1011,7 +1116,11 @@ export const build = (
         effects: declaredEffects(annotations),
         placement,
         priority: call.priority,
-        tier: "sealed",
+        // A declared envelope states how reversible the flow beneath it is, so
+        // it is the call's tier. A flow that declared none keeps the sealed
+        // default every call has always carried, which is what keeps every
+        // existing flow's key exactly where it was.
+        tier: envelope?.tier ?? "sealed",
         body: {
           _tag: "FlowCall",
           flow: call.flow,
@@ -1059,6 +1168,7 @@ export const build = (
           // satisfy; a callee that declared none keeps running under the
           // caller's.
           placement: placement ?? call.placement,
+          envelope: calleeEnvelope,
           priority: call.priority,
           substitutions: call.substitutions,
           stack: [...call.stack, target],
@@ -1123,7 +1233,7 @@ export const build = (
           "Split the flow with .child() boundaries or trampoline handoffs so one execution plans a bounded graph."
       })
     }
-    const { ast, capabilities, depth, id, placement, stack, substitutions } = request
+    const { ast, capabilities, depth, envelope, id, placement, stack, substitutions } = request
     // A node's own priority wins; otherwise it inherits the enclosing one.
     const priority = ast.priority ?? request.priority
     const dependencies: Array<string> = []
@@ -1143,6 +1253,7 @@ export const build = (
       depth: depth + 1,
       capabilities,
       placement,
+      envelope,
       priority,
       substitutions: options.substitutions ?? substitutions,
       stack,
@@ -1167,6 +1278,7 @@ export const build = (
           payload: hydrate(ast.payload, substitutions, id),
           capabilities,
           placement,
+          envelope,
           priority,
           substitutions,
           stack,
@@ -1180,6 +1292,9 @@ export const build = (
         const declared = actionDeclaration(Node.declaration(ast))
         const annotations = declared?.annotations ?? Context.empty()
         const payload = hydrate(ast.payload, substitutions, id)
+        // An action is a leaf, so its declaration cannot become an envelope for
+        // anything; it is only checked against the one it sits inside.
+        admitEnvelope(envelope, declaredEnvelope(annotations), { id, flow: ast.action })
         record({
           id,
           kind: ast._tag,
@@ -1448,6 +1563,7 @@ export const build = (
       depth: 0,
       capabilities: [],
       placement: undefined,
+      envelope: undefined,
       priority: undefined,
       substitutions: new Map(),
       stack: [],
@@ -1471,7 +1587,10 @@ export const build = (
       capabilities: sorted(Context.get(declaration.annotations, Annotations.Capabilities)),
       // Nothing encloses the entry, so its own declared placement is what the
       // body it splices has to be satisfiable under, not a constraint on it.
+      // Its declared envelope reads the same way: the entry is the top of the
+      // authority chain, so it grants rather than narrows.
       placement: undefined,
+      envelope: undefined,
       priority: undefined,
       substitutions: new Map(),
       stack: [],
@@ -1511,17 +1630,22 @@ export const edges = (graph: Graph): ReadonlyArray<Edge> => graph.edges
  * The drafts, in node order, ready for `Plan.compile` or `Plan.append`
  * unchanged.
  *
- * A graph with diagnostics is inspectable but intentionally not compilable:
- * returning its partial drafts would turn missing topology into a valid plan.
- * This accessor therefore throws the first typed build refusal, and it is the
- * ONLY way to reach the drafts — the built graph holds nodes, and a draft is
- * the node's own {@link GraphNode.draft}.
+ * A graph with a FATAL diagnostic is inspectable but intentionally not
+ * compilable: returning its partial drafts would turn missing topology into a
+ * valid plan. This accessor therefore throws the first fatal build refusal, and
+ * it is the ONLY way to reach the drafts. The built graph holds nodes, and a
+ * draft is the node's own {@link GraphNode.draft}.
+ *
+ * An advisory refusal does not withhold the drafts. The one advisory code is
+ * `capability_outside_grant`, where the callee runs with LESS authority than it
+ * asked for: the author needs to see it, and the graph it describes is exactly
+ * the graph that will run.
  *
  * @since 0.1.0
  * @category accessors
  */
 export const drafts = (graph: Graph): ReadonlyArray<Plan.NodeDraft> => {
-  const refusal = graph.diagnostics[0]
+  const refusal = graph.diagnostics.find(isFatalDiagnostic)
   if (refusal !== undefined) throw refusal
   return graph.nodes.map((node) => node.draft)
 }

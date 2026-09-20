@@ -95,9 +95,28 @@ identically.
 
 `GraphBuildErrorCode` also carries `recursion_requires_boundary`,
 `placement_requires_boundary`, `graph_too_deep`, `duplicate_node`,
-`payload_too_deep`, and `unstable_callback`. Those come from
+`payload_too_deep`, `unstable_callback`, `effect_outside_envelope`,
+`effect_mode_widening`, `effect_tier_widening`, and
+`capability_outside_grant`. Those come from
 [`@smthrs/flow`](/api/flow)'s graph walk, which shares this vocabulary. The
 code set is closed so a caller can switch on it across both packages.
+
+The last four are the effect-authority refusals. `Effects` above defines the
+rule: a declaration may narrow the envelope enclosing it and never widen it.
+
+```text
+Flow "build/write-dist" at "root.flow" declares a path its caller's effect
+envelope does not cover: etc/hosts.
+```
+
+`effect_outside_envelope` names the escaping paths, `effect_mode_widening`
+means an `expected` declaration sits inside a `hermetic` envelope, and
+`effect_tier_widening` means a tier rose where it may only narrow. All three
+are fatal: widen the caller's declared effects, or narrow the callee's.
+
+`capability_outside_grant` is the one advisory code. The call still runs, with
+the capability dropped, so declare it on the caller or stop requiring it on the
+callee.
 
 `unstable_callback` deserves its own note because the fix lives in your flow
 body. `Graph.build` with `callbackIdentity: "stable"` refuses a callback whose

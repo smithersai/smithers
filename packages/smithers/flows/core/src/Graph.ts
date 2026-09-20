@@ -6,12 +6,11 @@
  *
  * @since 0.0.0
  */
+import * as Effects from "@smthrs/plan/Effects"
 import { Context, Option, Result, Schema } from "effect"
 import * as Annotations from "./Annotations.ts"
-import * as Effects from "./Effects.ts"
 import * as Flow from "./Flow.ts"
 import { GraphBuildError, isFatalDiagnostic } from "./internal/diagnostic.ts"
-import * as EffectIndex from "./internal/effects.ts"
 import * as internal from "./internal/node.ts"
 import type { NodeAst } from "./internal/node.ts"
 import type { FlowDetails } from "./internal/reflection.ts"
@@ -278,7 +277,7 @@ export const maximumPlanEffectPaths = 65_536
  * @category limits
  * @since 1.0.0-rc.0
  */
-export const maximumEffectPathLength = EffectIndex.maximumPathLength
+export const maximumEffectPathLength = Effects.maximumPathLength
 
 /**
  * Maximum number of patterns, entries ending in `*`, one read list or one
@@ -288,7 +287,7 @@ export const maximumEffectPathLength = EffectIndex.maximumPathLength
  * @category limits
  * @since 1.0.0-rc.0
  */
-export const maximumEffectGlobs = EffectIndex.maximumGlobs
+export const maximumEffectGlobs = Effects.maximumGlobs
 
 declare const GraphTypeId: unique symbol
 
@@ -650,7 +649,7 @@ export const build = (
     nodeId: string
   ): Effects.Declaration | undefined => {
     if (declaration === undefined) return undefined
-    const effects = EffectIndex.boundedEffects(
+    const effects = Effects.boundedEffects(
       declaration,
       Math.min(maximumEffectPaths, maximumPlanEffectPaths - planEffectPaths),
       () => planTooLarge(nodeId)
@@ -663,14 +662,14 @@ export const build = (
   // object, so it is prepared once and each enclosed declaration is checked
   // against the prepared form: a wide envelope costs its size once per build
   // rather than once per node that narrows it.
-  const preparedEnvelopes = new Map<Effects.Declaration, EffectIndex.PreparedEnvelope>()
+  const preparedEnvelopes = new Map<Effects.Declaration, Effects.PreparedEnvelope>()
   const narrowAgainst = (envelope: Effects.Declaration, step: Effects.Declaration): Effects.NarrowResult => {
     let prepared = preparedEnvelopes.get(envelope)
     if (prepared === undefined) {
-      prepared = EffectIndex.prepareEnvelope(envelope)
+      prepared = Effects.prepareEnvelope(envelope)
       preparedEnvelopes.set(envelope, prepared)
     }
-    return EffectIndex.narrowPrepared(prepared, step)
+    return Effects.narrowPrepared(prepared, step)
   }
 
   const recordNode = (node: InternalNode): void => {
@@ -1112,8 +1111,8 @@ export const build = (
   // and a marked pair that is not already ordered always does, so the overlap
   // itself is computed at most once per recorded conflict.
   const writers = work.length
-  const indexed = EffectIndex.indexPaths(work.map((node) => node.effectiveEffects.writes))
-  const ranked = work.map((node) => EffectIndex.rankPaths(indexed, node.effectiveEffects.writes))
+  const indexed = Effects.indexPaths(work.map((node) => node.effectiveEffects.writes))
+  const ranked = work.map((node) => Effects.rankPaths(indexed, node.effectiveEffects.writes))
   const rankCount = indexed.paths.length
   // The writers holding each rank, ascending, in compressed-row form.
   const bucketStart = new Int32Array(rankCount + 1)
@@ -1175,7 +1174,7 @@ export const build = (
         const bId = idIndex.get(b.id)!
         if (aId === bId || reachable(aId, bId) || reachable(bId, aId)) continue
         if (conflicts.length >= maximumGraphConflicts) throw planTooLarge(b.id)
-        const paths = EffectIndex.overlapRanks(indexed, ranked[left]!, ranked[right]!)
+        const paths = Effects.overlapRanks(indexed, ranked[left]!, ranked[right]!)
           .map((rank) => indexed.paths[rank]!)
         const aEffects = a.effectiveEffects
         const bEffects = b.effectiveEffects

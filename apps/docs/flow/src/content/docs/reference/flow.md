@@ -539,6 +539,15 @@ The capability names a flow may require. Its identifier is `"@smthrs/flow/Flow/C
 
 The annotation key for a flow's declared filesystem effects. Its identifier is `"@smthrs/flow/Flow/EffectsDeclaration"`.
 
+### `Flow.EffectEnvelope`
+
+- **Type:** `Context.Service<Effects.Declaration>`
+- **Since:** `0.1.0`
+
+The annotation key for the effect AUTHORITY a flow declares: the ceiling every step spliced beneath it must stay inside. Its identifier is `"@smthrs/flow/Flow/EffectEnvelope"`, its value is the one envelope model from `@smthrs/plan/Effects`, and `Flow.make`'s `effects` literal writes it.
+
+It answers a different question from `Flow.EffectsDeclaration`. That one says which FILES a node touches, so a plan can order writers and a sandbox can enforce a boundary at run time. This one says how much a flow is ALLOWED to touch, so `Graph.build` can refuse a composition that claims more than its caller granted, with `effect_outside_envelope`, `effect_mode_widening`, `effect_tier_widening`, or the advisory `capability_outside_grant`.
+
 ### `Flow.Placement`
 
 - **Type:** `Context.Service<PlacementDirective>`
@@ -602,12 +611,14 @@ Declares the host's execution-id source as a layer. Callers that name an `execut
 
 ### `Flow.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
+- **Signature:** `make(tag: Tag, options: { payload, description?, capabilities?, effects?, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
 - **Default:** `success` is `Schema.Void`, `error` is `Schema.Never`, `annotations` is `Context.empty()`
 - **Required:** `payload` and `body`
 - **Since:** `0.1.0`
 
 Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A flow with nothing to plan is an action instead. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer.
+
+`description`, `capabilities`, and `effects` are declared as literals and lowered into the annotation bag, so a catalog reading the source text projects the same values `Graph.build` enforces. `effects` takes `{ reads, writes, mode, onConflict, tier? }` and is normalized by `Effects.make`.
 
 ### `Flow.MaxRoundsExceeded`
 

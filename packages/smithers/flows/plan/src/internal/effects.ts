@@ -13,14 +13,13 @@
  * patterns collapse to disjoint sorted prefixes, so a step path costs one
  * lookup and one binary search however wide the envelope is.
  *
- * Governing contract: `packages/smithers/flows/core/docs/api.md`, published as
- * https://smithers.sh/docs/reference/api/core.
+ * Governing contract: `packages/smithers/flows/plan/docs/api.md`, published as
+ * https://smithers.sh/docs/reference/api/plan.
  *
  * @since 1.0.0-rc.0
  */
 
 import type * as Effects from "../Effects.ts"
-import type { GraphBuildError } from "./diagnostic.ts"
 
 const SLASH = 47
 const DOT = 46
@@ -452,8 +451,8 @@ export const narrowPrepared = (envelope: PreparedEnvelope, step: DeclarationLike
 }
 
 /**
- * Maximum length, in UTF-16 code units, of one effect path `Graph.build`
- * admits before it refuses the plan with `plan_too_large`. 4096 is `PATH_MAX`
+ * Maximum length, in UTF-16 code units, of one effect path a graph build
+ * admits before it refuses the plan as too large. 4096 is `PATH_MAX`
  * on Linux, the longest path a supported host can open, so no path that names
  * a file is refused. Every per-character cost of a build is bounded by it:
  * the one dot-segment scan each path gets, the comparisons that sort the
@@ -468,16 +467,17 @@ export const maximumPathLength = 4096
 
 /**
  * Maximum number of patterns, entries ending in `*`, one read list or one
- * write list of an effect declaration may carry before `Graph.build` refuses
- * the plan with `plan_too_large`. A pattern never costs a match more than a
+ * write list of an effect declaration may carry before a graph build refuses
+ * the plan as too large. A pattern never costs a match more than a
  * literal path does: its prefix is located once by binary search, patterns
  * nested under another collapse into the outermost before the paths they
  * cover are enumerated, and every match after that is an integer comparison.
  * What a pattern costs beyond a literal is that search, two binary searches
- * of at most 16 comparisons each over a plan at `Graph.maximumPlanEffectPaths`,
+ * of at most 16 comparisons each over a plan at the builder's plan-wide path
+ * ceiling,
  * every comparison reading up to {@link maximumPathLength} code units.
  * 128 keeps that term, 4,096 comparisons per list, below the sort that admits
- * a list of `Graph.maximumEffectPaths` literal paths, while still letting one
+ * a per-declaration list of literal paths, while still letting one
  * declaration name a subtree per package of a large monorepo. The count is
  * read from the last character of each path as it is admitted, so a pattern
  * past the limit costs one character read.
@@ -503,7 +503,7 @@ export const maximumGlobs = 128
 export const copyPaths = (
   paths: ReadonlyArray<string>,
   limit: number,
-  refuse: () => GraphBuildError
+  refuse: () => Error
 ): Array<string> => {
   const copy: Array<string> = []
   let globs = 0
@@ -535,7 +535,7 @@ export const copyPaths = (
 export const boundedEffects = (
   declaration: Effects.Declaration,
   limit: number,
-  refuse: () => GraphBuildError
+  refuse: () => Error
 ): Effects.Declaration => {
   const reads = copyPaths(declaration.reads, limit, refuse)
   const writes = copyPaths(declaration.writes, limit - reads.length, refuse)

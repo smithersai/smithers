@@ -43,6 +43,7 @@
  */
 import { isRecord } from "@smthrs/canonical/Record"
 import { DerivedKey, digest } from "@smthrs/keys"
+import { isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Node from "@smthrs/plan/Node"
 import * as Planned from "@smthrs/plan/Planned"
@@ -238,12 +239,15 @@ const interpretWithPolicy = (
     const graphNodes = Graph.nodes(graph)
     const byId = new Map(graphNodes.map((node) => [node.id, node]))
 
-    if (graph.diagnostics.length > 0) {
-      const first = graph.diagnostics[0]!
+    // Advisory diagnostics describe a graph that is exactly what will run, so
+    // they are reported by `Graph.diagnostics` and do not stop a run. A fatal
+    // one means the topology is not what the author wrote.
+    const fatal = graph.diagnostics.find(isFatalDiagnostic)
+    if (fatal !== undefined) {
       return yield* refuse(
         "incomplete_graph",
-        first.node,
-        `Graph of "${name}" is missing topology and cannot be driven: ${first.message}`
+        fatal.node,
+        `Graph of "${name}" is missing topology and cannot be driven: ${fatal.message}`
       )
     }
 

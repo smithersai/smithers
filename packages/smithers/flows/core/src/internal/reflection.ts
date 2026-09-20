@@ -17,14 +17,14 @@
  * @since 1.0.0-rc.0
  */
 import { processNonce } from "@smthrs/crypto/Identity"
+import type * as Effects from "@smthrs/plan/Effects"
+import { boundedEffects } from "@smthrs/plan/Effects"
 import { Chunk, Option, Result, Schema, SchemaAST } from "effect"
 import type * as Context from "effect/Context"
-import type * as Effects from "../Effects.ts"
 import * as Flow from "../Flow.ts"
 import type * as KeyMaterial from "../KeyMaterial.ts"
 import * as Node from "../Node.ts"
 import { GraphBuildError } from "./diagnostic.ts"
-import { boundedEffects } from "./effects.ts"
 import * as internal from "./node.ts"
 
 /**

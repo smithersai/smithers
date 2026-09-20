@@ -3,9 +3,15 @@
  * flow's declaration, calling it as a node, and intersecting the effect
  * envelopes of the flows a pattern wraps.
  *
+ * The envelope algebra comes straight from `@smthrs/plan/Effects`, the one
+ * effect model: a decorator that narrows a wrapped flow's authority here and a
+ * `Graph.build` that refuses a widening composition are reading the same
+ * declaration through the same rule, not two rules that happen to agree.
+ *
  * @since 0.1.0
  */
-import { Annotations, Effects, Flow, Graph, Node } from "@smthrs/core"
+import { Annotations, Flow, Graph, Node } from "@smthrs/core"
+import * as Effects from "@smthrs/plan/Effects"
 import type * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
@@ -248,7 +254,7 @@ const step = (path: string, key: string): string => path === "" ? key : `${path}
 
 // The comparison walks JSON Schema documents, whose only containers are
 // objects and arrays. Keeping that one-line container guard here is what lets
-// the package compose `@smthrs/core` alone.
+// the package's dependency footprint small.
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 

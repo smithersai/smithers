@@ -10,7 +10,8 @@ are how you take the first without the second.
 `Trellis` runs a plan a model authored, inside an envelope the plan cannot
 widen. `DelegationChain` is the fixed six-stage chain built from `Trellis` and
 the other patterns here: refine, plan, derisk, execute, review, settle. Both
-compose [`@smthrs/core`](/api/core) alone and import no Node built-ins.
+compose [`@smthrs/core`](/api/core) and [`@smthrs/plan`](/api/plan), and import
+no Node built-ins.
 
 ## Why a plan needs two halves
 

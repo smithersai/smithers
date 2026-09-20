@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/plan: the authoring AST, the planned placeholder, key material, the step-key compiler, the plan value, its diff, its append-only store, and its migrations."
 ---
 
-`@smthrs/plan` exports eleven modules from its root entry point, and each is also
+`@smthrs/plan` exports twelve modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
@@ -21,6 +21,7 @@ import * as Plan from "@smthrs/plan/Plan"
 | `Planned`         | The strict placeholder a body sees where a step result will be, and the reference it records.             |
 | `GraphBuildError` | The refusals a plan-time build raises instead of producing a wrong plan.                                  |
 | `FileSet`         | The static filesystem vocabulary: patterns, globs, tree artifacts, filegroups, and overlap.               |
+| `Effects`         | The one effect envelope model: declare, narrow a step against an envelope, find write overlap.            |
 | `KeyMaterial`     | What a planner declares about a node: body, tagged input references, layers, capabilities, effects.       |
 | `StepKey`         | The compiler that turns material plus resolved dependency digests into a [`@smthrs/keys`](/api/keys) key. |
 | `Plan`            | `compile`, `append`, the node and conflict schemas, and the digest an approval binds to.                  |
@@ -1086,6 +1087,134 @@ const overlaps: (left: Entry, right: Entry) => boolean
 
 Conservative static overlap. Exact paths compare in canonical separator and NFC form. Two globs always overlap, and so do a glob and a tree artifact. A tree artifact overlaps any path beneath it. A glob tests the path bytes it is handed, so canonicalizing a measured path before matching is the caller's decision.
 
+## Effects
+
+[src/Effects.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Effects.ts)
+
+The one effect envelope model. A flow declares what it may read and write, and a
+graph build checks every step beneath it against that declaration. `@smthrs/flow`
+enforces it while it builds, `@smthrs/core` re-exports it as `Effects`, and
+`@smthrs/patterns` intersects a decorator's declaration with the flow it wraps
+through it.
+
+`FileSet` above is the other half of the vocabulary and stays separate: it
+describes the files a node actually touches, in Bazel-style entries a plan
+compiles conflicts from, while this module describes the AUTHORITY a flow holds,
+in the flat path grammar `covers` defines.
+
+### Effects.Declaration
+
+```ts
+interface Declaration {
+  readonly reads: ReadonlyArray<string>
+  readonly writes: ReadonlyArray<string>
+  readonly mode: "hermetic" | "expected"
+  readonly onConflict: "serialize" | "lane" | "fail"
+  readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
+}
+```
+
+`mode` says whether the declaration is complete (`hermetic`) or partial
+(`expected`). `onConflict` says what the planner should do about another writer
+of the same path, and its three values are `Plan.PairStrategy`. `tier` says how
+reversible the effect is, matching `KeyMaterial.kind`, and an omitted tier reads
+as `sealed`.
+
+### Effects.make
+
+```ts
+const make: (input: MakeOptions) => Declaration
+```
+
+Constructs a deterministic declaration. `MakeOptions` takes `Iterable<string>`
+for `reads` and `writes` and is otherwise identical to `Declaration`.
+Normalization is sorting and deduplication only: no separator rewriting and no
+dot-segment resolution is performed, so hand it paths that are already
+normalized.
+
+### Effects.covers
+
+```ts
+const covers: (envelope: string, path: string) => boolean
+```
+
+Whether one envelope entry covers one path. The grammar is exhaustive and
+intentionally not full minimatch: an exact path matches itself, `*` and `**`
+match everything, `prefix*` matches by string prefix, and `prefix/**` matches
+`prefix/` and everything below it but not the bare path `prefix`. A path
+containing a whole `.` or `..` segment is never covered.
+
+### Effects.narrow
+
+```ts
+const narrow: (envelope: Declaration, step: Declaration) => NarrowResult
+```
+
+Verifies that a step declaration stays within an enclosing envelope. Read and
+write paths must be covered independently, `expected` may tighten to
+`hermetic` but not the reverse, and the tier may narrow from `irreversible` to
+`compensable` to `sealed`.
+
+### Effects.NarrowResult
+
+```ts
+type NarrowResult =
+  | { readonly ok: true }
+  | {
+    readonly ok: false
+    readonly code: "effect_outside_envelope" | "effect_mode_widening" | "effect_tier_widening"
+    readonly paths: ReadonlyArray<string>
+  }
+```
+
+`paths` is populated for `effect_outside_envelope` and empty for the other two.
+The three codes are the three `GraphBuildError` codes a build records when a
+declaration widens the envelope that encloses it.
+
+### Effects.overlaps
+
+```ts
+const overlaps: (a: Declaration, b: Declaration) => ReadonlyArray<string>
+```
+
+Returns the concrete or narrower write declarations two declarations share,
+sorted and duplicate-free. Two declarations of the same literal path always
+overlap, including a path `covers` refuses to match because it carries a `.` or
+`..` segment: glob coverage stays strict, but two writers naming the same
+unnormalized path are still writing the same resource.
+
+### Effects.sealed
+
+```ts
+const sealed: (declaration: Declaration) => Declaration
+```
+
+Returns a `hermetic`, `sealed` copy of a declaration.
+
+### The prepared matching API
+
+```ts
+const prepareEnvelope: (envelope: Declaration) => PreparedEnvelope
+const narrowPrepared: (envelope: PreparedEnvelope, step: Declaration) => NarrowResult
+
+const indexPaths: (lists: Iterable<ReadonlyArray<string>>) => PathIndex
+const rankPaths: (index: PathIndex, paths: ReadonlyArray<string>) => Ranked
+const overlapRanks: (index: PathIndex, a: Ranked, b: Ranked) => Array<number>
+
+const boundedEffects: (declaration: Declaration, limit: number, refuse: () => Error) => Declaration
+const maximumPathLength: 4096
+const maximumGlobs: 128
+```
+
+What a graph build uses so one envelope costs its size once per build rather
+than once per step it encloses. `prepareEnvelope` reads an envelope into the
+form `narrowPrepared` answers from; `indexPaths`, `rankPaths`, and
+`overlapRanks` are the same decomposition for write overlap, which `overlaps`
+wraps for the pairwise case. `boundedEffects` snapshots a declaration into
+builder-owned data and throws the caller's own refusal before the copy grows
+past `limit`, past `maximumPathLength` code units in one path, or past
+`maximumGlobs` patterns in one list.
+
 ## GraphBuildError
 
 [src/GraphBuildError.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/GraphBuildError.ts)
@@ -1121,8 +1250,29 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/pla
 | `invalid_priority`            | `Node.priority` received a value that is not a safe integer                                    |
 | `invalid_payload`             | a payload member cannot be captured as inert JSON without executing code or losing identity    |
 | `unstable_callback`           | a callback has process-local identity in a build that requires stable callbacks                |
+| `effect_outside_envelope`     | a declaration reads or writes a path the enclosing effect envelope does not cover              |
+| `effect_mode_widening`        | an `expected` declaration sits inside a `hermetic` envelope                                    |
+| `effect_tier_widening`        | a declaration's tier is less reversible than the enclosing envelope's                          |
+| `capability_outside_grant`    | a called flow requires a capability the caller does not hold, so the call drops it             |
 
 `GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/api/flow)'s graph walk, which shares the vocabulary. `unstable_callback` is raised by that walk when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
+
+The four effect-authority codes come from that walk too. It records them while
+it checks every declaration against the envelope enclosing it, using the
+narrowing rule [`Effects.narrow`](#effectsnarrow) defines.
+
+### GraphBuildError.isFatalDiagnostic
+
+```ts
+const isFatalDiagnostic: (diagnostic: GraphBuildError) => boolean
+```
+
+Whether a recorded refusal blocks the drafts a plan is compiled from. Every code
+is fatal except `capability_outside_grant`: a capability the caller does not
+grant is DROPPED, so the callee runs with LESS authority than it asked for,
+which is the safe direction. The author still needs to see it, because a flow
+that silently loses a capability fails later at the action that needed it, so
+the build records the refusal and `Graph.drafts` still hands the drafts over.
 
 ## PlanDiff
 

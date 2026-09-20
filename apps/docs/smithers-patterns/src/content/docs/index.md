@@ -41,7 +41,8 @@ pnpm add @smthrs/patterns@next
 
 The Smithers 1.0 release candidates publish under the `next` tag. The package
 needs Node.js 22.19.0 or later. It shares its `effect` peer with the host,
-depends on [`@smthrs/core`](https://core.smithers.sh/reference/api/), and imports no Node built-ins.
+depends on [`@smthrs/core`](https://core.smithers.sh/reference/api/) and [`@smthrs/plan`](https://plan.smithers.sh/reference/api/), and
+imports no Node built-ins.
 
 ## Revise a draft until a reviewer approves it
 

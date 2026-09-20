@@ -5,6 +5,7 @@
  *
  * @since 0.1.0
  */
+import type * as PlanEffects from "@smthrs/plan/Effects"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
 import { constFalse, constTrue } from "effect/Function"
@@ -72,6 +73,26 @@ export const Capabilities = Context.Reference<ReadonlyArray<string>>(
  * @since 0.1.0
  */
 export const EffectsDeclaration = Context.Service<Effects>("@smthrs/flow/Flow/EffectsDeclaration")
+
+/**
+ * The effect AUTHORITY a flow declares: the ceiling every step spliced beneath
+ * it must stay inside.
+ *
+ * This is the one envelope model, `@smthrs/plan/Effects`, which `@smthrs/core`
+ * re-exports and `@smthrs/patterns` intersects against. It answers a different
+ * question from {@link EffectsDeclaration}: that one says which FILES a node
+ * touches, so a plan can order writers and a sandbox can enforce a boundary at
+ * run time, while this one says how much a flow is ALLOWED to touch, so
+ * {@link module:Graph.build} can refuse a composition that claims more than its
+ * caller granted.
+ *
+ * `Flow.make`'s `effects` option writes it, which is what makes it readable by
+ * a catalog that projects a declaration without importing this module.
+ *
+ * @category annotations
+ * @since 0.1.0
+ */
+export const EffectEnvelope = Context.Service<PlanEffects.Declaration>("@smthrs/flow/Flow/EffectEnvelope")
 
 /**
  * Required annotation key for a flow's schema-encodable placement directive.

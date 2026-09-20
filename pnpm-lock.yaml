@@ -4103,6 +4103,9 @@ importers:
       '@smthrs/crypto':
         specifier: 1.0.0-rc.0
         version: link:../crypto
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.0
+        version: link:../plan
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -4898,6 +4901,9 @@ importers:
       '@smthrs/core':
         specifier: 1.0.0-rc.0
         version: link:../core
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.0
+        version: link:../plan
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

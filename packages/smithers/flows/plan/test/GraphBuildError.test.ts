@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { GraphBuildError, GraphBuildErrorCode } from "../src/GraphBuildError.ts"
+import { GraphBuildError, GraphBuildErrorCode, isFatalDiagnostic } from "../src/GraphBuildError.ts"
 
 describe("GraphBuildError", () => {
   it("is a tagged error naming the site and the fix", () => {
@@ -28,7 +28,18 @@ describe("GraphBuildError", () => {
       "duplicate_node",
       "invalid_priority",
       "invalid_payload",
-      "unstable_callback"
+      "unstable_callback",
+      "effect_outside_envelope",
+      "effect_mode_widening",
+      "effect_tier_widening",
+      "capability_outside_grant"
     ])
+  })
+
+  it("makes exactly one code advisory", () => {
+    const advisory = GraphBuildErrorCode.literals.filter((code) =>
+      !isFatalDiagnostic(new GraphBuildError({ code, node: "n", path: [], message: "m" }))
+    )
+    expect(advisory).toEqual(["capability_outside_grant"])
   })
 })
