@@ -464,6 +464,80 @@ describe("issues seam — mutations re-fetch so the card states the new truth", 
       "hello"
     ])
   })
+
+  test("CAP-003: a posted comment with a failed refresh stays successful and retries only the read", async () => {
+    const calls: string[] = []
+    let detailReads = 0
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues/7/comments": json(201, wireComment(2, "hello")),
+      "GET /api/repos/will/flows/issues/7": () => {
+        detailReads += 1
+        return detailReads === 1
+          ? json(503, { message: "Detail unavailable" })
+          : json(200, wireIssue(7, { comment_count: 3 }))
+      },
+      "GET /api/repos/will/flows/issues/7/comments": json(200, [wireComment(2, "hello")])
+    }, calls))
+
+    expect(controller.runCommand("issues.comment", "7 hello")).toBe(true)
+    for (let turn = 0; turn < 10 && store.collections.toasts.get("toast-issue.comment.refresh:will/flows:7") === undefined; turn += 1) {
+      await settled()
+    }
+    expect(store.collections.toasts.get("toast-issue.comment.refresh:will/flows:7")).toMatchObject({
+      title: "Comment posted",
+      status: "failed",
+      detail: "Refresh failed: Detail unavailable",
+      action: { label: "Retry", flow: "issues.view", args: "7 will/flows" }
+    })
+    expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
+    expect(calls.filter(call => call.startsWith("POST "))).toHaveLength(1)
+
+    expect((await controller.commands.run("issues.view", "7 will/flows")).status).toBe("executed")
+    expect(calls.filter(call => call.startsWith("POST "))).toHaveLength(1)
+    expect(calls.filter(call => call === "GET /api/repos/will/flows/issues/7")).toHaveLength(2)
+    expect(calls.filter(call => call === "GET /api/repos/will/flows/issues/7/comments")).toHaveLength(1)
+  })
+
+  test("CAP-003: a refused comment write never claims it posted", async () => {
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues/7/comments": json(500, { message: "Write refused" })
+    }, calls))
+
+    expect(controller.runCommand("issues.comment", "7 hello")).toBe(true)
+    for (let turn = 0; turn < 10 && store.collections.toasts.get("toast-command.failed.issues.comment") === undefined; turn += 1) {
+      await settled()
+    }
+    expect(calls.filter(call => call.includes("/issues/7"))).toEqual(["POST /api/repos/will/flows/issues/7/comments"])
+    expect(store.collections.toasts.get("toast-command.failed.issues.comment")).toMatchObject({
+      title: "Comment on an issue didn't run",
+      status: "failed",
+      detail: "Write refused"
+    })
+    expect([...store.collections.toasts.values()].some(toast =>
+      toast.title.includes("posted") || toast.detail.includes("posted")
+    )).toBe(false)
+  })
+
+  test("CAP-003: a lost comment response reports an unknown write outcome and does not refresh", async () => {
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "POST /api/repos/will/flows/issues/7/comments": () => { throw new TypeError("connection reset") }
+    }, calls))
+
+    expect(controller.runCommand("issues.comment", "7 hello")).toBe(true)
+    for (let turn = 0; turn < 10 && store.collections.toasts.get("toast-issue.comment.unknown:will/flows:7") === undefined; turn += 1) {
+      await settled()
+    }
+    expect(store.collections.toasts.get("toast-issue.comment.unknown:will/flows:7")).toMatchObject({
+      title: "Comment status unknown",
+      status: "failed",
+      detail: "No response from issue #7 in will/flows: connection reset"
+    })
+    expect([...store.collections.toasts.values()].some(toast => toast.title.includes("didn't run"))).toBe(false)
+    expect(calls.filter(call => call.includes("/issues/7"))).toEqual(["POST /api/repos/will/flows/issues/7/comments"])
+  })
+
 })
 
 describe("issues seam — honest failures, never throws", () => {

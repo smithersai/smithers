@@ -20,7 +20,7 @@ export interface IssuesSeam {
     state: "open" | "closed",
     repo?: string
   ) => Promise<string | void>
-  readonly commentOnIssue: (number: number, text: string, repo?: string) => Promise<string | void>
+  readonly commentOnIssue: (number: number, text: string, repo?: string) => Promise<string | void | { readonly value: string }>
 }
 
 type IssueListPayload = Extract<Card, { kind: "issue-list" }>["payload"]
@@ -448,6 +448,34 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     if (typeof outcome === "string") return `${done}, but refreshing the card failed: ${outcome}`
   }
 
+  const showCommentNotice = (
+    key: string,
+    title: string,
+    detail: string,
+    action?: { readonly label: string; readonly flow: "issues.view"; readonly args: string }
+  ): void => {
+    ctx.dispatch({ type: "toast.shown", actor: "system", key, title, action })
+    if (ctx.resolveToast) ctx.resolveToast(key, { status: "failed", detail, action })
+    else ctx.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail, action })
+  }
+
+  const refreshCommentDetail = async (repo: string, number: number): Promise<void | { readonly value: string }> => {
+    invalidatePreparedViews(ctx.store)
+    let failure: string | undefined
+    try {
+      const outcome = await showIssue(repo, number)
+      if (typeof outcome === "string") failure = outcome
+    } catch (error) {
+      failure = errorText(error)
+    }
+    if (failure === undefined) return
+    const detail = `Refresh failed: ${failure}`
+    const key = `issue.comment.refresh:${repo}:${number}`
+    const action = { label: "Retry", flow: "issues.view" as const, args: `${number} ${repo}` }
+    showCommentNotice(key, "Comment posted", detail, action)
+    return { value: `Comment posted. ${detail}` }
+  }
+
   return {
     listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string) => tutorialRepositoryRead(ctx, "issues", explicitRepo, filter, renderRepositoryForm, (repo) => listView(filter, repo)), { preload: listView.preload }),
 
@@ -541,7 +569,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
           body: JSON.stringify({ body: text })
         })
       } catch (error) {
-        return unreachable(`comment on issue #${number} in ${repo}`, error)
+        const detail = `No response from issue #${number} in ${repo}: ${errorText(error)}`
+        showCommentNotice(`issue.comment.unknown:${repo}:${number}`, "Comment status unknown", detail)
+        return { value: `Comment status unknown. ${detail}` }
       }
       if (!response.ok) {
         // Mutations never fall back — the GitHub-source proxy is GET-only.
@@ -552,8 +582,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         )
       }
       // The re-fetch below re-lists the comments; the POST echo is not read.
-      await response.body?.cancel()
-      return refreshDetail(`The comment was posted to issue #${number} in ${repo}`, repo, number)
+      await response.body?.cancel().catch(() => {})
+      return refreshCommentDetail(repo, number)
     },
 
   }
