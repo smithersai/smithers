@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { scenario } from "./types"
-import { extractRequestedGrep, hostGrep } from "./selection"
+import { extractRequestedGrep, hostGrep, scenarioGrep } from "./selection"
 
 test("portable scenarios carry every declared host tag", () => {
   const details = scenario("browser.reload", { capabilities: [], coverage: ["action:chat.reload", "host:local", "host:production", "path:persistence", "door:button"] })
-  expect(details.tag).toEqual(["@real-host:local", "@real-host:production"])
+  expect(details.tag).toEqual(["@real-scenario:browser.reload", "@real-host:local", "@real-host:production"])
 })
 
 test("host selection includes portable cases and excludes other hosts without skips", () => {
@@ -20,6 +20,20 @@ test("a test-name expression cannot broaden the selected host", () => {
   expect(selected.test("suite reload @real-host:production")).toBe(true)
   expect(selected.test("suite fork @real-host:local")).toBe(false)
   expect(selected.test("suite edit @real-host:production")).toBe(false)
+})
+
+test("scenario selection uses one shared set independently of host tags", () => {
+  const selected = scenarioGrep(["chat.stream-grounded", "chat.stop-real-turn"])
+  expect(selected.test("turn @real-scenario:chat.stream-grounded @real-host:local")).toBe(true)
+  expect(selected.test("turn @real-scenario:chat.stream-grounded @real-host:production")).toBe(true)
+  expect(selected.test("turn @real-scenario:other @real-host:production")).toBe(false)
+})
+
+test("a caller expression cannot broaden the selected scenario set", () => {
+  const selected = scenarioGrep(["chat.stream-grounded"], "title-match")
+  expect(selected.test("title-match @real-scenario:chat.stream-grounded")).toBe(true)
+  expect(selected.test("other @real-scenario:chat.stream-grounded")).toBe(false)
+  expect(selected.test("title-match @real-scenario:other")).toBe(false)
 })
 
 test("extracts CLI grep while preserving file and invert filters", () => {

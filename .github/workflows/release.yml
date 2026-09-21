@@ -365,6 +365,18 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      # Issue 1668: the mode launchers write this configuration and their
+      # process/restart receipts. Until packaging and Plue jobs provide all six
+      # entries, the runner emits explicit unavailable rows and blocks release.
+      - name: Product deployment mode matrix
+        run: bun apps/app/scripts/run-mode-matrix.ts run --config "$RUNNER_TEMP/smithers-mode-matrix/config.json" --report "$RUNNER_TEMP/smithers-mode-matrix/report.json"
+      - name: Upload product deployment mode matrix receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: product-deployment-mode-matrix
+          path: "${{ runner.temp }}/smithers-mode-matrix"
+          if-no-files-found: error
       - name: Server typecheck and tests
         run: pnpm exec smthrs ci '//apps/server/...' --verbose
         env:

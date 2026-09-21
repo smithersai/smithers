@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test"
-import { hostGrep } from "./e2e/real/coverage/selection"
+import { hostGrep, scenarioGrep } from "./e2e/real/coverage/selection"
 import type { RealHost } from "./e2e/real/coverage/types"
+import { DEPLOYMENT_MODES } from "./e2e/real/coverage/types"
+import { MATRIX_SCENARIO_IDS, MODE_DESCRIPTORS } from "./e2e/real/coverage/matrix"
 import { MODEL_CREDENTIAL_ENV_PREFIX } from "@smthrs/rpc/ConfiguredModel"
 
 const PORT = Number(process.env.SMITHERS_REAL_PORT ?? "47321")
@@ -8,7 +10,10 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error(`Invali
 
 const externalBaseURL = process.env.SMITHERS_REAL_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${PORT}`
-const expectedHost = process.env.SMITHERS_REAL_E2E_HOST ?? (externalBaseURL ? "production" : "local")
+const deploymentMode = process.env.SMITHERS_REAL_E2E_MODE
+if (deploymentMode !== undefined && !(DEPLOYMENT_MODES as readonly string[]).includes(deploymentMode)) throw new Error(`Invalid SMITHERS_REAL_E2E_MODE: ${deploymentMode}`)
+const matrixHost = deploymentMode === undefined ? undefined : MODE_DESCRIPTORS[deploymentMode as keyof typeof MODE_DESCRIPTORS].legacyHost
+const expectedHost = process.env.SMITHERS_REAL_E2E_HOST ?? matrixHost ?? (externalBaseURL ? "production" : "local")
 if (!["local", "production", "native"].includes(expectedHost)) throw new Error(`Invalid SMITHERS_REAL_E2E_HOST: ${expectedHost}`)
 process.env.SMITHERS_REAL_E2E_HOST = expectedHost
 // The named model credentials and their pinned origins the runner declared: the host under test reads them by name.
@@ -20,7 +25,9 @@ if (!/^https?:$/.test(parsed.protocol)) throw new Error(`SMITHERS_REAL_BASE_URL 
 export default defineConfig({
   testDir: "e2e/real",
   testMatch: "**/*.spec.ts",
-  grep: hostGrep(expectedHost as RealHost, process.env.SMITHERS_REAL_TEST_GREP),
+  grep: deploymentMode === undefined
+    ? hostGrep(expectedHost as RealHost, process.env.SMITHERS_REAL_TEST_GREP)
+    : scenarioGrep(MATRIX_SCENARIO_IDS, process.env.SMITHERS_REAL_TEST_GREP),
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

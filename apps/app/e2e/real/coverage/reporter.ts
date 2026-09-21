@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter"
 import { TEARDOWN_ANNOTATION } from "../support/teardown"
-import { REAL_HOSTS } from "./types"
-import type { RealE2EEvidenceFile, RealHost, RealScenarioRunEvidence } from "./types"
+import { DEPLOYMENT_MODES, REAL_HOSTS } from "./types"
+import type { DeploymentMode, RealE2EEvidenceFile, RealHost, RealScenarioRunEvidence } from "./types"
 
 const annotation = (test: TestCase, type: string): readonly string[] =>
   test.annotations.filter((item) => item.type === type).flatMap((item) => item.description === undefined ? [] : [item.description])
@@ -21,12 +21,14 @@ export default class RealE2EEvidenceReporter implements Reporter {
   private readonly host = requiredEnvironment("SMITHERS_REAL_E2E_HOST")
   private readonly revision = requiredEnvironment("SMITHERS_REAL_E2E_REVISION")
   private readonly buildSha = process.env.SMITHERS_REAL_E2E_BUILD_SHA?.trim()
+  private readonly mode = process.env.SMITHERS_REAL_E2E_MODE?.trim()
 
   constructor() {
     if (!(REAL_HOSTS as readonly string[]).includes(this.host)) throw new Error(`Unknown SMITHERS_REAL_E2E_HOST ${this.host}`)
     if (!/^[0-9a-f]{40,64}$/.test(this.revision)) throw new Error("SMITHERS_REAL_E2E_REVISION must be an exact 40-64 digit lowercase hex revision")
     if (this.host === "production" && !this.buildSha) throw new Error("Production evidence requires SMITHERS_REAL_E2E_BUILD_SHA")
     if (this.buildSha && !/^[0-9a-f]{40,64}$/.test(this.buildSha)) throw new Error("SMITHERS_REAL_E2E_BUILD_SHA must be an exact 40-64 digit lowercase hex revision")
+    if (this.mode !== undefined && !(DEPLOYMENT_MODES as readonly string[]).includes(this.mode)) throw new Error(`Unknown SMITHERS_REAL_E2E_MODE ${this.mode}`)
   }
 
   onTestEnd(test: TestCase, result: TestResult): void {
@@ -48,6 +50,7 @@ export default class RealE2EEvidenceReporter implements Reporter {
     this.runs.push({
       scenarioId: ids[0]!,
       host: this.host as RealHost,
+      ...(this.mode === undefined ? {} : { mode: this.mode as DeploymentMode }),
       status: result.status,
       revision: this.revision,
       ...(this.buildSha === undefined ? {} : { buildSha: this.buildSha }),

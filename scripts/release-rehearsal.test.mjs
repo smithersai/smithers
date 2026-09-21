@@ -234,6 +234,7 @@ test("only the re-run guard, candidate preparation and publication select a path
 
   assert.deepEqual(conditional, [
     "Refuse a re-run attempt",
+    "Upload product deployment mode matrix receipt",
     "Build all workspaces from clean artifacts",
     "Review declaration API drift",
     "Pack and smoke-test release artifacts",
@@ -249,6 +250,7 @@ test("only the re-run guard, candidate preparation and publication select a path
     "Report the skipped publication"
   ])
   assert.equal(step("Collect ci-test-tier-evidence").if, "always()")
+  assert.equal(step("Upload product deployment mode matrix receipt").if, "always()")
   assert.equal(step("Upload the publish receipt").if, "always()")
   assert.equal(step("Upload ci-test-tier-evidence").if, "always()")
   assert.equal(step("Upload release runtime smoke evidence").if, "always()")

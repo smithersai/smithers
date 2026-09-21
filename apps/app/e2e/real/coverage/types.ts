@@ -1,10 +1,12 @@
 import type { TestDetails } from "@playwright/test"
 
 export const REAL_HOSTS = ["local", "production", "native"] as const
+export const DEPLOYMENT_MODES = ["web-selfhost", "web-plue", "local-own", "local-plue", "native-own", "native-plue"] as const
 export const CRITICAL_PATHS = ["success", "permission", "error", "persistence", "keyboard"] as const
 export const DOORS = ["slash", "button", "agent", "user-only"] as const
 
 export type RealHost = typeof REAL_HOSTS[number]
+export type DeploymentMode = typeof DEPLOYMENT_MODES[number]
 export type CriticalPath = typeof CRITICAL_PATHS[number]
 export type Door = typeof DOORS[number]
 
@@ -38,7 +40,10 @@ export interface RealScenarioDetailsMetadata {
 
 /** Canonical per-test details. The fixture and reporter consume these annotations. */
 export const scenario = (id: string, metadata: RealScenarioDetailsMetadata): TestDetails => ({
-  tag: metadata.coverage.filter((token) => token.startsWith("host:")).map((token) => `@real-${token}`),
+  tag: [
+    `@real-scenario:${id}`,
+    ...metadata.coverage.filter((token) => token.startsWith("host:")).map((token) => `@real-${token}`)
+  ],
   annotation: [
     { type: "real-scenario", description: id },
     ...(metadata.description === undefined ? [] : [{ type: "real-description", description: metadata.description }]),
@@ -50,6 +55,7 @@ export const scenario = (id: string, metadata: RealScenarioDetailsMetadata): Tes
 export interface RealScenarioRunEvidence {
   readonly scenarioId: string
   readonly host: RealHost
+  readonly mode?: DeploymentMode
   readonly status: "passed" | "failed" | "timedOut" | "skipped" | "interrupted"
   readonly revision: string
   readonly buildSha?: string

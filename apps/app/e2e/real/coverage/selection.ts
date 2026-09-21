@@ -7,6 +7,14 @@ export const hostGrep = (host: RealHost, requested?: string): RegExp => {
   return new RegExp(`^(?=.*(?:^|\\s)@real-host:${host}(?:\\s|$))${requested === undefined ? "" : `(?=.*(?:${requested}))`}`)
 }
 
+/** Select the same release scenarios for every deployment mode. */
+export const scenarioGrep = (scenarioIds: readonly string[], requested?: string): RegExp => {
+  if (scenarioIds.length === 0) throw new Error("The deployment matrix requires at least one scenario id")
+  for (const id of scenarioIds) if (!/^[a-z0-9][a-z0-9._-]+$/.test(id)) throw new Error(`Invalid real E2E scenario id: ${id}`)
+  const escaped = scenarioIds.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+  return new RegExp(`^(?=.*(?:^|\\s)@real-scenario:(?:${escaped})(?:\\s|$))${requested === undefined ? "" : `(?=.*(?:${requested}))`}`)
+}
+
 /** Playwright CLI --grep overrides config.grep; move it into our combined filter. */
 export const extractRequestedGrep = (args: readonly string[]): { readonly args: readonly string[]; readonly grep?: string } => {
   const remaining: string[] = []

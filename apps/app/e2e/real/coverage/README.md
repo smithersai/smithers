@@ -97,6 +97,46 @@ root is the marketing site. `SMITHERS_REAL_APP_PATH` selects a same-origin app
 repository path; its production default is
 `/codeplanesmithers/canary-sandbox`.
 
+## Six-mode release matrix
+
+`scripts/run-mode-matrix.ts` applies one obligation catalog to
+`web-selfhost`, `web-plue`, `local-own`, `local-plue`, `native-own`, and
+`native-plue`. It selects scenarios by their stable `real-scenario` tag, not
+their old host tag, so a mode cannot get a smaller copied suite. `audit`
+records readiness only; `run` also runs the deterministic nonblocking/toast
+specs and every currently implemented real scenario in the catalog.
+
+Pass `--config <path>` or set `SMITHERS_MODE_MATRIX_CONFIG`. The JSON file has
+one exact source revision and an array of mode records:
+
+```json
+{
+  "revision": "0123456789012345678901234567890123456789",
+  "modes": [{
+    "mode": "native-own",
+    "origin": "http://127.0.0.1:47321",
+    "auth": { "kind": "owner-session", "environment": "SMITHERS_OWNER_SESSION" },
+    "executionReceipt": "/absolute/path/to/native-own.json"
+  }]
+}
+```
+
+The auth field names an environment variable; its value is never copied into
+the report. `browser-profile` is wired to the current real fixture;
+`owner-session` remains explicitly unavailable until issue 05 supplies its
+real injection seam. The launcher receipt binds mode, origin, revision, readiness, and
+started process roles. Own modes must prove fresh launch and data-preserving
+restart. `native-own` must prove its supervisor, app, and PostgreSQL;
+Plue-backed local/native modes fail if they started any of those processes.
+The readiness probe then reads the real health/bootstrap endpoints and records
+advertised capabilities.
+
+Output contains only `passed`, `failed`, or `unavailable`; there is no skip
+state. Missing mode configuration, auth, launcher evidence, capability,
+scenario implementation, or executed receipt stays `unavailable` and makes
+the gate fail. Deterministic, local-infrastructure, live-provider, and
+Plue-production tiers remain separate rows.
+
 The shared `scenario()` details also derive `@real-host:*` Playwright tags.
 The real config selects the current host before fixtures execute, so a
 production-only case is not a local preflight failure or a skipped test.

@@ -18,6 +18,7 @@
     "checklist": "bun scripts/launch-checklist.ts",
     "test:e2e": "playwright test",
     "test:e2e:real": "bun scripts/run-real-e2e.ts",
+    "test:e2e:matrix": "bun scripts/run-mode-matrix.ts run",
     "test:e2e:site": "playwright test --config playwright.site.config.ts",
     "test:e2e:auth": "bun test e2e/native/CloudAuthFragment.test.ts",
     "test:e2e:probes": "bun test e2e/probes",
