@@ -144,6 +144,7 @@ func workspaceSessionTargetWorkspaceID(r *http.Request) string {
 }
 
 type inFlightRequestTracker struct {
+	closing               atomic.Bool
 	active                atomic.Int64
 	completed             atomic.Int64
 	shutdownActive        atomic.Int64
@@ -156,6 +157,10 @@ func newInFlightRequestTracker() *inFlightRequestTracker {
 
 func (t *inFlightRequestTracker) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if t.closing.Load() {
+			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+			return
+		}
 		t.active.Add(1)
 		defer func() {
 			t.completed.Add(1)
@@ -166,10 +171,26 @@ func (t *inFlightRequestTracker) Wrap(next http.Handler) http.Handler {
 }
 
 func (t *inFlightRequestTracker) BeginShutdown() int64 {
+	t.closing.Store(true)
 	t.shutdownCompletedBase.Store(t.completed.Load())
 	active := t.active.Load()
 	t.shutdownActive.Store(active)
 	return active
+}
+
+// WaitForDrain is used when a deployment mounts our handler on its own HTTP
+// server. There is no internal http.Server listener to drain in that mode.
+func (t *inFlightRequestTracker) WaitForDrain(ctx context.Context) error {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for t.active.Load() != 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	return nil
 }
 
 func (t *inFlightRequestTracker) Snapshot() (drained, killed, activeRemaining int64) {

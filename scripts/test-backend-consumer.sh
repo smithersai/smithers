@@ -19,6 +19,7 @@ package main
 
 import (
     "context"
+	"net/http"
 
     "github.com/smithersai/smithers/packages/backend/app"
     "github.com/smithersai/smithers/packages/backend/ports"
@@ -26,8 +27,10 @@ import (
 
 func main() {
     var launch func(context.Context, app.Config) error = app.Run
+	var start func(context.Context, app.Config) (*app.Instance, error) = app.Start
+	var handler func(*app.Instance) http.Handler = (*app.Instance).Handler
     var executor ports.Executor
-    _, _ = launch, executor
+	_, _, _, _ = launch, start, handler, executor
 }
 EOF
 cd "$consumer_dir"

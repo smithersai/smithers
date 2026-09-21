@@ -49,10 +49,29 @@ func main() {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
- return run(ctx, args, stdout, stderr)
+	return run(ctx, args, stdout, stderr)
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	return runWithOptions(ctx, args, stdout, stderr, runOptions{})
+}
+
+// Start assembles the same product routes and workers as Run, then hands the
+// live handler to a host that owns its HTTP listener. The call remains active
+// until ctx is cancelled and the shared workers have drained.
+func Start(ctx context.Context, args []string, stdout, stderr io.Writer, ready func(http.Handler)) error {
+	if ready == nil {
+		return errors.New("compose: ready callback is required")
+	}
+	return runWithOptions(ctx, args, stdout, stderr, runOptions{externalHTTP: true, ready: ready})
+}
+
+type runOptions struct {
+	externalHTTP bool
+	ready        func(http.Handler)
+}
+
+func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) error {
 	_ = stdout
 	// `smithers-api migrate [apply|status]` is an enforced, server-free schema
 	// migration path: it applies Atlas migrations and exits (non-zero on
@@ -1301,7 +1320,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	)
 
 	requestTracker := newInFlightRequestTracker()
-	srv := buildHTTPServer(cfg, requestTracker.Wrap(r))
+	handler := requestTracker.Wrap(r)
+	srv := buildHTTPServer(cfg, handler)
 
 	// Start landing worker in a background goroutine.
 	workerCtx, workerCancel := context.WithCancel(ctx)
@@ -1376,8 +1396,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 
 	// Register signals before listening so the first SIGTERM is never lost.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
+	if !options.externalHTTP {
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(sigCh)
+	}
 
 	// Graceful shutdown
 	shutdownDone := make(chan struct{})
@@ -1387,12 +1409,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		case <-sigCh:
 		case <-ctx.Done():
 		}
-		signal.Stop(sigCh)
+		if !options.externalHTTP {
+			signal.Stop(sigCh)
+		}
 		inFlightAtSIGTERM := requestTracker.BeginShutdown()
 		slog.Info("shutting down", "shutdown_timeout", shutdownTimeout.String(), "in_flight_requests_at_sigterm", inFlightAtSIGTERM)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		shutdownErr := srv.Shutdown(shutdownCtx)
+		if options.externalHTTP {
+			if drainErr := requestTracker.WaitForDrain(shutdownCtx); drainErr != nil {
+				shutdownErr = errors.Join(shutdownErr, drainErr)
+			}
+		}
 		drained, killed, activeRemaining := requestTracker.Snapshot()
 
 		// Keep background services alive while in-flight HTTP requests drain. A
@@ -1444,6 +1473,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		slog.Info(fmt.Sprintf("in-flight requests at SIGTERM: %d, drained: %d, killed: %d", inFlightAtSIGTERM, drained, killed), attrs...)
 	}()
+	if options.externalHTTP {
+		options.ready(handler)
+		<-shutdownDone
+		return nil
+	}
 
 	slog.Info("API server listening", "addr", cfg.Server.Addr)
 	ln, err := netListen("tcp", srv.Addr)
