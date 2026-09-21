@@ -3,6 +3,7 @@
  *
  * @since 1.0.0
  */
+import type { ApplicationTargetDocument } from "./ApplicationTarget.ts"
 /*
  * The one native door the local app keeps on Electrobun RPC (LOCAL-APP.md,
  * "Runtime topology"). Chat rides the local HTTP origin (/api/chat/*), so the
@@ -32,6 +33,19 @@ export interface SmithersNativeRPC {
       readonly openExternal: {
         readonly params: { readonly url: string }
         readonly response: { readonly opened: boolean }
+      }
+      /**
+       * The packaging supervisor's resolved backend. This is configuration,
+       * not a native product API: all product traffic still uses HTTP.
+       */
+      readonly applicationTarget: {
+        readonly params: Record<never, never>
+        readonly response: { readonly target: ApplicationTargetDocument }
+      }
+      /** Token material stays outside the runtime target document. */
+      readonly applicationToken: {
+        readonly params: Record<never, never>
+        readonly response: { readonly token: string | null }
       }
     }
     readonly messages: Record<never, never>

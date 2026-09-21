@@ -23,10 +23,8 @@
 import {
   CLOUD_LSP_REASSEMBLY_CAP_BYTES,
   CLOUD_LSP_ROOT_URI,
-  CLOUD_ROUTE_PREFIX,
   CLOUD_WS_NOT_READY_CLOSE_CODE,
   CLOUD_WS_PENDING_CLOSE_CODE,
-  CLOUD_WS_ROUTE_PREFIX,
   CloudLspFragmentSchema,
   CloudLspSessionSchema,
   LSP_DIAGNOSTICS_CAP,
@@ -160,11 +158,12 @@ const GUEST_NOT_READY = "guest_not_ready"
 const ROOT_PATH = "/home/developer/workspace"
 
 /** The same-origin tunnel URL of the page for the lsp branch, or undefined outside a browser. */
-export const pageCloudLspSocketUrl = (repo: string, sessionId: string, language: string): string | undefined => {
+export const pageCloudLspSocketUrl = (repo: string, sessionId: string, language: string, baseUrl = ""): string | undefined => {
   if (typeof window === "undefined" || typeof WebSocket === "undefined") return undefined
-  const { protocol, host } = window.location
+  const origin = new URL(baseUrl === "" ? window.location.origin : baseUrl)
+  const { protocol, host } = origin
   const [owner = "", name = ""] = repo.split("/")
-  return `${protocol === "https:" ? "wss" : "ws"}://${host}${CLOUD_WS_ROUTE_PREFIX}repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions/${
+  return `${protocol === "https:" ? "wss" : "ws"}://${host}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions/${
     encodeURIComponent(sessionId)
   }/lsp?language=${encodeURIComponent(language)}`
 }
@@ -330,7 +329,7 @@ export const createCloudLspClient = (options: CloudLspClientOptions): CloudLspCl
    */
   const createSession = async (conn: Connection, attempt: { count: number }): Promise<string> => {
     const [owner = "", name = ""] = conn.repo.split("/")
-    const url = `${options.baseUrl}${CLOUD_ROUTE_PREFIX}api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions`
+    const url = `${options.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions`
     for (;;) {
       assertActive()
       let response: Response

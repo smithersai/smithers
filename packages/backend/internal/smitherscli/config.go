@@ -11,7 +11,9 @@ import (
 
 const defaultObserveURL = "https://smithers-observe.up.railway.app"
 
-const defaultAPIURL = "https://api.jjhub.tech"
+// No deployment is privileged. The CLI requires the same explicit origin the
+// application runtime uses, from config or SMITHERS_API_ORIGIN.
+const defaultAPIURL = ""
 
 // cliGOOS mirrors runtime.GOOS but is a package variable so platform-specific
 // base-directory selection can be exercised on any host during tests.
@@ -34,7 +36,7 @@ const (
 
 type Config struct {
 	ObserveURL     string      `json:"observe_url" yaml:"observe_url"`
-	APIURL         string      `json:"api_url" yaml:"api_url"`
+	APIURL         string      `json:"api_origin" yaml:"api_origin"`
 	GitProtocol    GitProtocol `json:"git_protocol" yaml:"git_protocol"`
 	AgentIssueRepo string      `json:"agent_issue_repo,omitempty" yaml:"agent_issue_repo,omitempty"`
 }
@@ -111,7 +113,9 @@ func LoadRawConfig() RawConfig {
 	}
 
 	raw := RawConfig{Config: Config{ObserveURL: defaultObserveURL, APIURL: defaultAPIURL, GitProtocol: GitProtocolSSH}}
-	if value, ok := parsed["api_url"].(string); ok {
+	if value, ok := parsed["api_origin"].(string); ok {
+		raw.APIURL = normalizeAPIURL(value)
+	} else if value, ok := parsed["api_url"].(string); ok {
 		raw.APIURL = normalizeAPIURL(value)
 	}
 	if value, ok := parsed["observe_url"].(string); ok && strings.TrimSpace(value) != "" {
@@ -132,6 +136,9 @@ func LoadRawConfig() RawConfig {
 func LoadConfig() Config {
 	raw := LoadRawConfig()
 	cfg := raw.Config
+	if apiOrigin := strings.TrimSpace(os.Getenv("SMITHERS_API_ORIGIN")); apiOrigin != "" {
+		cfg.APIURL = normalizeAPIURL(apiOrigin)
+	}
 	if envIssueRepo := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_ISSUE_REPO")); envIssueRepo != "" {
 		cfg.AgentIssueRepo = envIssueRepo
 	}
@@ -148,7 +155,9 @@ func SaveConfig(update map[string]string) error {
 			AgentIssueRepo: existing.AgentIssueRepo,
 		},
 	}
-	if value, ok := update["api_url"]; ok {
+	if value, ok := update["api_origin"]; ok {
+		merged.APIURL = normalizeAPIURL(value)
+	} else if value, ok := update["api_url"]; ok {
 		merged.APIURL = normalizeAPIURL(value)
 	}
 	if value, ok := update["observe_url"]; ok {

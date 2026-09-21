@@ -1,13 +1,14 @@
 /*
  * The Electrobun main process (LOCAL-APP.md, "Runtime topology"). The only
- * file that imports the Electrobun SDK: it starts the local origin, then
- * opens one window at it. The origin is the only transport between the SPA
- * and this process; RPC carries just the two native doors (the folder dialog
- * and the system browser). Neither privileged operation has an HTTP fallback.
+ * file that imports the Electrobun SDK. The packaging supervisor supplies the
+ * shared Go backend origin; this process opens one window and exposes only
+ * platform transport/configuration doors. Product behavior stays in the
+ * common backend and browser application.
  */
 import type { BrowserWindow as NativeBrowserWindow } from "electrobun/main"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
+import { nativeBackendConfig } from "./NativeBackendConfig"
 import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
@@ -45,21 +46,37 @@ const stubAgent = Bun.env.SMITHERS_CHAT_STUB === "1"
   ? (await import("../../e2e/support/ChatStub")).createChatStub
   : undefined
 
-const server = await startLocalServer({
+// The retired Bun product host survives only as the deterministic packaged
+// test fixture. Production receives the actual shared Go backend origin from
+// the issue12 supervisor, or connects directly to Plue.
+const testServer = stubAgent === undefined ? undefined : await startLocalServer({
   ...(port === undefined ? {} : { port }),
   distDir: defaultDistDir(import.meta.dir),
   stateDir,
-  ...(stubAgent === undefined ? {} : { agent: stubAgent }),
-  cloudMode: Bun.env.SMITHERS_LOCAL_MODE === "offline" ? "offline" : "hybrid"
+  agent: stubAgent,
+  cloudMode: "offline"
 })
-console.log(`SMITHERS_LOCAL_ORIGIN=${server.origin}`)
+const backend = testServer === undefined
+  ? nativeBackendConfig(Bun.env)
+  : {
+    rendererOrigin: testServer.origin,
+    target: {
+      apiVersion: 1,
+      mode: "native-own",
+      apiOrigin: testServer.origin,
+      auth: { kind: "session" },
+      cors: "same-origin",
+      developerExternal: false
+    } as const,
+    token: null
+  }
 
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
-    await server.stop()
+    await testServer?.stop()
   },
   quit: (code) => process.exit(code),
   onBeforeQuit: (handler) => { Electrobun.events.on("before-quit", handler) },
@@ -72,7 +89,9 @@ if (headless) {
   const rpc = BrowserView.defineRPC<SmithersNativeRPC>({
     handlers: {
       requests: {
-        openExternal: async ({ url }) => ({ opened: await openExternal(url) })
+        openExternal: async ({ url }) => ({ opened: await openExternal(url) }),
+        applicationTarget: async () => ({ target: backend.target }),
+        applicationToken: async () => ({ token: backend.token })
       },
       messages: {}
     }
@@ -81,7 +100,7 @@ if (headless) {
   // The local origin, never views:// and never a Vite dev server.
   mainWindow = new BrowserWindow({
     title: "Smithers",
-    url: `${server.origin}/`,
+    url: `${backend.rendererOrigin}/`,
     rpc,
     frame: {
       width: 1180,
@@ -153,7 +172,7 @@ bridge = startPackagedE2EBridge({
     return {
       app: {
         pid: process.pid,
-        origin: server.origin,
+        origin: backend.rendererOrigin,
         packaged: build.isPackaged,
         channel: build.channel,
         defaultRenderer: build.defaultRenderer

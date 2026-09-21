@@ -24,7 +24,7 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	commandsConfigCovSetConfigHome(t)
 	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
 
-	for _, key := range []string{"api_url", "git_protocol", "agent_issue_repo"} {
+	for _, key := range []string{"api_origin", "api_url", "git_protocol", "agent_issue_repo"} {
 		if err := validateConfigKey(key); err != nil {
 			t.Fatalf("validateConfigKey(%q) returned error: %v", key, err)
 		}
@@ -34,10 +34,10 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	if err := configCommand().ServeWithOptions([]string{"set", "api_url", "https://api.example.com/api/", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
-		t.Fatalf("config set api_url returned error: %v", err)
+	if err := configCommand().ServeWithOptions([]string{"set", "api_origin", "https://api.example.com/api/", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
+		t.Fatalf("config set api_origin returned error: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "api_url") {
+	if !strings.Contains(stdout.String(), "api_origin") {
 		t.Fatalf("config set output missing key:\n%s", stdout.String())
 	}
 	stdout.Reset()
@@ -50,7 +50,7 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	}
 
 	stdout.Reset()
-	if err := configCommand().ServeWithOptions([]string{"get", "api_url", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
+	if err := configCommand().ServeWithOptions([]string{"get", "api_origin", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("config get returned error: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "https://api.example.com") || strings.Contains(stdout.String(), "/api/") {
@@ -61,7 +61,7 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	if err := configCommand().ServeWithOptions([]string{"list", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("config list returned error: %v", err)
 	}
-	for _, want := range []string{"api_url", "git_protocol", "agent_issue_repo", "alice/issues"} {
+	for _, want := range []string{"api_origin", "git_protocol", "agent_issue_repo", "alice/issues"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("config list missing %q:\n%s", want, stdout.String())
 		}

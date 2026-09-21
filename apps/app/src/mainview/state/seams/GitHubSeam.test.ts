@@ -1,6 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import {
@@ -99,7 +98,7 @@ const harness = async (
   const ctx: SeamContext = {
     http: async (input, init) => {
       const method = init?.method ?? "GET"
-      const path = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const path = input.startsWith("/") ? input.slice(1) : input
       const key = `${method} ${path}`
       requests.push(key)
       const route = routes[key] ?? routes[path]

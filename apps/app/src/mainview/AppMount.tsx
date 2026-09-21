@@ -3,8 +3,8 @@ import { createRoot } from "react-dom/client"
 import { AppRoot } from "./AppRoot"
 import { configureControllerBoot } from "./ControllerProvider"
 import { browserStartupWatchdog } from "./StartupWatchdog"
+import { loadRuntimeApplicationClient, runtimeApplicationFetch } from "./runtime/ApplicationTransport"
 import { warmBootstrap } from "./runtime/Runtime"
-import { createAppFetch } from "./runtime/LocalSession"
 import { createClientErrorReporter } from "./state/ClientErrors"
 
 /*
@@ -27,7 +27,7 @@ export interface MountedApp {
 }
 
 /** Warm only the GET; homepage preloading must not create saved app state. */
-export const warmApp = () => warmBootstrap(createAppFetch())
+export const warmApp = () => loadRuntimeApplicationClient().then((client) => warmBootstrap(client.fetch))
 
 /*
  * The app owns the lookup of its own mark so a caller (the home page's view
@@ -68,7 +68,7 @@ export const applyAppearance = (root: HTMLElement = document.documentElement): v
 export function mountApp(container: HTMLElement, options: MountAppOptions): MountedApp {
   applyAppearance()
   configureControllerBoot({ keepUrl: options.keepUrl === true })
-  const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
+  const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: runtimeApplicationFetch }) })
   const root = createRoot(container)
   flushSync(() => root.render(<AppRoot watchdog={watchdog} />))
   return { unmount: () => root.unmount(), mark: appWordmark(container) }

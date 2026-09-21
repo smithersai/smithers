@@ -3,7 +3,7 @@ import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { nativeOpenExternal, nativeRepositories, nativeShellAvailable } from "./native/NativeBridge"
-import { createAppFetch } from "./runtime/LocalSession"
+import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
 import { createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
@@ -43,7 +43,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
-    const http = yield* Effect.sync(() => createAppFetch())
+    const client = yield* promiseEffect("resolve application backend", loadRuntimeApplicationClient)
+    const http = client.fetch
     const bootstrapRead = warmBootstrap(http)
     const { bootstrap, store } = yield* promiseEffect("prepare runtime and persisted state", () =>
       loadControllerBootInputs(() => bootstrapRead, () => createAppStore(undefined, {
@@ -64,6 +65,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         agent,
         {
           fetchImpl: runtime.http,
+          baseUrl: client.baseUrl,
           bootstrap: runtime.bootstrap,
           repositoryApp: requested ?? undefined,
           frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true }),

@@ -8,7 +8,6 @@ import { createWorkspaceSeam, DEGRADED_WORKSPACE_REFUSAL } from "./WorkspaceSeam
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import {
-  CLOUD_ROUTE_PREFIX,
   CLOUD_AUTH_SESSION_PATH,
   CLOUD_AUTH_SIGN_OUT_PATH,
   CLOUD_AUTH_START_PATH
@@ -226,7 +225,7 @@ for (const state of ["signed-in", "signed-out", "degraded"] as const) {
         expect(result).toEqual({ value: "No cloud workspaces." })
         expect(await workspace.openDesktopBox("main", "will/smithers")).toContain("fixture desktop create reached Cloud")
         expect(upstream.some(request => request.method === "POST" && new URL(request.url).pathname === "/api/repos/will/smithers/workspaces")).toBe(true)
-        expect(requests.some(request => request.url.startsWith(`${CLOUD_ROUTE_PREFIX}api/user/workspaces`))).toBe(true)
+        expect(requests.some(request => request.url.startsWith("/api/user/workspaces"))).toBe(true)
         expect(upstream.filter(request => new URL(request.url).hostname === "cloud.test").every(
           request => request.headers.get("authorization") === `Bearer ${TOKEN}`
         )).toBe(true)

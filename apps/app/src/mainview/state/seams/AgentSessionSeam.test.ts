@@ -1,6 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
@@ -76,7 +75,7 @@ const harness = async (
   const ctx: SeamContext = {
     http: async (input, init) => {
       const method = init?.method ?? "GET"
-      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const stripped = input.startsWith("/") ? input.slice(1) : input
       const url = new URL(stripped, "https://cloud.invalid/")
       const path = url.pathname.slice(1)
       const key = `${method} ${path}`
@@ -88,7 +87,7 @@ const harness = async (
       return typeof route === "function" ? route(url) : route.clone()
     },
     stream: async (input, init) => {
-      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const stripped = input.startsWith("/") ? input.slice(1) : input
       const url = new URL(stripped, "https://cloud.invalid/")
       const path = url.pathname.slice(1)
       streamCalls.push({ path, cursor: new Headers(init?.headers).get("Last-Event-ID"), accept: init?.headers === undefined ? null : new Headers(init.headers).get("accept"), signal: init?.signal ?? undefined })

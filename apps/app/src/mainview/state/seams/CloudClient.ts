@@ -1,4 +1,3 @@
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { clientRefusal, refusalOf, retryAfterHeader } from "@smthrs/rpc/Refusal"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { errorMessage } from "./SeamContext"
@@ -65,7 +64,7 @@ export const cloudUnreachable = (error: unknown): CloudFailure => {
 
 /** Domain seams share transport; authorization, DTOs, and retry decisions remain in the seam. */
 export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) => {
-  const url = (path: string): string => `${ctx.baseUrl}${CLOUD_ROUTE_PREFIX}api${path}`
+  const url = (path: string): string => `${ctx.baseUrl}/api${path}`
   const request = async (
     method: string,
     path: string,

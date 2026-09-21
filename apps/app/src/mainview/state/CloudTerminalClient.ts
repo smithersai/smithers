@@ -1,5 +1,3 @@
-import { CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
-
 /*
  * The cloud-workspace terminal transport (lane citc): one WebSocket per
  * workspace session, through the same-origin tunnel at `/api/cloud-ws/`.
@@ -112,11 +110,12 @@ const RECONNECT_CODES: ReadonlySet<number> = new Set([1001, 1006])
 export const namesMissingShellExit = (reason: string): boolean => /(^|\s)status 127(\s|$)/.test(reason.trim())
 
 /** The same-origin tunnel URL of the page, or undefined outside a browser. */
-export const pageCloudSocketUrl = (repo: string, sessionId: string): string | undefined => {
+export const pageCloudSocketUrl = (repo: string, sessionId: string, baseUrl = ""): string | undefined => {
   if (typeof window === "undefined" || typeof WebSocket === "undefined") return undefined
-  const { protocol, host } = window.location
+  const origin = new URL(baseUrl === "" ? window.location.origin : baseUrl)
+  const { protocol, host } = origin
   const [owner = "", name = ""] = repo.split("/")
-  return `${protocol === "https:" ? "wss" : "ws"}://${host}${CLOUD_WS_ROUTE_PREFIX}repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions/${encodeURIComponent(sessionId)}/terminal`
+  return `${protocol === "https:" ? "wss" : "ws"}://${host}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/workspace/sessions/${encodeURIComponent(sessionId)}/terminal`
 }
 
 interface Connection {

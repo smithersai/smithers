@@ -253,7 +253,7 @@ test("the recorded transcript: session POST, initialize with the guest root, ini
   })
   // The session: one POST with plue's body, its id in the socket URL, the local capability as the subprotocol.
   expect(posts).toEqual([{
-    url: "http://local.invalid/api/cloud/api/repos/will/flows/workspace/sessions",
+    url: "http://local.invalid/api/repos/will/flows/workspace/sessions",
     body: { workspace_id: "ws-1", kind: "lsp", language: "typescript" }
   }])
   expect(dials).toEqual(["will/flows lsps-1 typescript"])

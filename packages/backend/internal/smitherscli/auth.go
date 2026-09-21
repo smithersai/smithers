@@ -14,8 +14,7 @@ import (
 	"time"
 )
 
-// Seams so tests can exercise otherwise-unreachable defensive branches:
-// ResolveAuthTarget never returns an error for real inputs (see below), and
+// Seams so tests can exercise otherwise-unreachable defensive branches.
 // json.MarshalIndent never fails for smithersAuthFileRecord.
 var (
 	authTargetResolver = ResolveAuthTarget
@@ -115,6 +114,9 @@ func ResolveAuthTarget(options map[string]string) (AuthTarget, error) {
 
 	hostname := strings.TrimSpace(options["hostname"])
 	if hostname == "" {
+		if configuredAPIURL == "" {
+			return AuthTarget{}, errors.New("Smithers API origin is not configured. Set SMITHERS_API_ORIGIN or run `smithers config set api_origin ORIGIN`.")
+		}
 		return AuthTarget{APIURL: configuredAPIURL, Host: configuredHost}, nil
 	}
 	if strings.HasPrefix(strings.ToLower(hostname), "http://") || strings.HasPrefix(strings.ToLower(hostname), "https://") {
@@ -301,7 +303,7 @@ func PersistAuthToken(token string, options map[string]string) (AuthTarget, erro
 	}); err != nil {
 		return AuthTarget{}, err
 	}
-	if err := SaveConfig(map[string]string{"api_url": target.APIURL}); err != nil {
+	if err := SaveConfig(map[string]string{"api_origin": target.APIURL}); err != nil {
 		return AuthTarget{}, err
 	}
 	scrubLegacyTokenIfCurrentHost(target)

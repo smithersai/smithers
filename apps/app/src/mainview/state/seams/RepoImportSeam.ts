@@ -10,7 +10,6 @@
  * src/smithersCloud/githubImport.ts (startImport/pollImport) against plue
  * internal/routes/github_import.go.
  */
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
@@ -158,7 +157,7 @@ interface CardPatch {
 }
 
 export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
-  const cloud = (path: string): string => `${ctx.baseUrl}${CLOUD_ROUTE_PREFIX}api${path}`
+  const cloud = (path: string): string => `${ctx.baseUrl}/api${path}`
   /*
    * One tracking loop per repo: a re-run (the card's "Try again", or the
    * command again) bumps the epoch so a superseded loop stops upserting a

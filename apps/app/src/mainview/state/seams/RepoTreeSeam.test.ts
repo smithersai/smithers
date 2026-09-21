@@ -56,7 +56,7 @@ const json = (status: number, body: unknown): Response =>
  * Worker's own 401 body, `ws-broken` plue's 409 for a box that stopped
  * between the inventory read and the click.
  */
-const BOX_FILES = "/api/cloud/api/repos/will/flows/workspaces/ws-1/files"
+const BOX_FILES = "/api/repos/will/flows/workspaces/ws-1/files"
 const boxAnswers: Record<string, () => Response> = {
   "": () =>
     json(200, {
@@ -131,8 +131,8 @@ const treeBackend = () => {
         const answer = sharedAnswers[at]
         return answer === undefined ? json(404, { message: `smithersai/smithers has no ${at}` }) : answer()
       }
-      if (path.startsWith("/api/cloud/api/repos/")) {
-        boxRequests.push(`${path.slice("/api/cloud/api".length)}${parsed.search}`)
+      if (path.startsWith("/api/repos/")) {
+        boxRequests.push(`${path.slice("/api".length)}${parsed.search}`)
         if (path !== BOX_FILES) return json(401, { status: "error", message: "Sign in to run a Smithers turn." })
         const answer = boxAnswers[parsed.searchParams.get("path") ?? ""]
         return answer === undefined ? json(404, { status: "error", message: `no such path in ws-1: ${parsed.searchParams.get("path")}` }) : answer()

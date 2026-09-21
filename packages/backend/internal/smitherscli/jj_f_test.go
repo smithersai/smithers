@@ -239,7 +239,7 @@ func TestJj_F_PushLocalBookmarkAuthError(t *testing.T) {
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(configHome, "missing-auth.json"))
 	if err := PushLocalBookmark("feature"); err == nil {
 		t.Fatal("PushLocalBookmark should error without auth token")
-	} else if !strings.Contains(err.Error(), "no token found") {
+	} else if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("PushLocalBookmark auth error = %v", err)
 	}
 }

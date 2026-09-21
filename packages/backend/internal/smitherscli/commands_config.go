@@ -9,6 +9,7 @@ import (
 
 var validConfigKeys = map[string]struct{}{
 	"agent_issue_repo": {},
+	"api_origin":       {},
 	"api_url":          {},
 	"observe_url":      {},
 	"git_protocol":     {},
@@ -16,7 +17,7 @@ var validConfigKeys = map[string]struct{}{
 
 func validateConfigKey(key string) error {
 	if _, ok := validConfigKeys[key]; !ok {
-		return fmt.Errorf("Unknown config key: %s (valid keys: api_url, git_protocol)", key)
+		return fmt.Errorf("Unknown config key: %s (valid keys: api_origin, git_protocol)", key)
 	}
 	return nil
 }
@@ -26,7 +27,7 @@ func configCommand() *incur.Cli {
 	cmd.Command("get", &incur.CommandDef{
 		Description: "Get a config value by key",
 		ArgsSchema: objectSchema([]string{"key"}, map[string]*incur.JSONSchema{
-			"key": stringSchema("Config key (agent_issue_repo, api_url, observe_url, git_protocol)"),
+			"key": stringSchema("Config key (agent_issue_repo, api_origin, observe_url, git_protocol)"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			key := stringValue(ctx.Args["key"])
@@ -35,7 +36,7 @@ func configCommand() *incur.Cli {
 			}
 			cfg := LoadRawConfig()
 			switch key {
-			case "api_url":
+			case "api_origin", "api_url":
 				return map[string]any{key: cfg.APIURL}, nil
 			case "observe_url":
 				return map[string]any{key: cfg.ObserveURL}, nil
@@ -49,7 +50,7 @@ func configCommand() *incur.Cli {
 	cmd.Command("set", &incur.CommandDef{
 		Description: "Set a config value by key",
 		ArgsSchema: objectSchema([]string{"key", "value"}, map[string]*incur.JSONSchema{
-			"key":   stringSchema("Config key (agent_issue_repo, api_url, observe_url, git_protocol)"),
+			"key":   stringSchema("Config key (agent_issue_repo, api_origin, observe_url, git_protocol)"),
 			"value": stringSchema("Value to set"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
@@ -72,7 +73,7 @@ func configCommand() *incur.Cli {
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			cfg := LoadRawConfig()
 			return map[string]any{
-				"api_url":          cfg.APIURL,
+				"api_origin":       cfg.APIURL,
 				"observe_url":      cfg.ObserveURL,
 				"git_protocol":     string(cfg.GitProtocol),
 				"agent_issue_repo": nullableString(cfg.AgentIssueRepo),
@@ -94,27 +95,29 @@ func configCommand() *incur.Cli {
 			}
 			result := map[string]any{
 				"effective": map[string]any{
-					"api_url":          effective.APIURL,
+					"api_origin":       effective.APIURL,
 					"observe_url":      effective.ObserveURL,
 					"git_protocol":     string(effective.GitProtocol),
 					"agent_issue_repo": nullableString(effective.AgentIssueRepo),
 				},
 				"config_file": map[string]any{
 					"path":             ConfigPath(),
-					"api_url":          raw.APIURL,
+					"api_origin":       raw.APIURL,
 					"observe_url":      raw.ObserveURL,
 					"git_protocol":     string(raw.GitProtocol),
 					"agent_issue_repo": nullableString(raw.AgentIssueRepo),
 				},
 				"env_overrides": map[string]any{
 					"SMITHERS_TOKEN":            tokenStatus,
+					"SMITHERS_API_ORIGIN":       nullableString(os.Getenv("SMITHERS_API_ORIGIN")),
 					"SMITHERS_AGENT_ISSUE_REPO": agentIssueRepo,
 				},
 				"precedence": []string{
 					"SMITHERS_TOKEN (authentication token, highest priority for auth)",
+					"SMITHERS_API_ORIGIN (overrides api_origin in config file)",
 					"SMITHERS_AGENT_ISSUE_REPO (overrides agent_issue_repo in config file)",
-					"Config file: api_url, git_protocol, agent_issue_repo",
-					"Built-in defaults: api_url=https://api.jjhub.tech, git_protocol=ssh",
+					"Config file: api_origin, git_protocol, agent_issue_repo",
+					"Built-in defaults: git_protocol=ssh",
 				},
 			}
 			if ctx.FormatExplicit {
@@ -126,20 +129,22 @@ func configCommand() *incur.Cli {
 				"Config file: " + ConfigPath(),
 				"",
 				"Effective configuration:",
-				fmt.Sprintf("  api_url:          %s", eff["api_url"]),
+				fmt.Sprintf("  api_origin:       %s", eff["api_origin"]),
 				fmt.Sprintf("  observe_url:      %s", eff["observe_url"]),
 				fmt.Sprintf("  git_protocol:     %s", eff["git_protocol"]),
 				fmt.Sprintf("  agent_issue_repo: %s", displayNullable(eff["agent_issue_repo"])),
 				"",
 				"Environment variable overrides:",
 				fmt.Sprintf("  SMITHERS_TOKEN:           %s", env["SMITHERS_TOKEN"]),
+				fmt.Sprintf("  SMITHERS_API_ORIGIN:      %s", displayNullable(env["SMITHERS_API_ORIGIN"])),
 				fmt.Sprintf("  SMITHERS_AGENT_ISSUE_REPO: %s", env["SMITHERS_AGENT_ISSUE_REPO"]),
 				"",
 				"Precedence (highest to lowest):",
 				"  SMITHERS_TOKEN (authentication token, highest priority for auth)",
+				"  SMITHERS_API_ORIGIN (overrides api_origin in config file)",
 				"  SMITHERS_AGENT_ISSUE_REPO (overrides agent_issue_repo in config file)",
-				"  Config file: api_url, git_protocol, agent_issue_repo",
-				"  Built-in defaults: api_url=https://api.jjhub.tech, git_protocol=ssh",
+				"  Config file: api_origin, git_protocol, agent_issue_repo",
+				"  Built-in defaults: git_protocol=ssh",
 			}
 			return joinLines(lines), nil
 		},

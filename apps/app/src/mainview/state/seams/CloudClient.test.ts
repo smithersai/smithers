@@ -1,4 +1,3 @@
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { describe, expect, test } from "bun:test"
 import { cloudFailure, createCloudClient } from "./CloudClient"
 
@@ -19,16 +18,16 @@ describe("cloud transport", () => {
     await client.send("POST", "/repos", { name: "sample" })
     await client.send("DELETE", "/repos/1")
     expect(calls).toEqual([
-      { path: `https://app.example${CLOUD_ROUTE_PREFIX}api/repos`, init: undefined },
+      { path: "https://app.example/api/repos", init: undefined },
       {
-        path: `https://app.example${CLOUD_ROUTE_PREFIX}api/repos`,
+        path: "https://app.example/api/repos",
         init: {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: "{\"name\":\"sample\"}"
         }
       },
-      { path: `https://app.example${CLOUD_ROUTE_PREFIX}api/repos/1`, init: { method: "DELETE" } }
+      { path: "https://app.example/api/repos/1", init: { method: "DELETE" } }
     ])
   })
 

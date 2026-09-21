@@ -1,6 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { createAppStore } from "../AppStore"
 import {
   agentSessionEgressPath,
@@ -69,7 +68,7 @@ const harness = async (
   const urls: Array<string> = []
   const ctx: SeamContext = {
     http: async (input, init) => {
-      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const stripped = input.startsWith("/") ? input.slice(1) : input
       const url = new URL(stripped, "https://cloud.invalid/")
       const path = url.pathname.slice(1)
       urls.push(`${init?.method ?? "GET"} ${path}${url.search}`)

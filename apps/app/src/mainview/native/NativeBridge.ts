@@ -1,4 +1,5 @@
 import { Electroview } from "electrobun/view"
+import type { ApplicationTargetDocument } from "@smthrs/rpc/ApplicationTarget"
 import type { PickLocalRepositoryResult, RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 
@@ -22,6 +23,16 @@ export const nativeShellAvailable = rpc !== undefined
 export const nativeOpenExternal: (url: string) => Promise<boolean> = rpc === undefined
   ? async () => false
   : async (url) => (await rpc.proxy.request.openExternal({ url })).opened
+
+/** Backend selection is the native host's only data-plane handshake. */
+export const nativeApplicationTarget = async (): Promise<ApplicationTargetDocument | undefined> =>
+  rpc === undefined ? undefined : (await rpc.proxy.request.applicationTarget({})).target
+
+/** Auth is separate so the target document is safe to persist and inspect. */
+export const nativeApplicationToken = async (): Promise<string | undefined> => {
+  if (rpc === undefined) return undefined
+  return (await rpc.proxy.request.applicationToken({})).token ?? undefined
+}
 
 export interface NativeRepositories {
   readonly available: boolean

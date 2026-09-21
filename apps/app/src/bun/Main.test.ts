@@ -135,10 +135,32 @@ describe("the native main process starts the local origin", () => {
 })
 
 describe("the native RPC surface", () => {
-  test("exactly one native door is bound: the system browser", async () => {
+  test("binds only platform and backend-configuration doors", async () => {
     const report = await probe({})
-    expect([...report.requestNames].sort()).toEqual(["openExternal"])
+    expect([...report.requestNames].sort()).toEqual(["applicationTarget", "applicationToken", "openExternal"])
     expect(report.messageNames).toEqual([])
+  }, PROBE_BUDGET_MS)
+
+  test("hands the renderer a secret-free target and the credential separately", async () => {
+    const report = await probe({
+      scenario: {
+        exercises: [
+          { label: "target", request: "applicationTarget", params: {} },
+          { label: "token", request: "applicationToken", params: {} }
+        ]
+      }
+    })
+    expect(report.results.target).toEqual({
+      target: {
+        apiVersion: 1,
+        mode: "native-own",
+        apiOrigin: report.origin,
+        auth: { kind: "session" },
+        cors: "same-origin",
+        developerExternal: false
+      }
+    })
+    expect(report.results.token).toEqual({ token: null })
   }, PROBE_BUDGET_MS)
 
   test("openExternal refuses every scheme but http and https", async () => {

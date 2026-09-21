@@ -65,12 +65,12 @@ const importBackend = (
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const path = new URL(url, "https://app.test").pathname
     const method = init?.method ?? "GET"
-    if (path === "/api/cloud/api/github/import" && method === "POST") return start()
-    if (path.startsWith("/api/cloud/api/github/import/") && path.endsWith("/retry") && method === "POST") {
+    if (path === "/api/github/import" && method === "POST") return start()
+    if (path.startsWith("/api/github/import/") && path.endsWith("/retry") && method === "POST") {
       if (retry === undefined) return json(404, { message: `no retry stub for ${path}` })
       return retry()
     }
-    if (path.startsWith("/api/cloud/api/github/import/") && method === "GET") {
+    if (path.startsWith("/api/github/import/") && method === "GET") {
       if (poll === undefined) return json(404, { message: `no poll stub for ${path}` })
       return poll()
     }
@@ -483,7 +483,7 @@ describe("repo import — instant background lifecycle", () => {
       toastDebounceMs: 5,
       fetchImpl: async (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
-        if (path === "/api/cloud/api/github/import" && (init?.method ?? "GET") === "POST") { starts += 1; return launch }
+        if (path === "/api/github/import" && (init?.method ?? "GET") === "POST") { starts += 1; return launch }
         if (path.endsWith("/github/import/job-1")) return poll
         return json(404, {})
       }

@@ -27,6 +27,7 @@ func TestConfig_Cov_BaseDirsAndConfigLifecycle(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cacheHome)
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
+	t.Setenv("SMITHERS_API_ORIGIN", "")
 
 	if got := configBaseDir(); got != configHome {
 		t.Fatalf("configBaseDir() = %q, want %q", got, configHome)
@@ -70,6 +71,11 @@ func TestConfig_Cov_BaseDirsAndConfigLifecycle(t *testing.T) {
 	if got := LoadConfig().AgentIssueRepo; got != "env/issues" {
 		t.Fatalf("LoadConfig env override = %q", got)
 	}
+	t.Setenv("SMITHERS_API_ORIGIN", "http://127.0.0.1:9090/api/")
+	if got := LoadConfig().APIURL; got != "http://127.0.0.1:9090" {
+		t.Fatalf("LoadConfig API origin override = %q", got)
+	}
+	t.Setenv("SMITHERS_API_ORIGIN", "")
 
 	if err := SaveConfig(map[string]string{"api_url": " http://localhost:8080/api/ ", "git_protocol": "ssh", "agent_issue_repo": "new/issues"}); err != nil {
 		t.Fatalf("SaveConfig returned error: %v", err)

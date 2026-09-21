@@ -1055,7 +1055,7 @@ export const createAppController = (
   /* Lane citc: the cloud-workspace terminal transport, one socket per session. */
   const cloudTerminal = createCloudTerminalClient({
     auth: services.bootstrap?.host === "cloud" ? "cookie" : "subprotocol",
-    socketUrl: services.cloudSocketUrl ?? pageCloudSocketUrl,
+    socketUrl: services.cloudSocketUrl ?? ((repo, sessionId) => pageCloudSocketUrl(repo, sessionId, baseUrl)),
     socketProtocol: () => socketProtocols()[0]
   })
   ctx.onDispose(cloudTerminal.dispose)
@@ -1069,7 +1069,7 @@ export const createAppController = (
     ? createCloudLspClient({
       http: seamCtx.http,
       baseUrl,
-      socketUrl: services.cloudLspSocketUrl ?? pageCloudLspSocketUrl,
+      socketUrl: services.cloudLspSocketUrl ?? ((repo, sessionId, language) => pageCloudLspSocketUrl(repo, sessionId, language, baseUrl)),
       socketProtocol: () => socketProtocols()[0]
     })
     : undefined

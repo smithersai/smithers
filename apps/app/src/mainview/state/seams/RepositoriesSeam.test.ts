@@ -1,6 +1,5 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { BOOKMARK_WIRE } from "./fixtures/BookmarkWire"
@@ -54,7 +53,7 @@ const harness = async (
   const ctx: SeamContext = {
     http: async (input) => {
       requests.push(input)
-      const stripped = input.startsWith(CLOUD_ROUTE_PREFIX) ? input.slice(CLOUD_ROUTE_PREFIX.length) : input
+      const stripped = input.startsWith("/") ? input.slice(1) : input
       const [path = "", search = ""] = stripped.split("?")
       if (path === "api/user/workspaces" && options.workspaces !== undefined) return options.workspaces.clone()
       return route(path, new URLSearchParams(search))
@@ -89,7 +88,7 @@ const backend = (path: string): Response => {
 const repos = (store: AppStore) => [...store.collections.repositories.values()].sort((a, b) => a.id.localeCompare(b.id))
 const copies = (store: AppStore) => [...store.collections.workingCopies.values()].sort((a, b) => a.id.localeCompare(b.id))
 const bookmarkCalls = (requests: ReadonlyArray<string>) =>
-  requests.filter((request) => request.includes("/bookmarks")).map((request) => request.slice(CLOUD_ROUTE_PREFIX.length))
+  requests.filter((request) => request.includes("/bookmarks")).map((request) => request.slice(1))
 
 describe("repositories seam", () => {
   test("loads the inventory: owners classified, heads from the default bookmark, workspaces as copies", async () => {

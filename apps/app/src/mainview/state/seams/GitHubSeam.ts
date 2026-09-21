@@ -45,7 +45,6 @@ import { refuseCloudSignIn } from "./CloudSignIn"
  * succeeded | failed` for a ref). A FAILED ref is retryable on its own since
  * plue#491; every other ref is not, because plue's route refuses it.
  */
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card,GitHubAppStatusInput } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import { createRunEpochs } from "./RunEpochs"
@@ -224,7 +223,7 @@ const parseMirrorRun = (value: unknown): MirrorRunAnswer | null => {
 }
 
 export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): GitHubSeam => {
-  const cloud = (path: string): string => `${ctx.baseUrl}${CLOUD_ROUTE_PREFIX}api${path}`
+  const cloud = (path: string): string => `${ctx.baseUrl}/api${path}`
   /* One tracking loop per repo: a re-run supersedes the loop before it. */
   const epochs = createRunEpochs(ctx, "github-epochs")
 
