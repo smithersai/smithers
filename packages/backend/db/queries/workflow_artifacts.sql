@@ -21,16 +21,9 @@ SELECT
     args.size,
     args.content_type,
     'pending',
-    concat(
-        'repos/',
-        args.repository_id,
-        '/runs/',
-        args.workflow_run_id,
-        '/artifacts/',
-        next_artifact.id,
-        '/',
-        args.name
-    ),
+    'repos/' || args.repository_id::text || '/runs/' ||
+    args.workflow_run_id::text || '/artifacts/' ||
+    next_artifact.id::text || '/' || args.name,
     args.expires_at
 FROM next_artifact
 CROSS JOIN (

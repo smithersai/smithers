@@ -381,3 +381,107 @@ RETURNING event_id;
 -- name: DeleteStripeProcessedEvent :exec
 DELETE FROM stripe_processed_events
 WHERE event_id = sqlc.arg(event_id);
+
+-- name: CountPrivateReposByOwner :one
+SELECT COUNT(*)::bigint
+FROM (
+  SELECT r.id
+  FROM repositories r
+  WHERE NOT r.is_public
+    AND (
+      (sqlc.arg(owner_type)::text = 'user' AND r.user_id = sqlc.arg(owner_id)::bigint)
+      OR
+      (sqlc.arg(owner_type)::text = 'org' AND r.org_id = sqlc.arg(owner_id)::bigint)
+    )
+) private_repository_allocations;
+
+-- name: SumStorageBytesByOwner :one
+-- Product metadata and pending uploads count toward storage. A private
+-- storage adapter may count its own deletion queue allocations separately.
+WITH owned_repos AS (
+    SELECT id
+    FROM repositories
+    WHERE (
+        sqlc.arg(owner_type)::text = 'user'
+        AND user_id = sqlc.arg(owner_id)::bigint
+    )
+    OR (
+        sqlc.arg(owner_type)::text = 'org'
+        AND org_id = sqlc.arg(owner_id)::bigint
+    )
+)
+SELECT (
+    COALESCE((
+        SELECT SUM(lo.size)
+        FROM lfs_objects lo
+        WHERE lo.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+    + COALESCE((
+        SELECT SUM(lur.size)
+        FROM lfs_upload_reservations lur
+        WHERE lur.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+    + COALESCE((
+        SELECT SUM(wa.size)
+        FROM workflow_artifacts wa
+        WHERE wa.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+    + COALESCE((
+        SELECT SUM(wc.object_size_bytes)
+        FROM workflow_caches wc
+        WHERE wc.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+    + COALESCE((
+        SELECT SUM(ra.size)
+        FROM release_assets ra
+        JOIN releases rel ON rel.id = ra.release_id
+        WHERE rel.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+    + COALESCE((
+        SELECT SUM(ia.size)
+        FROM issue_artifacts ia
+        WHERE ia.repository_id IN (SELECT id FROM owned_repos)
+    ), 0)
+
+)::bigint;
+
+-- name: SumStorageBytesByRepository :one
+-- Keep this footprint definition in lockstep with SumStorageBytesByOwner.
+-- Transfers use it while the repository still belongs to the source owner in
+-- the coordinating transaction, then meter the exact footprint against the
+-- destination owner's independently locked usage.
+SELECT (
+    COALESCE((
+        SELECT SUM(lo.size)
+        FROM lfs_objects lo
+        WHERE lo.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+    + COALESCE((
+        SELECT SUM(lur.size)
+        FROM lfs_upload_reservations lur
+        WHERE lur.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+    + COALESCE((
+        SELECT SUM(wa.size)
+        FROM workflow_artifacts wa
+        WHERE wa.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+    + COALESCE((
+        SELECT SUM(wc.object_size_bytes)
+        FROM workflow_caches wc
+        WHERE wc.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+    + COALESCE((
+        SELECT SUM(ra.size)
+        FROM release_assets ra
+        JOIN releases rel ON rel.id = ra.release_id
+        WHERE rel.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+    + COALESCE((
+        SELECT SUM(ia.size)
+        FROM issue_artifacts ia
+        WHERE ia.repository_id = sqlc.arg(repository_id)::bigint
+    ), 0)
+
+)::bigint;
+

@@ -8,10 +8,11 @@ sql:
   - engine: "postgresql"
     schema: "schema.sql"
     queries: "queries/"
+    strict_function_checks: true
     gen:
       go:
-        package: "db"
-        out: "../internal/db"
+        package: "clusterdb"
+        out: "../internal/clusterdb"
         sql_package: "pgx/v5"
         emit_json_tags: true
         emit_empty_slices: true

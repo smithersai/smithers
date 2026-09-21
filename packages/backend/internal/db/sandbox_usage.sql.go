@@ -10,35 +10,6 @@ import (
 	"time"
 )
 
-const closeOrphanedSandboxUsageIntervals = `-- name: CloseOrphanedSandboxUsageIntervals :exec
-UPDATE sandbox_usage_intervals AS usage
-SET ended_at = GREATEST(usage.started_at, LEAST(now(), COALESCE(
-    CASE usage.sandbox_kind
-        WHEN 'workspace' THEN (SELECT COALESCE(w.suspended_at, w.deleted_at, w.last_activity_at, w.updated_at) FROM workspaces w WHERE w.id::text = usage.sandbox_id)
-        WHEN 'gateway' THEN (SELECT COALESCE(g.deleted_at, g.last_activity_at, g.updated_at) FROM repo_gateways g WHERE g.id::text = usage.sandbox_id)
-        WHEN 'agent' THEN (SELECT COALESCE(a.finished_at, a.deleted_at, a.updated_at) FROM agent_sessions a WHERE a.id::text = usage.sandbox_id)
-    END, now())))
-WHERE usage.ended_at IS NULL AND (
-    (usage.sandbox_kind = 'workspace' AND NOT EXISTS (
-        SELECT 1 FROM workspaces w WHERE w.id::text = usage.sandbox_id
-        AND w.status IN ('pending', 'starting', 'running') AND w.deleted_at IS NULL
-    )) OR
-    (usage.sandbox_kind = 'gateway' AND NOT EXISTS (
-        SELECT 1 FROM repo_gateways g WHERE g.id::text = usage.sandbox_id
-        AND g.status IN ('pending', 'starting', 'running') AND g.deleted_at IS NULL
-    )) OR
-    (usage.sandbox_kind = 'agent' AND NOT EXISTS (
-        SELECT 1 FROM agent_sessions a WHERE a.id::text = usage.sandbox_id
-        AND a.status = 'active' AND a.deleted_at IS NULL
-    ))
-)
-`
-
-func (q *Queries) CloseOrphanedSandboxUsageIntervals(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, closeOrphanedSandboxUsageIntervals)
-	return err
-}
-
 const closeSandboxUsageInterval = `-- name: CloseSandboxUsageInterval :exec
 UPDATE sandbox_usage_intervals
 SET ended_at = GREATEST(started_at, now())
@@ -56,6 +27,7 @@ func (q *Queries) CloseSandboxUsageInterval(ctx context.Context, arg CloseSandbo
 }
 
 const openSandboxUsageInterval = `-- name: OpenSandboxUsageInterval :exec
+
 INSERT INTO sandbox_usage_intervals (user_id, sandbox_kind, sandbox_id)
 SELECT $1::bigint, $2::text, $3::text
 WHERE NOT EXISTS (
@@ -72,6 +44,7 @@ type OpenSandboxUsageIntervalParams struct {
 	SandboxID   string `json:"sandbox_id"`
 }
 
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) OpenSandboxUsageInterval(ctx context.Context, arg OpenSandboxUsageIntervalParams) error {
 	_, err := q.db.Exec(ctx, openSandboxUsageInterval, arg.UserID, arg.SandboxKind, arg.SandboxID)
 	return err

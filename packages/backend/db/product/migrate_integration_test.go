@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
-	productdb "github.com/smithersai/smithers/packages/backend/internal/productdb"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 // Set SMITHERS_PRODUCT_TEST_DATABASE_URL to a PostgreSQL URL whose user can
@@ -93,8 +93,8 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO users(username, lower_username) VALUES ('bob', 'bob') RETURNING id`).Scan(&bob); err != nil {
 		t.Fatal(err)
 	}
-	queries := productdb.New(pool)
-	repository, err := queries.CreateRepo(ctx, productdb.CreateRepoParams{
+	queries := db.New(pool)
+	repository, err := queries.CreateRepo(ctx, db.CreateRepoParams{
 		UserID: pgtype.Int8{Int64: alice, Valid: true}, Name: "secret", LowerName: "secret", DefaultBookmark: "main",
 	})
 	if err != nil {
@@ -117,15 +117,15 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	inside := queries.WithTx(tx)
-	if _, err := inside.CreateIssue(ctx, productdb.CreateIssueParams{RepositoryID: repo, Title: "issue", AuthorID: alice}); err != nil {
+	if _, err := inside.CreateIssue(ctx, db.CreateIssueParams{RepositoryID: repo, Title: "issue", AuthorID: alice}); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatal(err)
 	}
-	if _, err := inside.CreateWikiPage(ctx, productdb.CreateWikiPageParams{RepositoryID: repo, Slug: "home", Title: "Home", AuthorID: alice}); err != nil {
+	if _, err := inside.CreateWikiPage(ctx, db.CreateWikiPageParams{RepositoryID: repo, Slug: "home", Title: "Home", AuthorID: alice}); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatal(err)
 	}
-	if _, err := inside.CreateLandingRequest(ctx, productdb.CreateLandingRequestParams{RepositoryID: repo, Title: "review", AuthorID: alice, TargetBookmark: "main"}); err != nil {
+	if _, err := inside.CreateLandingRequest(ctx, db.CreateLandingRequestParams{RepositoryID: repo, Title: "review", AuthorID: alice, TargetBookmark: "main"}); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatal(err)
 	}

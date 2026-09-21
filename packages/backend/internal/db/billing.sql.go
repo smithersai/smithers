@@ -15,6 +15,7 @@ import (
 
 const claimStripeProcessedEvent = `-- name: ClaimStripeProcessedEvent :one
 
+
 INSERT INTO stripe_processed_events (event_id, event_type)
 VALUES ($1, $2)
 ON CONFLICT (event_id) DO NOTHING
@@ -112,16 +113,6 @@ FROM (
       OR
       ($1::text = 'org' AND r.org_id = $2::bigint)
     )
-  UNION ALL
-  SELECT p.repository_id
-  FROM repository_provisioning_operations p
-  WHERE NOT p.is_public
-    AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = p.repository_id)
-    AND (
-      ($1::text = 'user' AND p.user_id = $2::bigint)
-      OR
-      ($1::text = 'org' AND p.org_id = $2::bigint)
-    )
 ) private_repository_allocations
 `
 
@@ -161,6 +152,7 @@ func (q *Queries) DeleteStripeProcessedEvent(ctx context.Context, eventID string
 }
 
 const getBillingAccountByOwner = `-- name: GetBillingAccountByOwner :one
+
 SELECT id, owner_type, owner_id, stripe_customer_id, stripe_customer_email, stripe_customer_name, created_at, updated_at
 FROM billing_accounts
 WHERE owner_type = $1
@@ -172,6 +164,7 @@ type GetBillingAccountByOwnerParams struct {
 	OwnerID   int64  `json:"owner_id"`
 }
 
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) GetBillingAccountByOwner(ctx context.Context, arg GetBillingAccountByOwnerParams) (BillingAccount, error) {
 	row := q.db.QueryRow(ctx, getBillingAccountByOwner, arg.OwnerType, arg.OwnerID)
 	var i BillingAccount
@@ -211,6 +204,7 @@ func (q *Queries) GetBillingAccountByStripeCustomerID(ctx context.Context, strip
 }
 
 const getCreditBalance = `-- name: GetCreditBalance :one
+
 
 SELECT billing_account_id, balance_cents, last_grant_at, updated_at
 FROM billing_credit_balances
@@ -762,29 +756,7 @@ SELECT (
         FROM issue_artifacts ia
         WHERE ia.repository_id IN (SELECT id FROM owned_repos)
     ), 0)
-    + COALESCE((
-        -- Queue keys survive repository deletion, so use the live repository's
-        -- current owner when present and the denormalized tombstone otherwise.
-        -- Final and pending copies share allocation_key and count only once.
-        SELECT SUM(queued.allocation_bytes)
-        FROM (
-            SELECT MAX(sdq.size_bytes) AS allocation_bytes
-            FROM storage_deletion_queue sdq
-            LEFT JOIN repositories queued_repo ON queued_repo.id = sdq.repository_id
-            WHERE (
-                queued_repo.id IS NOT NULL
-                AND (
-                    ($1::text = 'user' AND queued_repo.user_id = $2::bigint)
-                    OR ($1::text = 'org' AND queued_repo.org_id = $2::bigint)
-                )
-            ) OR (
-                queued_repo.id IS NULL
-                AND sdq.owner_type = $1::text
-                AND sdq.owner_id = $2::bigint
-            )
-            GROUP BY sdq.allocation_key
-        ) AS queued
-    ), 0)
+
 )::bigint
 `
 
@@ -793,10 +765,8 @@ type SumStorageBytesByOwnerParams struct {
 	OwnerID   int64  `json:"owner_id"`
 }
 
-// Every metadata row is authoritative storage or an upload/deletion
-// reservation. Pending rows must count before a signed capability is issued,
-// and retryable deleting rows must remain counted until physical cleanup
-// succeeds; filtering to only ready/finalized rows reopens quota races.
+// Product metadata and pending uploads count toward storage. A private
+// storage adapter may count its own deletion queue allocations separately.
 func (q *Queries) SumStorageBytesByOwner(ctx context.Context, arg SumStorageBytesByOwnerParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sumStorageBytesByOwner, arg.OwnerType, arg.OwnerID)
 	var column_1 int64
@@ -837,15 +807,7 @@ SELECT (
         FROM issue_artifacts ia
         WHERE ia.repository_id = $1::bigint
     ), 0)
-    + COALESCE((
-        SELECT SUM(queued.allocation_bytes)
-        FROM (
-            SELECT MAX(sdq.size_bytes) AS allocation_bytes
-            FROM storage_deletion_queue sdq
-            WHERE sdq.repository_id = $1::bigint
-            GROUP BY sdq.allocation_key
-        ) AS queued
-    ), 0)
+
 )::bigint
 `
 

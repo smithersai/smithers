@@ -13,6 +13,7 @@ import (
 )
 
 const adminListAgentSessions = `-- name: AdminListAgentSessions :many
+
 SELECT s.id, s.repository_id, s.user_id, s.workflow_run_id, s.title, s.status, s.metadata, s.workspace_id, s.started_at, s.finished_at, s.created_at, s.updated_at, s.deleted_at, u.username AS username,
        (COALESCE(ru.username, o.name, '') || '/' || r.name)::text AS repository
 FROM agent_sessions s JOIN users u ON u.id = s.user_id
@@ -35,6 +36,7 @@ type AdminListAgentSessionsRow struct {
 	Repository   string       `json:"repository"`
 }
 
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) AdminListAgentSessions(ctx context.Context, arg AdminListAgentSessionsParams) ([]AdminListAgentSessionsRow, error) {
 	rows, err := q.db.Query(ctx, adminListAgentSessions, arg.Status, arg.IncludeSynthetic, arg.RowLimit)
 	if err != nil {
@@ -60,65 +62,6 @@ func (q *Queries) AdminListAgentSessions(ctx context.Context, arg AdminListAgent
 			&i.AgentSession.DeletedAt,
 			&i.Username,
 			&i.Repository,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const adminListSandboxHosts = `-- name: AdminListSandboxHosts :many
-SELECT h.id, h.provider, h.identity_public_key, h.identity_signed_at, h.base_url, h.boot_id, h.state, h.placement_generation, h.capacity_cpu_millis, h.capacity_memory_bytes, h.capacity_disk_bytes, h.capacity_vms, h.allocated_cpu_millis, h.allocated_memory_bytes, h.allocated_disk_bytes, h.allocated_vms, h.observed_allocated_cpu_millis, h.observed_allocated_memory_bytes, h.observed_allocated_disk_bytes, h.observed_allocated_vms, h.capabilities, h.runtime_version, h.worker_image, h.heartbeat_at, h.lease_expires_at, h.created_at, h.updated_at, (SELECT count(*) FROM sandbox_instances i WHERE i.worker_id = h.id AND i.deleted_at IS NULL)::bigint AS instance_count
-FROM sandbox_hosts h ORDER BY h.id
-`
-
-type AdminListSandboxHostsRow struct {
-	SandboxHost   SandboxHost `json:"sandbox_host"`
-	InstanceCount int64       `json:"instance_count"`
-}
-
-func (q *Queries) AdminListSandboxHosts(ctx context.Context) ([]AdminListSandboxHostsRow, error) {
-	rows, err := q.db.Query(ctx, adminListSandboxHosts)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AdminListSandboxHostsRow{}
-	for rows.Next() {
-		var i AdminListSandboxHostsRow
-		if err := rows.Scan(
-			&i.SandboxHost.ID,
-			&i.SandboxHost.Provider,
-			&i.SandboxHost.IdentityPublicKey,
-			&i.SandboxHost.IdentitySignedAt,
-			&i.SandboxHost.BaseUrl,
-			&i.SandboxHost.BootID,
-			&i.SandboxHost.State,
-			&i.SandboxHost.PlacementGeneration,
-			&i.SandboxHost.CapacityCpuMillis,
-			&i.SandboxHost.CapacityMemoryBytes,
-			&i.SandboxHost.CapacityDiskBytes,
-			&i.SandboxHost.CapacityVms,
-			&i.SandboxHost.AllocatedCpuMillis,
-			&i.SandboxHost.AllocatedMemoryBytes,
-			&i.SandboxHost.AllocatedDiskBytes,
-			&i.SandboxHost.AllocatedVms,
-			&i.SandboxHost.ObservedAllocatedCpuMillis,
-			&i.SandboxHost.ObservedAllocatedMemoryBytes,
-			&i.SandboxHost.ObservedAllocatedDiskBytes,
-			&i.SandboxHost.ObservedAllocatedVms,
-			&i.SandboxHost.Capabilities,
-			&i.SandboxHost.RuntimeVersion,
-			&i.SandboxHost.WorkerImage,
-			&i.SandboxHost.HeartbeatAt,
-			&i.SandboxHost.LeaseExpiresAt,
-			&i.SandboxHost.CreatedAt,
-			&i.SandboxHost.UpdatedAt,
-			&i.InstanceCount,
 		); err != nil {
 			return nil, err
 		}
@@ -281,46 +224,6 @@ func (q *Queries) AdminListWorkspaces(ctx context.Context, arg AdminListWorkspac
 		return nil, err
 	}
 	return items, nil
-}
-
-const adminPruneStaleSandboxHosts = `-- name: AdminPruneStaleSandboxHosts :one
-WITH pruned AS (
-    DELETE FROM sandbox_hosts h
-    WHERE h.lease_expires_at < now() - make_interval(hours => $1::int)
-    AND NOT EXISTS (SELECT 1 FROM sandbox_instances i WHERE i.worker_id = h.id AND i.deleted_at IS NULL)
-    RETURNING h.id
-), audited AS (
-    INSERT INTO audit_log (event_type, actor_id, actor_name, target_type, target_name, action, metadata, ip_address)
-    SELECT 'admin.sandbox_host.prune', $2::bigint, $3::text,
-           'sandbox_host', '', 'prune',
-           jsonb_build_object('outcome', 'succeeded', 'older_than_hours', $1::int,
-                              'pruned', count(*), 'host_ids', COALESCE(jsonb_agg(id ORDER BY id), '[]'::jsonb)),
-           $4::text
-    FROM pruned
-    RETURNING id
-)
-SELECT count(*)::bigint AS pruned FROM pruned WHERE EXISTS (SELECT 1 FROM audited)
-`
-
-type AdminPruneStaleSandboxHostsParams struct {
-	OlderThanHours int32       `json:"older_than_hours"`
-	ActorID        pgtype.Int8 `json:"actor_id"`
-	ActorName      string      `json:"actor_name"`
-	IpAddress      string      `json:"ip_address"`
-}
-
-// The deletion and its exact affected targets commit with the audit, or neither
-// commits. A retry cannot erase the original target list from the audit trail.
-func (q *Queries) AdminPruneStaleSandboxHosts(ctx context.Context, arg AdminPruneStaleSandboxHostsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminPruneStaleSandboxHosts,
-		arg.OlderThanHours,
-		arg.ActorID,
-		arg.ActorName,
-		arg.IpAddress,
-	)
-	var pruned int64
-	err := row.Scan(&pruned)
-	return pruned, err
 }
 
 const failNeverStartedAgentSession = `-- name: FailNeverStartedAgentSession :one

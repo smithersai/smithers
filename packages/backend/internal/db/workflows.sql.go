@@ -97,146 +97,6 @@ func (q *Queries) ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (W
 	return i, err
 }
 
-const claimRunnerWorkflowTask = `-- name: ClaimRunnerWorkflowTask :one
-WITH runner_candidate AS MATERIALIZED (
-    SELECT rp.id
-    FROM runner_pool rp
-    WHERE rp.id = $1::bigint
-      AND rp.status = 'idle'
-    FOR UPDATE OF rp SKIP LOCKED
-),
-task_candidate AS MATERIALIZED (
-    SELECT wt.id, wt.workflow_step_id
-    FROM workflow_tasks wt
-    JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
-    JOIN workflow_steps ws ON ws.id = wt.workflow_step_id
-    CROSS JOIN runner_candidate rc
-    WHERE wt.status = 'pending'
-      AND wt.available_at <= NOW()
-      AND wr.status IN ('queued', 'running')
-      AND wr.execution_plane = 'runner'
-      AND ws.status IN ('queued', 'running')
-    ORDER BY wt.priority DESC, wt.created_at ASC, wt.id ASC
-    FOR UPDATE OF wt, wr, ws SKIP LOCKED
-    LIMIT 1
-),
-claimed_task AS (
-    UPDATE workflow_tasks wt
-    SET status = 'running',
-        attempt = wt.attempt + 1,
-        runner_id = rc.id,
-        assigned_at = NOW(),
-        started_at = COALESCE(wt.started_at, NOW()),
-        updated_at = NOW()
-    FROM task_candidate tc
-    CROSS JOIN runner_candidate rc
-    WHERE wt.id = tc.id
-      AND wt.status = 'pending'
-    RETURNING wt.id, wt.workflow_run_id, wt.workflow_step_id, wt.repository_id, wt.status, wt.priority, wt.payload, wt.available_at, wt.attempt, wt.runner_id, wt.vm_id, wt.assigned_at, wt.started_at, wt.finished_at, wt.last_error, wt.created_at, wt.updated_at
-),
-running_step AS (
-    UPDATE workflow_steps ws
-    SET status = 'running',
-        started_at = COALESCE(ws.started_at, NOW()),
-        updated_at = NOW()
-    FROM claimed_task ct
-    WHERE ws.id = ct.workflow_step_id
-      AND ws.status IN ('queued', 'running')
-    RETURNING ws.id
-),
-claimed_runner AS (
-    UPDATE runner_pool rp
-    SET status = 'busy',
-        updated_at = NOW()
-    FROM runner_candidate rc
-    CROSS JOIN running_step rs
-    WHERE rp.id = rc.id
-      AND rp.status = 'idle'
-    RETURNING rp.id
-)
-SELECT ct.id, ct.workflow_run_id, ct.workflow_step_id, ct.repository_id, ct.status, ct.priority, ct.payload, ct.available_at, ct.attempt, ct.runner_id, ct.vm_id, ct.assigned_at, ct.started_at, ct.finished_at, ct.last_error, ct.created_at, ct.updated_at
-FROM claimed_task ct
-JOIN running_step rs ON rs.id = ct.workflow_step_id
-JOIN claimed_runner cr ON cr.id = ct.runner_id
-`
-
-type ClaimRunnerWorkflowTaskRow struct {
-	ID             int64              `json:"id"`
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Status         string             `json:"status"`
-	Priority       int16              `json:"priority"`
-	Payload        json.RawMessage    `json:"payload"`
-	AvailableAt    time.Time          `json:"available_at"`
-	Attempt        int32              `json:"attempt"`
-	RunnerID       pgtype.Int8        `json:"runner_id"`
-	VmID           pgtype.Text        `json:"vm_id"`
-	AssignedAt     pgtype.Timestamptz `json:"assigned_at"`
-	StartedAt      pgtype.Timestamptz `json:"started_at"`
-	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
-	LastError      pgtype.Text        `json:"last_error"`
-	CreatedAt      time.Time          `json:"created_at"`
-	UpdatedAt      time.Time          `json:"updated_at"`
-}
-
-// Production runner claim is deliberately one PostgreSQL statement. The
-// legacy ClaimIdleRunner -> ClaimPendingTask -> MarkWorkflowTaskRunning flow
-// can leave a busy runner and a running task behind when the later step update
-// fails: ReleaseRunner correctly refuses to release a runner that still owns
-// active work. Lock the idle runner and the complete task/run/step candidate,
-// then make every state transition through data-modifying CTE dependencies so
-// any database error rolls the whole claim back.
-func (q *Queries) ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (ClaimRunnerWorkflowTaskRow, error) {
-	row := q.db.QueryRow(ctx, claimRunnerWorkflowTask, runnerID)
-	var i ClaimRunnerWorkflowTaskRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkflowRunID,
-		&i.WorkflowStepID,
-		&i.RepositoryID,
-		&i.Status,
-		&i.Priority,
-		&i.Payload,
-		&i.AvailableAt,
-		&i.Attempt,
-		&i.RunnerID,
-		&i.VmID,
-		&i.AssignedAt,
-		&i.StartedAt,
-		&i.FinishedAt,
-		&i.LastError,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const clearTerminalWorkflowTaskRunnerOwnership = `-- name: ClearTerminalWorkflowTaskRunnerOwnership :execrows
-UPDATE workflow_tasks
-SET runner_id = NULL,
-    updated_at = NOW()
-WHERE id = $1
-  AND runner_id = $2
-  AND status IN ('done', 'failed', 'cancelled')
-`
-
-type ClearTerminalWorkflowTaskRunnerOwnershipParams struct {
-	TaskID   int64       `json:"task_id"`
-	RunnerID pgtype.Int8 `json:"runner_id"`
-}
-
-// Trusted runner settlement clears the old lease before releasing runner_pool.
-// Exact task+runner matching makes a delayed acknowledgement harmless after
-// that runner has moved on to another task.
-func (q *Queries) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
-	result, err := q.db.Exec(ctx, clearTerminalWorkflowTaskRunnerOwnership, arg.TaskID, arg.RunnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const countCommitStatusesByRef = `-- name: CountCommitStatusesByRef :one
 SELECT COUNT(*)
 FROM commit_statuses
@@ -331,6 +191,7 @@ func (q *Queries) CreateCommitStatus(ctx context.Context, arg CreateCommitStatus
 }
 
 const createWorkflowDefinition = `-- name: CreateWorkflowDefinition :one
+
 INSERT INTO workflow_definitions (repository_id, name, path, config)
 VALUES ($1, $2, $3, $4)
 RETURNING id, repository_id, name, path, config, is_active, created_at, updated_at
@@ -343,6 +204,7 @@ type CreateWorkflowDefinitionParams struct {
 	Config       json.RawMessage `json:"config"`
 }
 
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) CreateWorkflowDefinition(ctx context.Context, arg CreateWorkflowDefinitionParams) (WorkflowDefinition, error) {
 	row := q.db.QueryRow(ctx, createWorkflowDefinition,
 		arg.RepositoryID,
@@ -960,28 +822,6 @@ func (q *Queries) GetWorkflowTaskStepID(ctx context.Context, id int64) (int64, e
 	var workflow_step_id int64
 	err := row.Scan(&workflow_step_id)
 	return workflow_step_id, err
-}
-
-const hasUnsettledRunnerOwnershipForWorkflowRun = `-- name: HasUnsettledRunnerOwnershipForWorkflowRun :one
-SELECT EXISTS (
-    SELECT 1
-    FROM workflow_tasks wt
-    JOIN runner_pool rp ON rp.id = wt.runner_id
-    WHERE wt.workflow_run_id = $1
-      AND wt.status IN ('cancelled', 'failed')
-      AND rp.status IN ('busy', 'draining')
-) AS has_unsettled_ownership
-`
-
-// Resume must not requeue a task while its previous runner child may still be
-// executing. Cancellation deliberately retains runner_id; completion fallback
-// releases the runner only after the child exits, and stale-runner cleanup
-// moves a crashed runner out of busy/draining.
-func (q *Queries) HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error) {
-	row := q.db.QueryRow(ctx, hasUnsettledRunnerOwnershipForWorkflowRun, workflowRunID)
-	var has_unsettled_ownership bool
-	err := row.Scan(&has_unsettled_ownership)
-	return has_unsettled_ownership, err
 }
 
 const listBlockedTasksForRun = `-- name: ListBlockedTasksForRun :many

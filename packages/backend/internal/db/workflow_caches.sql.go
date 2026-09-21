@@ -277,11 +277,13 @@ func (q *Queries) FindWorkflowCacheForRestore(ctx context.Context, arg FindWorkf
 }
 
 const getWorkflowCacheByID = `-- name: GetWorkflowCacheByID :one
+
 SELECT id, repository_id, workflow_run_id, bookmark_name, cache_key, cache_version, object_key, object_size_bytes, compression, status, deletion_token, hit_count, last_hit_at, finalized_at, expires_at, created_at, updated_at
 FROM workflow_caches
 WHERE id = $1
 `
 
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) GetWorkflowCacheByID(ctx context.Context, id int64) (WorkflowCach, error) {
 	row := q.db.QueryRow(ctx, getWorkflowCacheByID, id)
 	var i WorkflowCach
@@ -352,37 +354,6 @@ func (q *Queries) GetWorkflowCacheByScopeVersion(ctx context.Context, arg GetWor
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getWorkflowCacheRepoUsage = `-- name: GetWorkflowCacheRepoUsage :one
-SELECT (
-    COALESCE((
-        SELECT SUM(wc.object_size_bytes)
-        FROM workflow_caches AS wc
-        WHERE wc.repository_id = $1
-          AND wc.status IN ('pending', 'finalized', 'deleting')
-    ), 0)
-    + COALESCE((
-        SELECT SUM(allocation_bytes)
-        FROM (
-            SELECT MAX(sdq.size_bytes) AS allocation_bytes
-            FROM storage_deletion_queue AS sdq
-            WHERE sdq.repository_id = $1
-              AND sdq.allocation_key LIKE 'workflow-cache:%'
-            GROUP BY sdq.allocation_key
-        ) AS queued_cache_allocations
-    ), 0)
-)::bigint
-`
-
-// Retained deletion-queue allocations still occupy cache quota after their
-// active metadata row is gone. Final/pending exact keys share allocation_key
-// and therefore count only once here, matching global repository billing.
-func (q *Queries) GetWorkflowCacheRepoUsage(ctx context.Context, targetRepositoryID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, getWorkflowCacheRepoUsage, targetRepositoryID)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const getWorkflowCacheStats = `-- name: GetWorkflowCacheStats :one

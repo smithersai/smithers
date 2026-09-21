@@ -7,69 +7,16 @@ package db
 
 import (
 	"context"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countActiveSandboxVMs = `-- name: CountActiveSandboxVMs :one
-SELECT COUNT(*)::bigint AS active_vms
-FROM sandbox_instances
-WHERE deleted_at IS NULL
-  AND reservation_held
-`
-
-// Micro-VMs currently holding a compute reservation, which is the same set that
-// sandbox_hosts.allocated_vms charges for. Suspended and stopped guests have
-// handed compute back and are not active even though their disk is retained.
-func (q *Queries) CountActiveSandboxVMs(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveSandboxVMs)
-	var active_vms int64
-	err := row.Scan(&active_vms)
-	return active_vms, err
-}
-
-const getAlertIncidentStateCounts = `-- name: GetAlertIncidentStateCounts :one
-SELECT
-    COUNT(*) FILTER (WHERE acknowledged_at IS NULL AND (snoozed_until IS NULL OR snoozed_until <= now()))::bigint AS open_count,
-    COUNT(*) FILTER (WHERE acknowledged_at IS NOT NULL)::bigint AS acknowledged_count,
-    COUNT(*) FILTER (WHERE snoozed_until > now())::bigint AS snoozed_count,
-    COUNT(*) FILTER (WHERE state IN ('remediating', 'pr_opened'))::bigint AS remediating_count
-FROM alert_incidents
-WHERE state IN ('open', 'remediating', 'pr_opened')
-`
-
-type GetAlertIncidentStateCountsRow struct {
-	OpenCount         int64 `json:"open_count"`
-	AcknowledgedCount int64 `json:"acknowledged_count"`
-	SnoozedCount      int64 `json:"snoozed_count"`
-	RemediatingCount  int64 `json:"remediating_count"`
-}
-
-// Incident tallies for the status summary. The WHERE clause repeats the partial
-// index predicate on idx_alert_incidents_policy_active so the count never scans
-// the resolved history. 'pr_opened' is an in-flight remediation (the workflow
-// opened a fix PR and the incident has not resolved), so it shares the
-// remediating bucket the same way the status aggregate buckets it; otherwise
-// those rows would be scanned and then counted in neither column.
-func (q *Queries) GetAlertIncidentStateCounts(ctx context.Context) (GetAlertIncidentStateCountsRow, error) {
-	row := q.db.QueryRow(ctx, getAlertIncidentStateCounts)
-	var i GetAlertIncidentStateCountsRow
-	err := row.Scan(
-		&i.OpenCount,
-		&i.AcknowledgedCount,
-		&i.SnoozedCount,
-		&i.RemediatingCount,
-	)
-	return i, err
-}
-
 const getLandingQueueDepth = `-- name: GetLandingQueueDepth :one
+
 SELECT COUNT(*)::bigint AS depth
 FROM landing_tasks
 WHERE status IN ('pending', 'append_pending')
 `
 
+// Product queries extracted from the transitional Plue source.
 // Landing work still waiting for a worker. Retries whose backoff has not
 // elapsed are queued work too, so this counts every pending task rather than
 // mirroring ClaimPendingLandingTask's available_at gate.
@@ -78,136 +25,4 @@ func (q *Queries) GetLandingQueueDepth(ctx context.Context) (int64, error) {
 	var depth int64
 	err := row.Scan(&depth)
 	return depth, err
-}
-
-const listAlertIncidents = `-- name: ListAlertIncidents :many
-
-SELECT id, incident_id, policy_name, condition_name, state, summary, incident_url, runbook, workflow, remediation_pr_url, attempts, created_at, resolved_at, updated_at, source, occurrences, last_seen_at, acknowledged_at, acknowledged_by, snoozed_until, resolved_by, resolution_note FROM alert_incidents
-WHERE ($1::text IS NULL OR policy_name = $1::text)
-  AND CASE $2::text
-    WHEN 'all' THEN TRUE
-    WHEN 'active' THEN state IN ('open', 'remediating', 'pr_opened')
-    WHEN 'open' THEN state IN ('open', 'remediating', 'pr_opened')
-      AND acknowledged_at IS NULL AND (snoozed_until IS NULL OR snoozed_until <= now())
-    WHEN 'acknowledged' THEN state IN ('open', 'remediating', 'pr_opened') AND acknowledged_at IS NOT NULL
-    WHEN 'snoozed' THEN state IN ('open', 'remediating', 'pr_opened') AND snoozed_until > now()
-    WHEN 'resolved' THEN state IN ('resolved', 'failed')
-    ELSE FALSE
-  END
-ORDER BY created_at DESC, id DESC
-LIMIT $3
-`
-
-type ListAlertIncidentsParams struct {
-	Policy      pgtype.Text `json:"policy"`
-	StateFilter string      `json:"state_filter"`
-	PageLimit   int32       `json:"page_limit"`
-}
-
-// ---- Admin system console (GET /api/admin/system/{status,canaries,incidents}) ----
-// State filters are lifecycle views; snoozing does not change active state.
-func (q *Queries) ListAlertIncidents(ctx context.Context, arg ListAlertIncidentsParams) ([]AlertIncident, error) {
-	rows, err := q.db.Query(ctx, listAlertIncidents, arg.Policy, arg.StateFilter, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AlertIncident{}
-	for rows.Next() {
-		var i AlertIncident
-		if err := rows.Scan(
-			&i.ID,
-			&i.IncidentID,
-			&i.PolicyName,
-			&i.ConditionName,
-			&i.State,
-			&i.Summary,
-			&i.IncidentUrl,
-			&i.Runbook,
-			&i.Workflow,
-			&i.RemediationPrUrl,
-			&i.Attempts,
-			&i.CreatedAt,
-			&i.ResolvedAt,
-			&i.UpdatedAt,
-			&i.Source,
-			&i.Occurrences,
-			&i.LastSeenAt,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.SnoozedUntil,
-			&i.ResolvedBy,
-			&i.ResolutionNote,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAlertRemediationJobsForIncidents = `-- name: ListAlertRemediationJobsForIncidents :many
-SELECT id,
-       incident_id,
-       status,
-       attempts,
-       error,
-       available_at,
-       processed_at,
-       created_at,
-       updated_at,
-       workflow_run_id
-FROM alert_remediation_jobs
-WHERE incident_id = ANY($1::bigint[])
-ORDER BY incident_id ASC, created_at DESC, id ASC
-`
-
-type ListAlertRemediationJobsForIncidentsRow struct {
-	ID            int64              `json:"id"`
-	IncidentID    int64              `json:"incident_id"`
-	Status        string             `json:"status"`
-	Attempts      int32              `json:"attempts"`
-	Error         string             `json:"error"`
-	AvailableAt   time.Time          `json:"available_at"`
-	ProcessedAt   pgtype.Timestamptz `json:"processed_at"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
-	WorkflowRunID pgtype.Int8        `json:"workflow_run_id"`
-}
-
-// Jobs half of the incident feed, batched over one page of incident ids so the
-// listing costs one extra round trip instead of one per incident. dispatch_token
-// authorizes the outcome callback, so it is deliberately never selected here.
-func (q *Queries) ListAlertRemediationJobsForIncidents(ctx context.Context, incidentIds []int64) ([]ListAlertRemediationJobsForIncidentsRow, error) {
-	rows, err := q.db.Query(ctx, listAlertRemediationJobsForIncidents, incidentIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListAlertRemediationJobsForIncidentsRow{}
-	for rows.Next() {
-		var i ListAlertRemediationJobsForIncidentsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.IncidentID,
-			&i.Status,
-			&i.Attempts,
-			&i.Error,
-			&i.AvailableAt,
-			&i.ProcessedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.WorkflowRunID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

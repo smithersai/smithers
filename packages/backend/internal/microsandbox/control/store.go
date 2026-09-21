@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	msb "github.com/smithersai/smithers/packages/backend/internal/microsandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
@@ -238,7 +238,7 @@ func (s *PGStore) InsertEgressAuditBatch(ctx context.Context, workerID string, r
 	if err != nil {
 		return 0, err
 	}
-	return db.New(s.pool).InsertSandboxEgressAuditBatch(ctx, db.InsertSandboxEgressAuditBatchParams{
+	return clusterdb.New(s.pool).InsertSandboxEgressAuditBatch(ctx, clusterdb.InsertSandboxEgressAuditBatchParams{
 		WorkerID: workerID,
 		Records:  payload,
 	})

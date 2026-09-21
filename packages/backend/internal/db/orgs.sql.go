@@ -741,7 +741,7 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 }
 
 const listTeamRepos = `-- name: ListTeamRepos :many
-SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.storage_set_id, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
+SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
 FROM team_repos tr
 JOIN repositories r ON r.id = tr.repository_id
 WHERE tr.team_id = $1
@@ -772,7 +772,6 @@ func (q *Queries) ListTeamRepos(ctx context.Context, arg ListTeamReposParams) ([
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,

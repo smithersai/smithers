@@ -43,7 +43,7 @@ SET is_archived = TRUE,
     archived_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 func (q *Queries) ArchiveRepo(ctx context.Context, id int64) (Repository, error) {
@@ -56,7 +56,6 @@ func (q *Queries) ArchiveRepo(ctx context.Context, id int64) (Repository, error)
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -211,9 +210,9 @@ func (q *Queries) CountUserRepos(ctx context.Context, userID pgtype.Int8) (int64
 }
 
 const createForkRepo = `-- name: CreateForkRepo :one
-INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, is_fork, fork_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8)
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, is_fork, fork_id)
+VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7)
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type CreateForkRepoParams struct {
@@ -221,7 +220,6 @@ type CreateForkRepoParams struct {
 	Name            string      `json:"name"`
 	LowerName       string      `json:"lower_name"`
 	Description     string      `json:"description"`
-	StorageSetID    string      `json:"storage_set_id"`
 	IsPublic        bool        `json:"is_public"`
 	DefaultBookmark string      `json:"default_bookmark"`
 	ForkID          pgtype.Int8 `json:"fork_id"`
@@ -233,7 +231,6 @@ func (q *Queries) CreateForkRepo(ctx context.Context, arg CreateForkRepoParams) 
 		arg.Name,
 		arg.LowerName,
 		arg.Description,
-		arg.StorageSetID,
 		arg.IsPublic,
 		arg.DefaultBookmark,
 		arg.ForkID,
@@ -246,7 +243,6 @@ func (q *Queries) CreateForkRepo(ctx context.Context, arg CreateForkRepoParams) 
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -285,9 +281,9 @@ func (q *Queries) CreateForkRepo(ctx context.Context, arg CreateForkRepoParams) 
 }
 
 const createOrgRepo = `-- name: CreateOrgRepo :one
-INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type CreateOrgRepoParams struct {
@@ -295,7 +291,6 @@ type CreateOrgRepoParams struct {
 	Name            string      `json:"name"`
 	LowerName       string      `json:"lower_name"`
 	Description     string      `json:"description"`
-	StorageSetID    string      `json:"storage_set_id"`
 	IsPublic        bool        `json:"is_public"`
 	DefaultBookmark string      `json:"default_bookmark"`
 }
@@ -306,7 +301,6 @@ func (q *Queries) CreateOrgRepo(ctx context.Context, arg CreateOrgRepoParams) (R
 		arg.Name,
 		arg.LowerName,
 		arg.Description,
-		arg.StorageSetID,
 		arg.IsPublic,
 		arg.DefaultBookmark,
 	)
@@ -318,7 +312,6 @@ func (q *Queries) CreateOrgRepo(ctx context.Context, arg CreateOrgRepoParams) (R
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -357,9 +350,9 @@ func (q *Queries) CreateOrgRepo(ctx context.Context, arg CreateOrgRepoParams) (R
 }
 
 const createRepo = `-- name: CreateRepo :one
-INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type CreateRepoParams struct {
@@ -367,7 +360,6 @@ type CreateRepoParams struct {
 	Name            string      `json:"name"`
 	LowerName       string      `json:"lower_name"`
 	Description     string      `json:"description"`
-	StorageSetID    string      `json:"storage_set_id"`
 	IsPublic        bool        `json:"is_public"`
 	DefaultBookmark string      `json:"default_bookmark"`
 }
@@ -378,7 +370,6 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Reposit
 		arg.Name,
 		arg.LowerName,
 		arg.Description,
-		arg.StorageSetID,
 		arg.IsPublic,
 		arg.DefaultBookmark,
 	)
@@ -390,7 +381,6 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Reposit
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -514,7 +504,7 @@ func (q *Queries) GetHighestTeamPermissionForRepoUser(ctx context.Context, arg G
 }
 
 const getRepoByID = `-- name: GetRepoByID :one
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE id = $1
 `
@@ -529,7 +519,6 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repository, error)
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -568,7 +557,7 @@ func (q *Queries) GetRepoByID(ctx context.Context, id int64) (Repository, error)
 }
 
 const getRepoByIDForUpdate = `-- name: GetRepoByIDForUpdate :one
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE id = $1
 FOR UPDATE
@@ -588,7 +577,6 @@ func (q *Queries) GetRepoByIDForUpdate(ctx context.Context, id int64) (Repositor
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -627,7 +615,7 @@ func (q *Queries) GetRepoByIDForUpdate(ctx context.Context, id int64) (Repositor
 }
 
 const getRepoByOwnerAndLowerName = `-- name: GetRepoByOwnerAndLowerName :one
-SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.storage_set_id, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
+SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
 FROM repositories r
 JOIN owner_namespaces ns
   ON ns.lower_slug = LOWER($1)
@@ -654,7 +642,6 @@ func (q *Queries) GetRepoByOwnerAndLowerName(ctx context.Context, arg GetRepoByO
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -772,7 +759,7 @@ func (q *Queries) IsOrgOwnerForRepoUser(ctx context.Context, arg IsOrgOwnerForRe
 }
 
 const listAllRepos = `-- name: ListAllRepos :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 ORDER BY updated_at DESC, id DESC
 LIMIT $2
@@ -800,7 +787,6 @@ func (q *Queries) ListAllRepos(ctx context.Context, arg ListAllReposParams) ([]R
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -882,7 +868,7 @@ func (q *Queries) ListCollaboratorsByRepo(ctx context.Context, repositoryID int6
 }
 
 const listOrgRepos = `-- name: ListOrgRepos :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE org_id = $1
 ORDER BY updated_at DESC, id DESC
@@ -912,7 +898,6 @@ func (q *Queries) ListOrgRepos(ctx context.Context, arg ListOrgReposParams) ([]R
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -958,7 +943,7 @@ func (q *Queries) ListOrgRepos(ctx context.Context, arg ListOrgReposParams) ([]R
 }
 
 const listPublicOrgRepos = `-- name: ListPublicOrgRepos :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE org_id = $1
   AND is_public = TRUE
@@ -989,7 +974,6 @@ func (q *Queries) ListPublicOrgRepos(ctx context.Context, arg ListPublicOrgRepos
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -1035,7 +1019,7 @@ func (q *Queries) ListPublicOrgRepos(ctx context.Context, arg ListPublicOrgRepos
 }
 
 const listPublicUserRepos = `-- name: ListPublicUserRepos :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE user_id = $1
   AND is_public = TRUE
@@ -1066,7 +1050,6 @@ func (q *Queries) ListPublicUserRepos(ctx context.Context, arg ListPublicUserRep
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -1189,7 +1172,7 @@ func (q *Queries) ListReadableReposForUser(ctx context.Context, arg ListReadable
 }
 
 const listRepoForks = `-- name: ListRepoForks :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE fork_id = $1
 ORDER BY created_at DESC, id DESC
@@ -1219,7 +1202,6 @@ func (q *Queries) ListRepoForks(ctx context.Context, arg ListRepoForksParams) ([
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -1297,7 +1279,7 @@ func (q *Queries) ListTeamReposByRepo(ctx context.Context, repositoryID int64) (
 }
 
 const listUserRepos = `-- name: ListUserRepos :many
-SELECT id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+SELECT id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 FROM repositories
 WHERE user_id = $1
 ORDER BY updated_at DESC, id DESC
@@ -1327,7 +1309,6 @@ func (q *Queries) ListUserRepos(ctx context.Context, arg ListUserReposParams) ([
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -1395,7 +1376,7 @@ SET org_id = $1,
     user_id = NULL,
     updated_at = NOW()
 WHERE id = $2
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type TransferRepoToOrgParams struct {
@@ -1413,7 +1394,6 @@ func (q *Queries) TransferRepoToOrg(ctx context.Context, arg TransferRepoToOrgPa
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -1457,7 +1437,7 @@ SET user_id = $1,
     org_id = NULL,
     updated_at = NOW()
 WHERE id = $2
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type TransferRepoToUserParams struct {
@@ -1475,7 +1455,6 @@ func (q *Queries) TransferRepoToUser(ctx context.Context, arg TransferRepoToUser
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -1519,7 +1498,7 @@ SET is_archived = FALSE,
     archived_at = NULL,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 func (q *Queries) UnarchiveRepo(ctx context.Context, id int64) (Repository, error) {
@@ -1532,7 +1511,6 @@ func (q *Queries) UnarchiveRepo(ctx context.Context, id int64) (Repository, erro
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -1582,7 +1560,7 @@ SET name = $1,
     landing_queue_required_checks = COALESCE($8::text[], '{}'::text[]),
     updated_at = NOW()
 WHERE id = $9
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type UpdateRepoParams struct {
@@ -1617,7 +1595,6 @@ func (q *Queries) UpdateRepo(ctx context.Context, arg UpdateRepoParams) (Reposit
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -1669,7 +1646,7 @@ SET description = $1,
     landing_queue_required_checks = COALESCE($10::text[], '{}'::text[]),
     updated_at = NOW()
 WHERE id = $11
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type UpdateRepoConfigStateParams struct {
@@ -1708,7 +1685,6 @@ func (q *Queries) UpdateRepoConfigState(ctx context.Context, arg UpdateRepoConfi
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,
@@ -1751,7 +1727,7 @@ UPDATE repositories
 SET topics = $1,
     updated_at = NOW()
 WHERE id = $2
-RETURNING id, user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
+RETURNING id, user_id, org_id, name, lower_name, description, is_public, default_bookmark, topics, search_vector, next_issue_number, next_landing_number, is_fork, fork_id, is_template, template_id, is_archived, archived_at, is_mirror, mirror_destination, mirror_status, last_mirror_at, last_mirror_error, last_mirror_github_head, mirror_behind_refs, mirror_failed_refs, workspace_idle_timeout_secs, workspace_persistence, workspace_dependencies, clone_depth, landing_queue_mode, landing_queue_required_checks, num_stars, num_forks, num_watches, num_issues, num_closed_issues, created_at, updated_at
 `
 
 type UpdateRepoTopicsParams struct {
@@ -1769,7 +1745,6 @@ func (q *Queries) UpdateRepoTopics(ctx context.Context, arg UpdateRepoTopicsPara
 		&i.Name,
 		&i.LowerName,
 		&i.Description,
-		&i.StorageSetID,
 		&i.IsPublic,
 		&i.DefaultBookmark,
 		&i.Topics,

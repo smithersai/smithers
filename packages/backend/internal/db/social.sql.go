@@ -163,7 +163,7 @@ func (q *Queries) ListActiveWatchersForRepo(ctx context.Context, repositoryID in
 }
 
 const listPublicUserStarredRepos = `-- name: ListPublicUserStarredRepos :many
-SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.storage_set_id, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
+SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
 FROM stars s
 JOIN repositories r ON r.id = s.repository_id
 WHERE s.user_id = $1
@@ -195,7 +195,6 @@ func (q *Queries) ListPublicUserStarredRepos(ctx context.Context, arg ListPublic
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -382,7 +381,7 @@ func (q *Queries) ListRepoWatchers(ctx context.Context, arg ListRepoWatchersPara
 }
 
 const listUserStarredRepos = `-- name: ListUserStarredRepos :many
-SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.storage_set_id, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
+SELECT r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at
 FROM stars s
 JOIN repositories r ON r.id = s.repository_id
 WHERE s.user_id = $1
@@ -413,7 +412,6 @@ func (q *Queries) ListUserStarredRepos(ctx context.Context, arg ListUserStarredR
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,
@@ -460,7 +458,7 @@ func (q *Queries) ListUserStarredRepos(ctx context.Context, arg ListUserStarredR
 
 const listUserWatchedRepos = `-- name: ListUserWatchedRepos :many
 SELECT
-    r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.storage_set_id, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at,
+    r.id, r.user_id, r.org_id, r.name, r.lower_name, r.description, r.is_public, r.default_bookmark, r.topics, r.search_vector, r.next_issue_number, r.next_landing_number, r.is_fork, r.fork_id, r.is_template, r.template_id, r.is_archived, r.archived_at, r.is_mirror, r.mirror_destination, r.mirror_status, r.last_mirror_at, r.last_mirror_error, r.last_mirror_github_head, r.mirror_behind_refs, r.mirror_failed_refs, r.workspace_idle_timeout_secs, r.workspace_persistence, r.workspace_dependencies, r.clone_depth, r.landing_queue_mode, r.landing_queue_required_checks, r.num_stars, r.num_forks, r.num_watches, r.num_issues, r.num_closed_issues, r.created_at, r.updated_at,
     w.mode AS watch_mode
 FROM watches w
 JOIN repositories r ON r.id = w.repository_id
@@ -483,7 +481,6 @@ type ListUserWatchedReposRow struct {
 	Name                       string             `json:"name"`
 	LowerName                  string             `json:"lower_name"`
 	Description                string             `json:"description"`
-	StorageSetID               string             `json:"storage_set_id"`
 	IsPublic                   bool               `json:"is_public"`
 	DefaultBookmark            string             `json:"default_bookmark"`
 	Topics                     []string           `json:"topics"`
@@ -536,7 +533,6 @@ func (q *Queries) ListUserWatchedRepos(ctx context.Context, arg ListUserWatchedR
 			&i.Name,
 			&i.LowerName,
 			&i.Description,
-			&i.StorageSetID,
 			&i.IsPublic,
 			&i.DefaultBookmark,
 			&i.Topics,

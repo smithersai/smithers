@@ -29,6 +29,7 @@ func (q *Queries) CountActiveSessionsForUser(ctx context.Context, userID int64) 
 
 const countActiveSessionsForWorkspace = `-- name: CountActiveSessionsForWorkspace :one
 
+
 SELECT COUNT(*)
 FROM workspace_sessions
 WHERE workspace_id = $1
@@ -211,7 +212,7 @@ type CreateWorkspaceParams struct {
 	IdleTimeoutSecs        pgtype.Int4 `json:"idle_timeout_secs"`
 }
 
-// ---- Workspace (Sandbox VM lifecycle) ----
+// Product queries extracted from the transitional Plue source.
 func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error) {
 	row := q.db.QueryRow(ctx, createWorkspace,
 		arg.RepositoryID,
@@ -338,6 +339,7 @@ func (q *Queries) CreateWorkspaceLSPSession(ctx context.Context, arg CreateWorks
 
 const createWorkspaceSession = `-- name: CreateWorkspaceSession :one
 
+
 WITH live_workspace AS MATERIALIZED (
     SELECT workspace.id
     FROM workspaces AS workspace
@@ -394,6 +396,7 @@ func (q *Queries) CreateWorkspaceSession(ctx context.Context, arg CreateWorkspac
 }
 
 const createWorkspaceSnapshot = `-- name: CreateWorkspaceSnapshot :one
+
 
 INSERT INTO workspace_snapshots (
     repository_id,
@@ -1217,6 +1220,7 @@ func (q *Queries) GetWorkspaceSessionForUserRepo(ctx context.Context, arg GetWor
 
 const getWorkspaceShare = `-- name: GetWorkspaceShare :one
 
+
 SELECT id, workspace_id, owner_user_id, grantee_user_id, level, created_at
 FROM workspace_shares
 WHERE workspace_id = $1::uuid
@@ -1359,92 +1363,6 @@ func (q *Queries) ListIdleWorkspaceSessions(ctx context.Context) ([]WorkspaceSes
 			&i.UpdatedAt,
 			&i.Kind,
 			&i.Language,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listIdleWorkspaces = `-- name: ListIdleWorkspaces :many
-SELECT w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at
-FROM workspaces w
-WHERE w.status = 'running'
-  AND w.deleted_at IS NULL
-  AND w.idle_timeout_secs > 0
-  AND NOW() > w.last_activity_at + make_interval(secs => w.idle_timeout_secs)
-  AND NOT EXISTS (
-    SELECT 1
-    FROM workspace_sessions s
-    WHERE s.workspace_id = w.id
-      AND s.status IN ('pending', 'starting', 'running')
-      AND NOW() <= s.last_activity_at + make_interval(secs => s.idle_timeout_secs)
-  )
-  -- Native runs can progress without an attached browser. A bound executor's
-  -- running service is an explicit workspace use, not terminal-session idle.
-  AND NOT EXISTS (
-    SELECT 1 FROM repo_gateways g
-    WHERE g.workspace_id = w.id AND g.vm_id = w.vm_id
-      AND g.deleted_at IS NULL AND g.status IN ('starting', 'running')
-  )
-`
-
-// Finds workspaces with status=running whose last_activity_at > idle_timeout_secs ago.
-// Excludes workspaces that still have a LIVE (non-idle) running session: terminal
-// WebSocket traffic bumps only the session's last_activity_at (not the
-// workspace's), so without this exclusion the idle sweeper would suspend a VM out
-// from under an actively-used terminal.
-func (q *Queries) ListIdleWorkspaces(ctx context.Context) ([]Workspace, error) {
-	rows, err := q.db.Query(ctx, listIdleWorkspaces)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Workspace{}
-	for rows.Next() {
-		var i Workspace
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.UserID,
-			&i.Name,
-			&i.IsFork,
-			&i.ParentWorkspaceID,
-			&i.TargetBookmark,
-			&i.SourceSnapshotID,
-			&i.Kind,
-			&i.EnvironmentSource,
-			&i.EnvironmentRevision,
-			&i.EnvironmentClosureHash,
-			&i.AgentSessionID,
-			&i.HeadPushTokenID,
-			&i.EnvironmentImage,
-			&i.DesktopSessionID,
-			&i.DesktopSessionTokenHash,
-			&i.DesktopSessionExpiresAt,
-			&i.VmID,
-			&i.ProvisioningGeneration,
-			&i.Status,
-			&i.FailureCode,
-			&i.FailureMessage,
-			&i.ProvisioningStage,
-			&i.LastActivityAt,
-			&i.IdleTimeoutSecs,
-			&i.SuspendedAt,
-			&i.StartedAt,
-			&i.ResumedAt,
-			&i.HeadChangeID,
-			&i.HeadCommitID,
-			&i.Ahead,
-			&i.Behind,
-			&i.LastAccessedAt,
-			&i.DeletedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1994,6 +1912,7 @@ func (q *Queries) MarkWorkspaceResumed(ctx context.Context, arg MarkWorkspaceRes
 
 const notifyWorkspaceStatus = `-- name: NotifyWorkspaceStatus :exec
 
+
 SELECT pg_notify(
     'workspace_status_' || replace($1::text, '-', ''),
     $2::text
@@ -2509,6 +2428,7 @@ func (q *Queries) SuspendRunningWorkspace(ctx context.Context, id string) (Works
 
 const touchWorkspaceActivity = `-- name: TouchWorkspaceActivity :exec
 
+
 UPDATE workspaces
 SET last_activity_at = NOW(), updated_at = NOW()
 WHERE id = $1
@@ -2990,6 +2910,7 @@ func (q *Queries) UpsertWorkspaceShare(ctx context.Context, arg UpsertWorkspaceS
 }
 
 const upsertWorkspaceWorkflowDefinition = `-- name: UpsertWorkspaceWorkflowDefinition :one
+
 
 INSERT INTO workflow_definitions (repository_id, name, path, config)
 VALUES ($1, 'Workspace', '.smithers/workspace', '{"workspace": true}'::jsonb)

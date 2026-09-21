@@ -8,10 +8,11 @@ sql:
   - engine: "postgresql"
     schema: "migrations/0001_product_baseline.sql"
     queries: "queries/"
+    strict_function_checks: true
     gen:
       go:
         package: "db"
-        out: "../../internal/productdb"
+        out: "../../internal/db"
         sql_package: "pgx/v5"
         emit_json_tags: true
         emit_empty_slices: true
@@ -20,12 +21,6 @@ sql:
             go_type: "string"
           - db_type: "timestamptz"
             go_type: "time.Time"
-          # This control deliberately starts at PostgreSQL infinity. Keep the
-          # richer pgtype representation for its generated read/attest APIs.
-          - column: "storage_legacy_capability_horizons.valid_until"
-            go_type:
-              import: "github.com/jackc/pgx/v5/pgtype"
-              type: "Timestamptz"
           - db_type: "jsonb"
             go_type:
               import: "encoding/json"

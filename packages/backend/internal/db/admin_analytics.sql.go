@@ -159,42 +159,6 @@ func (q *Queries) AnalyticsAgentsByStatus(ctx context.Context, arg AnalyticsAgen
 	return items, nil
 }
 
-const analyticsGoldenSnapshots = `-- name: AnalyticsGoldenSnapshots :many
-SELECT g.kind,g.status,count(*)::bigint AS count FROM sandbox_golden_snapshots g WHERE g.created_at >= $1::timestamptz AND g.created_at < $2::timestamptz GROUP BY g.kind,g.status ORDER BY g.kind,g.status
-`
-
-type AnalyticsGoldenSnapshotsParams struct {
-	RangeStart time.Time `json:"range_start"`
-	RangeEnd   time.Time `json:"range_end"`
-}
-
-type AnalyticsGoldenSnapshotsRow struct {
-	Kind   string `json:"kind"`
-	Status string `json:"status"`
-	Count  int64  `json:"count"`
-}
-
-// Current kind/status counts for platform golden snapshots created in range. These rows have no user owner and are never synthetic-filtered.
-func (q *Queries) AnalyticsGoldenSnapshots(ctx context.Context, arg AnalyticsGoldenSnapshotsParams) ([]AnalyticsGoldenSnapshotsRow, error) {
-	rows, err := q.db.Query(ctx, analyticsGoldenSnapshots, arg.RangeStart, arg.RangeEnd)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AnalyticsGoldenSnapshotsRow{}
-	for rows.Next() {
-		var i AnalyticsGoldenSnapshotsRow
-		if err := rows.Scan(&i.Kind, &i.Status, &i.Count); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const analyticsImportFailures = `-- name: AnalyticsImportFailures :many
 SELECT i.error AS reason,count(*)::bigint AS count FROM import_jobs i JOIN users u ON u.id=i.user_id WHERE i.created_at >= $1::timestamptz AND i.created_at < $2::timestamptz AND ($3::boolean OR NOT u.is_synthetic) AND i.status='failed' GROUP BY i.error ORDER BY count DESC,reason
 `
@@ -569,6 +533,7 @@ func (q *Queries) AnalyticsTopRepos(ctx context.Context, arg AnalyticsTopReposPa
 }
 
 const analyticsUsers = `-- name: AnalyticsUsers :one
+
 WITH active_users AS (
  SELECT w.user_id FROM workspaces w WHERE w.last_activity_at >= $2::timestamptz AND w.last_activity_at < $3::timestamptz
  UNION SELECT a.user_id FROM agent_sessions a WHERE a.created_at >= $2::timestamptz AND a.created_at < $3::timestamptz
@@ -597,6 +562,7 @@ type AnalyticsUsersRow struct {
 	ActiveInRange int64 `json:"active_in_range"`
 }
 
+// Product queries extracted from the transitional Plue source.
 // Total/human/synthetic are all-time inventory (including synthetic users). New and active users respect the filter; active is the distinct union of workspace activity, agent creation, landing creation, and auth-session creation.
 func (q *Queries) AnalyticsUsers(ctx context.Context, arg AnalyticsUsersParams) (AnalyticsUsersRow, error) {
 	row := q.db.QueryRow(ctx, analyticsUsers, arg.IncludeSynthetic, arg.RangeStart, arg.RangeEnd)
