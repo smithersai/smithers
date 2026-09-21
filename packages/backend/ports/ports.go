@@ -4,12 +4,10 @@
 package ports
 
 import (
-	"context"
-	"io"
-
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // RepositoryEndpointResolver chooses the storage/execution endpoint for a
@@ -45,43 +43,47 @@ var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
 
-// IsolationLevel is the guarantee of an execution adapter, not an edition
-// label. A trusted process must never be presented as an untrusted sandbox.
-type IsolationLevel string
+// Workspace lifecycle aliases keep deployment injection types available from
+// ports without making common services import this composition package.
+type IsolationLevel = workspace.IsolationLevel
 
 const (
-	IsolationTrustedProcess IsolationLevel = "trusted_process"
-	IsolationSandboxed      IsolationLevel = "isolated"
+	IsolationTrustedProcess   = workspace.IsolationTrustedProcess
+	IsolationSandboxed        = workspace.IsolationSandboxed
+	WorkspaceStarting         = workspace.WorkspaceStarting
+	WorkspaceRunning          = workspace.WorkspaceRunning
+	WorkspaceStopping         = workspace.WorkspaceStopping
+	WorkspaceStopped          = workspace.WorkspaceStopped
+	WorkspaceFailed           = workspace.WorkspaceFailed
+	WorkspaceRecoveryRequired = workspace.WorkspaceRecoveryRequired
+	ServiceRunning            = workspace.ServiceRunning
+	ServiceExited             = workspace.ServiceExited
 )
 
-// Workload identifies already admitted work. Product admission and durable
-// receipts live in the common PostgreSQL implementation. The executor must
-// honor context cancellation and its configured concurrency budget.
-type Workload struct {
-	ID          string
-	WorkspaceID string
-	Command     []string
-	Directory   string
-}
+var (
+	ErrWorkspaceNotFound = workspace.ErrWorkspaceNotFound
+	ErrWorkspaceStopped  = workspace.ErrWorkspaceStopped
+)
 
-// ExecutionResult is an observation, not a product completion receipt. The
-// common worker commits a terminal receipt after reconciliation.
-type ExecutionResult struct {
-	ExitCode int
-}
-
-type Executor interface {
-	Isolation() IsolationLevel
-	Execute(ctx context.Context, work Workload) (ExecutionResult, error)
-}
-
-// Terminal is an interactive byte stream scoped to an authorized workspace.
-// The common app authenticates and authorizes before calling OpenTerminal.
-type Terminal interface {
-	io.ReadWriteCloser
-	Resize(ctx context.Context, columns, rows uint16) error
-}
-
-type WorkspaceAccess interface {
-	OpenTerminal(ctx context.Context, workspaceID string) (Terminal, error)
-}
+type Terminal = workspace.Terminal
+type WorkspaceState = workspace.WorkspaceState
+type WorkspaceCapabilities = workspace.WorkspaceCapabilities
+type WorkspaceSpec = workspace.WorkspaceSpec
+type Workspace = workspace.Workspace
+type ColdSnapshot = workspace.ColdSnapshot
+type ColdSnapshotSpec = workspace.ColdSnapshotSpec
+type WorkspaceSnapshots = workspace.WorkspaceSnapshots
+type Command = workspace.Command
+type CommandResult = workspace.CommandResult
+type ServiceSpec = workspace.ServiceSpec
+type Service = workspace.Service
+type ServiceState = workspace.ServiceState
+type ServiceObservation = workspace.ServiceObservation
+type PreviewTarget = workspace.PreviewTarget
+type FileEntry = workspace.FileEntry
+type WorkspaceLifecycle = workspace.WorkspaceLifecycle
+type WorkspaceExecution = workspace.WorkspaceExecution
+type WorkspaceTerminal = workspace.WorkspaceTerminal
+type WorkspacePreview = workspace.WorkspacePreview
+type WorkspaceFiles = workspace.WorkspaceFiles
+type WorkspaceRuntime = workspace.WorkspaceRuntime
