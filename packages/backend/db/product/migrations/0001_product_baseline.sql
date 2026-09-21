@@ -1,0 +1,14347 @@
+-- Smithers product baseline for fresh PostgreSQL installations.
+-- Extracted from the Plue product schema on 2026-09-21. Cluster placement,
+-- fleet, Electric, and cloud-operation tables and triggers are excluded.
+-- The product schema retains authorization, audit, optional billing,
+-- repositories, issues, reviews, wiki, workflow, and workspace state.
+SET LOCAL check_function_bodies = false;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: admit_native_repository_job_comment(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admit_native_repository_job_comment() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  issue_row issues%ROWTYPE;
+  comment_row issue_comments%ROWTYPE;
+  action_name TEXT;
+  actor JSONB;
+BEGIN
+  IF TG_OP='UPDATE' AND NEW.body IS NOT DISTINCT FROM OLD.body THEN RETURN NEW; END IF;
+  IF TG_OP='DELETE' THEN comment_row:=OLD; action_name:='deleted';
+  ELSIF TG_OP='INSERT' THEN comment_row:=NEW; action_name:='created';
+  ELSE comment_row:=NEW; action_name:='edited'; END IF;
+  SELECT * INTO issue_row FROM issues WHERE id=comment_row.issue_id;
+  IF NOT FOUND OR comment_row.type<>'comment' THEN RETURN NULL; END IF;
+  SELECT jsonb_build_object('id',id,'login',username) INTO actor FROM users WHERE id=comment_row.user_id;
+  INSERT INTO repository_job_events
+    (repository_id,delivery_key,source,event_type,event_action,issue_number,payload)
+  VALUES (issue_row.repository_id,'native:'||gen_random_uuid()::text,'smithers-cloud','issue_comment',action_name,issue_row.number,
+    jsonb_build_object('action',action_name,'issue',repository_job_native_issue_payload(issue_row),
+      'comment',to_jsonb(comment_row)||jsonb_build_object('user',actor),
+      'sender',actor,'repository',jsonb_build_object('id',issue_row.repository_id)));
+  RETURN NULL;
+END $$;
+
+
+--
+-- Name: admit_native_repository_job_issue(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admit_native_repository_job_issue() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  action_name TEXT;
+BEGIN
+  IF TG_OP='UPDATE' AND (NEW.title,NEW.body,NEW.state) IS NOT DISTINCT FROM (OLD.title,OLD.body,OLD.state) THEN
+    RETURN NEW;
+  END IF;
+  action_name := CASE WHEN TG_OP='INSERT' THEN 'opened'
+    WHEN NEW.state<>OLD.state THEN CASE WHEN NEW.state='open' THEN 'reopened' ELSE 'closed' END
+    ELSE 'edited' END;
+  INSERT INTO repository_job_events
+    (repository_id,delivery_key,source,event_type,event_action,issue_number,payload)
+  VALUES (NEW.repository_id,'native:'||gen_random_uuid()::text,'smithers-cloud','issues',action_name,NEW.number,
+    jsonb_build_object('action',action_name,'issue',repository_job_native_issue_payload(NEW),
+      'repository',jsonb_build_object('id',NEW.repository_id)));
+  RETURN NEW;
+END $$;
+
+
+--
+-- Name: admit_native_repository_job_label(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.admit_native_repository_job_label() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  issue_row issues%ROWTYPE;
+  issue_key BIGINT;
+  action_name TEXT;
+BEGIN
+  IF TG_OP='DELETE' THEN issue_key:=OLD.issue_id; action_name:='unlabeled';
+  ELSE issue_key:=NEW.issue_id; action_name:='labeled'; END IF;
+  SELECT * INTO issue_row FROM issues WHERE id=issue_key;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  INSERT INTO repository_job_events
+    (repository_id,delivery_key,source,event_type,event_action,issue_number,payload)
+  VALUES (issue_row.repository_id,'native:'||gen_random_uuid()::text,'smithers-cloud','issues',action_name,issue_row.number,
+    jsonb_build_object('action',action_name,'issue',repository_job_native_issue_payload(issue_row),
+      'repository',jsonb_build_object('id',issue_row.repository_id)));
+  RETURN NULL;
+END $$;
+
+
+--
+-- Name: backfill_one_workflow_log_budget(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.backfill_one_workflow_log_budget() RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_workflow_run_id BIGINT;
+    v_log_bytes BIGINT;
+    v_log_entry_count BIGINT;
+BEGIN
+    SELECT run.id
+    INTO v_workflow_run_id
+    FROM workflow_runs AS run
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM workflow_log_budget_initializations AS initialized
+        WHERE initialized.workflow_run_id = run.id
+    )
+    ORDER BY run.id
+    FOR UPDATE OF run SKIP LOCKED
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT
+        COALESCE(SUM(table_log_bytes), 0)::bigint,
+        COALESCE(SUM(table_log_entry_count), 0)::bigint
+    INTO v_log_bytes, v_log_entry_count
+    FROM (
+        SELECT
+            COALESCE(SUM(OCTET_LENGTH(entry)::bigint), 0)::bigint AS table_log_bytes,
+            COUNT(*)::bigint AS table_log_entry_count
+        FROM workflow_logs
+        WHERE workflow_run_id = v_workflow_run_id
+        UNION ALL
+        SELECT
+            COALESCE(SUM(OCTET_LENGTH(entry)::bigint), 0)::bigint AS table_log_bytes,
+            COUNT(*)::bigint AS table_log_entry_count
+        FROM workflow_run_logs
+        WHERE workflow_run_id = v_workflow_run_id
+    ) AS usage;
+
+    UPDATE workflow_runs
+    SET log_bytes = v_log_bytes,
+        log_entry_count = v_log_entry_count
+    WHERE id = v_workflow_run_id;
+
+    INSERT INTO workflow_log_budget_initializations (workflow_run_id)
+    VALUES (v_workflow_run_id)
+    ON CONFLICT (workflow_run_id) DO NOTHING;
+
+    RETURN v_workflow_run_id;
+END;
+$$;
+
+
+--
+-- Name: can_view_repository(bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.can_view_repository(p_repository_id bigint, p_viewer_id bigint) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM repositories r
+        WHERE r.id = p_repository_id
+          AND (
+            r.is_public = TRUE
+            OR (
+              p_viewer_id > 0
+              AND (
+                r.user_id = p_viewer_id
+                OR EXISTS (
+                  SELECT 1
+                  FROM org_members om
+                  WHERE om.organization_id = r.org_id
+                    AND om.user_id = p_viewer_id
+                    AND om.role = 'owner'
+                )
+                OR EXISTS (
+                  SELECT 1
+                  FROM team_repos tr
+                  JOIN team_members tm ON tm.team_id = tr.team_id
+                  WHERE tr.repository_id = r.id
+                    AND tm.user_id = p_viewer_id
+                )
+                OR EXISTS (
+                  SELECT 1
+                  FROM collaborators c
+                  WHERE c.repository_id = r.id
+                    AND c.user_id = p_viewer_id
+                )
+              )
+            )
+          )
+    );
+$$;
+
+
+--
+-- Name: delete_reactions_for_target(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_reactions_for_target() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM reactions
+    WHERE target_type = TG_ARGV[0]
+      AND target_id = OLD.id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: enforce_issue_dependency_dag(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_issue_dependency_dag() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE repo_id bigint;
+BEGIN
+    SELECT repository_id INTO repo_id FROM issues WHERE id = NEW.issue_id;
+    PERFORM pg_advisory_xact_lock(hashtextextended('issue_dependencies:' || repo_id::text, 0));
+    IF EXISTS (
+        WITH RECURSIVE reachable(id) AS (
+            SELECT NEW.depends_on_issue_id
+            UNION
+            SELECT d.depends_on_issue_id FROM issue_dependencies d JOIN reachable r ON d.issue_id = r.id
+        ) SELECT 1 FROM reachable WHERE id = NEW.issue_id
+    ) THEN
+        RAISE EXCEPTION 'issue dependency would create a cycle'
+            USING ERRCODE = '23514', CONSTRAINT = 'issue_dependencies_acyclic';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_webhook_repo_cap(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_webhook_repo_cap() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    hook_count BIGINT;
+BEGIN
+    PERFORM 1 FROM repositories WHERE id = NEW.repository_id FOR UPDATE;
+    SELECT COUNT(*) INTO hook_count
+    FROM webhooks
+    WHERE repository_id = NEW.repository_id;
+    IF hook_count >= 20 THEN
+        RAISE EXCEPTION 'repository % already has the maximum of 20 webhooks', NEW.repository_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'webhooks_repo_cap';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: enforce_workspace_user_quota(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_workspace_user_quota() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    active_count BIGINT;
+BEGIN
+    PERFORM 1 FROM users WHERE id = NEW.user_id FOR UPDATE;
+    SELECT COUNT(*) INTO active_count
+    FROM workspaces
+    WHERE user_id = NEW.user_id
+      AND deleted_at IS NULL
+      AND status <> 'failed';
+    IF active_count >= 100 THEN
+        RAISE EXCEPTION 'user % already has the maximum of 100 active workspaces', NEW.user_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'workspaces_user_quota';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: force_agent_workflow_run_execution_plane(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.force_agent_workflow_run_execution_plane() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM workflow_definitions wd
+        WHERE wd.id = NEW.workflow_definition_id
+          AND wd.path = '.smithers/agent'
+    ) THEN
+        NEW.execution_plane := 'agent';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: get_next_issue_number(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_next_issue_number(repo_id bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    next_num BIGINT;
+BEGIN
+    UPDATE repositories
+    SET next_issue_number = next_issue_number + 1,
+        updated_at = NOW()
+    WHERE id = repo_id
+    RETURNING next_issue_number - 1 INTO next_num;
+
+    IF next_num IS NULL THEN
+        RAISE EXCEPTION 'repository % not found', repo_id;
+    END IF;
+
+    RETURN next_num;
+END;
+$$;
+
+
+--
+-- Name: get_next_landing_number(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_next_landing_number(repo_id bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    next_num BIGINT;
+BEGIN
+    UPDATE repositories
+    SET next_landing_number = next_landing_number + 1,
+        updated_at = NOW()
+    WHERE id = repo_id
+    RETURNING next_landing_number - 1 INTO next_num;
+
+    IF next_num IS NULL THEN
+        RAISE EXCEPTION 'repository % not found', repo_id;
+    END IF;
+
+    RETURN next_num;
+END;
+$$;
+
+
+--
+-- Name: guard_alert_incident_terminal_state(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_alert_incident_terminal_state() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.state = 'resolved'
+       OR (OLD.state = 'pr_opened' AND (NEW.state NOT IN ('pr_opened', 'resolved')
+           OR (NEW.state = 'pr_opened' AND (NEW.remediation_pr_url IS DISTINCT FROM OLD.remediation_pr_url
+               OR NEW.attempts IS DISTINCT FROM OLD.attempts)))) THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_artifact_deletion_claim(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_artifact_deletion_claim() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.status = 'deleting'
+       AND (
+           NEW.status IS DISTINCT FROM 'deleting'
+           OR (to_jsonb(NEW) - 'deletion_token' - 'updated_at')
+              IS DISTINCT FROM
+              (to_jsonb(OLD) - 'deletion_token' - 'updated_at')
+       ) THEN
+        RETURN NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_issue_state_fact_history(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_issue_state_fact_history() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM repositories WHERE id = OLD.repository_id) THEN RETURN OLD; END IF;
+    RAISE EXCEPTION 'issue state facts are append-only' USING ERRCODE = '23514';
+END;
+$$;
+
+
+--
+-- Name: guard_notification_fact_history(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_notification_fact_history() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Deleting a recipient must delete their private journal without an
+    -- append-only guard breaking FK cascades or retaining personal snippets.
+    IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM users WHERE users.id = OLD.user_id) THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'notification facts are append-only' USING ERRCODE = '23514';
+END;
+$$;
+
+
+--
+-- Name: guard_release_deletion_tombstone(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_release_deletion_tombstone() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM release_deletion_intents
+        WHERE release_id = OLD.id
+    ) THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_workflow_log_budget_identity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workflow_log_budget_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.workflow_run_id IS DISTINCT FROM OLD.workflow_run_id
+       OR NEW.entry IS DISTINCT FROM OLD.entry THEN
+        RAISE EXCEPTION 'workflow log run and entry are immutable'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_workflow_run_execution_plane_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workflow_run_execution_plane_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.execution_plane IS DISTINCT FROM OLD.execution_plane THEN
+        RAISE EXCEPTION 'workflow_run % execution_plane is immutable (% -> %)',
+            OLD.id, OLD.execution_plane, NEW.execution_plane
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_workflow_run_status_claim(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workflow_run_status_claim() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.status = 'queued'
+       AND NEW.status = 'running'
+       AND OLD.execution_plane IS DISTINCT FROM 'sandbox'
+       AND current_setting('smithers.workflow_run_status_id', true)
+           IS DISTINCT FROM OLD.id::text THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_workflow_task_execution_plane_claim(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workflow_task_execution_plane_claim() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    parent_execution_plane VARCHAR(16);
+BEGIN
+    IF NOT (
+        (OLD.status = 'pending' AND NEW.status = 'assigned')
+        OR (OLD.status = 'assigned' AND NEW.status = 'running')
+    ) THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT execution_plane
+    INTO parent_execution_plane
+    FROM workflow_runs
+    WHERE id = OLD.workflow_run_id;
+
+    IF OLD.status = 'pending' AND NEW.status = 'assigned' THEN
+        IF parent_execution_plane IS DISTINCT FROM 'runner'
+           OR NEW.runner_id IS NULL THEN
+            RETURN NULL;
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF parent_execution_plane = 'runner' THEN
+        IF NEW.runner_id IS NULL THEN
+            RETURN NULL;
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF parent_execution_plane = 'agent'
+       AND OLD.runner_id IS NULL
+       AND NEW.runner_id IS NULL
+       AND NEW.vm_id IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: guard_workspace_session_active_status(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workspace_session_active_status() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.status IN ('pending', 'starting', 'running')
+       AND NOT EXISTS (
+           SELECT 1
+           FROM workspaces
+           WHERE id = NEW.workspace_id
+             AND deleted_at IS NULL
+       ) THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: guard_workspace_session_live_parent_insert(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_workspace_session_live_parent_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM 1
+    FROM workspaces
+    WHERE id = NEW.workspace_id
+      AND repository_id = NEW.repository_id
+      AND deleted_at IS NULL
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: initialize_new_workflow_log_budget(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.initialize_new_workflow_log_budget() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO workflow_log_budget_initializations (workflow_run_id)
+    VALUES (NEW.id);
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: lock_issue_state_journal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lock_issue_state_journal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE repo BIGINT; parent_issue BIGINT;
+BEGIN
+    IF TG_TABLE_NAME = 'issues' THEN
+        IF TG_OP = 'UPDATE' AND (NEW.id <> OLD.id OR NEW.repository_id <> OLD.repository_id OR NEW.number <> OLD.number) THEN
+            RAISE EXCEPTION 'issue identity is immutable' USING ERRCODE = '23514';
+        END IF;
+        repo := CASE WHEN TG_OP = 'DELETE' THEN OLD.repository_id ELSE NEW.repository_id END;
+    ELSE
+        IF TG_OP = 'UPDATE' AND NEW.issue_id <> OLD.issue_id THEN
+            RAISE EXCEPTION 'issue membership parent is immutable' USING ERRCODE = '23514';
+        END IF;
+        IF TG_OP = 'UPDATE' THEN
+            IF TG_TABLE_NAME = 'issue_assignees' THEN
+                IF NEW.id <> OLD.id THEN
+                    RAISE EXCEPTION 'issue assignment identity is immutable' USING ERRCODE = '23514';
+                END IF;
+            ELSE
+                IF NEW.label_id <> OLD.label_id THEN
+                    RAISE EXCEPTION 'issue label identity is immutable' USING ERRCODE = '23514';
+                END IF;
+            END IF;
+        END IF;
+        parent_issue := CASE WHEN TG_OP = 'DELETE' THEN OLD.issue_id ELSE NEW.issue_id END;
+        SELECT repository_id INTO repo FROM issues WHERE id = parent_issue;
+    END IF;
+    -- Match issue-number allocation and repository issue-count triggers. The
+    -- journal counter is allocated only after both locks have been acquired.
+    PERFORM id FROM repositories WHERE id = repo FOR UPDATE;
+    IF FOUND THEN
+        INSERT INTO issue_state_journals(repository_id) VALUES(repo) ON CONFLICT DO NOTHING;
+        PERFORM repository_id FROM issue_state_journals WHERE repository_id = repo FOR UPDATE;
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: lock_notification_journal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lock_notification_journal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE recipient BIGINT;
+BEGIN
+    IF TG_OP = 'UPDATE' AND (NEW.id <> OLD.id OR NEW.user_id <> OLD.user_id) THEN
+        RAISE EXCEPTION 'notification identity is immutable' USING ERRCODE = '23514';
+    END IF;
+    recipient := CASE WHEN TG_OP = 'DELETE' THEN OLD.user_id ELSE NEW.user_id END;
+    -- Match the existing creation query lock order: user, then journal. All
+    -- service update queries also lock this user before touching child rows.
+    -- On a user FK cascade the user is already absent, so no fact is retained.
+    PERFORM users.id FROM users WHERE users.id = recipient FOR UPDATE;
+    IF FOUND THEN
+        INSERT INTO notification_journals (user_id) VALUES (recipient)
+        ON CONFLICT (user_id) DO NOTHING;
+        PERFORM user_id FROM notification_journals WHERE user_id = recipient FOR UPDATE;
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: maintain_issue_comment_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.maintain_issue_comment_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE issues
+        SET comment_count = comment_count + 1,
+            updated_at = NOW()
+        WHERE id = NEW.issue_id;
+        RETURN NEW;
+    END IF;
+    UPDATE issues
+    SET comment_count = GREATEST(comment_count - 1, 0),
+        updated_at = NOW()
+    WHERE id = OLD.issue_id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: maintain_repo_fork_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.maintain_repo_fork_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE repositories
+        SET num_forks = num_forks + 1,
+            updated_at = NOW()
+        WHERE id = NEW.fork_id;
+        RETURN NEW;
+    END IF;
+    UPDATE repositories
+    SET num_forks = GREATEST(num_forks - 1, 0),
+        updated_at = NOW()
+    WHERE id = OLD.fork_id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: maintain_repo_issue_counts(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.maintain_repo_issue_counts() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE repositories
+        SET num_issues = num_issues + 1,
+            num_closed_issues = num_closed_issues
+                + CASE WHEN NEW.state <> 'open' THEN 1 ELSE 0 END,
+            updated_at = NOW()
+        WHERE id = NEW.repository_id;
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE repositories
+        SET num_closed_issues = GREATEST(
+                num_closed_issues
+                + CASE WHEN NEW.state <> 'open' THEN 1 ELSE 0 END
+                - CASE WHEN OLD.state <> 'open' THEN 1 ELSE 0 END,
+                0),
+            updated_at = NOW()
+        WHERE id = NEW.repository_id;
+        RETURN NEW;
+    END IF;
+    UPDATE repositories
+    SET num_issues = GREATEST(num_issues - 1, 0),
+        num_closed_issues = GREATEST(num_closed_issues
+            - CASE WHEN OLD.state <> 'open' THEN 1 ELSE 0 END, 0),
+        updated_at = NOW()
+    WHERE id = OLD.repository_id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: maintain_repo_star_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.maintain_repo_star_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE repositories
+        SET num_stars = num_stars + 1,
+            updated_at = NOW()
+        WHERE id = NEW.repository_id;
+        RETURN NEW;
+    END IF;
+    UPDATE repositories
+    SET num_stars = GREATEST(num_stars - 1, 0),
+        updated_at = NOW()
+    WHERE id = OLD.repository_id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: maintain_repo_watch_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.maintain_repo_watch_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE repositories
+        SET num_watches = num_watches + 1,
+            updated_at = NOW()
+        WHERE id = NEW.repository_id;
+        RETURN NEW;
+    END IF;
+    UPDATE repositories
+    SET num_watches = GREATEST(num_watches - 1, 0),
+        updated_at = NOW()
+    WHERE id = OLD.repository_id;
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: normalize_workspace_failure_details(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_workspace_failure_details() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.status = 'failed' THEN
+        NEW.failure_code = COALESCE(NULLIF(btrim(NEW.failure_code), ''), 'provisioning_failed');
+        NEW.failure_message = COALESCE(NULLIF(btrim(NEW.failure_message), ''), 'workspace provisioning failed');
+    ELSE
+        NEW.failure_code = NULL;
+        NEW.failure_message = NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: prevent_org_owner_namespace_rename(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_org_owner_namespace_rename() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.name IS DISTINCT FROM OLD.name
+       OR NEW.lower_name IS DISTINCT FROM OLD.lower_name THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '0A000',
+            MESSAGE = 'organization owner namespace is immutable',
+            HINT = 'Move repository storage with a durable namespace-move workflow before renaming an organization.';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: prevent_owner_delete_with_repositories(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_owner_delete_with_repositories() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'users' AND EXISTS (SELECT 1 FROM repositories WHERE user_id = OLD.id) THEN
+    RAISE EXCEPTION 'cannot delete user while repositories exist' USING ERRCODE = '55006';
+  ELSIF TG_TABLE_NAME = 'organizations' AND EXISTS (SELECT 1 FROM repositories WHERE org_id = OLD.id) THEN
+    RAISE EXCEPTION 'cannot delete organization while repositories exist' USING ERRCODE = '55006';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: prevent_user_owner_namespace_rename(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_user_owner_namespace_rename() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.username IS DISTINCT FROM OLD.username
+       OR NEW.lower_username IS DISTINCT FROM OLD.lower_username THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '0A000',
+            MESSAGE = 'user owner namespace is immutable',
+            HINT = 'Move repository storage with a durable namespace-move workflow before renaming a user.';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_landing_create_identity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_landing_create_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.request_id IS DISTINCT FROM OLD.request_id OR
+       NEW.create_request_hash IS DISTINCT FROM OLD.create_request_hash OR
+       (OLD.request_id IS NOT NULL AND (NEW.author_id <> OLD.author_id OR NEW.repository_id <> OLD.repository_id)) THEN
+        RAISE EXCEPTION 'landing create identity is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: publish_user_access_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.publish_user_access_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    event revocation_events;
+    old_enabled boolean := OLD.is_active AND NOT OLD.prohibit_login AND OLD.deleted_at IS NULL;
+    new_enabled boolean := NEW.is_active AND NOT NEW.prohibit_login AND NEW.deleted_at IS NULL;
+BEGIN
+    IF old_enabled IS NOT DISTINCT FROM new_enabled THEN
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(1548769901);
+    INSERT INTO revocation_events (kind, user_id, reason)
+    VALUES (CASE WHEN new_enabled THEN 'user_enabled' ELSE 'user_disabled' END,
+        NEW.id, CASE WHEN new_enabled THEN 'account enabled' ELSE 'account suspended or deleted' END)
+    RETURNING * INTO event;
+    PERFORM pg_notify('revocations', json_build_object('id', event.id, 'kind', event.kind,
+        'user_id', event.user_id)::text);
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: record_issue_state_fact(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_issue_state_fact() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE repo BIGINT; parent_issue BIGINT; position BIGINT; entity TEXT; identity TEXT; image JSONB;
+BEGIN
+    IF TG_OP = 'UPDATE' AND to_jsonb(NEW) = to_jsonb(OLD) THEN RETURN NEW; END IF;
+    image := CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
+    IF TG_TABLE_NAME = 'issues' THEN
+        repo := (image ->> 'repository_id')::BIGINT;
+        parent_issue := (image ->> 'id')::BIGINT;
+        entity := 'issue'; identity := parent_issue::TEXT;
+        image := image - 'search_vector';
+        IF TG_OP = 'UPDATE' AND image = to_jsonb(OLD) - 'search_vector' THEN RETURN NEW; END IF;
+    ELSE
+        parent_issue := (image ->> 'issue_id')::BIGINT;
+        SELECT repository_id INTO repo FROM issues WHERE id = parent_issue;
+        IF TG_TABLE_NAME = 'issue_labels' THEN
+            entity := 'issue_label'; identity := parent_issue::TEXT || ':' || (image ->> 'label_id');
+        ELSE
+            entity := 'issue_assignee'; identity := image ->> 'id';
+        END IF;
+    END IF;
+    -- An issue delete fact removes all its memberships during projection.
+    -- Cascading child deletion sees no issue; repository deletion purges its
+    -- complete private history instead of appending an orphan tombstone.
+    IF repo IS NULL OR NOT EXISTS (SELECT 1 FROM repositories WHERE id = repo) THEN
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+    END IF;
+    UPDATE issue_state_journals SET head = head + 1 WHERE repository_id = repo RETURNING head INTO STRICT position;
+    INSERT INTO issue_state_facts(repository_id, sequence, entity_type, operation, issue_id, entity_key, post_image)
+    VALUES(repo, position, entity, CASE TG_OP WHEN 'INSERT' THEN 'created' WHEN 'UPDATE' THEN 'updated' ELSE 'deleted' END,
+        parent_issue, identity, CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE image END);
+    PERFORM pg_notify('issue_state_facts_' || repo::TEXT, position::TEXT);
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: record_notification_fact(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_notification_fact() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    recipient BIGINT;
+    record_id BIGINT;
+    position BIGINT;
+    kind TEXT;
+    image JSONB;
+BEGIN
+    recipient := CASE WHEN TG_OP = 'DELETE' THEN OLD.user_id ELSE NEW.user_id END;
+    IF NOT EXISTS (SELECT 1 FROM users WHERE users.id = recipient) THEN
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' AND to_jsonb(NEW) = to_jsonb(OLD) THEN RETURN NEW; END IF;
+    IF TG_OP = 'DELETE' THEN
+        record_id := OLD.id;
+        image := to_jsonb(OLD) - 'user_id';
+        kind := 'notification.deleted';
+    ELSE
+        record_id := NEW.id;
+        image := to_jsonb(NEW) - 'user_id';
+        IF TG_OP = 'INSERT' THEN kind := 'notification.created';
+        ELSIF NEW.status = 'read' AND (OLD.status <> NEW.status OR OLD.read_at IS DISTINCT FROM NEW.read_at) THEN kind := 'notification.read';
+        ELSIF NEW.status = 'unread' AND OLD.status <> NEW.status THEN kind := 'notification.unread';
+        ELSE kind := 'notification.updated';
+        END IF;
+    END IF;
+    -- The BEFORE trigger holds user/journal locks before allocating this
+    -- position; both head and fact disappear if this mutation rolls back.
+    UPDATE notification_journals SET head = head + 1 WHERE user_id = recipient
+    RETURNING head INTO STRICT position;
+    INSERT INTO notification_facts (user_id, sequence, event_type, notification_id, post_image)
+    VALUES (recipient, position, kind, record_id, image);
+    -- PostgreSQL delivers this only after the surrounding mutation commits.
+    PERFORM pg_notify('notification_facts_' || recipient::text, position::text);
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: release_workflow_log_budget(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.release_workflow_log_budget() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_initialized BOOLEAN;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM workflow_log_budget_initializations AS initialized
+        WHERE initialized.workflow_run_id = OLD.workflow_run_id
+    )
+    INTO v_initialized
+    FROM workflow_runs AS run
+    WHERE run.id = OLD.workflow_run_id
+    FOR UPDATE OF run;
+
+    IF NOT FOUND OR NOT v_initialized THEN
+        RETURN OLD;
+    END IF;
+
+    UPDATE workflow_runs
+    SET log_bytes = GREATEST(log_bytes - OCTET_LENGTH(OLD.entry)::bigint, 0),
+        log_entry_count = GREATEST(log_entry_count - 1, 0)
+    WHERE id = OLD.workflow_run_id;
+    RETURN OLD;
+END;
+$$;
+
+
+
+
+--
+-- Name: issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issues (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    number bigint NOT NULL,
+    title character varying(255) NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    search_vector tsvector,
+    state character varying(16) DEFAULT 'open'::character varying NOT NULL,
+    author_id bigint NOT NULL,
+    milestone_id bigint,
+    comment_count bigint DEFAULT 0 NOT NULL,
+    closed_at timestamp with time zone,
+    fixed_by_id bigint,
+    fixed_by_agent_session_id uuid,
+    fixed_at timestamp with time zone,
+    verified_by_id bigint,
+    verified_by_agent_session_id uuid,
+    verified_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT issues_distinct_verifier_check CHECK ((((state)::text <> 'verified'::text) OR ((fixed_by_agent_session_id IS NOT NULL) AND ((verified_by_agent_session_id IS NULL) OR (verified_by_agent_session_id <> fixed_by_agent_session_id))) OR ((fixed_by_agent_session_id IS NULL) AND ((verified_by_agent_session_id IS NOT NULL) OR (verified_by_id <> fixed_by_id))))),
+    CONSTRAINT issues_fix_metadata_check CHECK (((((state)::text = ANY ((ARRAY['fixed'::character varying, 'verified'::character varying])::text[])) AND (fixed_by_id IS NOT NULL) AND (fixed_at IS NOT NULL)) OR (((state)::text <> ALL ((ARRAY['fixed'::character varying, 'verified'::character varying])::text[])) AND (fixed_by_id IS NULL) AND (fixed_by_agent_session_id IS NULL) AND (fixed_at IS NULL)))),
+    CONSTRAINT issues_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying, 'fixed'::character varying, 'verified'::character varying])::text[]))),
+    CONSTRAINT issues_verification_metadata_check CHECK (((((state)::text = 'verified'::text) AND (verified_by_id IS NOT NULL) AND (verified_at IS NOT NULL)) OR (((state)::text <> 'verified'::text) AND (verified_by_id IS NULL) AND (verified_by_agent_session_id IS NULL) AND (verified_at IS NULL))))
+);
+
+
+--
+-- Name: repository_job_native_issue_payload(public.issues); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.repository_job_native_issue_payload(issue_row public.issues) RETURNS jsonb
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT to_jsonb(issue_row) - 'search_vector' || jsonb_build_object(
+    'user', jsonb_build_object('id',u.id,'login',u.username),
+    'labels', COALESCE((SELECT jsonb_agg(jsonb_build_object('name',l.name))
+      FROM issue_labels il JOIN labels l ON l.id=il.label_id
+      WHERE il.issue_id=issue_row.id), '[]'::jsonb))
+  FROM users u WHERE u.id=issue_row.author_id
+$$;
+
+
+--
+-- Name: reserve_workflow_log_budget(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reserve_workflow_log_budget() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_entry_bytes BIGINT := OCTET_LENGTH(NEW.entry)::bigint;
+    v_initialized BOOLEAN;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM workflow_log_budget_initializations AS initialized
+        WHERE initialized.workflow_run_id = NEW.workflow_run_id
+    )
+    INTO v_initialized
+    FROM workflow_runs AS run
+    WHERE run.id = NEW.workflow_run_id
+    FOR UPDATE OF run;
+
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    IF NOT v_initialized THEN
+        RETURN NEW;
+    END IF;
+
+    UPDATE workflow_runs
+    SET log_bytes = log_bytes + v_entry_bytes,
+        log_entry_count = log_entry_count + 1
+    WHERE id = NEW.workflow_run_id
+      AND log_bytes <= 52428800::bigint - v_entry_bytes
+      AND log_entry_count < 100000::bigint;
+
+    IF FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    RAISE EXCEPTION 'workflow run % log storage limit reached', NEW.workflow_run_id
+        USING ERRCODE = '54000',
+              CONSTRAINT = 'workflow_run_log_budget';
+END;
+$$;
+
+
+--
+-- Name: revoke_deleted_oauth2_token(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.revoke_deleted_oauth2_token() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE event revocation_events;
+BEGIN
+    PERFORM pg_advisory_xact_lock(1548769901);
+    INSERT INTO revocation_events (kind, user_id, token_hash, reason)
+    VALUES ('token_revoked', OLD.user_id, OLD.token_hash, 'OAuth token revoked')
+    RETURNING * INTO event;
+    PERFORM pg_notify('revocations', json_build_object('id', event.id, 'kind', event.kind,
+        'user_id', event.user_id, 'token_hash', event.token_hash)::text);
+    RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: set_code_search_document_vector(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_code_search_document_vector() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.file_path, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_default_bookmark(bigint, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_default_bookmark(p_repo_id bigint, p_bookmark_name character varying) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    target_bookmark_id BIGINT;
+    cleared_rows BIGINT;
+    set_rows BIGINT;
+    updated_rows BIGINT;
+BEGIN
+    SELECT id
+    INTO target_bookmark_id
+    FROM bookmarks
+    WHERE repository_id = p_repo_id
+      AND name = p_bookmark_name
+    FOR UPDATE;
+
+    IF target_bookmark_id IS NULL THEN
+        RAISE EXCEPTION 'bookmark % not found in repository %', p_bookmark_name, p_repo_id;
+    END IF;
+
+    UPDATE bookmarks
+    SET is_default = FALSE,
+        updated_at = NOW()
+    WHERE repository_id = p_repo_id
+      AND is_default = TRUE
+      AND id <> target_bookmark_id;
+
+    GET DIAGNOSTICS cleared_rows = ROW_COUNT;
+
+    UPDATE bookmarks
+    SET is_default = TRUE,
+        updated_at = NOW()
+    WHERE id = target_bookmark_id
+      AND is_default = FALSE;
+
+    GET DIAGNOSTICS set_rows = ROW_COUNT;
+    updated_rows = cleared_rows + set_rows;
+
+    RETURN updated_rows;
+END;
+$$;
+
+
+--
+-- Name: set_issue_search_vector(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_issue_search_vector() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.body, '')), 'B');
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_repository_search_vector(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_repository_search_vector() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.name, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'B') ||
+        setweight(to_tsvector('simple', COALESCE(array_to_string(NEW.topics, ' '), '')), 'C');
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_user_search_vector(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_user_search_vector() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.username, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.display_name, '')), 'B') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.bio, '')), 'C');
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_workflow_step_repository_id(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_workflow_step_repository_id() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    expected_repository_id BIGINT;
+BEGIN
+    SELECT repository_id
+    INTO expected_repository_id
+    FROM workflow_runs
+    WHERE id = NEW.workflow_run_id;
+
+    IF expected_repository_id IS NULL THEN
+        RAISE EXCEPTION 'workflow_run % not found for workflow_step', NEW.workflow_run_id;
+    END IF;
+
+    NEW.repository_id := expected_repository_id;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_workflow_task_repository_id(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_workflow_task_repository_id() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    step_run_id BIGINT;
+    step_repository_id BIGINT;
+BEGIN
+    SELECT workflow_run_id, repository_id
+    INTO step_run_id, step_repository_id
+    FROM workflow_steps
+    WHERE id = NEW.workflow_step_id;
+
+    IF step_repository_id IS NULL THEN
+        RAISE EXCEPTION 'workflow_step % not found for workflow_task', NEW.workflow_step_id;
+    END IF;
+    IF step_run_id <> NEW.workflow_run_id THEN
+        RAISE EXCEPTION 'workflow_task run % does not match run % of workflow_step %',
+            NEW.workflow_run_id, step_run_id, NEW.workflow_step_id;
+    END IF;
+
+    NEW.repository_id := step_repository_id;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: stop_workspace_sessions_on_tombstone(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stop_workspace_sessions_on_tombstone() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.deleted_at IS NOT NULL
+       AND (OLD.deleted_at IS NULL OR NEW.status IS DISTINCT FROM OLD.status) THEN
+        UPDATE workspace_sessions
+        SET status = 'stopped',
+            updated_at = NOW()
+        WHERE workspace_id = NEW.id
+          AND status IN ('pending', 'starting', 'running');
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: sync_org_owner_namespace(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_org_owner_namespace() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO owner_namespaces (lower_slug, owner_type, org_id)
+        VALUES (LOWER(NEW.lower_name), 'org', NEW.id);
+    ELSIF NEW.lower_name IS DISTINCT FROM OLD.lower_name THEN
+        UPDATE owner_namespaces
+        SET lower_slug = LOWER(NEW.lower_name)
+        WHERE org_id = NEW.id;
+        IF NOT FOUND THEN
+            INSERT INTO owner_namespaces (lower_slug, owner_type, org_id)
+            VALUES (LOWER(NEW.lower_name), 'org', NEW.id);
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: sync_user_owner_namespace(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_user_owner_namespace() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO owner_namespaces (lower_slug, owner_type, user_id)
+        VALUES (LOWER(NEW.lower_username), 'user', NEW.id);
+    ELSIF NEW.lower_username IS DISTINCT FROM OLD.lower_username THEN
+        UPDATE owner_namespaces
+        SET lower_slug = LOWER(NEW.lower_username)
+        WHERE user_id = NEW.id;
+        IF NOT FOUND THEN
+            INSERT INTO owner_namespaces (lower_slug, owner_type, user_id)
+            VALUES (LOWER(NEW.lower_username), 'user', NEW.id);
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: tombstone_release_tag_on_deletion_intent(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tombstone_release_tag_on_deletion_intent() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_current_tag VARCHAR(255);
+    v_tombstone_tag VARCHAR(255) := CHR(31) || 'smithers-deleted-release:' || NEW.release_id::text;
+BEGIN
+    SELECT tag_name
+    INTO v_current_tag
+    FROM releases
+    WHERE id = NEW.release_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    IF v_current_tag <> v_tombstone_tag THEN
+        INSERT INTO release_deletion_tag_tombstones (release_id, original_tag_name)
+        VALUES (NEW.release_id, v_current_tag)
+        ON CONFLICT (release_id) DO NOTHING;
+    END IF;
+
+    IF v_current_tag <> v_tombstone_tag THEN
+        UPDATE releases
+        SET tag_name = v_tombstone_tag
+        WHERE id = NEW.release_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: wiki_advance_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.wiki_advance_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Initializing causal metadata is not a new human edit. The CAS query
+    -- changes only these two fields and never changes author/time/body.
+    IF OLD.crdt_state IS NULL AND NEW.crdt_state IS NOT NULL
+       AND (to_jsonb(NEW) - 'crdt_state' - 'crdt_vector') =
+           (to_jsonb(OLD) - 'crdt_state' - 'crdt_vector') THEN
+        RETURN NEW;
+    END IF;
+    NEW.revision := OLD.revision + 1;
+    RETURN NEW;
+END $$;
+
+
+--
+-- Name: wiki_record_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.wiki_record_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    page wiki_pages%ROWTYPE;
+    cursor_id BIGINT;
+    is_deleted BOOLEAN := TG_OP = 'DELETE';
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.revision = OLD.revision THEN
+        RETURN NULL;
+    END IF;
+    IF is_deleted THEN
+        -- Parent/user cascades have already removed the referenced row.
+        -- Ordinary page deletion retains history; repository deletion removes it.
+        IF NOT EXISTS (SELECT 1 FROM repositories WHERE id = OLD.repository_id) THEN
+            RETURN NULL;
+        END IF;
+        page := OLD;
+        page.revision := OLD.revision + 1;
+        page.last_update_id := NULL;
+        page.last_update := NULL;
+        page.author_id := COALESCE(NULLIF(current_setting('smithers.wiki_actor_id', true), '')::bigint, OLD.author_id);
+    ELSE
+        page := NEW;
+    END IF;
+    INSERT INTO wiki_page_revisions(repository_id, page_id, revision, slug, title, body,
+        author_id, author_username, update_id, update_bytes, deleted)
+    VALUES (page.repository_id, page.id, page.revision, page.slug, page.title, page.body,
+        CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = page.author_id) THEN page.author_id END, COALESCE((SELECT username FROM users WHERE id = page.author_id), ''),
+        page.last_update_id, page.last_update, is_deleted)
+    RETURNING id INTO cursor_id;
+    -- Only small metadata goes through NOTIFY; clients fetch bounded pages of
+    -- committed revisions or the latest CRDT snapshot through authorized REST.
+    PERFORM pg_notify('wiki_page_' || page.id, json_build_object(
+        'id', page.revision, 'page_id', page.id, 'revision', page.revision,
+        'update_id', page.last_update_id, 'deleted', is_deleted)::text);
+    RETURN NULL;
+END $$;
+
+
+--
+-- Name: access_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.access_tokens (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    name character varying(255) DEFAULT ''::character varying NOT NULL,
+    token_hash character varying(255) NOT NULL,
+    token_last_eight character varying(8) DEFAULT ''::character varying NOT NULL,
+    scopes text DEFAULT ''::text NOT NULL,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: access_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.access_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: access_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.access_tokens_id_seq OWNED BY public.access_tokens.id;
+
+
+--
+-- Name: agent_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_messages (
+    id bigint NOT NULL,
+    session_id uuid NOT NULL,
+    repository_id bigint NOT NULL,
+    role character varying(16) NOT NULL,
+    sequence bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_messages_role_check CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'assistant'::character varying, 'system'::character varying, 'tool'::character varying])::text[])))
+);
+
+
+--
+-- Name: agent_messages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_messages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_messages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_messages_id_seq OWNED BY public.agent_messages.id;
+
+
+--
+-- Name: agent_parts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_parts (
+    id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    session_id uuid NOT NULL,
+    part_index bigint NOT NULL,
+    part_type character varying(32) NOT NULL,
+    content jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_parts_content_check CHECK ((jsonb_typeof(content) = 'object'::text))
+);
+
+
+--
+-- Name: agent_parts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_parts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_parts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_parts_id_seq OWNED BY public.agent_parts.id;
+
+
+--
+-- Name: agent_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_sessions (
+    id uuid NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    workflow_run_id bigint,
+    title character varying(255) DEFAULT ''::character varying NOT NULL,
+    status character varying(16) NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    workspace_id uuid,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT agent_sessions_metadata_check CHECK ((jsonb_typeof(metadata) = 'object'::text)),
+    CONSTRAINT agent_sessions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying])::text[])))
+);
+
+
+--
+-- Name: alpha_waitlist_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alpha_waitlist_entries (
+    id bigint NOT NULL,
+    email character varying(255) NOT NULL,
+    lower_email character varying(255) NOT NULL,
+    github_username character varying(255) DEFAULT ''::character varying NOT NULL,
+    github_avatar_url text DEFAULT ''::text NOT NULL,
+    note text DEFAULT ''::text NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    source character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    approved_by bigint,
+    approved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alpha_waitlist_entries_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying])::text[])))
+);
+
+
+--
+-- Name: alpha_waitlist_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.alpha_waitlist_entries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: alpha_waitlist_entries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.alpha_waitlist_entries_id_seq OWNED BY public.alpha_waitlist_entries.id;
+
+
+--
+-- Name: alpha_whitelist_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alpha_whitelist_entries (
+    id bigint NOT NULL,
+    identity_type character varying(16) NOT NULL,
+    identity_value character varying(255) NOT NULL,
+    lower_identity_value character varying(255) NOT NULL,
+    created_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alpha_whitelist_entries_identity_type_check CHECK (((identity_type)::text = ANY ((ARRAY['email'::character varying, 'wallet'::character varying, 'username'::character varying])::text[])))
+);
+
+
+--
+-- Name: alpha_whitelist_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.alpha_whitelist_entries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: alpha_whitelist_entries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.alpha_whitelist_entries_id_seq OWNED BY public.alpha_whitelist_entries.id;
+
+
+--
+-- Name: analyzer_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.analyzer_runs (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    revision_seq bigint NOT NULL,
+    name text NOT NULL,
+    state character varying(16) NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    paused_by text,
+    paused_reason text,
+    failure_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT analyzer_runs_failure_detail_check CHECK (((((state)::text = 'failed'::text) AND (failure_reason IS NOT NULL) AND (btrim(failure_reason) <> ''::text)) OR (((state)::text <> 'failed'::text) AND (failure_reason IS NULL)))),
+    CONSTRAINT analyzer_runs_name_check CHECK ((btrim(name) <> ''::text)),
+    CONSTRAINT analyzer_runs_pause_detail_check CHECK (((((state)::text = 'paused'::text) AND (paused_by IS NOT NULL) AND (btrim(paused_by) <> ''::text) AND (paused_reason IS NOT NULL) AND (btrim(paused_reason) <> ''::text)) OR (((state)::text <> 'paused'::text) AND (paused_by IS NULL) AND (paused_reason IS NULL)))),
+    CONSTRAINT analyzer_runs_revision_seq_check CHECK ((revision_seq > 0)),
+    CONSTRAINT analyzer_runs_state_check CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'paused'::character varying])::text[])))
+);
+
+
+--
+-- Name: analyzer_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.analyzer_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: analyzer_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.analyzer_runs_id_seq OWNED BY public.analyzer_runs.id;
+
+
+--
+-- Name: anon_sandboxes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anon_sandboxes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repo_full_name text NOT NULL,
+    branch text DEFAULT 'main'::text NOT NULL,
+    vm_id text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    provisioning_stage text DEFAULT ''::text NOT NULL,
+    token_hash text NOT NULL,
+    client_ip text DEFAULT ''::text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT anon_sandboxes_branch_check CHECK (((length(branch) >= 1) AND (length(branch) <= 128))),
+    CONSTRAINT anon_sandboxes_repo_full_name_check CHECK (((length(repo_full_name) >= 3) AND (length(repo_full_name) <= 255))),
+    CONSTRAINT anon_sandboxes_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'starting'::text, 'running'::text, 'failed'::text, 'deleted'::text]))),
+    CONSTRAINT anon_sandboxes_token_hash_check CHECK ((length(token_hash) = 64))
+);
+
+
+--
+-- Name: app_timeline_branches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_timeline_branches (
+    timeline_id uuid NOT NULL,
+    ordinal integer NOT NULL,
+    from_seq bigint NOT NULL,
+    events jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_timeline_branches_from_seq_check CHECK ((from_seq >= 0)),
+    CONSTRAINT app_timeline_branches_ordinal_check CHECK ((ordinal >= 0))
+);
+
+
+--
+-- Name: app_timeline_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_timeline_events (
+    timeline_id uuid NOT NULL,
+    seq bigint NOT NULL,
+    payload jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_timeline_events_seq_check CHECK ((seq >= 0))
+);
+
+
+--
+-- Name: app_timeline_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_timeline_members (
+    timeline_id uuid NOT NULL,
+    user_id bigint NOT NULL,
+    role text NOT NULL,
+    joined_at timestamp with time zone DEFAULT now() NOT NULL,
+    removed_at timestamp with time zone,
+    CONSTRAINT app_timeline_members_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'editor'::text, 'viewer'::text])))
+);
+
+
+--
+-- Name: app_timeline_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_timeline_snapshots (
+    timeline_id uuid NOT NULL,
+    seq bigint NOT NULL,
+    state jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_timeline_snapshots_seq_check CHECK ((seq >= 0))
+);
+
+
+--
+-- Name: app_timelines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_timelines (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    owner_user_id bigint NOT NULL,
+    client_key text DEFAULT 'default'::text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    head_seq bigint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT app_timelines_client_key_check CHECK (((length(client_key) >= 1) AND (length(client_key) <= 128))),
+    CONSTRAINT app_timelines_head_seq_check CHECK ((head_seq >= 0))
+);
+
+
+--
+-- Name: approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.approvals (
+    id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    repository_id bigint NOT NULL,
+    state text NOT NULL,
+    kind text NOT NULL,
+    title text NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    decided_by bigint,
+    expires_at timestamp with time zone,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT approvals_check CHECK ((((state = 'pending'::text) AND (decided_at IS NULL) AND (decided_by IS NULL)) OR ((state = ANY (ARRAY['approved'::text, 'rejected'::text])) AND (decided_at IS NOT NULL)) OR (state = 'expired'::text))),
+    CONSTRAINT approvals_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT approvals_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_log (
+    id bigint NOT NULL,
+    event_type character varying(64) NOT NULL,
+    actor_id bigint,
+    actor_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    target_type character varying(64) DEFAULT ''::character varying NOT NULL,
+    target_id bigint,
+    target_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    action character varying(32) NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    ip_address character varying(45) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: audit_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
+
+
+--
+-- Name: auth_nonces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_nonces (
+    nonce_key character varying(64) NOT NULL,
+    wallet_address character varying(42),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone
+);
+
+
+--
+-- Name: auth_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.auth_sessions (
+    session_key text NOT NULL,
+    user_id bigint NOT NULL,
+    username character varying(255) NOT NULL,
+    is_admin boolean DEFAULT false NOT NULL,
+    data bytea,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: billing_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_accounts (
+    id bigint NOT NULL,
+    owner_type character varying(16) NOT NULL,
+    owner_id bigint NOT NULL,
+    stripe_customer_id character varying(255) NOT NULL,
+    stripe_customer_email character varying(255) DEFAULT ''::character varying NOT NULL,
+    stripe_customer_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT billing_accounts_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[])))
+);
+
+
+--
+-- Name: billing_accounts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.billing_accounts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: billing_accounts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.billing_accounts_id_seq OWNED BY public.billing_accounts.id;
+
+
+--
+-- Name: billing_credit_balances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_credit_balances (
+    billing_account_id bigint NOT NULL,
+    balance_cents bigint DEFAULT 0 NOT NULL,
+    last_grant_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: billing_credit_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_credit_ledger (
+    id bigint NOT NULL,
+    billing_account_id bigint NOT NULL,
+    amount_cents bigint NOT NULL,
+    balance_after_cents bigint NOT NULL,
+    reason character varying(255) DEFAULT ''::character varying NOT NULL,
+    category character varying(32) NOT NULL,
+    metric_key character varying(64) DEFAULT ''::character varying NOT NULL,
+    idempotency_key character varying(255) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT billing_credit_ledger_category_check CHECK (((category)::text = ANY ((ARRAY['monthly_grant'::character varying, 'purchase'::character varying, 'deduction'::character varying, 'refund'::character varying, 'gift'::character varying, 'expiration'::character varying, 'adjustment'::character varying])::text[])))
+);
+
+
+--
+-- Name: billing_credit_ledger_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.billing_credit_ledger_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: billing_credit_ledger_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.billing_credit_ledger_id_seq OWNED BY public.billing_credit_ledger.id;
+
+
+--
+-- Name: billing_entitlements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_entitlements (
+    id bigint NOT NULL,
+    billing_account_id bigint NOT NULL,
+    feature_key character varying(255) NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    last_synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: billing_entitlements_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.billing_entitlements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: billing_entitlements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.billing_entitlements_id_seq OWNED BY public.billing_entitlements.id;
+
+
+--
+-- Name: billing_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_subscriptions (
+    id bigint NOT NULL,
+    billing_account_id bigint NOT NULL,
+    stripe_subscription_id character varying(255) NOT NULL,
+    stripe_price_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    plan_key character varying(64) DEFAULT ''::character varying NOT NULL,
+    billing_interval character varying(16) DEFAULT ''::character varying NOT NULL,
+    status character varying(32) NOT NULL,
+    quantity bigint DEFAULT 0 NOT NULL,
+    trial_end timestamp with time zone,
+    current_period_start timestamp with time zone,
+    current_period_end timestamp with time zone,
+    past_due_since timestamp with time zone,
+    cancel_at_period_end boolean DEFAULT false NOT NULL,
+    canceled_at timestamp with time zone,
+    raw_payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT billing_subscriptions_billing_interval_check CHECK (((billing_interval)::text = ANY ((ARRAY[''::character varying, 'monthly'::character varying, 'annual'::character varying])::text[]))),
+    CONSTRAINT billing_subscriptions_quantity_check CHECK ((quantity >= 0)),
+    CONSTRAINT billing_subscriptions_raw_payload_check CHECK ((jsonb_typeof(raw_payload) = 'object'::text))
+);
+
+
+--
+-- Name: billing_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.billing_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: billing_subscriptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.billing_subscriptions_id_seq OWNED BY public.billing_subscriptions.id;
+
+
+--
+-- Name: billing_usage_counters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_usage_counters (
+    id bigint NOT NULL,
+    owner_type character varying(16) NOT NULL,
+    owner_id bigint NOT NULL,
+    metric_key character varying(64) NOT NULL,
+    period_start timestamp with time zone NOT NULL,
+    period_end timestamp with time zone NOT NULL,
+    included_quantity bigint DEFAULT 0 NOT NULL,
+    consumed_quantity bigint DEFAULT 0 NOT NULL,
+    overage_quantity bigint DEFAULT 0 NOT NULL,
+    last_reported_meter_event_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    last_synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT billing_usage_counters_check CHECK ((period_end > period_start)),
+    CONSTRAINT billing_usage_counters_consumed_quantity_check CHECK ((consumed_quantity >= 0)),
+    CONSTRAINT billing_usage_counters_included_quantity_check CHECK ((included_quantity >= 0)),
+    CONSTRAINT billing_usage_counters_overage_quantity_check CHECK ((overage_quantity >= 0)),
+    CONSTRAINT billing_usage_counters_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[])))
+);
+
+
+--
+-- Name: billing_usage_counters_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.billing_usage_counters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: billing_usage_counters_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.billing_usage_counters_id_seq OWNED BY public.billing_usage_counters.id;
+
+
+--
+-- Name: bookmarks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bookmarks (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    target_change_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    is_default boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: bookmarks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.bookmarks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: bookmarks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.bookmarks_id_seq OWNED BY public.bookmarks.id;
+
+
+--
+-- Name: branch_lock_join_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.branch_lock_join_requests (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    branch character varying(255) NOT NULL,
+    requester_id bigint NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    resolver_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamp with time zone,
+    CONSTRAINT branch_lock_join_requests_branch_check CHECK (((length((branch)::text) >= 1) AND (length((branch)::text) <= 255))),
+    CONSTRAINT branch_lock_join_requests_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'denied'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+
+--
+-- Name: branch_lock_join_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.branch_lock_join_requests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: branch_lock_join_requests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.branch_lock_join_requests_id_seq OWNED BY public.branch_lock_join_requests.id;
+
+
+--
+-- Name: branch_locks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.branch_locks (
+    repository_id bigint NOT NULL,
+    branch character varying(255) NOT NULL,
+    user_id bigint NOT NULL,
+    workspace_id uuid,
+    heartbeat_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT branch_locks_branch_check CHECK (((length((branch)::text) >= 1) AND (length((branch)::text) <= 255)))
+);
+
+
+--
+-- Name: build_cache_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.build_cache_artifacts (
+    repository_id bigint NOT NULL,
+    digest character(64) NOT NULL,
+    size_bytes bigint NOT NULL,
+    gcs_key text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_accessed_at timestamp with time zone DEFAULT now() NOT NULL,
+    access_count bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT build_cache_artifacts_digest_check CHECK ((digest ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT build_cache_artifacts_size_bytes_check CHECK ((size_bytes >= 0))
+);
+
+
+--
+-- Name: build_cache_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.build_cache_entries (
+    repository_id bigint NOT NULL,
+    key_digest text NOT NULL,
+    body text NOT NULL,
+    result_canonical text NOT NULL,
+    created_at_ms bigint,
+    recorded_run_id text,
+    recorded_event_seq bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_accessed_at timestamp with time zone DEFAULT now() NOT NULL,
+    access_count bigint DEFAULT 0 NOT NULL,
+    CONSTRAINT build_cache_entries_body_check CHECK ((octet_length(body) <= 1048576)),
+    CONSTRAINT build_cache_entries_check CHECK (((recorded_run_id IS NULL) = (recorded_event_seq IS NULL))),
+    CONSTRAINT build_cache_entries_created_at_ms_check CHECK (((created_at_ms IS NULL) OR (created_at_ms >= 0))),
+    CONSTRAINT build_cache_entries_key_digest_check CHECK (((octet_length(key_digest) >= 1) AND (octet_length(key_digest) <= 512))),
+    CONSTRAINT build_cache_entries_recorded_event_seq_check CHECK (((recorded_event_seq IS NULL) OR (recorded_event_seq >= 0))),
+    CONSTRAINT build_cache_entries_recorded_run_id_check CHECK (((recorded_run_id IS NULL) OR ((octet_length(recorded_run_id) >= 1) AND (octet_length(recorded_run_id) <= 512))))
+);
+
+
+--
+-- Name: build_cache_entry_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.build_cache_entry_artifacts (
+    repository_id bigint NOT NULL,
+    key_digest text NOT NULL,
+    digest character(64) NOT NULL
+);
+
+
+--
+-- Name: build_cache_read_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.build_cache_read_tokens (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    created_by bigint,
+    name character varying(255) DEFAULT ''::character varying NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    token_last_eight character varying(8) DEFAULT ''::character varying NOT NULL,
+    last_used_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: build_cache_read_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.build_cache_read_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: build_cache_read_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.build_cache_read_tokens_id_seq OWNED BY public.build_cache_read_tokens.id;
+
+
+--
+-- Name: change_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.change_revisions (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    seq bigint NOT NULL,
+    commit_id character varying(255) NOT NULL,
+    parent_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    source character varying(16) NOT NULL,
+    agent_session_id uuid,
+    workspace_snapshot_id uuid,
+    workspace_id uuid,
+    operation_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT change_revisions_seq_check CHECK ((seq > 0)),
+    CONSTRAINT change_revisions_source_check CHECK (((source)::text = ANY ((ARRAY['push'::character varying, 'rebase'::character varying, 'agent'::character varying, 'undo'::character varying, 'revert'::character varying, 'split'::character varying])::text[])))
+);
+
+
+--
+-- Name: change_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.change_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: change_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.change_revisions_id_seq OWNED BY public.change_revisions.id;
+
+
+--
+-- Name: change_walkthroughs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.change_walkthroughs (
+    id bigint NOT NULL,
+    change_revision_id bigint NOT NULL,
+    sections jsonb DEFAULT '[]'::jsonb NOT NULL,
+    quiz jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT change_walkthroughs_quiz_check CHECK ((jsonb_typeof(quiz) = 'array'::text)),
+    CONSTRAINT change_walkthroughs_sections_check CHECK ((jsonb_typeof(sections) = 'array'::text))
+);
+
+
+--
+-- Name: change_walkthroughs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.change_walkthroughs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: change_walkthroughs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.change_walkthroughs_id_seq OWNED BY public.change_walkthroughs.id;
+
+
+--
+-- Name: changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.changes (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    author_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    author_email character varying(255) DEFAULT ''::character varying NOT NULL,
+    has_conflict boolean DEFAULT false NOT NULL,
+    is_empty boolean DEFAULT false NOT NULL,
+    parent_change_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    revision_seq bigint DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT changes_parent_change_ids_check CHECK ((jsonb_typeof(parent_change_ids) = 'array'::text)),
+    CONSTRAINT changes_revision_seq_check CHECK ((revision_seq > 0))
+);
+
+
+--
+-- Name: changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.changes_id_seq OWNED BY public.changes.id;
+
+
+--
+-- Name: changeset_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.changeset_members (
+    id bigint NOT NULL,
+    changeset_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    path character varying(255) NOT NULL,
+    change_id character varying(255) NOT NULL,
+    commit_id character varying(255) NOT NULL,
+    target_bookmark character varying(255) DEFAULT 'main'::character varying NOT NULL,
+    previous_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    landed_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: changeset_members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.changeset_members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: changeset_members_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.changeset_members_id_seq OWNED BY public.changeset_members.id;
+
+
+--
+-- Name: changesets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.changesets (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    superproject_repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    commit_id character varying(255) NOT NULL,
+    parent_change_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    target_bookmark character varying(255) DEFAULT 'main'::character varying NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    state character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    failure_reason text DEFAULT ''::text NOT NULL,
+    landing_plan jsonb DEFAULT '{}'::jsonb NOT NULL,
+    landed_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    created_by bigint,
+    landed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT changesets_parent_change_ids_check CHECK ((jsonb_typeof(parent_change_ids) = 'array'::text)),
+    CONSTRAINT changesets_state_check CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'landing'::character varying, 'landed'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: changesets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.changesets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: changesets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.changesets_id_seq OWNED BY public.changesets.id;
+
+
+--
+-- Name: code_search_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.code_search_documents (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    file_path text NOT NULL,
+    content text DEFAULT ''::text NOT NULL,
+    search_vector tsvector,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: code_search_documents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.code_search_documents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: code_search_documents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.code_search_documents_id_seq OWNED BY public.code_search_documents.id;
+
+
+--
+-- Name: code_search_index_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.code_search_index_state (
+    repository_id bigint NOT NULL,
+    commit_id text NOT NULL
+);
+
+
+--
+-- Name: collaborators; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.collaborators (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint,
+    permission character varying(16) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT collaborators_permission_check CHECK (((permission)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying, 'admin'::character varying])::text[])))
+);
+
+
+--
+-- Name: collaborators_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.collaborators_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: collaborators_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.collaborators_id_seq OWNED BY public.collaborators.id;
+
+
+--
+-- Name: commit_statuses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.commit_statuses (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255),
+    commit_sha character varying(255),
+    context character varying(255) NOT NULL,
+    status character varying(16) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    target_url text DEFAULT ''::text NOT NULL,
+    workflow_run_id bigint,
+    targets_affected bigint DEFAULT 0 NOT NULL,
+    targets_ran bigint DEFAULT 0 NOT NULL,
+    targets_cached bigint DEFAULT 0 NOT NULL,
+    duration_ms bigint DEFAULT 0 NOT NULL,
+    workspace_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commit_statuses_duration_ms_nonnegative CHECK ((duration_ms >= 0)),
+    CONSTRAINT commit_statuses_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'success'::character varying, 'failure'::character varying, 'error'::character varying, 'cancelled'::character varying])::text[]))),
+    CONSTRAINT commit_statuses_targets_affected_nonnegative CHECK ((targets_affected >= 0)),
+    CONSTRAINT commit_statuses_targets_cached_nonnegative CHECK ((targets_cached >= 0)),
+    CONSTRAINT commit_statuses_targets_ran_nonnegative CHECK ((targets_ran >= 0))
+);
+
+
+--
+-- Name: commit_statuses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.commit_statuses_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: commit_statuses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.commit_statuses_id_seq OWNED BY public.commit_statuses.id;
+
+
+--
+-- Name: conflicts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conflicts (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    file_path text NOT NULL,
+    conflict_type character varying(32) NOT NULL,
+    resolved boolean DEFAULT false NOT NULL,
+    resolved_by bigint,
+    resolution_method character varying(32) DEFAULT ''::character varying NOT NULL,
+    resolved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT conflicts_conflict_type_check CHECK (((conflict_type)::text = ANY ((ARRAY['content'::character varying, 'rename'::character varying, 'delete'::character varying])::text[]))),
+    CONSTRAINT conflicts_resolution_method_check CHECK (((resolution_method)::text = ANY ((ARRAY[''::character varying, 'manual'::character varying, 'theirs'::character varying, 'ours'::character varying, 'base'::character varying])::text[])))
+);
+
+
+--
+-- Name: conflicts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.conflicts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: conflicts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.conflicts_id_seq OWNED BY public.conflicts.id;
+
+
+--
+-- Name: deploy_keys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deploy_keys (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    title text NOT NULL,
+    key_fingerprint text NOT NULL,
+    public_key text NOT NULL,
+    read_only boolean DEFAULT true NOT NULL,
+    last_used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: deploy_keys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.deploy_keys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: deploy_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.deploy_keys_id_seq OWNED BY public.deploy_keys.id;
+
+
+--
+-- Name: devtools_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.devtools_snapshots (
+    session_id uuid NOT NULL,
+    repository_id bigint NOT NULL,
+    kind text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    "timestamp" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT devtools_snapshots_kind_check CHECK ((kind = ANY (ARRAY['file_tree'::text, 'screenshot'::text, 'command_output'::text, 'tool_state'::text]))),
+    CONSTRAINT devtools_snapshots_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text))
+);
+
+
+--
+-- Name: email_addresses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_addresses (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    email character varying(255) NOT NULL,
+    lower_email character varying(255) NOT NULL,
+    is_activated boolean DEFAULT false NOT NULL,
+    is_primary boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: email_addresses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_addresses_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_addresses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_addresses_id_seq OWNED BY public.email_addresses.id;
+
+
+--
+-- Name: email_verification_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_verification_tokens (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    email character varying(255) NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    token_type character varying(20) NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    used_at timestamp with time zone,
+    CONSTRAINT email_verification_tokens_token_type_check CHECK (((token_type)::text = ANY ((ARRAY['verify'::character varying, 'reset'::character varying])::text[])))
+);
+
+
+--
+-- Name: email_verification_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_verification_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_verification_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_verification_tokens_id_seq OWNED BY public.email_verification_tokens.id;
+
+
+--
+-- Name: file_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.file_drafts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repository_id bigint NOT NULL,
+    bookmark text NOT NULL,
+    path text NOT NULL,
+    content text DEFAULT ''::text NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    base_change_id text DEFAULT ''::text NOT NULL,
+    updated_by bigint,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: finding_feedback; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finding_feedback (
+    finding_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    useful boolean NOT NULL,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.findings (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    revision_seq bigint NOT NULL,
+    analyzer text NOT NULL,
+    source character varying(16) NOT NULL,
+    path text NOT NULL,
+    line bigint NOT NULL,
+    side character varying(8) DEFAULT 'right'::character varying NOT NULL,
+    severity text NOT NULL,
+    text text NOT NULL,
+    suggestion text,
+    anchor_hash text,
+    feedback character varying(16),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT findings_analyzer_check CHECK ((btrim(analyzer) <> ''::text)),
+    CONSTRAINT findings_feedback_check CHECK (((feedback)::text = ANY ((ARRAY['useful'::character varying, 'not_useful'::character varying, 'fixed'::character varying])::text[]))),
+    CONSTRAINT findings_line_check CHECK ((line > 0)),
+    CONSTRAINT findings_path_check CHECK ((btrim(path) <> ''::text)),
+    CONSTRAINT findings_revision_seq_check CHECK ((revision_seq > 0)),
+    CONSTRAINT findings_severity_check CHECK ((btrim(severity) <> ''::text)),
+    CONSTRAINT findings_side_check CHECK (((side)::text = ANY ((ARRAY['left'::character varying, 'right'::character varying, 'both'::character varying])::text[]))),
+    CONSTRAINT findings_source_check CHECK (((source)::text = ANY ((ARRAY['analyzer'::character varying, 'reviewer'::character varying])::text[]))),
+    CONSTRAINT findings_text_check CHECK ((btrim(text) <> ''::text))
+);
+
+
+--
+-- Name: findings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.findings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: findings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.findings_id_seq OWNED BY public.findings.id;
+
+
+--
+-- Name: github_app_installation_repositories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_app_installation_repositories (
+    installation_id bigint NOT NULL,
+    github_repository_id bigint CONSTRAINT github_app_installation_repositor_github_repository_id_not_null NOT NULL,
+    owner_login character varying(255) DEFAULT ''::character varying NOT NULL,
+    owner_login_lower character varying(255) DEFAULT ''::character varying NOT NULL,
+    repo_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    repo_name_lower character varying(255) DEFAULT ''::character varying NOT NULL,
+    is_private boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: github_app_installations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_app_installations (
+    installation_id bigint NOT NULL,
+    account_login character varying(255) DEFAULT ''::character varying NOT NULL,
+    account_type character varying(64) DEFAULT ''::character varying NOT NULL,
+    repository_selection character varying(32) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: github_mirror_sync_ref_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_mirror_sync_ref_results (
+    id bigint NOT NULL,
+    run_id bigint NOT NULL,
+    name text NOT NULL,
+    from_revision text DEFAULT ''::text NOT NULL,
+    to_revision text DEFAULT ''::text NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    error text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_mirror_sync_ref_results_check CHECK (((from_revision <> ''::text) OR (to_revision <> ''::text))),
+    CONSTRAINT github_mirror_sync_ref_results_name_check CHECK (((length(name) >= 1) AND (length(name) <= 1024))),
+    CONSTRAINT github_mirror_sync_ref_results_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'succeeded'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: github_mirror_sync_ref_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_mirror_sync_ref_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_mirror_sync_ref_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_mirror_sync_ref_results_id_seq OWNED BY public.github_mirror_sync_ref_results.id;
+
+
+--
+-- Name: github_mirror_sync_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_mirror_sync_runs (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    requested_by bigint,
+    state character varying(16) DEFAULT 'queued'::character varying NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_mirror_sync_runs_state_check CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: github_mirror_sync_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_mirror_sync_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_mirror_sync_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_mirror_sync_runs_id_seq OWNED BY public.github_mirror_sync_runs.id;
+
+
+--
+-- Name: github_repo_listings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_repo_listings (
+    user_id bigint NOT NULL,
+    payload jsonb DEFAULT '[]'::jsonb NOT NULL,
+    synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    sync_error text,
+    syncing_since timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: github_synced_issue_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_synced_issue_comments (
+    id bigint NOT NULL,
+    synced_repo_id bigint NOT NULL,
+    issue_number bigint NOT NULL,
+    github_id bigint NOT NULL,
+    payload jsonb NOT NULL,
+    github_created_at timestamp with time zone,
+    github_updated_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_synced_issue_comments_issue_number_check CHECK ((issue_number > 0))
+);
+
+
+--
+-- Name: github_synced_issue_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_synced_issue_comments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_synced_issue_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_synced_issue_comments_id_seq OWNED BY public.github_synced_issue_comments.id;
+
+
+--
+-- Name: github_synced_issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_synced_issues (
+    id bigint NOT NULL,
+    synced_repo_id bigint NOT NULL,
+    resource character varying(16) NOT NULL,
+    number bigint NOT NULL,
+    github_id bigint NOT NULL,
+    state character varying(16) DEFAULT 'open'::character varying NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    payload jsonb NOT NULL,
+    github_created_at timestamp with time zone,
+    github_updated_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_synced_issues_number_check CHECK ((number > 0)),
+    CONSTRAINT github_synced_issues_resource_check CHECK (((resource)::text = ANY ((ARRAY['issues'::character varying, 'pulls'::character varying])::text[]))),
+    CONSTRAINT github_synced_issues_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying])::text[])))
+);
+
+
+--
+-- Name: github_synced_issues_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_synced_issues_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_synced_issues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_synced_issues_id_seq OWNED BY public.github_synced_issues.id;
+
+
+--
+-- Name: github_synced_repos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_synced_repos (
+    id bigint NOT NULL,
+    owner_login character varying(255) NOT NULL,
+    owner_login_lower character varying(255) NOT NULL,
+    repo_name character varying(255) NOT NULL,
+    repo_name_lower character varying(255) NOT NULL,
+    installation_id bigint,
+    github_repository_id bigint,
+    sync_refs boolean DEFAULT true NOT NULL,
+    sync_metadata boolean DEFAULT true NOT NULL,
+    sync_state character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    enrolled_via character varying(16) DEFAULT 'lazy'::character varying NOT NULL,
+    mirror_owner character varying(255),
+    mirror_repo character varying(255),
+    last_synced_at timestamp with time zone,
+    last_webhook_at timestamp with time zone,
+    syncing_since timestamp with time zone,
+    sync_error text,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_synced_repos_enrolled_via_check CHECK (((enrolled_via)::text = ANY ((ARRAY['import'::character varying, 'installation'::character varying, 'lazy'::character varying])::text[]))),
+    CONSTRAINT github_synced_repos_owner_login_check CHECK (((length((owner_login)::text) >= 1) AND (length((owner_login)::text) <= 255))),
+    CONSTRAINT github_synced_repos_repo_name_check CHECK (((length((repo_name)::text) >= 1) AND (length((repo_name)::text) <= 255))),
+    CONSTRAINT github_synced_repos_sync_state_check CHECK (((sync_state)::text = ANY ((ARRAY['pending'::character varying, 'syncing'::character varying, 'ready'::character varying, 'error'::character varying, 'failed'::character varying, 'disabled'::character varying])::text[])))
+);
+
+
+--
+-- Name: github_synced_repos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_synced_repos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_synced_repos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_synced_repos_id_seq OWNED BY public.github_synced_repos.id;
+
+
+--
+-- Name: github_webhook_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_webhook_jobs (
+    id bigint NOT NULL,
+    delivery_id uuid NOT NULL,
+    event_type character varying(64) NOT NULL,
+    action character varying(64) DEFAULT ''::character varying NOT NULL,
+    installation_id bigint,
+    github_repository_id bigint,
+    payload jsonb NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    error text DEFAULT ''::text NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT github_webhook_jobs_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT github_webhook_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'processing'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: github_webhook_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.github_webhook_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: github_webhook_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.github_webhook_jobs_id_seq OWNED BY public.github_webhook_jobs.id;
+
+
+--
+-- Name: import_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id bigint NOT NULL,
+    repository_id bigint,
+    workspace_id uuid,
+    github_owner character varying(255) NOT NULL,
+    github_repo character varying(255) NOT NULL,
+    repo_owner character varying(255) DEFAULT ''::character varying NOT NULL,
+    repo_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    branch character varying(255) DEFAULT ''::character varying NOT NULL,
+    target_bookmark text DEFAULT 'main'::text NOT NULL,
+    status character varying(16) DEFAULT 'cloning'::character varying NOT NULL,
+    stage text DEFAULT ''::text NOT NULL,
+    refs_done bigint DEFAULT 0 NOT NULL,
+    refs_total bigint DEFAULT 0 NOT NULL,
+    objects_done bigint DEFAULT 0 NOT NULL,
+    objects_total bigint DEFAULT 0 NOT NULL,
+    issues_done bigint DEFAULT 0 NOT NULL,
+    issues_total bigint DEFAULT 0 NOT NULL,
+    error text DEFAULT ''::text NOT NULL,
+    provisioning_repository_id bigint,
+    provisioning_token character varying(64),
+    claim_token character varying(64),
+    claimed_at timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_import_jobs_claim CHECK ((((claim_token IS NULL) AND (claimed_at IS NULL)) OR (((claim_token)::text ~ '^[0-9a-f]{64}$'::text) AND (claimed_at IS NOT NULL)))),
+    CONSTRAINT ck_import_jobs_progress_bounds CHECK (((refs_done <= refs_total) AND (objects_done <= objects_total) AND (issues_done <= issues_total))),
+    CONSTRAINT ck_import_jobs_progress_nonnegative CHECK (((refs_done >= 0) AND (refs_total >= 0) AND (objects_done >= 0) AND (objects_total >= 0) AND (issues_done >= 0) AND (issues_total >= 0))),
+    CONSTRAINT ck_import_jobs_provisioning_binding CHECK ((((provisioning_repository_id IS NULL) AND (provisioning_token IS NULL)) OR ((provisioning_repository_id IS NOT NULL) AND ((provisioning_token)::text ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT import_jobs_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT import_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['cloning'::character varying, 'ready'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: issue_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_artifacts (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    step_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    size bigint DEFAULT 0 NOT NULL,
+    content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    gcs_key text NOT NULL,
+    confirmed_at timestamp with time zone,
+    deletion_token character varying(64),
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT issue_artifacts_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
+    CONSTRAINT issue_artifacts_size_check CHECK ((size >= 0)),
+    CONSTRAINT issue_artifacts_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'deleting'::character varying])::text[])))
+);
+
+
+--
+-- Name: issue_artifacts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_artifacts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_artifacts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_artifacts_id_seq OWNED BY public.issue_artifacts.id;
+
+
+--
+-- Name: issue_assignees; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_assignees (
+    id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    user_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: issue_assignees_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_assignees_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_assignees_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_assignees_id_seq OWNED BY public.issue_assignees.id;
+
+
+--
+-- Name: issue_change_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_change_links (
+    repository_id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    link_type character varying(16) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT issue_change_links_link_type_check CHECK (((link_type)::text = ANY ((ARRAY['issue'::character varying, 'closes'::character varying])::text[])))
+);
+
+
+--
+-- Name: issue_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_comments (
+    id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    user_id bigint,
+    commenter character varying(255) DEFAULT ''::character varying NOT NULL,
+    body text NOT NULL,
+    type character varying(32) DEFAULT 'comment'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: issue_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_comments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_comments_id_seq OWNED BY public.issue_comments.id;
+
+
+--
+-- Name: issue_dependencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_dependencies (
+    issue_id bigint NOT NULL,
+    depends_on_issue_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT issue_dependencies_check CHECK ((issue_id <> depends_on_issue_id))
+);
+
+
+--
+-- Name: issue_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_events (
+    id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    actor_id bigint,
+    event_type character varying(64) NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT issue_events_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text))
+);
+
+
+--
+-- Name: issue_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_events_id_seq OWNED BY public.issue_events.id;
+
+
+--
+-- Name: issue_labels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_labels (
+    issue_id bigint NOT NULL,
+    label_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: issue_state_facts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_state_facts (
+    repository_id bigint NOT NULL,
+    sequence bigint NOT NULL,
+    event_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    schema_version smallint DEFAULT 1 NOT NULL,
+    entity_type text NOT NULL,
+    operation text NOT NULL,
+    issue_id bigint NOT NULL,
+    entity_key text NOT NULL,
+    post_image jsonb,
+    recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT issue_state_facts_check CHECK ((((operation = 'deleted'::text) AND (post_image IS NULL)) OR ((operation <> 'deleted'::text) AND (post_image IS NOT NULL)))),
+    CONSTRAINT issue_state_facts_entity_type_check CHECK ((entity_type = ANY (ARRAY['issue'::text, 'issue_label'::text, 'issue_assignee'::text]))),
+    CONSTRAINT issue_state_facts_operation_check CHECK ((operation = ANY (ARRAY['baseline'::text, 'created'::text, 'updated'::text, 'deleted'::text]))),
+    CONSTRAINT issue_state_facts_post_image_check CHECK (((post_image IS NULL) OR (jsonb_typeof(post_image) = 'object'::text))),
+    CONSTRAINT issue_state_facts_schema_version_check CHECK ((schema_version = 1)),
+    CONSTRAINT issue_state_facts_sequence_check CHECK ((sequence > 0))
+);
+
+
+--
+-- Name: issue_state_journals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_state_journals (
+    repository_id bigint NOT NULL,
+    head bigint DEFAULT 0 NOT NULL,
+    coverage_kind text DEFAULT 'from_creation'::text NOT NULL,
+    coverage_started_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT issue_state_journals_coverage_kind_check CHECK ((coverage_kind = ANY (ARRAY['legacy_snapshot'::text, 'from_creation'::text]))),
+    CONSTRAINT issue_state_journals_head_check CHECK ((head >= 0))
+);
+
+
+--
+-- Name: issues_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issues_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issues_id_seq OWNED BY public.issues.id;
+
+
+--
+-- Name: jj_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jj_operations (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    operation_id character varying(255) NOT NULL,
+    operation_type character varying(64) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    user_id bigint NOT NULL,
+    parent_operation_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    workspace_id uuid,
+    change_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: jj_operations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.jj_operations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: jj_operations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.jj_operations_id_seq OWNED BY public.jj_operations.id;
+
+
+--
+-- Name: labels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.labels (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    color character varying(16) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: labels_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.labels_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: labels_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.labels_id_seq OWNED BY public.labels.id;
+
+
+--
+-- Name: landing_request_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_request_changes (
+    id bigint NOT NULL,
+    landing_request_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    position_in_stack bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: landing_request_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_request_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_request_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_request_changes_id_seq OWNED BY public.landing_request_changes.id;
+
+
+--
+-- Name: landing_request_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_request_comments (
+    id bigint NOT NULL,
+    landing_request_id bigint NOT NULL,
+    user_id bigint,
+    path text DEFAULT ''::text NOT NULL,
+    line bigint DEFAULT 0 NOT NULL,
+    side character varying(8) DEFAULT 'right'::character varying NOT NULL,
+    body text NOT NULL,
+    commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    anchor_hash character varying(64) DEFAULT ''::character varying NOT NULL,
+    state character varying(32) DEFAULT 'open'::character varying NOT NULL,
+    done_at timestamp with time zone,
+    done_by bigint,
+    resolved_in_revision jsonb DEFAULT 'null'::jsonb NOT NULL,
+    resolved_at timestamp with time zone,
+    resolved_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT landing_request_comments_resolved_in_revision_check CHECK (((resolved_in_revision = 'null'::jsonb) OR (jsonb_typeof(resolved_in_revision) = 'object'::text))),
+    CONSTRAINT landing_request_comments_side_check CHECK (((side)::text = ANY ((ARRAY['left'::character varying, 'right'::character varying, 'both'::character varying])::text[]))),
+    CONSTRAINT landing_request_comments_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'done'::character varying, 'resolved'::character varying])::text[])))
+);
+
+
+--
+-- Name: landing_request_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_request_comments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_request_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_request_comments_id_seq OWNED BY public.landing_request_comments.id;
+
+
+--
+-- Name: landing_request_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_request_reviews (
+    id bigint NOT NULL,
+    landing_request_id bigint NOT NULL,
+    reviewer_id bigint,
+    reviewer_kind character varying(16) DEFAULT 'human'::character varying NOT NULL,
+    agent_session_id uuid,
+    type character varying(32) NOT NULL,
+    verdict character varying(16),
+    confidence_bucket character varying(16),
+    summary text DEFAULT ''::text NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    state character varying(32) DEFAULT 'submitted'::character varying NOT NULL,
+    commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    change_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT landing_request_reviews_agent_fields_check CHECK ((((reviewer_kind)::text = 'human'::text) OR ((verdict IS NOT NULL) AND (confidence_bucket IS NOT NULL) AND (length(btrim(summary)) > 0) AND (length(btrim((commit_id)::text)) > 0)))),
+    CONSTRAINT landing_request_reviews_change_revisions_check CHECK ((jsonb_typeof(change_revisions) = 'object'::text)),
+    CONSTRAINT landing_request_reviews_confidence_bucket_check CHECK (((confidence_bucket)::text = ANY ((ARRAY['high'::character varying, 'medium'::character varying, 'low'::character varying])::text[]))),
+    CONSTRAINT landing_request_reviews_principal_check CHECK (((((reviewer_kind)::text = 'human'::text) AND (agent_session_id IS NULL)) OR ((reviewer_kind)::text = 'agent'::text))),
+    CONSTRAINT landing_request_reviews_reviewer_kind_check CHECK (((reviewer_kind)::text = ANY ((ARRAY['human'::character varying, 'agent'::character varying])::text[]))),
+    CONSTRAINT landing_request_reviews_state_check CHECK (((state)::text = ANY ((ARRAY['submitted'::character varying, 'dismissed'::character varying])::text[]))),
+    CONSTRAINT landing_request_reviews_type_check CHECK (((type)::text = ANY ((ARRAY['pending'::character varying, 'approve'::character varying, 'comment'::character varying, 'request_changes'::character varying])::text[]))),
+    CONSTRAINT landing_request_reviews_verdict_check CHECK (((verdict)::text = ANY ((ARRAY['lgtm'::character varying, 'concerns'::character varying])::text[])))
+);
+
+
+--
+-- Name: landing_request_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_request_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_request_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_request_reviews_id_seq OWNED BY public.landing_request_reviews.id;
+
+
+--
+-- Name: landing_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_requests (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    number bigint NOT NULL,
+    request_id uuid,
+    create_request_hash bytea,
+    title character varying(255) NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    state character varying(16) DEFAULT 'open'::character varying NOT NULL,
+    author_id bigint NOT NULL,
+    target_bookmark character varying(255) NOT NULL,
+    source_bookmark character varying(255) DEFAULT ''::character varying NOT NULL,
+    conflict_status character varying(16) DEFAULT 'unknown'::character varying NOT NULL,
+    stack_size bigint DEFAULT 0 NOT NULL,
+    agent_authored boolean DEFAULT false NOT NULL,
+    author_agent_session_id uuid,
+    turn_party character varying(16) DEFAULT 'reviewer'::character varying NOT NULL,
+    turn_actor_id text DEFAULT ''::text NOT NULL,
+    turn_since timestamp with time zone DEFAULT now() NOT NULL,
+    turn_reason character varying(16) DEFAULT 'request'::character varying NOT NULL,
+    turn_revision_id bigint DEFAULT 0 NOT NULL,
+    landed_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
+    auto_land_enabled boolean DEFAULT false NOT NULL,
+    auto_land_set_by bigint,
+    auto_land_set_at timestamp with time zone,
+    auto_land_checked_at timestamp with time zone,
+    queued_by bigint,
+    queued_at timestamp with time zone,
+    landing_started_at timestamp with time zone,
+    closed_at timestamp with time zone,
+    merged_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT landing_requests_auto_land_intent_check CHECK (((auto_land_enabled AND (auto_land_set_by IS NOT NULL) AND (auto_land_set_at IS NOT NULL)) OR ((NOT auto_land_enabled) AND (auto_land_set_by IS NULL) AND (auto_land_set_at IS NULL)))),
+    CONSTRAINT landing_requests_conflict_status_check CHECK (((conflict_status)::text = ANY ((ARRAY['clean'::character varying, 'conflicted'::character varying, 'unknown'::character varying])::text[]))),
+    CONSTRAINT landing_requests_create_identity CHECK ((((request_id IS NULL) AND (create_request_hash IS NULL)) OR ((request_id IS NOT NULL) AND (create_request_hash IS NOT NULL) AND (octet_length(create_request_hash) = 32)))),
+    CONSTRAINT landing_requests_landed_revisions_check CHECK ((jsonb_typeof(landed_revisions) = 'object'::text)),
+    CONSTRAINT landing_requests_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying, 'merged'::character varying, 'draft'::character varying, 'queued'::character varying, 'landing'::character varying, 'failed'::character varying])::text[]))),
+    CONSTRAINT landing_requests_turn_party_check CHECK (((turn_party)::text = ANY ((ARRAY['author'::character varying, 'reviewer'::character varying])::text[]))),
+    CONSTRAINT landing_requests_turn_reason_check CHECK (((turn_reason)::text = ANY ((ARRAY['comment'::character varying, 'revision'::character varying, 'request'::character varying])::text[])))
+);
+
+
+--
+-- Name: landing_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_requests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_requests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_requests_id_seq OWNED BY public.landing_requests.id;
+
+
+--
+-- Name: landing_review_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_review_requests (
+    id bigint NOT NULL,
+    landing_request_id bigint NOT NULL,
+    requested_by bigint NOT NULL,
+    reviewer_id bigint,
+    agent_name character varying(255),
+    state character varying(16) DEFAULT 'requested'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT landing_review_requests_principal_check CHECK ((((reviewer_id IS NOT NULL) AND (agent_name IS NULL)) OR ((reviewer_id IS NULL) AND (agent_name IS NOT NULL) AND (length(btrim((agent_name)::text)) > 0)))),
+    CONSTRAINT landing_review_requests_state_check CHECK (((state)::text = ANY ((ARRAY['requested'::character varying, 'fulfilled'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+
+--
+-- Name: landing_review_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_review_requests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_review_requests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_review_requests_id_seq OWNED BY public.landing_review_requests.id;
+
+
+--
+-- Name: landing_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_tasks (
+    id bigint NOT NULL,
+    landing_request_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    priority smallint DEFAULT 1 NOT NULL,
+    attempt integer DEFAULT 0 NOT NULL,
+    last_error text,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    append_request jsonb,
+    CONSTRAINT landing_tasks_append_dispatch CHECK ((((append_request IS NULL) AND ((status)::text <> 'append_pending'::text)) OR ((append_request IS NOT NULL) AND (jsonb_typeof(append_request) = 'object'::text) AND ((status)::text <> 'pending'::text)))),
+    CONSTRAINT landing_tasks_priority_check CHECK (((priority >= 0) AND (priority <= 3))),
+    CONSTRAINT landing_tasks_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'append_pending'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: landing_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.landing_tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: landing_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.landing_tasks_id_seq OWNED BY public.landing_tasks.id;
+
+
+--
+-- Name: lfs_locks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.lfs_locks (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    path character varying(2048) NOT NULL,
+    owner_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: lfs_locks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.lfs_locks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: lfs_locks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.lfs_locks_id_seq OWNED BY public.lfs_locks.id;
+
+
+--
+-- Name: lfs_meta_objects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.lfs_meta_objects (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    oid character varying(255) NOT NULL,
+    size bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT lfs_meta_objects_size_check CHECK ((size >= 0))
+);
+
+
+--
+-- Name: lfs_meta_objects_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.lfs_meta_objects_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: lfs_meta_objects_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.lfs_meta_objects_id_seq OWNED BY public.lfs_meta_objects.id;
+
+
+--
+-- Name: lfs_objects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.lfs_objects (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    oid text NOT NULL,
+    size bigint NOT NULL,
+    gcs_path text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: lfs_objects_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.lfs_objects_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: lfs_objects_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.lfs_objects_id_seq OWNED BY public.lfs_objects.id;
+
+
+--
+-- Name: lfs_upload_reservations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.lfs_upload_reservations (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    oid text NOT NULL,
+    size bigint NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT lfs_upload_reservations_size_check CHECK ((size >= 0))
+);
+
+
+--
+-- Name: lfs_upload_reservations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.lfs_upload_reservations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: lfs_upload_reservations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.lfs_upload_reservations_id_seq OWNED BY public.lfs_upload_reservations.id;
+
+
+--
+-- Name: linear_comment_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_comment_map (
+    id bigint NOT NULL,
+    issue_map_id bigint NOT NULL,
+    jjhub_comment_id bigint NOT NULL,
+    linear_comment_id character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: linear_comment_map_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.linear_comment_map_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: linear_comment_map_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.linear_comment_map_id_seq OWNED BY public.linear_comment_map.id;
+
+
+--
+-- Name: linear_integrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_integrations (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    org_id bigint,
+    linear_team_id character varying(255) NOT NULL,
+    linear_team_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    linear_team_key character varying(32) DEFAULT ''::character varying NOT NULL,
+    access_token_encrypted bytea NOT NULL,
+    refresh_token_encrypted bytea,
+    token_expires_at timestamp with time zone,
+    webhook_key character varying(64) DEFAULT ''::character varying NOT NULL,
+    webhook_secret character varying(255) NOT NULL,
+    jjhub_repo_id bigint NOT NULL,
+    jjhub_repo_owner character varying(255) NOT NULL,
+    jjhub_repo_name character varying(255) NOT NULL,
+    linear_actor_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    linear_actor_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    linear_actor_email character varying(320) DEFAULT ''::character varying NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    last_sync_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: linear_integrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.linear_integrations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: linear_integrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.linear_integrations_id_seq OWNED BY public.linear_integrations.id;
+
+
+--
+-- Name: linear_issue_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_issue_map (
+    id bigint NOT NULL,
+    integration_id bigint NOT NULL,
+    jjhub_issue_id bigint NOT NULL,
+    jjhub_issue_number bigint NOT NULL,
+    linear_issue_id character varying(255) NOT NULL,
+    linear_identifier character varying(64) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: linear_issue_map_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.linear_issue_map_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: linear_issue_map_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.linear_issue_map_id_seq OWNED BY public.linear_issue_map.id;
+
+
+--
+-- Name: linear_oauth_setups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_oauth_setups (
+    setup_key character varying(64) NOT NULL,
+    user_id bigint NOT NULL,
+    payload_encrypted bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone
+);
+
+
+--
+-- Name: linear_sync_ops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_sync_ops (
+    id bigint NOT NULL,
+    integration_id bigint NOT NULL,
+    run_id bigint,
+    retry_of_id bigint,
+    source character varying(16) NOT NULL,
+    target character varying(16) NOT NULL,
+    entity character varying(32) NOT NULL,
+    entity_id character varying(255) NOT NULL,
+    action character varying(32) NOT NULL,
+    status character varying(16) DEFAULT 'success'::character varying NOT NULL,
+    error_message text DEFAULT ''::text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT linear_sync_ops_action_check CHECK (((action)::text = ANY ((ARRAY['create'::character varying, 'update'::character varying, 'delete'::character varying, 'close'::character varying, 'reopen'::character varying, 'initial_sync'::character varying])::text[]))),
+    CONSTRAINT linear_sync_ops_entity_check CHECK (((entity)::text = ANY ((ARRAY['issue'::character varying, 'comment'::character varying])::text[]))),
+    CONSTRAINT linear_sync_ops_source_check CHECK (((source)::text = ANY ((ARRAY['jjhub'::character varying, 'linear'::character varying])::text[]))),
+    CONSTRAINT linear_sync_ops_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'success'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[]))),
+    CONSTRAINT linear_sync_ops_target_check CHECK (((target)::text = ANY ((ARRAY['jjhub'::character varying, 'linear'::character varying])::text[])))
+);
+
+
+--
+-- Name: linear_sync_ops_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.linear_sync_ops_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: linear_sync_ops_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.linear_sync_ops_id_seq OWNED BY public.linear_sync_ops.id;
+
+
+--
+-- Name: linear_sync_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.linear_sync_runs (
+    id bigint NOT NULL,
+    integration_id bigint NOT NULL,
+    state character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    issues_done integer DEFAULT 0 NOT NULL,
+    issues_total integer DEFAULT 0 NOT NULL,
+    issues_failed integer DEFAULT 0 NOT NULL,
+    comments_done integer DEFAULT 0 NOT NULL,
+    comments_total integer DEFAULT 0 NOT NULL,
+    comments_failed integer DEFAULT 0 NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT linear_sync_runs_comments_done_check CHECK ((comments_done >= 0)),
+    CONSTRAINT linear_sync_runs_comments_failed_check CHECK ((comments_failed >= 0)),
+    CONSTRAINT linear_sync_runs_comments_total_check CHECK ((comments_total >= 0)),
+    CONSTRAINT linear_sync_runs_issues_done_check CHECK ((issues_done >= 0)),
+    CONSTRAINT linear_sync_runs_issues_failed_check CHECK ((issues_failed >= 0)),
+    CONSTRAINT linear_sync_runs_issues_total_check CHECK ((issues_total >= 0)),
+    CONSTRAINT linear_sync_runs_state_check CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: linear_sync_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.linear_sync_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: linear_sync_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.linear_sync_runs_id_seq OWNED BY public.linear_sync_runs.id;
+
+
+--
+-- Name: mentions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mentions (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    issue_id bigint,
+    landing_request_id bigint,
+    comment_type character varying(32) NOT NULL,
+    comment_id bigint,
+    user_id bigint,
+    mentioned_user_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT mentions_comment_type_check CHECK (((comment_type)::text = ANY ((ARRAY['issue_comment'::character varying, 'landing_comment'::character varying, 'issue_body'::character varying, 'landing_body'::character varying])::text[])))
+);
+
+
+--
+-- Name: mentions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mentions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mentions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mentions_id_seq OWNED BY public.mentions.id;
+
+
+--
+-- Name: milestones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.milestones (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    title character varying(255) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    state character varying(16) DEFAULT 'open'::character varying NOT NULL,
+    due_date timestamp with time zone,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT milestones_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying])::text[])))
+);
+
+
+--
+-- Name: milestones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.milestones_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: milestones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.milestones_id_seq OWNED BY public.milestones.id;
+
+
+--
+-- Name: notification_facts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_facts (
+    user_id bigint NOT NULL,
+    sequence bigint NOT NULL,
+    event_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    schema_version smallint DEFAULT 1 NOT NULL,
+    event_type text NOT NULL,
+    notification_id bigint NOT NULL,
+    post_image jsonb NOT NULL,
+    recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT notification_facts_event_type_check CHECK ((event_type = ANY (ARRAY['notification.baseline'::text, 'notification.created'::text, 'notification.read'::text, 'notification.unread'::text, 'notification.updated'::text, 'notification.deleted'::text]))),
+    CONSTRAINT notification_facts_post_image_check CHECK ((jsonb_typeof(post_image) = 'object'::text)),
+    CONSTRAINT notification_facts_schema_version_check CHECK ((schema_version = 1)),
+    CONSTRAINT notification_facts_sequence_check CHECK ((sequence > 0))
+);
+
+
+--
+-- Name: notification_journals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_journals (
+    user_id bigint NOT NULL,
+    head bigint DEFAULT 0 NOT NULL,
+    coverage_kind text DEFAULT 'from_creation'::text NOT NULL,
+    coverage_started_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT notification_journals_coverage_kind_check CHECK ((coverage_kind = ANY (ARRAY['legacy_snapshot'::text, 'from_creation'::text]))),
+    CONSTRAINT notification_journals_head_check CHECK ((head >= 0))
+);
+
+
+--
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    source_type character varying(64) NOT NULL,
+    source_id bigint,
+    subject character varying(255) DEFAULT ''::character varying NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    status character varying(16) DEFAULT 'unread'::character varying NOT NULL,
+    read_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notifications_status_check CHECK (((status)::text = ANY ((ARRAY['unread'::character varying, 'read'::character varying, 'pinned'::character varying])::text[])))
+);
+
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.notifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+
+
+--
+-- Name: oauth2_access_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth2_access_tokens (
+    id bigint NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    app_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: oauth2_access_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.oauth2_access_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: oauth2_access_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.oauth2_access_tokens_id_seq OWNED BY public.oauth2_access_tokens.id;
+
+
+--
+-- Name: oauth2_applications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth2_applications (
+    id bigint NOT NULL,
+    client_id character varying(64) NOT NULL,
+    client_secret_hash character varying(64) NOT NULL,
+    name character varying(255) NOT NULL,
+    redirect_uris text[] DEFAULT '{}'::text[] NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    owner_id bigint NOT NULL,
+    confidential boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: oauth2_applications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.oauth2_applications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: oauth2_applications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.oauth2_applications_id_seq OWNED BY public.oauth2_applications.id;
+
+
+--
+-- Name: oauth2_authorization_codes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth2_authorization_codes (
+    code_hash character varying(64) NOT NULL,
+    app_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    redirect_uri text NOT NULL,
+    code_challenge text DEFAULT ''::text NOT NULL,
+    code_challenge_method character varying(16) DEFAULT ''::character varying NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: oauth2_refresh_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth2_refresh_tokens (
+    id bigint NOT NULL,
+    token_hash character varying(64) NOT NULL,
+    app_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    scopes text[],
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: oauth2_refresh_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.oauth2_refresh_tokens_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: oauth2_refresh_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.oauth2_refresh_tokens_id_seq OWNED BY public.oauth2_refresh_tokens.id;
+
+
+--
+-- Name: oauth_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_accounts (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    provider character varying(32) NOT NULL,
+    provider_user_id character varying(255) NOT NULL,
+    access_token_encrypted bytea,
+    refresh_token_encrypted bytea,
+    expires_at timestamp with time zone,
+    profile_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT oauth_accounts_profile_data_check CHECK ((jsonb_typeof(profile_data) = 'object'::text))
+);
+
+
+--
+-- Name: oauth_accounts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.oauth_accounts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: oauth_accounts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.oauth_accounts_id_seq OWNED BY public.oauth_accounts.id;
+
+
+--
+-- Name: oauth_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oauth_states (
+    state_key character varying(64) NOT NULL,
+    context_hash character varying(64) NOT NULL,
+    requested_scopes text[],
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone
+);
+
+
+--
+-- Name: org_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.org_members (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    role character varying(16) DEFAULT 'member'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT org_members_role_check CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'member'::character varying])::text[])))
+);
+
+
+--
+-- Name: org_members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.org_members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: org_members_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.org_members_id_seq OWNED BY public.org_members.id;
+
+
+--
+-- Name: organization_secrets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organization_secrets (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    value_encrypted bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: organization_secrets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.organization_secrets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: organization_secrets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.organization_secrets_id_seq OWNED BY public.organization_secrets.id;
+
+
+--
+-- Name: organization_variables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organization_variables (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    value text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: organization_variables_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.organization_variables_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: organization_variables_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.organization_variables_id_seq OWNED BY public.organization_variables.id;
+
+
+--
+-- Name: organizations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organizations (
+    id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    lower_name character varying(255) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    visibility character varying(16) DEFAULT 'public'::character varying NOT NULL,
+    website character varying(2048) DEFAULT ''::character varying NOT NULL,
+    location character varying(255) DEFAULT ''::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_organizations_canonical_owner_namespace CHECK ((((lower_name)::text = lower((name)::text)) AND ((name)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text))),
+    CONSTRAINT organizations_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['public'::character varying, 'limited'::character varying, 'private'::character varying])::text[])))
+);
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.organizations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: organizations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
+
+
+--
+-- Name: owner_namespaces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.owner_namespaces (
+    lower_slug character varying(255) NOT NULL,
+    owner_type character varying(16) NOT NULL,
+    user_id bigint,
+    org_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT owner_namespaces_check CHECK (((((owner_type)::text = 'user'::text) AND (user_id IS NOT NULL) AND (org_id IS NULL)) OR (((owner_type)::text = 'org'::text) AND (org_id IS NOT NULL) AND (user_id IS NULL)))),
+    CONSTRAINT owner_namespaces_lower_slug_check CHECK (((lower_slug)::text = lower((lower_slug)::text))),
+    CONSTRAINT owner_namespaces_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[])))
+);
+
+
+--
+-- Name: pair_prompt_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_prompt_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id text NOT NULL,
+    seq bigint NOT NULL,
+    author_user_id bigint NOT NULL,
+    source text NOT NULL,
+    body text NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    executor_client_id text,
+    claim_expires_at timestamp with time zone,
+    run_id text,
+    canceled_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT pair_prompt_queue_source_check CHECK ((source = ANY (ARRAY['solo'::text, 'together'::text]))),
+    CONSTRAINT pair_prompt_queue_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'claimed'::text, 'running'::text, 'done'::text, 'failed'::text, 'canceled'::text])))
+);
+
+
+--
+-- Name: pair_session_draft; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_session_draft (
+    session_id text NOT NULL,
+    content text DEFAULT ''::text NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    updated_by bigint,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: pair_session_invites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_session_invites (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id text NOT NULL,
+    lower_email text,
+    lower_github_username text,
+    role text NOT NULL,
+    token_hash text NOT NULL,
+    invited_by bigint NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    accepted_by_user_id bigint,
+    accepted_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pair_session_invites_join_key_present CHECK (((lower_email IS NOT NULL) OR (lower_github_username IS NOT NULL))),
+    CONSTRAINT pair_session_invites_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text])))
+);
+
+
+--
+-- Name: pair_session_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_session_links (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id text NOT NULL,
+    slug text NOT NULL,
+    role text NOT NULL,
+    created_by bigint NOT NULL,
+    revoked_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pair_session_links_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text])))
+);
+
+
+--
+-- Name: pair_session_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_session_members (
+    session_id text NOT NULL,
+    user_id bigint NOT NULL,
+    role text NOT NULL,
+    invited_via_invite_id uuid,
+    presence jsonb DEFAULT '{}'::jsonb NOT NULL,
+    presence_updated_at timestamp with time zone,
+    last_seen_at timestamp with time zone,
+    joined_at timestamp with time zone DEFAULT now() NOT NULL,
+    removed_at timestamp with time zone,
+    CONSTRAINT pair_session_members_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text, 'owner'::text])))
+);
+
+
+--
+-- Name: pair_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_sessions (
+    id text NOT NULL,
+    owner_user_id bigint NOT NULL,
+    source_workspace_id uuid NOT NULL,
+    workspace_id uuid,
+    access_mode text DEFAULT 'restricted'::text NOT NULL,
+    status text DEFAULT 'provisioning'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    ended_at timestamp with time zone,
+    CONSTRAINT pair_sessions_access_mode_check CHECK ((access_mode = ANY (ARRAY['restricted'::text, 'link'::text]))),
+    CONSTRAINT pair_sessions_status_check CHECK ((status = ANY (ARRAY['provisioning'::text, 'active'::text, 'ended'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: pair_share_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_share_links (
+    id bigint NOT NULL,
+    token_hash text NOT NULL,
+    room_id text NOT NULL,
+    level character varying(8) DEFAULT 'view'::character varying NOT NULL,
+    created_by bigint NOT NULL,
+    expires_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pair_share_links_level_check CHECK (((level)::text = ANY ((ARRAY['view'::character varying, 'edit'::character varying])::text[])))
+);
+
+
+--
+-- Name: pair_share_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.pair_share_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: pair_share_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.pair_share_links_id_seq OWNED BY public.pair_share_links.id;
+
+
+--
+-- Name: pair_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pair_state (
+    room_id text NOT NULL,
+    state jsonb NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: pinned_issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pinned_issues (
+    repository_id bigint NOT NULL,
+    issue_id bigint NOT NULL,
+    pinned_by_id bigint,
+    "position" smallint DEFAULT 1 NOT NULL,
+    pinned_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pinned_issues_position_check CHECK ((("position" >= 1) AND ("position" <= 3)))
+);
+
+
+--
+-- Name: protected_bookmarks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.protected_bookmarks (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    pattern character varying(255) NOT NULL,
+    require_review boolean DEFAULT true NOT NULL,
+    require_human_approvals bigint DEFAULT 1 NOT NULL,
+    require_agent_lgtm boolean DEFAULT false NOT NULL,
+    required_checks text[] DEFAULT '{}'::text[] NOT NULL,
+    require_status_checks boolean DEFAULT false NOT NULL,
+    required_status_contexts text[] DEFAULT '{}'::text[] NOT NULL,
+    dismiss_stale_reviews boolean DEFAULT false NOT NULL,
+    restrict_push_teams text[] DEFAULT '{}'::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT protected_bookmarks_require_human_approvals_check CHECK ((require_human_approvals >= 0))
+);
+
+
+--
+-- Name: protected_bookmarks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.protected_bookmarks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: protected_bookmarks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.protected_bookmarks_id_seq OWNED BY public.protected_bookmarks.id;
+
+
+--
+-- Name: provider_connection_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.provider_connection_grants (
+    id bigint NOT NULL,
+    connection_id uuid NOT NULL,
+    repository_id bigint,
+    org_id bigint,
+    all_repositories boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT provider_connection_grants_check CHECK ((all_repositories OR (repository_id IS NOT NULL) OR (org_id IS NOT NULL)))
+);
+
+
+--
+-- Name: provider_connection_grants_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.provider_connection_grants_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: provider_connection_grants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.provider_connection_grants_id_seq OWNED BY public.provider_connection_grants.id;
+
+
+--
+-- Name: provider_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.provider_connections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    owner_type character varying(16) NOT NULL,
+    user_id bigint,
+    org_id bigint,
+    provider character varying(16) NOT NULL,
+    kind character varying(16) NOT NULL,
+    label character varying(80) DEFAULT ''::character varying NOT NULL,
+    account_email character varying(255) DEFAULT ''::character varying NOT NULL,
+    account_id character varying(255) DEFAULT ''::character varying NOT NULL,
+    plan character varying(64) DEFAULT ''::character varying NOT NULL,
+    access_token_encrypted bytea NOT NULL,
+    refresh_token_encrypted bytea,
+    access_expires_at timestamp with time zone,
+    state character varying(16) DEFAULT 'active'::character varying NOT NULL,
+    last_refresh_at timestamp with time zone,
+    next_refresh_at timestamp with time zone,
+    refresh_failures integer DEFAULT 0 NOT NULL,
+    last_error text DEFAULT ''::text NOT NULL,
+    created_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT provider_connections_check CHECK (((((owner_type)::text = 'user'::text) AND (user_id IS NOT NULL) AND (org_id IS NULL)) OR (((owner_type)::text = 'org'::text) AND (org_id IS NOT NULL) AND (user_id IS NULL)))),
+    CONSTRAINT provider_connections_kind_check CHECK (((kind)::text = ANY ((ARRAY['setup_token'::character varying, 'oauth'::character varying])::text[]))),
+    CONSTRAINT provider_connections_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[]))),
+    CONSTRAINT provider_connections_provider_check CHECK (((provider)::text = ANY ((ARRAY['claude'::character varying, 'codex'::character varying])::text[]))),
+    CONSTRAINT provider_connections_state_check CHECK (((state)::text = ANY ((ARRAY['active'::character varying, 'refresh_failed'::character varying, 'revoked'::character varying])::text[])))
+);
+
+
+--
+-- Name: reactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reactions (
+    id bigint NOT NULL,
+    user_id bigint,
+    target_type character varying(32) NOT NULL,
+    target_id bigint NOT NULL,
+    emoji character varying(64) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reactions_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['issue'::character varying, 'issue_comment'::character varying, 'landing_request'::character varying, 'landing_comment'::character varying])::text[])))
+);
+
+
+--
+-- Name: reactions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.reactions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: reactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.reactions_id_seq OWNED BY public.reactions.id;
+
+
+--
+-- Name: release_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.release_assets (
+    id bigint NOT NULL,
+    release_id bigint NOT NULL,
+    uploader_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    size bigint DEFAULT 0 NOT NULL,
+    download_count bigint DEFAULT 0 NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    gcs_key text NOT NULL,
+    content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
+    confirmed_at timestamp with time zone,
+    deletion_token character varying(64),
+    delete_after timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT release_assets_deletion_state_check CHECK (((((status)::text = 'deleting'::text) AND (delete_after IS NOT NULL)) OR (((status)::text <> 'deleting'::text) AND (deletion_token IS NULL) AND (delete_after IS NULL)))),
+    CONSTRAINT release_assets_download_count_check CHECK ((download_count >= 0)),
+    CONSTRAINT release_assets_size_check CHECK ((size >= 0)),
+    CONSTRAINT release_assets_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'deleting'::character varying])::text[])))
+);
+
+
+--
+-- Name: release_assets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.release_assets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: release_assets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.release_assets_id_seq OWNED BY public.release_assets.id;
+
+
+--
+-- Name: release_deletion_intents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.release_deletion_intents (
+    release_id bigint NOT NULL,
+    deletion_token character varying(64),
+    event_dispatched_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: release_deletion_tag_tombstones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.release_deletion_tag_tombstones (
+    release_id bigint NOT NULL,
+    original_tag_name character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: releases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.releases (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    publisher_id bigint NOT NULL,
+    tag_name character varying(255) NOT NULL,
+    target character varying(255) DEFAULT ''::character varying NOT NULL,
+    title character varying(255) DEFAULT ''::character varying NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    sha character varying(255) DEFAULT ''::character varying NOT NULL,
+    is_draft boolean DEFAULT false NOT NULL,
+    is_prerelease boolean DEFAULT false NOT NULL,
+    is_tag boolean DEFAULT false NOT NULL,
+    published_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: releases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.releases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: releases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.releases_id_seq OWNED BY public.releases.id;
+
+
+--
+-- Name: repo_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repo_connections (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    repo_owner character varying(255) NOT NULL,
+    repo_name character varying(255) NOT NULL,
+    repo_owner_lower character varying(255) NOT NULL,
+    repo_name_lower character varying(255) NOT NULL,
+    license_spdx_id character varying(64) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: repo_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.repo_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: repo_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.repo_connections_id_seq OWNED BY public.repo_connections.id;
+
+
+--
+-- Name: repositories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repositories (
+    id bigint NOT NULL,
+    user_id bigint,
+    org_id bigint,
+    name character varying(255) NOT NULL,
+    lower_name character varying(255) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    is_public boolean DEFAULT true NOT NULL,
+    default_bookmark character varying(255) DEFAULT 'main'::character varying NOT NULL,
+    topics text[] DEFAULT '{}'::text[] NOT NULL,
+    search_vector tsvector,
+    next_issue_number bigint DEFAULT 1 NOT NULL,
+    next_landing_number bigint DEFAULT 1 NOT NULL,
+    is_fork boolean DEFAULT false NOT NULL,
+    fork_id bigint,
+    is_template boolean DEFAULT false NOT NULL,
+    template_id bigint,
+    is_archived boolean DEFAULT false NOT NULL,
+    archived_at timestamp with time zone,
+    is_mirror boolean DEFAULT false NOT NULL,
+    mirror_destination text DEFAULT ''::text NOT NULL,
+    mirror_status character varying(16) DEFAULT 'unconfigured'::character varying NOT NULL,
+    last_mirror_at timestamp with time zone,
+    last_mirror_error text,
+    last_mirror_github_head character varying(64),
+    mirror_behind_refs integer DEFAULT 0 NOT NULL,
+    mirror_failed_refs integer DEFAULT 0 NOT NULL,
+    workspace_idle_timeout_secs integer DEFAULT 1800 NOT NULL,
+    workspace_persistence character varying(16) DEFAULT 'persistent'::character varying NOT NULL,
+    workspace_dependencies text[] DEFAULT '{}'::text[] NOT NULL,
+    clone_depth integer DEFAULT 0 NOT NULL,
+    landing_queue_mode character varying(16) DEFAULT 'serialized'::character varying NOT NULL,
+    landing_queue_required_checks text[] DEFAULT '{}'::text[] NOT NULL,
+    num_stars bigint DEFAULT 0 NOT NULL,
+    num_forks bigint DEFAULT 0 NOT NULL,
+    num_watches bigint DEFAULT 0 NOT NULL,
+    num_issues bigint DEFAULT 0 NOT NULL,
+    num_closed_issues bigint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_repositories_canonical_storage_identity CHECK ((((lower_name)::text = lower((name)::text)) AND (length((name)::text) <= 100) AND ((name)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text) AND (lower((name)::text) !~ '\.(git|wiki|docs)$'::text) AND (lower((name)::text) <> ALL (ARRAY['agent'::text, 'bookmarks'::text, 'changes'::text, 'commits'::text, 'contributors'::text, 'issues'::text, 'labels'::text, 'landings'::text, 'milestones'::text, 'operations'::text, 'pulls'::text, 'settings'::text, 'stargazers'::text, 'watchers'::text, 'workflows'::text])))),
+    CONSTRAINT repositories_check CHECK ((num_nonnulls(user_id, org_id) = 1)),
+    CONSTRAINT repositories_clone_depth_check CHECK ((clone_depth >= '-1'::integer)),
+    CONSTRAINT repositories_landing_queue_mode_check CHECK (((landing_queue_mode)::text = ANY ((ARRAY['serialized'::character varying, 'parallel'::character varying])::text[]))),
+    CONSTRAINT repositories_mirror_behind_refs_check CHECK ((mirror_behind_refs >= 0)),
+    CONSTRAINT repositories_mirror_failed_refs_check CHECK ((mirror_failed_refs >= 0)),
+    CONSTRAINT repositories_mirror_status_check CHECK (((mirror_status)::text = ANY ((ARRAY['synced'::character varying, 'behind'::character varying, 'failed'::character varying, 'unconfigured'::character varying])::text[]))),
+    CONSTRAINT repositories_workspace_idle_timeout_secs_check CHECK ((workspace_idle_timeout_secs > 0)),
+    CONSTRAINT repositories_workspace_persistence_check CHECK (((workspace_persistence)::text = ANY ((ARRAY['persistent'::character varying, 'ephemeral'::character varying])::text[])))
+);
+
+
+--
+-- Name: repositories_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.repositories_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: repositories_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.repositories_id_seq OWNED BY public.repositories.id;
+
+
+--
+-- Name: repository_agent_environment_secrets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_agent_environment_secrets (
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    value_encrypted bytea NOT NULL,
+    hosts text[] DEFAULT '{}'::text[] NOT NULL,
+    match_headers text[] DEFAULT '{}'::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: repository_agent_environments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_agent_environments (
+    repository_id bigint NOT NULL,
+    setup_script text DEFAULT ''::text NOT NULL,
+    environment_variables jsonb DEFAULT '[]'::jsonb NOT NULL,
+    provider_connection_preference character varying(16) DEFAULT 'org_first'::character varying CONSTRAINT repository_agent_environmen_provider_connection_prefer_not_null NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_agent_environment_provider_connection_preferen_check CHECK (((provider_connection_preference)::text = ANY ((ARRAY['org_first'::character varying, 'user_first'::character varying, 'org_only'::character varying, 'user_only'::character varying, 'platform_only'::character varying])::text[]))),
+    CONSTRAINT repository_agent_environments_environment_variables_check CHECK ((jsonb_typeof(environment_variables) = 'array'::text))
+);
+
+
+--
+-- Name: repository_job_comments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_job_comments (
+    dispatch_id uuid NOT NULL,
+    step text NOT NULL,
+    body text NOT NULL,
+    comment_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: repository_job_dispatches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_job_dispatches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    registration_id uuid NOT NULL,
+    revision bigint NOT NULL,
+    digest text NOT NULL,
+    delivery_key text NOT NULL,
+    source text NOT NULL,
+    event_type text NOT NULL,
+    event_action text NOT NULL,
+    issue_number bigint DEFAULT 0 NOT NULL,
+    payload jsonb NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    plan jsonb,
+    run_id text DEFAULT ''::text NOT NULL,
+    signal_attempt integer DEFAULT 0 NOT NULL,
+    receipt jsonb,
+    claim_token uuid,
+    lease_until timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    error text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_job_dispatches_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'dispatching'::text, 'waiting'::text, 'submitted'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: repository_job_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_job_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repository_id bigint NOT NULL,
+    delivery_key text NOT NULL,
+    source text NOT NULL,
+    event_type text NOT NULL,
+    event_action text NOT NULL,
+    issue_number bigint DEFAULT 0 NOT NULL,
+    payload jsonb NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_job_events_source_check CHECK ((source = ANY (ARRAY['github'::text, 'smithers-cloud'::text])))
+);
+
+
+--
+-- Name: repository_job_registrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_job_registrations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repository_id bigint NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id bigint NOT NULL,
+    job text NOT NULL,
+    mode text NOT NULL,
+    revision bigint NOT NULL,
+    digest text NOT NULL,
+    source_revision text NOT NULL,
+    flow_id text NOT NULL,
+    configuration jsonb NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    trial_issue_number bigint DEFAULT 0 NOT NULL,
+    trial_source text DEFAULT ''::text NOT NULL,
+    schedule text DEFAULT ''::text NOT NULL,
+    next_fire_at timestamp with time zone,
+    activated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_job_registrations_check CHECK (((mode <> 'trial'::text) OR ((trial_issue_number > 0) AND (trial_source = ANY (ARRAY['github'::text, 'smithers-cloud'::text]))))),
+    CONSTRAINT repository_job_registrations_job_check CHECK ((job = ANY (ARRAY['issues'::text, 'review'::text, 'ci'::text, 'feature'::text, 'chores'::text]))),
+    CONSTRAINT repository_job_registrations_mode_check CHECK ((mode = ANY (ARRAY['trial'::text, 'enabled'::text]))),
+    CONSTRAINT repository_job_registrations_revision_check CHECK ((revision > 0))
+);
+
+
+--
+-- Name: repository_job_trials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_job_trials (
+    repository_id bigint NOT NULL,
+    job text NOT NULL,
+    request_id text NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    digest text NOT NULL,
+    title text NOT NULL,
+    body text NOT NULL,
+    issue_id bigint,
+    issue_number bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_job_trials_job_check CHECK ((job = ANY (ARRAY['issues'::text, 'review'::text, 'ci'::text, 'feature'::text, 'chores'::text])))
+);
+
+
+--
+-- Name: repository_secrets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_secrets (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    value_encrypted bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: repository_secrets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.repository_secrets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: repository_secrets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.repository_secrets_id_seq OWNED BY public.repository_secrets.id;
+
+
+--
+-- Name: repository_variables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.repository_variables (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    value text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: repository_variables_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.repository_variables_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: repository_variables_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.repository_variables_id_seq OWNED BY public.repository_variables.id;
+
+
+--
+-- Name: revocation_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.revocation_events (
+    id bigint NOT NULL,
+    kind text NOT NULL,
+    user_id bigint,
+    token_id bigint,
+    token_hash text DEFAULT ''::text NOT NULL,
+    repository_id bigint,
+    organization_id bigint,
+    workspace_id text DEFAULT ''::text NOT NULL,
+    session_id text DEFAULT ''::text NOT NULL,
+    gateway_id text DEFAULT ''::text NOT NULL,
+    sandbox_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    reason text DEFAULT ''::text NOT NULL,
+    actor_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revocation_events_kind_check CHECK ((kind = ANY (ARRAY['token_revoked'::text, 'token_scopes_narrowed'::text, 'user_disabled'::text, 'user_enabled'::text, 'collaborator_removed'::text, 'workspace_share_removed'::text, 'agent_session_cancelled'::text, 'org_member_removed'::text, 'gateway_revoked'::text])))
+);
+
+
+--
+-- Name: revocation_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.revocation_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: revocation_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.revocation_events_id_seq OWNED BY public.revocation_events.id;
+
+
+--
+-- Name: sandbox_usage_intervals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sandbox_usage_intervals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id bigint NOT NULL,
+    sandbox_kind text NOT NULL,
+    sandbox_id text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    ended_at timestamp with time zone,
+    CONSTRAINT sandbox_usage_intervals_order CHECK (((ended_at IS NULL) OR (ended_at >= started_at))),
+    CONSTRAINT sandbox_usage_intervals_sandbox_kind_check CHECK ((sandbox_kind = ANY (ARRAY['workspace'::text, 'gateway'::text, 'agent'::text])))
+);
+
+
+--
+-- Name: search_rate_limits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_rate_limits (
+    scope text NOT NULL,
+    principal_key text NOT NULL,
+    tokens double precision NOT NULL,
+    last_refill_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: share_listing_event_cooldowns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.share_listing_event_cooldowns (
+    listing_id uuid NOT NULL,
+    user_id bigint NOT NULL,
+    event_type character varying(16) NOT NULL,
+    last_counted_at timestamp with time zone NOT NULL,
+    CONSTRAINT share_listing_event_cooldowns_event_type_check CHECK (((event_type)::text = ANY ((ARRAY['install'::character varying, 'run'::character varying])::text[])))
+);
+
+
+--
+-- Name: share_listings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.share_listings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    kind character varying(16) NOT NULL,
+    name character varying(128) NOT NULL,
+    slug character varying(160) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    owner_user_id bigint NOT NULL,
+    source_repo_owner character varying(255) NOT NULL,
+    source_repo_name character varying(255) NOT NULL,
+    source_path text NOT NULL,
+    content_snapshot text NOT NULL,
+    use_count bigint DEFAULT 0 NOT NULL,
+    install_count bigint DEFAULT 0 NOT NULL,
+    published_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    unpublished_at timestamp with time zone,
+    CONSTRAINT share_listings_install_count_check CHECK ((install_count >= 0)),
+    CONSTRAINT share_listings_kind_check CHECK (((kind)::text = ANY ((ARRAY['workflow'::character varying, 'connector'::character varying])::text[]))),
+    CONSTRAINT share_listings_name_check CHECK (((length((name)::text) >= 1) AND (length((name)::text) <= 128))),
+    CONSTRAINT share_listings_slug_check CHECK (((length((slug)::text) >= 1) AND (length((slug)::text) <= 160))),
+    CONSTRAINT share_listings_use_count_check CHECK ((use_count >= 0))
+);
+
+
+--
+-- Name: sse_tickets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sse_tickets (
+    ticket_hash character varying(64) NOT NULL,
+    user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone
+);
+
+
+--
+-- Name: ssh_keys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ssh_keys (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    name character varying(255) DEFAULT ''::character varying NOT NULL,
+    public_key text NOT NULL,
+    fingerprint character varying(255) NOT NULL,
+    key_type character varying(32) DEFAULT 'user'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ssh_keys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ssh_keys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ssh_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ssh_keys_id_seq OWNED BY public.ssh_keys.id;
+
+
+--
+-- Name: stack_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stack_changes (
+    id bigint NOT NULL,
+    stack_id bigint NOT NULL,
+    change_id character varying(255) NOT NULL,
+    "position" integer NOT NULL,
+    branch_name character varying(255) NOT NULL,
+    pr_number bigint,
+    pr_state character varying(32),
+    review_status character varying(32),
+    ci_status character varying(32),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: stack_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stack_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: stack_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stack_changes_id_seq OWNED BY public.stack_changes.id;
+
+
+--
+-- Name: stacks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stacks (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    target_ref character varying(255) DEFAULT 'main'::character varying NOT NULL,
+    state character varying(32) DEFAULT 'active'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT stacks_state_check CHECK (((state)::text = ANY ((ARRAY['active'::character varying, 'landed'::character varying, 'unsubmitted'::character varying])::text[])))
+);
+
+
+--
+-- Name: stacks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stacks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: stacks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stacks_id_seq OWNED BY public.stacks.id;
+
+
+--
+-- Name: stars; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stars (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: stars_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stars_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: stars_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stars_id_seq OWNED BY public.stars.id;
+
+
+--
+-- Name: stripe_processed_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stripe_processed_events (
+    event_id character varying(255) NOT NULL,
+    event_type character varying(255) NOT NULL,
+    processed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: team_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.team_members (
+    id bigint NOT NULL,
+    team_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: team_members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.team_members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: team_members_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.team_members_id_seq OWNED BY public.team_members.id;
+
+
+--
+-- Name: team_repos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.team_repos (
+    id bigint NOT NULL,
+    team_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: team_repos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.team_repos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: team_repos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.team_repos_id_seq OWNED BY public.team_repos.id;
+
+
+--
+-- Name: teams; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.teams (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    lower_name character varying(255) NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    permission character varying(16) DEFAULT 'read'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT teams_permission_check CHECK (((permission)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying, 'admin'::character varying])::text[])))
+);
+
+
+--
+-- Name: teams_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.teams_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: teams_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.teams_id_seq OWNED BY public.teams.id;
+
+
+--
+-- Name: user_ai_keys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_ai_keys (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    provider character varying(64) NOT NULL,
+    api_key_encrypted text NOT NULL,
+    rotated_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_ai_keys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.user_ai_keys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: user_ai_keys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.user_ai_keys_id_seq OWNED BY public.user_ai_keys.id;
+
+
+--
+-- Name: user_devices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_devices (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    apns_token text NOT NULL,
+    platform text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_devices_platform_check CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text])))
+);
+
+
+--
+-- Name: user_devices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.user_devices_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: user_devices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.user_devices_id_seq OWNED BY public.user_devices.id;
+
+
+--
+-- Name: user_notification_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_notification_preferences (
+    user_id bigint NOT NULL,
+    notify_issues boolean DEFAULT true NOT NULL,
+    notify_landings boolean DEFAULT true NOT NULL,
+    notify_mentions boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users (
+    id bigint NOT NULL,
+    username character varying(255) NOT NULL,
+    lower_username character varying(255) NOT NULL,
+    email character varying(255),
+    lower_email character varying(255),
+    display_name character varying(255) DEFAULT ''::character varying NOT NULL,
+    bio text DEFAULT ''::text NOT NULL,
+    search_vector tsvector,
+    avatar_url character varying(2048) DEFAULT ''::character varying NOT NULL,
+    wallet_address character varying(42),
+    user_type character varying(32) DEFAULT 'user'::character varying NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    is_admin boolean DEFAULT false NOT NULL,
+    prohibit_login boolean DEFAULT false NOT NULL,
+    email_notifications_enabled boolean DEFAULT true NOT NULL,
+    last_login_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_synthetic boolean DEFAULT false NOT NULL,
+    CONSTRAINT ck_users_canonical_owner_namespace CHECK ((((lower_username)::text = lower((username)::text)) AND ((username)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text))),
+    CONSTRAINT users_user_type_check CHECK (((user_type)::text = ANY ((ARRAY['user'::character varying, 'bot'::character varying, 'service'::character varying])::text[])))
+);
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.users_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- Name: watches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.watches (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    mode character varying(16) DEFAULT 'watching'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT watches_mode_check CHECK (((mode)::text = ANY ((ARRAY['watching'::character varying, 'ignored'::character varying, 'participating'::character varying])::text[])))
+);
+
+
+--
+-- Name: watches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.watches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: watches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.watches_id_seq OWNED BY public.watches.id;
+
+
+--
+-- Name: webhook_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_deliveries (
+    id bigint NOT NULL,
+    webhook_id bigint NOT NULL,
+    event_type character varying(64) NOT NULL,
+    payload jsonb NOT NULL,
+    status character varying(16) NOT NULL,
+    response_status integer,
+    response_body text DEFAULT ''::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    delivered_at timestamp with time zone,
+    next_retry_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT webhook_deliveries_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT webhook_deliveries_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'success'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: webhook_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.webhook_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: webhook_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.webhook_deliveries_id_seq OWNED BY public.webhook_deliveries.id;
+
+
+--
+-- Name: webhooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhooks (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    url text NOT NULL,
+    secret text DEFAULT ''::text NOT NULL,
+    events text[] DEFAULT '{}'::text[] NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    last_delivery_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: webhooks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.webhooks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: webhooks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.webhooks_id_seq OWNED BY public.webhooks.id;
+
+
+--
+-- Name: wiki_page_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wiki_page_revisions (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    page_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    slug text NOT NULL,
+    title text NOT NULL,
+    body text NOT NULL,
+    author_id bigint,
+    author_username text NOT NULL,
+    update_id uuid,
+    update_bytes bytea,
+    deleted boolean DEFAULT false NOT NULL,
+    history_commit_id text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: wiki_page_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.wiki_page_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: wiki_page_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.wiki_page_revisions_id_seq OWNED BY public.wiki_page_revisions.id;
+
+
+--
+-- Name: wiki_pages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wiki_pages (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    slug text NOT NULL,
+    title text NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    author_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    revision bigint DEFAULT 1 NOT NULL,
+    crdt_state bytea,
+    crdt_vector bytea,
+    last_update_id uuid,
+    last_update bytea,
+    CONSTRAINT wiki_crdt_state_pair CHECK (((crdt_state IS NULL) = (crdt_vector IS NULL))),
+    CONSTRAINT wiki_crdt_state_size CHECK ((octet_length(crdt_state) <= 8388608))
+);
+
+
+--
+-- Name: wiki_pages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.wiki_pages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: wiki_pages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.wiki_pages_id_seq OWNED BY public.wiki_pages.id;
+
+
+--
+-- Name: workflow_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_artifacts (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    workflow_run_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    size bigint DEFAULT 0 NOT NULL,
+    content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    gcs_key text NOT NULL,
+    confirmed_at timestamp with time zone,
+    deletion_token character varying(64),
+    expires_at timestamp with time zone NOT NULL,
+    release_tag text,
+    release_asset_name text,
+    release_attached_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_artifacts_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
+    CONSTRAINT workflow_artifacts_size_check CHECK ((size >= 0)),
+    CONSTRAINT workflow_artifacts_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'deleting'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_artifacts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_artifacts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_artifacts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_artifacts_id_seq OWNED BY public.workflow_artifacts.id;
+
+
+--
+-- Name: workflow_caches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_caches (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    workflow_run_id bigint,
+    bookmark_name character varying(255) NOT NULL,
+    cache_key character varying(512) NOT NULL,
+    cache_version character varying(64) DEFAULT 'static'::character varying NOT NULL,
+    object_key text NOT NULL,
+    object_size_bytes bigint DEFAULT 0 NOT NULL,
+    compression character varying(32) DEFAULT 'tar+gzip'::character varying NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    deletion_token character varying(64),
+    hit_count bigint DEFAULT 0 NOT NULL,
+    last_hit_at timestamp with time zone,
+    finalized_at timestamp with time zone,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_caches_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
+    CONSTRAINT workflow_caches_object_size_bytes_check CHECK ((object_size_bytes >= 0)),
+    CONSTRAINT workflow_caches_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'finalized'::character varying, 'deleting'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_caches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_caches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_caches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_caches_id_seq OWNED BY public.workflow_caches.id;
+
+
+--
+-- Name: workflow_definitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_definitions (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    path text NOT NULL,
+    config jsonb NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_definitions_config_check CHECK ((jsonb_typeof(config) = 'object'::text))
+);
+
+
+--
+-- Name: workflow_definitions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_definitions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_definitions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_definitions_id_seq OWNED BY public.workflow_definitions.id;
+
+
+--
+-- Name: workflow_log_budget_initializations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_log_budget_initializations (
+    workflow_run_id bigint NOT NULL,
+    initialized_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: workflow_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_logs (
+    id bigint NOT NULL,
+    workflow_run_id bigint NOT NULL,
+    workflow_step_id bigint NOT NULL,
+    sequence bigint NOT NULL,
+    stream character varying(16) NOT NULL,
+    entry text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_logs_stream_check CHECK (((stream)::text = ANY ((ARRAY['stdout'::character varying, 'stderr'::character varying, 'system'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_logs_id_seq OWNED BY public.workflow_logs.id;
+
+
+--
+-- Name: workflow_run_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_run_logs (
+    id bigint DEFAULT nextval('public.workflow_logs_id_seq'::regclass) NOT NULL,
+    workflow_run_id bigint NOT NULL,
+    workflow_step_id bigint NOT NULL,
+    sequence bigint NOT NULL,
+    stream character varying(16) NOT NULL,
+    entry text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_run_logs_stream_check CHECK (((stream)::text = ANY ((ARRAY['stdout'::character varying, 'stderr'::character varying, 'system'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_runs (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    workflow_definition_id bigint NOT NULL,
+    status character varying(16) NOT NULL,
+    trigger_event character varying(64) NOT NULL,
+    trigger_ref character varying(255) DEFAULT ''::character varying NOT NULL,
+    trigger_commit_sha character varying(255) DEFAULT ''::character varying NOT NULL,
+    dispatch_inputs jsonb,
+    agent_token_hash character varying(64),
+    agent_token_expires_at timestamp with time zone,
+    jjhub_token_id bigint,
+    check_run_id bigint,
+    check_run_url text,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    execution_plane character varying(16) DEFAULT 'runner'::character varying NOT NULL,
+    log_bytes bigint DEFAULT 0 NOT NULL,
+    log_entry_count bigint DEFAULT 0 NOT NULL,
+    cancel_reason character varying(128) DEFAULT ''::character varying NOT NULL,
+    CONSTRAINT workflow_runs_execution_plane_check CHECK (((execution_plane)::text = ANY ((ARRAY['runner'::character varying, 'sandbox'::character varying, 'agent'::character varying])::text[]))),
+    CONSTRAINT workflow_runs_log_bytes_nonnegative CHECK ((log_bytes >= 0)),
+    CONSTRAINT workflow_runs_log_entry_count_nonnegative CHECK ((log_entry_count >= 0)),
+    CONSTRAINT workflow_runs_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'success'::character varying, 'failure'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_runs_id_seq OWNED BY public.workflow_runs.id;
+
+
+--
+-- Name: workflow_schedule_specs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_schedule_specs (
+    id bigint NOT NULL,
+    workflow_definition_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    cron_expression text NOT NULL,
+    next_fire_at timestamp with time zone NOT NULL,
+    prev_fire_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: workflow_schedule_specs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_schedule_specs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_schedule_specs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_schedule_specs_id_seq OWNED BY public.workflow_schedule_specs.id;
+
+
+--
+-- Name: workflow_steps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_steps (
+    id bigint NOT NULL,
+    workflow_run_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    "position" bigint NOT NULL,
+    status character varying(16) NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_steps_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'success'::character varying, 'failure'::character varying, 'skipped'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_steps_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_steps_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_steps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_steps_id_seq OWNED BY public.workflow_steps.id;
+
+
+--
+-- Name: workflow_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_tasks (
+    id bigint NOT NULL,
+    workflow_run_id bigint NOT NULL,
+    workflow_step_id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    status character varying(16) NOT NULL,
+    priority smallint DEFAULT 1 NOT NULL,
+    payload jsonb NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    attempt integer DEFAULT 0 NOT NULL,
+    runner_id bigint,
+    vm_id text,
+    assigned_at timestamp with time zone,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_tasks_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT workflow_tasks_priority_check CHECK (((priority >= 0) AND (priority <= 3))),
+    CONSTRAINT workflow_tasks_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'assigned'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'blocked'::character varying, 'skipped'::character varying])::text[])))
+);
+
+
+--
+-- Name: workflow_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_tasks_id_seq OWNED BY public.workflow_tasks.id;
+
+
+--
+-- Name: workflow_triggers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workflow_triggers (
+    id bigint NOT NULL,
+    repository_id bigint NOT NULL,
+    workflow_definition_id bigint NOT NULL,
+    workflow_path text NOT NULL,
+    event_type character varying(64) NOT NULL,
+    event_action character varying(64) DEFAULT ''::character varying NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: workflow_triggers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workflow_triggers_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workflow_triggers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workflow_triggers_id_seq OWNED BY public.workflow_triggers.id;
+
+
+--
+-- Name: workspace_capability_bindings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_capability_bindings (
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    required_capability text NOT NULL,
+    workspace_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_capability_bindings_required_capability_check CHECK ((required_capability = 'repository-jobs/v1'::text))
+);
+
+
+--
+-- Name: workspace_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    ssh_connection_info jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    cols integer DEFAULT 80 NOT NULL,
+    rows integer DEFAULT 24 NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    idle_timeout_secs integer DEFAULT 1800 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    kind character varying(16) DEFAULT 'terminal'::character varying NOT NULL,
+    language character varying(32) DEFAULT ''::character varying NOT NULL,
+    CONSTRAINT ck_workspace_sessions_kind CHECK (((kind)::text = ANY ((ARRAY['terminal'::character varying, 'lsp'::character varying])::text[]))),
+    CONSTRAINT ck_workspace_sessions_language CHECK ((((kind)::text = 'lsp'::text) = ((language)::text <> ''::text))),
+    CONSTRAINT workspace_sessions_ssh_connection_info_check CHECK ((jsonb_typeof(ssh_connection_info) = 'object'::text)),
+    CONSTRAINT workspace_sessions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'starting'::character varying, 'running'::character varying, 'stopped'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: workspace_shares; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_shares (
+    id bigint NOT NULL,
+    workspace_id uuid NOT NULL,
+    owner_user_id bigint NOT NULL,
+    grantee_user_id bigint NOT NULL,
+    level character varying(8) DEFAULT 'read'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_shares_level_check CHECK (((level)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying])::text[])))
+);
+
+
+--
+-- Name: workspace_shares_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_shares_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workspace_shares_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workspace_shares_id_seq OWNED BY public.workspace_shares.id;
+
+
+--
+-- Name: workspace_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_snapshots (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    workspace_id text DEFAULT ''::text NOT NULL,
+    name text NOT NULL,
+    snapshot_id text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: workspaces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspaces (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    repository_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    is_fork boolean DEFAULT false NOT NULL,
+    parent_workspace_id uuid,
+    target_bookmark text DEFAULT 'main'::text NOT NULL,
+    source_snapshot_id uuid,
+    kind text DEFAULT 'container'::text NOT NULL,
+    environment_source text DEFAULT '.smithers/environment.nix'::text NOT NULL,
+    environment_revision text DEFAULT ''::text NOT NULL,
+    environment_closure_hash text DEFAULT ''::text NOT NULL,
+    agent_session_id uuid,
+    head_push_token_id bigint,
+    environment_image text DEFAULT ''::text NOT NULL,
+    desktop_session_id text DEFAULT ''::text NOT NULL,
+    desktop_session_token_hash text DEFAULT ''::text NOT NULL,
+    desktop_session_expires_at timestamp with time zone,
+    vm_id text DEFAULT ''::text NOT NULL,
+    provisioning_generation integer DEFAULT 0 NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    failure_code text,
+    failure_message text,
+    provisioning_stage text DEFAULT ''::text NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    idle_timeout_secs integer DEFAULT 1800 NOT NULL,
+    suspended_at timestamp with time zone,
+    started_at timestamp with time zone,
+    resumed_at timestamp with time zone,
+    head_change_id text DEFAULT ''::text NOT NULL,
+    head_commit_id text DEFAULT ''::text NOT NULL,
+    ahead integer DEFAULT 0 NOT NULL,
+    behind integer DEFAULT 0 NOT NULL,
+    last_accessed_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspaces_ahead_check CHECK ((ahead >= 0)),
+    CONSTRAINT workspaces_behind_check CHECK ((behind >= 0)),
+    CONSTRAINT workspaces_failure_detail_check CHECK (((((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (btrim(failure_code) <> ''::text) AND (failure_message IS NOT NULL) AND (btrim(failure_message) <> ''::text)) OR (((status)::text <> 'failed'::text) AND (failure_code IS NULL) AND (failure_message IS NULL)))),
+    CONSTRAINT workspaces_kind_check CHECK ((kind = ANY (ARRAY['container'::text, 'vm'::text, 'desktop'::text, 'agent'::text]))),
+    CONSTRAINT workspaces_provisioning_generation_check CHECK ((provisioning_generation >= 0)),
+    CONSTRAINT workspaces_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'starting'::character varying, 'running'::character varying, 'suspended'::character varying, 'stopped'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: access_tokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.access_tokens ALTER COLUMN id SET DEFAULT nextval('public.access_tokens_id_seq'::regclass);
+
+
+--
+-- Name: agent_messages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages ALTER COLUMN id SET DEFAULT nextval('public.agent_messages_id_seq'::regclass);
+
+
+--
+-- Name: agent_parts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts ALTER COLUMN id SET DEFAULT nextval('public.agent_parts_id_seq'::regclass);
+
+
+--
+-- Name: alpha_waitlist_entries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_waitlist_entries ALTER COLUMN id SET DEFAULT nextval('public.alpha_waitlist_entries_id_seq'::regclass);
+
+
+--
+-- Name: alpha_whitelist_entries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_whitelist_entries ALTER COLUMN id SET DEFAULT nextval('public.alpha_whitelist_entries_id_seq'::regclass);
+
+
+--
+-- Name: analyzer_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analyzer_runs ALTER COLUMN id SET DEFAULT nextval('public.analyzer_runs_id_seq'::regclass);
+
+
+--
+-- Name: audit_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
+
+
+--
+-- Name: billing_accounts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_accounts ALTER COLUMN id SET DEFAULT nextval('public.billing_accounts_id_seq'::regclass);
+
+
+--
+-- Name: billing_credit_ledger id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_credit_ledger ALTER COLUMN id SET DEFAULT nextval('public.billing_credit_ledger_id_seq'::regclass);
+
+
+--
+-- Name: billing_entitlements id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_entitlements ALTER COLUMN id SET DEFAULT nextval('public.billing_entitlements_id_seq'::regclass);
+
+
+--
+-- Name: billing_subscriptions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.billing_subscriptions_id_seq'::regclass);
+
+
+--
+-- Name: billing_usage_counters id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_usage_counters ALTER COLUMN id SET DEFAULT nextval('public.billing_usage_counters_id_seq'::regclass);
+
+
+--
+-- Name: bookmarks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bookmarks ALTER COLUMN id SET DEFAULT nextval('public.bookmarks_id_seq'::regclass);
+
+
+--
+-- Name: branch_lock_join_requests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_lock_join_requests ALTER COLUMN id SET DEFAULT nextval('public.branch_lock_join_requests_id_seq'::regclass);
+
+
+--
+-- Name: build_cache_read_tokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_read_tokens ALTER COLUMN id SET DEFAULT nextval('public.build_cache_read_tokens_id_seq'::regclass);
+
+
+--
+-- Name: change_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions ALTER COLUMN id SET DEFAULT nextval('public.change_revisions_id_seq'::regclass);
+
+
+--
+-- Name: change_walkthroughs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_walkthroughs ALTER COLUMN id SET DEFAULT nextval('public.change_walkthroughs_id_seq'::regclass);
+
+
+--
+-- Name: changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changes ALTER COLUMN id SET DEFAULT nextval('public.changes_id_seq'::regclass);
+
+
+--
+-- Name: changeset_members id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members ALTER COLUMN id SET DEFAULT nextval('public.changeset_members_id_seq'::regclass);
+
+
+--
+-- Name: changesets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets ALTER COLUMN id SET DEFAULT nextval('public.changesets_id_seq'::regclass);
+
+
+--
+-- Name: code_search_documents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_documents ALTER COLUMN id SET DEFAULT nextval('public.code_search_documents_id_seq'::regclass);
+
+
+--
+-- Name: collaborators id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collaborators ALTER COLUMN id SET DEFAULT nextval('public.collaborators_id_seq'::regclass);
+
+
+--
+-- Name: commit_statuses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commit_statuses ALTER COLUMN id SET DEFAULT nextval('public.commit_statuses_id_seq'::regclass);
+
+
+--
+-- Name: conflicts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conflicts ALTER COLUMN id SET DEFAULT nextval('public.conflicts_id_seq'::regclass);
+
+
+--
+-- Name: deploy_keys id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deploy_keys ALTER COLUMN id SET DEFAULT nextval('public.deploy_keys_id_seq'::regclass);
+
+
+--
+-- Name: email_addresses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_addresses ALTER COLUMN id SET DEFAULT nextval('public.email_addresses_id_seq'::regclass);
+
+
+--
+-- Name: email_verification_tokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_tokens ALTER COLUMN id SET DEFAULT nextval('public.email_verification_tokens_id_seq'::regclass);
+
+
+--
+-- Name: findings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings ALTER COLUMN id SET DEFAULT nextval('public.findings_id_seq'::regclass);
+
+
+--
+-- Name: github_mirror_sync_ref_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_ref_results ALTER COLUMN id SET DEFAULT nextval('public.github_mirror_sync_ref_results_id_seq'::regclass);
+
+
+--
+-- Name: github_mirror_sync_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_runs ALTER COLUMN id SET DEFAULT nextval('public.github_mirror_sync_runs_id_seq'::regclass);
+
+
+--
+-- Name: github_synced_issue_comments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issue_comments ALTER COLUMN id SET DEFAULT nextval('public.github_synced_issue_comments_id_seq'::regclass);
+
+
+--
+-- Name: github_synced_issues id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issues ALTER COLUMN id SET DEFAULT nextval('public.github_synced_issues_id_seq'::regclass);
+
+
+--
+-- Name: github_synced_repos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_repos ALTER COLUMN id SET DEFAULT nextval('public.github_synced_repos_id_seq'::regclass);
+
+
+--
+-- Name: github_webhook_jobs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_webhook_jobs ALTER COLUMN id SET DEFAULT nextval('public.github_webhook_jobs_id_seq'::regclass);
+
+
+--
+-- Name: issue_artifacts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_artifacts ALTER COLUMN id SET DEFAULT nextval('public.issue_artifacts_id_seq'::regclass);
+
+
+--
+-- Name: issue_assignees id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_assignees ALTER COLUMN id SET DEFAULT nextval('public.issue_assignees_id_seq'::regclass);
+
+
+--
+-- Name: issue_comments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_comments ALTER COLUMN id SET DEFAULT nextval('public.issue_comments_id_seq'::regclass);
+
+
+--
+-- Name: issue_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_events ALTER COLUMN id SET DEFAULT nextval('public.issue_events_id_seq'::regclass);
+
+
+--
+-- Name: issues id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues ALTER COLUMN id SET DEFAULT nextval('public.issues_id_seq'::regclass);
+
+
+--
+-- Name: jj_operations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations ALTER COLUMN id SET DEFAULT nextval('public.jj_operations_id_seq'::regclass);
+
+
+--
+-- Name: labels id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labels ALTER COLUMN id SET DEFAULT nextval('public.labels_id_seq'::regclass);
+
+
+--
+-- Name: landing_request_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_changes ALTER COLUMN id SET DEFAULT nextval('public.landing_request_changes_id_seq'::regclass);
+
+
+--
+-- Name: landing_request_comments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments ALTER COLUMN id SET DEFAULT nextval('public.landing_request_comments_id_seq'::regclass);
+
+
+--
+-- Name: landing_request_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_reviews ALTER COLUMN id SET DEFAULT nextval('public.landing_request_reviews_id_seq'::regclass);
+
+
+--
+-- Name: landing_requests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests ALTER COLUMN id SET DEFAULT nextval('public.landing_requests_id_seq'::regclass);
+
+
+--
+-- Name: landing_review_requests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_review_requests ALTER COLUMN id SET DEFAULT nextval('public.landing_review_requests_id_seq'::regclass);
+
+
+--
+-- Name: landing_tasks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_tasks ALTER COLUMN id SET DEFAULT nextval('public.landing_tasks_id_seq'::regclass);
+
+
+--
+-- Name: lfs_locks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_locks ALTER COLUMN id SET DEFAULT nextval('public.lfs_locks_id_seq'::regclass);
+
+
+--
+-- Name: lfs_meta_objects id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_meta_objects ALTER COLUMN id SET DEFAULT nextval('public.lfs_meta_objects_id_seq'::regclass);
+
+
+--
+-- Name: lfs_objects id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_objects ALTER COLUMN id SET DEFAULT nextval('public.lfs_objects_id_seq'::regclass);
+
+
+--
+-- Name: lfs_upload_reservations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_upload_reservations ALTER COLUMN id SET DEFAULT nextval('public.lfs_upload_reservations_id_seq'::regclass);
+
+
+--
+-- Name: linear_comment_map id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_comment_map ALTER COLUMN id SET DEFAULT nextval('public.linear_comment_map_id_seq'::regclass);
+
+
+--
+-- Name: linear_integrations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations ALTER COLUMN id SET DEFAULT nextval('public.linear_integrations_id_seq'::regclass);
+
+
+--
+-- Name: linear_issue_map id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map ALTER COLUMN id SET DEFAULT nextval('public.linear_issue_map_id_seq'::regclass);
+
+
+--
+-- Name: linear_sync_ops id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_ops ALTER COLUMN id SET DEFAULT nextval('public.linear_sync_ops_id_seq'::regclass);
+
+
+--
+-- Name: linear_sync_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_runs ALTER COLUMN id SET DEFAULT nextval('public.linear_sync_runs_id_seq'::regclass);
+
+
+--
+-- Name: mentions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions ALTER COLUMN id SET DEFAULT nextval('public.mentions_id_seq'::regclass);
+
+
+--
+-- Name: milestones id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.milestones ALTER COLUMN id SET DEFAULT nextval('public.milestones_id_seq'::regclass);
+
+
+--
+-- Name: notifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
+
+
+--
+-- Name: oauth2_access_tokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_access_tokens ALTER COLUMN id SET DEFAULT nextval('public.oauth2_access_tokens_id_seq'::regclass);
+
+
+--
+-- Name: oauth2_applications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_applications ALTER COLUMN id SET DEFAULT nextval('public.oauth2_applications_id_seq'::regclass);
+
+
+--
+-- Name: oauth2_refresh_tokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_refresh_tokens ALTER COLUMN id SET DEFAULT nextval('public.oauth2_refresh_tokens_id_seq'::regclass);
+
+
+--
+-- Name: oauth_accounts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_accounts ALTER COLUMN id SET DEFAULT nextval('public.oauth_accounts_id_seq'::regclass);
+
+
+--
+-- Name: org_members id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_members ALTER COLUMN id SET DEFAULT nextval('public.org_members_id_seq'::regclass);
+
+
+--
+-- Name: organization_secrets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_secrets ALTER COLUMN id SET DEFAULT nextval('public.organization_secrets_id_seq'::regclass);
+
+
+--
+-- Name: organization_variables id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_variables ALTER COLUMN id SET DEFAULT nextval('public.organization_variables_id_seq'::regclass);
+
+
+--
+-- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('public.organizations_id_seq'::regclass);
+
+
+--
+-- Name: pair_share_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_share_links ALTER COLUMN id SET DEFAULT nextval('public.pair_share_links_id_seq'::regclass);
+
+
+--
+-- Name: protected_bookmarks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.protected_bookmarks ALTER COLUMN id SET DEFAULT nextval('public.protected_bookmarks_id_seq'::regclass);
+
+
+--
+-- Name: provider_connection_grants id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connection_grants ALTER COLUMN id SET DEFAULT nextval('public.provider_connection_grants_id_seq'::regclass);
+
+
+--
+-- Name: reactions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reactions ALTER COLUMN id SET DEFAULT nextval('public.reactions_id_seq'::regclass);
+
+
+--
+-- Name: release_assets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_assets ALTER COLUMN id SET DEFAULT nextval('public.release_assets_id_seq'::regclass);
+
+
+--
+-- Name: releases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.releases ALTER COLUMN id SET DEFAULT nextval('public.releases_id_seq'::regclass);
+
+
+--
+-- Name: repo_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repo_connections ALTER COLUMN id SET DEFAULT nextval('public.repo_connections_id_seq'::regclass);
+
+
+--
+-- Name: repositories id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories ALTER COLUMN id SET DEFAULT nextval('public.repositories_id_seq'::regclass);
+
+
+--
+-- Name: repository_secrets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_secrets ALTER COLUMN id SET DEFAULT nextval('public.repository_secrets_id_seq'::regclass);
+
+
+--
+-- Name: repository_variables id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_variables ALTER COLUMN id SET DEFAULT nextval('public.repository_variables_id_seq'::regclass);
+
+
+--
+-- Name: revocation_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revocation_events ALTER COLUMN id SET DEFAULT nextval('public.revocation_events_id_seq'::regclass);
+
+
+--
+-- Name: ssh_keys id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ssh_keys ALTER COLUMN id SET DEFAULT nextval('public.ssh_keys_id_seq'::regclass);
+
+
+--
+-- Name: stack_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stack_changes ALTER COLUMN id SET DEFAULT nextval('public.stack_changes_id_seq'::regclass);
+
+
+--
+-- Name: stacks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stacks ALTER COLUMN id SET DEFAULT nextval('public.stacks_id_seq'::regclass);
+
+
+--
+-- Name: stars id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stars ALTER COLUMN id SET DEFAULT nextval('public.stars_id_seq'::regclass);
+
+
+--
+-- Name: team_members id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members ALTER COLUMN id SET DEFAULT nextval('public.team_members_id_seq'::regclass);
+
+
+--
+-- Name: team_repos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_repos ALTER COLUMN id SET DEFAULT nextval('public.team_repos_id_seq'::regclass);
+
+
+--
+-- Name: teams id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams ALTER COLUMN id SET DEFAULT nextval('public.teams_id_seq'::regclass);
+
+
+--
+-- Name: user_ai_keys id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_ai_keys ALTER COLUMN id SET DEFAULT nextval('public.user_ai_keys_id_seq'::regclass);
+
+
+--
+-- Name: user_devices id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_devices ALTER COLUMN id SET DEFAULT nextval('public.user_devices_id_seq'::regclass);
+
+
+--
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: watches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watches ALTER COLUMN id SET DEFAULT nextval('public.watches_id_seq'::regclass);
+
+
+--
+-- Name: webhook_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_deliveries ALTER COLUMN id SET DEFAULT nextval('public.webhook_deliveries_id_seq'::regclass);
+
+
+--
+-- Name: webhooks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhooks ALTER COLUMN id SET DEFAULT nextval('public.webhooks_id_seq'::regclass);
+
+
+--
+-- Name: wiki_page_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions ALTER COLUMN id SET DEFAULT nextval('public.wiki_page_revisions_id_seq'::regclass);
+
+
+--
+-- Name: wiki_pages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_pages ALTER COLUMN id SET DEFAULT nextval('public.wiki_pages_id_seq'::regclass);
+
+
+--
+-- Name: workflow_artifacts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_artifacts ALTER COLUMN id SET DEFAULT nextval('public.workflow_artifacts_id_seq'::regclass);
+
+
+--
+-- Name: workflow_caches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_caches ALTER COLUMN id SET DEFAULT nextval('public.workflow_caches_id_seq'::regclass);
+
+
+--
+-- Name: workflow_definitions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_definitions ALTER COLUMN id SET DEFAULT nextval('public.workflow_definitions_id_seq'::regclass);
+
+
+--
+-- Name: workflow_logs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs ALTER COLUMN id SET DEFAULT nextval('public.workflow_logs_id_seq'::regclass);
+
+
+--
+-- Name: workflow_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_runs ALTER COLUMN id SET DEFAULT nextval('public.workflow_runs_id_seq'::regclass);
+
+
+--
+-- Name: workflow_schedule_specs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_schedule_specs ALTER COLUMN id SET DEFAULT nextval('public.workflow_schedule_specs_id_seq'::regclass);
+
+
+--
+-- Name: workflow_steps id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_steps ALTER COLUMN id SET DEFAULT nextval('public.workflow_steps_id_seq'::regclass);
+
+
+--
+-- Name: workflow_tasks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_tasks ALTER COLUMN id SET DEFAULT nextval('public.workflow_tasks_id_seq'::regclass);
+
+
+--
+-- Name: workflow_triggers id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_triggers ALTER COLUMN id SET DEFAULT nextval('public.workflow_triggers_id_seq'::regclass);
+
+
+--
+-- Name: workspace_shares id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares ALTER COLUMN id SET DEFAULT nextval('public.workspace_shares_id_seq'::regclass);
+
+
+--
+-- Name: access_tokens access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.access_tokens
+    ADD CONSTRAINT access_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: access_tokens access_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.access_tokens
+    ADD CONSTRAINT access_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: agent_messages agent_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT agent_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_messages agent_messages_session_id_sequence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT agent_messages_session_id_sequence_key UNIQUE (session_id, sequence);
+
+
+--
+-- Name: agent_parts agent_parts_message_id_part_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts
+    ADD CONSTRAINT agent_parts_message_id_part_index_key UNIQUE (message_id, part_index);
+
+
+--
+-- Name: agent_parts agent_parts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts
+    ADD CONSTRAINT agent_parts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_sessions agent_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_sessions
+    ADD CONSTRAINT agent_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alpha_waitlist_entries alpha_waitlist_entries_lower_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_waitlist_entries
+    ADD CONSTRAINT alpha_waitlist_entries_lower_email_key UNIQUE (lower_email);
+
+
+--
+-- Name: alpha_waitlist_entries alpha_waitlist_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_waitlist_entries
+    ADD CONSTRAINT alpha_waitlist_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alpha_whitelist_entries alpha_whitelist_entries_identity_type_lower_identity_value_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_whitelist_entries
+    ADD CONSTRAINT alpha_whitelist_entries_identity_type_lower_identity_value_key UNIQUE (identity_type, lower_identity_value);
+
+
+--
+-- Name: alpha_whitelist_entries alpha_whitelist_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_whitelist_entries
+    ADD CONSTRAINT alpha_whitelist_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: analyzer_runs analyzer_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analyzer_runs
+    ADD CONSTRAINT analyzer_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: analyzer_runs analyzer_runs_repository_id_change_id_revision_seq_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analyzer_runs
+    ADD CONSTRAINT analyzer_runs_repository_id_change_id_revision_seq_name_key UNIQUE (repository_id, change_id, revision_seq, name);
+
+
+--
+-- Name: anon_sandboxes anon_sandboxes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anon_sandboxes
+    ADD CONSTRAINT anon_sandboxes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: anon_sandboxes anon_sandboxes_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anon_sandboxes
+    ADD CONSTRAINT anon_sandboxes_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: app_timeline_branches app_timeline_branches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_branches
+    ADD CONSTRAINT app_timeline_branches_pkey PRIMARY KEY (timeline_id, ordinal);
+
+
+--
+-- Name: app_timeline_events app_timeline_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_events
+    ADD CONSTRAINT app_timeline_events_pkey PRIMARY KEY (timeline_id, seq);
+
+
+--
+-- Name: app_timeline_members app_timeline_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_members
+    ADD CONSTRAINT app_timeline_members_pkey PRIMARY KEY (timeline_id, user_id);
+
+
+--
+-- Name: app_timeline_snapshots app_timeline_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_snapshots
+    ADD CONSTRAINT app_timeline_snapshots_pkey PRIMARY KEY (timeline_id, seq);
+
+
+--
+-- Name: app_timelines app_timelines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timelines
+    ADD CONSTRAINT app_timelines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: approvals approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_log audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: auth_nonces auth_nonces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_nonces
+    ADD CONSTRAINT auth_nonces_pkey PRIMARY KEY (nonce_key);
+
+
+--
+-- Name: auth_sessions auth_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_sessions
+    ADD CONSTRAINT auth_sessions_pkey PRIMARY KEY (session_key);
+
+
+--
+-- Name: billing_accounts billing_accounts_owner_type_owner_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_accounts
+    ADD CONSTRAINT billing_accounts_owner_type_owner_id_key UNIQUE (owner_type, owner_id);
+
+
+--
+-- Name: billing_accounts billing_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_accounts
+    ADD CONSTRAINT billing_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: billing_accounts billing_accounts_stripe_customer_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_accounts
+    ADD CONSTRAINT billing_accounts_stripe_customer_id_key UNIQUE (stripe_customer_id);
+
+
+--
+-- Name: billing_credit_balances billing_credit_balances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_credit_balances
+    ADD CONSTRAINT billing_credit_balances_pkey PRIMARY KEY (billing_account_id);
+
+
+--
+-- Name: billing_credit_ledger billing_credit_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_credit_ledger
+    ADD CONSTRAINT billing_credit_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: billing_entitlements billing_entitlements_billing_account_id_feature_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_entitlements
+    ADD CONSTRAINT billing_entitlements_billing_account_id_feature_key_key UNIQUE (billing_account_id, feature_key);
+
+
+--
+-- Name: billing_entitlements billing_entitlements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_entitlements
+    ADD CONSTRAINT billing_entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: billing_subscriptions billing_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_subscriptions
+    ADD CONSTRAINT billing_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: billing_subscriptions billing_subscriptions_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_subscriptions
+    ADD CONSTRAINT billing_subscriptions_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
+
+
+--
+-- Name: billing_usage_counters billing_usage_counters_owner_type_owner_id_metric_key_perio_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_usage_counters
+    ADD CONSTRAINT billing_usage_counters_owner_type_owner_id_metric_key_perio_key UNIQUE (owner_type, owner_id, metric_key, period_start, period_end);
+
+
+--
+-- Name: billing_usage_counters billing_usage_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_usage_counters
+    ADD CONSTRAINT billing_usage_counters_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bookmarks bookmarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bookmarks
+    ADD CONSTRAINT bookmarks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bookmarks bookmarks_repository_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bookmarks
+    ADD CONSTRAINT bookmarks_repository_id_name_key UNIQUE (repository_id, name);
+
+
+--
+-- Name: branch_lock_join_requests branch_lock_join_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_lock_join_requests
+    ADD CONSTRAINT branch_lock_join_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: branch_locks branch_locks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_locks
+    ADD CONSTRAINT branch_locks_pkey PRIMARY KEY (repository_id, branch);
+
+
+--
+-- Name: build_cache_artifacts build_cache_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_artifacts
+    ADD CONSTRAINT build_cache_artifacts_pkey PRIMARY KEY (repository_id, digest);
+
+
+--
+-- Name: build_cache_entries build_cache_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_entries
+    ADD CONSTRAINT build_cache_entries_pkey PRIMARY KEY (repository_id, key_digest);
+
+
+--
+-- Name: build_cache_entry_artifacts build_cache_entry_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_entry_artifacts
+    ADD CONSTRAINT build_cache_entry_artifacts_pkey PRIMARY KEY (repository_id, key_digest, digest);
+
+
+--
+-- Name: build_cache_read_tokens build_cache_read_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_read_tokens
+    ADD CONSTRAINT build_cache_read_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: build_cache_read_tokens build_cache_read_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_read_tokens
+    ADD CONSTRAINT build_cache_read_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: change_revisions change_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: change_revisions change_revisions_repository_id_change_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_repository_id_change_id_seq_key UNIQUE (repository_id, change_id, seq);
+
+
+--
+-- Name: change_walkthroughs change_walkthroughs_change_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_walkthroughs
+    ADD CONSTRAINT change_walkthroughs_change_revision_id_key UNIQUE (change_revision_id);
+
+
+--
+-- Name: change_walkthroughs change_walkthroughs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_walkthroughs
+    ADD CONSTRAINT change_walkthroughs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: changes changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changes
+    ADD CONSTRAINT changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: changes changes_repository_id_change_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changes
+    ADD CONSTRAINT changes_repository_id_change_id_key UNIQUE (repository_id, change_id);
+
+
+--
+-- Name: changeset_members changeset_members_changeset_id_path_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members
+    ADD CONSTRAINT changeset_members_changeset_id_path_key UNIQUE (changeset_id, path);
+
+
+--
+-- Name: changeset_members changeset_members_changeset_id_repository_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members
+    ADD CONSTRAINT changeset_members_changeset_id_repository_id_key UNIQUE (changeset_id, repository_id);
+
+
+--
+-- Name: changeset_members changeset_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members
+    ADD CONSTRAINT changeset_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: changesets changesets_organization_id_change_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets
+    ADD CONSTRAINT changesets_organization_id_change_id_key UNIQUE (organization_id, change_id);
+
+
+--
+-- Name: changesets changesets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets
+    ADD CONSTRAINT changesets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: code_search_documents code_search_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_documents
+    ADD CONSTRAINT code_search_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: code_search_documents code_search_documents_repository_id_file_path_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_documents
+    ADD CONSTRAINT code_search_documents_repository_id_file_path_key UNIQUE (repository_id, file_path);
+
+
+--
+-- Name: code_search_index_state code_search_index_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_index_state
+    ADD CONSTRAINT code_search_index_state_pkey PRIMARY KEY (repository_id);
+
+
+--
+-- Name: collaborators collaborators_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collaborators
+    ADD CONSTRAINT collaborators_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: commit_statuses commit_statuses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commit_statuses
+    ADD CONSTRAINT commit_statuses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: conflicts conflicts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: conflicts conflicts_repository_id_change_id_file_path_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_repository_id_change_id_file_path_key UNIQUE (repository_id, change_id, file_path);
+
+
+--
+-- Name: deploy_keys deploy_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deploy_keys
+    ADD CONSTRAINT deploy_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deploy_keys deploy_keys_repository_id_key_fingerprint_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deploy_keys
+    ADD CONSTRAINT deploy_keys_repository_id_key_fingerprint_key UNIQUE (repository_id, key_fingerprint);
+
+
+--
+-- Name: devtools_snapshots devtools_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devtools_snapshots
+    ADD CONSTRAINT devtools_snapshots_pkey PRIMARY KEY (session_id, kind);
+
+
+--
+-- Name: email_addresses email_addresses_lower_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_addresses
+    ADD CONSTRAINT email_addresses_lower_email_key UNIQUE (lower_email);
+
+
+--
+-- Name: email_addresses email_addresses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_addresses
+    ADD CONSTRAINT email_addresses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_addresses email_addresses_user_id_lower_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_addresses
+    ADD CONSTRAINT email_addresses_user_id_lower_email_key UNIQUE (user_id, lower_email);
+
+
+--
+-- Name: email_verification_tokens email_verification_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_tokens
+    ADD CONSTRAINT email_verification_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_verification_tokens email_verification_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_tokens
+    ADD CONSTRAINT email_verification_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: file_drafts file_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.file_drafts
+    ADD CONSTRAINT file_drafts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finding_feedback finding_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finding_feedback
+    ADD CONSTRAINT finding_feedback_pkey PRIMARY KEY (finding_id, user_id);
+
+
+--
+-- Name: findings findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_app_installation_repositories github_app_installation_repositories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_installation_repositories
+    ADD CONSTRAINT github_app_installation_repositories_pkey PRIMARY KEY (installation_id, github_repository_id);
+
+
+--
+-- Name: github_app_installations github_app_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_installations
+    ADD CONSTRAINT github_app_installations_pkey PRIMARY KEY (installation_id);
+
+
+--
+-- Name: github_mirror_sync_ref_results github_mirror_sync_ref_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_ref_results
+    ADD CONSTRAINT github_mirror_sync_ref_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_mirror_sync_ref_results github_mirror_sync_ref_results_run_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_ref_results
+    ADD CONSTRAINT github_mirror_sync_ref_results_run_id_name_key UNIQUE (run_id, name);
+
+
+--
+-- Name: github_mirror_sync_runs github_mirror_sync_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_runs
+    ADD CONSTRAINT github_mirror_sync_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_repo_listings github_repo_listings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_repo_listings
+    ADD CONSTRAINT github_repo_listings_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: github_synced_issue_comments github_synced_issue_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issue_comments
+    ADD CONSTRAINT github_synced_issue_comments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_synced_issues github_synced_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issues
+    ADD CONSTRAINT github_synced_issues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_synced_repos github_synced_repos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_repos
+    ADD CONSTRAINT github_synced_repos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_webhook_jobs github_webhook_jobs_delivery_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_webhook_jobs
+    ADD CONSTRAINT github_webhook_jobs_delivery_id_key UNIQUE (delivery_id);
+
+
+--
+-- Name: github_webhook_jobs github_webhook_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_webhook_jobs
+    ADD CONSTRAINT github_webhook_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_jobs import_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_jobs
+    ADD CONSTRAINT import_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_artifacts issue_artifacts_issue_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_artifacts
+    ADD CONSTRAINT issue_artifacts_issue_id_name_key UNIQUE (issue_id, name);
+
+
+--
+-- Name: issue_artifacts issue_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_artifacts
+    ADD CONSTRAINT issue_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_assignees issue_assignees_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_assignees
+    ADD CONSTRAINT issue_assignees_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_change_links issue_change_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_change_links
+    ADD CONSTRAINT issue_change_links_pkey PRIMARY KEY (repository_id, issue_id, change_id);
+
+
+--
+-- Name: issue_comments issue_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_comments
+    ADD CONSTRAINT issue_comments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_dependencies issue_dependencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_dependencies
+    ADD CONSTRAINT issue_dependencies_pkey PRIMARY KEY (issue_id, depends_on_issue_id);
+
+
+--
+-- Name: issue_events issue_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_events
+    ADD CONSTRAINT issue_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_labels issue_labels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_labels
+    ADD CONSTRAINT issue_labels_pkey PRIMARY KEY (issue_id, label_id);
+
+
+--
+-- Name: issue_state_facts issue_state_facts_event_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_state_facts
+    ADD CONSTRAINT issue_state_facts_event_id_key UNIQUE (event_id);
+
+
+--
+-- Name: issue_state_facts issue_state_facts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_state_facts
+    ADD CONSTRAINT issue_state_facts_pkey PRIMARY KEY (repository_id, sequence);
+
+
+--
+-- Name: issue_state_journals issue_state_journals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_state_journals
+    ADD CONSTRAINT issue_state_journals_pkey PRIMARY KEY (repository_id);
+
+
+--
+-- Name: issues issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issues issues_repository_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_repository_id_id_key UNIQUE (repository_id, id);
+
+
+--
+-- Name: issues issues_repository_id_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_repository_id_number_key UNIQUE (repository_id, number);
+
+
+--
+-- Name: jj_operations jj_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations
+    ADD CONSTRAINT jj_operations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jj_operations jj_operations_repository_id_operation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations
+    ADD CONSTRAINT jj_operations_repository_id_operation_id_key UNIQUE (repository_id, operation_id);
+
+
+--
+-- Name: labels labels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labels
+    ADD CONSTRAINT labels_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: labels labels_repository_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labels
+    ADD CONSTRAINT labels_repository_id_name_key UNIQUE (repository_id, name);
+
+
+--
+-- Name: landing_request_changes landing_request_changes_landing_request_id_change_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_changes
+    ADD CONSTRAINT landing_request_changes_landing_request_id_change_id_key UNIQUE (landing_request_id, change_id);
+
+
+--
+-- Name: landing_request_changes landing_request_changes_landing_request_id_position_in_stac_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_changes
+    ADD CONSTRAINT landing_request_changes_landing_request_id_position_in_stac_key UNIQUE (landing_request_id, position_in_stack);
+
+
+--
+-- Name: landing_request_changes landing_request_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_changes
+    ADD CONSTRAINT landing_request_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_request_comments landing_request_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments
+    ADD CONSTRAINT landing_request_comments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_request_reviews landing_request_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_reviews
+    ADD CONSTRAINT landing_request_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_requests landing_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_requests landing_requests_repository_id_author_id_request_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_repository_id_author_id_request_id_key UNIQUE (repository_id, author_id, request_id);
+
+
+--
+-- Name: landing_requests landing_requests_repository_id_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_repository_id_number_key UNIQUE (repository_id, number);
+
+
+--
+-- Name: landing_review_requests landing_review_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_review_requests
+    ADD CONSTRAINT landing_review_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_tasks landing_tasks_landing_request_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_tasks
+    ADD CONSTRAINT landing_tasks_landing_request_id_key UNIQUE (landing_request_id);
+
+
+--
+-- Name: landing_tasks landing_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_tasks
+    ADD CONSTRAINT landing_tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: lfs_locks lfs_locks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_locks
+    ADD CONSTRAINT lfs_locks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: lfs_locks lfs_locks_repository_id_path_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_locks
+    ADD CONSTRAINT lfs_locks_repository_id_path_key UNIQUE (repository_id, path);
+
+
+--
+-- Name: lfs_meta_objects lfs_meta_objects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_meta_objects
+    ADD CONSTRAINT lfs_meta_objects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: lfs_meta_objects lfs_meta_objects_repository_id_oid_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_meta_objects
+    ADD CONSTRAINT lfs_meta_objects_repository_id_oid_key UNIQUE (repository_id, oid);
+
+
+--
+-- Name: lfs_objects lfs_objects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_objects
+    ADD CONSTRAINT lfs_objects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: lfs_objects lfs_objects_repository_id_oid_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_objects
+    ADD CONSTRAINT lfs_objects_repository_id_oid_key UNIQUE (repository_id, oid);
+
+
+--
+-- Name: lfs_upload_reservations lfs_upload_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_upload_reservations
+    ADD CONSTRAINT lfs_upload_reservations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: lfs_upload_reservations lfs_upload_reservations_repository_id_oid_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_upload_reservations
+    ADD CONSTRAINT lfs_upload_reservations_repository_id_oid_key UNIQUE (repository_id, oid);
+
+
+--
+-- Name: linear_comment_map linear_comment_map_issue_map_id_jjhub_comment_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_comment_map
+    ADD CONSTRAINT linear_comment_map_issue_map_id_jjhub_comment_id_key UNIQUE (issue_map_id, jjhub_comment_id);
+
+
+--
+-- Name: linear_comment_map linear_comment_map_issue_map_id_linear_comment_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_comment_map
+    ADD CONSTRAINT linear_comment_map_issue_map_id_linear_comment_id_key UNIQUE (issue_map_id, linear_comment_id);
+
+
+--
+-- Name: linear_comment_map linear_comment_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_comment_map
+    ADD CONSTRAINT linear_comment_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: linear_integrations linear_integrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations
+    ADD CONSTRAINT linear_integrations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: linear_integrations linear_integrations_user_id_linear_team_id_jjhub_repo_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations
+    ADD CONSTRAINT linear_integrations_user_id_linear_team_id_jjhub_repo_id_key UNIQUE (user_id, linear_team_id, jjhub_repo_id);
+
+
+--
+-- Name: linear_issue_map linear_issue_map_integration_id_jjhub_issue_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map
+    ADD CONSTRAINT linear_issue_map_integration_id_jjhub_issue_id_key UNIQUE (integration_id, jjhub_issue_id);
+
+
+--
+-- Name: linear_issue_map linear_issue_map_integration_id_linear_issue_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map
+    ADD CONSTRAINT linear_issue_map_integration_id_linear_issue_id_key UNIQUE (integration_id, linear_issue_id);
+
+
+--
+-- Name: linear_issue_map linear_issue_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map
+    ADD CONSTRAINT linear_issue_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: linear_oauth_setups linear_oauth_setups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_oauth_setups
+    ADD CONSTRAINT linear_oauth_setups_pkey PRIMARY KEY (setup_key);
+
+
+--
+-- Name: linear_sync_ops linear_sync_ops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_ops
+    ADD CONSTRAINT linear_sync_ops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: linear_sync_runs linear_sync_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_runs
+    ADD CONSTRAINT linear_sync_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mentions mentions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: milestones milestones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.milestones
+    ADD CONSTRAINT milestones_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: milestones milestones_repository_id_title_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.milestones
+    ADD CONSTRAINT milestones_repository_id_title_key UNIQUE (repository_id, title);
+
+
+--
+-- Name: notification_facts notification_facts_event_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_facts
+    ADD CONSTRAINT notification_facts_event_id_key UNIQUE (event_id);
+
+
+--
+-- Name: notification_facts notification_facts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_facts
+    ADD CONSTRAINT notification_facts_pkey PRIMARY KEY (user_id, sequence);
+
+
+--
+-- Name: notification_journals notification_journals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_journals
+    ADD CONSTRAINT notification_journals_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oauth2_access_tokens oauth2_access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_access_tokens
+    ADD CONSTRAINT oauth2_access_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oauth2_access_tokens oauth2_access_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_access_tokens
+    ADD CONSTRAINT oauth2_access_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: oauth2_applications oauth2_applications_client_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_applications
+    ADD CONSTRAINT oauth2_applications_client_id_key UNIQUE (client_id);
+
+
+--
+-- Name: oauth2_applications oauth2_applications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_applications
+    ADD CONSTRAINT oauth2_applications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oauth2_authorization_codes oauth2_authorization_codes_code_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_authorization_codes
+    ADD CONSTRAINT oauth2_authorization_codes_code_hash_key UNIQUE (code_hash);
+
+
+--
+-- Name: oauth2_refresh_tokens oauth2_refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_refresh_tokens
+    ADD CONSTRAINT oauth2_refresh_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oauth2_refresh_tokens oauth2_refresh_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_refresh_tokens
+    ADD CONSTRAINT oauth2_refresh_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: oauth_accounts oauth_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_accounts
+    ADD CONSTRAINT oauth_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oauth_accounts oauth_accounts_provider_provider_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_accounts
+    ADD CONSTRAINT oauth_accounts_provider_provider_user_id_key UNIQUE (provider, provider_user_id);
+
+
+--
+-- Name: oauth_states oauth_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_states
+    ADD CONSTRAINT oauth_states_pkey PRIMARY KEY (state_key);
+
+
+--
+-- Name: org_members org_members_organization_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_organization_id_user_id_key UNIQUE (organization_id, user_id);
+
+
+--
+-- Name: org_members org_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organization_secrets organization_secrets_organization_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_secrets
+    ADD CONSTRAINT organization_secrets_organization_id_name_key UNIQUE (organization_id, name);
+
+
+--
+-- Name: organization_secrets organization_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_secrets
+    ADD CONSTRAINT organization_secrets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organization_variables organization_variables_organization_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_variables
+    ADD CONSTRAINT organization_variables_organization_id_name_key UNIQUE (organization_id, name);
+
+
+--
+-- Name: organization_variables organization_variables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_variables
+    ADD CONSTRAINT organization_variables_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: organizations organizations_lower_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_lower_name_key UNIQUE (lower_name);
+
+
+--
+-- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: owner_namespaces owner_namespaces_org_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.owner_namespaces
+    ADD CONSTRAINT owner_namespaces_org_id_key UNIQUE (org_id);
+
+
+--
+-- Name: owner_namespaces owner_namespaces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.owner_namespaces
+    ADD CONSTRAINT owner_namespaces_pkey PRIMARY KEY (lower_slug);
+
+
+--
+-- Name: owner_namespaces owner_namespaces_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.owner_namespaces
+    ADD CONSTRAINT owner_namespaces_user_id_key UNIQUE (user_id);
+
+
+--
+-- Name: pair_prompt_queue pair_prompt_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_prompt_queue
+    ADD CONSTRAINT pair_prompt_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pair_prompt_queue pair_prompt_queue_session_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_prompt_queue
+    ADD CONSTRAINT pair_prompt_queue_session_id_seq_key UNIQUE (session_id, seq);
+
+
+--
+-- Name: pair_session_draft pair_session_draft_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_draft
+    ADD CONSTRAINT pair_session_draft_pkey PRIMARY KEY (session_id);
+
+
+--
+-- Name: pair_session_invites pair_session_invites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_invites
+    ADD CONSTRAINT pair_session_invites_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pair_session_links pair_session_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_links
+    ADD CONSTRAINT pair_session_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pair_session_members pair_session_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_members
+    ADD CONSTRAINT pair_session_members_pkey PRIMARY KEY (session_id, user_id);
+
+
+--
+-- Name: pair_sessions pair_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_sessions
+    ADD CONSTRAINT pair_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pair_share_links pair_share_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_share_links
+    ADD CONSTRAINT pair_share_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pair_share_links pair_share_links_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_share_links
+    ADD CONSTRAINT pair_share_links_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: pair_state pair_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_state
+    ADD CONSTRAINT pair_state_pkey PRIMARY KEY (room_id);
+
+
+--
+-- Name: pinned_issues pinned_issues_repository_id_issue_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pinned_issues
+    ADD CONSTRAINT pinned_issues_repository_id_issue_id_key UNIQUE (repository_id, issue_id);
+
+
+--
+-- Name: pinned_issues pinned_issues_repository_id_position_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pinned_issues
+    ADD CONSTRAINT pinned_issues_repository_id_position_key UNIQUE (repository_id, "position");
+
+
+--
+-- Name: protected_bookmarks protected_bookmarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.protected_bookmarks
+    ADD CONSTRAINT protected_bookmarks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: protected_bookmarks protected_bookmarks_repository_id_pattern_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.protected_bookmarks
+    ADD CONSTRAINT protected_bookmarks_repository_id_pattern_key UNIQUE (repository_id, pattern);
+
+
+--
+-- Name: provider_connection_grants provider_connection_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connection_grants
+    ADD CONSTRAINT provider_connection_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: provider_connections provider_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connections
+    ADD CONSTRAINT provider_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reactions reactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reactions
+    ADD CONSTRAINT reactions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: release_assets release_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_assets
+    ADD CONSTRAINT release_assets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: release_deletion_intents release_deletion_intents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_deletion_intents
+    ADD CONSTRAINT release_deletion_intents_pkey PRIMARY KEY (release_id);
+
+
+--
+-- Name: release_deletion_tag_tombstones release_deletion_tag_tombstones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_deletion_tag_tombstones
+    ADD CONSTRAINT release_deletion_tag_tombstones_pkey PRIMARY KEY (release_id);
+
+
+--
+-- Name: releases releases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.releases
+    ADD CONSTRAINT releases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: releases releases_repository_id_tag_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.releases
+    ADD CONSTRAINT releases_repository_id_tag_name_key UNIQUE (repository_id, tag_name);
+
+
+--
+-- Name: repo_connections repo_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repo_connections
+    ADD CONSTRAINT repo_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repo_connections repo_connections_user_id_repo_owner_lower_repo_name_lower_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repo_connections
+    ADD CONSTRAINT repo_connections_user_id_repo_owner_lower_repo_name_lower_key UNIQUE (user_id, repo_owner_lower, repo_name_lower);
+
+
+--
+-- Name: repositories repositories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories
+    ADD CONSTRAINT repositories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_agent_environment_secrets repository_agent_environment_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_agent_environment_secrets
+    ADD CONSTRAINT repository_agent_environment_secrets_pkey PRIMARY KEY (repository_id, name);
+
+
+--
+-- Name: repository_agent_environments repository_agent_environments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_agent_environments
+    ADD CONSTRAINT repository_agent_environments_pkey PRIMARY KEY (repository_id);
+
+
+--
+-- Name: repository_job_comments repository_job_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_comments
+    ADD CONSTRAINT repository_job_comments_pkey PRIMARY KEY (dispatch_id, step);
+
+
+--
+-- Name: repository_job_dispatches repository_job_dispatches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_dispatches
+    ADD CONSTRAINT repository_job_dispatches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_job_dispatches repository_job_dispatches_registration_id_revision_delivery_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_dispatches
+    ADD CONSTRAINT repository_job_dispatches_registration_id_revision_delivery_key UNIQUE (registration_id, revision, delivery_key);
+
+
+--
+-- Name: repository_job_events repository_job_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_events
+    ADD CONSTRAINT repository_job_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_job_events repository_job_events_repository_id_delivery_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_events
+    ADD CONSTRAINT repository_job_events_repository_id_delivery_key_key UNIQUE (repository_id, delivery_key);
+
+
+--
+-- Name: repository_job_registrations repository_job_registrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_registrations
+    ADD CONSTRAINT repository_job_registrations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_job_registrations repository_job_registrations_repository_id_job_mode_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_registrations
+    ADD CONSTRAINT repository_job_registrations_repository_id_job_mode_key UNIQUE (repository_id, job, mode);
+
+
+--
+-- Name: repository_job_trials repository_job_trials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_trials
+    ADD CONSTRAINT repository_job_trials_pkey PRIMARY KEY (repository_id, job, request_id);
+
+
+--
+-- Name: repository_secrets repository_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_secrets
+    ADD CONSTRAINT repository_secrets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_secrets repository_secrets_repository_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_secrets
+    ADD CONSTRAINT repository_secrets_repository_id_name_key UNIQUE (repository_id, name);
+
+
+--
+-- Name: repository_variables repository_variables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_variables
+    ADD CONSTRAINT repository_variables_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: repository_variables repository_variables_repository_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_variables
+    ADD CONSTRAINT repository_variables_repository_id_name_key UNIQUE (repository_id, name);
+
+
+--
+-- Name: revocation_events revocation_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.revocation_events
+    ADD CONSTRAINT revocation_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sandbox_usage_intervals sandbox_usage_intervals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sandbox_usage_intervals
+    ADD CONSTRAINT sandbox_usage_intervals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: search_rate_limits search_rate_limits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_rate_limits
+    ADD CONSTRAINT search_rate_limits_pkey PRIMARY KEY (scope, principal_key);
+
+
+--
+-- Name: share_listing_event_cooldowns share_listing_event_cooldowns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_listing_event_cooldowns
+    ADD CONSTRAINT share_listing_event_cooldowns_pkey PRIMARY KEY (listing_id, user_id, event_type);
+
+
+--
+-- Name: share_listings share_listings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_listings
+    ADD CONSTRAINT share_listings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sse_tickets sse_tickets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sse_tickets
+    ADD CONSTRAINT sse_tickets_pkey PRIMARY KEY (ticket_hash);
+
+
+--
+-- Name: ssh_keys ssh_keys_fingerprint_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ssh_keys
+    ADD CONSTRAINT ssh_keys_fingerprint_key UNIQUE (fingerprint);
+
+
+--
+-- Name: ssh_keys ssh_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ssh_keys
+    ADD CONSTRAINT ssh_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stack_changes stack_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stack_changes
+    ADD CONSTRAINT stack_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stack_changes stack_changes_stack_id_change_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stack_changes
+    ADD CONSTRAINT stack_changes_stack_id_change_id_key UNIQUE (stack_id, change_id);
+
+
+--
+-- Name: stacks stacks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stacks
+    ADD CONSTRAINT stacks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stacks stacks_repository_id_user_id_target_ref_state_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stacks
+    ADD CONSTRAINT stacks_repository_id_user_id_target_ref_state_key UNIQUE (repository_id, user_id, target_ref, state);
+
+
+--
+-- Name: stars stars_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stars stars_user_id_repository_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_user_id_repository_id_key UNIQUE (user_id, repository_id);
+
+
+--
+-- Name: stripe_processed_events stripe_processed_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stripe_processed_events
+    ADD CONSTRAINT stripe_processed_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: team_members team_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: team_members team_members_team_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_team_id_user_id_key UNIQUE (team_id, user_id);
+
+
+--
+-- Name: team_repos team_repos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_repos
+    ADD CONSTRAINT team_repos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: team_repos team_repos_team_id_repository_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_repos
+    ADD CONSTRAINT team_repos_team_id_repository_id_key UNIQUE (team_id, repository_id);
+
+
+--
+-- Name: teams teams_organization_id_lower_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_organization_id_lower_name_key UNIQUE (organization_id, lower_name);
+
+
+--
+-- Name: teams teams_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: file_drafts uq_file_drafts_repo_bookmark_path; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.file_drafts
+    ADD CONSTRAINT uq_file_drafts_repo_bookmark_path UNIQUE (repository_id, bookmark, path);
+
+
+--
+-- Name: stack_changes uq_stack_changes_stack_position; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stack_changes
+    ADD CONSTRAINT uq_stack_changes_stack_position UNIQUE (stack_id, "position") DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: user_ai_keys user_ai_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_ai_keys
+    ADD CONSTRAINT user_ai_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_ai_keys user_ai_keys_user_id_provider_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_ai_keys
+    ADD CONSTRAINT user_ai_keys_user_id_provider_key UNIQUE (user_id, provider);
+
+
+--
+-- Name: user_devices user_devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_devices
+    ADD CONSTRAINT user_devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_devices user_devices_user_id_apns_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_devices
+    ADD CONSTRAINT user_devices_user_id_apns_token_key UNIQUE (user_id, apns_token);
+
+
+--
+-- Name: user_notification_preferences user_notification_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_notification_preferences
+    ADD CONSTRAINT user_notification_preferences_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: users users_lower_username_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_lower_username_key UNIQUE (lower_username);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_username_key UNIQUE (username);
+
+
+--
+-- Name: watches watches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watches
+    ADD CONSTRAINT watches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: watches watches_user_id_repository_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watches
+    ADD CONSTRAINT watches_user_id_repository_id_key UNIQUE (user_id, repository_id);
+
+
+--
+-- Name: webhook_deliveries webhook_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_deliveries
+    ADD CONSTRAINT webhook_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: webhooks webhooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhooks
+    ADD CONSTRAINT webhooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wiki_pages wiki_body_size; Type: CHECK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.wiki_pages
+    ADD CONSTRAINT wiki_body_size CHECK ((octet_length(body) <= 1048576)) NOT VALID;
+
+
+--
+-- Name: wiki_page_revisions wiki_page_revisions_page_id_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions
+    ADD CONSTRAINT wiki_page_revisions_page_id_revision_key UNIQUE (page_id, revision);
+
+
+--
+-- Name: wiki_page_revisions wiki_page_revisions_page_id_update_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions
+    ADD CONSTRAINT wiki_page_revisions_page_id_update_id_key UNIQUE (page_id, update_id);
+
+
+--
+-- Name: wiki_page_revisions wiki_page_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions
+    ADD CONSTRAINT wiki_page_revisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wiki_pages wiki_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_pages
+    ADD CONSTRAINT wiki_pages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wiki_pages wiki_pages_repository_id_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_pages
+    ADD CONSTRAINT wiki_pages_repository_id_slug_key UNIQUE (repository_id, slug);
+
+
+--
+-- Name: workflow_artifacts workflow_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_artifacts
+    ADD CONSTRAINT workflow_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_artifacts workflow_artifacts_workflow_run_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_artifacts
+    ADD CONSTRAINT workflow_artifacts_workflow_run_id_name_key UNIQUE (workflow_run_id, name);
+
+
+--
+-- Name: workflow_caches workflow_caches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_caches
+    ADD CONSTRAINT workflow_caches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_caches workflow_caches_repository_id_bookmark_name_cache_key_cache_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_caches
+    ADD CONSTRAINT workflow_caches_repository_id_bookmark_name_cache_key_cache_key UNIQUE (repository_id, bookmark_name, cache_key, cache_version);
+
+
+--
+-- Name: workflow_definitions workflow_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_definitions
+    ADD CONSTRAINT workflow_definitions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_definitions workflow_definitions_repository_id_path_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_definitions
+    ADD CONSTRAINT workflow_definitions_repository_id_path_key UNIQUE (repository_id, path);
+
+
+--
+-- Name: workflow_log_budget_initializations workflow_log_budget_initializations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_log_budget_initializations
+    ADD CONSTRAINT workflow_log_budget_initializations_pkey PRIMARY KEY (workflow_run_id);
+
+
+--
+-- Name: workflow_logs workflow_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs
+    ADD CONSTRAINT workflow_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_logs workflow_logs_workflow_step_id_sequence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs
+    ADD CONSTRAINT workflow_logs_workflow_step_id_sequence_key UNIQUE (workflow_step_id, sequence);
+
+
+--
+-- Name: workflow_run_logs workflow_run_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_logs
+    ADD CONSTRAINT workflow_run_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_run_logs workflow_run_logs_workflow_run_id_sequence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_logs
+    ADD CONSTRAINT workflow_run_logs_workflow_run_id_sequence_key UNIQUE (workflow_run_id, sequence);
+
+
+--
+-- Name: workflow_runs workflow_runs_agent_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_agent_token_hash_key UNIQUE (agent_token_hash);
+
+
+--
+-- Name: workflow_runs workflow_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_schedule_specs workflow_schedule_specs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_schedule_specs
+    ADD CONSTRAINT workflow_schedule_specs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_schedule_specs workflow_schedule_specs_workflow_definition_id_cron_express_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_schedule_specs
+    ADD CONSTRAINT workflow_schedule_specs_workflow_definition_id_cron_express_key UNIQUE (workflow_definition_id, cron_expression);
+
+
+--
+-- Name: workflow_steps workflow_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_steps workflow_steps_workflow_run_id_position_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_workflow_run_id_position_key UNIQUE (workflow_run_id, "position");
+
+
+--
+-- Name: workflow_tasks workflow_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_tasks
+    ADD CONSTRAINT workflow_tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_triggers workflow_triggers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_triggers workflow_triggers_repository_id_workflow_path_event_type_ev_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_repository_id_workflow_path_event_type_ev_key UNIQUE (repository_id, workflow_path, event_type, event_action);
+
+
+--
+-- Name: workspace_capability_bindings workspace_capability_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_capability_bindings
+    ADD CONSTRAINT workspace_capability_bindings_pkey PRIMARY KEY (repository_id, user_id, required_capability);
+
+
+--
+-- Name: workspace_capability_bindings workspace_capability_bindings_workspace_id_required_capabil_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_capability_bindings
+    ADD CONSTRAINT workspace_capability_bindings_workspace_id_required_capabil_key UNIQUE (workspace_id, required_capability);
+
+
+--
+-- Name: workspace_sessions workspace_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_sessions
+    ADD CONSTRAINT workspace_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_shares workspace_shares_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares
+    ADD CONSTRAINT workspace_shares_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_shares workspace_shares_workspace_id_grantee_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares
+    ADD CONSTRAINT workspace_shares_workspace_id_grantee_user_id_key UNIQUE (workspace_id, grantee_user_id);
+
+
+--
+-- Name: workspace_snapshots workspace_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_snapshots
+    ADD CONSTRAINT workspace_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspaces workspaces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_timeline_members_timeline_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX app_timeline_members_timeline_live ON public.app_timeline_members USING btree (timeline_id) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: app_timeline_one_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX app_timeline_one_owner ON public.app_timeline_members USING btree (timeline_id) WHERE ((role = 'owner'::text) AND (removed_at IS NULL));
+
+
+--
+-- Name: idx_access_tokens_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_access_tokens_expires_at ON public.access_tokens USING btree (expires_at);
+
+
+--
+-- Name: idx_access_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_access_tokens_token_hash ON public.access_tokens USING btree (token_hash);
+
+
+--
+-- Name: idx_access_tokens_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_access_tokens_user_id ON public.access_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_agent_messages_repo_session_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_messages_repo_session_sequence ON public.agent_messages USING btree (repository_id, session_id, sequence);
+
+
+--
+-- Name: idx_agent_messages_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_messages_session_id ON public.agent_messages USING btree (session_id, sequence);
+
+
+--
+-- Name: idx_agent_parts_content_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_parts_content_gin ON public.agent_parts USING gin (content);
+
+
+--
+-- Name: idx_agent_parts_message_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_parts_message_id ON public.agent_parts USING btree (message_id, part_index);
+
+
+--
+-- Name: idx_agent_parts_repo_session_message_partindex; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_parts_repo_session_message_partindex ON public.agent_parts USING btree (repository_id, session_id, message_id, part_index);
+
+
+--
+-- Name: idx_agent_sessions_live_by_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_sessions_live_by_repo ON public.agent_sessions USING btree (repository_id, created_at DESC) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_agent_sessions_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_sessions_repo_id ON public.agent_sessions USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_agent_sessions_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_sessions_workspace ON public.agent_sessions USING btree (workspace_id) WHERE (workspace_id IS NOT NULL);
+
+
+--
+-- Name: idx_alpha_waitlist_approved_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alpha_waitlist_approved_by ON public.alpha_waitlist_entries USING btree (approved_by);
+
+
+--
+-- Name: idx_alpha_waitlist_status_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alpha_waitlist_status_created ON public.alpha_waitlist_entries USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_alpha_whitelist_created_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alpha_whitelist_created_by ON public.alpha_whitelist_entries USING btree (created_by);
+
+
+--
+-- Name: idx_analyzer_runs_change_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_analyzer_runs_change_revision ON public.analyzer_runs USING btree (repository_id, change_id, revision_seq, name);
+
+
+--
+-- Name: idx_anon_sandboxes_client_ip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anon_sandboxes_client_ip ON public.anon_sandboxes USING btree (client_ip) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_anon_sandboxes_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anon_sandboxes_expires_at ON public.anon_sandboxes USING btree (expires_at) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_anon_sandboxes_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anon_sandboxes_status ON public.anon_sandboxes USING btree (status) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_approvals_repo_session_state_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_approvals_repo_session_state_created ON public.approvals USING btree (repository_id, session_id, state, created_at DESC);
+
+
+--
+-- Name: idx_audit_log_actor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_log_actor_id ON public.audit_log USING btree (actor_id);
+
+
+--
+-- Name: idx_audit_log_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_log_created_at ON public.audit_log USING btree (created_at);
+
+
+--
+-- Name: idx_audit_log_event_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_log_event_type ON public.audit_log USING btree (event_type);
+
+
+--
+-- Name: idx_audit_log_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_log_target ON public.audit_log USING btree (target_type, target_id);
+
+
+--
+-- Name: idx_auth_nonces_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_auth_nonces_expires_at ON public.auth_nonces USING btree (expires_at);
+
+
+--
+-- Name: idx_auth_nonces_wallet; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_auth_nonces_wallet ON public.auth_nonces USING btree (wallet_address);
+
+
+--
+-- Name: idx_auth_sessions_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_auth_sessions_expires_at ON public.auth_sessions USING btree (expires_at);
+
+
+--
+-- Name: idx_auth_sessions_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_auth_sessions_user_id ON public.auth_sessions USING btree (user_id);
+
+
+--
+-- Name: idx_billing_accounts_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_accounts_owner ON public.billing_accounts USING btree (owner_type, owner_id);
+
+
+--
+-- Name: idx_billing_credit_ledger_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_credit_ledger_account ON public.billing_credit_ledger USING btree (billing_account_id, created_at DESC);
+
+
+--
+-- Name: idx_billing_entitlements_account_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_entitlements_account_active ON public.billing_entitlements USING btree (billing_account_id, active);
+
+
+--
+-- Name: idx_billing_subscriptions_account_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_subscriptions_account_status ON public.billing_subscriptions USING btree (billing_account_id, status, updated_at DESC);
+
+
+--
+-- Name: idx_billing_subscriptions_account_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_subscriptions_account_updated ON public.billing_subscriptions USING btree (billing_account_id, updated_at DESC);
+
+
+--
+-- Name: idx_billing_usage_counters_owner_metric_period; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_billing_usage_counters_owner_metric_period ON public.billing_usage_counters USING btree (owner_type, owner_id, metric_key, period_start DESC);
+
+
+--
+-- Name: idx_bookmarks_repo_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bookmarks_repo_name ON public.bookmarks USING btree (repository_id, name);
+
+
+--
+-- Name: idx_branch_lock_join_requests_holder; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_branch_lock_join_requests_holder ON public.branch_lock_join_requests USING btree (repository_id, branch) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: idx_branch_lock_join_requests_requester; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_branch_lock_join_requests_requester ON public.branch_lock_join_requests USING btree (requester_id, status);
+
+
+--
+-- Name: idx_branch_locks_heartbeat; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_branch_locks_heartbeat ON public.branch_locks USING btree (heartbeat_at);
+
+
+--
+-- Name: idx_branch_locks_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_branch_locks_user ON public.branch_locks USING btree (user_id);
+
+
+--
+-- Name: idx_build_cache_artifacts_repo_accessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_build_cache_artifacts_repo_accessed ON public.build_cache_artifacts USING btree (repository_id, last_accessed_at);
+
+
+--
+-- Name: idx_build_cache_entries_repo_accessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_build_cache_entries_repo_accessed ON public.build_cache_entries USING btree (repository_id, last_accessed_at);
+
+
+--
+-- Name: idx_build_cache_entry_artifacts_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_build_cache_entry_artifacts_digest ON public.build_cache_entry_artifacts USING btree (repository_id, digest);
+
+
+--
+-- Name: idx_build_cache_read_tokens_repo_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_build_cache_read_tokens_repo_active ON public.build_cache_read_tokens USING btree (repository_id) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: idx_change_revisions_agent_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_change_revisions_agent_session ON public.change_revisions USING btree (agent_session_id) WHERE (agent_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_change_revisions_change_seq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_change_revisions_change_seq ON public.change_revisions USING btree (repository_id, change_id, seq DESC);
+
+
+--
+-- Name: idx_change_revisions_non_undo_commit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_change_revisions_non_undo_commit ON public.change_revisions USING btree (repository_id, change_id, commit_id) WHERE ((source)::text <> 'undo'::text);
+
+
+--
+-- Name: idx_change_revisions_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_change_revisions_workspace ON public.change_revisions USING btree (workspace_id) WHERE (workspace_id IS NOT NULL);
+
+
+--
+-- Name: idx_change_revisions_workspace_snapshot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_change_revisions_workspace_snapshot ON public.change_revisions USING btree (workspace_snapshot_id) WHERE (workspace_snapshot_id IS NOT NULL);
+
+
+--
+-- Name: idx_changes_parent_change_ids_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_changes_parent_change_ids_gin ON public.changes USING gin (parent_change_ids);
+
+
+--
+-- Name: idx_changes_repo_id_desc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_changes_repo_id_desc ON public.changes USING btree (repository_id, id DESC);
+
+
+--
+-- Name: idx_changeset_members_repository; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_changeset_members_repository ON public.changeset_members USING btree (repository_id);
+
+
+--
+-- Name: idx_changesets_org_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_changesets_org_created ON public.changesets USING btree (organization_id, created_at DESC);
+
+
+--
+-- Name: idx_changesets_org_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_changesets_org_state ON public.changesets USING btree (organization_id, state);
+
+
+--
+-- Name: idx_code_search_documents_repo_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_code_search_documents_repo_path ON public.code_search_documents USING btree (repository_id, file_path);
+
+
+--
+-- Name: idx_code_search_documents_search_vector_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_code_search_documents_search_vector_gin ON public.code_search_documents USING gin (search_vector);
+
+
+--
+-- Name: idx_collaborators_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_collaborators_user_id ON public.collaborators USING btree (user_id);
+
+
+--
+-- Name: idx_commit_statuses_repo_change; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commit_statuses_repo_change ON public.commit_statuses USING btree (repository_id, change_id, created_at DESC);
+
+
+--
+-- Name: idx_commit_statuses_repo_sha; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commit_statuses_repo_sha ON public.commit_statuses USING btree (repository_id, commit_sha, created_at DESC);
+
+
+--
+-- Name: idx_conflicts_repo_change; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conflicts_repo_change ON public.conflicts USING btree (repository_id, change_id, file_path);
+
+
+--
+-- Name: idx_conflicts_repo_change_resolved; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conflicts_repo_change_resolved ON public.conflicts USING btree (repository_id, change_id, resolved);
+
+
+--
+-- Name: idx_deploy_keys_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_deploy_keys_fingerprint ON public.deploy_keys USING btree (key_fingerprint);
+
+
+--
+-- Name: idx_deploy_keys_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_deploy_keys_repo_id ON public.deploy_keys USING btree (repository_id);
+
+
+--
+-- Name: idx_devtools_snapshots_repo_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_devtools_snapshots_repo_session ON public.devtools_snapshots USING btree (repository_id, session_id);
+
+
+--
+-- Name: idx_email_addresses_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_addresses_user_id ON public.email_addresses USING btree (user_id);
+
+
+--
+-- Name: idx_email_verification_tokens_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_verification_tokens_expires_at ON public.email_verification_tokens USING btree (expires_at);
+
+
+--
+-- Name: idx_email_verification_tokens_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_verification_tokens_user_id ON public.email_verification_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_file_drafts_repo_bookmark_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_drafts_repo_bookmark_live ON public.file_drafts USING btree (repository_id, bookmark) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_findings_change_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_findings_change_revision ON public.findings USING btree (repository_id, change_id, revision_seq, analyzer, id);
+
+
+--
+-- Name: idx_github_app_installation_repos_installation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_app_installation_repos_installation ON public.github_app_installation_repositories USING btree (installation_id);
+
+
+--
+-- Name: idx_github_app_installation_repos_owner_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_app_installation_repos_owner_repo ON public.github_app_installation_repositories USING btree (owner_login_lower, repo_name_lower);
+
+
+--
+-- Name: idx_github_mirror_sync_ref_results_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_mirror_sync_ref_results_run ON public.github_mirror_sync_ref_results USING btree (run_id, name);
+
+
+--
+-- Name: idx_github_mirror_sync_runs_repository; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_mirror_sync_runs_repository ON public.github_mirror_sync_runs USING btree (repository_id, created_at DESC, id DESC);
+
+
+--
+-- Name: idx_github_synced_issue_comments_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_synced_issue_comments_issue ON public.github_synced_issue_comments USING btree (synced_repo_id, issue_number, github_created_at);
+
+
+--
+-- Name: idx_github_synced_issues_listing; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_synced_issues_listing ON public.github_synced_issues USING btree (synced_repo_id, resource, state, github_updated_at DESC);
+
+
+--
+-- Name: idx_github_synced_issues_listing_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_synced_issues_listing_created ON public.github_synced_issues USING btree (synced_repo_id, resource, state, github_created_at DESC);
+
+
+--
+-- Name: idx_github_synced_repos_installation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_synced_repos_installation ON public.github_synced_repos USING btree (installation_id) WHERE (installation_id IS NOT NULL);
+
+
+--
+-- Name: idx_github_synced_repos_refs; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_synced_repos_refs ON public.github_synced_repos USING btree (owner_login_lower, repo_name_lower) WHERE (sync_refs AND ((sync_state)::text <> 'disabled'::text));
+
+
+--
+-- Name: idx_github_webhook_jobs_installation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_webhook_jobs_installation ON public.github_webhook_jobs USING btree (installation_id, created_at DESC);
+
+
+--
+-- Name: idx_github_webhook_jobs_pending_dequeue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_webhook_jobs_pending_dequeue ON public.github_webhook_jobs USING btree (available_at, id) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: idx_github_webhook_jobs_repository; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_webhook_jobs_repository ON public.github_webhook_jobs USING btree (github_repository_id, created_at DESC);
+
+
+--
+-- Name: idx_import_jobs_retryable_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_import_jobs_retryable_claim ON public.import_jobs USING btree (available_at, claimed_at, created_at, id) WHERE ((status)::text = 'cloning'::text);
+
+
+--
+-- Name: idx_import_jobs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_import_jobs_status ON public.import_jobs USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_import_jobs_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_import_jobs_user_created ON public.import_jobs USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_import_jobs_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_import_jobs_workspace_id ON public.import_jobs USING btree (workspace_id) WHERE (workspace_id IS NOT NULL);
+
+
+--
+-- Name: idx_issue_artifacts_cleanup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_artifacts_cleanup ON public.issue_artifacts USING btree (status, created_at, expires_at, updated_at, id);
+
+
+--
+-- Name: idx_issue_artifacts_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_artifacts_expires_at ON public.issue_artifacts USING btree (expires_at);
+
+
+--
+-- Name: idx_issue_artifacts_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_artifacts_issue_id ON public.issue_artifacts USING btree (issue_id, created_at DESC);
+
+
+--
+-- Name: idx_issue_artifacts_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_artifacts_repo_id ON public.issue_artifacts USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_issue_change_links_change; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_change_links_change ON public.issue_change_links USING btree (repository_id, change_id, issue_id);
+
+
+--
+-- Name: idx_issue_comments_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_comments_issue_id ON public.issue_comments USING btree (issue_id, created_at);
+
+
+--
+-- Name: idx_issue_events_issue_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_events_issue_id ON public.issue_events USING btree (issue_id, created_at);
+
+
+--
+-- Name: idx_issue_events_payload_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_events_payload_gin ON public.issue_events USING gin (payload);
+
+
+--
+-- Name: idx_issue_state_facts_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issue_state_facts_issue ON public.issue_state_facts USING btree (repository_id, issue_id, sequence);
+
+
+--
+-- Name: idx_issues_open_partial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issues_open_partial ON public.issues USING btree (repository_id, number DESC) WHERE ((state)::text = 'open'::text);
+
+
+--
+-- Name: idx_issues_repo_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issues_repo_state ON public.issues USING btree (repository_id, state, number DESC);
+
+
+--
+-- Name: idx_issues_search_vector_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_issues_search_vector_gin ON public.issues USING gin (search_vector);
+
+
+--
+-- Name: idx_jj_operations_change_ids_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jj_operations_change_ids_gin ON public.jj_operations USING gin (change_ids);
+
+
+--
+-- Name: idx_jj_operations_repo_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jj_operations_repo_created_at ON public.jj_operations USING btree (repository_id, created_at DESC, id DESC);
+
+
+--
+-- Name: idx_jj_operations_workspace_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jj_operations_workspace_created_at ON public.jj_operations USING btree (workspace_id, created_at DESC, id DESC) WHERE (workspace_id IS NOT NULL);
+
+
+--
+-- Name: idx_labels_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_labels_repo_id ON public.labels USING btree (repository_id);
+
+
+--
+-- Name: idx_landing_request_changes_change; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_changes_change ON public.landing_request_changes USING btree (change_id, landing_request_id);
+
+
+--
+-- Name: idx_landing_request_changes_lr_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_changes_lr_id ON public.landing_request_changes USING btree (landing_request_id, position_in_stack);
+
+
+--
+-- Name: idx_landing_request_comments_lr_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_comments_lr_id ON public.landing_request_comments USING btree (landing_request_id, created_at);
+
+
+--
+-- Name: idx_landing_request_comments_unresolved; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_comments_unresolved ON public.landing_request_comments USING btree (landing_request_id, id) WHERE ((state)::text <> 'resolved'::text);
+
+
+--
+-- Name: idx_landing_request_reviews_agent_lgtm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_reviews_agent_lgtm ON public.landing_request_reviews USING btree (landing_request_id, commit_id) WHERE (((reviewer_kind)::text = 'agent'::text) AND ((verdict)::text = 'lgtm'::text) AND ((state)::text = 'submitted'::text));
+
+
+--
+-- Name: idx_landing_request_reviews_agent_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_reviews_agent_session ON public.landing_request_reviews USING btree (agent_session_id) WHERE (agent_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_landing_request_reviews_lr_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_request_reviews_lr_id ON public.landing_request_reviews USING btree (landing_request_id, created_at);
+
+
+--
+-- Name: idx_landing_requests_author_agent_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_requests_author_agent_session ON public.landing_requests USING btree (author_agent_session_id) WHERE (author_agent_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_landing_requests_auto_land; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_requests_auto_land ON public.landing_requests USING btree (auto_land_checked_at NULLS FIRST, auto_land_set_at, id) WHERE (auto_land_enabled AND ((state)::text = 'open'::text));
+
+
+--
+-- Name: idx_landing_requests_open_partial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_requests_open_partial ON public.landing_requests USING btree (repository_id, number DESC) WHERE ((state)::text = 'open'::text);
+
+
+--
+-- Name: idx_landing_requests_repo_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_requests_repo_state ON public.landing_requests USING btree (repository_id, state, number DESC);
+
+
+--
+-- Name: idx_landing_review_requests_landing; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_review_requests_landing ON public.landing_review_requests USING btree (landing_request_id, created_at, id);
+
+
+--
+-- Name: idx_landing_tasks_repo_running; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_tasks_repo_running ON public.landing_tasks USING btree (repository_id) WHERE ((status)::text = 'running'::text);
+
+
+--
+-- Name: idx_landing_tasks_status_priority; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_landing_tasks_status_priority ON public.landing_tasks USING btree (status, priority DESC, created_at) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'append_pending'::character varying])::text[]));
+
+
+--
+-- Name: idx_lfs_locks_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_locks_owner ON public.lfs_locks USING btree (owner_id);
+
+
+--
+-- Name: idx_lfs_locks_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_locks_repo ON public.lfs_locks USING btree (repository_id);
+
+
+--
+-- Name: idx_lfs_meta_objects_oid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_meta_objects_oid ON public.lfs_meta_objects USING btree (oid);
+
+
+--
+-- Name: idx_lfs_meta_objects_repository_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_meta_objects_repository_id ON public.lfs_meta_objects USING btree (repository_id);
+
+
+--
+-- Name: idx_lfs_objects_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_objects_repo ON public.lfs_objects USING btree (repository_id);
+
+
+--
+-- Name: idx_lfs_upload_reservations_expiry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_upload_reservations_expiry ON public.lfs_upload_reservations USING btree (expires_at);
+
+
+--
+-- Name: idx_lfs_upload_reservations_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lfs_upload_reservations_repo ON public.lfs_upload_reservations USING btree (repository_id);
+
+
+--
+-- Name: idx_linear_comment_map_issue_map; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_comment_map_issue_map ON public.linear_comment_map USING btree (issue_map_id);
+
+
+--
+-- Name: idx_linear_integrations_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_integrations_active ON public.linear_integrations USING btree (is_active) WHERE (is_active = true);
+
+
+--
+-- Name: idx_linear_integrations_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_integrations_repo_id ON public.linear_integrations USING btree (jjhub_repo_id);
+
+
+--
+-- Name: idx_linear_integrations_team_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_integrations_team_id ON public.linear_integrations USING btree (linear_team_id);
+
+
+--
+-- Name: idx_linear_integrations_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_integrations_user_id ON public.linear_integrations USING btree (user_id);
+
+
+--
+-- Name: idx_linear_integrations_webhook_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_linear_integrations_webhook_key ON public.linear_integrations USING btree (webhook_key) WHERE ((webhook_key)::text <> ''::text);
+
+
+--
+-- Name: idx_linear_issue_map_integration; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_issue_map_integration ON public.linear_issue_map USING btree (integration_id);
+
+
+--
+-- Name: idx_linear_issue_map_jjhub_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_issue_map_jjhub_issue ON public.linear_issue_map USING btree (jjhub_issue_id);
+
+
+--
+-- Name: idx_linear_issue_map_linear_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_issue_map_linear_issue ON public.linear_issue_map USING btree (linear_issue_id);
+
+
+--
+-- Name: idx_linear_oauth_setups_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_oauth_setups_expires_at ON public.linear_oauth_setups USING btree (expires_at);
+
+
+--
+-- Name: idx_linear_oauth_setups_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_oauth_setups_user_id ON public.linear_oauth_setups USING btree (user_id);
+
+
+--
+-- Name: idx_linear_sync_ops_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_ops_dedup ON public.linear_sync_ops USING btree (integration_id, entity, entity_id, created_at DESC);
+
+
+--
+-- Name: idx_linear_sync_ops_feed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_ops_feed ON public.linear_sync_ops USING btree (integration_id, created_at DESC, id DESC);
+
+
+--
+-- Name: idx_linear_sync_ops_integration; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_ops_integration ON public.linear_sync_ops USING btree (integration_id, created_at DESC);
+
+
+--
+-- Name: idx_linear_sync_ops_retry_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_ops_retry_of ON public.linear_sync_ops USING btree (retry_of_id) WHERE (retry_of_id IS NOT NULL);
+
+
+--
+-- Name: idx_linear_sync_ops_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_ops_run ON public.linear_sync_ops USING btree (run_id, created_at DESC, id DESC) WHERE (run_id IS NOT NULL);
+
+
+--
+-- Name: idx_linear_sync_runs_integration; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_linear_sync_runs_integration ON public.linear_sync_runs USING btree (integration_id, created_at DESC, id DESC);
+
+
+--
+-- Name: idx_mentions_mentioned_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mentions_mentioned_user ON public.mentions USING btree (mentioned_user_id, created_at DESC) WHERE (mentioned_user_id IS NOT NULL);
+
+
+--
+-- Name: idx_milestones_repo_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_milestones_repo_state ON public.milestones USING btree (repository_id, state);
+
+
+--
+-- Name: idx_notification_facts_notification; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notification_facts_notification ON public.notification_facts USING btree (user_id, notification_id, sequence);
+
+
+--
+-- Name: idx_notifications_unread_partial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notifications_unread_partial ON public.notifications USING btree (user_id, created_at DESC) WHERE ((status)::text = 'unread'::text);
+
+
+--
+-- Name: idx_notifications_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notifications_user_created ON public.notifications USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_oauth2_access_tokens_app_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_access_tokens_app_id ON public.oauth2_access_tokens USING btree (app_id);
+
+
+--
+-- Name: idx_oauth2_access_tokens_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_access_tokens_expires_at ON public.oauth2_access_tokens USING btree (expires_at);
+
+
+--
+-- Name: idx_oauth2_access_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_access_tokens_token_hash ON public.oauth2_access_tokens USING btree (token_hash);
+
+
+--
+-- Name: idx_oauth2_access_tokens_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_access_tokens_user_id ON public.oauth2_access_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_oauth2_applications_client_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_applications_client_id ON public.oauth2_applications USING btree (client_id);
+
+
+--
+-- Name: idx_oauth2_applications_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_applications_owner_id ON public.oauth2_applications USING btree (owner_id);
+
+
+--
+-- Name: idx_oauth2_authorization_codes_app_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_authorization_codes_app_id ON public.oauth2_authorization_codes USING btree (app_id);
+
+
+--
+-- Name: idx_oauth2_authorization_codes_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_authorization_codes_expires_at ON public.oauth2_authorization_codes USING btree (expires_at);
+
+
+--
+-- Name: idx_oauth2_refresh_tokens_app_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_refresh_tokens_app_id ON public.oauth2_refresh_tokens USING btree (app_id);
+
+
+--
+-- Name: idx_oauth2_refresh_tokens_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_refresh_tokens_expires_at ON public.oauth2_refresh_tokens USING btree (expires_at);
+
+
+--
+-- Name: idx_oauth2_refresh_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_refresh_tokens_token_hash ON public.oauth2_refresh_tokens USING btree (token_hash);
+
+
+--
+-- Name: idx_oauth2_refresh_tokens_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth2_refresh_tokens_user_id ON public.oauth2_refresh_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_oauth_accounts_profile_data_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth_accounts_profile_data_gin ON public.oauth_accounts USING gin (profile_data);
+
+
+--
+-- Name: idx_oauth_accounts_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth_accounts_user_id ON public.oauth_accounts USING btree (user_id);
+
+
+--
+-- Name: idx_oauth_states_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_oauth_states_expires_at ON public.oauth_states USING btree (expires_at);
+
+
+--
+-- Name: idx_org_members_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_org_members_user_id ON public.org_members USING btree (user_id);
+
+
+--
+-- Name: idx_organization_secrets_org_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_organization_secrets_org_id ON public.organization_secrets USING btree (organization_id);
+
+
+--
+-- Name: idx_organization_variables_org_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_organization_variables_org_id ON public.organization_variables USING btree (organization_id);
+
+
+--
+-- Name: idx_organizations_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_organizations_lower_name ON public.organizations USING btree (lower_name);
+
+
+--
+-- Name: idx_pair_prompt_queue_session_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pair_prompt_queue_session_status ON public.pair_prompt_queue USING btree (session_id, status);
+
+
+--
+-- Name: idx_pair_sessions_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pair_sessions_owner ON public.pair_sessions USING btree (owner_user_id);
+
+
+--
+-- Name: idx_pair_share_links_room; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pair_share_links_room ON public.pair_share_links USING btree (room_id);
+
+
+--
+-- Name: idx_protected_bookmarks_repo_pattern; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_protected_bookmarks_repo_pattern ON public.protected_bookmarks USING btree (repository_id, pattern);
+
+
+--
+-- Name: idx_provider_connection_grants_connection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_provider_connection_grants_connection ON public.provider_connection_grants USING btree (connection_id);
+
+
+--
+-- Name: idx_provider_connections_org_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_provider_connections_org_provider ON public.provider_connections USING btree (org_id, provider, updated_at DESC) WHERE ((state)::text = 'active'::text);
+
+
+--
+-- Name: idx_provider_connections_refresh_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_provider_connections_refresh_due ON public.provider_connections USING btree (next_refresh_at) WHERE (((state)::text = 'active'::text) AND (refresh_token_encrypted IS NOT NULL));
+
+
+--
+-- Name: idx_provider_connections_user_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_provider_connections_user_provider ON public.provider_connections USING btree (user_id, provider, updated_at DESC) WHERE ((state)::text = 'active'::text);
+
+
+--
+-- Name: idx_reactions_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reactions_target ON public.reactions USING btree (target_type, target_id);
+
+
+--
+-- Name: idx_release_assets_cleanup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_release_assets_cleanup ON public.release_assets USING btree (status, delete_after, created_at, updated_at, id);
+
+
+--
+-- Name: idx_release_assets_deleting_retry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_release_assets_deleting_retry ON public.release_assets USING btree (updated_at, id) WHERE ((status)::text = 'deleting'::text);
+
+
+--
+-- Name: idx_release_assets_release_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_release_assets_release_id ON public.release_assets USING btree (release_id, created_at DESC);
+
+
+--
+-- Name: idx_release_deletion_intents_retry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_release_deletion_intents_retry ON public.release_deletion_intents USING btree (updated_at, release_id);
+
+
+--
+-- Name: idx_releases_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_releases_repo_id ON public.releases USING btree (repository_id, COALESCE(published_at, created_at) DESC, id DESC);
+
+
+--
+-- Name: idx_releases_tag_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_releases_tag_name ON public.releases USING btree (repository_id, tag_name);
+
+
+--
+-- Name: idx_repo_connections_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repo_connections_user_id ON public.repo_connections USING btree (user_id);
+
+
+--
+-- Name: idx_repositories_forks_with_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_forks_with_parent ON public.repositories USING btree (fork_id) WHERE ((is_fork = true) AND (fork_id IS NOT NULL));
+
+
+--
+-- Name: idx_repositories_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_lower_name ON public.repositories USING btree (lower_name);
+
+
+--
+-- Name: idx_repositories_org_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_org_id ON public.repositories USING btree (org_id);
+
+
+--
+-- Name: idx_repositories_search_vector_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_search_vector_gin ON public.repositories USING gin (search_vector);
+
+
+--
+-- Name: idx_repositories_topics_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_topics_gin ON public.repositories USING gin (topics);
+
+
+--
+-- Name: idx_repositories_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repositories_user_id ON public.repositories USING btree (user_id);
+
+
+--
+-- Name: idx_repository_secrets_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repository_secrets_repo_id ON public.repository_secrets USING btree (repository_id);
+
+
+--
+-- Name: idx_repository_variables_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_repository_variables_repo_id ON public.repository_variables USING btree (repository_id);
+
+
+--
+-- Name: idx_revocation_events_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revocation_events_created_at ON public.revocation_events USING btree (created_at);
+
+
+--
+-- Name: idx_search_rate_limits_updated_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_rate_limits_updated_at ON public.search_rate_limits USING btree (updated_at);
+
+
+--
+-- Name: idx_share_listings_catalog; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_share_listings_catalog ON public.share_listings USING btree (kind, published_at DESC) WHERE (unpublished_at IS NULL);
+
+
+--
+-- Name: idx_share_listings_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_share_listings_owner ON public.share_listings USING btree (owner_user_id, published_at DESC);
+
+
+--
+-- Name: idx_sse_tickets_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sse_tickets_expires_at ON public.sse_tickets USING btree (expires_at);
+
+
+--
+-- Name: idx_sse_tickets_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sse_tickets_user_id ON public.sse_tickets USING btree (user_id);
+
+
+--
+-- Name: idx_ssh_keys_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ssh_keys_fingerprint ON public.ssh_keys USING btree (fingerprint);
+
+
+--
+-- Name: idx_ssh_keys_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ssh_keys_user_id ON public.ssh_keys USING btree (user_id);
+
+
+--
+-- Name: idx_stack_changes_stack_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_stack_changes_stack_id ON public.stack_changes USING btree (stack_id);
+
+
+--
+-- Name: idx_stacks_repository_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_stacks_repository_state ON public.stacks USING btree (repository_id, state);
+
+
+--
+-- Name: idx_stars_repository_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_stars_repository_id ON public.stars USING btree (repository_id);
+
+
+--
+-- Name: idx_stripe_processed_events_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_stripe_processed_events_processed_at ON public.stripe_processed_events USING btree (processed_at DESC);
+
+
+--
+-- Name: idx_team_members_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_team_members_user_id ON public.team_members USING btree (user_id);
+
+
+--
+-- Name: idx_team_repos_repository_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_team_repos_repository_id ON public.team_repos USING btree (repository_id);
+
+
+--
+-- Name: idx_teams_org_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_teams_org_id ON public.teams USING btree (organization_id);
+
+
+--
+-- Name: idx_user_ai_keys_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_ai_keys_expires_at ON public.user_ai_keys USING btree (expires_at);
+
+
+--
+-- Name: idx_user_ai_keys_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_ai_keys_user_id ON public.user_ai_keys USING btree (user_id);
+
+
+--
+-- Name: idx_user_devices_user_platform; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_devices_user_platform ON public.user_devices USING btree (user_id, platform, last_seen_at DESC);
+
+
+--
+-- Name: idx_users_deleted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_users_deleted_at ON public.users USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
+
+
+--
+-- Name: idx_users_lower_username; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_users_lower_username ON public.users USING btree (lower_username);
+
+
+--
+-- Name: idx_users_search_vector_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_users_search_vector_gin ON public.users USING gin (search_vector);
+
+
+--
+-- Name: idx_watches_repository_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_watches_repository_id ON public.watches USING btree (repository_id);
+
+
+--
+-- Name: idx_webhook_deliveries_payload_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_deliveries_payload_gin ON public.webhook_deliveries USING gin (payload);
+
+
+--
+-- Name: idx_webhook_deliveries_pending_partial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_deliveries_pending_partial ON public.webhook_deliveries USING btree (next_retry_at, id) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: idx_webhook_deliveries_webhook_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_deliveries_webhook_id ON public.webhook_deliveries USING btree (webhook_id, created_at DESC);
+
+
+--
+-- Name: idx_webhooks_events_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhooks_events_gin ON public.webhooks USING gin (events);
+
+
+--
+-- Name: idx_webhooks_repository_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhooks_repository_id ON public.webhooks USING btree (repository_id);
+
+
+--
+-- Name: idx_wiki_page_revisions_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wiki_page_revisions_repo ON public.wiki_page_revisions USING btree (repository_id, id);
+
+
+--
+-- Name: idx_wiki_pages_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wiki_pages_repo ON public.wiki_pages USING btree (repository_id);
+
+
+--
+-- Name: idx_workflow_artifacts_cleanup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_artifacts_cleanup ON public.workflow_artifacts USING btree (status, created_at, expires_at, updated_at, id);
+
+
+--
+-- Name: idx_workflow_artifacts_deleting_retry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_artifacts_deleting_retry ON public.workflow_artifacts USING btree (updated_at, id) WHERE ((status)::text = 'deleting'::text);
+
+
+--
+-- Name: idx_workflow_artifacts_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_artifacts_expires_at ON public.workflow_artifacts USING btree (expires_at);
+
+
+--
+-- Name: idx_workflow_artifacts_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_artifacts_repo_id ON public.workflow_artifacts USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_workflow_artifacts_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_artifacts_run_id ON public.workflow_artifacts USING btree (workflow_run_id, created_at DESC);
+
+
+--
+-- Name: idx_workflow_caches_eviction; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_caches_eviction ON public.workflow_caches USING btree (repository_id, status, expires_at, last_hit_at, finalized_at, updated_at, created_at);
+
+
+--
+-- Name: idx_workflow_caches_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_caches_repo_id ON public.workflow_caches USING btree (repository_id);
+
+
+--
+-- Name: idx_workflow_caches_restore_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_caches_restore_lookup ON public.workflow_caches USING btree (repository_id, bookmark_name, cache_key, cache_version, status, expires_at DESC);
+
+
+--
+-- Name: idx_workflow_definitions_config_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_definitions_config_gin ON public.workflow_definitions USING gin (config);
+
+
+--
+-- Name: idx_workflow_definitions_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_definitions_repo_id ON public.workflow_definitions USING btree (repository_id);
+
+
+--
+-- Name: idx_workflow_logs_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_logs_run_id ON public.workflow_logs USING btree (workflow_run_id, id);
+
+
+--
+-- Name: idx_workflow_run_logs_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_run_logs_run_id ON public.workflow_run_logs USING btree (workflow_run_id, id);
+
+
+--
+-- Name: idx_workflow_runs_active_by_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_active_by_ref ON public.workflow_runs USING btree (repository_id, workflow_definition_id, trigger_ref, id) WHERE ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[]));
+
+
+--
+-- Name: idx_workflow_runs_agent_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_agent_token ON public.workflow_runs USING btree (agent_token_hash) WHERE (agent_token_hash IS NOT NULL);
+
+
+--
+-- Name: idx_workflow_runs_alert_remediation_dispatch_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_workflow_runs_alert_remediation_dispatch_token ON public.workflow_runs USING btree (((dispatch_inputs ->> 'remediation_dispatch_token'::text))) WHERE (((trigger_event)::text = 'monitoring_alert'::text) AND ((execution_plane)::text = 'runner'::text) AND (dispatch_inputs ? 'remediation_dispatch_token'::text));
+
+
+--
+-- Name: idx_workflow_runs_legacy_alert_incident; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_legacy_alert_incident ON public.workflow_runs USING btree (((dispatch_inputs ->> 'incident_row_id'::text)), ((dispatch_inputs ->> 'incident_id'::text)), status) WHERE (((trigger_event)::text = 'monitoring_alert'::text) AND ((execution_plane)::text = 'runner'::text) AND (NOT (dispatch_inputs ? 'remediation_dispatch_token'::text)));
+
+
+--
+-- Name: idx_workflow_runs_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_repo_id ON public.workflow_runs USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_workflow_runs_sandbox_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_sandbox_claim ON public.workflow_runs USING btree (created_at, id) WHERE (((status)::text = 'queued'::text) AND ((execution_plane)::text = 'sandbox'::text));
+
+
+--
+-- Name: idx_workflow_runs_status_partial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_runs_status_partial ON public.workflow_runs USING btree (repository_id, created_at DESC) WHERE ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[]));
+
+
+--
+-- Name: idx_workflow_schedule_specs_next_fire; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_schedule_specs_next_fire ON public.workflow_schedule_specs USING btree (next_fire_at);
+
+
+--
+-- Name: idx_workflow_steps_repo_run_position; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_steps_repo_run_position ON public.workflow_steps USING btree (repository_id, workflow_run_id, "position");
+
+
+--
+-- Name: idx_workflow_steps_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_steps_run_id ON public.workflow_steps USING btree (workflow_run_id, "position");
+
+
+--
+-- Name: idx_workflow_tasks_payload_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_tasks_payload_gin ON public.workflow_tasks USING gin (payload);
+
+
+--
+-- Name: idx_workflow_tasks_pending_dequeue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_tasks_pending_dequeue ON public.workflow_tasks USING btree (priority DESC, created_at, id, available_at) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: idx_workflow_tasks_runner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_tasks_runner_id ON public.workflow_tasks USING btree (runner_id) WHERE (runner_id IS NOT NULL);
+
+
+--
+-- Name: idx_workflow_tasks_vm_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_tasks_vm_id ON public.workflow_tasks USING btree (vm_id) WHERE (vm_id IS NOT NULL);
+
+
+--
+-- Name: idx_workflow_triggers_definition; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_triggers_definition ON public.workflow_triggers USING btree (workflow_definition_id);
+
+
+--
+-- Name: idx_workflow_triggers_repo_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_triggers_repo_event ON public.workflow_triggers USING btree (repository_id, event_type, event_action) WHERE (enabled = true);
+
+
+--
+-- Name: idx_workspace_sessions_active_lsp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_workspace_sessions_active_lsp ON public.workspace_sessions USING btree (workspace_id, language) WHERE (((kind)::text = 'lsp'::text) AND ((status)::text = ANY ((ARRAY['pending'::character varying, 'starting'::character varying, 'running'::character varying])::text[])));
+
+
+--
+-- Name: idx_workspace_sessions_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_sessions_repo_id ON public.workspace_sessions USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_workspace_sessions_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_sessions_status ON public.workspace_sessions USING btree (status) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'starting'::character varying, 'running'::character varying])::text[]));
+
+
+--
+-- Name: idx_workspace_sessions_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_sessions_user_id ON public.workspace_sessions USING btree (user_id);
+
+
+--
+-- Name: idx_workspace_sessions_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_sessions_workspace_id ON public.workspace_sessions USING btree (workspace_id);
+
+
+--
+-- Name: idx_workspace_shares_grantee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_shares_grantee ON public.workspace_shares USING btree (grantee_user_id, workspace_id);
+
+
+--
+-- Name: idx_workspace_snapshots_repo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_snapshots_repo_id ON public.workspace_snapshots USING btree (repository_id, created_at DESC);
+
+
+--
+-- Name: idx_workspace_snapshots_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_snapshots_workspace_id ON public.workspace_snapshots USING btree (workspace_id);
+
+
+--
+-- Name: idx_workspaces_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspaces_status ON public.workspaces USING btree (status) WHERE ((deleted_at IS NULL) AND ((status)::text = ANY ((ARRAY['pending'::character varying, 'starting'::character varying, 'running'::character varying, 'suspended'::character varying])::text[])));
+
+
+--
+-- Name: idx_workspaces_user_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspaces_user_active ON public.workspaces USING btree (user_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_workspaces_user_recency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspaces_user_recency ON public.workspaces USING btree (user_id, last_accessed_at DESC NULLS LAST, last_activity_at DESC) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: pair_prompt_queue_one_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pair_prompt_queue_one_active ON public.pair_prompt_queue USING btree (session_id) WHERE (status = ANY (ARRAY['claimed'::text, 'running'::text]));
+
+
+--
+-- Name: pair_session_invites_session_email; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pair_session_invites_session_email ON public.pair_session_invites USING btree (session_id, lower_email) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: pair_session_invites_session_username; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pair_session_invites_session_username ON public.pair_session_invites USING btree (session_id, lower_github_username) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: pair_session_links_one_live_per_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pair_session_links_one_live_per_role ON public.pair_session_links USING btree (session_id, role) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: pair_session_members_session_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pair_session_members_session_live ON public.pair_session_members USING btree (session_id) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: pair_session_one_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pair_session_one_owner ON public.pair_session_members USING btree (session_id) WHERE ((role = 'owner'::text) AND (removed_at IS NULL));
+
+
+--
+-- Name: pair_sessions_live_per_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pair_sessions_live_per_source ON public.pair_sessions USING btree (source_workspace_id) WHERE (status <> ALL (ARRAY['ended'::text, 'failed'::text]));
+
+
+--
+-- Name: repository_job_comments_comment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX repository_job_comments_comment ON public.repository_job_comments USING btree (comment_id);
+
+
+--
+-- Name: repository_job_dispatch_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX repository_job_dispatch_issue ON public.repository_job_dispatches USING btree (registration_id, revision, source, issue_number, created_at);
+
+
+--
+-- Name: repository_job_dispatch_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX repository_job_dispatch_pending ON public.repository_job_dispatches USING btree (next_attempt_at, created_at) WHERE (status = ANY (ARRAY['queued'::text, 'dispatching'::text, 'waiting'::text]));
+
+
+--
+-- Name: repository_job_events_repo_received; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX repository_job_events_repo_received ON public.repository_job_events USING btree (repository_id, received_at, id);
+
+
+--
+-- Name: sandbox_usage_intervals_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX sandbox_usage_intervals_open ON public.sandbox_usage_intervals USING btree (sandbox_kind, sandbox_id) WHERE (ended_at IS NULL);
+
+
+--
+-- Name: sandbox_usage_intervals_user_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX sandbox_usage_intervals_user_started ON public.sandbox_usage_intervals USING btree (user_id, started_at DESC);
+
+
+--
+-- Name: uq_agent_sessions_active_finding_dispatch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_agent_sessions_active_finding_dispatch ON public.agent_sessions USING btree (((metadata ->> 'finding_id'::text))) WHERE (((status)::text = 'active'::text) AND (deleted_at IS NULL) AND (metadata ? 'finding_id'::text));
+
+
+--
+-- Name: uq_app_timelines_owner_client; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_app_timelines_owner_client ON public.app_timelines USING btree (owner_user_id, client_key) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: uq_billing_credit_ledger_idempotency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_billing_credit_ledger_idempotency ON public.billing_credit_ledger USING btree (billing_account_id, idempotency_key) WHERE ((idempotency_key)::text <> ''::text);
+
+
+--
+-- Name: uq_bookmarks_single_default_per_repo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_bookmarks_single_default_per_repo ON public.bookmarks USING btree (repository_id) WHERE (is_default = true);
+
+
+--
+-- Name: uq_branch_lock_join_requests_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_branch_lock_join_requests_pending ON public.branch_lock_join_requests USING btree (repository_id, branch, requester_id) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: uq_collaborators_repo_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_collaborators_repo_user ON public.collaborators USING btree (repository_id, user_id) WHERE (user_id IS NOT NULL);
+
+
+--
+-- Name: uq_email_addresses_primary_per_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_email_addresses_primary_per_user ON public.email_addresses USING btree (user_id) WHERE (is_primary = true);
+
+
+--
+-- Name: uq_github_mirror_sync_runs_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_github_mirror_sync_runs_active ON public.github_mirror_sync_runs USING btree (repository_id) WHERE ((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[]));
+
+
+--
+-- Name: uq_github_synced_issue_comments_github_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_github_synced_issue_comments_github_id ON public.github_synced_issue_comments USING btree (synced_repo_id, github_id);
+
+
+--
+-- Name: uq_github_synced_issues_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_github_synced_issues_number ON public.github_synced_issues USING btree (synced_repo_id, resource, number);
+
+
+--
+-- Name: uq_github_synced_repos_github_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_github_synced_repos_github_id ON public.github_synced_repos USING btree (github_repository_id) WHERE (github_repository_id IS NOT NULL);
+
+
+--
+-- Name: uq_github_synced_repos_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_github_synced_repos_slug ON public.github_synced_repos USING btree (owner_login_lower, repo_name_lower);
+
+
+--
+-- Name: uq_import_jobs_one_active_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_import_jobs_one_active_source ON public.import_jobs USING btree (user_id, lower((github_owner)::text), lower((github_repo)::text)) WHERE ((status)::text = 'cloning'::text);
+
+
+--
+-- Name: uq_import_jobs_provisioning_repository; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_import_jobs_provisioning_repository ON public.import_jobs USING btree (provisioning_repository_id) WHERE (provisioning_repository_id IS NOT NULL);
+
+
+--
+-- Name: uq_import_jobs_provisioning_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_import_jobs_provisioning_token ON public.import_jobs USING btree (provisioning_token) WHERE (provisioning_token IS NOT NULL);
+
+
+--
+-- Name: uq_issue_assignees_issue_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_issue_assignees_issue_user ON public.issue_assignees USING btree (issue_id, user_id) WHERE (user_id IS NOT NULL);
+
+
+--
+-- Name: uq_landing_review_requests_requested_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_landing_review_requests_requested_agent ON public.landing_review_requests USING btree (landing_request_id, lower((agent_name)::text)) WHERE (((state)::text = 'requested'::text) AND (agent_name IS NOT NULL));
+
+
+--
+-- Name: uq_landing_review_requests_requested_reviewer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_landing_review_requests_requested_reviewer ON public.landing_review_requests USING btree (landing_request_id, reviewer_id) WHERE (((state)::text = 'requested'::text) AND (reviewer_id IS NOT NULL));
+
+
+--
+-- Name: uq_mentions_body_issue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mentions_body_issue ON public.mentions USING btree (comment_type, issue_id, mentioned_user_id) WHERE ((comment_id IS NULL) AND (issue_id IS NOT NULL) AND (mentioned_user_id IS NOT NULL));
+
+
+--
+-- Name: uq_mentions_body_landing; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mentions_body_landing ON public.mentions USING btree (comment_type, landing_request_id, mentioned_user_id) WHERE ((comment_id IS NULL) AND (landing_request_id IS NOT NULL) AND (mentioned_user_id IS NOT NULL));
+
+
+--
+-- Name: uq_mentions_comment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mentions_comment ON public.mentions USING btree (comment_type, comment_id, mentioned_user_id) WHERE ((comment_id IS NOT NULL) AND (mentioned_user_id IS NOT NULL));
+
+
+--
+-- Name: uq_pair_session_invites_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_pair_session_invites_token_hash ON public.pair_session_invites USING btree (token_hash);
+
+
+--
+-- Name: uq_pair_session_links_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_pair_session_links_slug ON public.pair_session_links USING btree (slug);
+
+
+--
+-- Name: uq_reactions_user_target_emoji; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_reactions_user_target_emoji ON public.reactions USING btree (user_id, target_type, target_id, emoji) WHERE (user_id IS NOT NULL);
+
+
+--
+-- Name: uq_release_assets_live_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_release_assets_live_name ON public.release_assets USING btree (release_id, name) WHERE ((status)::text <> 'deleting'::text);
+
+
+--
+-- Name: uq_repositories_org_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_repositories_org_lower_name ON public.repositories USING btree (org_id, lower_name) WHERE (org_id IS NOT NULL);
+
+
+--
+-- Name: uq_repositories_user_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_repositories_user_lower_name ON public.repositories USING btree (user_id, lower_name) WHERE (org_id IS NULL);
+
+
+--
+-- Name: uq_share_listings_live_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_share_listings_live_slug ON public.share_listings USING btree (kind, slug) WHERE (unpublished_at IS NULL);
+
+
+--
+-- Name: uq_users_lower_email; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_users_lower_email ON public.users USING btree (lower_email) WHERE (lower_email IS NOT NULL);
+
+
+--
+-- Name: uq_users_wallet_address; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_users_wallet_address ON public.users USING btree (wallet_address) WHERE (wallet_address IS NOT NULL);
+
+
+--
+-- Name: uq_workspaces_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_workspaces_active ON public.workspaces USING btree (repository_id, user_id, kind) WHERE ((is_fork = false) AND (deleted_at IS NULL) AND (((status)::text = ANY ((ARRAY['running'::character varying, 'suspended'::character varying])::text[])) OR (((status)::text = 'starting'::text) AND (vm_id <> ''::text))));
+
+
+--
+-- Name: uq_workspaces_agent_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_workspaces_agent_session ON public.workspaces USING btree (agent_session_id) WHERE ((agent_session_id IS NOT NULL) AND (deleted_at IS NULL));
+
+
+--
+-- Name: issue_dependencies issue_dependency_dag; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER issue_dependency_dag BEFORE INSERT OR UPDATE ON public.issue_dependencies FOR EACH ROW EXECUTE FUNCTION public.enforce_issue_dependency_dag();
+
+
+--
+-- Name: landing_requests landing_create_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER landing_create_identity_immutable BEFORE UPDATE ON public.landing_requests FOR EACH ROW EXECUTE FUNCTION public.protect_landing_create_identity();
+
+
+--
+-- Name: oauth2_access_tokens oauth2_token_revocation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER oauth2_token_revocation AFTER DELETE ON public.oauth2_access_tokens FOR EACH ROW EXECUTE FUNCTION public.revoke_deleted_oauth2_token();
+
+
+--
+-- Name: code_search_documents trg_code_search_documents_search_vector; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_code_search_documents_search_vector BEFORE INSERT OR UPDATE OF file_path, content ON public.code_search_documents FOR EACH ROW EXECUTE FUNCTION public.set_code_search_document_vector();
+
+
+--
+-- Name: issue_artifacts trg_issue_artifacts_guard_deletion_claim; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_artifacts_guard_deletion_claim BEFORE UPDATE ON public.issue_artifacts FOR EACH ROW EXECUTE FUNCTION public.guard_artifact_deletion_claim();
+
+
+--
+-- Name: issue_assignees trg_issue_assignees_journal_lock; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_assignees_journal_lock BEFORE INSERT OR DELETE OR UPDATE ON public.issue_assignees FOR EACH ROW EXECUTE FUNCTION public.lock_issue_state_journal();
+
+
+--
+-- Name: issue_assignees trg_issue_assignees_record_fact; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_assignees_record_fact AFTER INSERT OR DELETE OR UPDATE ON public.issue_assignees FOR EACH ROW EXECUTE FUNCTION public.record_issue_state_fact();
+
+
+--
+-- Name: issue_comments trg_issue_comments_count_del; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_comments_count_del AFTER DELETE ON public.issue_comments FOR EACH ROW EXECUTE FUNCTION public.maintain_issue_comment_count();
+
+
+--
+-- Name: issue_comments trg_issue_comments_count_ins; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_comments_count_ins AFTER INSERT ON public.issue_comments FOR EACH ROW EXECUTE FUNCTION public.maintain_issue_comment_count();
+
+
+--
+-- Name: issue_comments trg_issue_comments_delete_reactions; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_comments_delete_reactions AFTER DELETE ON public.issue_comments FOR EACH ROW EXECUTE FUNCTION public.delete_reactions_for_target('issue_comment');
+
+
+--
+-- Name: issue_labels trg_issue_labels_journal_lock; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_labels_journal_lock BEFORE INSERT OR DELETE OR UPDATE ON public.issue_labels FOR EACH ROW EXECUTE FUNCTION public.lock_issue_state_journal();
+
+
+--
+-- Name: issue_labels trg_issue_labels_record_fact; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_labels_record_fact AFTER INSERT OR DELETE OR UPDATE ON public.issue_labels FOR EACH ROW EXECUTE FUNCTION public.record_issue_state_fact();
+
+
+--
+-- Name: issue_state_facts trg_issue_state_facts_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issue_state_facts_immutable BEFORE DELETE OR UPDATE ON public.issue_state_facts FOR EACH ROW EXECUTE FUNCTION public.guard_issue_state_fact_history();
+
+
+--
+-- Name: issues trg_issues_delete_reactions; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_delete_reactions AFTER DELETE ON public.issues FOR EACH ROW EXECUTE FUNCTION public.delete_reactions_for_target('issue');
+
+
+--
+-- Name: issues trg_issues_journal_lock; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_journal_lock BEFORE INSERT OR DELETE OR UPDATE ON public.issues FOR EACH ROW EXECUTE FUNCTION public.lock_issue_state_journal();
+
+
+--
+-- Name: issues trg_issues_record_fact; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_record_fact AFTER INSERT OR DELETE OR UPDATE ON public.issues FOR EACH ROW EXECUTE FUNCTION public.record_issue_state_fact();
+
+
+--
+-- Name: issues trg_issues_repo_counts_del; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_repo_counts_del AFTER DELETE ON public.issues FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_issue_counts();
+
+
+--
+-- Name: issues trg_issues_repo_counts_ins; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_repo_counts_ins AFTER INSERT ON public.issues FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_issue_counts();
+
+
+--
+-- Name: issues trg_issues_repo_counts_upd; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_repo_counts_upd AFTER UPDATE ON public.issues FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.maintain_repo_issue_counts();
+
+
+--
+-- Name: issues trg_issues_search_vector; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_issues_search_vector BEFORE INSERT OR UPDATE OF title, body ON public.issues FOR EACH ROW EXECUTE FUNCTION public.set_issue_search_vector();
+
+
+--
+-- Name: landing_request_comments trg_landing_request_comments_delete_reactions; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_landing_request_comments_delete_reactions AFTER DELETE ON public.landing_request_comments FOR EACH ROW EXECUTE FUNCTION public.delete_reactions_for_target('landing_comment');
+
+
+--
+-- Name: landing_requests trg_landing_requests_delete_reactions; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_landing_requests_delete_reactions AFTER DELETE ON public.landing_requests FOR EACH ROW EXECUTE FUNCTION public.delete_reactions_for_target('landing_request');
+
+
+--
+-- Name: notification_facts trg_notification_facts_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_notification_facts_immutable BEFORE DELETE OR UPDATE ON public.notification_facts FOR EACH ROW EXECUTE FUNCTION public.guard_notification_fact_history();
+
+
+--
+-- Name: notifications trg_notifications_journal_lock; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_notifications_journal_lock BEFORE INSERT OR DELETE OR UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.lock_notification_journal();
+
+
+--
+-- Name: notifications trg_notifications_record_fact; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_notifications_record_fact AFTER INSERT OR DELETE OR UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.record_notification_fact();
+
+
+--
+-- Name: organizations trg_organizations_owner_namespace; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_organizations_owner_namespace AFTER INSERT OR UPDATE OF lower_name ON public.organizations FOR EACH ROW EXECUTE FUNCTION public.sync_org_owner_namespace();
+
+
+--
+-- Name: organizations trg_organizations_prevent_owner_namespace_rename; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_organizations_prevent_owner_namespace_rename BEFORE UPDATE OF name, lower_name ON public.organizations FOR EACH ROW EXECUTE FUNCTION public.prevent_org_owner_namespace_rename();
+
+
+--
+-- Name: organizations trg_organizations_prevent_repository_cascade; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_organizations_prevent_repository_cascade BEFORE DELETE ON public.organizations FOR EACH ROW EXECUTE FUNCTION public.prevent_owner_delete_with_repositories();
+
+
+--
+-- Name: release_deletion_intents trg_release_deletion_intents_tombstone_tag; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_release_deletion_intents_tombstone_tag BEFORE INSERT ON public.release_deletion_intents FOR EACH ROW EXECUTE FUNCTION public.tombstone_release_tag_on_deletion_intent();
+
+
+--
+-- Name: releases trg_releases_guard_deletion_tombstone; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_releases_guard_deletion_tombstone BEFORE UPDATE ON public.releases FOR EACH ROW EXECUTE FUNCTION public.guard_release_deletion_tombstone();
+
+
+--
+-- Name: repositories trg_repositories_fork_count_dec; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repositories_fork_count_dec AFTER DELETE ON public.repositories FOR EACH ROW WHEN ((old.fork_id IS NOT NULL)) EXECUTE FUNCTION public.maintain_repo_fork_count();
+
+
+--
+-- Name: repositories trg_repositories_fork_count_inc; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repositories_fork_count_inc AFTER INSERT ON public.repositories FOR EACH ROW WHEN ((new.fork_id IS NOT NULL)) EXECUTE FUNCTION public.maintain_repo_fork_count();
+
+
+--
+-- Name: repositories trg_repositories_search_vector; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repositories_search_vector BEFORE INSERT OR UPDATE OF name, description, topics ON public.repositories FOR EACH ROW EXECUTE FUNCTION public.set_repository_search_vector();
+
+
+--
+-- Name: issue_comments trg_repository_job_native_comment; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repository_job_native_comment AFTER INSERT OR DELETE OR UPDATE OF body ON public.issue_comments FOR EACH ROW EXECUTE FUNCTION public.admit_native_repository_job_comment();
+
+
+--
+-- Name: issues trg_repository_job_native_issue; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repository_job_native_issue AFTER INSERT OR UPDATE OF title, body, state ON public.issues FOR EACH ROW EXECUTE FUNCTION public.admit_native_repository_job_issue();
+
+
+--
+-- Name: issue_labels trg_repository_job_native_label; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_repository_job_native_label AFTER INSERT OR DELETE ON public.issue_labels FOR EACH ROW EXECUTE FUNCTION public.admit_native_repository_job_label();
+
+
+--
+-- Name: stars trg_stars_count_del; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_stars_count_del AFTER DELETE ON public.stars FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_star_count();
+
+
+--
+-- Name: stars trg_stars_count_ins; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_stars_count_ins AFTER INSERT ON public.stars FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_star_count();
+
+
+--
+-- Name: users trg_users_owner_namespace; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_users_owner_namespace AFTER INSERT OR UPDATE OF lower_username ON public.users FOR EACH ROW EXECUTE FUNCTION public.sync_user_owner_namespace();
+
+
+--
+-- Name: users trg_users_prevent_owner_namespace_rename; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_users_prevent_owner_namespace_rename BEFORE UPDATE OF username, lower_username ON public.users FOR EACH ROW EXECUTE FUNCTION public.prevent_user_owner_namespace_rename();
+
+
+--
+-- Name: users trg_users_prevent_repository_cascade; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_users_prevent_repository_cascade BEFORE DELETE ON public.users FOR EACH ROW EXECUTE FUNCTION public.prevent_owner_delete_with_repositories();
+
+
+--
+-- Name: users trg_users_search_vector; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_users_search_vector BEFORE INSERT OR UPDATE OF username, display_name, bio ON public.users FOR EACH ROW EXECUTE FUNCTION public.set_user_search_vector();
+
+
+--
+-- Name: watches trg_watches_count_del; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_watches_count_del AFTER DELETE ON public.watches FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_watch_count();
+
+
+--
+-- Name: watches trg_watches_count_ins; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_watches_count_ins AFTER INSERT ON public.watches FOR EACH ROW EXECUTE FUNCTION public.maintain_repo_watch_count();
+
+
+--
+-- Name: webhooks trg_webhooks_repo_cap; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_webhooks_repo_cap BEFORE INSERT ON public.webhooks FOR EACH ROW EXECUTE FUNCTION public.enforce_webhook_repo_cap();
+
+
+--
+-- Name: workflow_artifacts trg_workflow_artifacts_guard_deletion_claim; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_artifacts_guard_deletion_claim BEFORE UPDATE ON public.workflow_artifacts FOR EACH ROW EXECUTE FUNCTION public.guard_artifact_deletion_claim();
+
+
+--
+-- Name: workflow_logs trg_workflow_logs_guard_budget_identity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_logs_guard_budget_identity BEFORE UPDATE OF workflow_run_id, entry ON public.workflow_logs FOR EACH ROW EXECUTE FUNCTION public.guard_workflow_log_budget_identity();
+
+
+--
+-- Name: workflow_logs trg_workflow_logs_release_budget; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_logs_release_budget BEFORE DELETE ON public.workflow_logs FOR EACH ROW EXECUTE FUNCTION public.release_workflow_log_budget();
+
+
+--
+-- Name: workflow_logs trg_workflow_logs_reserve_budget; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_logs_reserve_budget BEFORE INSERT ON public.workflow_logs FOR EACH ROW EXECUTE FUNCTION public.reserve_workflow_log_budget();
+
+
+--
+-- Name: workflow_run_logs trg_workflow_run_logs_guard_budget_identity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_run_logs_guard_budget_identity BEFORE UPDATE OF workflow_run_id, entry ON public.workflow_run_logs FOR EACH ROW EXECUTE FUNCTION public.guard_workflow_log_budget_identity();
+
+
+--
+-- Name: workflow_run_logs trg_workflow_run_logs_release_budget; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_run_logs_release_budget BEFORE DELETE ON public.workflow_run_logs FOR EACH ROW EXECUTE FUNCTION public.release_workflow_log_budget();
+
+
+--
+-- Name: workflow_run_logs trg_workflow_run_logs_reserve_budget; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_run_logs_reserve_budget BEFORE INSERT ON public.workflow_run_logs FOR EACH ROW EXECUTE FUNCTION public.reserve_workflow_log_budget();
+
+
+--
+-- Name: workflow_runs trg_workflow_runs_10_force_agent_plane; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_runs_10_force_agent_plane BEFORE INSERT ON public.workflow_runs FOR EACH ROW EXECUTE FUNCTION public.force_agent_workflow_run_execution_plane();
+
+
+--
+-- Name: workflow_runs trg_workflow_runs_20_execution_plane_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_runs_20_execution_plane_immutable BEFORE UPDATE OF execution_plane ON public.workflow_runs FOR EACH ROW EXECUTE FUNCTION public.guard_workflow_run_execution_plane_immutable();
+
+
+--
+-- Name: workflow_runs trg_workflow_runs_30_status_claim_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_runs_30_status_claim_guard BEFORE UPDATE OF status ON public.workflow_runs FOR EACH ROW EXECUTE FUNCTION public.guard_workflow_run_status_claim();
+
+
+--
+-- Name: workflow_runs trg_workflow_runs_initialize_log_budget; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_runs_initialize_log_budget AFTER INSERT ON public.workflow_runs FOR EACH ROW EXECUTE FUNCTION public.initialize_new_workflow_log_budget();
+
+
+--
+-- Name: workflow_steps trg_workflow_steps_repository_id; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_steps_repository_id BEFORE INSERT OR UPDATE ON public.workflow_steps FOR EACH ROW EXECUTE FUNCTION public.set_workflow_step_repository_id();
+
+
+--
+-- Name: workflow_tasks trg_workflow_tasks_20_execution_plane_claim_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_tasks_20_execution_plane_claim_guard BEFORE UPDATE OF status ON public.workflow_tasks FOR EACH ROW EXECUTE FUNCTION public.guard_workflow_task_execution_plane_claim();
+
+
+--
+-- Name: workflow_tasks trg_workflow_tasks_repository_id; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workflow_tasks_repository_id BEFORE INSERT OR UPDATE ON public.workflow_tasks FOR EACH ROW EXECUTE FUNCTION public.set_workflow_task_repository_id();
+
+
+--
+-- Name: workspace_sessions trg_workspace_sessions_active_status_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workspace_sessions_active_status_guard BEFORE UPDATE OF status ON public.workspace_sessions FOR EACH ROW EXECUTE FUNCTION public.guard_workspace_session_active_status();
+
+
+--
+-- Name: workspace_sessions trg_workspace_sessions_live_parent_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workspace_sessions_live_parent_insert BEFORE INSERT ON public.workspace_sessions FOR EACH ROW EXECUTE FUNCTION public.guard_workspace_session_live_parent_insert();
+
+
+--
+-- Name: workspaces trg_workspaces_normalize_failure_details; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workspaces_normalize_failure_details BEFORE INSERT OR UPDATE OF status, failure_code, failure_message ON public.workspaces FOR EACH ROW EXECUTE FUNCTION public.normalize_workspace_failure_details();
+
+
+--
+-- Name: workspaces trg_workspaces_stop_sessions_on_tombstone; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workspaces_stop_sessions_on_tombstone AFTER UPDATE OF deleted_at, status ON public.workspaces FOR EACH ROW EXECUTE FUNCTION public.stop_workspace_sessions_on_tombstone();
+
+
+--
+-- Name: workspaces trg_workspaces_user_quota; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_workspaces_user_quota BEFORE INSERT ON public.workspaces FOR EACH ROW EXECUTE FUNCTION public.enforce_workspace_user_quota();
+
+
+--
+-- Name: users user_access_revocation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER user_access_revocation AFTER UPDATE OF is_active, prohibit_login, deleted_at ON public.users FOR EACH ROW EXECUTE FUNCTION public.publish_user_access_change();
+
+
+--
+-- Name: wiki_pages wiki_advance_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER wiki_advance_revision BEFORE UPDATE ON public.wiki_pages FOR EACH ROW EXECUTE FUNCTION public.wiki_advance_revision();
+
+
+--
+-- Name: wiki_pages wiki_record_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER wiki_record_revision AFTER INSERT OR DELETE OR UPDATE ON public.wiki_pages FOR EACH ROW EXECUTE FUNCTION public.wiki_record_revision();
+
+
+--
+-- Name: access_tokens access_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.access_tokens
+    ADD CONSTRAINT access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_messages agent_messages_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT agent_messages_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_messages agent_messages_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_messages
+    ADD CONSTRAINT agent_messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.agent_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_parts agent_parts_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts
+    ADD CONSTRAINT agent_parts_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.agent_messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_parts agent_parts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts
+    ADD CONSTRAINT agent_parts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_parts agent_parts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_parts
+    ADD CONSTRAINT agent_parts_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.agent_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_sessions agent_sessions_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_sessions
+    ADD CONSTRAINT agent_sessions_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_sessions agent_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_sessions
+    ADD CONSTRAINT agent_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_sessions agent_sessions_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_sessions
+    ADD CONSTRAINT agent_sessions_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_sessions agent_sessions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_sessions
+    ADD CONSTRAINT agent_sessions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alpha_waitlist_entries alpha_waitlist_entries_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_waitlist_entries
+    ADD CONSTRAINT alpha_waitlist_entries_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alpha_whitelist_entries alpha_whitelist_entries_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alpha_whitelist_entries
+    ADD CONSTRAINT alpha_whitelist_entries_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: analyzer_runs analyzer_runs_repository_id_change_id_revision_seq_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analyzer_runs
+    ADD CONSTRAINT analyzer_runs_repository_id_change_id_revision_seq_fkey FOREIGN KEY (repository_id, change_id, revision_seq) REFERENCES public.change_revisions(repository_id, change_id, seq) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timeline_branches app_timeline_branches_timeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_branches
+    ADD CONSTRAINT app_timeline_branches_timeline_id_fkey FOREIGN KEY (timeline_id) REFERENCES public.app_timelines(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timeline_events app_timeline_events_timeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_events
+    ADD CONSTRAINT app_timeline_events_timeline_id_fkey FOREIGN KEY (timeline_id) REFERENCES public.app_timelines(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timeline_members app_timeline_members_timeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_members
+    ADD CONSTRAINT app_timeline_members_timeline_id_fkey FOREIGN KEY (timeline_id) REFERENCES public.app_timelines(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timeline_members app_timeline_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_members
+    ADD CONSTRAINT app_timeline_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timeline_snapshots app_timeline_snapshots_timeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timeline_snapshots
+    ADD CONSTRAINT app_timeline_snapshots_timeline_id_fkey FOREIGN KEY (timeline_id) REFERENCES public.app_timelines(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_timelines app_timelines_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_timelines
+    ADD CONSTRAINT app_timelines_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approvals approvals_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: approvals approvals_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approvals approvals_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.agent_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audit_log audit_log_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT audit_log_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: auth_sessions auth_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_sessions
+    ADD CONSTRAINT auth_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: billing_credit_balances billing_credit_balances_billing_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_credit_balances
+    ADD CONSTRAINT billing_credit_balances_billing_account_id_fkey FOREIGN KEY (billing_account_id) REFERENCES public.billing_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: billing_credit_ledger billing_credit_ledger_billing_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_credit_ledger
+    ADD CONSTRAINT billing_credit_ledger_billing_account_id_fkey FOREIGN KEY (billing_account_id) REFERENCES public.billing_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: billing_entitlements billing_entitlements_billing_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_entitlements
+    ADD CONSTRAINT billing_entitlements_billing_account_id_fkey FOREIGN KEY (billing_account_id) REFERENCES public.billing_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: billing_subscriptions billing_subscriptions_billing_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_subscriptions
+    ADD CONSTRAINT billing_subscriptions_billing_account_id_fkey FOREIGN KEY (billing_account_id) REFERENCES public.billing_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: bookmarks bookmarks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bookmarks
+    ADD CONSTRAINT bookmarks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: branch_lock_join_requests branch_lock_join_requests_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_lock_join_requests
+    ADD CONSTRAINT branch_lock_join_requests_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: branch_lock_join_requests branch_lock_join_requests_requester_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_lock_join_requests
+    ADD CONSTRAINT branch_lock_join_requests_requester_id_fkey FOREIGN KEY (requester_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: branch_lock_join_requests branch_lock_join_requests_resolver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_lock_join_requests
+    ADD CONSTRAINT branch_lock_join_requests_resolver_id_fkey FOREIGN KEY (resolver_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: branch_locks branch_locks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_locks
+    ADD CONSTRAINT branch_locks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: branch_locks branch_locks_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.branch_locks
+    ADD CONSTRAINT branch_locks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: build_cache_artifacts build_cache_artifacts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_artifacts
+    ADD CONSTRAINT build_cache_artifacts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: build_cache_entries build_cache_entries_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_entries
+    ADD CONSTRAINT build_cache_entries_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: build_cache_entry_artifacts build_cache_entry_artifacts_repository_id_digest_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_entry_artifacts
+    ADD CONSTRAINT build_cache_entry_artifacts_repository_id_digest_fkey FOREIGN KEY (repository_id, digest) REFERENCES public.build_cache_artifacts(repository_id, digest) ON DELETE RESTRICT;
+
+
+--
+-- Name: build_cache_entry_artifacts build_cache_entry_artifacts_repository_id_key_digest_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_entry_artifacts
+    ADD CONSTRAINT build_cache_entry_artifacts_repository_id_key_digest_fkey FOREIGN KEY (repository_id, key_digest) REFERENCES public.build_cache_entries(repository_id, key_digest) ON DELETE CASCADE;
+
+
+--
+-- Name: build_cache_read_tokens build_cache_read_tokens_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_read_tokens
+    ADD CONSTRAINT build_cache_read_tokens_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: build_cache_read_tokens build_cache_read_tokens_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_cache_read_tokens
+    ADD CONSTRAINT build_cache_read_tokens_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: change_revisions change_revisions_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_agent_session_id_fkey FOREIGN KEY (agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: change_revisions change_revisions_repository_id_change_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_repository_id_change_id_fkey FOREIGN KEY (repository_id, change_id) REFERENCES public.changes(repository_id, change_id) ON DELETE CASCADE;
+
+
+--
+-- Name: change_revisions change_revisions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: change_revisions change_revisions_workspace_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_revisions
+    ADD CONSTRAINT change_revisions_workspace_snapshot_id_fkey FOREIGN KEY (workspace_snapshot_id) REFERENCES public.workspace_snapshots(id) ON DELETE SET NULL;
+
+
+--
+-- Name: change_walkthroughs change_walkthroughs_change_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.change_walkthroughs
+    ADD CONSTRAINT change_walkthroughs_change_revision_id_fkey FOREIGN KEY (change_revision_id) REFERENCES public.change_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: changes changes_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changes
+    ADD CONSTRAINT changes_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: changeset_members changeset_members_changeset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members
+    ADD CONSTRAINT changeset_members_changeset_id_fkey FOREIGN KEY (changeset_id) REFERENCES public.changesets(id) ON DELETE CASCADE;
+
+
+--
+-- Name: changeset_members changeset_members_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changeset_members
+    ADD CONSTRAINT changeset_members_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: changesets changesets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets
+    ADD CONSTRAINT changesets_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: changesets changesets_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets
+    ADD CONSTRAINT changesets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: changesets changesets_superproject_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.changesets
+    ADD CONSTRAINT changesets_superproject_repository_id_fkey FOREIGN KEY (superproject_repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: code_search_documents code_search_documents_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_documents
+    ADD CONSTRAINT code_search_documents_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: code_search_index_state code_search_index_state_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.code_search_index_state
+    ADD CONSTRAINT code_search_index_state_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: collaborators collaborators_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collaborators
+    ADD CONSTRAINT collaborators_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: collaborators collaborators_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.collaborators
+    ADD CONSTRAINT collaborators_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: commit_statuses commit_statuses_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commit_statuses
+    ADD CONSTRAINT commit_statuses_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: commit_statuses commit_statuses_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commit_statuses
+    ADD CONSTRAINT commit_statuses_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: commit_statuses commit_statuses_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.commit_statuses
+    ADD CONSTRAINT commit_statuses_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: conflicts conflicts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conflicts conflicts_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: deploy_keys deploy_keys_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deploy_keys
+    ADD CONSTRAINT deploy_keys_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: devtools_snapshots devtools_snapshots_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devtools_snapshots
+    ADD CONSTRAINT devtools_snapshots_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: devtools_snapshots devtools_snapshots_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devtools_snapshots
+    ADD CONSTRAINT devtools_snapshots_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.agent_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_addresses email_addresses_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_addresses
+    ADD CONSTRAINT email_addresses_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_verification_tokens email_verification_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_verification_tokens
+    ADD CONSTRAINT email_verification_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: file_drafts file_drafts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.file_drafts
+    ADD CONSTRAINT file_drafts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: file_drafts file_drafts_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.file_drafts
+    ADD CONSTRAINT file_drafts_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: finding_feedback finding_feedback_finding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finding_feedback
+    ADD CONSTRAINT finding_feedback_finding_id_fkey FOREIGN KEY (finding_id) REFERENCES public.findings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: finding_feedback finding_feedback_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finding_feedback
+    ADD CONSTRAINT finding_feedback_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: findings findings_repository_id_change_id_revision_seq_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_repository_id_change_id_revision_seq_fkey FOREIGN KEY (repository_id, change_id, revision_seq) REFERENCES public.change_revisions(repository_id, change_id, seq) ON DELETE CASCADE;
+
+
+--
+-- Name: github_app_installation_repositories github_app_installation_repositories_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_installation_repositories
+    ADD CONSTRAINT github_app_installation_repositories_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.github_app_installations(installation_id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_mirror_sync_ref_results github_mirror_sync_ref_results_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_ref_results
+    ADD CONSTRAINT github_mirror_sync_ref_results_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.github_mirror_sync_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_mirror_sync_runs github_mirror_sync_runs_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_runs
+    ADD CONSTRAINT github_mirror_sync_runs_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_mirror_sync_runs github_mirror_sync_runs_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_mirror_sync_runs
+    ADD CONSTRAINT github_mirror_sync_runs_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: github_repo_listings github_repo_listings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_repo_listings
+    ADD CONSTRAINT github_repo_listings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_synced_issue_comments github_synced_issue_comments_synced_repo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issue_comments
+    ADD CONSTRAINT github_synced_issue_comments_synced_repo_id_fkey FOREIGN KEY (synced_repo_id) REFERENCES public.github_synced_repos(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_synced_issues github_synced_issues_synced_repo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_synced_issues
+    ADD CONSTRAINT github_synced_issues_synced_repo_id_fkey FOREIGN KEY (synced_repo_id) REFERENCES public.github_synced_repos(id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_jobs import_jobs_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_jobs
+    ADD CONSTRAINT import_jobs_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE SET NULL;
+
+
+--
+-- Name: import_jobs import_jobs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_jobs
+    ADD CONSTRAINT import_jobs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_jobs import_jobs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_jobs
+    ADD CONSTRAINT import_jobs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: issue_artifacts issue_artifacts_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_artifacts
+    ADD CONSTRAINT issue_artifacts_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_artifacts issue_artifacts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_artifacts
+    ADD CONSTRAINT issue_artifacts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_assignees issue_assignees_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_assignees
+    ADD CONSTRAINT issue_assignees_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_assignees issue_assignees_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_assignees
+    ADD CONSTRAINT issue_assignees_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: issue_change_links issue_change_links_repository_id_change_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_change_links
+    ADD CONSTRAINT issue_change_links_repository_id_change_id_fkey FOREIGN KEY (repository_id, change_id) REFERENCES public.changes(repository_id, change_id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_change_links issue_change_links_repository_id_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_change_links
+    ADD CONSTRAINT issue_change_links_repository_id_issue_id_fkey FOREIGN KEY (repository_id, issue_id) REFERENCES public.issues(repository_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_comments issue_comments_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_comments
+    ADD CONSTRAINT issue_comments_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_comments issue_comments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_comments
+    ADD CONSTRAINT issue_comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: issue_dependencies issue_dependencies_depends_on_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_dependencies
+    ADD CONSTRAINT issue_dependencies_depends_on_issue_id_fkey FOREIGN KEY (depends_on_issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_dependencies issue_dependencies_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_dependencies
+    ADD CONSTRAINT issue_dependencies_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_events issue_events_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_events
+    ADD CONSTRAINT issue_events_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: issue_events issue_events_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_events
+    ADD CONSTRAINT issue_events_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_labels issue_labels_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_labels
+    ADD CONSTRAINT issue_labels_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_labels issue_labels_label_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_labels
+    ADD CONSTRAINT issue_labels_label_id_fkey FOREIGN KEY (label_id) REFERENCES public.labels(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_state_facts issue_state_facts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_state_facts
+    ADD CONSTRAINT issue_state_facts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.issue_state_journals(repository_id) ON DELETE CASCADE;
+
+
+--
+-- Name: issue_state_journals issue_state_journals_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_state_journals
+    ADD CONSTRAINT issue_state_journals_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issues issues_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: issues issues_fixed_by_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_fixed_by_agent_session_id_fkey FOREIGN KEY (fixed_by_agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: issues issues_fixed_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_fixed_by_id_fkey FOREIGN KEY (fixed_by_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: issues issues_milestone_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_milestone_id_fkey FOREIGN KEY (milestone_id) REFERENCES public.milestones(id) ON DELETE SET NULL;
+
+
+--
+-- Name: issues issues_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: issues issues_verified_by_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_verified_by_agent_session_id_fkey FOREIGN KEY (verified_by_agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: issues issues_verified_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issues
+    ADD CONSTRAINT issues_verified_by_id_fkey FOREIGN KEY (verified_by_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: jj_operations jj_operations_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations
+    ADD CONSTRAINT jj_operations_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jj_operations jj_operations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations
+    ADD CONSTRAINT jj_operations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: jj_operations jj_operations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jj_operations
+    ADD CONSTRAINT jj_operations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: labels labels_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labels
+    ADD CONSTRAINT labels_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_request_changes landing_request_changes_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_changes
+    ADD CONSTRAINT landing_request_changes_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_request_comments landing_request_comments_done_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments
+    ADD CONSTRAINT landing_request_comments_done_by_fkey FOREIGN KEY (done_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_request_comments landing_request_comments_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments
+    ADD CONSTRAINT landing_request_comments_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_request_comments landing_request_comments_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments
+    ADD CONSTRAINT landing_request_comments_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_request_comments landing_request_comments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_comments
+    ADD CONSTRAINT landing_request_comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_request_reviews landing_request_reviews_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_reviews
+    ADD CONSTRAINT landing_request_reviews_agent_session_id_fkey FOREIGN KEY (agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_request_reviews landing_request_reviews_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_reviews
+    ADD CONSTRAINT landing_request_reviews_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_request_reviews landing_request_reviews_reviewer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_request_reviews
+    ADD CONSTRAINT landing_request_reviews_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_requests landing_requests_author_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_author_agent_session_id_fkey FOREIGN KEY (author_agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_requests landing_requests_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: landing_requests landing_requests_auto_land_set_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_auto_land_set_by_fkey FOREIGN KEY (auto_land_set_by) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: landing_requests landing_requests_queued_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_queued_by_fkey FOREIGN KEY (queued_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_requests landing_requests_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_requests
+    ADD CONSTRAINT landing_requests_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_review_requests landing_review_requests_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_review_requests
+    ADD CONSTRAINT landing_review_requests_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_review_requests landing_review_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_review_requests
+    ADD CONSTRAINT landing_review_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: landing_review_requests landing_review_requests_reviewer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_review_requests
+    ADD CONSTRAINT landing_review_requests_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: landing_tasks landing_tasks_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_tasks
+    ADD CONSTRAINT landing_tasks_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_tasks landing_tasks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_tasks
+    ADD CONSTRAINT landing_tasks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: lfs_locks lfs_locks_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_locks
+    ADD CONSTRAINT lfs_locks_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: lfs_locks lfs_locks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_locks
+    ADD CONSTRAINT lfs_locks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: lfs_meta_objects lfs_meta_objects_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_meta_objects
+    ADD CONSTRAINT lfs_meta_objects_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: lfs_objects lfs_objects_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_objects
+    ADD CONSTRAINT lfs_objects_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: lfs_upload_reservations lfs_upload_reservations_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lfs_upload_reservations
+    ADD CONSTRAINT lfs_upload_reservations_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_comment_map linear_comment_map_issue_map_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_comment_map
+    ADD CONSTRAINT linear_comment_map_issue_map_id_fkey FOREIGN KEY (issue_map_id) REFERENCES public.linear_issue_map(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_integrations linear_integrations_jjhub_repo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations
+    ADD CONSTRAINT linear_integrations_jjhub_repo_id_fkey FOREIGN KEY (jjhub_repo_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_integrations linear_integrations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations
+    ADD CONSTRAINT linear_integrations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: linear_integrations linear_integrations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_integrations
+    ADD CONSTRAINT linear_integrations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_issue_map linear_issue_map_integration_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map
+    ADD CONSTRAINT linear_issue_map_integration_id_fkey FOREIGN KEY (integration_id) REFERENCES public.linear_integrations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_issue_map linear_issue_map_jjhub_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_issue_map
+    ADD CONSTRAINT linear_issue_map_jjhub_issue_id_fkey FOREIGN KEY (jjhub_issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_oauth_setups linear_oauth_setups_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_oauth_setups
+    ADD CONSTRAINT linear_oauth_setups_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_sync_ops linear_sync_ops_integration_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_ops
+    ADD CONSTRAINT linear_sync_ops_integration_id_fkey FOREIGN KEY (integration_id) REFERENCES public.linear_integrations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: linear_sync_ops linear_sync_ops_retry_of_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_ops
+    ADD CONSTRAINT linear_sync_ops_retry_of_id_fkey FOREIGN KEY (retry_of_id) REFERENCES public.linear_sync_ops(id) ON DELETE SET NULL;
+
+
+--
+-- Name: linear_sync_ops linear_sync_ops_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_ops
+    ADD CONSTRAINT linear_sync_ops_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.linear_sync_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: linear_sync_runs linear_sync_runs_integration_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.linear_sync_runs
+    ADD CONSTRAINT linear_sync_runs_integration_id_fkey FOREIGN KEY (integration_id) REFERENCES public.linear_integrations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mentions mentions_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mentions mentions_landing_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_landing_request_id_fkey FOREIGN KEY (landing_request_id) REFERENCES public.landing_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mentions mentions_mentioned_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_mentioned_user_id_fkey FOREIGN KEY (mentioned_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: mentions mentions_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mentions mentions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mentions
+    ADD CONSTRAINT mentions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: milestones milestones_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.milestones
+    ADD CONSTRAINT milestones_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_facts notification_facts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_facts
+    ADD CONSTRAINT notification_facts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.notification_journals(user_id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_journals notification_journals_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_journals
+    ADD CONSTRAINT notification_journals_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_access_tokens oauth2_access_tokens_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_access_tokens
+    ADD CONSTRAINT oauth2_access_tokens_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.oauth2_applications(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_access_tokens oauth2_access_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_access_tokens
+    ADD CONSTRAINT oauth2_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_applications oauth2_applications_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_applications
+    ADD CONSTRAINT oauth2_applications_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_authorization_codes oauth2_authorization_codes_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_authorization_codes
+    ADD CONSTRAINT oauth2_authorization_codes_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.oauth2_applications(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_authorization_codes oauth2_authorization_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_authorization_codes
+    ADD CONSTRAINT oauth2_authorization_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_refresh_tokens oauth2_refresh_tokens_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_refresh_tokens
+    ADD CONSTRAINT oauth2_refresh_tokens_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.oauth2_applications(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth2_refresh_tokens oauth2_refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth2_refresh_tokens
+    ADD CONSTRAINT oauth2_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: oauth_accounts oauth_accounts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oauth_accounts
+    ADD CONSTRAINT oauth_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: org_members org_members_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: org_members org_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_members
+    ADD CONSTRAINT org_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_secrets organization_secrets_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_secrets
+    ADD CONSTRAINT organization_secrets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_variables organization_variables_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_variables
+    ADD CONSTRAINT organization_variables_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: owner_namespaces owner_namespaces_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.owner_namespaces
+    ADD CONSTRAINT owner_namespaces_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: owner_namespaces owner_namespaces_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.owner_namespaces
+    ADD CONSTRAINT owner_namespaces_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_prompt_queue pair_prompt_queue_author_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_prompt_queue
+    ADD CONSTRAINT pair_prompt_queue_author_user_id_fkey FOREIGN KEY (author_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_prompt_queue pair_prompt_queue_canceled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_prompt_queue
+    ADD CONSTRAINT pair_prompt_queue_canceled_by_fkey FOREIGN KEY (canceled_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pair_prompt_queue pair_prompt_queue_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_prompt_queue
+    ADD CONSTRAINT pair_prompt_queue_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.pair_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_draft pair_session_draft_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_draft
+    ADD CONSTRAINT pair_session_draft_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.pair_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_draft pair_session_draft_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_draft
+    ADD CONSTRAINT pair_session_draft_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pair_session_invites pair_session_invites_accepted_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_invites
+    ADD CONSTRAINT pair_session_invites_accepted_by_user_id_fkey FOREIGN KEY (accepted_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pair_session_invites pair_session_invites_invited_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_invites
+    ADD CONSTRAINT pair_session_invites_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_invites pair_session_invites_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_invites
+    ADD CONSTRAINT pair_session_invites_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.pair_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_links pair_session_links_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_links
+    ADD CONSTRAINT pair_session_links_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_links pair_session_links_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_links
+    ADD CONSTRAINT pair_session_links_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.pair_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_members pair_session_members_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_members
+    ADD CONSTRAINT pair_session_members_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.pair_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_session_members pair_session_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_session_members
+    ADD CONSTRAINT pair_session_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_sessions pair_sessions_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_sessions
+    ADD CONSTRAINT pair_sessions_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_sessions pair_sessions_source_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_sessions
+    ADD CONSTRAINT pair_sessions_source_workspace_id_fkey FOREIGN KEY (source_workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pair_sessions pair_sessions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_sessions
+    ADD CONSTRAINT pair_sessions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pair_share_links pair_share_links_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pair_share_links
+    ADD CONSTRAINT pair_share_links_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pinned_issues pinned_issues_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pinned_issues
+    ADD CONSTRAINT pinned_issues_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pinned_issues pinned_issues_pinned_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pinned_issues
+    ADD CONSTRAINT pinned_issues_pinned_by_id_fkey FOREIGN KEY (pinned_by_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pinned_issues pinned_issues_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pinned_issues
+    ADD CONSTRAINT pinned_issues_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: protected_bookmarks protected_bookmarks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.protected_bookmarks
+    ADD CONSTRAINT protected_bookmarks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: provider_connection_grants provider_connection_grants_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connection_grants
+    ADD CONSTRAINT provider_connection_grants_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.provider_connections(id) ON DELETE CASCADE;
+
+
+--
+-- Name: provider_connection_grants provider_connection_grants_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connection_grants
+    ADD CONSTRAINT provider_connection_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: provider_connection_grants provider_connection_grants_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connection_grants
+    ADD CONSTRAINT provider_connection_grants_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: provider_connections provider_connections_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connections
+    ADD CONSTRAINT provider_connections_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: provider_connections provider_connections_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connections
+    ADD CONSTRAINT provider_connections_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: provider_connections provider_connections_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.provider_connections
+    ADD CONSTRAINT provider_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reactions reactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reactions
+    ADD CONSTRAINT reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: release_assets release_assets_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_assets
+    ADD CONSTRAINT release_assets_release_id_fkey FOREIGN KEY (release_id) REFERENCES public.releases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_assets release_assets_uploader_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_assets
+    ADD CONSTRAINT release_assets_uploader_id_fkey FOREIGN KEY (uploader_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_deletion_intents release_deletion_intents_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_deletion_intents
+    ADD CONSTRAINT release_deletion_intents_release_id_fkey FOREIGN KEY (release_id) REFERENCES public.releases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: release_deletion_tag_tombstones release_deletion_tag_tombstones_release_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.release_deletion_tag_tombstones
+    ADD CONSTRAINT release_deletion_tag_tombstones_release_id_fkey FOREIGN KEY (release_id) REFERENCES public.releases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: releases releases_publisher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.releases
+    ADD CONSTRAINT releases_publisher_id_fkey FOREIGN KEY (publisher_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: releases releases_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.releases
+    ADD CONSTRAINT releases_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repo_connections repo_connections_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repo_connections
+    ADD CONSTRAINT repo_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repositories repositories_fork_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories
+    ADD CONSTRAINT repositories_fork_id_fkey FOREIGN KEY (fork_id) REFERENCES public.repositories(id) ON DELETE SET NULL;
+
+
+--
+-- Name: repositories repositories_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories
+    ADD CONSTRAINT repositories_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repositories repositories_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories
+    ADD CONSTRAINT repositories_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.repositories(id) ON DELETE SET NULL;
+
+
+--
+-- Name: repositories repositories_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repositories
+    ADD CONSTRAINT repositories_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_agent_environment_secrets repository_agent_environment_secrets_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_agent_environment_secrets
+    ADD CONSTRAINT repository_agent_environment_secrets_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_agent_environments repository_agent_environments_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_agent_environments
+    ADD CONSTRAINT repository_agent_environments_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_comments repository_job_comments_dispatch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_comments
+    ADD CONSTRAINT repository_job_comments_dispatch_id_fkey FOREIGN KEY (dispatch_id) REFERENCES public.repository_job_dispatches(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_dispatches repository_job_dispatches_registration_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_dispatches
+    ADD CONSTRAINT repository_job_dispatches_registration_id_fkey FOREIGN KEY (registration_id) REFERENCES public.repository_job_registrations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_events repository_job_events_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_events
+    ADD CONSTRAINT repository_job_events_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_registrations repository_job_registrations_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_registrations
+    ADD CONSTRAINT repository_job_registrations_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_registrations repository_job_registrations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_registrations
+    ADD CONSTRAINT repository_job_registrations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_registrations repository_job_registrations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_registrations
+    ADD CONSTRAINT repository_job_registrations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_trials repository_job_trials_issue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_trials
+    ADD CONSTRAINT repository_job_trials_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES public.issues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: repository_job_trials repository_job_trials_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_trials
+    ADD CONSTRAINT repository_job_trials_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_trials repository_job_trials_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_trials
+    ADD CONSTRAINT repository_job_trials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_job_trials repository_job_trials_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_job_trials
+    ADD CONSTRAINT repository_job_trials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_secrets repository_secrets_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_secrets
+    ADD CONSTRAINT repository_secrets_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: repository_variables repository_variables_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.repository_variables
+    ADD CONSTRAINT repository_variables_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sandbox_usage_intervals sandbox_usage_intervals_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sandbox_usage_intervals
+    ADD CONSTRAINT sandbox_usage_intervals_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: share_listing_event_cooldowns share_listing_event_cooldowns_listing_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_listing_event_cooldowns
+    ADD CONSTRAINT share_listing_event_cooldowns_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.share_listings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: share_listing_event_cooldowns share_listing_event_cooldowns_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_listing_event_cooldowns
+    ADD CONSTRAINT share_listing_event_cooldowns_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: share_listings share_listings_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_listings
+    ADD CONSTRAINT share_listings_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sse_tickets sse_tickets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sse_tickets
+    ADD CONSTRAINT sse_tickets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ssh_keys ssh_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ssh_keys
+    ADD CONSTRAINT ssh_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stack_changes stack_changes_stack_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stack_changes
+    ADD CONSTRAINT stack_changes_stack_id_fkey FOREIGN KEY (stack_id) REFERENCES public.stacks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stacks stacks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stacks
+    ADD CONSTRAINT stacks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stacks stacks_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stacks
+    ADD CONSTRAINT stacks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stars stars_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stars stars_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stars
+    ADD CONSTRAINT stars_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: team_members team_members_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: team_members team_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: team_repos team_repos_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_repos
+    ADD CONSTRAINT team_repos_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: team_repos team_repos_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_repos
+    ADD CONSTRAINT team_repos_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: teams teams_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_ai_keys user_ai_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_ai_keys
+    ADD CONSTRAINT user_ai_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_devices user_devices_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_devices
+    ADD CONSTRAINT user_devices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_notification_preferences user_notification_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_notification_preferences
+    ADD CONSTRAINT user_notification_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: watches watches_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watches
+    ADD CONSTRAINT watches_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: watches watches_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watches
+    ADD CONSTRAINT watches_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: webhook_deliveries webhook_deliveries_webhook_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_deliveries
+    ADD CONSTRAINT webhook_deliveries_webhook_id_fkey FOREIGN KEY (webhook_id) REFERENCES public.webhooks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: webhooks webhooks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhooks
+    ADD CONSTRAINT webhooks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: wiki_page_revisions wiki_page_revisions_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions
+    ADD CONSTRAINT wiki_page_revisions_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: wiki_page_revisions wiki_page_revisions_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_page_revisions
+    ADD CONSTRAINT wiki_page_revisions_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: wiki_pages wiki_pages_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_pages
+    ADD CONSTRAINT wiki_pages_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id);
+
+
+--
+-- Name: wiki_pages wiki_pages_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wiki_pages
+    ADD CONSTRAINT wiki_pages_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_artifacts workflow_artifacts_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_artifacts
+    ADD CONSTRAINT workflow_artifacts_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_artifacts workflow_artifacts_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_artifacts
+    ADD CONSTRAINT workflow_artifacts_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_caches workflow_caches_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_caches
+    ADD CONSTRAINT workflow_caches_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_caches workflow_caches_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_caches
+    ADD CONSTRAINT workflow_caches_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workflow_definitions workflow_definitions_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_definitions
+    ADD CONSTRAINT workflow_definitions_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_log_budget_initializations workflow_log_budget_initializations_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_log_budget_initializations
+    ADD CONSTRAINT workflow_log_budget_initializations_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_logs workflow_logs_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs
+    ADD CONSTRAINT workflow_logs_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_logs workflow_logs_workflow_step_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs
+    ADD CONSTRAINT workflow_logs_workflow_step_id_fkey FOREIGN KEY (workflow_step_id) REFERENCES public.workflow_steps(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_run_logs workflow_run_logs_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_logs
+    ADD CONSTRAINT workflow_run_logs_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_run_logs workflow_run_logs_workflow_step_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_run_logs
+    ADD CONSTRAINT workflow_run_logs_workflow_step_id_fkey FOREIGN KEY (workflow_step_id) REFERENCES public.workflow_steps(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs workflow_runs_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs workflow_runs_workflow_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_workflow_definition_id_fkey FOREIGN KEY (workflow_definition_id) REFERENCES public.workflow_definitions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_schedule_specs workflow_schedule_specs_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_schedule_specs
+    ADD CONSTRAINT workflow_schedule_specs_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_schedule_specs workflow_schedule_specs_workflow_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_schedule_specs
+    ADD CONSTRAINT workflow_schedule_specs_workflow_definition_id_fkey FOREIGN KEY (workflow_definition_id) REFERENCES public.workflow_definitions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_steps workflow_steps_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_steps workflow_steps_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_tasks workflow_tasks_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_tasks
+    ADD CONSTRAINT workflow_tasks_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_tasks workflow_tasks_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_tasks
+    ADD CONSTRAINT workflow_tasks_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_tasks workflow_tasks_workflow_step_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_tasks
+    ADD CONSTRAINT workflow_tasks_workflow_step_id_fkey FOREIGN KEY (workflow_step_id) REFERENCES public.workflow_steps(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_triggers workflow_triggers_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_triggers workflow_triggers_workflow_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_triggers
+    ADD CONSTRAINT workflow_triggers_workflow_definition_id_fkey FOREIGN KEY (workflow_definition_id) REFERENCES public.workflow_definitions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_capability_bindings workspace_capability_bindings_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_capability_bindings
+    ADD CONSTRAINT workspace_capability_bindings_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_capability_bindings workspace_capability_bindings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_capability_bindings
+    ADD CONSTRAINT workspace_capability_bindings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_capability_bindings workspace_capability_bindings_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_capability_bindings
+    ADD CONSTRAINT workspace_capability_bindings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_sessions workspace_sessions_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_sessions
+    ADD CONSTRAINT workspace_sessions_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_sessions workspace_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_sessions
+    ADD CONSTRAINT workspace_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_sessions workspace_sessions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_sessions
+    ADD CONSTRAINT workspace_sessions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_shares workspace_shares_grantee_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares
+    ADD CONSTRAINT workspace_shares_grantee_user_id_fkey FOREIGN KEY (grantee_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_shares workspace_shares_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares
+    ADD CONSTRAINT workspace_shares_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_shares workspace_shares_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_shares
+    ADD CONSTRAINT workspace_shares_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_snapshots workspace_snapshots_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_snapshots
+    ADD CONSTRAINT workspace_snapshots_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_snapshots workspace_snapshots_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_snapshots
+    ADD CONSTRAINT workspace_snapshots_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspaces workspaces_agent_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_agent_session_id_fkey FOREIGN KEY (agent_session_id) REFERENCES public.agent_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspaces workspaces_head_push_token_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_head_push_token_id_fkey FOREIGN KEY (head_push_token_id) REFERENCES public.access_tokens(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspaces workspaces_parent_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_parent_workspace_id_fkey FOREIGN KEY (parent_workspace_id) REFERENCES public.workspaces(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspaces workspaces_repository_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES public.repositories(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspaces workspaces_source_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES public.workspace_snapshots(id) ON DELETE SET NULL;
+
+
+--
+-- Name: workspaces workspaces_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--

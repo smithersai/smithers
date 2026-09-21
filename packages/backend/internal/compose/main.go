@@ -73,13 +73,13 @@ type runOptions struct {
 
 func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) error {
 	_ = stdout
-	// `smithers-api migrate [apply|status]` is an enforced, server-free schema
-	// migration path: it applies Atlas migrations and exits (non-zero on
+	// `smithers-backend migrate [apply|status]` is a server-free schema
+	// migration path: it applies the embedded product baseline and exits (non-zero on
 	// failure) WITHOUT booting the HTTP server or loading/validating the full
 	// server config. Dispatch before the server flag set so a stray positional
 	// can never silently boot the API. See migrate.go.
 	if len(args) > 0 && args[0] == "migrate" {
-		return runMigrate(ctx, args[1:], stderr)
+		return runMigrate(ctx, args[1:], stdout, stderr)
 	}
 	fs := flag.NewFlagSet("smithers-server", flag.ContinueOnError)
 	fs.SetOutput(stderr)
