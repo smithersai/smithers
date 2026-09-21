@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 const testAnonSandboxID = "7a1b9c2d-3e4f-4a5b-8c6d-9e0f1a2b3c4d"

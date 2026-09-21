@@ -20,14 +20,14 @@ func (n *workflowEventsCovNotifier) NotifyWorkflowRunEvent(_ context.Context, ar
 }
 
 func TestWorkflowEvents_Cov_NotifyBranches(t *testing.T) {
-	notifyWorkflowRunEvent(context.Background(), nil, 1, "source")
+	NotifyWorkflowRunEvent(context.Background(), nil, 1, "source")
 	n := &workflowEventsCovNotifier{}
-	notifyWorkflowRunEvent(context.Background(), n, 0, "source")
+	NotifyWorkflowRunEvent(context.Background(), n, 0, "source")
 	if len(n.calls) != 0 {
 		t.Fatalf("zero run id produced calls: %+v", n.calls)
 	}
 
-	notifyWorkflowRunEvent(context.Background(), n, 44, "scheduler")
+	NotifyWorkflowRunEvent(context.Background(), n, 44, "scheduler")
 	if len(n.calls) != 1 || n.calls[0].RunID != 44 {
 		t.Fatalf("calls = %+v", n.calls)
 	}
@@ -40,7 +40,7 @@ func TestWorkflowEvents_Cov_NotifyBranches(t *testing.T) {
 	}
 
 	n.err = errors.New("notify failed")
-	notifyWorkflowRunEvent(context.Background(), n, 45, "runner")
+	NotifyWorkflowRunEvent(context.Background(), n, 45, "runner")
 	if len(n.calls) != 2 {
 		t.Fatalf("erroring notifier should still have recorded call: %+v", n.calls)
 	}

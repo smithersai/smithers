@@ -1,15 +1,15 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type AdminAnalyticsRouteService interface {
-	Summary(context.Context, string, bool) (services.AnalyticsSummary, error)
+	Summary(context.Context, string, bool) (clusterservices.AnalyticsSummary, error)
 }
 type AdminAnalyticsHandler struct{ Service AdminAnalyticsRouteService }
 
@@ -23,7 +23,7 @@ func (h *AdminAnalyticsHandler) Summary(w http.ResponseWriter, r *http.Request) 
 		}
 		rangeName = values[0]
 	}
-	if _, err := services.AnalyticsRangeDays(rangeName); err != nil {
+	if _, err := clusterservices.AnalyticsRangeDays(rangeName); err != nil {
 		writeRouteError(w, r, err)
 		return
 	}

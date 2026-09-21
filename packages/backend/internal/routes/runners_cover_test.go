@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -92,9 +92,9 @@ func TestRunners_Cov_ErrorBranches(t *testing.T) {
 	t.Run("register propagates service error", func(t *testing.T) {
 		t.Parallel()
 		handler := RunnerHandler{Service: &mockRunnerRouteService{
-			registerFn: func(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error) {
+			registerFn: func(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error) {
 				assert.Equal(t, "runner-err", input.Name)
-				return services.RunnerRegisterResult{}, pkgerrors.Forbidden("runner rejected")
+				return clusterservices.RunnerRegisterResult{}, pkgerrors.Forbidden("runner rejected")
 			},
 		}}
 		req := httptest.NewRequest(http.MethodPost, "/internal/runners/register", strings.NewReader(`{"name":"runner-err"}`))
@@ -107,7 +107,7 @@ func TestRunners_Cov_ErrorBranches(t *testing.T) {
 	t.Run("claim propagates service error", func(t *testing.T) {
 		t.Parallel()
 		handler := RunnerHandler{Service: &mockRunnerRouteService{
-			claimTaskFn: func(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error) {
+			claimTaskFn: func(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
 				assert.Equal(t, int64(8), runnerID)
 				return nil, pkgerrors.NotFound("runner not found")
 			},
@@ -155,7 +155,7 @@ func TestRunners_Cov_ErrorBranches(t *testing.T) {
 	t.Run("stream propagates service error", func(t *testing.T) {
 		t.Parallel()
 		handler := RunnerHandler{Service: &mockRunnerRouteService{
-			streamEventsFn: func(ctx context.Context, input services.RunnerStreamEventsInput) error {
+			streamEventsFn: func(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error {
 				assert.Equal(t, int64(12), input.TaskID)
 				assert.Len(t, input.Events, 1)
 				return pkgerrors.NotFound("task not found")

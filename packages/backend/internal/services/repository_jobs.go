@@ -139,7 +139,7 @@ func validateRepositoryJob(job string, input RegisterRepositoryJobInput, now tim
 		return bad("too many event rules or an invalid label")
 	}
 	for _, rule := range input.Events {
-		switch normalizeTriggerName(rule.Type) {
+		switch NormalizeTriggerName(rule.Type) {
 		case "issue", "issue_comment", "pull_request", "pull_request_review", "push", "check_run", "check_suite":
 		default:
 			return bad("unsupported repository job event")

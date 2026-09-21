@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"errors"
 	"net/http"
@@ -13,19 +14,18 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type alertOutcomeTestRecorder struct {
 	run     db.WorkflowRun
-	claim   services.AlertRemediationTaskClaim
-	outcome services.AlertRemediationOutcome
+	claim   clusterservices.AlertRemediationTaskClaim
+	outcome clusterservices.AlertRemediationOutcome
 	err     error
 	calls   int
 }
 
-func (r *alertOutcomeTestRecorder) RecordWorkflowRemediationOutcome(_ context.Context, run db.WorkflowRun, claim services.AlertRemediationTaskClaim, outcome services.AlertRemediationOutcome) error {
+func (r *alertOutcomeTestRecorder) RecordWorkflowRemediationOutcome(_ context.Context, run db.WorkflowRun, claim clusterservices.AlertRemediationTaskClaim, outcome clusterservices.AlertRemediationOutcome) error {
 	r.calls++
 	r.run = run
 	r.claim = claim
@@ -92,7 +92,7 @@ func TestAlertRemediationOutcomeHandler_RecordsBoundPayload(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	require.Equal(t, 1, recorder.calls)
 	assert.Equal(t, run.ID, recorder.run.ID)
-	assert.Equal(t, services.AlertRemediationTaskClaim{TaskID: 11, RunnerID: 44, Attempt: 2}, recorder.claim)
+	assert.Equal(t, clusterservices.AlertRemediationTaskClaim{TaskID: 11, RunnerID: 44, Attempt: 2}, recorder.claim)
 	assert.Equal(t, "0.abcdef", recorder.outcome.IncidentID)
 	assert.Equal(t, "pr_opened", recorder.outcome.State)
 	assert.Equal(t, "https://github.com/smithers-ai/plue/pull/42", recorder.outcome.ReportURL)

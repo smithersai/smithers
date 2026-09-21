@@ -137,7 +137,7 @@ func collectRegisteredWorkflowTriggers(cfg *WorkflowConfig) []RegisteredWorkflow
 }
 
 func normalizeRegisteredEventType(eventType string) string {
-	normalized := normalizeTriggerName(eventType)
+	normalized := NormalizeTriggerName(eventType)
 	if normalized == "workflow_dispatch" {
 		normalized = "manual"
 	}

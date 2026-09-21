@@ -17,9 +17,9 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockGitHTTPProxyQuerier struct {

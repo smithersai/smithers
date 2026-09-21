@@ -1,11 +1,11 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -16,7 +16,7 @@ const adminSystemStatusTimeout = 5 * time.Second
 // AdminSystemStatusHandler. The aggregate never returns an error: component
 // failures are reported inside the snapshot.
 type AdminSystemStatusAggregator interface {
-	SystemStatus(ctx context.Context) services.AdminSystemStatus
+	SystemStatus(ctx context.Context) clusterservices.AdminSystemStatus
 }
 
 // AdminSystemStatusHandler handles GET /api/admin/system/status.

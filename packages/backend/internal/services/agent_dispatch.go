@@ -15,8 +15,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 var (
@@ -1199,7 +1199,7 @@ func (d *agentDispatch) markTaskRunning() error {
 	if _, err := d.svc.dispatchQ.UpdateWorkflowRunStatusBasedOnTasks(d.ctx, d.run.ID); err != nil {
 		logger.Warn("failed to update workflow run status after agent dispatch", "error", err)
 	}
-	notifyWorkflowRunEvent(d.ctx, d.svc.dispatchQ, d.run.ID, "agent.task_running")
+	NotifyWorkflowRunEvent(d.ctx, d.svc.dispatchQ, d.run.ID, "agent.task_running")
 	return nil
 }
 

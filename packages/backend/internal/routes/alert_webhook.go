@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -21,9 +21,9 @@ const (
 )
 
 // AlertIncidentReceiver handles a parsed monitoring alert incident (implemented
-// by services.AlertIncidentService).
+// by clusterservices.AlertIncidentService).
 type AlertIncidentReceiver interface {
-	HandleAlertIncident(ctx context.Context, incident services.MonitoringAlertIncident) error
+	HandleAlertIncident(ctx context.Context, incident clusterservices.MonitoringAlertIncident) error
 }
 
 // AlertWebhookHandler receives GCP Cloud Monitoring webhook_basicauth
@@ -101,7 +101,7 @@ func (h *AlertWebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	incident := services.MonitoringAlertIncident{
+	incident := clusterservices.MonitoringAlertIncident{
 		IncidentID:    strings.TrimSpace(payload.Incident.IncidentID),
 		PolicyName:    strings.TrimSpace(payload.Incident.PolicyName),
 		ConditionName: strings.TrimSpace(payload.Incident.ConditionName),

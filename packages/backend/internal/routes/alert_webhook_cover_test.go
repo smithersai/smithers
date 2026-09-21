@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"errors"
 	"net/http"
@@ -11,14 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type alertWebhookCovReceiver struct {
 	incidentErr error
 }
 
-func (r *alertWebhookCovReceiver) HandleAlertIncident(context.Context, services.MonitoringAlertIncident) error {
+func (r *alertWebhookCovReceiver) HandleAlertIncident(context.Context, clusterservices.MonitoringAlertIncident) error {
 	return r.incidentErr
 }
 

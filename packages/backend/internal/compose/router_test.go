@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -44,7 +45,7 @@ type mockRouterSearchService struct{}
 
 type mockRouterAuthService struct{}
 type mockRouterRunnerService struct {
-	lastCompleteInput *services.RunnerCompleteTaskInput
+	lastCompleteInput *clusterservices.RunnerCompleteTaskInput
 	lastClaimRunnerID int64
 	lastHeartbeatID   int64
 	lastTerminateID   int64
@@ -211,11 +212,11 @@ func (m *mockRouterGitService) ProxyReceivePack(ctx context.Context, owner, repo
 	return nil
 }
 
-func (m *mockRouterRunnerService) Register(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error) {
-	return services.RunnerRegisterResult{RunnerID: 1}, nil
+func (m *mockRouterRunnerService) Register(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error) {
+	return clusterservices.RunnerRegisterResult{RunnerID: 1}, nil
 }
 
-func (m *mockRouterRunnerService) ClaimTask(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error) {
+func (m *mockRouterRunnerService) ClaimTask(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
 	m.lastClaimRunnerID = runnerID
 	return nil, nil
 }
@@ -234,11 +235,11 @@ func (m *mockRouterRunnerService) GetTaskRuntimeEnvironment(ctx context.Context,
 	return map[string]string{}, nil
 }
 
-func (m *mockRouterRunnerService) StreamEvents(ctx context.Context, input services.RunnerStreamEventsInput) error {
+func (m *mockRouterRunnerService) StreamEvents(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error {
 	return nil
 }
 
-func (m *mockRouterRunnerService) CompleteTask(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+func (m *mockRouterRunnerService) CompleteTask(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 	m.lastCompleteInput = &input
 	return nil
 }
@@ -450,7 +451,7 @@ func (m *mockRouterWikiService) ListWikiRevisions(ctx context.Context, viewer *d
 
 type mockAdminRunnerRouteService struct{}
 
-func (m *mockAdminRunnerRouteService) ListRunners(ctx context.Context, input services.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+func (m *mockAdminRunnerRouteService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
 	return []db.RunnerPool{}, 0, nil
 }
 

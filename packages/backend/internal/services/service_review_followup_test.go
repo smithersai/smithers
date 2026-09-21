@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 func TestBillingWebhookUsesItemPeriodsAndStripeMinorUnits(t *testing.T) {
@@ -175,30 +175,30 @@ func TestRepositoryProvisionIdentityClassificationPreservesDatabaseErrors(t *tes
 func TestReservedSecretMarkerIsRejectedAcrossConfigurationBoundaries(t *testing.T) {
 	t.Parallel()
 
-	assert.False(t, isInjectedSecretName(secretEnvKeysRuntimeMarker))
+	assert.False(t, IsInjectedSecretName(SecretEnvKeysRuntimeMarker))
 	actor := &db.User{ID: 1}
 
 	_, err := NewSecretService(&mockSecretQuerier{}, webhook.NoopSecretCodec{}).SetSecret(
-		context.Background(), actor, "alice", "demo", secretEnvKeysRuntimeMarker, "secret")
+		context.Background(), actor, "alice", "demo", SecretEnvKeysRuntimeMarker, "secret")
 	assert.Equal(t, http.StatusUnprocessableEntity, apiStatus(t, err))
 	_, err = NewSecretService(&mockSecretQuerier{}, webhook.NoopSecretCodec{}).SetOrgSecret(
-		context.Background(), actor, "acme", secretEnvKeysRuntimeMarker, "secret")
+		context.Background(), actor, "acme", SecretEnvKeysRuntimeMarker, "secret")
 	assert.Equal(t, http.StatusUnprocessableEntity, apiStatus(t, err))
 	_, err = NewVariableService(&mockVariableQuerier{}).SetVariable(
-		context.Background(), actor, "alice", "demo", secretEnvKeysRuntimeMarker, "value")
+		context.Background(), actor, "alice", "demo", SecretEnvKeysRuntimeMarker, "value")
 	assert.Equal(t, http.StatusUnprocessableEntity, apiStatus(t, err))
 	_, err = NewVariableService(&mockVariableQuerier{}).SetOrgVariable(
-		context.Background(), actor, "acme", secretEnvKeysRuntimeMarker, "value")
+		context.Background(), actor, "acme", SecretEnvKeysRuntimeMarker, "value")
 	assert.Equal(t, http.StatusUnprocessableEntity, apiStatus(t, err))
 
-	secrets := []string{secretEnvKeysRuntimeMarker}
+	secrets := []string{SecretEnvKeysRuntimeMarker}
 	assert.Error(t, validateWorkflowJobSecrets(JobConfig{Name: "build", Secrets: &secrets}))
 	_, _, err = workflowTaskSecretAllowlist([]byte(`{"secret_names":["SMITHERS_SECRET_ENV_KEYS"]}`))
 	assert.Error(t, err)
 
 	injector := NewSecretInjector(&mockSecretInjectionQuerier{
 		listVariablesFn: func(context.Context, int64) ([]db.RepositoryVariable, error) {
-			return []db.RepositoryVariable{{Name: secretEnvKeysRuntimeMarker, Value: "user-value"}}, nil
+			return []db.RepositoryVariable{{Name: SecretEnvKeysRuntimeMarker, Value: "user-value"}}, nil
 		},
 	}, webhook.NoopSecretCodec{})
 	_, _, err = injector.RepositoryEnvironmentAndSecrets(context.Background(), 42)

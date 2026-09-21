@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,13 +14,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type AdminAgentSessionRouteService interface {
-	ListAgentSessions(context.Context, db.AdminListAgentSessionsParams) ([]services.AdminAgentSession, error)
-	CancelAgentSession(context.Context, string, string) (services.AdminManageStatus, error)
+	ListAgentSessions(context.Context, db.AdminListAgentSessionsParams) ([]clusterservices.AdminAgentSession, error)
+	CancelAgentSession(context.Context, string, string) (clusterservices.AdminManageStatus, error)
 }
 type AdminAgentSessionHandler struct{ Service AdminAgentSessionRouteService }
 

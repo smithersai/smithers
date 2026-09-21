@@ -21,8 +21,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/diffview"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 const changeSyncPageSize = 100
@@ -684,7 +684,7 @@ func (s *ChangeService) resolvePushProvenance(ctx context.Context, repositoryID 
 		case err == nil && session.RepositoryID == repositoryID:
 			agentSessionID = agentCandidate
 			// RFD-004: the run's computer, when it executed in a workspace.
-			workspaceID = uuidToString(session.WorkspaceID)
+			workspaceID = UUIDString(session.WorkspaceID)
 		case err == nil, stdErrors.Is(err, pgx.ErrNoRows):
 			// Untrusted commit text must not be able to forge provenance or make
 			// an otherwise valid push callback fail.

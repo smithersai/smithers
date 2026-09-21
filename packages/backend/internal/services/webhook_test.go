@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 )
 
 // --- mock querier ---
@@ -202,15 +202,15 @@ func sampleWebhook() db.Webhook {
 
 func ownerRepo() (db.Repository, *db.User) {
 	return db.Repository{
-		ID:        10,
-		Name:      "demo",
-		LowerName: "demo",
-		UserID:    pgtype.Int8{Int64: 1, Valid: true},
-		IsPublic:  true,
-	}, &db.User{
-		ID:       1,
-		Username: "alice",
-	}
+			ID:        10,
+			Name:      "demo",
+			LowerName: "demo",
+			UserID:    pgtype.Int8{Int64: 1, Valid: true},
+			IsPublic:  true,
+		}, &db.User{
+			ID:       1,
+			Username: "alice",
+		}
 }
 
 func webhookQuerier() *mockWebhookQuerier {

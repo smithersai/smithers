@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -21,7 +21,7 @@ const maxAlertRemediationOutcomeBodyBytes = 64 << 10
 // AlertWorkflowOutcomeRecorder authorizes the verified workflow run against a
 // durable remediation job before changing its incident.
 type AlertWorkflowOutcomeRecorder interface {
-	RecordWorkflowRemediationOutcome(ctx context.Context, run db.WorkflowRun, claim services.AlertRemediationTaskClaim, outcome services.AlertRemediationOutcome) error
+	RecordWorkflowRemediationOutcome(ctx context.Context, run db.WorkflowRun, claim clusterservices.AlertRemediationTaskClaim, outcome clusterservices.AlertRemediationOutcome) error
 }
 
 // AlertRemediationOutcomeHandler receives callbacks from the exact running
@@ -69,11 +69,11 @@ func (h *AlertRemediationOutcomeHandler) Record(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	err := h.Recorder.RecordWorkflowRemediationOutcome(r.Context(), *run, services.AlertRemediationTaskClaim{
+	err := h.Recorder.RecordWorkflowRemediationOutcome(r.Context(), *run, clusterservices.AlertRemediationTaskClaim{
 		TaskID:   claims.TaskID,
 		RunnerID: claims.RunnerID,
 		Attempt:  claims.Attempt,
-	}, services.AlertRemediationOutcome{
+	}, clusterservices.AlertRemediationOutcome{
 		IncidentID: incidentID,
 		State:      body.State,
 		PrURL:      body.PrURL,

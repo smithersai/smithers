@@ -162,7 +162,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			Branch:         inserted.Branch,
 			Status:         "acquired",
 			HolderUsername: s.username(ctx, inserted.UserID),
-			WorkspaceID:    uuidToString(inserted.WorkspaceID),
+			WorkspaceID:    UUIDString(inserted.WorkspaceID),
 		}, nil
 	}
 	if !isUniqueViolation(err) {
@@ -195,7 +195,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			Branch:         lock.Branch,
 			Status:         "acquired",
 			HolderUsername: s.username(ctx, lock.UserID),
-			WorkspaceID:    uuidToString(lock.WorkspaceID),
+			WorkspaceID:    UUIDString(lock.WorkspaceID),
 		}, nil
 	}
 
@@ -214,7 +214,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			Branch:         taken.Branch,
 			Status:         "took_over",
 			HolderUsername: s.username(ctx, taken.UserID),
-			WorkspaceID:    uuidToString(taken.WorkspaceID),
+			WorkspaceID:    UUIDString(taken.WorkspaceID),
 		}, nil
 	}
 	if !stdErrors.Is(err, pgx.ErrNoRows) {
@@ -237,7 +237,7 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 			Branch:         lock.Branch,
 			Status:         "acquired",
 			HolderUsername: s.username(ctx, lock.UserID),
-			WorkspaceID:    uuidToString(lock.WorkspaceID),
+			WorkspaceID:    UUIDString(lock.WorkspaceID),
 			Shared:         true,
 		}, nil
 	}

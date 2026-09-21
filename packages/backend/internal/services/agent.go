@@ -754,7 +754,7 @@ func (s *AgentService) agentSessionWorkspaceID(ctx context.Context, sessionID st
 	if err != nil {
 		return ""
 	}
-	return uuidToString(session.WorkspaceID)
+	return UUIDString(session.WorkspaceID)
 }
 
 // appendMessageWithTx performs atomic message append using a transaction.
@@ -1211,15 +1211,15 @@ func (s *AgentService) markAgentDispatchInfrastructureFailed(ctx context.Context
 				middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, sessionID, workflowRunID).
 					Warn("failed to mark taskless workflow run failed", "error", failErr)
 			} else if runErr == nil {
-				observeWorkflowRunCompletion(s.workflowMetrics, run, "failure")
+				ObserveWorkflowRunCompletion(s.workflowMetrics, run, "failure")
 			}
 		} else {
 			status, statusErr := s.dispatchQ.UpdateWorkflowRunStatusBasedOnTasks(ctx, workflowRunID)
 			if statusErr == nil && runErr == nil {
-				observeWorkflowRunCompletion(s.workflowMetrics, run, status)
+				ObserveWorkflowRunCompletion(s.workflowMetrics, run, status)
 			}
 		}
-		notifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.infrastructure_failed")
+		NotifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.infrastructure_failed")
 	}
 	if s.dispatchQ != nil && strings.TrimSpace(sessionID) != "" {
 		s.cancelAgentRuntimeWatchdog(sessionID)
@@ -1508,7 +1508,7 @@ func (s *AgentService) CancelSession(ctx context.Context, sessionID string, user
 	}
 	session, err := s.q.GetAgentSession(ctx, sessionID)
 	if err != nil {
-		return manageStoreError(err, "agent session")
+		return ResourceStoreError(err, "agent session")
 	}
 	if session.UserID != userID {
 		return pkgerrors.Forbidden("you do not own this agent session")
@@ -1587,7 +1587,7 @@ func toAgentSessionResponse(s db.AgentSession) AgentSessionResponse {
 		CreatedAt:    s.CreatedAt,
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
-		WorkspaceID:  uuidToString(s.WorkspaceID),
+		WorkspaceID:  UUIDString(s.WorkspaceID),
 	}
 }
 
@@ -1602,7 +1602,7 @@ func toAgentSessionWithCountResponse(s db.GetAgentSessionWithMessageCountRow) Ag
 		CreatedAt:    s.CreatedAt,
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
-		WorkspaceID:  uuidToString(s.WorkspaceID),
+		WorkspaceID:  UUIDString(s.WorkspaceID),
 	}
 }
 
@@ -1617,6 +1617,6 @@ func toAgentSessionListResponse(s db.ListAgentSessionsByRepoWithMessageCountRow)
 		CreatedAt:    s.CreatedAt,
 		UpdatedAt:    s.UpdatedAt,
 		Metadata:     s.Metadata,
-		WorkspaceID:  uuidToString(s.WorkspaceID),
+		WorkspaceID:  UUIDString(s.WorkspaceID),
 	}
 }

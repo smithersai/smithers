@@ -1,18 +1,18 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // AdminRunnerRouteService is the service contract for admin runner endpoints.
 type AdminRunnerRouteService interface {
-	ListRunners(ctx context.Context, input services.RunnerAdminListInput) ([]db.RunnerPool, int64, error)
+	ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error)
 }
 
 // AdminRunnerHandler handles /api/admin/runners requests.
@@ -58,7 +58,7 @@ func (h *AdminRunnerHandler) ListRunners(w http.ResponseWriter, r *http.Request)
 	statusFilter := r.URL.Query().Get("status")
 
 	page := cursorToPage(cursor, limit)
-	runners, total, err := h.Service.ListRunners(r.Context(), services.RunnerAdminListInput{
+	runners, total, err := h.Service.ListRunners(r.Context(), clusterservices.RunnerAdminListInput{
 		Page:         page,
 		PerPage:      limit,
 		StatusFilter: statusFilter,

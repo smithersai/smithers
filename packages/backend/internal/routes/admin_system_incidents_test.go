@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -20,14 +21,14 @@ import (
 )
 
 type mockAdminSystemIncidentsService struct {
-	listIncidentsFn func(ctx context.Context, input services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error)
+	listIncidentsFn func(ctx context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error)
 }
 
-func (m *mockAdminSystemIncidentsService) ListIncidents(ctx context.Context, input services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+func (m *mockAdminSystemIncidentsService) ListIncidents(ctx context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 	if m.listIncidentsFn != nil {
 		return m.listIncidentsFn(ctx, input)
 	}
-	return []services.AdminSystemIncident{}, nil
+	return []clusterservices.AdminSystemIncident{}, nil
 }
 
 func doSystemIncidentsRequest(h *AdminSystemIncidentsHandler, target string) *httptest.ResponseRecorder {
@@ -50,17 +51,17 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 		runID := int64(918273645)
 		h := &AdminSystemIncidentsHandler{
 			Service: &mockAdminSystemIncidentsService{
-				listIncidentsFn: func(_ context.Context, input services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+				listIncidentsFn: func(_ context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 					assert.Equal(t, services.AdminSystemIncidentStateActive, input.State)
 					assert.Equal(t, 50, input.Limit)
-					return []services.AdminSystemIncident{
+					return []clusterservices.AdminSystemIncident{
 						{
 							ID:       2,
 							Policy:   "queue-depth",
 							State:    "remediating",
 							OpenedAt: opened,
 							Summary:  "workflow queue backing up",
-							Remediations: []services.AdminSystemRemediation{
+							Remediations: []clusterservices.AdminSystemRemediation{
 								{ID: 10, State: "processing", Attempts: 2, WorkflowRunID: &runID, UpdatedAt: closed},
 								{ID: 11, State: "failed", Attempts: 1, UpdatedAt: opened},
 							},
@@ -72,7 +73,7 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 							OpenedAt:     opened.Add(-time.Hour),
 							ClosedAt:     &closed,
 							Summary:      "5xx rate above threshold",
-							Remediations: []services.AdminSystemRemediation{},
+							Remediations: []clusterservices.AdminSystemRemediation{},
 						},
 					}, nil
 				},
@@ -112,8 +113,8 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 
 		h := &AdminSystemIncidentsHandler{
 			Service: &mockAdminSystemIncidentsService{
-				listIncidentsFn: func(_ context.Context, _ services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
-					return []services.AdminSystemIncident{
+				listIncidentsFn: func(_ context.Context, _ clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
+					return []clusterservices.AdminSystemIncident{
 						{ID: 1, Policy: "api-5xx", State: "open", OpenedAt: opened, Summary: "s"},
 					}, nil
 				},
@@ -175,10 +176,10 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
-				var got services.AdminSystemIncidentListInput
+				var got clusterservices.AdminSystemIncidentListInput
 				h := &AdminSystemIncidentsHandler{
 					Service: &mockAdminSystemIncidentsService{
-						listIncidentsFn: func(_ context.Context, input services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+						listIncidentsFn: func(_ context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 							got = input
 							return nil, nil
 						},
@@ -215,7 +216,7 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 				called := false
 				h := &AdminSystemIncidentsHandler{
 					Service: &mockAdminSystemIncidentsService{
-						listIncidentsFn: func(_ context.Context, _ services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+						listIncidentsFn: func(_ context.Context, _ clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 							called = true
 							return nil, nil
 						},
@@ -234,7 +235,7 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 
 		h := &AdminSystemIncidentsHandler{
 			Service: &mockAdminSystemIncidentsService{
-				listIncidentsFn: func(_ context.Context, _ services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+				listIncidentsFn: func(_ context.Context, _ clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 					return nil, pkgerrors.BadRequest("invalid state: must be one of open, all")
 				},
 			},
@@ -249,7 +250,7 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 
 		h := &AdminSystemIncidentsHandler{
 			Service: &mockAdminSystemIncidentsService{
-				listIncidentsFn: func(_ context.Context, _ services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error) {
+				listIncidentsFn: func(_ context.Context, _ clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
 					return nil, pkgerrors.Internal("failed to list alert incidents: dial tcp 10.0.0.1:5432: refused")
 				},
 			},
@@ -266,33 +267,33 @@ type fakeIncidentActions struct {
 	id     int64
 	note   *string
 	until  time.Time
-	bulk   services.AdminIncidentBulkInput
+	bulk   clusterservices.AdminIncidentBulkInput
 	actor  services.AdminAuditActor
 	err    error
 }
 
-func (f *fakeIncidentActions) result(ctx context.Context, action string, id int64) (services.AdminSystemIncident, error) {
+func (f *fakeIncidentActions) result(ctx context.Context, action string, id int64) (clusterservices.AdminSystemIncident, error) {
 	f.called = action
 	f.id = id
 	f.actor, _ = services.AdminAuditActorFromContext(ctx)
-	return services.AdminSystemIncident{ID: id, IncidentID: "canary-1", Source: "canary", Condition: "condition", Occurrences: 12, State: "open"}, f.err
+	return clusterservices.AdminSystemIncident{ID: id, IncidentID: "canary-1", Source: "canary", Condition: "condition", Occurrences: 12, State: "open"}, f.err
 }
-func (f *fakeIncidentActions) Acknowledge(ctx context.Context, id int64, note *string) (services.AdminSystemIncident, error) {
+func (f *fakeIncidentActions) Acknowledge(ctx context.Context, id int64, note *string) (clusterservices.AdminSystemIncident, error) {
 	f.note = note
 	return f.result(ctx, "acknowledge", id)
 }
-func (f *fakeIncidentActions) Unacknowledge(ctx context.Context, id int64) (services.AdminSystemIncident, error) {
+func (f *fakeIncidentActions) Unacknowledge(ctx context.Context, id int64) (clusterservices.AdminSystemIncident, error) {
 	return f.result(ctx, "unacknowledge", id)
 }
-func (f *fakeIncidentActions) Resolve(ctx context.Context, id int64, note *string) (services.AdminSystemIncident, error) {
+func (f *fakeIncidentActions) Resolve(ctx context.Context, id int64, note *string) (clusterservices.AdminSystemIncident, error) {
 	f.note = note
 	return f.result(ctx, "resolve", id)
 }
-func (f *fakeIncidentActions) Snooze(ctx context.Context, id int64, until time.Time) (services.AdminSystemIncident, error) {
+func (f *fakeIncidentActions) Snooze(ctx context.Context, id int64, until time.Time) (clusterservices.AdminSystemIncident, error) {
 	f.until = until
 	return f.result(ctx, "snooze", id)
 }
-func (f *fakeIncidentActions) Bulk(ctx context.Context, in services.AdminIncidentBulkInput) (int64, error) {
+func (f *fakeIncidentActions) Bulk(ctx context.Context, in clusterservices.AdminIncidentBulkInput) (int64, error) {
 	f.bulk = in
 	_, err := f.result(ctx, "bulk", 0)
 	return 2, err
@@ -389,7 +390,7 @@ func TestAdminIncidentResponseLifecycleJSON(t *testing.T) {
 	local := time.Date(2026, 9, 14, 12, 0, 0, 0, time.FixedZone("offset", 3600))
 	actor := "operator"
 	note := "fixed"
-	data, err := json.Marshal(toSystemIncidentResponse(services.AdminSystemIncident{ID: 229, IncidentID: "canary-run", Policy: "policy", Condition: "condition", State: "open", Source: "canary", Summary: "summary", URL: "https://example.com", Runbook: "runbook", Occurrences: 12, OpenedAt: local, LastSeenAt: local, ClosedAt: &local, AcknowledgedAt: &local, AcknowledgedBy: &actor, SnoozedUntil: &local, ResolvedBy: &actor, ResolutionNote: &note}))
+	data, err := json.Marshal(toSystemIncidentResponse(clusterservices.AdminSystemIncident{ID: 229, IncidentID: "canary-run", Policy: "policy", Condition: "condition", State: "open", Source: "canary", Summary: "summary", URL: "https://example.com", Runbook: "runbook", Occurrences: 12, OpenedAt: local, LastSeenAt: local, ClosedAt: &local, AcknowledgedAt: &local, AcknowledgedBy: &actor, SnoozedUntil: &local, ResolvedBy: &actor, ResolutionNote: &note}))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"id":229,"incident_id":"canary-run","policy":"policy","condition":"condition","state":"open","source":"canary","summary":"summary","url":"https://example.com","runbook":"runbook","occurrences":12,"opened_at":"2026-09-14T11:00:00Z","last_seen_at":"2026-09-14T11:00:00Z","closed_at":"2026-09-14T11:00:00Z","acknowledged_at":"2026-09-14T11:00:00Z","acknowledged_by":"operator","snoozed_until":"2026-09-14T11:00:00Z","resolved_by":"operator","resolution_note":"fixed","remediations":[]}`, string(data))
 	for _, state := range []string{"active", "open", "acknowledged", "snoozed", "resolved", "all"} {

@@ -1083,7 +1083,7 @@ func TestPairSession_F_ShareVerifyAfterWriteDropsShareWhenMemberGone(t *testing.
 	var shares int
 	require.NoError(t, s.fx.pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM workspace_shares WHERE workspace_id=$1::uuid AND grantee_user_id=$2`,
-		uuidToString(s.session.WorkspaceID), s.editor).Scan(&shares))
+		UUIDString(s.session.WorkspaceID), s.editor).Scan(&shares))
 	assert.Zero(t, shares, "share recreated past a revoke must be dropped by the verify")
 }
 

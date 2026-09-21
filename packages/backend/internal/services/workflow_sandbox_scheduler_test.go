@@ -585,7 +585,7 @@ func TestWorkflowSandboxSchedulerWorker_PollOnce_ExecFailureRevokesCredentials(t
 
 	// The scheduler also revokes its own short-lived clone/push/mint tokens
 	// (each defaulting to id=1 from the mock's CreateAccessToken) as part of
-	// normal run teardown; assert only that revokeWorkflowRunCredentials did
+	// normal run teardown; assert only that RevokeWorkflowRunCredentials did
 	// its part: the persisted jjhub_token_id (555) got revoked for the
 	// repo-owner user.
 	require.NotEmpty(t, queries.deleteAccessTokenCalls)

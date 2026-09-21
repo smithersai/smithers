@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"errors"
 	"flag"
@@ -519,19 +520,19 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithIssueNotificationService(notificationService),
 		services.WithIssueOwnershipGuard(repoOwnershipFence),
 	)
-	runnerOptions := []services.RunnerServiceOption{
-		services.WithRunnerMetrics(smithersMetrics),
-		services.WithRunnerWebhookDispatcher(webhookDispatcher),
-		services.WithRunnerCommitStatusWriter(commitStatusService),
-		services.WithRunnerGitHubCheckRunService(gitHubCheckRunService),
-		services.WithRunnerGitHubInstallationResolver(repoConnectionService),
-		services.WithRunnerSecretInjector(secretInjector),
+	runnerOptions := []clusterservices.RunnerServiceOption{
+		clusterservices.WithRunnerMetrics(smithersMetrics),
+		clusterservices.WithRunnerWebhookDispatcher(webhookDispatcher),
+		clusterservices.WithRunnerCommitStatusWriter(commitStatusService),
+		clusterservices.WithRunnerGitHubCheckRunService(gitHubCheckRunService),
+		clusterservices.WithRunnerGitHubInstallationResolver(repoConnectionService),
+		clusterservices.WithRunnerSecretInjector(secretInjector),
 	}
 	if cfg.FeatureFlags.Workflows {
-		runnerOptions = append(runnerOptions, services.WithRunnerWorkflowDispatcher(workflowRunService))
+		runnerOptions = append(runnerOptions, clusterservices.WithRunnerWorkflowDispatcher(workflowRunService))
 	}
-	runnerService := services.NewRunnerService(queries, runnerOptions...)
-	runnerAdminService := services.NewRunnerAdminService(queries)
+	runnerService := clusterservices.NewRunnerService(queries, runnerOptions...)
+	runnerAdminService := clusterservices.NewRunnerAdminService(queries)
 	adminUserService := services.NewAdminUserService(queries,
 		services.WithTokenCreator(authService),
 		services.WithAdminAuditor(auditService),
@@ -872,13 +873,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// SMITHERS_ALERT_REMEDIATION_REPOSITORY (owner/repo) or the legacy
 	// SMITHERS_ALERT_REMEDIATION_REPOSITORY_ID identifies the repository
 	// hosting .smithers/workflows/remediate.tsx.
-	var alertRemediationWorker *services.AlertRemediationWorker
+	var alertRemediationWorker *clusterservices.AlertRemediationWorker
 	if cfg.FeatureFlags.Workflows {
 		if remediationRepo := resolveAlertRemediationRepository(ctx, queries); remediationRepo.ID > 0 {
 			if alertRegistry, err := loadAlertRegistry(); err != nil {
 				slog.Error("failed to load alert remediation registry; remediation worker disabled", "error", err)
 			} else {
-				alertRemediationWorker = services.NewAlertRemediationWorker(
+				alertRemediationWorker = clusterservices.NewAlertRemediationWorker(
 					queries,
 					workflowRunService,
 					alertRegistry,
@@ -1009,9 +1010,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// The admin system console reads the same sources the runtime gauges do, plus
 	// the incident and landing-queue aggregates, through one adapter.
-	adminSystemConsoleStore := services.NewAdminSystemConsoleStore(queries)
+	adminSystemConsoleStore := clusterservices.NewAdminSystemConsoleStore(queries)
 	adminSystemStatusHandler := &routes.AdminSystemStatusHandler{
-		Service: services.NewAdminSystemStatusService(services.AdminSystemStatusServiceConfig{
+		Service: clusterservices.NewAdminSystemStatusService(clusterservices.AdminSystemStatusServiceConfig{
 			DB:           pool,
 			Runtime:      runtimeMetricsStore,
 			Canaries:     queries,
@@ -1025,7 +1026,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Store: queries,
 	}
 	adminSystemIncidentsHandler := &routes.AdminSystemIncidentsHandler{
-		Service: services.NewAdminSystemIncidentsService(adminSystemConsoleStore),
+		Service: clusterservices.NewAdminSystemIncidentsService(adminSystemConsoleStore),
 	}
 	adminSystemMetricsHandler := routes.NewAdminSystemMetricsHandler(cfg.MetricsQueryProjectID(), nil)
 	if adminSystemMetricsHandler == nil {

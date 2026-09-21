@@ -215,8 +215,8 @@ func startRuntimeMetricsCollector(ctx context.Context, store RuntimeMetricsStore
 	}()
 }
 
-func observeWorkflowRunCompletion(observer WorkflowRunMetricsObserver, run db.WorkflowRun, status string) {
-	if observer == nil || run.ID <= 0 || !isTerminalWorkflowRunStatus(status) || isTerminalWorkflowRunStatus(run.Status) {
+func ObserveWorkflowRunCompletion(observer WorkflowRunMetricsObserver, run db.WorkflowRun, status string) {
+	if observer == nil || run.ID <= 0 || !IsTerminalWorkflowRunStatus(status) || IsTerminalWorkflowRunStatus(run.Status) {
 		return
 	}
 

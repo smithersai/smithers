@@ -299,7 +299,7 @@ func (s *AgentService) streamDispatchedTurn(ctx context.Context, connection Repo
 		if rows, err := s.dispatchedTurnTranscript(ctx, connection, hostRunID); err == nil && rows > reported {
 			reported = rows
 			s.touchAgentWorkspaceActivity(ctx, sessionID)
-			notifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.turn_progress")
+			NotifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.turn_progress")
 		}
 
 		status, output, err := s.dispatchedTurnStatus(ctx, connection, hostRunID)

@@ -63,7 +63,7 @@ func (m *supersedeQuerierMock) CancelWorkflowRun(_ context.Context, id int64) er
 	if !ok {
 		return nil
 	}
-	if isTerminalWorkflowRunStatus(stored.Status) {
+	if IsTerminalWorkflowRunStatus(stored.Status) {
 		return nil
 	}
 	stored.Status = "cancelled"

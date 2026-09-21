@@ -14,16 +14,16 @@ import (
 
 const (
 	redactedSecretValue        = "********"
-	secretEnvKeysRuntimeMarker = "SMITHERS_SECRET_ENV_KEYS"
+	SecretEnvKeysRuntimeMarker = "SMITHERS_SECRET_ENV_KEYS"
 )
 
-// maxInjectedEnvEntries and maxInjectedEnvBytes bound the total size of the
+// MaxInjectedEnvEntries and maxInjectedEnvBytes bound the total size of the
 // combined org+repo secret/variable environment injected into a runner or
 // sandbox. This caps the work done by log redaction (RedactSecretValues) and
 // keeps a single repo/org from exhausting runner memory via unbounded
 // secrets/variables.
 const (
-	maxInjectedEnvEntries = 1000
+	MaxInjectedEnvEntries = 1000
 	maxInjectedEnvBytes   = 1 << 20
 )
 
@@ -82,7 +82,7 @@ func (s *SecretInjector) RepositorySecrets(ctx context.Context, repositoryID int
 		}
 		for _, row := range orgRows {
 			name := strings.TrimSpace(row.Name)
-			if !isInjectedSecretName(name) {
+			if !IsInjectedSecretName(name) {
 				return nil, fmt.Errorf("organization secret %q is not a valid environment variable name", row.Name)
 			}
 			value, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
@@ -103,7 +103,7 @@ func (s *SecretInjector) RepositorySecrets(ctx context.Context, repositoryID int
 
 	for _, row := range rows {
 		name := strings.TrimSpace(row.Name)
-		if !isInjectedSecretName(name) {
+		if !IsInjectedSecretName(name) {
 			return nil, fmt.Errorf("repository secret %q is not a valid environment variable name", row.Name)
 		}
 		value, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
@@ -156,7 +156,7 @@ func (s *SecretInjector) RepositoryEnvironmentAndSecrets(ctx context.Context, re
 		}
 		for _, row := range orgVarRows {
 			name := strings.TrimSpace(row.Name)
-			if !isInjectedSecretName(name) {
+			if !IsInjectedSecretName(name) {
 				return nil, nil, fmt.Errorf("organization variable %q is not a valid environment variable name", row.Name)
 			}
 			if row.Value == "" {
@@ -174,7 +174,7 @@ func (s *SecretInjector) RepositoryEnvironmentAndSecrets(ctx context.Context, re
 
 	for _, row := range varRows {
 		name := strings.TrimSpace(row.Name)
-		if !isInjectedSecretName(name) {
+		if !IsInjectedSecretName(name) {
 			return nil, nil, fmt.Errorf("repository variable %q is not a valid environment variable name", row.Name)
 		}
 		if row.Value == "" {
@@ -191,7 +191,7 @@ func (s *SecretInjector) RepositoryEnvironmentAndSecrets(ctx context.Context, re
 		}
 		for _, row := range orgSecretRows {
 			name := strings.TrimSpace(row.Name)
-			if !isInjectedSecretName(name) {
+			if !IsInjectedSecretName(name) {
 				return nil, nil, fmt.Errorf("organization secret %q is not a valid environment variable name", row.Name)
 			}
 			value, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
@@ -213,7 +213,7 @@ func (s *SecretInjector) RepositoryEnvironmentAndSecrets(ctx context.Context, re
 
 	for _, row := range secretRows {
 		name := strings.TrimSpace(row.Name)
-		if !isInjectedSecretName(name) {
+		if !IsInjectedSecretName(name) {
 			return nil, nil, fmt.Errorf("repository secret %q is not a valid environment variable name", row.Name)
 		}
 
@@ -283,13 +283,13 @@ func RedactSecretValues(secretEnv map[string]string, text string) string {
 	return redacted
 }
 
-func isInjectedSecretName(name string) bool {
+func IsInjectedSecretName(name string) bool {
 	trimmed := strings.TrimSpace(name)
 	return !isReservedInjectedEnvName(trimmed) && injectedSecretNamePattern.MatchString(trimmed)
 }
 
 func isReservedInjectedEnvName(name string) bool {
-	return strings.TrimSpace(name) == secretEnvKeysRuntimeMarker
+	return strings.TrimSpace(name) == SecretEnvKeysRuntimeMarker
 }
 
 // validateInjectedEnvBudget rejects an injected environment that exceeds the
@@ -297,9 +297,9 @@ func isReservedInjectedEnvName(name string) bool {
 // redaction fail fast instead of doing unbounded work.
 func validateInjectedEnvBudget(env map[string]string) error {
 	totalBytes := injectedEnvByteSize(env)
-	if len(env) > maxInjectedEnvEntries || totalBytes > maxInjectedEnvBytes {
+	if len(env) > MaxInjectedEnvEntries || totalBytes > maxInjectedEnvBytes {
 		return fmt.Errorf("injected environment exceeds budget: %d entries / %d bytes (max %d / %d)",
-			len(env), totalBytes, maxInjectedEnvEntries, maxInjectedEnvBytes)
+			len(env), totalBytes, MaxInjectedEnvEntries, maxInjectedEnvBytes)
 	}
 	return nil
 }

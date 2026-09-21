@@ -61,7 +61,7 @@ type workflowQueryTxFactory interface {
 	WithTx(tx pgx.Tx) *db.Queries
 }
 
-func beginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, *db.Queries, bool, error) {
+func BeginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, *db.Queries, bool, error) {
 	starter, canStart := queries.(workflowQueryTxStarter)
 	factory, canBind := queries.(workflowQueryTxFactory)
 	if !canStart || !canBind {
@@ -74,7 +74,7 @@ func beginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, *db.Queries
 	return tx, factory.WithTx(tx), true, nil
 }
 
-func lockWorkflowRun(ctx context.Context, tx pgx.Tx, runID int64) error {
+func LockWorkflowRun(ctx context.Context, tx pgx.Tx, runID int64) error {
 	var lockedID int64
 	return tx.QueryRow(ctx,
 		`SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE`,
@@ -101,7 +101,7 @@ func markWorkflowRunFailed(ctx context.Context, queries WorkflowRunQuerier, runI
 // workflowRunCredentialRevoker is the DB surface needed to revoke a
 // terminal workflow run's live runtime credentials. It is satisfied by
 // *db.Queries in production; the duck-type assertion in
-// revokeWorkflowRunCredentials lets existing narrower test-mock queriers
+// RevokeWorkflowRunCredentials lets existing narrower test-mock queriers
 // keep compiling without implementing it (same pattern as
 // workflowRunFailureMarker above).
 type workflowRunCredentialRevoker interface {
@@ -112,7 +112,7 @@ type workflowRunCredentialRevoker interface {
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 }
 
-// revokeWorkflowRunCredentials clears a terminal workflow run's live agent
+// RevokeWorkflowRunCredentials clears a terminal workflow run's live agent
 // token and revokes any per-run jjhub API token, so neither credential
 // remains usable after the run finishes.
 //
@@ -129,7 +129,7 @@ type workflowRunCredentialRevoker interface {
 // cleanup never blocks the terminalization it is attached to. repositoryID
 // of 0 skips jjhub token revocation (used at dispatch-abort time, before any
 // jjhub token could have been minted for the run).
-func revokeWorkflowRunCredentials(ctx context.Context, queries any, runID, repositoryID int64) {
+func RevokeWorkflowRunCredentials(ctx context.Context, queries any, runID, repositoryID int64) {
 	revoker, ok := queries.(workflowRunCredentialRevoker)
 	if !ok {
 		return
@@ -505,7 +505,7 @@ func (s *workflowRunService) DispatchForEvent(ctx context.Context, input Dispatc
 			if !matched {
 				// Same reasoning for a manual dispatch against a workflow that does
 				// not declare a workflow_dispatch trigger.
-				if input.WorkflowDefinitionID != nil && normalizeTriggerName(input.Event.Type) == "workflow_dispatch" {
+				if input.WorkflowDefinitionID != nil && NormalizeTriggerName(input.Event.Type) == "workflow_dispatch" {
 					return nil, pkgerrors.UnprocessableEntity("workflow does not declare a workflow_dispatch trigger")
 				}
 				continue
@@ -619,7 +619,7 @@ func (s *workflowRunService) createRunForDefinition(
 		CommitSHA:    input.Event.CommitSHA,
 	})
 
-	tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries)
+	tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries)
 	if err != nil {
 		return WorkflowRunResult{}, pkgerrors.Internal("failed to begin workflow run transaction")
 	}
@@ -790,13 +790,13 @@ func validateWorkflowJobSecrets(job JobConfig) error {
 	if job.Secrets == nil {
 		return nil
 	}
-	if len(*job.Secrets) > maxInjectedEnvEntries {
+	if len(*job.Secrets) > MaxInjectedEnvEntries {
 		return fmt.Errorf("job %s declares too many secrets", job.Name)
 	}
 	seen := make(map[string]struct{}, len(*job.Secrets))
 	for _, rawName := range *job.Secrets {
 		name := strings.TrimSpace(rawName)
-		if name == "" || name != rawName || !isInjectedSecretName(name) {
+		if name == "" || name != rawName || !IsInjectedSecretName(name) {
 			return fmt.Errorf("job %s declares invalid secret name %q", job.Name, rawName)
 		}
 		if _, exists := seen[name]; exists {
@@ -997,7 +997,7 @@ func abortWorkflowRunDispatch(ctx context.Context, queries WorkflowRunQuerier, r
 	markWorkflowRunFailed(ctx, queries, runID)
 	// repositoryID is unknown/0 here: a jjhub token can't exist yet at
 	// dispatch-abort time, so this only clears the agent token.
-	revokeWorkflowRunCredentials(ctx, queries, runID, 0)
+	RevokeWorkflowRunCredentials(ctx, queries, runID, 0)
 }
 
 type workflowRunCheckRunUpdater interface {
@@ -1193,7 +1193,7 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 		return pkgerrors.Internal("workflow run store unavailable")
 	}
 
-	if tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries); transactional {
+	if tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries); transactional {
 		if err != nil {
 			return pkgerrors.Internal("failed to begin workflow run transaction")
 		}
@@ -1214,7 +1214,7 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 			}
 			return pkgerrors.Internal("failed to fetch workflow run")
 		}
-		if isTerminalWorkflowRunStatus(run.Status) {
+		if IsTerminalWorkflowRunStatus(run.Status) {
 			if err := tx.Commit(ctx); err != nil {
 				return pkgerrors.Internal("failed to commit workflow run transaction")
 			}
@@ -1229,7 +1229,7 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 		if err := tx.Commit(ctx); err != nil {
 			return pkgerrors.Internal("failed to commit workflow run transaction")
 		}
-		revokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
+		RevokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
 		s.publishCancelledWorkflowRun(ctx, repositoryID, run)
 		return nil
 	}
@@ -1244,7 +1244,7 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 		}
 		return pkgerrors.Internal("failed to fetch workflow run")
 	}
-	if isTerminalWorkflowRunStatus(run.Status) {
+	if IsTerminalWorkflowRunStatus(run.Status) {
 		return nil
 	}
 
@@ -1254,15 +1254,15 @@ func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID 
 	if err := s.queries.CancelWorkflowTasks(ctx, run.ID); err != nil {
 		return pkgerrors.Internal("failed to cancel workflow tasks")
 	}
-	revokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
+	RevokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
 	s.publishCancelledWorkflowRun(ctx, repositoryID, run)
 	return nil
 }
 
 func (s *workflowRunService) publishCancelledWorkflowRun(ctx context.Context, repositoryID int64, run db.WorkflowRun) {
-	observeWorkflowRunCompletion(s.metrics, run, "cancelled")
+	ObserveWorkflowRunCompletion(s.metrics, run, "cancelled")
 	if s.commitStatusWriter != nil {
-		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, "cancelled", workflowRunStatusDescription("cancelled"), ""); err != nil {
+		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, "cancelled", WorkflowRunStatusDescription("cancelled"), ""); err != nil {
 			middleware.LoggerWithWorkflowRun(ctx, run.ID).
 				Error("failed to update commit status for cancelled workflow run", "repository_id", repositoryID, "error", err)
 		}
@@ -1327,7 +1327,7 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		return pkgerrors.Internal("workflow run store unavailable")
 	}
 
-	if tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries); transactional {
+	if tx, txQueries, transactional, err := BeginWorkflowQueryTx(ctx, s.queries); transactional {
 		if err != nil {
 			return pkgerrors.Internal("failed to begin workflow run transaction")
 		}
@@ -1373,7 +1373,7 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		if err := tx.Commit(ctx); err != nil {
 			return pkgerrors.Internal("failed to commit workflow run transaction")
 		}
-		notifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
+		NotifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
 		return nil
 	}
 	run, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
@@ -1411,7 +1411,7 @@ func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID 
 		return pkgerrors.Internal("failed to resume workflow run")
 	}
 
-	notifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
+	NotifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
 	return nil
 }
 

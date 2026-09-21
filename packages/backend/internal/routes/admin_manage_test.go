@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -25,46 +25,46 @@ type manageRouteFake struct {
 	hours     int32
 }
 
-func (f *manageRouteFake) ListAgentSessions(_ context.Context, p db.AdminListAgentSessionsParams) ([]services.AdminAgentSession, error) {
+func (f *manageRouteFake) ListAgentSessions(_ context.Context, p db.AdminListAgentSessionsParams) ([]clusterservices.AdminAgentSession, error) {
 	f.calls++
 	f.agent = p
-	return []services.AdminAgentSession{}, f.err
+	return []clusterservices.AdminAgentSession{}, f.err
 }
-func (f *manageRouteFake) CancelAgentSession(_ context.Context, id, reason string) (services.AdminManageStatus, error) {
+func (f *manageRouteFake) CancelAgentSession(_ context.Context, id, reason string) (clusterservices.AdminManageStatus, error) {
 	f.calls++
 	f.reason = reason
-	return services.AdminManageStatus{ID: id, Status: "cancelled"}, f.err
+	return clusterservices.AdminManageStatus{ID: id, Status: "cancelled"}, f.err
 }
-func (f *manageRouteFake) ListWorkspaces(_ context.Context, p db.AdminListWorkspacesParams) ([]services.AdminWorkspace, error) {
+func (f *manageRouteFake) ListWorkspaces(_ context.Context, p db.AdminListWorkspacesParams) ([]clusterservices.AdminWorkspace, error) {
 	f.calls++
 	f.workspace = p
-	return []services.AdminWorkspace{}, f.err
+	return []clusterservices.AdminWorkspace{}, f.err
 }
-func (f *manageRouteFake) StopWorkspace(_ context.Context, id string) (services.AdminManageStatus, error) {
+func (f *manageRouteFake) StopWorkspace(_ context.Context, id string) (clusterservices.AdminManageStatus, error) {
 	f.calls++
-	return services.AdminManageStatus{ID: id, Status: "stopped"}, f.err
+	return clusterservices.AdminManageStatus{ID: id, Status: "stopped"}, f.err
 }
-func (f *manageRouteFake) SuspendWorkspace(_ context.Context, id string) (services.AdminManageStatus, error) {
+func (f *manageRouteFake) SuspendWorkspace(_ context.Context, id string) (clusterservices.AdminManageStatus, error) {
 	f.calls++
-	return services.AdminManageStatus{ID: id, Status: "suspended"}, f.err
+	return clusterservices.AdminManageStatus{ID: id, Status: "suspended"}, f.err
 }
-func (f *manageRouteFake) ListSandboxHosts(context.Context) ([]services.AdminSandboxHost, error) {
+func (f *manageRouteFake) ListSandboxHosts(context.Context) ([]clusterservices.AdminSandboxHost, error) {
 	f.calls++
-	return []services.AdminSandboxHost{}, f.err
+	return []clusterservices.AdminSandboxHost{}, f.err
 }
-func (f *manageRouteFake) DrainSandboxHost(_ context.Context, id string) (services.AdminHostState, error) {
+func (f *manageRouteFake) DrainSandboxHost(_ context.Context, id string) (clusterservices.AdminHostState, error) {
 	f.calls++
-	return services.AdminHostState{ID: id, State: "draining"}, f.err
+	return clusterservices.AdminHostState{ID: id, State: "draining"}, f.err
 }
-func (f *manageRouteFake) PruneStaleSandboxHosts(_ context.Context, h int32) (services.AdminPruneResult, error) {
+func (f *manageRouteFake) PruneStaleSandboxHosts(_ context.Context, h int32) (clusterservices.AdminPruneResult, error) {
 	f.calls++
 	f.hours = h
-	return services.AdminPruneResult{Pruned: 2}, f.err
+	return clusterservices.AdminPruneResult{Pruned: 2}, f.err
 }
-func (f *manageRouteFake) ListTokens(_ context.Context, p db.AdminListTokensParams) ([]services.AdminToken, error) {
+func (f *manageRouteFake) ListTokens(_ context.Context, p db.AdminListTokensParams) ([]clusterservices.AdminToken, error) {
 	f.calls++
 	f.token = p
-	return []services.AdminToken{}, f.err
+	return []clusterservices.AdminToken{}, f.err
 }
 func manageTestRouter(f *manageRouteFake) http.Handler {
 	r := chi.NewRouter()

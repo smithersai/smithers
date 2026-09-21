@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,28 +12,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockRunnerRouteService struct {
-	registerFn          func(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error)
-	claimTaskFn         func(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error)
+	registerFn          func(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error)
+	claimTaskFn         func(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error)
 	heartbeatFn         func(ctx context.Context, runnerID int64) error
 	terminateFn         func(ctx context.Context, runnerID int64) error
 	getTaskRuntimeEnvFn func(ctx context.Context, taskID int64) (map[string]string, error)
-	streamEventsFn      func(ctx context.Context, input services.RunnerStreamEventsInput) error
-	completeTaskFn      func(ctx context.Context, input services.RunnerCompleteTaskInput) error
+	streamEventsFn      func(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error
+	completeTaskFn      func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error
 }
 
-func (m *mockRunnerRouteService) Register(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error) {
+func (m *mockRunnerRouteService) Register(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error) {
 	if m.registerFn != nil {
 		return m.registerFn(ctx, input)
 	}
-	return services.RunnerRegisterResult{}, nil
+	return clusterservices.RunnerRegisterResult{}, nil
 }
 
-func (m *mockRunnerRouteService) ClaimTask(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error) {
+func (m *mockRunnerRouteService) ClaimTask(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
 	if m.claimTaskFn != nil {
 		return m.claimTaskFn(ctx, runnerID)
 	}
@@ -60,14 +60,14 @@ func (m *mockRunnerRouteService) GetTaskRuntimeEnvironment(ctx context.Context, 
 	return map[string]string{}, nil
 }
 
-func (m *mockRunnerRouteService) StreamEvents(ctx context.Context, input services.RunnerStreamEventsInput) error {
+func (m *mockRunnerRouteService) StreamEvents(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error {
 	if m.streamEventsFn != nil {
 		return m.streamEventsFn(ctx, input)
 	}
 	return nil
 }
 
-func (m *mockRunnerRouteService) CompleteTask(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+func (m *mockRunnerRouteService) CompleteTask(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 	if m.completeTaskFn != nil {
 		return m.completeTaskFn(ctx, input)
 	}
@@ -93,12 +93,12 @@ func TestRunnerHandler_Register(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			registerFn: func(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error) {
+			registerFn: func(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error) {
 				assert.Equal(t, "runner-1", input.Name)
 				assert.JSONEq(t, `{"region":"us-east-1"}`, string(input.Metadata))
-				return services.RunnerRegisterResult{
+				return clusterservices.RunnerRegisterResult{
 					RunnerID: 41,
-					Task: &services.RunnerAssignedTask{
+					Task: &clusterservices.RunnerAssignedTask{
 						ID:            2001,
 						WorkflowRunID: 99,
 						Payload:       json.RawMessage(`{"kind":"agent"}`),
@@ -113,7 +113,7 @@ func TestRunnerHandler_Register(t *testing.T) {
 		h.Register(rec, req)
 
 		require.Equal(t, http.StatusOK, rec.Code)
-		var payload services.RunnerRegisterResult
+		var payload clusterservices.RunnerRegisterResult
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 		assert.Equal(t, int64(41), payload.RunnerID)
 		require.NotNil(t, payload.Task)
@@ -154,7 +154,7 @@ func TestRunnerHandler_StreamEvents(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			streamEventsFn: func(ctx context.Context, input services.RunnerStreamEventsInput) error {
+			streamEventsFn: func(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error {
 				assert.Equal(t, int64(22), input.TaskID)
 				require.Len(t, input.Events, 1)
 				assert.Equal(t, "token", input.Events[0].Type)
@@ -193,7 +193,7 @@ func TestRunnerHandler_ClaimTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			claimTaskFn: func(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error) {
+			claimTaskFn: func(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
 				assert.Equal(t, int64(42), runnerID)
 				return nil, nil
 			},
@@ -211,9 +211,9 @@ func TestRunnerHandler_ClaimTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			claimTaskFn: func(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error) {
+			claimTaskFn: func(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
 				assert.Equal(t, int64(7), runnerID)
-				return &services.RunnerAssignedTask{
+				return &clusterservices.RunnerAssignedTask{
 					ID:             9,
 					WorkflowRunID:  10,
 					RepositoryID:   11,
@@ -230,7 +230,7 @@ func TestRunnerHandler_ClaimTask(t *testing.T) {
 		h.ClaimTask(rec, req)
 
 		require.Equal(t, http.StatusOK, rec.Code)
-		var payload services.RunnerAssignedTask
+		var payload clusterservices.RunnerAssignedTask
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 		assert.Equal(t, int64(9), payload.ID)
 		assert.Equal(t, int64(11), payload.RepositoryID)
@@ -391,7 +391,7 @@ func TestRunnerHandler_CompleteTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			completeTaskFn: func(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+			completeTaskFn: func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 				assert.Equal(t, int64(23), input.TaskID)
 				assert.Equal(t, "failed", input.Status)
 				assert.Equal(t, "runner crashed", input.Error)
@@ -412,7 +412,7 @@ func TestRunnerHandler_CompleteTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			completeTaskFn: func(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+			completeTaskFn: func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 				assert.Equal(t, int64(24), input.TaskID)
 				assert.Equal(t, "done", input.Status)
 				return nil
@@ -432,7 +432,7 @@ func TestRunnerHandler_CompleteTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			completeTaskFn: func(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+			completeTaskFn: func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 				assert.Equal(t, int64(24), input.TaskID)
 				assert.Equal(t, int64(42), input.RunnerID)
 				assert.Equal(t, "done", input.Status)
@@ -453,7 +453,7 @@ func TestRunnerHandler_CompleteTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			completeTaskFn: func(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+			completeTaskFn: func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 				assert.Equal(t, int64(23), input.TaskID)
 				assert.Equal(t, int64(77), input.RunnerID)
 				assert.Equal(t, "failed", input.Status)
@@ -475,7 +475,7 @@ func TestRunnerHandler_CompleteTask(t *testing.T) {
 		t.Parallel()
 
 		h := RunnerHandler{Service: &mockRunnerRouteService{
-			completeTaskFn: func(ctx context.Context, input services.RunnerCompleteTaskInput) error {
+			completeTaskFn: func(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
 				// Simulate real service validation: RunnerID == 0 → bad request
 				if input.RunnerID <= 0 {
 					return pkgerrors.BadRequest("runner id must be positive")

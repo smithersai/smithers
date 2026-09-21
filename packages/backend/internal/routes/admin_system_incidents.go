@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"strconv"
@@ -20,15 +21,15 @@ const adminSystemIncidentsQueryTimeout = 5 * time.Second
 // AdminSystemIncidentsRouteService is the service contract for the admin
 // system incidents endpoint.
 type AdminSystemIncidentsRouteService interface {
-	ListIncidents(ctx context.Context, input services.AdminSystemIncidentListInput) ([]services.AdminSystemIncident, error)
+	ListIncidents(ctx context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error)
 }
 
 type AdminIncidentsRouteService interface {
-	Acknowledge(context.Context, int64, *string) (services.AdminSystemIncident, error)
-	Unacknowledge(context.Context, int64) (services.AdminSystemIncident, error)
-	Resolve(context.Context, int64, *string) (services.AdminSystemIncident, error)
-	Snooze(context.Context, int64, time.Time) (services.AdminSystemIncident, error)
-	Bulk(context.Context, services.AdminIncidentBulkInput) (int64, error)
+	Acknowledge(context.Context, int64, *string) (clusterservices.AdminSystemIncident, error)
+	Unacknowledge(context.Context, int64) (clusterservices.AdminSystemIncident, error)
+	Resolve(context.Context, int64, *string) (clusterservices.AdminSystemIncident, error)
+	Snooze(context.Context, int64, time.Time) (clusterservices.AdminSystemIncident, error)
+	Bulk(context.Context, clusterservices.AdminIncidentBulkInput) (int64, error)
 }
 
 // AdminSystemIncidentsHandler handles GET /api/admin/system/incidents.
@@ -75,7 +76,7 @@ type systemIncidentsResponse struct {
 	Incidents []systemIncidentResponse `json:"incidents"`
 }
 
-func toSystemIncidentResponse(inc services.AdminSystemIncident) systemIncidentResponse {
+func toSystemIncidentResponse(inc clusterservices.AdminSystemIncident) systemIncidentResponse {
 	// pgx decodes timestamptz into the server's local zone; normalize to UTC so
 	// every admin system endpoint serializes the same instant identically.
 	resp := systemIncidentResponse{
@@ -112,15 +113,15 @@ func toSystemIncidentResponse(inc services.AdminSystemIncident) systemIncidentRe
 
 // parseSystemIncidentsQuery validates the query string for
 // GET /api/admin/system/incidents.
-func parseSystemIncidentsQuery(r *http.Request) (services.AdminSystemIncidentListInput, *pkgerrors.APIError) {
-	input := services.AdminSystemIncidentListInput{
+func parseSystemIncidentsQuery(r *http.Request) (clusterservices.AdminSystemIncidentListInput, *pkgerrors.APIError) {
+	input := clusterservices.AdminSystemIncidentListInput{
 		State:  services.AdminSystemIncidentStateActive,
 		Policy: r.URL.Query().Get("policy"),
 		Limit:  services.AdminSystemIncidentDefaultLimit,
 	}
 
 	if raw := strings.TrimSpace(r.URL.Query().Get("state")); raw != "" {
-		if !services.ValidAdminIncidentState(raw) {
+		if !clusterservices.ValidAdminIncidentState(raw) {
 			return input, pkgerrors.BadRequest("invalid incident state")
 		}
 		input.State = raw
@@ -206,7 +207,7 @@ func (h *AdminSystemIncidentsHandler) mutate(w http.ResponseWriter, r *http.Requ
 	}
 	ctx, cancel := context.WithTimeout(adminUserAuditContext(r), adminSystemIncidentsQueryTimeout)
 	defer cancel()
-	var result services.AdminSystemIncident
+	var result clusterservices.AdminSystemIncident
 	switch action {
 	case "acknowledge", "resolve":
 		var input incidentNoteRequest
@@ -241,7 +242,7 @@ func (h *AdminSystemIncidentsHandler) Bulk(w http.ResponseWriter, r *http.Reques
 		pkgerrors.WriteError(w, pkgerrors.Internal("incident service unavailable"))
 		return
 	}
-	var input services.AdminIncidentBulkInput
+	var input clusterservices.AdminIncidentBulkInput
 	if !decodeJSONBody(w, r, &input) {
 		return
 	}

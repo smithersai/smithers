@@ -170,7 +170,7 @@ func MatchTrigger(configJSON json.RawMessage, event TriggerEvent) (bool, error) 
 
 func matchesOn(on WorkflowOnConfig, event TriggerEvent) bool {
 	matched := false
-	switch normalizeTriggerName(event.Type) {
+	switch NormalizeTriggerName(event.Type) {
 	case "push":
 		matched = on.Push != nil && matchesPush(*on.Push, event.Ref)
 	case "pull_request":
@@ -213,7 +213,7 @@ func matchesOn(on WorkflowOnConfig, event TriggerEvent) bool {
 		return false
 	}
 	eventType, eventAction := parseWebhookDescriptor(on.Webhook.Event)
-	if eventType == "" || eventType != normalizeTriggerName(event.Type) {
+	if eventType == "" || eventType != NormalizeTriggerName(event.Type) {
 		return false
 	}
 	return eventAction == "" || eventAction == strings.ToLower(strings.TrimSpace(event.Action))
@@ -434,8 +434,8 @@ func normalizeTagRef(ref string) string {
 	return ref
 }
 
-// normalizeTriggerName lowercases and trims whitespace from a trigger name.
-func normalizeTriggerName(name string) string {
+// NormalizeTriggerName lowercases and trims whitespace from a trigger name.
+func NormalizeTriggerName(name string) string {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	switch normalized {
 	case "issues":
@@ -474,7 +474,7 @@ func splitDottedEventType(eventType string) (string, string) {
 func parseWebhookDescriptor(descriptor string) (string, string) {
 	eventType, eventAction := splitDottedEventType(descriptor)
 	if eventType == descriptor {
-		return normalizeTriggerName(eventType), ""
+		return NormalizeTriggerName(eventType), ""
 	}
-	return normalizeTriggerName(eventType), strings.ToLower(strings.TrimSpace(eventAction))
+	return NormalizeTriggerName(eventType), strings.ToLower(strings.TrimSpace(eventAction))
 }

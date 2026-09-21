@@ -27,7 +27,7 @@ func TestNotifyWorkflowRunEvent_Success(t *testing.T) {
 	t.Parallel()
 
 	notifier := &mockWorkflowRunEventNotifier{}
-	notifyWorkflowRunEvent(context.Background(), notifier, 42, "test")
+	NotifyWorkflowRunEvent(context.Background(), notifier, 42, "test")
 
 	require.Len(t, notifier.calls, 1)
 	assert.Equal(t, int64(42), notifier.calls[0].RunID)
@@ -39,14 +39,14 @@ func TestNotifyWorkflowRunEvent_NilNotifier(t *testing.T) {
 	t.Parallel()
 
 	// Should not panic
-	notifyWorkflowRunEvent(context.Background(), nil, 42, "test")
+	NotifyWorkflowRunEvent(context.Background(), nil, 42, "test")
 }
 
 func TestNotifyWorkflowRunEvent_ZeroRunID(t *testing.T) {
 	t.Parallel()
 
 	notifier := &mockWorkflowRunEventNotifier{}
-	notifyWorkflowRunEvent(context.Background(), notifier, 0, "test")
+	NotifyWorkflowRunEvent(context.Background(), notifier, 0, "test")
 
 	// Should not call notifier with zero run ID
 	assert.Empty(t, notifier.calls)
@@ -56,7 +56,7 @@ func TestNotifyWorkflowRunEvent_NegativeRunID(t *testing.T) {
 	t.Parallel()
 
 	notifier := &mockWorkflowRunEventNotifier{}
-	notifyWorkflowRunEvent(context.Background(), notifier, -1, "test")
+	NotifyWorkflowRunEvent(context.Background(), notifier, -1, "test")
 
 	// Should not call notifier with negative run ID
 	assert.Empty(t, notifier.calls)
@@ -72,6 +72,6 @@ func TestNotifyWorkflowRunEvent_NotifierError(t *testing.T) {
 	}
 
 	// Should not panic on error; logs warning but doesn't propagate
-	notifyWorkflowRunEvent(context.Background(), notifier, 42, "test")
+	NotifyWorkflowRunEvent(context.Background(), notifier, 42, "test")
 	require.Len(t, notifier.calls, 1)
 }

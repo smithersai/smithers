@@ -115,7 +115,7 @@ func TestPairSession_Cov_MembershipLinksInvitesPresenceAndEmail(t *testing.T) {
 	var shareLevel string
 	require.NoError(t, fx.pool.QueryRow(ctx,
 		`SELECT level FROM workspace_shares WHERE workspace_id=$1::uuid AND grantee_user_id=$2`,
-		uuidToString(session.WorkspaceID), viewer).Scan(&shareLevel))
+		UUIDString(session.WorkspaceID), viewer).Scan(&shareLevel))
 	assert.Equal(t, "write", shareLevel)
 
 	_, err = svc.SetMemberRole(ctx, session.ID, owner, owner, PairRoleViewer)

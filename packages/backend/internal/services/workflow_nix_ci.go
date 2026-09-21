@@ -380,8 +380,8 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCIRun(
 	if _, err := w.queries.MarkWorkflowRunSuccess(finalizeCtx, claim.successParams()); err != nil {
 		return err
 	}
-	revokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
-	notifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
+	RevokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
+	NotifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
 	return nil
 }
 

@@ -147,7 +147,7 @@ func TestObserveWorkflowRunCompletion_RecordsTerminalTransition(t *testing.T) {
 		CreatedAt: time.Now().Add(-5 * time.Second),
 	}
 
-	observeWorkflowRunCompletion(observer, run, "success")
+	ObserveWorkflowRunCompletion(observer, run, "success")
 
 	require.Equal(t, 1, observer.count)
 	assert.Equal(t, "success", observer.status)
@@ -164,7 +164,7 @@ func TestObserveWorkflowRunCompletion_SkipsNonTransitions(t *testing.T) {
 		CreatedAt: time.Now().Add(-5 * time.Second),
 	}
 
-	observeWorkflowRunCompletion(observer, run, "success")
+	ObserveWorkflowRunCompletion(observer, run, "success")
 
 	assert.Equal(t, 0, observer.count)
 }

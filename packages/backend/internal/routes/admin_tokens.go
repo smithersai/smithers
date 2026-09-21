@@ -1,15 +1,15 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type AdminTokenRouteService interface {
-	ListTokens(context.Context, db.AdminListTokensParams) ([]services.AdminToken, error)
+	ListTokens(context.Context, db.AdminListTokensParams) ([]clusterservices.AdminToken, error)
 }
 type AdminTokenHandler struct{ Service AdminTokenRouteService }
 

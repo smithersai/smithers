@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"log/slog"
 	"net/http"
@@ -248,12 +249,12 @@ func buildRouter(
 	}
 	// GCP Cloud Monitoring alert webhook receiver (webhook_basicauth channel)
 	// feeding the alert auto-remediation pipeline.
-	var alertIncidentService *services.AlertIncidentService
+	var alertIncidentService *clusterservices.AlertIncidentService
 	if queries != nil {
 		// Outcome callbacks only need the durable run/job binding. Keep this
 		// route available on every healthy API replica even when that replica
 		// could not start the background dispatcher.
-		alertIncidentService = services.NewAlertIncidentService(queries, nil)
+		alertIncidentService = clusterservices.NewAlertIncidentService(queries, nil)
 	}
 	if alertWebhookHandler := routes.NewAlertWebhookHandler(os.Getenv("SMITHERS_ALERT_WEBHOOK_SIGNING_KEY")); alertWebhookHandler != nil {
 		ready := len(alertRemediationReady) > 0 && alertRemediationReady[0]
@@ -273,10 +274,10 @@ func buildRouter(
 			} else {
 				alertRegistry = loaded
 			}
-			alertIncidentService = services.NewAlertIncidentService(
+			alertIncidentService = clusterservices.NewAlertIncidentService(
 				queries,
 				alertRegistry,
-				services.WithAlertRemediationEnabled(ready),
+				clusterservices.WithAlertRemediationEnabled(ready),
 			)
 			alertWebhookHandler.Receiver = alertIncidentService
 		}
@@ -1808,19 +1809,19 @@ func buildRouter(
 				}
 				// observe-v2: api-manage
 				if queries != nil {
-					var agents services.AdminAgentCanceller
-					var workspaces services.AdminWorkspaceLifecycle
+					var agents clusterservices.AdminAgentCanceller
+					var workspaces clusterservices.AdminWorkspaceLifecycle
 					if agentSessionHandler != nil {
-						agents, _ = agentSessionHandler.Service.(services.AdminAgentCanceller)
+						agents, _ = agentSessionHandler.Service.(clusterservices.AdminAgentCanceller)
 					}
 					if workspaceHandler != nil {
-						workspaces, _ = workspaceHandler.Service.(services.AdminWorkspaceLifecycle)
+						workspaces, _ = workspaceHandler.Service.(clusterservices.AdminWorkspaceLifecycle)
 					}
-					var hosts services.AdminHostDrainer
+					var hosts clusterservices.AdminHostDrainer
 					if pool != nil {
 						hosts = control.NewPGStore(pool)
 					}
-					manage := services.NewAdminManageService(queries, agents, workspaces, hosts)
+					manage := clusterservices.NewAdminManageService(queries, agents, workspaces, hosts)
 					agentAdmin := &routes.AdminAgentSessionHandler{Service: manage}
 					workspaceAdmin := &routes.AdminWorkspaceHandler{Service: manage}
 					hostAdmin := &routes.AdminSandboxHostHandler{Service: manage}
@@ -1837,9 +1838,9 @@ func buildRouter(
 				}
 				// observe-v2: api-analytics
 				if queries != nil {
-					analyticsService := services.NewAdminAnalyticsService(queries)
+					analyticsService := clusterservices.NewAdminAnalyticsService(queries)
 					if pool != nil {
-						analyticsService = services.NewAdminAnalyticsServiceWithPool(pool)
+						analyticsService = clusterservices.NewAdminAnalyticsServiceWithPool(pool)
 					}
 					analyticsHandler := &routes.AdminAnalyticsHandler{Service: analyticsService}
 					r.With(readAdmin...).Get("/analytics/summary", analyticsHandler.Summary)
@@ -1880,7 +1881,7 @@ func buildRouter(
 				// observe-v2: api-incidents
 				if adminSystemIncidentsHandler != nil {
 					if adminSystemIncidentsHandler.Actions == nil && queries != nil {
-						adminSystemIncidentsHandler.Actions = services.NewAdminIncidentsService(queries)
+						adminSystemIncidentsHandler.Actions = clusterservices.NewAdminIncidentsService(queries)
 					}
 					r.With(writeAdmin...).Post("/system/incidents/{id}/acknowledge", adminSystemIncidentsHandler.Acknowledge)
 					r.With(writeAdmin...).Post("/system/incidents/{id}/unacknowledge", adminSystemIncidentsHandler.Unacknowledge)

@@ -65,7 +65,7 @@ func (s *RepositoryJobService) Start(ctx context.Context) {
 func repositoryJobMatches(config RegisterRepositoryJobInput, event db.RepositoryJobEvent) bool {
 	matched := false
 	for _, rule := range config.Events {
-		if normalizeTriggerName(rule.Type) != normalizeTriggerName(event.EventType) {
+		if NormalizeTriggerName(rule.Type) != NormalizeTriggerName(event.EventType) {
 			continue
 		}
 		if len(rule.Actions) == 0 {

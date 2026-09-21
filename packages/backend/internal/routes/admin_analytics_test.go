@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -16,10 +17,10 @@ import (
 )
 
 type fakeAnalyticsRouteService struct {
-	fn func(context.Context, string, bool) (services.AnalyticsSummary, error)
+	fn func(context.Context, string, bool) (clusterservices.AnalyticsSummary, error)
 }
 
-func (f fakeAnalyticsRouteService) Summary(ctx context.Context, r string, b bool) (services.AnalyticsSummary, error) {
+func (f fakeAnalyticsRouteService) Summary(ctx context.Context, r string, b bool) (clusterservices.AnalyticsSummary, error) {
 	return f.fn(ctx, r, b)
 }
 func TestAdminAnalyticsHandlerSummary(t *testing.T) {
@@ -35,18 +36,18 @@ func TestAdminAnalyticsHandlerSummary(t *testing.T) {
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			calls := 0
-			h := AdminAnalyticsHandler{Service: fakeAnalyticsRouteService{fn: func(ctx context.Context, r string, b bool) (services.AnalyticsSummary, error) {
+			h := AdminAnalyticsHandler{Service: fakeAnalyticsRouteService{fn: func(ctx context.Context, r string, b bool) (clusterservices.AnalyticsSummary, error) {
 				calls++
 				require.Equal(t, tc.rangeName, r)
 				require.Equal(t, tc.synthetic, b)
-				return services.AnalyticsSummary{Range: r, SyntheticExcluded: !b}, nil
+				return clusterservices.AnalyticsSummary{Range: r, SyntheticExcluded: !b}, nil
 			}}}
 			rec := httptest.NewRecorder()
 			h.Summary(rec, httptest.NewRequest(http.MethodGet, "/api/admin/analytics/summary"+tc.query, nil))
 			require.Equal(t, tc.status, rec.Code)
 			if tc.status == 200 {
 				require.Equal(t, 1, calls)
-				var body services.AnalyticsSummary
+				var body clusterservices.AnalyticsSummary
 				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 				require.Equal(t, tc.rangeName, body.Range)
 			} else {
@@ -54,8 +55,8 @@ func TestAdminAnalyticsHandlerSummary(t *testing.T) {
 			}
 		})
 	}
-	h := AdminAnalyticsHandler{Service: fakeAnalyticsRouteService{fn: func(context.Context, string, bool) (services.AnalyticsSummary, error) {
-		return services.AnalyticsSummary{}, pkgerrors.Internal("query failed")
+	h := AdminAnalyticsHandler{Service: fakeAnalyticsRouteService{fn: func(context.Context, string, bool) (clusterservices.AnalyticsSummary, error) {
+		return clusterservices.AnalyticsSummary{}, pkgerrors.Internal("query failed")
 	}}}
 	rec := httptest.NewRecorder()
 	h.Summary(rec, httptest.NewRequest(http.MethodGet, "/", nil))

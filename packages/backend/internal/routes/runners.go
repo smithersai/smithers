@@ -1,24 +1,24 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type RunnerRouteService interface {
-	Register(ctx context.Context, input services.RunnerRegisterInput) (services.RunnerRegisterResult, error)
-	ClaimTask(ctx context.Context, runnerID int64) (*services.RunnerAssignedTask, error)
+	Register(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error)
+	ClaimTask(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error)
 	Heartbeat(ctx context.Context, runnerID int64) error
 	Terminate(ctx context.Context, runnerID int64) error
 	GetTaskRuntimeEnvironment(ctx context.Context, taskID int64) (map[string]string, error)
-	StreamEvents(ctx context.Context, input services.RunnerStreamEventsInput) error
-	CompleteTask(ctx context.Context, input services.RunnerCompleteTaskInput) error
+	StreamEvents(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error
+	CompleteTask(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error
 }
 
 type RunnerHandler struct {
@@ -26,7 +26,7 @@ type RunnerHandler struct {
 }
 
 type streamEventsRequest struct {
-	Events []services.RunnerEvent `json:"events"`
+	Events []clusterservices.RunnerEvent `json:"events"`
 }
 
 type completeTaskRequest struct {
@@ -45,7 +45,7 @@ func (h *RunnerHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req services.RunnerRegisterInput
+	var req clusterservices.RunnerRegisterInput
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -141,7 +141,7 @@ func (h *RunnerHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.StreamEvents(r.Context(), services.RunnerStreamEventsInput{
+	if err := h.Service.StreamEvents(r.Context(), clusterservices.RunnerStreamEventsInput{
 		TaskID: taskID,
 		Events: req.Events,
 	}); err != nil {
@@ -190,7 +190,7 @@ func (h *RunnerHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.CompleteTask(r.Context(), services.RunnerCompleteTaskInput{
+	if err := h.Service.CompleteTask(r.Context(), clusterservices.RunnerCompleteTaskInput{
 		RunnerID: req.RunnerID,
 		TaskID:   taskID,
 		Status:   req.Status,

@@ -42,7 +42,7 @@ func TestPgUUIDFromString(t *testing.T) {
 	t.Parallel()
 	assert.True(t, pgUUIDFromString("0f8fad5b-d9cb-469f-a165-70867728950e").Valid)
 	assert.False(t, pgUUIDFromString("nope").Valid)
-	assert.Equal(t, "0f8fad5b-d9cb-469f-a165-70867728950e", uuidToString(pgUUIDFromString("0f8fad5b-d9cb-469f-a165-70867728950e")))
+	assert.Equal(t, "0f8fad5b-d9cb-469f-a165-70867728950e", UUIDString(pgUUIDFromString("0f8fad5b-d9cb-469f-a165-70867728950e")))
 }
 
 func TestBuildAgentForkContinueCommand_KeepsWorkingCopyAndStopsReporter(t *testing.T) {

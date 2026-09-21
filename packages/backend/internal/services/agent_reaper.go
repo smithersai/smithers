@@ -302,12 +302,12 @@ func (s *AgentService) updateAgentWorkflowTerminalState(ctx context.Context, ses
 		}
 		status, statusErr := s.dispatchQ.UpdateWorkflowRunStatusBasedOnTasks(ctx, workflowRunID)
 		if statusErr == nil && runErr == nil {
-			observeWorkflowRunCompletion(s.workflowMetrics, run, status)
+			ObserveWorkflowRunCompletion(s.workflowMetrics, run, status)
 		}
-		notifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.task_terminal")
+		NotifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.task_terminal")
 	}
 
-	if workspaceID := uuidToString(session.WorkspaceID); workspaceID != "" && s.workspaces != nil {
+	if workspaceID := UUIDString(session.WorkspaceID); workspaceID != "" && s.workspaces != nil {
 		s.finishAgentWorkspace(ctx, session, workspaceID, workflowRunID, finalStatus)
 		return
 	}

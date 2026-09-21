@@ -1,21 +1,21 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"net/http"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
-type CanaryResultStore = services.CanaryResultStore
+type CanaryResultStore = clusterservices.CanaryResultStore
 
 type CanaryReportHandler struct {
 	Store CanaryResultStore
 	Clock func() time.Time
 }
 
-type canaryReportRequest = services.CanaryReportInput
+type canaryReportRequest = clusterservices.CanaryReportInput
 
 func (h *CanaryReportHandler) now() time.Time {
 	if h != nil && h.Clock != nil {
@@ -35,7 +35,7 @@ func (h *CanaryReportHandler) PostResults(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := services.NewCanaryReportService(h.Store).ReportResults(r.Context(), req, h.now()); err != nil {
+	if err := clusterservices.NewCanaryReportService(h.Store).ReportResults(r.Context(), req, h.now()); err != nil {
 		writeRouteError(w, r, err)
 		return
 	}

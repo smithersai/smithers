@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -12,15 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type stubAlertIncidentReceiver struct {
-	incidents []services.MonitoringAlertIncident
+	incidents []clusterservices.MonitoringAlertIncident
 	err       error
 }
 
-func (s *stubAlertIncidentReceiver) HandleAlertIncident(_ context.Context, incident services.MonitoringAlertIncident) error {
+func (s *stubAlertIncidentReceiver) HandleAlertIncident(_ context.Context, incident clusterservices.MonitoringAlertIncident) error {
 	if s.err != nil {
 		return s.err
 	}

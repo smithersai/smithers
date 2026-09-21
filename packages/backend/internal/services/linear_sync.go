@@ -24,8 +24,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
-	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 type LinearSyncQuerier interface {

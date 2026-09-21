@@ -203,7 +203,7 @@ func TestSecretInjector_SecretsPassedButNotLogged(t *testing.T) {
 func TestSecretInjector_RepositoryEnvironment_RejectsOverEntryBudget(t *testing.T) {
 	t.Parallel()
 
-	rows := make([]db.RepositoryVariable, maxInjectedEnvEntries+1)
+	rows := make([]db.RepositoryVariable, MaxInjectedEnvEntries+1)
 	for i := range rows {
 		rows[i] = db.RepositoryVariable{Name: fmt.Sprintf("VAR_%d", i), Value: "v"}
 	}
@@ -237,7 +237,7 @@ func TestSecretInjector_RepositoryEnvironment_RejectsOverByteBudget(t *testing.T
 func TestSecretInjector_RepositorySecrets_RejectsOverEntryBudget(t *testing.T) {
 	t.Parallel()
 
-	rows := make([]db.ListSecretValuesRow, maxInjectedEnvEntries+1)
+	rows := make([]db.ListSecretValuesRow, MaxInjectedEnvEntries+1)
 	for i := range rows {
 		rows[i] = db.ListSecretValuesRow{Name: fmt.Sprintf("SECRET_%d", i), ValueEncrypted: []byte("v")}
 	}

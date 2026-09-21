@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,37 +12,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type stubAdminSystemStatusService struct {
-	status      services.AdminSystemStatus
+	status      clusterservices.AdminSystemStatus
 	calls       int
 	hadDeadline bool
 }
 
-func (s *stubAdminSystemStatusService) SystemStatus(ctx context.Context) services.AdminSystemStatus {
+func (s *stubAdminSystemStatusService) SystemStatus(ctx context.Context) clusterservices.AdminSystemStatus {
 	s.calls++
 	_, ok := ctx.Deadline()
 	s.hadDeadline = ok
 	return s.status
 }
 
-func healthyAdminSystemStatus() services.AdminSystemStatus {
-	return services.AdminSystemStatus{
+func healthyAdminSystemStatus() clusterservices.AdminSystemStatus {
+	return clusterservices.AdminSystemStatus{
 		Status:      "ok",
 		GeneratedAt: time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC),
-		Database:    services.AdminSystemStatusDatabase{Status: "ok", LatencyMS: 1.25},
-		RunnerPool:  services.AdminSystemStatusRunnerPool{Available: 4, Claimed: 2},
-		Queues: services.AdminSystemStatusQueues{
-			WorkflowTasks: services.AdminSystemStatusWorkflowTaskQueue{Depth: 7, OldestAgeSeconds: 31.25},
-			Landing:       services.AdminSystemStatusLandingQueue{Depth: 9},
+		Database:    clusterservices.AdminSystemStatusDatabase{Status: "ok", LatencyMS: 1.25},
+		RunnerPool:  clusterservices.AdminSystemStatusRunnerPool{Available: 4, Claimed: 2},
+		Queues: clusterservices.AdminSystemStatusQueues{
+			WorkflowTasks: clusterservices.AdminSystemStatusWorkflowTaskQueue{Depth: 7, OldestAgeSeconds: 31.25},
+			Landing:       clusterservices.AdminSystemStatusLandingQueue{Depth: 9},
 		},
-		Connections:   services.AdminSystemStatusConnections{SSE: 42},
-		AgentSessions: services.AdminSystemStatusAgentSessions{Active: 3, OldestAgeSeconds: 120.5},
-		Sandboxes:     services.AdminSystemStatusSandboxes{ActiveVMs: 7},
-		Canaries:      services.AdminSystemStatusCanaries{Passing: 29, Failing: 1, Stale: 2},
-		Incidents:     services.AdminSystemStatusIncidents{Open: 1, Remediating: 2, Acknowledged: 3, Snoozed: 4},
+		Connections:   clusterservices.AdminSystemStatusConnections{SSE: 42},
+		AgentSessions: clusterservices.AdminSystemStatusAgentSessions{Active: 3, OldestAgeSeconds: 120.5},
+		Sandboxes:     clusterservices.AdminSystemStatusSandboxes{ActiveVMs: 7},
+		Canaries:      clusterservices.AdminSystemStatusCanaries{Passing: 29, Failing: 1, Stale: 2},
+		Incidents:     clusterservices.AdminSystemStatusIncidents{Open: 1, Remediating: 2, Acknowledged: 3, Snoozed: 4},
 	}
 }
 
@@ -50,15 +50,15 @@ func TestAdminSystemStatusHandler_SystemStatus(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		status   services.AdminSystemStatus
+		status   clusterservices.AdminSystemStatus
 		wantCode int
-		verify   func(t *testing.T, body services.AdminSystemStatus)
+		verify   func(t *testing.T, body clusterservices.AdminSystemStatus)
 	}{
 		{
 			name:     "healthy snapshot returns 200 and ok",
 			status:   healthyAdminSystemStatus(),
 			wantCode: http.StatusOK,
-			verify: func(t *testing.T, body services.AdminSystemStatus) {
+			verify: func(t *testing.T, body clusterservices.AdminSystemStatus) {
 				assert.Equal(t, "ok", body.Status)
 				assert.Equal(t, "ok", body.Database.Status)
 				assert.InDelta(t, 1.25, body.Database.LatencyMS, 0.0001)
@@ -78,14 +78,14 @@ func TestAdminSystemStatusHandler_SystemStatus(t *testing.T) {
 		},
 		{
 			name: "degraded snapshot still returns 200",
-			status: func() services.AdminSystemStatus {
+			status: func() clusterservices.AdminSystemStatus {
 				status := healthyAdminSystemStatus()
 				status.Status = "degraded"
-				status.Database = services.AdminSystemStatusDatabase{Status: "error", Error: "connection refused"}
+				status.Database = clusterservices.AdminSystemStatusDatabase{Status: "error", Error: "connection refused"}
 				return status
 			}(),
 			wantCode: http.StatusOK,
-			verify: func(t *testing.T, body services.AdminSystemStatus) {
+			verify: func(t *testing.T, body clusterservices.AdminSystemStatus) {
 				assert.Equal(t, "degraded", body.Status)
 				assert.Equal(t, "error", body.Database.Status)
 				assert.Contains(t, body.Database.Error, "connection refused")
@@ -93,16 +93,16 @@ func TestAdminSystemStatusHandler_SystemStatus(t *testing.T) {
 		},
 		{
 			name: "component errors are surfaced without failing the request",
-			status: func() services.AdminSystemStatus {
+			status: func() clusterservices.AdminSystemStatus {
 				status := healthyAdminSystemStatus()
-				status.RunnerPool = services.AdminSystemStatusRunnerPool{}
+				status.RunnerPool = clusterservices.AdminSystemStatusRunnerPool{}
 				status.Errors = []string{"runner_pool: runner query failed"}
 				return status
 			}(),
 			wantCode: http.StatusOK,
-			verify: func(t *testing.T, body services.AdminSystemStatus) {
+			verify: func(t *testing.T, body clusterservices.AdminSystemStatus) {
 				assert.Equal(t, "ok", body.Status)
-				assert.Equal(t, services.AdminSystemStatusRunnerPool{}, body.RunnerPool)
+				assert.Equal(t, clusterservices.AdminSystemStatusRunnerPool{}, body.RunnerPool)
 				require.Len(t, body.Errors, 1)
 				assert.Equal(t, "runner_pool: runner query failed", body.Errors[0])
 			},
@@ -124,7 +124,7 @@ func TestAdminSystemStatusHandler_SystemStatus(t *testing.T) {
 			assert.Equal(t, 1, svc.calls)
 			assert.True(t, svc.hadDeadline, "handler must bound the aggregation with a timeout")
 
-			var body services.AdminSystemStatus
+			var body clusterservices.AdminSystemStatus
 			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 			tt.verify(t, body)
 		})

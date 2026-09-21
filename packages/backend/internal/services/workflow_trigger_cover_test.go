@@ -47,8 +47,8 @@ func TestWorkflowTrigger_Cov_PushWorkflowArtifactAndNormalizeBranches(t *testing
 		Names:     []string{"dist/*.zip"},
 	}, TriggerEvent{SourceWorkflow: "build-linux", ArtifactName: "dist/linux/app"}))
 
-	assert.Equal(t, "workflow_dispatch", normalizeTriggerName(" manual_dispatch "))
-	assert.Equal(t, "issue", normalizeTriggerName("issues"))
+	assert.Equal(t, "workflow_dispatch", NormalizeTriggerName(" manual_dispatch "))
+	assert.Equal(t, "issue", NormalizeTriggerName("issues"))
 
 	event := normalizeTriggerEvent(TriggerEvent{Type: "release.PUBLISHED"})
 	assert.Equal(t, "release", event.Type)

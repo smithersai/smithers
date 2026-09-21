@@ -22,8 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 func assertWorkspaceClaudeBootstrap(t *testing.T, req sandbox.CreateRequest) {
@@ -136,7 +136,7 @@ func TestWorkspaceService_CreateWorkspace_FromSnapshotUsesSnapshot(t *testing.T)
 
 	// Workspace snapshot IDs must be valid UUIDs because SourceSnapshotID is
 	// stored as pgtype.UUID; stringToUUID silently returns an invalid UUID for
-	// non-UUID strings, causing uuidToString to return "".
+	// non-UUID strings, causing UUIDString to return "".
 	const snapID = "cccccccc-dddd-eeee-ffff-aaaaaaaaaaaa"
 
 	q := &mockWorkspaceQuerier{

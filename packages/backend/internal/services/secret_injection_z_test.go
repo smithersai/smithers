@@ -267,7 +267,7 @@ func secretInjectionZOrgRepo(mut func(*mockSecretInjectionQuerier)) *mockSecretI
 func TestSecretInjection_Z_ValidNameTrims(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, isInjectedSecretName(" NAME_1 "))
-	assert.False(t, isInjectedSecretName("1_BAD"))
+	assert.True(t, IsInjectedSecretName(" NAME_1 "))
+	assert.False(t, IsInjectedSecretName("1_BAD"))
 	assert.False(t, strings.Contains(RedactSecretValues(map[string]string{"S": "secret"}, "secret"), "secret"))
 }

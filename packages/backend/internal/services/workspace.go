@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 const (
@@ -1083,10 +1083,10 @@ func (s *WorkspaceService) toWorkspaceResponse(workspace db.Workspace) Workspace
 		Head:               WorkspaceHead{ChangeID: workspace.HeadChangeID, CommitID: workspace.HeadCommitID},
 		Ahead:              workspace.Ahead,
 		Behind:             workspace.Behind,
-		AgentSessionID:     uuidToString(workspace.AgentSessionID),
+		AgentSessionID:     UUIDString(workspace.AgentSessionID),
 		ProvisioningStage:  workspace.ProvisioningStage,
 		IsFork:             workspace.IsFork,
-		ParentWorkspaceID:  uuidToString(workspace.ParentWorkspaceID),
+		ParentWorkspaceID:  UUIDString(workspace.ParentWorkspaceID),
 		VMID:               workspace.VmID,
 		Persistence:        string(s.workspacePersistence),
 		LSP:                WorkspaceLSP{Languages: LSPLanguages()},
@@ -1110,7 +1110,7 @@ func (s *WorkspaceService) toWorkspaceResponse(workspace db.Workspace) Workspace
 			}
 		}
 	}
-	if snapshotID := uuidToString(workspace.SourceSnapshotID); snapshotID != "" {
+	if snapshotID := UUIDString(workspace.SourceSnapshotID); snapshotID != "" {
 		resp.SnapshotID = snapshotID
 	}
 	if workspace.SuspendedAt.Valid {
@@ -1223,9 +1223,9 @@ func toWorkspaceSnapshotResponse(snapshot db.WorkspaceSnapshot) WorkspaceSnapsho
 	}
 }
 
-// uuidToString converts a pgtype.UUID to its string representation.
+// UUIDString converts a pgtype.UUID to its string representation.
 // Returns an empty string if the UUID is not valid (null).
-func uuidToString(u pgtype.UUID) string {
+func UUIDString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}

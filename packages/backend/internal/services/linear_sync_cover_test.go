@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	smitherscrypto "github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
+	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 type linearSyncCovQuerier struct {

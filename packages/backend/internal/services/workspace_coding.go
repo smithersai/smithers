@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // WorkspaceCodingRevision is native JJ identity. Kind=conflicted has TreeTerms

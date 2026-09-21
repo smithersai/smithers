@@ -63,7 +63,7 @@ func TestObservability_Cov_NilStoresAndNegativeDurationBranches(t *testing.T) {
 	assert.Equal(t, WorkflowTaskQueueMetrics{}, queue)
 
 	observer := &fakeWorkflowRunMetricsObserver{}
-	observeWorkflowRunCompletion(observer, db.WorkflowRun{
+	ObserveWorkflowRunCompletion(observer, db.WorkflowRun{
 		ID:        99,
 		Status:    "running",
 		CreatedAt: time.Now().Add(time.Hour),
@@ -99,10 +99,10 @@ func TestObservability_Cov_StartedAtDurationBranch(t *testing.T) {
 		StartedAt: pgtype.Timestamptz{Time: time.Now().Add(-2 * time.Second), Valid: true},
 	}
 
-	observeWorkflowRunCompletion(observer, run, "failed")
+	ObserveWorkflowRunCompletion(observer, run, "failed")
 	require.Equal(t, 0, observer.count)
 
-	observeWorkflowRunCompletion(observer, run, "failure")
+	ObserveWorkflowRunCompletion(observer, run, "failure")
 	require.Equal(t, 1, observer.count)
 	assert.Equal(t, "failure", observer.status)
 	assert.Less(t, observer.seconds, 5.0)

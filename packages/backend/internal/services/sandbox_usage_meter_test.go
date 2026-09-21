@@ -216,7 +216,7 @@ func TestSandboxUsageAgentWorkspaceHandoff(t *testing.T) {
 	w := sampleDBWorkspace("meter-ws")
 	w.AgentSessionID = pgUUIDFromString("0f8fad5b-d9cb-469f-a165-70867728950e")
 	svc.meterWorkspaceUsage(context.Background(), w, "running")
-	q.requireClose(t, "agent", uuidToString(w.AgentSessionID))
+	q.requireClose(t, "agent", UUIDString(w.AgentSessionID))
 	q.requireOpen(t, w.UserID, "workspace", w.ID)
 }
 

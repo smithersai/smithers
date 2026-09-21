@@ -348,7 +348,7 @@ func TestRevokedMemberCannotRejoinViaLiveLink(t *testing.T) {
 	svc := newPairService(fx, map[int64]bool{owner: true, intruder: true}, false, nil)
 	session, err := svc.CreateSession(ctx, owner, fx.repoID, ws)
 	require.NoError(t, err)
-	forkID := uuidToString(session.WorkspaceID)
+	forkID := UUIDString(session.WorkspaceID)
 
 	link, err := svc.MintLink(ctx, session.ID, owner, PairRoleEditor)
 	require.NoError(t, err)
@@ -488,7 +488,7 @@ func TestPairSessionMutationLockSerializesRoleAndRevoke(t *testing.T) {
 	var shares int
 	require.NoError(t, fx.pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM workspace_shares WHERE workspace_id=$1::uuid AND grantee_user_id=$2`,
-		uuidToString(session.WorkspaceID), member).Scan(&shares))
+		UUIDString(session.WorkspaceID), member).Scan(&shares))
 	assert.Zero(t, shares, "revoke must be the complete final state")
 }
 
@@ -637,7 +637,7 @@ func TestPairSessionPreviewsDoNotMaterializeAccess(t *testing.T) {
 	svc := newPairService(fx, map[int64]bool{owner: true, invitee: true, linkVisitor: true}, false, nil)
 	session, err := svc.CreateSession(ctx, owner, fx.repoID, ws)
 	require.NoError(t, err)
-	forkID := uuidToString(session.WorkspaceID)
+	forkID := UUIDString(session.WorkspaceID)
 
 	inviteeEmail := pairUserEmail(t, fx.pool, invitee)
 	_, err = svc.CreateInvite(ctx, session.ID, owner, inviteeEmail, PairRoleEditor)
@@ -700,7 +700,7 @@ func TestWorkspaceShareGrantedOnJoinAndRevoked(t *testing.T) {
 	svc := newPairService(fx, map[int64]bool{owner: true, editor: true, viewer: true}, false, nil)
 	session, err := svc.CreateSession(context.Background(), owner, fx.repoID, ws)
 	require.NoError(t, err)
-	forkID := uuidToString(session.WorkspaceID)
+	forkID := UUIDString(session.WorkspaceID)
 	require.NotEmpty(t, forkID, "fork workspace must be bound")
 
 	shareLevel := func(grantee int64) (string, bool) {

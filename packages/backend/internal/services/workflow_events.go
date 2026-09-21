@@ -12,7 +12,7 @@ type workflowRunEventNotifier interface {
 	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
 }
 
-func notifyWorkflowRunEvent(ctx context.Context, notifier workflowRunEventNotifier, workflowRunID int64, source string) {
+func NotifyWorkflowRunEvent(ctx context.Context, notifier workflowRunEventNotifier, workflowRunID int64, source string) {
 	if notifier == nil || workflowRunID <= 0 {
 		return
 	}

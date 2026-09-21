@@ -18,8 +18,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/pairauth"
-	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 )
 
 // Pair session roles (decision #8). Exactly one owner (the creator); editors may
@@ -781,7 +781,7 @@ func (s *PairSessionService) resolveAcceptedInviteRace(ctx context.Context, sess
 	}
 	if fresh.AcceptedByUserID.Valid && fresh.AcceptedByUserID.Int64 == visitorID {
 		member, err := s.store.GetLivePairSessionMember(ctx, db.GetLivePairSessionMemberParams{SessionID: session.ID, UserID: visitorID})
-		if err == nil && uuidToString(member.InvitedViaInviteID) == fresh.ID {
+		if err == nil && UUIDString(member.InvitedViaInviteID) == fresh.ID {
 			if err := s.ensureWorkspaceShare(ctx, session, visitorID, member.Role); err != nil {
 				return PairResolution{}, err
 			}
@@ -1738,7 +1738,7 @@ func (s *PairSessionService) ensureWorkspaceShare(ctx context.Context, session d
 		return nil
 	}
 	if _, err := s.store.UpsertWorkspaceShare(ctx, db.UpsertWorkspaceShareParams{
-		WorkspaceID:   uuidToString(session.WorkspaceID),
+		WorkspaceID:   UUIDString(session.WorkspaceID),
 		OwnerUserID:   session.OwnerUserID,
 		GranteeUserID: userID,
 		Level:         pairShareLevelForRole(role),
@@ -1790,7 +1790,7 @@ func (s *PairSessionService) revokeWorkspaceShare(ctx context.Context, session d
 	if !session.WorkspaceID.Valid {
 		return nil
 	}
-	workspaceID := uuidToString(session.WorkspaceID)
+	workspaceID := UUIDString(session.WorkspaceID)
 	if err := s.store.DeleteWorkspaceShare(ctx, db.DeleteWorkspaceShareParams{
 		WorkspaceID:   workspaceID,
 		GranteeUserID: userID,

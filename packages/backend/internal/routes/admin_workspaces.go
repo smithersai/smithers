@@ -1,17 +1,17 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type AdminWorkspaceRouteService interface {
-	ListWorkspaces(context.Context, db.AdminListWorkspacesParams) ([]services.AdminWorkspace, error)
-	StopWorkspace(context.Context, string) (services.AdminManageStatus, error)
-	SuspendWorkspace(context.Context, string) (services.AdminManageStatus, error)
+	ListWorkspaces(context.Context, db.AdminListWorkspacesParams) ([]clusterservices.AdminWorkspace, error)
+	StopWorkspace(context.Context, string) (clusterservices.AdminManageStatus, error)
+	SuspendWorkspace(context.Context, string) (clusterservices.AdminManageStatus, error)
 }
 type AdminWorkspaceHandler struct{ Service AdminWorkspaceRouteService }
 

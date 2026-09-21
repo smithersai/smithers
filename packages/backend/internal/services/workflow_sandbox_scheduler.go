@@ -262,7 +262,7 @@ func workflowSandboxRunClaimFromRow(row clusterdb.ClaimQueuedWorkflowRunsRow) wo
 			TriggerRef:           row.TriggerRef,
 			TriggerCommitSha:     row.TriggerCommitSha,
 		},
-		Token:          uuidToString(row.ClaimToken),
+		Token:          UUIDString(row.ClaimToken),
 		Generation:     row.ClaimGeneration,
 		LeaseExpiresAt: row.ClaimLeaseExpiresAt.Time,
 	}
@@ -515,7 +515,7 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 
 	// The claim flipped the row to running; tell status streamers (the run's
 	// lifecycle SSE subscribers) that execution has actually started.
-	notifyWorkflowRunEvent(runCtx, w.queries, run.ID, "workflow_sandbox.running")
+	NotifyWorkflowRunEvent(runCtx, w.queries, run.ID, "workflow_sandbox.running")
 
 	def, err := w.queries.GetWorkflowDefinition(runCtx, db.GetWorkflowDefinitionParams{
 		ID:           run.WorkflowDefinitionID,
@@ -688,9 +688,9 @@ func (w *WorkflowSandboxSchedulerWorker) executeRun(ctx context.Context, claim w
 		StepID: step.ID,
 		Status: "success",
 	})
-	revokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
+	RevokeWorkflowRunCredentials(finalizeCtx, w.queries, run.ID, run.RepositoryID)
 	w.cancelRunTasks(finalizeCtx, run.ID)
-	notifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
+	NotifyWorkflowRunEvent(finalizeCtx, w.queries, run.ID, "workflow_sandbox.success")
 	return nil
 }
 
@@ -773,9 +773,9 @@ func (w *WorkflowSandboxSchedulerWorker) finalizeFailure(ctx context.Context, cl
 		})
 		_ = w.appendLog(ctx, runID, stepID, "system", message)
 	}
-	revokeWorkflowRunCredentials(ctx, w.queries, runID, run.RepositoryID)
+	RevokeWorkflowRunCredentials(ctx, w.queries, runID, run.RepositoryID)
 	w.cancelRunTasks(ctx, runID)
-	notifyWorkflowRunEvent(ctx, w.queries, runID, "workflow_sandbox.failure")
+	NotifyWorkflowRunEvent(ctx, w.queries, runID, "workflow_sandbox.failure")
 	return stdErrors.New(message)
 }
 

@@ -1,17 +1,17 @@
 package routes
 
 import (
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type AdminSandboxHostRouteService interface {
-	ListSandboxHosts(context.Context) ([]services.AdminSandboxHost, error)
-	DrainSandboxHost(context.Context, string) (services.AdminHostState, error)
-	PruneStaleSandboxHosts(context.Context, int32) (services.AdminPruneResult, error)
+	ListSandboxHosts(context.Context) ([]clusterservices.AdminSandboxHost, error)
+	DrainSandboxHost(context.Context, string) (clusterservices.AdminHostState, error)
+	PruneStaleSandboxHosts(context.Context, int32) (clusterservices.AdminPruneResult, error)
 }
 type AdminSandboxHostHandler struct{ Service AdminSandboxHostRouteService }
 

@@ -2673,7 +2673,7 @@ func scanImportJobRow(row pgx.Row, extraDestinations ...any) (ImportJob, error) 
 		RepoOwner:      repoOwner,
 		RepoName:       repoName,
 		TargetBookmark: targetWorkspaceBookmark(target),
-		WorkspaceID:    uuidToString(workspaceID),
+		WorkspaceID:    UUIDString(workspaceID),
 		Status:         status,
 		Stage:          stage,
 		Counts: ImportJobCounts{
