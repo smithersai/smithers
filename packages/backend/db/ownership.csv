@@ -136,7 +136,7 @@ linear_sync_ops,product,extracted
 canary_results,infrastructure-seam,extracted; split pending
 sse_tickets,product,extracted
 issue_artifacts,product,extracted
-sandbox_access_tokens,product,extracted
+sandbox_access_tokens,infrastructure-seam,extracted; split pending
 _sync_queue,retire-candidate,extracted; split pending
 _id_remap,retire-candidate,extracted; split pending
 devtools_snapshots,product,extracted
@@ -171,10 +171,10 @@ sandbox_egress_audit,infrastructure-seam,extracted; split pending
 sandbox_operations,infrastructure-seam,extracted; split pending
 sandbox_snapshots,infrastructure-seam,extracted; split pending
 sandbox_volumes,infrastructure-seam,extracted; split pending
-sandbox_access_identities,product,extracted
-sandbox_access_permissions,product,extracted
-sandbox_access_grants,product,extracted
-sandbox_domain_mappings,product,extracted
+sandbox_access_identities,infrastructure-seam,extracted; split pending
+sandbox_access_permissions,infrastructure-seam,extracted; split pending
+sandbox_access_grants,infrastructure-seam,extracted; split pending
+sandbox_domain_mappings,infrastructure-seam,extracted; split pending
 sandbox_orphans,infrastructure-seam,extracted; split pending
 memory_provisioning_tasks,infrastructure-seam,extracted; split pending
 memory_promotion_tasks,infrastructure-seam,extracted; split pending
