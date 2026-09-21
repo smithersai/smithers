@@ -91,6 +91,11 @@ const (
 	CodeRateLimiterUnavailable Code = "rate_limiter_unavailable"
 )
 
+// Repository CI receipts.
+const (
+	CodeRepositoryCIRunUnverified Code = "repository_ci_run_unverified"
+)
+
 // Deployment shape: this build of plue is running somewhere that has not been
 // given everything an endpoint needs.
 const (
@@ -257,6 +262,7 @@ const (
 	CodeWorkerError               Code = "worker_error"
 	CodeSandboxInternalError      Code = "internal_error"
 	CodeSandboxRuntimeError       Code = "runtime_error"
+	CodeSandboxControlBusy        Code = "sandbox_control_busy"
 	CodeTokenGenerationFailed     Code = "token_generation_failed"
 )
 
@@ -318,7 +324,8 @@ var registry = map[Code]Entry{
 	// rather than letting a budget go unenforced. The caller is inside its
 	// budget; plue simply cannot prove it right now, so the pacing rides in
 	// the body as well as the header.
-	CodeRateLimiterUnavailable: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, RetryAfter: 1, Doc: "plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced."},
+	CodeRateLimiterUnavailable:    {Status: http.StatusServiceUnavailable, Fault: FaultInfra, RetryAfter: 1, Doc: "plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced."},
+	CodeRepositoryCIRunUnverified: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The CI check receipt names a run this repository and workspace retain no usable dispatch for."},
 	// The endpoint's storage is not provisioned on this deployment, so the
 	// feature is switched off here. Nothing the caller sent is wrong, and no
 	// retry helps until the deployment is migrated.
@@ -602,6 +609,9 @@ var registry = map[Code]Entry{
 	// the caller, not a defect in plue's code, so it is infra — the caller may
 	// well succeed on another worker.
 	CodeSandboxRuntimeError: {Status: http.StatusInternalServerError, Fault: FaultInfra, RetryAfter: 0, Doc: "The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed."},
+	// A control-plane transaction kept losing a race with a concurrent writer.
+	// Nothing changed, and the identical request works once the contention clears.
+	CodeSandboxControlBusy: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, RetryAfter: 2, Doc: "A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears."},
 	// The controller could not mint the token the operation needs.
 	CodeTokenGenerationFailed: {Status: http.StatusInternalServerError, Fault: FaultBug, RetryAfter: 0, Doc: "The controller could not mint the token the operation needs."},
 }

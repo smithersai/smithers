@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:84b5baee98290532cc23c8b3f076bb0dad8542c01a2463ac242db0338a1b56b1"
+export const PLUE_FAILURE_DIGEST = "sha256:0f38622d0cd7d826260f9b56fef21e8c7b12f5b52eedf908a711f8e89c3e3078"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -153,6 +153,7 @@ export const PLUE_FAILURE_CODES = [
   "quota_exceeded",
   "rate_limit_exceeded",
   "rate_limiter_unavailable",
+  "repository_ci_run_unverified",
   "repository_provisioning_rollout",
   "repository_workspace_pending",
   "request_entity_too_large",
@@ -161,6 +162,7 @@ export const PLUE_FAILURE_CODES = [
   "retained_runtime_not_running",
   "retained_runtime_not_stopped",
   "runtime_error",
+  "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
   "snapshot_in_use",
@@ -392,6 +394,8 @@ export const PLUE_FAILURES = {
   "rate_limit_exceeded": { fault: "user", status: 429, retryAfter: 0 },
   /** plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced. */
   "rate_limiter_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
+  /** The CI check receipt names a run this repository and workspace retain no usable dispatch for. */
+  "repository_ci_run_unverified": { fault: "user", status: 403, retryAfter: 0 },
   /** Repository provisioning is mid-rollout on this deployment and is not accepting new work. */
   "repository_provisioning_rollout": { fault: "infra", status: 503, retryAfter: 0 },
   /** The repository workspace or gateway is still starting. Poll the same request; an unverified primary is not an authoritative workspace selection. */
@@ -408,6 +412,8 @@ export const PLUE_FAILURES = {
   "retained_runtime_not_stopped": { fault: "user", status: 409, retryAfter: 0 },
   /** The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed. */
   "runtime_error": { fault: "infra", status: 500, retryAfter: 0 },
+  /** A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears. */
+  "sandbox_control_busy": { fault: "infra", status: 503, retryAfter: 2 },
   /** This worker build cannot deliver secrets into a guest. */
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */

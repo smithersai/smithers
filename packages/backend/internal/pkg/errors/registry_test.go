@@ -254,9 +254,9 @@ func TestNewTakesStatusAndFaultFromTheRegistry(t *testing.T) {
 }
 
 func TestFailureCodesJSONIsFresh(t *testing.T) {
-	path := filepath.Join("..", "..", "docs", "failure-codes.json")
+	path := filepath.Join("..", "..", "..", "..", "..", "docs", "api", "failure-codes.json")
 	onDisk, err := os.ReadFile(path)
-	require.NoError(t, err, "docs/failure-codes.json is missing; run go run ./cmd/failurecodes > docs/failure-codes.json")
+	require.NoError(t, err, "docs/api/failure-codes.json is missing; run go run ./packages/backend/cmd/failurecodes > docs/api/failure-codes.json")
 
 	rendered, err := MarshalDocument()
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestFailureCodesJSONIsFresh(t *testing.T) {
 		"docs/failure-codes.json is stale. Other repositories generate their "+
 			"failure vocabulary from this file, so regenerate it in the same "+
 			"change that touched the registry:\n\n"+
-			"    go run ./cmd/failurecodes > docs/failure-codes.json\n")
+			"    go run ./packages/backend/cmd/failurecodes > docs/api/failure-codes.json\n")
 }
 
 func TestExportIsSortedAndDigested(t *testing.T) {

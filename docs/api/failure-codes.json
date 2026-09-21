@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:84b5baee98290532cc23c8b3f076bb0dad8542c01a2463ac242db0338a1b56b1",
+  "digest": "sha256:0f38622d0cd7d826260f9b56fef21e8c7b12f5b52eedf908a711f8e89c3e3078",
   "faults": [
     "user",
     "wait",
@@ -612,6 +612,13 @@
       "doc": "plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced."
     },
     {
+      "code": "repository_ci_run_unverified",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The CI check receipt names a run this repository and workspace retain no usable dispatch for."
+    },
+    {
       "code": "repository_provisioning_rollout",
       "fault": "infra",
       "status": 503,
@@ -666,6 +673,13 @@
       "status": 500,
       "retry_after": 0,
       "doc": "The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed."
+    },
+    {
+      "code": "sandbox_control_busy",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 2,
+      "doc": "A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears."
     },
     {
       "code": "secret_delivery_unavailable",

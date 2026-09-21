@@ -22,7 +22,7 @@ func TestFailureCodesServesTheCheckedInArtifact(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "public, max-age=300", rec.Header().Get("Cache-Control"))
 
-	onDisk, err := os.ReadFile(filepath.Join("..", "..", "docs", "failure-codes.json"))
+	onDisk, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "docs", "api", "failure-codes.json"))
 	require.NoError(t, err)
 	assert.Equal(t, string(onDisk), rec.Body.String(),
 		"a deployment serves the same bytes the repository holds, so a canary "+
