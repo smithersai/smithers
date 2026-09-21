@@ -95,14 +95,16 @@ func TestNewTransport_SMTPTakesPrecedenceOverSES(t *testing.T) {
 	assert.True(t, ok, "SMTP should take precedence over SES when both are configured")
 }
 
-func TestNewTransport_FallsBackToNoopWhenNothingConfigured(t *testing.T) {
+func TestNewTransport_DisablesDeliveryWhenNothingConfigured(t *testing.T) {
 	t.Parallel()
 
 	tr, err := NewTransport(TransportConfig{})
 
 	require.NoError(t, err)
-	_, ok := tr.(*NoopTransport)
-	assert.True(t, ok, "should return NoopTransport when nothing is configured")
+	_, ok := tr.(*DisabledTransport)
+	assert.True(t, ok, "should return DisabledTransport when nothing is configured")
+	assert.False(t, DeliveryConfigured(tr))
+	assert.ErrorIs(t, tr.Send(t.Context(), Message{}), ErrDeliveryNotConfigured)
 }
 
 func TestNewTransport_SESWithoutClientFailsFast(t *testing.T) {

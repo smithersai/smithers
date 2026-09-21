@@ -32,9 +32,44 @@ func validStartupConfig() *Config {
 			SessionSecret:    "super-secret",
 			LFSSigningSecret: "lfs-signing-secret",
 		},
+		Billing: BillingConfig{Mode: "unlimited"},
 		Email:   EmailConfig{BaseURL: "https://smithers.test"},
 		Webhook: WebhookConfig{SecretEncryptionKey: "webhook-secret-key"},
 	}
+}
+
+func TestValidateServerStartup_BillingProviderIsExplicitAndComplete(t *testing.T) {
+	t.Parallel()
+
+	cfg := validStartupConfig()
+	cfg.Billing.Mode = "invalid"
+	err := ValidateServerStartup(cfg)
+	require.ErrorContains(t, err, "billing.mode must be one of unlimited, stripe")
+
+	cfg = validStartupConfig()
+	cfg.Billing.StripeSecretKey = "sk_test_configured"
+	err = ValidateServerStartup(cfg)
+	require.ErrorContains(t, err, "Stripe settings require billing.mode=stripe")
+
+	cfg.Billing.Mode = "stripe"
+	err = ValidateServerStartup(cfg)
+	require.ErrorContains(t, err, "billing.stripe_webhook_secret is required")
+
+	cfg.Billing.StripeWebhookSecret = "whsec_configured"
+	require.NoError(t, ValidateServerStartup(cfg))
+}
+
+func TestValidateServerStartup_LinearCredentialsAreAllOrNothing(t *testing.T) {
+	t.Parallel()
+
+	cfg := validStartupConfig()
+	cfg.Auth.LinearClientID = "linear-client"
+	err := ValidateServerStartup(cfg)
+	require.ErrorContains(t, err, "auth.linear_client_id and auth.linear_client_secret must be configured together")
+
+	cfg.Auth.LinearClientSecret = "linear-secret"
+	cfg.Auth.LinearRedirectURL = "https://smithers.test/api/auth/linear/callback"
+	require.NoError(t, ValidateServerStartup(cfg))
 }
 
 func TestValidateServerStartup_Valid(t *testing.T) {

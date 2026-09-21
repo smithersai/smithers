@@ -18,7 +18,7 @@ type TransportConfig struct {
 // 1. SendGrid (if API key is set)
 // 2. SMTP (if Host is set)
 // 3. SES (if Region is set)
-// 4. Noop (fallback for dev/test)
+// 4. Disabled (accurate failure when no provider is configured)
 func NewTransport(cfg TransportConfig) (Transport, error) {
 	if cfg.SendGrid.APIKey != "" {
 		slog.Info("email transport configured", "provider", "sendgrid")
@@ -38,6 +38,6 @@ func NewTransport(cfg TransportConfig) (Transport, error) {
 		return NewSESTransport(cfg.SES, cfg.SESClient)
 	}
 
-	slog.Warn("no email transport configured, using noop transport")
-	return &NoopTransport{}, nil
+	slog.Info("email delivery disabled")
+	return &DisabledTransport{}, nil
 }

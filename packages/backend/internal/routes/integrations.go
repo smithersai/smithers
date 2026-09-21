@@ -6,10 +6,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
-type IntegrationsHandler struct{}
-
-func NewIntegrationsHandler() *IntegrationsHandler {
-	return &IntegrationsHandler{}
+type IntegrationsHandler struct {
+	catalog []IntegrationCatalogItem
 }
 
 type IntegrationCatalogItem struct {
@@ -25,79 +23,62 @@ type IntegrationCatalogItem struct {
 	Capabilities []string `json:"capabilities"`
 }
 
-func (h *IntegrationsHandler) GetMCPIntegrations(w http.ResponseWriter, r *http.Request) {
-	mcpIntegrations := []IntegrationCatalogItem{
-		{
+// IntegrationCapabilities names only providers backed by the common product
+// services in this process. Code presence alone is not a capability.
+type IntegrationCapabilities struct {
+	GitHubMirror bool
+	Linear       bool
+}
+
+// NewIntegrationsHandler preserves the client response shape while making the
+// catalog installation-specific. With no configured providers it returns an
+// empty catalog instead of invented installed integrations.
+func NewIntegrationsHandler(catalog ...IntegrationCatalogItem) *IntegrationsHandler {
+	items := append([]IntegrationCatalogItem(nil), catalog...)
+	for i := range items {
+		items[i].Capabilities = append([]string(nil), items[i].Capabilities...)
+	}
+	return &IntegrationsHandler{catalog: items}
+}
+
+// IntegrationCatalog returns the entries supported by the actual services
+// selected during composition. Notion is intentionally absent until a common
+// Notion service exists.
+func IntegrationCatalog(capabilities IntegrationCapabilities) []IntegrationCatalogItem {
+	items := make([]IntegrationCatalogItem, 0, 2)
+	if capabilities.GitHubMirror {
+		items = append(items, IntegrationCatalogItem{
 			ID:           "github-sync",
-			Name:         "GitHub Mirror",
-			Description:  "Gitea-style repository mirroring between Smithers and a pre-provisioned GitHub repository using webhook-driven and scheduled `git fetch` / `git push --mirror` runs.",
+			Name:         "GitHub",
 			Icon:         "github",
 			Color:        "text-primary",
-			Status:       "Built In",
+			Status:       "Configured",
 			Installed:    true,
 			Kind:         "sync-service",
 			Route:        "/integrations/github",
-			Capabilities: []string{"Push mirror", "Refs and tags", "Webhook driven", "Scheduled sync"},
-		},
-		{
-			ID:           "notion-sync",
-			Name:         "Notion Sync",
-			Description:  "Poll Notion pages and databases into a git-backed `notion/` tree inside the repository documents sidecar.",
-			Icon:         "file-text",
-			Color:        "text-cyan",
-			Status:       "Built In",
-			Installed:    true,
-			Kind:         "sync-service",
-			Route:        "/integrations/notion",
-			Capabilities: []string{"Markdown export", "Docs sidecar", "SQLite mappings", "Polling"},
-		},
-		{
+			Capabilities: []string{"Push mirror", "Refs and tags", "Webhooks", "Scheduled sync"},
+		})
+	}
+	if capabilities.Linear {
+		items = append(items, IntegrationCatalogItem{
 			ID:           "linear",
-			Name:         "Linear Sync",
-			Description:  "Sync Smithers issues and comments with Linear using the existing production integration flow.",
+			Name:         "Linear",
 			Icon:         "check-square",
 			Color:        "text-blue",
-			Status:       "Configure",
+			Status:       "Configured",
 			Installed:    true,
 			Kind:         "sync-service",
 			Route:        "/integrations/linear",
 			Capabilities: []string{"Issues", "Comments", "OAuth", "Webhooks"},
-		},
-		{
-			ID:           "github-mcp",
-			Name:         "GitHub MCP",
-			Description:  "Expose GitHub repositories and pull-request context directly to agents through MCP.",
-			Icon:         "github",
-			Color:        "text-primary",
-			Status:       "Connected",
-			Installed:    true,
-			Kind:         "mcp-server",
-			Capabilities: []string{"Agent context", "Repository access"},
-		},
-		{
-			ID:           "notion-mcp",
-			Name:         "Notion MCP",
-			Description:  "Give agents live read access to Notion workspace content through the Notion MCP server.",
-			Icon:         "file-text",
-			Color:        "text-cyan",
-			Status:       "Configure",
-			Installed:    true,
-			Kind:         "mcp-server",
-			Capabilities: []string{"Agent context", "Workspace docs"},
-		},
-		{
-			ID:           "postgres",
-			Name:         "PostgreSQL",
-			Description:  "Direct database access for agents to inspect schemas and analyze repository metadata.",
-			Icon:         "database",
-			Color:        "text-cyan",
-			Status:       "Configure",
-			Installed:    false,
-			Kind:         "mcp-server",
-			Capabilities: []string{"SQL", "Schema introspection"},
-		},
+		})
 	}
-	errors.WriteJSON(w, http.StatusOK, mcpIntegrations)
+	return items
+}
+
+func (h *IntegrationsHandler) GetMCPIntegrations(w http.ResponseWriter, r *http.Request) {
+	items := make([]IntegrationCatalogItem, len(h.catalog))
+	copy(items, h.catalog)
+	errors.WriteJSON(w, http.StatusOK, items)
 }
 
 func (h *IntegrationsHandler) GetSkills(w http.ResponseWriter, r *http.Request) {

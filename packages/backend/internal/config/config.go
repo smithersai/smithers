@@ -433,6 +433,10 @@ type ProviderConnectionsConfig struct {
 }
 
 type BillingConfig struct {
+	// Mode selects the one entitlement authority used by all product services.
+	// "unlimited" is the single-owner self-host policy; "stripe" enables the
+	// hosted account, usage, checkout, portal, and webhook implementation.
+	Mode                     string `mapstructure:"mode"`
 	StripeSecretKey          string `mapstructure:"stripe_secret_key"`
 	StripeWebhookSecret      string `mapstructure:"stripe_webhook_secret"`
 	PortalReturnURL          string `mapstructure:"portal_return_url"`
@@ -615,6 +619,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("auth.linear_client_id", "")
 	v.SetDefault("auth.linear_client_secret", "")
 	v.SetDefault("auth.linear_redirect_url", "http://localhost:4000/api/auth/linear/callback")
+	v.SetDefault("billing.mode", "unlimited")
 	v.SetDefault("billing.stripe_secret_key", "")
 	v.SetDefault("billing.stripe_webhook_secret", "")
 	v.SetDefault("billing.portal_return_url", "")
@@ -784,6 +789,7 @@ func Load(configFile string) (*Config, error) {
 		{"auth.linear_client_secret", "SMITHERS_AUTH_LINEAR_CLIENT_SECRET"},
 		{"auth.linear_redirect_url", "SMITHERS_AUTH_LINEAR_REDIRECT_URL"},
 		{"auth.worker_exchange_token", "SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN"},
+		{"billing.mode", "SMITHERS_BILLING_MODE"},
 		{"billing.stripe_secret_key", "SMITHERS_BILLING_STRIPE_SECRET_KEY"},
 		{"billing.stripe_webhook_secret", "SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET"},
 		{"billing.portal_return_url", "SMITHERS_BILLING_PORTAL_RETURN_URL"},

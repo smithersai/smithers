@@ -45,11 +45,69 @@ func ValidateServerStartup(cfg *Config) error {
 	if err := normalizeAgentAvailability(cfg); err != nil {
 		errs = append(errs, err.Error())
 	}
+	validateOptionalProviders(cfg, &errs)
 
 	if len(errs) > 0 {
 		return fmt.Errorf("config validation failed: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func validateOptionalProviders(cfg *Config, errs *[]string) {
+	billingMode := strings.ToLower(strings.TrimSpace(cfg.Billing.Mode))
+	if billingMode == "" {
+		billingMode = "unlimited"
+	}
+	switch billingMode {
+	case "unlimited":
+		if billingStripeConfigured(cfg.Billing) {
+			*errs = append(*errs, "billing Stripe settings require billing.mode=stripe")
+		}
+	case "stripe":
+		if strings.TrimSpace(cfg.Billing.StripeSecretKey) == "" {
+			*errs = append(*errs, "billing.stripe_secret_key is required when billing.mode=stripe")
+		}
+		if strings.TrimSpace(cfg.Billing.StripeWebhookSecret) == "" {
+			*errs = append(*errs, "billing.stripe_webhook_secret is required when billing.mode=stripe")
+		}
+	default:
+		*errs = append(*errs, "billing.mode must be one of unlimited, stripe")
+	}
+
+	linearID := strings.TrimSpace(cfg.Auth.LinearClientID)
+	linearSecret := strings.TrimSpace(cfg.Auth.LinearClientSecret)
+	if (linearID == "") != (linearSecret == "") {
+		*errs = append(*errs, "auth.linear_client_id and auth.linear_client_secret must be configured together")
+	}
+	if linearID != "" && strings.TrimSpace(cfg.Auth.LinearRedirectURL) == "" {
+		*errs = append(*errs, "auth.linear_redirect_url is required when Linear is configured")
+	}
+}
+
+func billingStripeConfigured(cfg BillingConfig) bool {
+	values := []string{
+		cfg.StripeSecretKey,
+		cfg.StripeWebhookSecret,
+		cfg.PortalReturnURL,
+		cfg.CheckoutSuccessURL,
+		cfg.CheckoutCancelURL,
+		cfg.PersonalMonthlyPriceID,
+		cfg.PersonalAnnualPriceID,
+		cfg.ProMonthlyPriceID,
+		cfg.ProAnnualPriceID,
+		cfg.MaxMonthlyPriceID,
+		cfg.MaxAnnualPriceID,
+		cfg.TeamMonthlyPriceID,
+		cfg.TeamAnnualPriceID,
+		cfg.EnterpriseMonthlyPriceID,
+		cfg.EnterpriseAnnualPriceID,
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidateRunnerStartup checks the runner configuration object. Runtime HTTP

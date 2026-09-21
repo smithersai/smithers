@@ -13,7 +13,7 @@ import (
 func TestIntegrationsHandler_GetMCPIntegrations(t *testing.T) {
 	t.Parallel()
 
-	h := NewIntegrationsHandler()
+	h := NewIntegrationsHandler(IntegrationCatalog(IntegrationCapabilities{GitHubMirror: true})...)
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/mcp", nil)
 	rec := httptest.NewRecorder()
 	h.GetMCPIntegrations(rec, req)
@@ -21,23 +21,24 @@ func TestIntegrationsHandler_GetMCPIntegrations(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var items []IntegrationCatalogItem
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &items))
-	assert.NotEmpty(t, items)
+	require.Len(t, items, 1)
 
 	// Verify github-sync is present
 	var found bool
 	for _, item := range items {
 		if item.ID == "github-sync" {
 			found = true
-			assert.Equal(t, "GitHub Mirror", item.Name)
+			assert.Equal(t, "GitHub", item.Name)
 			assert.Equal(t, "sync-service", item.Kind)
 			assert.True(t, item.Installed)
+			assert.Equal(t, "Configured", item.Status)
 			break
 		}
 	}
 	assert.True(t, found, "expected github-sync integration in response")
 }
 
-func TestIntegrationsHandler_GetMCPIntegrations_HasMCPServers(t *testing.T) {
+func TestIntegrationsHandler_GetMCPIntegrations_UnconfiguredIsEmpty(t *testing.T) {
 	t.Parallel()
 
 	h := NewIntegrationsHandler()
@@ -49,13 +50,7 @@ func TestIntegrationsHandler_GetMCPIntegrations_HasMCPServers(t *testing.T) {
 	var items []IntegrationCatalogItem
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &items))
 
-	var mcpCount int
-	for _, item := range items {
-		if item.Kind == "mcp-server" {
-			mcpCount++
-		}
-	}
-	assert.GreaterOrEqual(t, mcpCount, 2, "expected at least 2 MCP server integrations")
+	assert.Empty(t, items)
 }
 
 func TestIntegrationsHandler_GetSkills(t *testing.T) {
@@ -89,7 +84,7 @@ func TestIntegrationsHandler_GetSkills_ReturnsEmptyCatalog(t *testing.T) {
 func TestIntegrationsHandler_GetMCPIntegrations_AllHaveRequiredFields(t *testing.T) {
 	t.Parallel()
 
-	h := NewIntegrationsHandler()
+	h := NewIntegrationsHandler(IntegrationCatalog(IntegrationCapabilities{GitHubMirror: true, Linear: true})...)
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/mcp", nil)
 	rec := httptest.NewRecorder()
 	h.GetMCPIntegrations(rec, req)
@@ -104,4 +99,33 @@ func TestIntegrationsHandler_GetMCPIntegrations_AllHaveRequiredFields(t *testing
 		assert.NotEmpty(t, item.Kind, "each integration must have a kind")
 		assert.NotEmpty(t, item.Capabilities, "each integration must have capabilities")
 	}
+}
+
+func TestIntegrationCatalog_AdvertisesOnlyConfiguredRealServices(t *testing.T) {
+	t.Parallel()
+
+	items := IntegrationCatalog(IntegrationCapabilities{Linear: true})
+	require.Len(t, items, 1)
+	assert.Equal(t, "linear", items[0].ID)
+	assert.NotEqual(t, "notion-sync", items[0].ID)
+	assert.NotEqual(t, "github-mcp", items[0].ID)
+}
+
+func TestNewIntegrationsHandler_CopiesCatalog(t *testing.T) {
+	t.Parallel()
+
+	items := IntegrationCatalog(IntegrationCapabilities{GitHubMirror: true})
+	h := NewIntegrationsHandler(items...)
+	items[0].ID = "changed"
+	items[0].Capabilities[0] = "changed"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/mcp", nil)
+	rec := httptest.NewRecorder()
+	h.GetMCPIntegrations(rec, req)
+
+	var got []IntegrationCatalogItem
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, "github-sync", got[0].ID)
+	assert.Equal(t, "Push mirror", got[0].Capabilities[0])
 }

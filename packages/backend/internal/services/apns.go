@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
+
+var ErrPushDeliveryNotConfigured = errors.New("push delivery is not configured")
 
 const defaultApprovalPushQueueSize = 256
 
@@ -122,7 +125,7 @@ func (c *LoggingAPNSClient) SendApprovalPush(_ context.Context, token string, no
 		"title", notification.Title,
 		"token_prefix", tokenPrefix(token),
 	)
-	return nil
+	return ErrPushDeliveryNotConfigured
 }
 
 func tokenPrefix(token string) string {

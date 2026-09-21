@@ -109,12 +109,12 @@ func TestAPNS_Cov_DispatcherEnqueueRunAndSendBranches(t *testing.T) {
 
 func TestAPNS_Cov_LoggingClientAndTokenPrefix(t *testing.T) {
 	loggerClient := NewLoggingAPNSClient(nil)
-	require.NoError(t, loggerClient.SendApprovalPush(context.Background(), "abcdefghijklmnop", ApprovalPushNotification{
+	require.ErrorIs(t, loggerClient.SendApprovalPush(context.Background(), "abcdefghijklmnop", ApprovalPushNotification{
 		UserID:     1,
 		ApprovalID: "approval-log",
 		Kind:       "kind",
 		Title:      "title",
-	}))
+	}), ErrPushDeliveryNotConfigured)
 
 	assert.Equal(t, "short", tokenPrefix("short"))
 	assert.Equal(t, "abcdefghijkl", tokenPrefix("abcdefghijklmnop"))

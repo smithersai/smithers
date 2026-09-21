@@ -313,6 +313,26 @@ func TestEmailService_RequestVerification(t *testing.T) {
 	assert.True(t, tokenCreated)
 }
 
+func TestEmailService_RequestVerification_UnconfiguredDoesNotCreateToken(t *testing.T) {
+	t.Parallel()
+
+	databaseCalled := false
+	svc := newTestEmailServiceWithTransport(mockEmailQuerier{
+		getEmailByIDFn: func(context.Context, int64) (db.EmailAddress, error) {
+			databaseCalled = true
+			return db.EmailAddress{}, nil
+		},
+	}, &email.DisabledTransport{})
+
+	err := svc.RequestVerification(t.Context(), 42, 10)
+	require.Error(t, err)
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusNotFound, apiErr.Status)
+	assert.Contains(t, apiErr.Message, "not configured")
+	assert.False(t, databaseCalled)
+}
+
 func TestEmailService_RequestVerification_NotFound(t *testing.T) {
 	t.Parallel()
 	svc := newTestEmailService(mockEmailQuerier{

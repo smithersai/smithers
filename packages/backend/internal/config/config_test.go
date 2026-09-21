@@ -115,6 +115,7 @@ var allEnvKeys = []string{
 	"SMITHERS_AUTH_LINEAR_REDIRECT_URL",
 	"SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN",
 	// Billing
+	"SMITHERS_BILLING_MODE",
 	"SMITHERS_BILLING_STRIPE_SECRET_KEY",
 	"SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET",
 	"SMITHERS_BILLING_PORTAL_RETURN_URL",
@@ -772,6 +773,7 @@ func TestLoad_WebhookSecretEncryptionKeyEnvOverride(t *testing.T) {
 
 func TestLoad_BillingConfigEnvOverrides(t *testing.T) {
 	clearConfigEnv(t)
+	t.Setenv("SMITHERS_BILLING_MODE", "stripe")
 	t.Setenv("SMITHERS_BILLING_MAX_MONTHLY_PRICE_ID", "price_max_monthly")
 	t.Setenv("SMITHERS_BILLING_MAX_ANNUAL_PRICE_ID", "price_max_annual")
 	t.Setenv("SMITHERS_BILLING_PRO_MONTHLY_PRICE_ID", "price_pro_monthly")
@@ -780,6 +782,7 @@ func TestLoad_BillingConfigEnvOverrides(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 
+	assert.Equal(t, "stripe", cfg.Billing.Mode)
 	assert.Equal(t, "price_pro_monthly", cfg.Billing.ProMonthlyPriceID)
 	assert.Equal(t, "price_max_monthly", cfg.Billing.MaxMonthlyPriceID)
 	assert.Equal(t, "price_max_annual", cfg.Billing.MaxAnnualPriceID)
@@ -872,6 +875,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			LinearRedirectURL:    "http://localhost:4000/api/auth/linear/callback",
 		},
 		Billing: BillingConfig{
+			Mode:                     "unlimited",
 			StripeSecretKey:          "",
 			StripeWebhookSecret:      "",
 			PortalReturnURL:          "",
@@ -1782,7 +1786,7 @@ func TestLoad_SpecCompliance_RunnerConfig(t *testing.T) {
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 194,
+	assert.Len(t, allEnvKeys, 195,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1898,7 +1902,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"SandboxConfig":       37, // provider assertion, Microsandbox transport/accelerator, provider-neutral resource sizing/access, anonymous-sandbox bounds (enabled/allowlist/TTL/global+per-IP caps), repo-gateway provider credentials, agent seat, desktop guest sizing and observe-text switch, health probe, and preview relay token
 		"SSHConfig":           13, // Addr, HostKeyDir, MaxConnections, MaxConnectionsPerIP, MaxReceivePackSize, MaxUploadPackRequestSize, ReceivePackTimeout, UploadPackTimeout, ShutdownDrainTimeout, AuthAttemptsPerMinute, IdleTimeout, MaxTimeout, MaxSessionsPerConn
 		"AuthConfig":          23, // Session*, dedicated LFS signer, Cookie*, ClosedAlphaEnabled, EnableKeyAuth, KeyAuthDomain, GitHub* (5), Auth0* (5), Linear* (3), WorkerExchangeToken
-		"BillingConfig":       15, // Stripe credentials, portal URLs, and plan price ids
+		"BillingConfig":       16, // authority mode, Stripe credentials, portal URLs, and plan price ids
 		"WebhookConfig":       2,  // SecretEncryptionKey, GitHubAppSecret
 		"AgentsConfig":        1,
 		"RunnerConfig":        4,  // PoolSize, WarmTimeout, TaskTimeout, MaxAgentSessionDuration
@@ -1944,7 +1948,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 190, totalSubFields,
+	assert.Equal(t, 191, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 

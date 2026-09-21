@@ -174,6 +174,9 @@ func (s *EmailService) RequestVerification(ctx context.Context, userID, emailID 
 	if emailID <= 0 {
 		return pkgerrors.BadRequest("invalid email id")
 	}
+	if s == nil || !email.DeliveryConfigured(s.transport) {
+		return pkgerrors.NotFound(email.ErrDeliveryNotConfigured.Error())
+	}
 
 	emailAddr, err := s.queries.GetEmailByID(ctx, emailID)
 	if err != nil {
