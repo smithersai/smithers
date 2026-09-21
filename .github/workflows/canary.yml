@@ -1,13 +1,12 @@
-# Synthetic uptime, latency and error-rate probe against the live deployment
-# (E2E-CANARY-CHECKLIST CN-19, CN-20, CN-21).
+# External browser and synthetic uptime, latency and error-rate checks of the live deployment.
 #
 # This workflow never runs on a push or a pull request. It cannot fail a
 # contributor's build, and it cannot run in a fork: the job is guarded on the
 # repository name so a fork's scheduled runs are skipped rather than probing
 # someone else's deployment with someone else's issue tracker.
 #
-# THE ALERT. There is no paging infrastructure in this project and this file
-# invents none. The alert is one GitHub issue under a fixed title: a failing
+# THE ALERT. There is no paging infrastructure in this project. The alert is
+# one GitHub issue under a fixed title: a failing
 # run opens it, later failing runs comment on it, and the first passing run
 # comments and closes it. The decision is made by
 # apps/server/scripts/canary/uptime-report.ts, which is unit-tested; this file
@@ -16,11 +15,12 @@
 # notifications muted learns nothing. That is still strictly better than a red
 # tab in the Actions list, which notifies nobody on a scheduled run.
 #
-# COST. The unmetered probes are free: a static asset read, an unauthenticated
+# COST. The quarter-hour unmetered probes are free: a static asset read, an unauthenticated
 # scopes read, and a signed-out turn refusal that never reaches an upstream.
 # The metered CN-19 sample — one short model turn — runs only on the hourly
 # tick, and only when $CANARY_SESSION_COOKIE is configured. That is 24 short
-# turns a day, and zero if the secret is absent.
+# turns a day, and zero if the secret is absent. The hourly browser probe requires
+# the ordinary session and launches one configured fixture workflow run.
 #
 # LINTING. ci.yml names this file in its actionlint step, and
 # apps/server/scripts/canary/workflow-wiring.test.ts fails when a workflow is
@@ -43,6 +43,10 @@ on:
         description: Also take the metered turn-seam sample (spends model credit)
         type: boolean
         default: false
+      force_browser_failure:
+        description: Deliberately fail browser probe to verify the operator alert path
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,14 +59,8 @@ concurrency:
 jobs:
   probe:
     name: probe the live deployment
-    # INERT until this repository owns the deployment; this line keeps it so.
-    # The deployed Worker at canary.smithers.sh and this hourly job are not an
-    # rc.0 validation surface. Pointed at this
-    # repository the schedule would probe a deployment this repository does not
-    # own yet, and the alert steps below would file a GitHub issue every time it
-    # answered wrong. Re-enabling the canary after ownership moves means changing
-    # this line and the assertion in apps/review/tests/action/deployWorkflows.test.ts.
-    if: github.repository == 'smithersai/flows'
+    # Enable automation only after a successful manual run and alert drill.
+    if: github.repository == 'smithersai/smithers' && (github.event_name == 'workflow_dispatch' || vars.CANARY_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -76,6 +74,26 @@ jobs:
         with:
           bun-version: 1.4.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install browser
+        id: install_browser
+        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        continue-on-error: true
+        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
+      - name: Browser canary
+        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        id: browser
+        continue-on-error: true
+        working-directory: apps/app
+        env:
+          CANARY_URL: https://smithers.sh
+          CANARY_SESSION_COOKIE: ${{ secrets.CANARY_SESSION_COOKIE }}
+          CANARY_SESSION_LOGIN: ${{ vars.CANARY_SESSION_LOGIN || vars.SMITHERS_E2E_USER || 'codeplanesmithers' }}
+          CANARY_BROWSER_REPO: ${{ vars.CANARY_BROWSER_REPO || 'codeplanesmithers/canary-sandbox' }}
+          CANARY_BROWSER_WORKSPACE: ${{ vars.CANARY_BROWSER_WORKSPACE }}
+          CANARY_BROWSER_FLOW: ${{ vars.CANARY_BROWSER_FLOW }}
+          CANARY_BROWSER_FORCE_FAILURE: ${{ inputs.force_browser_failure && '1' || '' }}
+          CANARY_BROWSER_EVIDENCE: ${{ runner.temp }}/canary-browser
+        run: bun scripts/canary-browser.ts
       # A broken probe must never grade a deployment, so its own decision logic
       # is checked before it is trusted. This is the same idea as the
       # launch-checklist dry run in apps-deploy.yml: prove the runner, then run
@@ -92,7 +110,7 @@ jobs:
         continue-on-error: true
         working-directory: apps/server
         env:
-          CANARY_URL: ${{ vars.CANARY_URL || 'https://canary.smithers.sh' }}
+          CANARY_URL: https://smithers.sh
           # Absent on the quarter-hour ticks and on an ordinary manual run, so
           # those runs spend nothing and say out loud that they measured the
           # signed-out refusal gate only.
@@ -113,7 +131,7 @@ jobs:
         id: existing
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: 'Canary: canary.smithers.sh is failing'
+          TITLE: 'Canary: smithers.sh is failing'
         run: |
           set -euo pipefail
           number="$(gh issue list --state open --limit 100 --json number,title \
@@ -131,6 +149,8 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           OPEN_ISSUE: ${{ steps.existing.outputs.number }}
+          CANARY_BROWSER_FAILED: ${{ (steps.browser.outcome == 'failure' || steps.install_browser.outcome == 'failure') && '1' || '' }}
+          CANARY_BROWSER_SKIPPED: ${{ steps.browser.outcome == 'skipped' && '1' || '' }}
         run: |
           set -euo pipefail
           verdict=0
@@ -140,6 +160,13 @@ jobs:
             --open-issue "$OPEN_ISSUE" \
             --body-out "$RUNNER_TEMP/canary-alert.md" || verdict=$?
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: canary-browser
+          path: ${{ runner.temp }}/canary-browser
+          if-no-files-found: warn
       - name: Raise or clear the alert
         if: always()
         env:

@@ -52,6 +52,52 @@ func (q *Queries) CloseSandboxUsageInterval(ctx context.Context, arg CloseSandbo
 	return err
 }
 
+const countOtherActiveSandboxesForWorkspaceResume = `-- name: CountOtherActiveSandboxesForWorkspaceResume :one
+SELECT
+  (
+    SELECT COUNT(*) FROM workspaces w
+    WHERE w.user_id = $1::bigint AND w.deleted_at IS NULL
+      AND w.status IN ('pending', 'starting', 'running')
+      AND NOT (w.id = $2::uuid AND w.vm_id = $3::text AND w.status = 'running')
+  ) + (
+    SELECT COUNT(*) FROM agent_sessions a
+    WHERE a.user_id = $1::bigint AND a.status = 'active'
+      AND a.started_at IS NOT NULL AND a.deleted_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM workspaces w
+        WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
+          AND w.user_id = $1::bigint AND w.deleted_at IS NULL
+          AND w.status IN ('pending', 'starting', 'running')
+      )
+  ) AS others,
+  EXISTS (
+    SELECT 1 FROM workspaces w
+    WHERE w.id = $2::uuid AND w.user_id = $1::bigint
+      AND w.vm_id = $3::text AND w.deleted_at IS NULL
+      AND w.status IN ('running', 'suspended')
+  ) AS matches
+`
+
+type CountOtherActiveSandboxesForWorkspaceResumeParams struct {
+	UserID      int64  `json:"user_id"`
+	WorkspaceID string `json:"workspace_id"`
+	VmID        string `json:"vm_id"`
+}
+
+type CountOtherActiveSandboxesForWorkspaceResumeRow struct {
+	Others  int32 `json:"others"`
+	Matches bool  `json:"matches"`
+}
+
+// Check the exact owned VM and all other product reservations in one statement. A
+// suspended workspace no longer occupies a slot and is not excluded.
+func (q *Queries) CountOtherActiveSandboxesForWorkspaceResume(ctx context.Context, arg CountOtherActiveSandboxesForWorkspaceResumeParams) (CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveSandboxesForWorkspaceResume, arg.UserID, arg.WorkspaceID, arg.VmID)
+	var i CountOtherActiveSandboxesForWorkspaceResumeRow
+	err := row.Scan(&i.Others, &i.Matches)
+	return i, err
+}
+
 const openSandboxUsageInterval = `-- name: OpenSandboxUsageInterval :exec
 
 INSERT INTO sandbox_usage_intervals (user_id, sandbox_kind, sandbox_id)

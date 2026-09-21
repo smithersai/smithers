@@ -20,7 +20,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { argReader } from "./CanaryArgs.ts"
-import { ALERT_TITLE, alertAction, coerceReport, renderAlertBody } from "./uptime-checks.ts"
+import { ALERT_TITLE, alertAction, coerceReport, fail, renderAlertBody } from "./uptime-checks.ts"
 
 const args = process.argv.slice(2)
 /* A flag left empty is refused before the report is read or any file written. */
@@ -43,6 +43,13 @@ const parsed = ((): unknown => {
   }
 })()
 const report = coerceReport(parsed, reportPath)
+const combinedReport = process.env.CANARY_BROWSER_FAILED === "1"
+  ? {
+    ...report,
+    failed: true,
+    checks: [...report.checks, fail("browser", "smithers.sh browser", "Browser canary failed. Download the canary-browser artifact from the linked Actions run.")]
+  }
+  : report
 
 const rawIssue = flagValue("--open-issue")
 const openIssue = rawIssue === undefined || rawIssue.trim() === "" ? undefined : Number(rawIssue)
@@ -52,11 +59,14 @@ if (openIssue !== undefined && !Number.isInteger(openIssue)) {
 }
 
 const runUrl = flagValue("--run-url") ?? "(no run url given)"
-const action = alertAction({ report, openIssue, runUrl })
+// A cheap quarter-hour sample cannot clear a browser failure it never retested.
+const action = process.env.CANARY_BROWSER_SKIPPED === "1" && openIssue !== undefined && !combinedReport.failed
+  ? { kind: "none" as const, reason: "browser recheck is pending on the next full run" }
+  : alertAction({ report: combinedReport, openIssue, runUrl })
 
 const bodyOut = flagValue("--body-out")
 if (bodyOut !== undefined) {
-  writeFileSync(bodyOut, `${action.kind === "none" ? renderAlertBody(report, runUrl) : action.body}\n`)
+  writeFileSync(bodyOut, `${action.kind === "none" ? renderAlertBody(combinedReport, runUrl) : action.body}\n`)
 }
 
 const outputPath = flagValue("--github-output") ?? process.env.GITHUB_OUTPUT
@@ -77,4 +87,4 @@ console.log(
  * goes red, which is the whole point of deciding the alert here rather than
  * letting the probe's own exit code fail the job first.
  */
-process.exit(report.failed ? 1 : 0)
+process.exit(combinedReport.failed ? 1 : 0)

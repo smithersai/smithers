@@ -489,8 +489,18 @@ func isWorkspaceGuestNotReady(err error) bool {
 
 func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.Workspace) (out db.Workspace, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("resume", retErr) }()
-	if err := authorizeSandboxStartForUser(ctx, s.billing, workspace.UserID); err != nil {
-		return workspace, err
+	// A running DB row is already part of the account's active-sandbox count.
+	// The provider may have idle-slept its VM while the row stayed running.
+	// Resume that same VM against the existing reservation; a genuinely
+	// suspended row still needs a fresh slot.
+	var admissionErr error
+	if workspace.Status == "running" {
+		admissionErr = authorizeCountedSandboxResumeForUser(ctx, s.billing, workspace.UserID, workspace.ID, workspace.VmID)
+	} else {
+		admissionErr = authorizeSandboxStartForUser(ctx, s.billing, workspace.UserID)
+	}
+	if admissionErr != nil {
+		return workspace, admissionErr
 	}
 	var stampErr error
 	workspace, stampErr = s.stampResumedWorkspaceIdleTimeout(ctx, workspace)

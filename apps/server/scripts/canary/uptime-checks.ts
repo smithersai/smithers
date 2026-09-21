@@ -547,7 +547,7 @@ export const coerceReport = (parsed: unknown, source: string): ProbeReport => {
  * reader of the issue knows which number they have. A self-closing issue is
  * the cost of not suppressing real outages.
  */
-export const ALERT_TITLE = "Canary: canary.smithers.sh is failing"
+export const ALERT_TITLE = "Canary: smithers.sh is failing"
 
 export type AlertAction =
   | { readonly kind: "create"; readonly title: string; readonly body: string }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,6 +104,61 @@ func TestBillingService_AuthorizeSandboxStart(t *testing.T) {
 		var svc *BillingService
 		require.NoError(t, svc.AuthorizeSandboxStart(context.Background(), 7))
 	})
+}
+
+func TestBillingService_CountedSandboxResume(t *testing.T) {
+	for _, tc := range []struct {
+		name, plan      string
+		live            int
+		others          int64
+		matches         bool
+		seconds         int64
+		resumeAllowed   bool
+		newStartAllowed bool
+	}{
+		{name: "counted VM at Pro cap", plan: "pro", live: 3, others: 2, matches: true, resumeAllowed: true},
+		{name: "stale running input now needs a new slot", plan: "pro", live: 3, others: 3, matches: true},
+		{name: "wrong VM or owner refused", plan: "pro", live: 3, others: 2},
+		{name: "downgraded plan still full after self", plan: "free", live: 3, others: 2, matches: true},
+		{name: "daily hours still enforced", plan: "free", live: 1, others: 0, matches: true, seconds: 14400},
+		{name: "one counted VM on Free", plan: "free", live: 1, others: 0, matches: true, resumeAllowed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, q := sandboxTestBilling(tc.plan)
+			q.countActiveSandboxesFn = func(context.Context, int64) (int, error) { return tc.live, nil }
+			q.countOtherSandboxResumeFn = func(context.Context, db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
+				return db.CountOtherActiveSandboxesForWorkspaceResumeRow{Others: int32(tc.others), Matches: tc.matches}, nil
+			}
+			q.sumSandboxSecondsFn = func(context.Context, int64, time.Time) (int64, error) { return tc.seconds, nil }
+			resumeErr := svc.AuthorizeCountedSandboxResume(context.Background(), 7, "ws", "vm")
+			assert.Equal(t, tc.resumeAllowed, resumeErr == nil, "counted resume: %v", resumeErr)
+			startErr := svc.AuthorizeSandboxStart(context.Background(), 7)
+			assert.Equal(t, tc.newStartAllowed, startErr == nil, "new slot: %v", startErr)
+		})
+	}
+}
+
+func TestBillingService_ConcurrentCountedResumesDoNotAdmitANewSlot(t *testing.T) {
+	svc, q := sandboxTestBilling(BillingPlanPro)
+	q.countActiveSandboxesFn = func(context.Context, int64) (int, error) { return 3, nil }
+	q.countOtherSandboxResumeFn = func(context.Context, db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
+		return db.CountOtherActiveSandboxesForWorkspaceResumeRow{Others: 2, Matches: true}, nil
+	}
+	var group sync.WaitGroup
+	results := make(chan error, 2)
+	for range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			results <- svc.AuthorizeCountedSandboxResume(context.Background(), 7, "ws", "vm")
+		}()
+	}
+	group.Wait()
+	close(results)
+	for err := range results {
+		require.NoError(t, err)
+	}
+	require.Error(t, svc.AuthorizeSandboxStart(context.Background(), 7))
 }
 
 func TestBillingService_SandboxMonthlyUsage(t *testing.T) {

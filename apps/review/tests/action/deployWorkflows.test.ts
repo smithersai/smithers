@@ -17,18 +17,14 @@ const appsDir = fileURLToPath(new URL("../../../", import.meta.url));
 
 const readWorkflow = <T>(name: string): T => parse(readFileSync(`${workflowsDir}${name}`, "utf8")) as T;
 
-describe("canary.yml stays inert until deployment ownership moves", () => {
-  test("the repository guard names smithersai/flows, so the schedule never fires here", () => {
-    // The deployed Worker at canary.smithers.sh and its hourly job are not an
-    // rc.0 validation surface. The guard is what keeps the job from
-    // starting: flipped to this repository it would run hourly against a
-    // deployment this repository does not yet own, and its alert step files a
-    // GitHub issue on every failure.
-    //
-    // Re-enabling the canary is a deliberate act after ownership moves: change this
-    // line, and this test with it.
+describe("canary.yml probes the owning repository", () => {
+  test("the owning repository enables the schedule only after manual qualification", () => {
     const canary = readWorkflow<{ jobs: Record<string, { if?: string }> }>("canary.yml");
-    expect(canary.jobs.probe.if).toBe("github.repository == 'smithersai/flows'");
+    expect(canary.jobs.probe.if).toBe("github.repository == 'smithersai/smithers' && (github.event_name == 'workflow_dispatch' || vars.CANARY_ENABLED == 'true')");
+    const source = readFileSync(`${workflowsDir}canary.yml`, "utf8");
+    expect(source).toContain("bun scripts/canary-browser.ts");
+    expect(source).toContain("CANARY_BROWSER_FAILED:");
+    expect(source).toContain("name: canary-browser");
   });
 });
 

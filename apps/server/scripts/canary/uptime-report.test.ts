@@ -109,13 +109,14 @@ const runProbe = async (
 }
 
 const runReport = async (
-  extraArgs: ReadonlyArray<string>
+  extraArgs: ReadonlyArray<string>,
+  env: Record<string, string> = {}
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   const child = Bun.spawn(["bun", join(scriptsDir, "uptime-report.ts"), ...extraArgs], {
     cwd: serverDir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, GITHUB_OUTPUT: "" }
+    env: { ...process.env, GITHUB_OUTPUT: "", CANARY_BROWSER_FAILED: "", CANARY_BROWSER_SKIPPED: "", ...env }
   })
   const [stdout, stderr] = await Promise.all([
     new Response(child.stdout).text(),
@@ -237,6 +238,32 @@ describe("uptime-probe.ts against a live HTTP origin", () => {
 
 describe("uptime-report.ts", () => {
   const runUrl = "https://github.com/smithersai/smithers/actions/runs/7"
+
+  test("a healthy uptime report still alerts when the browser fails", async () => {
+    mode = "healthy"
+    const report = join(workDir, "browser-uptime.json")
+    await runProbe(["--samples", "5", "--json", report])
+    const output = join(workDir, "browser-output.txt")
+    const body = join(workDir, "browser-body.md")
+    const result = await runReport([
+      "--report", report, "--run-url", runUrl, "--body-out", body, "--github-output", output
+    ], { CANARY_BROWSER_FAILED: "1" })
+    expect(result.exitCode).toBe(1)
+    expect(readFileSync(output, "utf8")).toContain("action=create")
+    expect(readFileSync(body, "utf8")).toContain("canary-browser artifact")
+  })
+
+  test("a quarter-hour uptime pass leaves an open browser alert for the next full run", async () => {
+    mode = "healthy"
+    const report = join(workDir, "quarter-uptime.json")
+    await runProbe(["--samples", "5", "--json", report])
+    const output = join(workDir, "quarter-output.txt")
+    const result = await runReport([
+      "--report", report, "--open-issue", "42", "--github-output", output
+    ], { CANARY_BROWSER_SKIPPED: "1" })
+    expect(result.exitCode).toBe(0)
+    expect(readFileSync(output, "utf8")).toContain("action=none")
+  })
 
   test("a --report flag with no value is refused before any file is written", async () => {
     const result = await runReport(["--report", "--body-out", join(workDir, "body.md")])

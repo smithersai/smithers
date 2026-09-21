@@ -19,19 +19,20 @@ import (
 )
 
 type billingQuerierMock struct {
-	countActiveSandboxesFn func(context.Context, int64) (int, error)
-	countActiveAgentsFn    func(context.Context, int64) (int64, error)
-	sumSandboxSecondsFn    func(context.Context, int64, time.Time) (int64, error)
-	accountsByOwner        map[string]db.BillingAccount
-	accountsByCustomer     map[string]db.BillingAccount
-	processedEvents        map[string]string
-	creditBalances         map[int64]db.BillingCreditBalance
-	creditLedger           map[string]db.BillingCreditLedger
-	creditEntries          []db.BillingCreditLedger
-	usage                  map[string]db.BillingUsageCounter
-	nextUsageID            int64
-	nextLedgerID           int64
-	usageUpsertCalls       int
+	countActiveSandboxesFn    func(context.Context, int64) (int, error)
+	countOtherSandboxResumeFn func(context.Context, db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error)
+	countActiveAgentsFn       func(context.Context, int64) (int64, error)
+	sumSandboxSecondsFn       func(context.Context, int64, time.Time) (int64, error)
+	accountsByOwner           map[string]db.BillingAccount
+	accountsByCustomer        map[string]db.BillingAccount
+	processedEvents           map[string]string
+	creditBalances            map[int64]db.BillingCreditBalance
+	creditLedger              map[string]db.BillingCreditLedger
+	creditEntries             []db.BillingCreditLedger
+	usage                     map[string]db.BillingUsageCounter
+	nextUsageID               int64
+	nextLedgerID              int64
+	usageUpsertCalls          int
 
 	getBillingAccountByOwnerFn          func(context.Context, db.GetBillingAccountByOwnerParams) (db.BillingAccount, error)
 	getBillingAccountByStripeCustomerFn func(context.Context, string) (db.BillingAccount, error)
@@ -1574,6 +1575,12 @@ func (m *billingQuerierMock) CountActiveSandboxesForUser(ctx context.Context, us
 		return m.countActiveSandboxesFn(ctx, userID)
 	}
 	return 0, nil
+}
+func (m *billingQuerierMock) CountOtherActiveSandboxesForWorkspaceResume(ctx context.Context, arg db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
+	if m.countOtherSandboxResumeFn != nil {
+		return m.countOtherSandboxResumeFn(ctx, arg)
+	}
+	return db.CountOtherActiveSandboxesForWorkspaceResumeRow{}, nil
 }
 func (m *billingQuerierMock) CountActiveAgentSessionVMsForUser(ctx context.Context, userID int64) (int64, error) {
 	if m.countActiveAgentsFn != nil {

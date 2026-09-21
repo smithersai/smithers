@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -52,6 +54,39 @@ func (s *BillingService) AuthorizeSandboxStart(ctx context.Context, userID int64
 	if err != nil {
 		return err
 	}
+	return authorizeSandboxEntitlement(entitlement)
+}
+
+// AuthorizeCountedSandboxResume checks the current plan against an exact
+// owned workspace and VM. One DB statement counts all other reservations and
+// confirms that the row still names this VM, so a stale caller cannot
+// discount another sandbox after a concurrent workspace transition.
+func (s *BillingService) AuthorizeCountedSandboxResume(ctx context.Context, userID int64, workspaceID, vmID string) error {
+	if s == nil {
+		return nil
+	}
+	entitlement, err := s.SandboxEntitlement(ctx, userID)
+	if err != nil {
+		return err
+	}
+	querier, ok := s.queries.(interface {
+		CountOtherActiveSandboxesForWorkspaceResume(context.Context, db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error)
+	})
+	if !ok {
+		return s.AuthorizeSandboxStart(ctx, userID)
+	}
+	row, err := querier.CountOtherActiveSandboxesForWorkspaceResume(ctx, db.CountOtherActiveSandboxesForWorkspaceResumeParams{UserID: userID, WorkspaceID: workspaceID, VmID: vmID})
+	if err != nil {
+		return err
+	}
+	if !row.Matches {
+		return pkgerrors.Conflict("workspace VM changed during resume; retry")
+	}
+	entitlement.ConcurrentInUse = int64(row.Others)
+	return authorizeSandboxEntitlement(entitlement)
+}
+
+func authorizeSandboxEntitlement(entitlement SandboxEntitlement) error {
 	name := billingPlanDisplayName(entitlement.PlanKey)
 	upgrade, capacity := "", int64(0)
 	switch entitlement.PlanKey {
@@ -85,6 +120,22 @@ func (s *BillingService) AuthorizeSandboxStart(ctx context.Context, userID int64
 		return e
 	}
 	return nil
+}
+
+func authorizeCountedSandboxResumeForUser(ctx context.Context, policy BillingPolicy, userID int64, workspaceID, vmID string) error {
+	if admitted, ok := ctx.Value(sandboxStartAdmissionKey{}).(int64); ok && admitted == userID {
+		return nil
+	}
+	if policy == nil {
+		return nil
+	}
+	if counted, ok := policy.(interface {
+		AuthorizeCountedSandboxResume(context.Context, int64, string, string) error
+	}); ok {
+		return counted.AuthorizeCountedSandboxResume(ctx, userID, workspaceID, vmID)
+	}
+	// Other billing policies retain their normal admission semantics.
+	return authorizeSandboxStartForUser(ctx, policy, userID)
 }
 
 func sandboxPlanLimitError(entitlement SandboxEntitlement, kind string, quantity int64, upgrade, message string) *pkgerrors.APIError {

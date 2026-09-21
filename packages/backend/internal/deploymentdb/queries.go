@@ -47,6 +47,16 @@ func (q *Queries) CountActiveSandboxesForUser(ctx context.Context, userID int64)
 	return q.ClusterQueries.CountActiveSandboxesForUser(ctx, userID)
 }
 
+// Hosted resume counts the exact owned VM against the same product-plus-private
+// reservation set as hosted new-slot admission. Keep the service-facing result
+// typed in the canonical product model.
+func (q *Queries) CountOtherActiveSandboxesForWorkspaceResume(ctx context.Context, arg db.CountOtherActiveSandboxesForWorkspaceResumeParams) (db.CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
+	row, err := q.ClusterQueries.CountOtherActiveSandboxesForWorkspaceResume(ctx, clusterdb.CountOtherActiveSandboxesForWorkspaceResumeParams{
+		UserID: arg.UserID, WorkspaceID: arg.WorkspaceID, VmID: arg.VmID,
+	})
+	return db.CountOtherActiveSandboxesForWorkspaceResumeRow{Others: row.Others, Matches: row.Matches}, err
+}
+
 // Hosted suspend retains the private gateway lease fence in the same CAS.
 func (q *Queries) SuspendRunningWorkspaceIfSessionless(ctx context.Context, id string) (db.Workspace, error) {
 	return q.ClusterQueries.SuspendRunningWorkspaceIfSessionless(ctx, id)
