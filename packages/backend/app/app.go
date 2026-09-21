@@ -10,17 +10,43 @@ import (
 	"net/http"
 	"os"
 
+	"go.opentelemetry.io/otel/sdk/trace"
+
 	"github.com/smithersai/smithers/packages/backend/internal/compose"
+	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/repository"
 )
 
 // Config holds the process-level inputs of the shared backend. The product
 // routes, services, jobs, and database are assembled by the common
 // implementation. A deployment can pass its configuration file using Args.
 type Config struct {
+	// Role selects local combined operation or hosted API/worker replicas.
+	// The zero value is a single-owner combined app.
+	Role   Role
 	Args   []string
 	Stdout io.Writer
 	Stderr io.Writer
+	// TraceExporter is built by the deployment and runs through the common
+	// telemetry pipeline. Nil selects the local none/OTLP configuration.
+	TraceExporter trace.SpanExporter
+	// Blobs and AgentLogs are deployment adapters. Nil uses the configured
+	// single-process default, which the self-hosted app supplies locally.
+	Blobs     ports.BlobStore
+	AgentLogs ports.AgentLogStore
+	// Repository is the same native Git/jj client in local and Plue modes.
+	// A local host supplies repository.OpenLocal(...).Client(); Plue supplies
+	// repository.NewRemoteClient(...).
+	Repository *repository.Client
 }
+
+type Role = compose.Role
+
+const (
+	RoleLocal        Role = compose.RoleLocal
+	RoleHostedAPI    Role = compose.RoleHostedAPI
+	RoleHostedWorker Role = compose.RoleHostedWorker
+)
 
 // Instance is one running product composition. Its handler is the real shared
 // route set; callers can mount it on their own HTTP server while the bounded
@@ -63,7 +89,13 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	ready := make(chan http.Handler, 1)
 	stdout, stderr := writers(cfg)
 	go func() {
-		instance.err = compose.Start(ctx, append([]string(nil), cfg.Args...), stdout, stderr, func(handler http.Handler) {
+		instance.err = compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
+			Role:          cfg.Role,
+			TraceExporter: cfg.TraceExporter,
+			Blobs:         cfg.Blobs,
+			AgentLogs:     cfg.AgentLogs,
+			Repository:    cfg.Repository,
+		}, func(handler http.Handler) {
 			ready <- handler
 		})
 		close(instance.done)
@@ -80,7 +112,8 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 		return nil, instance.err
 	case <-ctx.Done():
 		cancel()
-		return nil, ctx.Err()
+		<-instance.done
+		return nil, errors.Join(ctx.Err(), instance.err)
 	}
 }
 
@@ -89,7 +122,13 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 // when startup or a worker fails.
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
-	return compose.Run(ctx, append([]string(nil), cfg.Args...), stdout, stderr)
+	return compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
+		Role:          cfg.Role,
+		TraceExporter: cfg.TraceExporter,
+		Blobs:         cfg.Blobs,
+		AgentLogs:     cfg.AgentLogs,
+		Repository:    cfg.Repository,
+	})
 }
 
 func writers(cfg Config) (io.Writer, io.Writer) {

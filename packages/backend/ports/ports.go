@@ -6,6 +6,10 @@ package ports
 import (
 	"context"
 	"io"
+
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/repository"
 )
 
 // RepositoryEndpointResolver chooses the storage/execution endpoint for a
@@ -13,29 +17,18 @@ import (
 // local installations resolve to their bundled repository service, while a
 // cluster can route to a storage set. The returned URL must come from trusted
 // configuration, never a user-controlled or mutable operation record.
-type RepositoryEndpointResolver interface {
-	ResolveURL(ctx context.Context, owner, repo string) (string, error)
-}
+type RepositoryEndpointResolver = repository.StorageSetResolver
 
-// Blob describes immutable stored bytes. Digest is a lowercase SHA-256 hex
-// string. A provider that cannot report a digest leaves it empty; callers
-// requiring integrity must then verify the stream themselves.
-type Blob struct {
-	Size   int64
-	Digest string
-}
+// BlobStore is the actual product blob contract consumed by the extracted
+// services. The alias prevents a second storage model from drifting away from
+// the routes and artifact/LFS semantics. The local adapter implements signed
+// transfer URLs through authenticated application routes; cloud adapters can
+// use provider-signed URLs. Callers import this public alias, never internal.
+type BlobStore = blob.Store
 
-// BlobStore is the common storage contract. PutIfAbsent is create-only, and
-// duplicate keys must not overwrite existing bytes. Keys are product-owned;
-// adapters must reject traversal outside their configured namespace. There is
-// intentionally no required signed-URL method: browser transfers can stream
-// through the product API in the single-container edition.
-type BlobStore interface {
-	PutIfAbsent(ctx context.Context, key string, body io.Reader) (Blob, error)
-	Open(ctx context.Context, key string) (io.ReadCloser, Blob, error)
-	Stat(ctx context.Context, key string) (Blob, error)
-	Delete(ctx context.Context, key string) error
-}
+// AgentLogStore persists archived session transcripts through the same
+// deployment-owned storage boundary.
+type AgentLogStore = services.AgentLogStore
 
 // IsolationLevel is the guarantee of an execution adapter, not an edition
 // label. A trusted process must never be presented as an untrusted sandbox.

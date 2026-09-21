@@ -2,6 +2,7 @@ package compose
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,5 +43,29 @@ func TestExternalHandlerDrainsBeforeClosingDependencies(t *testing.T) {
 	<-finished
 	if err := <-drained; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExternalHandlerTimeoutCancelsRequest(t *testing.T) {
+	tracker := newInFlightRequestTracker()
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	handler := tracker.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(finished)
+	}))
+	go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	<-started
+	tracker.BeginShutdown()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := tracker.WaitForDrain(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected bounded drain error, got %v", err)
+	}
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("request context was not canceled before dependency cleanup")
 	}
 }

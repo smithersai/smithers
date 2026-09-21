@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/sdk/trace"
+
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/cleanup"
@@ -26,6 +28,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/observability"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
@@ -52,6 +55,16 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	return run(ctx, args, stdout, stderr)
 }
 
+// RunWithExporter uses a deployment-provided trace exporter while retaining
+// the shared redaction and sampling pipeline.
+func RunWithExporter(ctx context.Context, args []string, stdout, stderr io.Writer, exporter trace.SpanExporter) error {
+	return RunWithOptions(ctx, args, stdout, stderr, Options{TraceExporter: exporter})
+}
+
+func RunWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, adapters Options) error {
+	return runWithOptions(ctx, args, stdout, stderr, runOptions{Options: adapters})
+}
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	return runWithOptions(ctx, args, stdout, stderr, runOptions{})
 }
@@ -60,18 +73,59 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 // live handler to a host that owns its HTTP listener. The call remains active
 // until ctx is cancelled and the shared workers have drained.
 func Start(ctx context.Context, args []string, stdout, stderr io.Writer, ready func(http.Handler)) error {
+	return StartWithExporter(ctx, args, stdout, stderr, nil, ready)
+}
+
+func StartWithExporter(ctx context.Context, args []string, stdout, stderr io.Writer, exporter trace.SpanExporter, ready func(http.Handler)) error {
+	return StartWithOptions(ctx, args, stdout, stderr, Options{TraceExporter: exporter}, ready)
+}
+
+func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, adapters Options, ready func(http.Handler)) error {
 	if ready == nil {
 		return errors.New("compose: ready callback is required")
 	}
-	return runWithOptions(ctx, args, stdout, stderr, runOptions{externalHTTP: true, ready: ready})
+	return runWithOptions(ctx, args, stdout, stderr, runOptions{Options: adapters, externalHTTP: true, ready: ready})
 }
 
+// Options are the only deployment seams in the common product assembly.
+type Options struct {
+	Role          Role
+	TraceExporter trace.SpanExporter
+	Blobs         blob.Store
+	AgentLogs     services.AgentLogStore
+	Repository    *repohost.Client
+}
+
+// Role selects only process responsibilities. Every role assembles the same
+// product services and route definitions; deployment adapters still determine
+// storage and execution behavior.
+type Role string
+
+const (
+	RoleLocal        Role = "local"
+	RoleHostedAPI    Role = "hosted_api"
+	RoleHostedWorker Role = "hosted_worker"
+)
+
+func (role Role) valid() bool {
+	return role == "" || role == RoleLocal || role == RoleHostedAPI || role == RoleHostedWorker
+}
+
+func (role Role) hosted() bool         { return role == RoleHostedAPI || role == RoleHostedWorker }
+func (role Role) workers() bool        { return role != RoleHostedAPI }
+func (role Role) clusterWorkers() bool { return role == RoleHostedWorker }
+func (role Role) servesHTTP() bool     { return role != RoleHostedWorker }
+
 type runOptions struct {
+	Options
 	externalHTTP bool
 	ready        func(http.Handler)
 }
 
 func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) error {
+	if !options.Role.valid() {
+		return fmt.Errorf("unknown backend role %q", options.Role)
+	}
 	_ = stdout
 	// `smithers-backend migrate [apply|status]` is a server-free schema
 	// migration path: it applies the embedded product baseline and exits (non-zero on
@@ -98,9 +152,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
 	}
-	if err := validateProductionBlobStore(os.Getenv("SMITHERS_ENV"), cfg.Blob); err != nil {
-		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid production blob config", "error", err)
-		return err
+	if options.Blobs == nil {
+		if err := validateProductionBlobStore(os.Getenv("SMITHERS_ENV"), cfg.Blob); err != nil {
+			slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid production blob config", "error", err)
+			return err
+		}
 	}
 
 	// Initialize structured JSON logger from config and set as global default.
@@ -122,7 +178,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	smithersMetrics := routes.NewSmithersMetrics()
 
 	// Initialize OpenTelemetry
-	tp, err := otelInit(ctx, cfg.Observability)
+	var tp *trace.TracerProvider
+	if options.TraceExporter != nil {
+		tp, err = observability.InitWithExporter(ctx, cfg.Observability, options.TraceExporter)
+	} else {
+		tp, err = otelInit(ctx, cfg.Observability)
+	}
 	if err != nil {
 		slog.Warn("failed to initialize OpenTelemetry", "error", err)
 		// Continue without tracing - don't fail startup
@@ -145,42 +206,35 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	defer pool.Close()
 	slog.Info("connected to database")
 
-	provisioningEnforcementRequested := false
-	if raw := strings.TrimSpace(os.Getenv("SMITHERS_REPOSITORY_PROVISIONING_ENFORCE")); raw != "" {
-		provisioningEnforcementRequested, err = strconv.ParseBool(raw)
-		if err != nil {
-			return fmt.Errorf("parse SMITHERS_REPOSITORY_PROVISIONING_ENFORCE: %w", err)
+	provisioningEnforced := false
+	if options.Role.hosted() {
+		provisioningEnforcementRequested := false
+		if raw := strings.TrimSpace(os.Getenv("SMITHERS_REPOSITORY_PROVISIONING_ENFORCE")); raw != "" {
+			provisioningEnforcementRequested, err = strconv.ParseBool(raw)
+			if err != nil {
+				return fmt.Errorf("parse SMITHERS_REPOSITORY_PROVISIONING_ENFORCE: %w", err)
+			}
 		}
-	}
-	provisioningEnforced, err := services.ConfigureRepositoryProvisioningEnforcement(
-		ctx, pool, provisioningEnforcementRequested,
-	)
-	if err != nil {
-		return err
-	}
-	if provisioningEnforced {
-		slog.Info("repository provisioning insert fence is enforced")
-	} else {
-		// Loud by design: this is a bounded rolling-deploy escape hatch, not a
-		// steady-state mode. Active/token-bound operations remain fenced in SQL.
-		slog.Error("REPOSITORY PROVISIONING LEGACY INSERT COMPATIBILITY IS ENABLED",
-			"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
-	}
-
-	legacyMutationFences, err := services.ConfigureLegacyMutationFences(
-		ctx, pool, provisioningEnforcementRequested,
-	)
-	if err != nil {
-		return err
-	}
-	if legacyMutationFences.RepositoryStorageEnforced && legacyMutationFences.ReleaseDeletionEnabled {
-		slog.Info("post-drain repository storage and release deletion protocols are enforced")
-	} else {
-		// The deploy script flips the shared phase signal only after its API UID
-		// and EndpointSlice drain gate has proved that previous-version writers
-		// are gone. Until then SQL still fences every token-bound operation.
-		slog.Error("LEGACY REPOSITORY STORAGE AND RELEASE DELETION COMPATIBILITY IS ENABLED",
-			"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
+		provisioningEnforced, err = services.ConfigureRepositoryProvisioningEnforcement(ctx, pool, provisioningEnforcementRequested)
+		if err != nil {
+			return err
+		}
+		if provisioningEnforced {
+			slog.Info("repository provisioning insert fence is enforced")
+		} else {
+			slog.Error("REPOSITORY PROVISIONING LEGACY INSERT COMPATIBILITY IS ENABLED",
+				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
+		}
+		legacyMutationFences, fenceErr := services.ConfigureLegacyMutationFences(ctx, pool, provisioningEnforcementRequested)
+		if fenceErr != nil {
+			return fenceErr
+		}
+		if legacyMutationFences.RepositoryStorageEnforced && legacyMutationFences.ReleaseDeletionEnabled {
+			slog.Info("post-drain repository storage and release deletion protocols are enforced")
+		} else {
+			slog.Error("LEGACY REPOSITORY STORAGE AND RELEASE DELETION COMPATIBILITY IS ENABLED",
+				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
+		}
 	}
 
 	// Start background DB pool stats collector (reports every 15s).
@@ -192,11 +246,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	runnerStaleSweeper := runnerpool.NewRunnerPool(queries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
 	runtimeMetricsStore := services.NewRuntimeMetricsStore(queries, pool)
 	services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
-	smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(queries))
-	// observe-v2: api-metrics
-	inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(queries)
-	smithersMetrics.MustRegister(inventoryMetrics)
-	inventoryMetrics.Start(poolStatsCtx)
+	if options.Role.hosted() {
+		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(queries))
+		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(queries)
+		smithersMetrics.MustRegister(inventoryMetrics)
+		inventoryMetrics.Start(poolStatsCtx)
+	}
 	// One shared broker multiplexes every SSE stream type (notifications,
 	// workspaces, workflow-run logs, agent sessions, releases) over a SINGLE
 	// pooled connection, so SSE clients no longer consume one pgxpool slot each.
@@ -252,7 +307,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	storageSetResolverTemplate := services.BuildStorageSetResolverTemplate(cfg.RepoHost.URL, activeStorageSetID)
 
 	storageSetResolver := services.NewDBStorageSetResolver(queries, storageSetResolverTemplate)
-	repoHostClient := repohost.NewClient(storageSetResolver, cfg.RepoHost.AuthToken, smithersMetrics)
+	repoHostClient := options.Repository
+	if repoHostClient == nil {
+		repoHostClient = repohost.NewClient(storageSetResolver, cfg.RepoHost.AuthToken, smithersMetrics)
+	}
 
 	webhookDispatcher := webhooks.NewDispatcher(queries)
 	// Complete the dispatcher before any service captures it.
@@ -482,13 +540,15 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	workflowAPIService := services.NewWorkflowAPIService(queries, workflowRunService)
 
-	blobStore, gcsClient, expiryDuration, err := newBlobStore(ctx, cfg.Blob)
+	blobStore, gcsClient, expiryDuration, err := selectBlobStore(ctx, cfg.Blob, options.Blobs)
 	if err != nil {
 		slog.Error("failed to initialize blob store", "error", err)
 		return err
 	}
 	if gcsClient != nil {
 		defer func() { _ = gcsClient.Close() }()
+	}
+	if _, canPurge := blobStore.(blob.GenerationPurger); canPurge {
 		legacyFinalKeyPurgeAllowed, gateErr := queries.IsLegacyFinalKeyPurgeAllowed(ctx)
 		if gateErr != nil {
 			return fmt.Errorf("load legacy final-key capability horizon: %w", gateErr)
@@ -580,7 +640,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Smithers Pair: realtime multiplayer pair-coding (shared doc + cursors +
 	// one shared Codex model run in a Microsandbox sandbox). Key-gated, no repo.
 	pairService := services.NewPairService(pool, pairSandbox, landingService)
-	if err := ensurePairSchema(pairService, context.Background()); err != nil {
+	if err := ensurePairSchema(pairService, ctx); err != nil {
 		slog.Warn("pair: ensure schema failed", "error", err)
 	}
 	pairHandler := routes.NewPairHandler(pairService, pool)
@@ -588,7 +648,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Initialize agent log store (GCS-backed when available, in-memory fallback).
 	// Transcripts are retention-limited operational data: they belong in the
 	// dedicated agent-logs bucket, not the versioned long-retention blobs bucket.
-	agentLogStore := initializeAgentLogStore(gcsClient, cfg.Blob)
+	agentLogStore := options.AgentLogs
+	if agentLogStore == nil {
+		agentLogStore = initializeAgentLogStore(gcsClient, cfg.Blob)
+	}
 
 	agentSnapshotID := cfg.Sandbox.AgentSnapshotID
 	// UsableProviderCredentials drops blanks AND the operator-seeded
@@ -1326,55 +1389,70 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Start landing worker in a background goroutine.
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
+	var joinedWorkers []*joinedBackgroundWorker
+	launchWorker := func(run func()) {
+		joinedWorkers = append(joinedWorkers, startJoinedBackgroundWorker(run))
+	}
 	var wikiHistoryWorker *joinedBackgroundWorker
-	if cfg.FeatureFlags.Wiki {
+	if options.Role.workers() && cfg.FeatureFlags.Wiki {
 		wikiHistoryWorker = startJoinedBackgroundWorker(func() { services.RunWikiHistory(workerCtx, pool, repoHostClient) })
 	}
-	go runnerStaleSweeper.RunStaleSweeper(workerCtx, 30*time.Second)
-	go landingWorker.Start(workerCtx)
-	go providerConnectionRefreshWorker.Start(workerCtx)
-	go workflowLogBudgetBackfiller.Start(workerCtx)
+	if options.Role.workers() {
+		launchWorker(func() { landingWorker.Start(workerCtx) })
+		launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
+		launchWorker(func() { workflowLogBudgetBackfiller.Start(workerCtx) })
+	}
+	if options.Role.clusterWorkers() {
+		launchWorker(func() { runnerStaleSweeper.RunStaleSweeper(workerCtx, 30*time.Second) })
+	}
 	var gitHubImportWorker *joinedBackgroundWorker
-	if provisioningEnforced {
+	if options.Role.clusterWorkers() && provisioningEnforced {
 		gitHubImportWorker = startJoinedBackgroundWorker(func() {
 			gitHubImportService.Start(workerCtx)
 		})
-	} else {
+	} else if options.Role.clusterWorkers() {
 		slog.Error("durable GitHub import worker is disabled until repository provisioning enforcement is enabled")
 	}
-	if cfg.FeatureFlags.Workflows {
-		go cronSchedulerWorker.Start(workerCtx)
-		go workflowSandboxSchedulerWorker.Start(workerCtx)
-		go gitHubWebhookEventWorker.Start(workerCtx)
-		go repositoryJobService.Start(workerCtx)
-		if alertRemediationWorker != nil {
-			go alertRemediationWorker.Start(workerCtx)
+	if options.Role.workers() && cfg.FeatureFlags.Workflows {
+		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })
+		launchWorker(func() { gitHubWebhookEventWorker.Start(workerCtx) })
+		launchWorker(func() { repositoryJobService.Start(workerCtx) })
+		if options.Role.clusterWorkers() {
+			launchWorker(func() { workflowSandboxSchedulerWorker.Start(workerCtx) })
+		}
+		if options.Role.clusterWorkers() && alertRemediationWorker != nil {
+			launchWorker(func() { alertRemediationWorker.Start(workerCtx) })
 		}
 	}
-	go webhookWorker.Start(workerCtx)
+	if options.Role.workers() {
+		launchWorker(func() { webhookWorker.Start(workerCtx) })
+	}
 	// R3: the reconciliation backstop for the synced GitHub metadata store —
 	// webhooks are hints; this sweep (oldest staleness first, adaptive
 	// interval clamped 45s–8h, 14-strike hard fail) is the truth.
-	go gitHubSyncedRepoService.StartReconciler(workerCtx)
-	go repositoryStorageReconciler.Start(workerCtx)
-	go repositoryProvisioningReconciler.Start(workerCtx)
-	go pairSessionService.StartStaleSweeper(workerCtx)
-	go repoGatewayService.StartReaper(workerCtx)
-	go sandboxOrphanReaper.Start(workerCtx)
-	agentService.StartSessionReaper(workerCtx, time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs)*time.Second)
-	if cfg.Sandbox.AnonEnabled {
-		anonSandboxService.StartReaper(workerCtx)
+	if options.Role.workers() {
+		launchWorker(func() { gitHubSyncedRepoService.StartReconciler(workerCtx) })
+		launchWorker(func() { pairSessionService.StartStaleSweeper(workerCtx) })
+		agentService.StartSessionReaper(workerCtx, time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs)*time.Second)
+		if cfg.Sandbox.AnonEnabled {
+			anonSandboxService.StartReaper(workerCtx)
+		}
+		authCleaner.Start(workerCtx)
+		workflowCacheCleaner.Start(workerCtx)
+		workflowArtifactCleaner.Start(workerCtx)
+		auditCleaner.Start(workerCtx)
+		workspaceCleaner.Start(workerCtx)
 	}
-	authCleaner.Start(workerCtx)
-	workflowCacheCleaner.Start(workerCtx)
-	workflowArtifactCleaner.Start(workerCtx)
-
-	storageDeletionCleaner.Start(workerCtx)
-	auditCleaner.Start(workerCtx)
-	egressAuditCleaner.Start(workerCtx)
-	workspaceCleaner.Start(workerCtx)
-	if cfg.Sandbox.GoldenSnapshotsEnabled {
-		goldenSnapshotService.Start(workerCtx)
+	if options.Role.clusterWorkers() {
+		launchWorker(func() { repositoryStorageReconciler.Start(workerCtx) })
+		launchWorker(func() { repositoryProvisioningReconciler.Start(workerCtx) })
+		launchWorker(func() { repoGatewayService.StartReaper(workerCtx) })
+		launchWorker(func() { sandboxOrphanReaper.Start(workerCtx) })
+		storageDeletionCleaner.Start(workerCtx)
+		egressAuditCleaner.Start(workerCtx)
+		if cfg.Sandbox.GoldenSnapshotsEnabled {
+			goldenSnapshotService.Start(workerCtx)
+		}
 	}
 
 	// Backfill github_app_installation_repositories from live installation state
@@ -1383,33 +1461,38 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// GetGitHubAppStatus reports "not installed" for every repo. Non-blocking so a
 	// slow/failed GitHub round-trip never delays serving; no-ops cleanly when app
 	// credentials are unconfigured.
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("github_app.reconcile.boot_panic", "panic", r, "stack", string(debug.Stack()))
+	if options.Role.workers() {
+		launchWorker(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("github_app.reconcile.boot_panic", "panic", r, "stack", string(debug.Stack()))
+				}
+			}()
+			if err := repoConnectionService.ReconcileGitHubAppInstallations(workerCtx); err != nil {
+				slog.Error("github_app.reconcile.boot_failed", "error", err)
 			}
-		}()
-		if err := repoConnectionService.ReconcileGitHubAppInstallations(workerCtx); err != nil {
-			slog.Error("github_app.reconcile.boot_failed", "error", err)
-		}
-	}()
+		})
+	}
 
 	// Register signals before listening so the first SIGTERM is never lost.
 	sigCh := make(chan os.Signal, 1)
-	if !options.externalHTTP {
+	if !options.externalHTTP && options.Role.servesHTTP() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		defer signal.Stop(sigCh)
 	}
 
 	// Graceful shutdown
 	shutdownDone := make(chan struct{})
+	abortShutdown := make(chan struct{})
+	var shutdownFailure error // synchronized by shutdownDone closing
 	go func() {
 		defer close(shutdownDone)
 		select {
 		case <-sigCh:
 		case <-ctx.Done():
+		case <-abortShutdown:
 		}
-		if !options.externalHTTP {
+		if !options.externalHTTP && options.Role.servesHTTP() {
 			signal.Stop(sigCh)
 		}
 		inFlightAtSIGTERM := requestTracker.BeginShutdown()
@@ -1417,10 +1500,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		shutdownErr := srv.Shutdown(shutdownCtx)
-		if options.externalHTTP {
-			if drainErr := requestTracker.WaitForDrain(shutdownCtx); drainErr != nil {
-				shutdownErr = errors.Join(shutdownErr, drainErr)
-			}
+		if drainErr := requestTracker.WaitForDrain(shutdownCtx); drainErr != nil {
+			shutdownErr = errors.Join(shutdownErr, drainErr)
 		}
 		drained, killed, activeRemaining := requestTracker.Snapshot()
 
@@ -1447,15 +1528,26 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			}
 			workerShutdownCancel()
 		}
-		authCleaner.Stop()
-		workflowCacheCleaner.Stop()
-		workflowArtifactCleaner.Stop()
-
-		storageDeletionCleaner.Stop()
-		auditCleaner.Stop()
-		egressAuditCleaner.Stop()
-		workspaceCleaner.Stop()
-		goldenSnapshotService.Stop()
+		workerWaitCtx, stopWorkers := context.WithTimeout(context.Background(), shutdownTimeout)
+		for _, worker := range joinedWorkers {
+			if err := worker.Wait(workerWaitCtx); err != nil {
+				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("background worker did not stop: %w", err))
+				break
+			}
+		}
+		stopWorkers()
+		if options.Role.workers() {
+			authCleaner.Stop()
+			workflowCacheCleaner.Stop()
+			workflowArtifactCleaner.Stop()
+			auditCleaner.Stop()
+			workspaceCleaner.Stop()
+		}
+		if options.Role.clusterWorkers() {
+			storageDeletionCleaner.Stop()
+			egressAuditCleaner.Stop()
+			goldenSnapshotService.Stop()
+		}
 		// Release the LISTEN connection before run closes the shared pool.
 		stopRevocationBus()
 
@@ -1467,31 +1559,46 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			"shutdown_timeout", shutdownTimeout.String(),
 		}
 		if shutdownErr != nil {
+			shutdownFailure = shutdownErr
 			attrs = append(attrs, "error", shutdownErr)
 			slog.Warn(fmt.Sprintf("in-flight requests at SIGTERM: %d, drained: %d, killed: %d", inFlightAtSIGTERM, drained, killed), attrs...)
 			return
 		}
 		slog.Info(fmt.Sprintf("in-flight requests at SIGTERM: %d, drained: %d, killed: %d", inFlightAtSIGTERM, drained, killed), attrs...)
 	}()
-	if options.externalHTTP {
-		options.ready(handler)
+	if options.externalHTTP || !options.Role.servesHTTP() {
+		if err := ctx.Err(); err != nil {
+			<-shutdownDone
+			return errors.Join(err, shutdownFailure)
+		}
+		if options.ready != nil {
+			if options.Role.servesHTTP() {
+				options.ready(handler)
+			} else {
+				options.ready(nil)
+			}
+		}
 		<-shutdownDone
-		return nil
+		return shutdownFailure
 	}
 
 	slog.Info("API server listening", "addr", cfg.Server.Addr)
 	ln, err := netListen("tcp", srv.Addr)
 	if err != nil {
 		slog.Error("server error", "error", err)
+		close(abortShutdown)
+		<-shutdownDone
 		return err
 	}
 	onListen(ln)
 	if err := srv.Serve(ln); err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
+		close(abortShutdown)
+		<-shutdownDone
 		return err
 	}
 	<-shutdownDone
-	return nil
+	return shutdownFailure
 }
 
 // revocationBusStopTimeout bounds how long shutdown waits for the revocation

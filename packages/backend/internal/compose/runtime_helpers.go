@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -145,6 +146,9 @@ func workspaceSessionTargetWorkspaceID(r *http.Request) string {
 
 type inFlightRequestTracker struct {
 	closing               atomic.Bool
+	mu                    sync.Mutex
+	cancels               map[uint64]context.CancelFunc
+	nextID                uint64
 	active                atomic.Int64
 	completed             atomic.Int64
 	shutdownActive        atomic.Int64
@@ -161,16 +165,37 @@ func (t *inFlightRequestTracker) Wrap(next http.Handler) http.Handler {
 			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 			return
 		}
+		ctx, cancel := context.WithCancel(r.Context())
+		t.mu.Lock()
+		if t.closing.Load() {
+			t.mu.Unlock()
+			cancel()
+			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+			return
+		}
+		if t.cancels == nil {
+			t.cancels = make(map[uint64]context.CancelFunc)
+		}
+		t.nextID++
+		id := t.nextID
+		t.cancels[id] = cancel
 		t.active.Add(1)
+		t.mu.Unlock()
 		defer func() {
+			t.mu.Lock()
+			delete(t.cancels, id)
 			t.completed.Add(1)
 			t.active.Add(-1)
+			t.mu.Unlock()
+			cancel()
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (t *inFlightRequestTracker) BeginShutdown() int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.closing.Store(true)
 	t.shutdownCompletedBase.Store(t.completed.Load())
 	active := t.active.Load()
@@ -186,11 +211,29 @@ func (t *inFlightRequestTracker) WaitForDrain(ctx context.Context) error {
 	for t.active.Load() != 0 {
 		select {
 		case <-ctx.Done():
+			t.cancelActive()
+			grace, stop := context.WithTimeout(context.Background(), time.Second)
+			defer stop()
+			for t.active.Load() != 0 {
+				select {
+				case <-grace.Done():
+					return ctx.Err()
+				case <-ticker.C:
+				}
+			}
 			return ctx.Err()
 		case <-ticker.C:
 		}
 	}
 	return nil
+}
+
+func (t *inFlightRequestTracker) cancelActive() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, cancel := range t.cancels {
+		cancel()
+	}
 }
 
 func (t *inFlightRequestTracker) Snapshot() (drained, killed, activeRemaining int64) {
@@ -466,6 +509,17 @@ func buildAuthProviders(cfg config.AuthConfig) (services.KeyAuthVerifier, servic
 }
 
 var apiJSONTimeout = 30 * time.Second
+
+func selectBlobStore(ctx context.Context, cfg config.BlobConfig, provided blob.Store) (blob.Store, *storage.Client, time.Duration, error) {
+	if provided == nil {
+		return newBlobStore(ctx, cfg)
+	}
+	expiry, err := blob.ParseSignedURLExpiry(cfg.SignedURLExpiry)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	return provided, nil, expiry, nil
+}
 
 const defaultLFSVerifyJSONTimeout = 10 * time.Minute
 const lfsVerifyWriteTimeoutHeadroom = 5 * time.Second

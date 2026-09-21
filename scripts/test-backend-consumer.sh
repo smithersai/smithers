@@ -23,14 +23,17 @@ import (
 
     "github.com/smithersai/smithers/packages/backend/app"
     "github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/repository"
 )
 
 func main() {
     var launch func(context.Context, app.Config) error = app.Run
+	var migrate func(context.Context, string) error = app.Migrate
 	var start func(context.Context, app.Config) (*app.Instance, error) = app.Start
 	var handler func(*app.Instance) http.Handler = (*app.Instance).Handler
     var executor ports.Executor
-	_, _, _, _ = launch, start, handler, executor
+	var repo *repository.Client
+	_, _, _, _, _, _ = launch, migrate, start, handler, executor, repo
 }
 EOF
 cd "$consumer_dir"
