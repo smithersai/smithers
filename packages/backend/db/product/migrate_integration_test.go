@@ -93,6 +93,25 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO users(username, lower_username) VALUES ('bob', 'bob') RETURNING id`).Scan(&bob); err != nil {
 		t.Fatal(err)
 	}
+	var importJobID string
+	var defaultBookmark string
+	var publishReady bool
+	if err := pool.QueryRow(ctx, `INSERT INTO import_jobs(user_id, github_owner, github_repo)
+		VALUES ($1, 'alice', 'project') RETURNING id, default_bookmark, publish_ready`, alice).
+		Scan(&importJobID, &defaultBookmark, &publishReady); err != nil {
+		t.Fatal(err)
+	}
+	if defaultBookmark != "" || publishReady {
+		t.Fatal("new import reservation unexpectedly marked ready")
+	}
+	if err := pool.QueryRow(ctx, `UPDATE import_jobs SET default_bookmark='trunk', publish_ready=true
+		WHERE id=$1 RETURNING default_bookmark, publish_ready`, importJobID).
+		Scan(&defaultBookmark, &publishReady); err != nil {
+		t.Fatal(err)
+	}
+	if defaultBookmark != "trunk" || !publishReady {
+		t.Fatal("import publication state was not durable")
+	}
 	queries := db.New(pool)
 	repository, err := queries.CreateRepo(ctx, db.CreateRepoParams{
 		UserID: pgtype.Int8{Int64: alice, Valid: true}, Name: "secret", LowerName: "secret", DefaultBookmark: "main",
@@ -157,7 +176,7 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE smithers_product_migrations SET checksum=$1 WHERE version=$2`, registered[0].checksum, BaselineVersion); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO smithers_product_migrations(version, checksum) VALUES (2, 'future')`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO smithers_product_migrations(version, checksum) VALUES ($1, 'future')`, len(registered)+1); err != nil {
 		t.Fatal(err)
 	}
 	if err := Apply(ctx, pool); !errors.Is(err, ErrUnsupportedVersion) {

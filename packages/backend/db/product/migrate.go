@@ -34,6 +34,7 @@ type migrationSpec struct {
 // makes a forgotten file or an accidental deletion fail before any SQL runs.
 var migrationRegistry = []migrationSpec{
 	{BaselineVersion, "migrations/0001_product_baseline.sql"},
+	{2, "migrations/0002_import_publication.sql"},
 }
 
 type migration struct {
