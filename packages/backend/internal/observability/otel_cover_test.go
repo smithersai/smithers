@@ -2,8 +2,6 @@ package observability
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,24 +9,22 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
 
-func TestOtel_Cov_InitWithFakeADCSetsGlobals(t *testing.T) {
+func TestInitInjectedExporterSetsGlobals(t *testing.T) {
 	originalProvider := otel.GetTracerProvider()
 	originalPropagator := otel.GetTextMapPropagator()
 	defer otel.SetTracerProvider(originalProvider)
 	defer otel.SetTextMapPropagator(originalPropagator)
 
-	credentialsPath := otelCovWriteFakeADCCredentials(t)
-	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credentialsPath)
-
-	provider, err := Init(context.Background(), config.ObservabilityConfig{
+	provider, err := InitWithExporter(context.Background(), config.ObservabilityConfig{
 		CloudTraceProjectID: "coverage-project",
 		TraceSampleRate:     1,
-	})
+	}, tracetest.NewInMemoryExporter())
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 	t.Cleanup(func() {
@@ -48,31 +44,8 @@ func TestOtel_Cov_InitWithFakeADCSetsGlobals(t *testing.T) {
 	assert.Equal(t, "smithers", baggage.FromContext(ctx).Member("customer").Value())
 }
 
-func TestOtel_Cov_InitExporterFailureWrapsError(t *testing.T) {
-	credentialsPath := filepath.Join(t.TempDir(), "invalid-adc.json")
-	require.NoError(t, os.WriteFile(credentialsPath, []byte(`{"type":`), 0o600))
-	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credentialsPath)
-
-	provider, err := Init(context.Background(), config.ObservabilityConfig{
-		CloudTraceProjectID: "coverage-project",
-		TraceSampleRate:     0.5,
-	})
-
-	require.Error(t, err)
+func TestInitCloudExporterRequiresInjection(t *testing.T) {
+	provider, err := Init(context.Background(), config.ObservabilityConfig{OTelExporter: "cloudtrace", CloudTraceProjectID: "project"})
+	require.ErrorContains(t, err, "deployment-provided trace exporter")
 	assert.Nil(t, provider)
-	assert.ErrorContains(t, err, "failed to create Cloud Trace exporter")
-}
-
-func otelCovWriteFakeADCCredentials(t *testing.T) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "adc.json")
-	credentials := `{
-		"type": "authorized_user",
-		"client_id": "coverage-client-id.apps.googleusercontent.com",
-		"client_secret": "coverage-client-secret",
-		"refresh_token": "coverage-refresh-token"
-	}`
-	require.NoError(t, os.WriteFile(path, []byte(credentials), 0o600))
-	return path
 }

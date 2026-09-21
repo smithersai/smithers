@@ -123,7 +123,7 @@ func TestInit_NoProjectID(t *testing.T) {
 	cfg := config.ObservabilityConfig{
 		TraceSampleRate:     0.01,
 		CloudTraceProjectID: "",
-		OTelExporter:        "cloudtrace",
+		OTelExporter:        "none",
 	}
 
 	provider, err := Init(ctx, cfg)

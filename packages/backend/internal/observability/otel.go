@@ -1,5 +1,5 @@
 // Package observability provides shared OpenTelemetry initialization for
-// Smithers services (API server, repo-host). It wires a Google Cloud Trace
+// Smithers services (API server, repo-host). It wires an optional OTLP or injected
 // exporter, a sample-rate-based sampler, and W3C TraceContext + Baggage
 // propagation.
 package observability
@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	cloudtrace "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -51,24 +50,17 @@ func BuildTextMapPropagator() propagation.TextMapPropagator {
 func traceExporterName(cfg config.ObservabilityConfig) string {
 	name := strings.ToLower(strings.TrimSpace(cfg.OTelExporter))
 	if name == "" {
-		return "cloudtrace"
+		return "none"
 	}
 	return name
 }
 
 func buildTraceExporter(ctx context.Context, cfg config.ObservabilityConfig) (trace.SpanExporter, string, error) {
 	switch exporterName := traceExporterName(cfg); exporterName {
+	case "none":
+		return nil, exporterName, nil
 	case "cloudtrace":
-		if strings.TrimSpace(cfg.CloudTraceProjectID) == "" {
-			return nil, exporterName, nil
-		}
-		exporter, err := cloudtrace.New(
-			cloudtrace.WithProjectID(cfg.CloudTraceProjectID),
-		)
-		if err != nil {
-			return nil, exporterName, fmt.Errorf("failed to create Cloud Trace exporter: %w", err)
-		}
-		return exporter, exporterName, nil
+		return nil, exporterName, fmt.Errorf("cloudtrace requires a deployment-provided trace exporter")
 	case "otlp":
 		endpoint := strings.TrimSpace(cfg.OTLPEndpoint)
 		if endpoint == "" {
@@ -80,7 +72,7 @@ func buildTraceExporter(ctx context.Context, cfg config.ObservabilityConfig) (tr
 		}
 		return exporter, exporterName, nil
 	default:
-		return nil, exporterName, fmt.Errorf("unsupported SMITHERS_OTEL_EXPORTER %q (valid: cloudtrace, otlp)", exporterName)
+		return nil, exporterName, fmt.Errorf("unsupported SMITHERS_OTEL_EXPORTER %q (valid: none, otlp; deployment exporters must be injected)", exporterName)
 	}
 }
 
@@ -88,9 +80,20 @@ func buildTraceExporter(ctx context.Context, cfg config.ObservabilityConfig) (tr
 // Returns the trace provider, or nil if tracing is disabled.
 // The returned provider's Shutdown must be called on application exit to flush spans.
 func Init(ctx context.Context, cfg config.ObservabilityConfig) (*trace.TracerProvider, error) {
-	exporter, exporterName, err := buildTraceExporter(ctx, cfg)
-	if err != nil {
-		return nil, err
+	return InitWithExporter(ctx, cfg, nil)
+}
+
+// InitWithExporter installs a deployment-owned exporter through the same sampling
+// and credential-redaction pipeline. The returned provider owns its shutdown.
+// A nil exporter selects the common none/OTLP configuration.
+func InitWithExporter(ctx context.Context, cfg config.ObservabilityConfig, exporter trace.SpanExporter) (*trace.TracerProvider, error) {
+	exporterName := "injected"
+	if exporter == nil {
+		var err error
+		exporter, exporterName, err = buildTraceExporter(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if exporter == nil {
 		slog.Info("OpenTelemetry: tracing disabled", "exporter", exporterName)
