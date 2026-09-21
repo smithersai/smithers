@@ -1195,6 +1195,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("workflow-list"),
     payload: z.object({
       repo: z.string(),
+      catalogRequest: z.object({ id: z.string(), owner: z.string(), state: z.enum(["pending", "failed"]) }).optional(),
       /** The gateway that actually answered this executable catalog. */
       workspaceId: GatewayWorkspaceIdSchema.optional(),
       /** Version 1 distinguishes a recorded legacy gateway from missing provenance. */

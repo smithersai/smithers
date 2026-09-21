@@ -30,3 +30,23 @@ test("flow rows lead with their human description and retain an identifier fallb
   expect(html).toContain("<span>issue.repro</span>")
   expect(html).toContain("<strong>lint</strong>")
 })
+
+test("a pending catalog offers no launch and a failed catalog offers a source-bound Retry", () => {
+  const card: Extract<Card, { kind: "workflow-list" }> = {
+    id: "workflow-list-owner/repo", kind: "workflow-list", title: "Flows", status: "active", loading: true, createdAt: 1, ordinal: 1,
+    payload: { repo: "owner/repo", gatewayBindingVersion: 1, workflows: [{ key: "check", description: null }],
+      catalogRequest: { id: "catalog-request", owner: "owner", state: "pending" } }
+  }
+  const render = () => renderToStaticMarkup(<WorkflowListCardBody card={card} onRunCommand={() => {}} />)
+  expect(render()).not.toContain('data-flow="flow.run"')
+  card.loading = false
+  card.status = "error"
+  card.body = "Upstream unavailable"
+  card.payload.catalogRequest!.state = "failed"
+  const failed = render()
+  expect(failed).toContain('role="alert"')
+  expect(failed).toContain("Upstream unavailable")
+  expect(failed).toContain('data-flow="flow.list"')
+  expect(failed).toContain(">Retry</button>")
+  expect(failed).not.toContain('data-flow="flow.run"')
+})

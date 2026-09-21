@@ -29,7 +29,6 @@ export const flowsSurfaceFlows = (actions: CommandActions): ReadonlyArray<FlowEn
     userOnly: true,
     userOnlyReason: "a surface switch; the model lists flows with flow.list, which answers as an embedded card",
     input: NoPayload,
-    prepare: () => actions.listWorkspaceWorkflows.preload?.(),
     handler: () => actions.showFlows()
   })
 ]
@@ -115,7 +114,6 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     requires: ["signed-in"],
     args: "[sourceCard=id] [owner/repo]",
     input: Schema.Struct({ repo: Schema.optional(Schema.String), sourceCard: Schema.optional(Schema.String) }),
-    prepare: ({ repo, sourceCard }) => actions.listWorkspaceWorkflows.preload?.(repo, sourceCard),
     handler: ({ repo, sourceCard }) => actions.listWorkspaceWorkflows(repo, sourceCard)
   }),
   flow({

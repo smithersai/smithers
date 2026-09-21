@@ -1,6 +1,7 @@
 import { cloudFailure } from "../seams/CloudClient"
 import { renderPlanLimit } from "../seams/BillingSeam"
-import { preparedView, type ViewAction } from "../PreparedView"
+import type { ViewAction } from "../PreparedView"
+import { createWorkflowCatalogController } from "./workflow-catalog"
 import { WORKFLOW_PROVISION_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { Card } from "../AppState"
 import { sameApproval } from "../ApprovalReference"
@@ -715,37 +716,16 @@ export const createWorkflowController = (
     return "error" in binding ? binding : { repo: target.repo, binding }
   }
 
-  const listWorkspaceWorkflows = preparedView({ ...ctx, dispatch: store.dispatch, actor: () => ctx.commandActor, nextOrdinal: nextTranscriptOrdinal }, (repoArg?: string, sourceCard?: string) => {
-    const guard = workflowIdentityGuard()
-    if (guard !== undefined) return guard
-    const target = workflowScope(repoArg, sourceCard)
-    if ("error" in target) return target.error
-    const { repo, binding } = target
-    const id = binding.workspaceId === undefined ? `workflow-list-${repo}`
-      : `workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(binding.workspaceId)}`
-    return { id, title: `Flows: ${repo}`, before: () => provisionWorkspace(repo, binding), read: async () => {
-    const list = await gateway.listFlows(repo, binding)
-    if (list.status !== "ok") return list.message
-    const workflows = list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).map((flow) => ({ key: flow.flowId, description: flow.description,
-      ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }) }))
-    const existing = store.collections.cards.get(id)
-    const card: Card = {
-      id,
-      kind: "workflow-list",
-      title: `Flows: ${repo}`,
-      status: "active",
-      createdAt: existing?.createdAt ?? Date.now(),
-      ordinal: nextTranscriptOrdinal(),
-      payload: { repo, workflows, gatewayBindingVersion: 1,
-        ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }) }
-    }
-    return { card,
-      value: workflows.length === 0
-        ? `No flows on ${repo} yet.`
-        : `Flows on ${repo}: ${workflows.map((workflow) => workflow.key).join(", ")}.`
-    }
-    } }
+  const catalogs = createWorkflowCatalogController(ctx, {
+    resolve: (repo, sourceCard) => {
+      const guard = workflowIdentityGuard()
+      if (guard !== undefined) return guard
+      const scope = workflowScope(repo, sourceCard)
+      return "error" in scope ? scope.error : scope
+    },
+    provision: provisionWorkspaceImpl
   })
+  const listWorkspaceWorkflows = catalogs.list
 
   /*
    * Ask 5 (will, 2026-09-02): "where it says connect chat and world an option
@@ -1046,7 +1026,7 @@ export const createWorkflowController = (
     })
   }
   return {
-    resumeWorkflowRequests: requests.resume,
+    resumeWorkflowRequests: () => { requests.resume(); catalogs.resume() },
     retryWorkflowRequest: requests.retry,
     createWorkflow,
     listWorkspaceWorkflows,

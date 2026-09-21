@@ -959,6 +959,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { repo: "smithersai/smithers", workflows: [] },
     full: {
       repo: "smithersai/smithers",
+      catalogRequest: { id: "catalog-request", owner: "smithersai", state: "pending" },
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
       workflows: [{

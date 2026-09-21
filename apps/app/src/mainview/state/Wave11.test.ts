@@ -733,7 +733,8 @@ describe("wave 11 — workflows are presented", () => {
 
     const outcome = await controller.commands.run("flow.list")
     expect(outcome.status).toBe("executed")
-    expect(said(outcome)).toContain("create-flow")
+    expect(said(outcome)).toBe("Flows requested.")
+    await waitFor(() => store.collections.cards.get(`workflow-list-${REPO}`)?.loading === false)
     const card = store.collections.cards.get(`workflow-list-${REPO}`)
     expect(card?.kind).toBe("workflow-list")
     expect(card?.kind === "workflow-list" && card.payload.workflows.map((entry) => entry.key)).toEqual([
@@ -753,6 +754,7 @@ describe("wave 11 — workflows are presented", () => {
       await signIn(store, [REPO, "another/project"])
       store.dispatch({ type: "repo.selected", actor: "user", id: "another/project" })
       expect((await controller.commands.run("flow.list")).status).toBe("executed")
+      await waitFor(() => double.calls.some(call => call.path === "/api/workflow/provision"))
       expect(double.calls.find((call) => call.path === "/api/workflow/provision")?.body).toEqual({ repo: "another/project" })
       expect(store.collections.cards.has("workflow-list-another/project")).toBe(true)
       expect((await controller.commands.run("flow.list", REPO)).status).toBe("executed")

@@ -1559,6 +1559,7 @@ describe("workspace-bound run cards", () => {
     await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
     const before = double.calls.length
     expect((await controller.commands.run("flow.list", `sourceCard=${source.id}`)).status).toBe("executed")
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "workflow-list" && card.payload.workspaceId === workspaceId && !card.loading))
     const catalog = [...store.collections.cards.values()].find(card => card.kind === "workflow-list" && card.payload.workspaceId === workspaceId)!
     expect(catalog).toMatchObject({ payload: { repo: REPO, workspaceId, gatewayBindingVersion: 1 } })
     expect(catalog.id).not.toBe(`workflow-list-${REPO}`)

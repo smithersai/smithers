@@ -362,7 +362,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * watching, launch Retry, Stop, Run again, the steer row's send, the
        * repository chooser's row and the workflow list's Run.
        */
-      "../cards/WorkflowCards.tsx": 15,
+      "../cards/WorkflowCards.tsx": 16,
       "../DevtoolsPanel.tsx": 1,
       "../SearchPalette.tsx": 6, // + Ask Smithers, the first row of an empty ⌘K
       "../SurfaceChrome.tsx": 3,
