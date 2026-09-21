@@ -1308,6 +1308,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repoGatewayService.SetRevocationPublisher(revocationPublisher)
 	agentService.SetRevocationPublisher(revocationPublisher)
 	repoService.SetRevocationPublisher(revocationPublisher)
+	if !options.Role.hosted() {
+		// These HTTP surfaces operate on fleet placement, runner, canary, or
+		// durable import state excluded from the single-owner product schema.
+		// The shared router already treats nil handlers as absent routes.
+		runnerHandler = nil
+		adminRunnerHandler = nil
+		adminSystemStatusHandler = nil
+		adminSystemCanariesHandler = nil
+		adminSystemIncidentsHandler = nil
+		adminSystemMetricsHandler = nil
+		canaryReportHandler = nil
+		repoGatewayHandler = nil
+		gitHubImportHandler = nil
+	}
 
 	r := buildRouter(
 		cfg,

@@ -584,9 +584,11 @@ func buildRouter(
 			// would wrongly 429 a resume of an existing gateway (which consumes no new
 			// capacity). The provision-only cap is enforced inside RepoGatewayService;
 			// the feature gate + per-repo sandbox-hours budget still apply here.
-			gatewayProvision := append([]func(http.Handler) http.Handler{}, vmProvision...)
-			gatewayProvision = append(gatewayProvision, gateSandboxes, repoSandboxHoursQuota)
-			r.With(gatewayProvision...).Post("/api/repos/{owner}/{repo}/gateway", repoGatewayHandler.PostRepoGateway)
+			if repoGatewayHandler != nil {
+				gatewayProvision := append([]func(http.Handler) http.Handler{}, vmProvision...)
+				gatewayProvision = append(gatewayProvision, gateSandboxes, repoSandboxHoursQuota)
+				r.With(gatewayProvision...).Post("/api/repos/{owner}/{repo}/gateway", repoGatewayHandler.PostRepoGateway)
+			}
 		})
 	}
 	if workspaceHandler != nil && workspaceHandler.Desktop != nil {
