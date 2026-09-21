@@ -59,7 +59,8 @@ describe("declaration provenance", () => {
     const entry = Graph.nodes(Graph.build(flow, {})).find((node) => node.ast._tag === "FlowCall")
 
     expect(entry?.declaredAt?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
-    expect(entry?.declaredAt?.line).toBe(33)
+    // The flow is constructed at this call, rather than at flowOf's definition.
+    expect(entry?.declaredAt?.line).toBe(58)
   })
 
   it.effect("keys the same declaration identically wherever it was written", () =>

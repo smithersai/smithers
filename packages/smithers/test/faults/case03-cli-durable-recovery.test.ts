@@ -113,11 +113,11 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
         database.close()
       }
     }
-    const waitFor = async (predicate: () => boolean, description: string) => {
-      const deadline = Date.now() + 45_000
+    const waitFor = async (predicate: () => boolean, description: string | (() => string), timeoutMs = 45_000) => {
+      const deadline = Date.now() + timeoutMs
       while (!predicate()) {
         if (Date.now() >= deadline) {
-          throw new Error(`${description}: ${readFileSync(receipt.logFile, "utf8")}`)
+          throw new Error(`${typeof description === "string" ? description : description()}: ${readFileSync(receipt.logFile, "utf8")}`)
         }
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
@@ -138,7 +138,8 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
       // the real process only once the actual engine wait is committed.
       await waitFor(
         () => engineRow()?.waiting_reason === "timer" && engineRow()?.status === "suspended",
-        "Agent did not persist a timer park"
+        () => `Agent did not persist a timer park; row=${JSON.stringify(engineRow())}; processes=${JSON.stringify(records())}`,
+        45_000
       )
       expect(isAlive(detachedPid!)).toBe(true)
       process.kill(detachedPid!, "SIGKILL")

@@ -20,6 +20,6 @@ describe("review markers", () => {
       const text = readFileSync(join(root, file), "utf8")
       return markers.filter((marker) => marker.test(text)).map((marker) => `${file}: ${marker.source}`)
     })
-    expect(found.filter((entry) => !entry.startsWith("test/ReviewMarkers.test.ts"))).toEqual([])
+    expect(found.filter((entry) => !entry.replaceAll("\\", "/").startsWith("test/ReviewMarkers.test.ts"))).toEqual([])
   })
 })

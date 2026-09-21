@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { act } from "react"
+import { createRoot } from "react-dom/client"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import type { Card } from "@smthrs/rpc/Cards"
 import { CardView } from "../ChatCards"
+import { FlowGraphSurface } from "../ViewModules"
 import { defaultPill } from "./CardFamily"
 import { CARD_FAMILIES, CARD_RENDERERS, pillStatus } from "./CardRenderers"
 
@@ -189,7 +193,7 @@ describe("CardRenderers", () => {
    * two ends together for the dispatcher listings a plan card reads its
    * schedules from.
    */
-  test("a binding the shell was given reaches the body: the plan card sees the dispatcher listings", () => {
+  test("a binding the shell was given reaches the body: the plan card sees the dispatcher listings", async () => {
     const plan: Card = {
       ...base,
       kind: "flow-plan",
@@ -213,9 +217,23 @@ describe("CardRenderers", () => {
         webhooks: []
       }
     }
-    /* The plan draws a canvas, so the schedule is a node on it, not a panel row. */
-    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} triggerCatalogs={[dispatcher]} />))
-      .toContain("data-node=\"trigger:nightly\"")
-    expect(renderToStaticMarkup(<CardView card={plan} {...handlers} />)).not.toContain("trigger:nightly")
+    /* The canvas loads asynchronously; exercise the mounted card that receives the shell's binding. */
+    GlobalRegistrator.register()
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    await FlowGraphSurface.preload()
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    try {
+      await act(async () => root.render(<CardView card={plan} {...handlers} triggerCatalogs={[dispatcher]} />))
+      expect(host.querySelector('[data-node="trigger:nightly"]')).not.toBeNull()
+      await act(async () => root.render(<CardView card={plan} {...handlers} />))
+      expect(host.querySelector('[data-node="trigger:nightly"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
+      await GlobalRegistrator.unregister()
+    }
   })
 })

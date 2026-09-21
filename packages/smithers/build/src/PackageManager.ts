@@ -441,10 +441,15 @@ const failureMessage = (cause: unknown): string => {
   if ((typeof cause !== "object" && typeof cause !== "function") || cause === null) return "unknown failure"
   try {
     const descriptor = Object.getOwnPropertyDescriptor(cause, "message")
-    return descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string" &&
-        descriptor.value !== ""
-      ? descriptor.value
-      : "unknown failure"
+    if (descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string" &&
+      descriptor.value !== "") return descriptor.value
+    // Platform errors may derive `message` from their prototype. They are
+    // real Errors, but have no own message descriptor, so the previous path
+    // reported only "unknown failure" for a failed Windows child process.
+    if (cause instanceof Error && typeof cause.message === "string" && cause.message !== "") {
+      return cause.message.slice(0, 2_048)
+    }
+    return "unknown failure"
   } catch {
     return "unknown failure"
   }

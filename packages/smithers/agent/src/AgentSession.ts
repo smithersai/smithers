@@ -1914,6 +1914,7 @@ export const make = (
     const seats = yield* SeatResolver
     const agent = yield* Agent
     const engineRuns = yield* RunStore.RunStore
+    const engineState = yield* DurableEngineState.DurableEngineState
     const scope = yield* Effect.scope
     const services = yield* Effect.context<Services>()
 
@@ -2914,8 +2915,15 @@ export const make = (
             pending === undefined ||
             !(yield* hostsPark(payload.runId, { _tag: "delegated", requestedAtMs: pending.requestedAtMs }))
           ) {
+            // A trampoline poll may re-enter a parked timer before its durable
+            // deadline. Keep the timer classification so the host still sees
+            // the real wake; only the clock completion records a delegation.
+            const clocks = controlRun.status === "parked"
+              ? yield* engineState.pendingClocks({ executionId: payload.runId })
+              : []
             yield* FlowRuntime.annotateWaiting({
-              reason: controlRun.status === "waiting-approval" ? "approval" : "event"
+              reason: controlRun.status === "waiting-approval" ? "approval" : clocks.length > 0 ? "timer" : "event",
+              ...(clocks.length > 0 ? { wakeAt: Math.min(...clocks.map((clock) => clock.dueAtMs)) } : {})
             })
             return yield* Flow.suspend(instance)
           }

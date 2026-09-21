@@ -6,6 +6,7 @@ import * as Fiber from "effect/Fiber"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import * as ArtifactBackupLease from "../src/ArtifactBackupLease.ts"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
 import * as ArtifactSweep from "../src/ArtifactSweep.ts"
@@ -20,7 +21,7 @@ const launch = (
   mode: "backup-hold" | "freshen-hold" | "lock-hold",
   directory: string
 ): ChildProcessWithoutNullStreams =>
-  spawn(process.execPath, ["--experimental-strip-types", fixture.pathname, mode, directory, digest], {
+  spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(fixture), mode, directory, digest], {
     stdio: ["pipe", "pipe", "pipe"]
   })
 

@@ -29,7 +29,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { contrastRatioOf, type Rgb } from "../src/contrastRatio.ts";
 import { rgbChannels } from "../src/rgbChannels.ts";
 import { mixChannels, mixColors } from "../src/mixColors.ts";
@@ -81,7 +81,7 @@ function opaque(value: string | null | undefined, fallback: string): string {
 
 async function load(id: string): Promise<UpstreamTheme> {
   const modulePath = require.resolve(`@shikijs/themes/${id}`);
-  return (await import(modulePath)).default as UpstreamTheme;
+  return (await import(pathToFileURL(modulePath).href)).default as UpstreamTheme;
 }
 
 function terminal(theme: UpstreamTheme, bg: string, text: string, semantic: Record<string, string>) {

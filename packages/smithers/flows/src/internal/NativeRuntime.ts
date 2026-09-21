@@ -42,6 +42,7 @@ export interface HostOptions {
     readonly hostId: string
   }
   readonly isAlive?: Ownership.LivenessCheck | undefined
+  readonly requestResume?: Runtime.Options["requestResume"]
   readonly rules?: GrantStore.MakeOptions["rules"]
   readonly signals?: ReadonlyArray<NodeJS.Signals> | undefined
   readonly shutdownTimeoutMs?: number | undefined
@@ -279,7 +280,8 @@ export const makeNative = (platform: NativePlatform) => {
       filename,
       workspaceRoot: options.workspaceRoot,
       owner: { hostId },
-      isAlive: configuredLiveness ?? HostLiveness.isAlive({ hostId })
+      isAlive: configuredLiveness ?? HostLiveness.isAlive({ hostId }),
+      requestResume: options.requestResume
     })
     return Object.freeze({
       ...validated,
@@ -376,6 +378,7 @@ export const makeNative = (platform: NativePlatform) => {
         owner: validated.owner,
         journalSource: `${validated.owner.hostId}-engine`,
         isAlive: validated.isAlive,
+        requestResume: validated.requestResume,
         // The same declaration `Runtime.layer` passes: the tree this host
         // read its flows out of, or nothing (D-068).
         sourceRevision: validated.sourceRevision
