@@ -154,6 +154,10 @@ func (c *Client) ListTreeFiles(storePath, changeID, prefix string) ([]repohost.C
 	return nil, ffiUnavailable()
 }
 
+func (c *Client) ListDirectory(storePath, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error) {
+	return nil, ffiUnavailable()
+}
+
 func (c *Client) GetConflicts(storePath, changeID string) ([]repohost.Conflict, error) {
 	return nil, ffiUnavailable()
 }

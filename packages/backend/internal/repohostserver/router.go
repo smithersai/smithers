@@ -1588,6 +1588,17 @@ func (s *Server) listFilesAtChange(w http.ResponseWriter, r *http.Request) error
 
 	unlock := s.locks.RLock(repoPath)
 	defer unlock()
+	if r.URL.Query().Get("depth") == "1" {
+		limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+		if err != nil || limit < 1 || limit > 1001 {
+			return &repohostffi.Error{Code: "bad_request", Message: "directory page limit must be between 1 and 1001"}
+		}
+		result, err := s.ffi.ListDirectory(repoPath, chi.URLParam(r, "change_id"), r.URL.Query().Get("prefix"), r.URL.Query().Get("after"), uint32(limit))
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, result)
+	}
 
 	result, err := s.ffi.ListTreeFiles(repoPath, chi.URLParam(r, "change_id"), strings.TrimSpace(r.URL.Query().Get("prefix")))
 	if err != nil {

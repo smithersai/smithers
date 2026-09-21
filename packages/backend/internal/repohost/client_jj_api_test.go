@@ -315,6 +315,22 @@ func TestClient_ListFilesAtChange_UsesRepoIDRouteAndPrefixQuery(t *testing.T) {
 	assert.Equal(t, ".smithers/workflows/build.tsx", files[0].Path)
 }
 
+func TestClient_ListDirectory_UsesBoundedQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/alice:demo/changes/abc/tree", r.URL.EscapedPath())
+		assert.Equal(t, "1", r.URL.Query().Get("depth"))
+		assert.Equal(t, "apps", r.URL.Query().Get("prefix"))
+		assert.Equal(t, "apps/app", r.URL.Query().Get("after"))
+		assert.Equal(t, "1000", r.URL.Query().Get("limit"))
+		_ = json.NewEncoder(w).Encode([]TreeEntry{{Path: "apps/cli", Kind: "dir"}})
+	}))
+	t.Cleanup(server.Close)
+	client := NewClient(&StaticStorageSetResolver{URL: server.URL}, "test-token")
+	entries, err := client.ListDirectory(context.Background(), "alice", "demo", "abc", "apps", "apps/app", 1000)
+	require.NoError(t, err)
+	assert.Equal(t, []TreeEntry{{Path: "apps/cli", Kind: "dir"}}, entries)
+}
+
 func TestClient_GetChangeConflicts_UsesRepoIDRoute(t *testing.T) {
 	t.Parallel()
 

@@ -18,10 +18,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 var repoNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
@@ -1363,6 +1363,140 @@ func (s *RepoService) resolveChangeRef(ctx context.Context, owner, repoName, ref
 	return ref, nil
 }
 
+// ListRepoContentsPage returns one bounded page of immediate directory entries.
+func immutableCommitSHA(ref string) bool {
+	if len(ref) != 40 && len(ref) != 64 {
+		return false
+	}
+	for i := 0; i < len(ref); i++ {
+		c := ref[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *RepoService) resolveContentsCommit(ctx context.Context, owner, repo, ref string) (string, error) {
+	if immutableCommitSHA(ref) {
+		return ref, nil
+	}
+	change := ref
+	found := false
+	commit := ""
+	err := s.walkBookmarks(ctx, owner, repo, func(bookmarks []repohost.Bookmark) bool {
+		for _, bookmark := range bookmarks {
+			if bookmark.Name == ref {
+				found = true
+				change = strings.TrimSpace(bookmark.TargetChangeID)
+				commit = strings.TrimSpace(bookmark.TargetCommitID)
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return "", errors.Internal("failed to resolve bookmark")
+	}
+	if commit != "" {
+		if !immutableCommitSHA(commit) {
+			return "", errors.Internal("invalid bookmark commit")
+		}
+		return commit, nil
+	}
+	if found && change == "" {
+		return "", errors.NotFound("content not found")
+	}
+	reader, ok := s.repoHost.(interface {
+		GetChange(context.Context, string, string, string) (repohost.Change, error)
+	})
+	if !ok {
+		return "", errors.Internal("commit resolution unavailable")
+	}
+	resolved, err := reader.GetChange(ctx, owner, repo, change)
+	if err != nil {
+		if isRepoHostStatus(err, 404) {
+			return "", errors.NotFound("content not found")
+		}
+		if isRepoHostStatus(err, 400) {
+			return "", errors.BadRequest("invalid content revision")
+		}
+		return "", errors.Internal("failed to resolve change commit")
+	}
+	if !immutableCommitSHA(resolved.CommitID) {
+		return "", errors.Internal("invalid change commit")
+	}
+	return resolved.CommitID, nil
+}
+
+func (s *RepoService) ListRepoContentsPage(ctx context.Context, viewer *db.User, owner, repo, ref, dirPath, after string, limit int) ([]RepoContent, string, string, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, "", "", errors.BadRequest("directory page limit must be between 1 and 1000")
+	}
+	repository, err := s.resolveReadableRepo(ctx, viewer, owner, repo)
+	if err != nil {
+		return nil, "", "", err
+	}
+	changeRef := strings.TrimSpace(ref)
+	if changeRef == "" {
+		changeRef = repository.DefaultBookmark
+	}
+	trimmedOwner := strings.TrimSpace(owner)
+	changeRef, err = s.resolveContentsCommit(ctx, trimmedOwner, repository.Name, changeRef)
+	if err != nil {
+		return nil, "", "", err
+	}
+	prefix := strings.Trim(strings.TrimSpace(dirPath), "/")
+	if after != "" {
+		name := after
+		if prefix != "" {
+			if !strings.HasPrefix(after, prefix+"/") {
+				return nil, "", "", errors.BadRequest("invalid directory cursor")
+			}
+			name = strings.TrimPrefix(after, prefix+"/")
+		}
+		if name == "" || strings.Contains(name, "/") {
+			return nil, "", "", errors.BadRequest("invalid directory cursor")
+		}
+	}
+	directoryHost, ok := s.repoHost.(interface {
+		ListDirectory(context.Context, string, string, string, string, string, int) ([]repohost.TreeEntry, error)
+	})
+	if !ok {
+		return nil, "", "", errors.Internal("directory paging unavailable")
+	}
+	page, err := directoryHost.ListDirectory(ctx, trimmedOwner, repository.Name, changeRef, prefix, after, limit+1)
+	if err != nil {
+		if isRepoHostStatus(err, 404) {
+			return nil, "", "", errors.NotFound("content not found")
+		}
+		if isRepoHostStatus(err, 400) {
+			return nil, "", "", errors.BadRequest("invalid directory page")
+		}
+		return nil, "", "", errors.Internal("failed to list repository contents")
+	}
+	if len(page) > limit+1 {
+		return nil, "", "", errors.Internal("oversized directory page")
+	}
+	hasMore := len(page) > limit
+	if hasMore {
+		page = page[:limit]
+	}
+	entries := make([]RepoContent, 0, len(page))
+	for _, entry := range page {
+		name := strings.TrimPrefix(entry.Path, prefix+"/")
+		if prefix == "" {
+			name = entry.Path
+		}
+		entries = append(entries, RepoContent{Name: name, Path: entry.Path, Type: entry.Kind})
+	}
+	next := ""
+	if hasMore {
+		next = page[len(page)-1].Path
+	}
+	return entries, next, changeRef, nil
+}
+
 // ListRepoContents returns directory entries for the given path (or root if empty).
 func (s *RepoService) ListRepoContents(ctx context.Context, viewer *db.User, owner, repo, ref, dirPath string) ([]RepoContent, error) {
 	repository, err := s.resolveReadableRepo(ctx, viewer, owner, repo)
@@ -1381,7 +1515,37 @@ func (s *RepoService) ListRepoContents(ctx context.Context, viewer *db.User, own
 		return nil, err
 	}
 
-	prefix := strings.TrimSpace(dirPath)
+	prefix := strings.Trim(strings.TrimSpace(dirPath), "/")
+	if directoryHost, ok := s.repoHost.(interface {
+		ListDirectory(context.Context, string, string, string, string, string, int) ([]repohost.TreeEntry, error)
+	}); ok {
+		entries := make([]RepoContent, 0)
+		after := ""
+		for {
+			page, err := directoryHost.ListDirectory(ctx, trimmedOwner, repository.Name, changeRef, prefix, after, 1000)
+			if err != nil {
+				if isRepoHostStatus(err, 404) {
+					return nil, errors.NotFound("content not found")
+				}
+				return nil, errors.Internal("failed to list repository contents")
+			}
+			for _, entry := range page {
+				name := strings.TrimPrefix(entry.Path, strings.TrimSuffix(prefix, "/")+"/")
+				if prefix == "" {
+					name = entry.Path
+				}
+				entries = append(entries, RepoContent{Name: name, Path: entry.Path, Type: entry.Kind})
+			}
+			if len(page) < 1000 {
+				return entries, nil
+			}
+			next := page[len(page)-1].Path
+			if next <= after {
+				return nil, errors.Internal("invalid repository directory cursor")
+			}
+			after = next
+		}
+	}
 	files, err := s.repoHost.ListFilesAtChange(ctx, trimmedOwner, repository.Name, changeRef, prefix)
 	if err != nil {
 		if isRepoHostStatus(err, 404) {

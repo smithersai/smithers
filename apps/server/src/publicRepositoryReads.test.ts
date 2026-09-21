@@ -65,6 +65,14 @@ describe("anonymous repository reads", () => {
     expect(seen[0]?.headers.has("cookie")).toBe(false)
   })
 
+  test("forwards directory cursors and exposes the next page header", async () => {
+    const { read, seen } = reader(() => Response.json([{ name: "README.md", type: "file" }], { headers: { "X-Next-Cursor": "README.md", "X-Contents-Commit": "a".repeat(40) } }))
+    const response = await read(new URL("https://app.test/api/repos/smithersai/smithers/contents?after=apps%2Fcli"), "https://cloud.test")
+    expect(seen[0]?.url).toBe("https://cloud.test/api/repos/smithers-canary/smithers/contents?after=apps%2Fcli")
+    expect(response.headers.get("X-Next-Cursor")).toBe("README.md")
+    expect(response.headers.get("X-Contents-Commit")).toBe("a".repeat(40))
+  })
+
   test("the upstream request asks for a manual redirect and a 3xx answer is unavailable", async () => {
     // workerd rejects redirect: "error" before sending anything, which made
     // every production public read a 502; "manual" is the accepted mode.

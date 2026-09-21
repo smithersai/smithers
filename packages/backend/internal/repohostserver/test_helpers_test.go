@@ -44,6 +44,7 @@ type mockFFI struct {
 	getRevisionDiffFn        func(storePath, fromCommitID, toCommitID, path string) (repohost.ChangeDiff, error)
 	getFilesFn               func(storePath, changeID string) ([]repohost.ChangeFile, error)
 	listTreeFilesFn          func(storePath, changeID, prefix string) ([]repohost.ChangeFile, error)
+	listDirectoryFn          func(storePath, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error)
 	getConflictsFn           func(storePath, changeID string) ([]repohost.Conflict, error)
 	landChangeFn             func(storePath, changeID, targetBookmark string) (repohost.LandResult, error)
 	getFileContentFn         func(storePath, changeID, path string) (repohost.FileContent, error)
@@ -275,6 +276,13 @@ func (m *mockFFI) ListTreeFiles(storePath, changeID, prefix string) ([]repohost.
 		return m.listTreeFilesFn(storePath, changeID, prefix)
 	}
 	return []repohost.ChangeFile{}, nil
+}
+
+func (m *mockFFI) ListDirectory(storePath, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error) {
+	if m.listDirectoryFn != nil {
+		return m.listDirectoryFn(storePath, changeID, prefix, after, limit)
+	}
+	return []repohost.TreeEntry{}, nil
 }
 
 func (m *mockFFI) GetConflicts(storePath, changeID string) ([]repohost.Conflict, error) {

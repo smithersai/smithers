@@ -22,6 +22,7 @@ import type { AppStore } from "../AppStore"
 import { isPracticeRepo,practiceFilePaths } from "../practice/PracticeRepository"
 import { resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
+import { readContentsPages } from "./ContentsPages"
 import { errorMessage,errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
 import { practiceReadFile } from "./tutorial2-file_open"
 
@@ -450,7 +451,10 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       } else {
         let response: Response
         try {
-          response = await ctx.http(contentsUrl(repo, normalized))
+          const answer = await readContentsPages(ctx.http, contentsUrl(repo, normalized))
+          if (answer.kind === "error") return answer.error
+          response = answer.response
+          body = answer.body
         } catch (error) {
           return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
         }
@@ -460,7 +464,6 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         if (!response.ok) {
           return readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`)
         }
-        body = await response.json().catch(() => null)
       }
       if (!Array.isArray(body)) {
         // The contents route answers a record (content/encoding) for a file path.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -397,6 +398,34 @@ func (h *RepoHandler) ReplaceRepoTopics(w http.ResponseWriter, r *http.Request) 
 // GetRepoContents handles GET /api/repos/{owner}/{repo}/contents and
 // GET /api/repos/{owner}/{repo}/contents/{path:.*}.
 // An empty path returns the root directory listing as an array.
+func (h *RepoHandler) listContentsPage(w http.ResponseWriter, r *http.Request, owner, repo, ref, path string) ([]services.RepoContent, error) {
+	limit := 1000
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 1000 {
+			return nil, errors.BadRequest("directory page limit must be between 1 and 1000")
+		}
+		limit = parsed
+	}
+	after := r.URL.Query().Get("after")
+	if verr := validateContentPath(after); verr != nil {
+		return nil, verr
+	}
+	if pager, ok := h.Service.(interface {
+		ListRepoContentsPage(context.Context, *db.User, string, string, string, string, string, int) ([]services.RepoContent, string, string, error)
+	}); ok {
+		entries, next, commit, err := pager.ListRepoContentsPage(r.Context(), middleware.UserFromContext(r.Context()), owner, repo, ref, path, after, limit)
+		if err == nil {
+			w.Header().Set("X-Contents-Commit", commit)
+		}
+		if next != "" {
+			w.Header().Set("X-Next-Cursor", next)
+		}
+		return entries, err
+	}
+	return h.Service.ListRepoContents(r.Context(), middleware.UserFromContext(r.Context()), owner, repo, ref, path)
+}
+
 func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 	owner, repoName, err := repoOwnerAndName(r)
 	if err != nil {
@@ -423,7 +452,7 @@ func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if repoPath == "" {
-		entries, err := h.Service.ListRepoContents(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName, ref, "")
+		entries, err := h.listContentsPage(w, r, owner, repoName, ref, "")
 		if err != nil {
 			writeRouteError(w, r, err)
 			return
@@ -443,12 +472,12 @@ func (h *RepoHandler) GetRepoContents(w http.ResponseWriter, r *http.Request) {
 		writeRouteError(w, r, err)
 		return
 	}
-	entries, listErr := h.Service.ListRepoContents(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName, ref, repoPath)
+	entries, listErr := h.listContentsPage(w, r, owner, repoName, ref, repoPath)
 	if listErr != nil {
 		writeRouteError(w, r, listErr)
 		return
 	}
-	if len(entries) == 0 {
+	if len(entries) == 0 && r.URL.Query().Get("after") == "" {
 		writeRouteError(w, r, err)
 		return
 	}

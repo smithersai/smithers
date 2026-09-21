@@ -38,6 +38,7 @@ type FFIClient interface {
 	GetRevisionDiff(storePath, fromCommitID, toCommitID, path string) (repohost.ChangeDiff, error)
 	GetFiles(storePath, changeID string) ([]repohost.ChangeFile, error)
 	ListTreeFiles(storePath, changeID, prefix string) ([]repohost.ChangeFile, error)
+	ListDirectory(storePath, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error)
 	GetConflicts(storePath, changeID string) ([]repohost.Conflict, error)
 	LandChanges(storePath, requestJSON string) (repohost.LandResult, error)
 	LandChange(storePath, changeID, targetBookmark string) (repohost.LandResult, error)

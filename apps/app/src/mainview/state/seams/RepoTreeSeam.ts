@@ -24,6 +24,7 @@
 import { isRecord } from "@smthrs/canonical/Record"
 import type { RepoTreeEntry, WorkingCopy } from "../AppState"
 import { createCloudClient } from "./CloudClient"
+import { readContentsPages } from "./ContentsPages"
 import { encodeRepoPath, parseEntry, sortEntries, unsafePath } from "./FilesSeam"
 import { readErrorMessage, unreachableSentence } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
@@ -106,8 +107,15 @@ export const createRepoTreeSeam = (ctx: SeamContext): RepoTreeSeam => {
   const loadSharedDirectory = async (copy: WorkingCopy, path: string): Promise<void> => {
     const label = path === "" ? "/" : path
     let response: Response
+    let body: unknown
     try {
-      response = await ctx.http(`${ctx.baseUrl}${sharedContentsPath(copy.repoId, path)}`)
+      const answer = await readContentsPages(ctx.http, `${ctx.baseUrl}${sharedContentsPath(copy.repoId, path)}`)
+      if (answer.kind === "error") {
+        failed(copy.id, path, answer.error)
+        return
+      }
+      response = answer.response
+      body = answer.body
     } catch (error) {
       failed(copy.id, path, unreachableSentence(`the backend to list ${label} in ${copy.repoId}`, error))
       return
@@ -117,7 +125,6 @@ export const createRepoTreeSeam = (ctx: SeamContext): RepoTreeSeam => {
       failed(copy.id, path, await readErrorMessage(response, fallback))
       return
     }
-    const body: unknown = await response.json().catch(() => null)
     if (!Array.isArray(body)) {
       failed(
         copy.id,

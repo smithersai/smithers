@@ -196,6 +196,26 @@ type ChangeFile struct {
 	Path string `json:"path"`
 }
 
+type TreeEntry struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+// ListDirectory returns at most limit immediate children after the path cursor.
+func (c *Client) ListDirectory(ctx context.Context, owner, repo, changeID, prefix, after string, limit int) ([]TreeEntry, error) {
+	baseURL, err := c.resolver.ResolveURL(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("resolve storage set url: %w", err)
+	}
+	query := url.Values{"depth": {"1"}, "limit": {strconv.Itoa(limit)}, "prefix": {prefix}, "after": {after}}
+	endpoint := repoByIDEndpoint(baseURL, owner, repo) + "/changes/" + url.PathEscape(changeID) + "/tree?" + query.Encode()
+	var out []TreeEntry
+	if err := c.doJSON(ctx, http.MethodGet, endpoint, nil, http.StatusOK, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Conflict describes a conflict path/type.
 type Conflict struct {
 	FilePath         string `json:"file_path"`

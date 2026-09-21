@@ -81,6 +81,7 @@ const boxAnswers: Record<string, () => Response> = {
  * `content`/`encoding` for a file, the mirror's message on a refusal.
  */
 const SHARED_CONTENTS = "/api/repos/smithersai/smithers/contents"
+const PAGE_COMMIT = "a".repeat(40)
 const sharedAnswers: Record<string, () => Response> = {
   /*
    * The mirror answers a git tree's own byte order: uppercase before
@@ -117,7 +118,15 @@ const treeBackend = () => {
       const path = parsed.pathname
       if (path === SHARED_CONTENTS || path.startsWith(`${SHARED_CONTENTS}/`)) {
         // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes; not this seam's read.
-        if (!path.endsWith("/contents/.smithers/factory.json")) sharedRequests.push(path)
+        if (!path.endsWith("/contents/.smithers/factory.json")) sharedRequests.push(`${path}${parsed.search}`)
+        if (path === `${SHARED_CONTENTS}/paged`) {
+          return parsed.searchParams.get("after") === "paged/first"
+            ? new Response(JSON.stringify([{ name: "second", path: "paged/second", type: "file" }]), { headers: { "X-Contents-Commit": PAGE_COMMIT } })
+            : new Response(JSON.stringify([{ name: "first", path: "paged/first", type: "file" }]), { status: 200, headers: { "X-Next-Cursor": "paged/first", "X-Contents-Commit": PAGE_COMMIT, "content-type": "application/json" } })
+        }
+        if (path === `${SHARED_CONTENTS}/oversized`) {
+          return json(200, Array.from({ length: 10_001 }, (_, index) => ({ name: `file-${index}`, type: "file" })))
+        }
         const at = decodeURIComponent(path.slice(SHARED_CONTENTS.length).replace(/^\//, ""))
         const answer = sharedAnswers[at]
         return answer === undefined ? json(404, { message: `smithersai/smithers has no ${at}` }) : answer()
@@ -333,6 +342,27 @@ describe("repo tree seam: the shared read-only copy reads the mirror's contents 
     expect(scope.store.collections.workingCopies.get(SHARED)).toMatchObject({ kind: "shared", access: "read" })
     return scope
   }
+
+  test("loads every directory page before publishing the tree row", async () => {
+    const { store, controller, sharedRequests } = await loadShared()
+    expect((await controller.commands.run("repo.tree", `${SHARED}#paged`)).status).toBe("executed")
+    expect(sharedRequests).toEqual([
+      `${SHARED_CONTENTS}/paged`,
+      `${SHARED_CONTENTS}/paged?ref=${PAGE_COMMIT}&after=paged%2Ffirst`
+    ])
+    expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "paged"))?.entries).toEqual([
+      { name: "first", kind: "file" },
+      { name: "second", kind: "file" }
+    ])
+  })
+
+  test("fails the tree row rather than presenting a capped directory as complete", async () => {
+    const { store, controller } = await loadShared()
+    expect((await controller.commands.run("repo.tree", `${SHARED}#oversized`)).status).toBe("executed")
+    expect(store.collections.repoTree.get(repoTreeRowId(SHARED, "oversized"))).toMatchObject({
+      state: "failed", entries: [], error: "Directory listing exceeds 10,000 entries."
+    })
+  })
 
   test("/repo.tree <sharedCopy> lists the root through GET .../contents and maps the mirror's rows to the tree's rows, nothing filtered", async () => {
     const { store, controller, requests, boxRequests, sharedRequests } = await loadShared()

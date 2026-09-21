@@ -1340,6 +1340,42 @@ func TestListFilesAtChangeReturnsTreeJSON(t *testing.T) {
 	})
 }
 
+func TestListDirectoryRejectsInvalidPageLimit(t *testing.T) {
+	srv := newTestServerWithMock(t, &mockFFI{})
+	for _, limit := range []string{"0", "1002", "oops"} {
+		req := httptest.NewRequest(http.MethodGet, "/repos/alice%3Ademo/changes/change/tree?depth=1&limit="+limit, nil)
+		req.Header.Set("Authorization", validAuth())
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("limit %s: got %d, body %s", limit, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestListDirectoryReturnsImmediateChildren(t *testing.T) {
+	srv := newTestServerWithMock(t, &mockFFI{listDirectoryFn: func(_, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error) {
+		if changeID != "change" || prefix != "apps" || after != "apps/app" || limit != 1000 {
+			t.Fatalf("wrong directory request: %s %s %s %d", changeID, prefix, after, limit)
+		}
+		return []repohost.TreeEntry{{Path: "apps/cli", Kind: "dir"}}, nil
+	}})
+	req := httptest.NewRequest(http.MethodGet, "/repos/alice%3Ademo/changes/change/tree?depth=1&prefix=apps&after=apps%2Fapp&limit=1000", nil)
+	req.Header.Set("Authorization", validAuth())
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", w.Code, w.Body.String())
+	}
+	var entries []repohost.TreeEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Path != "apps/cli" || entries[0].Kind != "dir" {
+		t.Fatalf("unexpected entries: %+v", entries)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import { repoKeyOf } from "../AppState"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { resolveFileTarget } from "./FilesSeam"
+const PAGE_COMMIT = "a".repeat(40)
 
 /*
  * The repo files seam (FilesSeam.ts) through the real command path: /files.list
@@ -162,6 +163,14 @@ const filesBackend = () => {
       // The repository-flows seam reads .smithers/factory.json in the background whenever the target repository changes (the slash leaves); it is not this seam's request.
       if (url.endsWith("/contents/.smithers/factory.json")) return json(404, { status: "error", message: "no projection" })
       requests.push({ method: "GET", url })
+      if (url === "/api/repos/will/flows/contents/oversized") {
+        return json(200, Array.from({ length: 10_001 }, (_, index) => ({ name: `file-${index}`, type: "file" })))
+      }
+      if (url.startsWith("/api/repos/will/flows/contents/paged")) {
+        return url.includes("after=paged%2Ffirst")
+          ? new Response(JSON.stringify([{ name: "second", path: "paged/second", type: "file" }]), { headers: { "X-Contents-Commit": PAGE_COMMIT } })
+          : new Response(JSON.stringify([{ name: "first", path: "paged/first", type: "file" }]), { status: 200, headers: { "X-Next-Cursor": "paged/first", "X-Contents-Commit": PAGE_COMMIT, "content-type": "application/json" } })
+      }
       if (url.includes("net.txt")) throw new Error("socket hang up")
       /*
        * Addressed by path: a read AT a revision asks the same route with
@@ -236,6 +245,28 @@ const fileCard = (store: AppStore, id: string) => {
 }
 
 describe("files seam — files.list", () => {
+  test("follows directory cursors before showing a file-list card", async () => {
+    const { store, controller, requests } = await freshController()
+    await ready(store)
+    expect((await controller.commands.run("files.list", "paged")).status).toBe("executed")
+    expect(requests.map((request) => request.url)).toEqual([
+      "/api/repos/will/flows/contents/paged",
+      `/api/repos/will/flows/contents/paged?ref=${PAGE_COMMIT}&after=paged%2Ffirst`
+    ])
+    expect(listCard(store, "files-will/flows-paged")?.payload.entries).toEqual([
+      { name: "first", kind: "file" },
+      { name: "second", kind: "file" }
+    ])
+  })
+
+  test("does not publish a partial card when the directory exceeds the cap", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    const outcome = await controller.commands.run("files.list", "oversized")
+    expect(outcome.status).toBe("failed")
+    expect(JSON.stringify(outcome)).toContain("Directory listing exceeds 10,000 entries.")
+    expect(listCard(store, "files-will/flows-oversized")).toBeUndefined()
+  })
   test("rejects dot-segment and mixed-separator traversal before any request", async () => {
     const { store, controller, requests } = await freshController()
     await ready(store)

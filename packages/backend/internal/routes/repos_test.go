@@ -32,6 +32,34 @@ type mockRepoRouteService struct {
 	listContentsFn  func(ctx context.Context, viewer *db.User, owner, repo, ref, dirPath string) ([]services.RepoContent, error)
 }
 
+type pagedRepoRouteService struct{ mockRepoRouteService }
+
+func (pagedRepoRouteService) ListRepoContentsPage(_ context.Context, _ *db.User, _, _, _, path, after string, limit int) ([]services.RepoContent, string, string, error) {
+	if path != "" || after != "README.md" || limit != 1 {
+		return nil, "", "", pkgerrors.BadRequest("unexpected page query")
+	}
+	return []services.RepoContent{{Name: "apps", Path: "apps", Type: "dir"}}, "apps", "0123456789012345678901234567890123456789", nil
+}
+
+func TestRepoHandler_GetRepoContentsPage(t *testing.T) {
+	h := RepoHandler{Service: pagedRepoRouteService{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/contents?limit=1&after=README.md", nil)
+	req = withRouteParams(req, map[string]string{"owner": "alice", "repo": "demo"})
+	rec := httptest.NewRecorder()
+	h.GetRepoContents(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "apps", rec.Header().Get("X-Next-Cursor"))
+	assert.Equal(t, "0123456789012345678901234567890123456789", rec.Header().Get("X-Contents-Commit"))
+	var entries []services.RepoContent
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &entries))
+	assert.Equal(t, "apps", entries[0].Path)
+	invalid := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/contents?limit=1001", nil)
+	invalid = withRouteParams(invalid, map[string]string{"owner": "alice", "repo": "demo"})
+	bad := httptest.NewRecorder()
+	h.GetRepoContents(bad, invalid)
+	assert.Equal(t, http.StatusBadRequest, bad.Code)
+}
+
 func (m mockRepoRouteService) CreateRepo(ctx context.Context, user *db.User, name, description string, isPublic bool, defaultBookmark string, autoInit bool) (db.Repository, error) {
 	if m.createRepoFn != nil {
 		return m.createRepoFn(ctx, user, name, description, isPublic, defaultBookmark, autoInit)

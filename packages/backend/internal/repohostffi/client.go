@@ -32,6 +32,7 @@ typedef char* (*smithers_get_diff_fn)(const char*, const char*);
 typedef char* (*smithers_get_revision_diff_fn)(const char*, const char*, const char*, const char*);
 typedef char* (*smithers_get_files_fn)(const char*, const char*);
 typedef char* (*smithers_list_tree_files_fn)(const char*, const char*, const char*);
+typedef char* (*smithers_list_directory_fn)(const char*, const char*, const char*, const char*, uint32_t);
 typedef char* (*smithers_get_conflicts_fn)(const char*, const char*);
 typedef char* (*smithers_land_changes_fn)(const char*, const char*);
 typedef char* (*smithers_land_change_fn)(const char*, const char*, const char*);
@@ -230,6 +231,11 @@ static char *smithers_call_get_files(const char *store_path, const char *change_
 static char *smithers_call_list_tree_files(const char *store_path, const char *change_id, const char *prefix) {
 	smithers_list_tree_files_fn fn = (smithers_list_tree_files_fn)smithers_lookup_symbol("smithers_list_tree_files");
 	return fn == NULL ? NULL : fn(store_path, change_id, prefix);
+}
+
+static char *smithers_call_list_directory(const char *store_path, const char *change_id, const char *prefix, const char *after, uint32_t limit) {
+	smithers_list_directory_fn fn = (smithers_list_directory_fn)smithers_lookup_symbol("smithers_list_directory");
+	return fn == NULL ? NULL : fn(store_path, change_id, prefix, after, limit);
 }
 
 static char *smithers_call_get_conflicts(const char *store_path, const char *change_id) {
@@ -766,6 +772,18 @@ func (c *Client) ListTreeFiles(storePath, changeID, prefix string) ([]repohost.C
 	}
 
 	return decode[[]repohost.ChangeFile](c, C.smithers_call_list_tree_files(storePathC, changeIDC, prefixC))
+}
+
+func (c *Client) ListDirectory(storePath, changeID, prefix, after string, limit uint32) ([]repohost.TreeEntry, error) {
+	if err := rejectNUL(storePath, changeID, prefix, after); err != nil {
+		return nil, err
+	}
+	storeC, changeC, prefixC, afterC := cString(storePath), cString(changeID), cString(prefix), cString(after)
+	defer freeCString(storeC)
+	defer freeCString(changeC)
+	defer freeCString(prefixC)
+	defer freeCString(afterC)
+	return decode[[]repohost.TreeEntry](c, C.smithers_call_list_directory(storeC, changeC, prefixC, afterC, C.uint32_t(limit)))
 }
 
 func (c *Client) GetConflicts(storePath, changeID string) ([]repohost.Conflict, error) {

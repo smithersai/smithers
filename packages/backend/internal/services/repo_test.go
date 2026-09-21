@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type repoDispatchCall struct {
@@ -328,6 +328,33 @@ func (m *mockRepoQuerier) AddTeamRepo(ctx context.Context, arg db.AddTeamRepoPar
 }
 
 // mockRepoHostClient implements RepoHostClient for testing.
+type pagedRepoHostClient struct {
+	*mockRepoHostClient
+	pages        map[string][]repohost.TreeEntry
+	seenChanges  []string
+	changeCommit string
+	changeError  error
+}
+
+func (m *pagedRepoHostClient) GetChange(_ context.Context, _, _, _ string) (repohost.Change, error) {
+	return repohost.Change{CommitID: m.changeCommit}, m.changeError
+}
+
+func (m *pagedRepoHostClient) ListDirectory(_ context.Context, _, _, change, prefix, after string, limit int) ([]repohost.TreeEntry, error) {
+	m.seenChanges = append(m.seenChanges, change)
+	entries := m.pages[prefix]
+	page := make([]repohost.TreeEntry, 0, limit)
+	for _, entry := range entries {
+		if entry.Path > after {
+			page = append(page, entry)
+			if len(page) == limit {
+				break
+			}
+		}
+	}
+	return page, nil
+}
+
 type mockRepoHostClient struct {
 	initRepoFn           func(ctx context.Context, owner, repo, defaultBookmark string, autoInit bool) error
 	setDefaultBookmarkFn func(ctx context.Context, owner, repo, name string) error
@@ -2288,6 +2315,100 @@ func TestRepoService_ListRepoContents(t *testing.T) {
 		require.Error(t, err)
 		assert.Equal(t, http.StatusNotFound, apiStatus(t, err))
 	})
+}
+
+func TestRepoService_ListRepoContentsPaged(t *testing.T) {
+	repository := testRepo(func(r *db.Repository) { r.IsPublic = true; r.DefaultBookmark = "main" })
+	q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+		return repository, nil
+	}}
+	entries := make([]repohost.TreeEntry, 10001)
+	for i := range entries {
+		entries[i] = repohost.TreeEntry{Path: fmt.Sprintf("file-%05d", i), Kind: "file"}
+	}
+	rh := &pagedRepoHostClient{mockRepoHostClient: &mockRepoHostClient{listBookmarksFn: func(context.Context, string, string, string, int) ([]repohost.Bookmark, string, error) {
+		return []repohost.Bookmark{{Name: "main", TargetChangeID: "change", TargetCommitID: "0123456789012345678901234567890123456789"}}, "", nil
+	}}, pages: map[string][]repohost.TreeEntry{"": entries, "apps": {{Path: "apps/app", Kind: "dir"}, {Path: "apps/cli", Kind: "dir"}}}}
+	svc := NewRepoService(q, rh, "s1")
+	root, err := svc.ListRepoContents(context.Background(), nil, "alice", "demo", "", "")
+	require.NoError(t, err)
+	require.Len(t, root, 10001)
+	assert.Equal(t, "file-10000", root[len(root)-1].Name)
+	dir, err := svc.ListRepoContents(context.Background(), nil, "alice", "demo", "", "apps")
+	require.NoError(t, err)
+	assert.Equal(t, []RepoContent{{Name: "app", Path: "apps/app", Type: "dir"}, {Name: "cli", Path: "apps/cli", Type: "dir"}}, dir)
+	first, cursor, commit, err := svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "", 1000)
+	require.NoError(t, err)
+	assert.Equal(t, "0123456789012345678901234567890123456789", commit)
+	require.Len(t, first, 1000)
+	assert.Equal(t, "file-00999", cursor)
+	last, next, _, err := svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "file-09999", 1000)
+	require.NoError(t, err)
+	assert.Equal(t, []RepoContent{{Name: "file-10000", Path: "file-10000", Type: "file"}}, last)
+	assert.Empty(t, next)
+	rh.pages[""] = entries[:1000]
+	exact, terminal, _, err := svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "", 1000)
+	require.NoError(t, err)
+	require.Len(t, exact, 1000)
+	assert.Empty(t, terminal, "exactly 1000 children are a terminal page")
+	_, _, _, err = svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "apps", "app/file", 1000)
+	require.Error(t, err, "cursor must name an immediate child of the requested directory")
+	_, _, _, err = svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "", 1001)
+	require.Error(t, err)
+}
+
+func TestRepoService_ListRepoContentsPageRevisionRefusals(t *testing.T) {
+	repository := testRepo(func(r *db.Repository) { r.IsPublic = true; r.DefaultBookmark = "main" })
+	q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+		return repository, nil
+	}}
+	for _, status := range []int{http.StatusNotFound, http.StatusBadRequest} {
+		rh := &pagedRepoHostClient{mockRepoHostClient: &mockRepoHostClient{}, changeError: &repohost.StatusError{StatusCode: status, Message: "invalid revision"}}
+		_, _, _, err := NewRepoService(q, rh, "s1").ListRepoContentsPage(context.Background(), nil, "alice", "demo", "missing", "", "", 1000)
+		require.Error(t, err)
+		assert.Equal(t, status, apiStatus(t, err))
+	}
+}
+
+func TestRepoService_ListRepoContentsPagePinsMovingBookmark(t *testing.T) {
+	repository := testRepo(func(r *db.Repository) { r.IsPublic = true; r.DefaultBookmark = "main" })
+	q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+		return repository, nil
+	}}
+	firstCommit, secondCommit := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	bookmarkReads := 0
+	rh := &pagedRepoHostClient{mockRepoHostClient: &mockRepoHostClient{listBookmarksFn: func(context.Context, string, string, string, int) ([]repohost.Bookmark, string, error) {
+		bookmarkReads++
+		commit := firstCommit
+		if bookmarkReads > 1 {
+			commit = secondCommit
+		}
+		return []repohost.Bookmark{{Name: "main", TargetChangeID: "moving", TargetCommitID: commit}}, "", nil
+	}}, pages: map[string][]repohost.TreeEntry{"": {{Path: "a", Kind: "file"}, {Path: "b", Kind: "file"}}}}
+	svc := NewRepoService(q, rh, "s1")
+	_, cursor, commit, err := svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "", 1)
+	require.NoError(t, err)
+	assert.Equal(t, "a", cursor)
+	assert.Equal(t, firstCommit, commit)
+	_, _, _, err = svc.ListRepoContentsPage(context.Background(), nil, "alice", "demo", commit, "", cursor, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, bookmarkReads)
+	assert.Equal(t, []string{firstCommit, firstCommit}, rh.seenChanges)
+}
+
+func TestRepoService_ListRepoContentsPageResolvesChangeToCommit(t *testing.T) {
+	repository := testRepo(func(r *db.Repository) { r.IsPublic = true; r.DefaultBookmark = "main" })
+	q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+		return repository, nil
+	}}
+	commit := strings.Repeat("c", 40)
+	rh := &pagedRepoHostClient{mockRepoHostClient: &mockRepoHostClient{listBookmarksFn: func(context.Context, string, string, string, int) ([]repohost.Bookmark, string, error) {
+		return []repohost.Bookmark{{Name: "main", TargetChangeID: "moving"}}, "", nil
+	}}, changeCommit: commit, pages: map[string][]repohost.TreeEntry{"": {{Path: "README.md", Kind: "file"}}}}
+	_, _, pinned, err := NewRepoService(q, rh, "s1").ListRepoContentsPage(context.Background(), nil, "alice", "demo", "", "", "", 1000)
+	require.NoError(t, err)
+	assert.Equal(t, commit, pinned)
+	assert.Equal(t, []string{commit}, rh.seenChanges)
 }
 
 func TestRepoService_GetRepoContents_ResolvesBookmark(t *testing.T) {
