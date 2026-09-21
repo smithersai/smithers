@@ -687,8 +687,8 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 	repoRoot, err := findRepoRoot()
 	require.NoError(t, err, "must be able to locate repo root")
 
-	schemaPath := filepath.Join(repoRoot, "db", "schema.sql")
-	modelsPath := filepath.Join(repoRoot, "internal", "db", "models.go")
+	schemaPath := filepath.Join(repoRoot, "packages", "backend", "db", "schema.sql")
+	modelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "db", "models.go")
 
 	schemaBytes, err := os.ReadFile(schemaPath)
 	require.NoError(t, err, "db/schema.sql must exist")

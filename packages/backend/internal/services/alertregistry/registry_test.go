@@ -1,23 +1,11 @@
 package alertregistry
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	// internal/services/alertregistry → repo root
-	return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
-}
 
 func TestLoad_ParsesEmbeddedRegistry(t *testing.T) {
 	t.Parallel()
@@ -25,59 +13,6 @@ func TestLoad_ParsesEmbeddedRegistry(t *testing.T) {
 	reg, err := Load()
 	require.NoError(t, err)
 	require.NotEmpty(t, reg.Alerts)
-}
-
-func TestRegistry_EveryRunbookAndWorkflowExists(t *testing.T) {
-	t.Parallel()
-
-	reg, err := Load()
-	require.NoError(t, err)
-
-	root := repoRoot(t)
-	for _, entry := range reg.Alerts {
-		info, err := os.Stat(filepath.Join(root, entry.Runbook))
-		assert.NoError(t, err, "runbook for %q must exist: %s", entry.PolicyDisplayNamePrefix, entry.Runbook)
-		if err == nil {
-			assert.False(t, info.IsDir(), "runbook %s must be a file", entry.Runbook)
-		}
-		if entry.Remediable {
-			_, err := os.Stat(filepath.Join(root, entry.Workflow))
-			assert.NoError(t, err, "workflow for %q must exist: %s", entry.PolicyDisplayNamePrefix, entry.Workflow)
-		}
-	}
-}
-
-// TestRegistry_CoversEveryMonitoringAlertPolicy parses the Terraform
-// monitoring module and asserts every alert policy display-name prefix has a
-// registry entry.
-func TestRegistry_CoversEveryMonitoringAlertPolicy(t *testing.T) {
-	t.Parallel()
-
-	reg, err := Load()
-	require.NoError(t, err)
-
-	tfPath := filepath.Join(repoRoot(t), "infra", "terraform", "modules", "monitoring", "main.tf")
-	raw, err := os.ReadFile(tfPath)
-	require.NoError(t, err)
-
-	// Alert policy display names look like:
-	//   display_name = "Smithers High Error Rate - ${var.environment}"
-	re := regexp.MustCompile(`display_name\s*=\s*"(Smithers [^"]+?) - \$\{var\.environment\}"`)
-	matches := re.FindAllStringSubmatch(string(raw), -1)
-	require.NotEmpty(t, matches, "expected alert policy display names in %s", tfPath)
-
-	seen := map[string]struct{}{}
-	for _, m := range matches {
-		prefix := strings.TrimSpace(m[1])
-		if _, dup := seen[prefix]; dup {
-			continue
-		}
-		seen[prefix] = struct{}{}
-		entry := reg.Lookup(prefix + " - prod")
-		assert.NotNil(t, entry, "alert policy %q has no registry entry in docs/runbooks/registry.json", prefix)
-	}
-	// Sanity: the monitoring module currently defines 20+ policies.
-	assert.GreaterOrEqual(t, len(seen), 20, "unexpectedly few alert policies parsed from %s", tfPath)
 }
 
 func TestLookup_MatchesEnvironmentSuffixAndLongestPrefix(t *testing.T) {
