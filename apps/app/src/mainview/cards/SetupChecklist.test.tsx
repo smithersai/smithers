@@ -7,7 +7,7 @@ import { ControllerContext } from "../ControllerContext"
 import type { AppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import { FIRST_RUN_JOBS } from "./FirstRunActions"
-import { resolveSteps, SETUP_STEPS, SetupChecklist, SetupChecklistCard } from "./SetupChecklist"
+import { resolveSteps, SETUP_STEPS, SetupChecklist, SetupChecklistCard, hasRegisteredSetup } from "./SetupChecklist"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
@@ -23,6 +23,24 @@ const jobTitles = ["Handle issues", "Review PRs", "Set up CI", "Build a feature"
 const jobCommands = [...commands, ...FIRST_RUN_JOBS.map((name, index) => ({ name, summary: jobTitles[index]! }))]
 const empty = { signedIn: false, hasRepo: false, hasSetup: false }
 const done = { signedIn: true, hasRepo: true, hasSetup: true }
+
+test("only a current account's selected repository registration completes setup", () => {
+  const setup = initialSetup("will/demo", "issues", "will")
+  const card = (payload: typeof setup) => ({ id: "setup", kind: "repository-setup" as const, title: "Handle issues", status: "active" as const, createdAt: 1, ordinal: 1, payload })
+  const active = { revision: setup.revision, digest: setupCandidate(setup), registrationId: "reg", sourceRevision: "source", enabled: true }
+  expect(hasRegisteredSetup([card(setup)], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, request: { id: "failed", operation: "apply", revision: setup.revision, digest: active.digest, state: "failed" } })], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active })], "will/demo", "will")).toBe(true)
+  expect(hasRegisteredSetup([card({ ...setup, active })], "other/repo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active })], "will/demo", "other")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active })], "will/demo", null)).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active: { ...active, enabled: false } })], "will/demo", "will")).toBe(true)
+  expect(hasRegisteredSetup([card({ ...setup, active: { ...active, digest: "wrong" } })], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active: { ...active, revision: setup.revision + 1 } })], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active: { ...active, owned: false } })], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active, revision: setup.revision + 1, draft: { ...setup.draft, label: "Changed draft" } })], "will/demo", "will")).toBe(false)
+  expect(hasRegisteredSetup([card({ ...setup, active: { ...active, draft: setup.draft }, revision: setup.revision + 1, draft: { ...setup.draft, label: "Changed draft" } })], "will/demo", "will")).toBe(true)
+})
 
 test("each step names the first flow this host registered, and completion follows state", () => {
   const steps = resolveSteps(commands, empty)
@@ -63,7 +81,7 @@ test("incomplete steps are flow buttons; completed steps are not interactive", (
   } finally { flushSync(() => root.unmount()) }
 })
 
-test("signing in checks the first step off live, and a finished list unmounts itself", async () => {
+test("setup needs a registration and keeps the five jobs reachable after pausing and reload", async () => {
   const data = new Map<string, string>()
   const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } }
   let store = await createAppStore({ kind: "localStorage", storage })
@@ -72,7 +90,7 @@ test("signing in checks the first step off live, and a finished list unmounts it
   const host = document.createElement("div")
   document.body.append(host)
   let root = createRoot(host)
-  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, commands: { all: () => commands }, runCommand: (...args: unknown[]) => { calls.push(args) } } as unknown as AppController}><SetupChecklist /></ControllerContext>))
+  const render = () => flushSync(() => root.render(<ControllerContext value={{ store, commands: { all: () => jobCommands }, runCommand: (...args: unknown[]) => { calls.push(args) } } as unknown as AppController}><SetupChecklist /></ControllerContext>))
   try {
     render()
     await new Promise(resolve => setTimeout(resolve, 20))
@@ -84,9 +102,23 @@ test("signing in checks the first step off live, and a finished list unmounts it
     expect(host.querySelector('[data-flow="auth.sign-in"]')).toBeNull()
     expect(host.querySelector("header")?.textContent).toContain("1 of 3")
     store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/demo", org: "will", ownerKind: "user", name: "demo", head: null }] })
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "pending" } })
+    store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: "home", repo: "will/demo", phase: "ready" } })
     store.dispatch({ type: "card.upsert", actor: "system", card: { id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1, payload: initialSetup("will/demo", "issues", "will") } })
     await new Promise(resolve => setTimeout(resolve, 20))
+    expect(host.querySelector("header")?.textContent).toContain("2 of 3")
+    const setup = initialSetup("will/demo", "issues", "will")
+    store.dispatch({ type: "card.upsert", actor: "system", card: { id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1, payload: { ...setup, active: { revision: setup.revision, digest: setupCandidate(setup), registrationId: "reg", sourceRevision: "source", enabled: true } } } })
+    await new Promise(resolve => setTimeout(resolve, 20))
     expect(host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+    store.dispatch({ type: "first-run.dismissed", actor: "user" })
+    store.dispatch({ type: "card.upsert", actor: "system", card: { id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: 1, payload: { ...setup, active: { revision: setup.revision, digest: setupCandidate(setup), registrationId: "reg", sourceRevision: "source", enabled: false } } } })
+    await store.settled?.()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const jobs = () => [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Repository jobs"] > button')]
+    expect(host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+    expect(jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+    expect(jobs()[0]?.textContent).toBe("Handle issues · Paused")
     flushSync(() => root.unmount())
     await store.dispose?.()
     store = await createAppStore({ kind: "localStorage", storage })
@@ -94,6 +126,11 @@ test("signing in checks the first step off live, and a finished list unmounts it
     render()
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
+    expect(jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
+    expect(jobs()[0]?.textContent).toBe("Handle issues · Paused")
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", allowlisted: true, admin: false, scopesPlain: null })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(host.querySelector("header")?.textContent).toContain("1 of 3")
   } finally {
     flushSync(() => root.unmount())
     host.remove()
@@ -119,7 +156,7 @@ const dismissedHome = async (calls: Array<[string, string | undefined]>, options
   const card = (job: "issues" | "review", enabled?: boolean) => {
     const payload = initialSetup("will/demo", job, "will")
     return { id: `setup:will:will%2Fdemo:${job}`, kind: "repository-setup" as const, title: job, status: "active" as const, createdAt: 1, ordinal: 1,
-      payload: enabled === undefined ? payload : { ...payload, active: { revision: payload.revision, digest: setupCandidate(payload), registrationId: "reg", sourceRevision: "f4d4814e", enabled } } }
+      payload: { ...payload, active: { revision: payload.revision, digest: setupCandidate(payload), registrationId: "reg", sourceRevision: "f4d4814e", enabled: enabled ?? true } } }
   }
   store.dispatch({ type: "card.upsert", actor: "system", card: card("issues") })
   store.dispatch({ type: "card.upsert", actor: "system", card: card("review", false) })
@@ -141,7 +178,7 @@ test("the five jobs are buttons on the home surface once the first job exists, w
   try {
     expect(home.host.querySelector('[data-testid="setup-checklist"]')).toBeNull()
     expect(home.jobs().map(button => button.dataset.flow)).toEqual([...FIRST_RUN_JOBS])
-    expect(home.jobs().map(button => button.textContent)).toEqual(["Handle issues · Off", "Review PRs · Paused", "Set up CI", "Build a feature", "Automate a chore"])
+    expect(home.jobs().map(button => button.textContent)).toEqual(["Handle issues · Enabled", "Review PRs · Paused", "Set up CI", "Build a feature", "Automate a chore"])
     home.jobs()[1]!.click()
     await home.settle()
     expect(calls).toEqual([["review.setup", "will/demo"]])
