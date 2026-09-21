@@ -17,12 +17,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/previewgateway"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // Repo gateway: a durable `smithers gateway` control plane running inside a
@@ -179,18 +180,18 @@ func repoGatewayBunInstallScript(bunPath, stagedBunPath, installerCommand string
 
 // RepoGatewayQuerier is the DB contract needed by RepoGatewayService.
 type RepoGatewayQuerier interface {
-	CreateRepoGateway(ctx context.Context, arg db.CreateRepoGatewayParams) (db.RepoGateway, error)
-	GetActiveRepoGatewayForUserRepo(ctx context.Context, arg db.GetActiveRepoGatewayForUserRepoParams) (db.RepoGateway, error)
-	UpdateRepoGatewayExecutionInfo(ctx context.Context, arg db.UpdateRepoGatewayExecutionInfoParams) (db.RepoGateway, error)
-	UpdateRepoGatewayStatus(ctx context.Context, arg db.UpdateRepoGatewayStatusParams) (db.RepoGateway, error)
+	CreateRepoGateway(ctx context.Context, arg clusterdb.CreateRepoGatewayParams) (clusterdb.RepoGateway, error)
+	GetActiveRepoGatewayForUserRepo(ctx context.Context, arg clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error)
+	UpdateRepoGatewayExecutionInfo(ctx context.Context, arg clusterdb.UpdateRepoGatewayExecutionInfoParams) (clusterdb.RepoGateway, error)
+	UpdateRepoGatewayStatus(ctx context.Context, arg clusterdb.UpdateRepoGatewayStatusParams) (clusterdb.RepoGateway, error)
 	TouchRepoGatewayActivity(ctx context.Context, id string) error
-	SoftDeleteRepoGateway(ctx context.Context, id string) (db.RepoGateway, error)
+	SoftDeleteRepoGateway(ctx context.Context, id string) (clusterdb.RepoGateway, error)
 	// ListStaleRepoGateways backs the reaper: non-terminal rows older than the
 	// given age whose provision is presumed crashed.
-	ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]db.RepoGateway, error)
+	ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]clusterdb.RepoGateway, error)
 	// ListActiveRepoGateways backs the widowed-gateway sweep: 'running' and
 	// 'suspended' rows re-validated against the sandbox provider.
-	ListActiveRepoGateways(ctx context.Context) ([]db.RepoGateway, error)
+	ListActiveRepoGateways(ctx context.Context) ([]clusterdb.RepoGateway, error)
 
 	// Short-lived repo clone token store (same flow as agent/workspace VMs).
 	CreateAccessToken(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error)
@@ -198,7 +199,7 @@ type RepoGatewayQuerier interface {
 }
 
 type RepoGatewayRelayQuerier interface {
-	GetRepoGatewayByID(ctx context.Context, id string) (db.RepoGateway, error)
+	GetRepoGatewayByID(ctx context.Context, id string) (clusterdb.RepoGateway, error)
 }
 
 // RepoGatewayRelayTarget is the authenticated, internal routing result used by
@@ -284,7 +285,7 @@ func WithRepoGatewayGoldenSnapshots(golden *GoldenSnapshotService) RepoGatewaySe
 type RepoGatewayAccessQuerier interface {
 	RepoPermQuerier
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
-	ListActiveRepoGateways(ctx context.Context) ([]db.RepoGateway, error)
+	ListActiveRepoGateways(ctx context.Context) ([]clusterdb.RepoGateway, error)
 }
 
 // WithRepoGatewayAccessRevocation wires the periodic authorization sweep run
@@ -565,7 +566,7 @@ func (s *RepoGatewayService) GetRepoGatewayConnectionInfo(ctx context.Context, i
 		return info, err
 	}
 
-	existing, err := s.q.GetActiveRepoGatewayForUserRepo(ctx, db.GetActiveRepoGatewayForUserRepoParams{
+	existing, err := s.q.GetActiveRepoGatewayForUserRepo(ctx, clusterdb.GetActiveRepoGatewayForUserRepoParams{
 		RepositoryID: input.RepositoryID,
 		UserID:       input.UserID,
 	})
@@ -598,7 +599,7 @@ func (s *RepoGatewayService) GetRepoGatewayConnectionInfo(ctx context.Context, i
 // stampede. The work is singleflighted per gateway row: without that, a client
 // polling every two seconds would start a fresh four-minute resume per poll and
 // the gateway could never converge.
-func (s *RepoGatewayService) resolveExistingGateway(ctx context.Context, existing db.RepoGateway, input RepoGatewayConnectionInput) (RepoGatewayConnectionInfo, error) {
+func (s *RepoGatewayService) resolveExistingGateway(ctx context.Context, existing clusterdb.RepoGateway, input RepoGatewayConnectionInput) (RepoGatewayConnectionInfo, error) {
 	resolve, started := s.beginGatewayResolve(existing.ID)
 	if started {
 		backgroundBudget := s.provisionBackgroundBudget
@@ -704,7 +705,7 @@ func repoGatewayResumeTimedOut(parent context.Context, err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil
 }
 
-func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway db.RepoGateway, inputs ...RepoGatewayConnectionInput) (RepoGatewayConnectionInfo, error) {
+func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway clusterdb.RepoGateway, inputs ...RepoGatewayConnectionInput) (RepoGatewayConnectionInfo, error) {
 	var input RepoGatewayConnectionInput
 	if len(inputs) > 0 {
 		input = inputs[0]
@@ -902,7 +903,7 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway db.RepoGa
 	}
 
 	if gateway.Status == "suspended" {
-		if updated, updateErr := s.q.UpdateRepoGatewayStatus(gatewayCtx, db.UpdateRepoGatewayStatusParams{
+		if updated, updateErr := s.q.UpdateRepoGatewayStatus(gatewayCtx, clusterdb.UpdateRepoGatewayStatusParams{
 			ID:     gateway.ID,
 			Status: "running",
 		}); updateErr == nil {
@@ -937,7 +938,7 @@ func (s *RepoGatewayService) reuseGateway(ctx context.Context, gateway db.RepoGa
 // with a bounded context that survives the request ending. A successful
 // StartSandbox must never be allowed to leave its row active when the caller
 // disconnects before service re-declaration finishes.
-func (s *RepoGatewayService) discardGatewayAfterReuse(ctx context.Context, gateway db.RepoGateway) {
+func (s *RepoGatewayService) discardGatewayAfterReuse(ctx context.Context, gateway clusterdb.RepoGateway) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), repoGatewayCleanupTimeout)
 	defer cancel()
 	s.discardGateway(cleanupCtx, gateway)
@@ -1010,7 +1011,7 @@ func (s *RepoGatewayService) probeGatewayHealthChecked(ctx context.Context, vmID
 }
 
 // discardGateway tombstones a gateway row and deletes its VM (best effort).
-func (s *RepoGatewayService) discardGateway(ctx context.Context, gateway db.RepoGateway) {
+func (s *RepoGatewayService) discardGateway(ctx context.Context, gateway clusterdb.RepoGateway) {
 	defer meterSandboxUsage(ctx, s.q, gateway.UserID, "gateway", gateway.ID, false)
 	// Announce for both ownership modes, even when guest cleanup fails.
 	defer revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
@@ -1063,7 +1064,7 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 	// created BEFORE the cap check and CountActiveSandboxesForUser counts it,
 	// so two racing provisions each see the other's reservation instead of
 	// both passing a stale pre-insert count and blowing past the cap.
-	gateway, err := s.q.CreateRepoGateway(ctx, db.CreateRepoGatewayParams{
+	gateway, err := s.q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{
 		RepositoryID: input.RepositoryID,
 		UserID:       input.UserID,
 		Status:       "pending",
@@ -1111,7 +1112,7 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 	// active, this is also where the provisioning race is resolved (the unique
 	// index rejects the second writer) — moved earlier so the loser bails out
 	// BEFORE the expensive install steps rather than after.
-	if _, err := s.q.UpdateRepoGatewayExecutionInfo(ctx, db.UpdateRepoGatewayExecutionInfoParams{
+	if _, err := s.q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{
 		ID:                  gateway.ID,
 		VmID:                vm.ID,
 		BaseUrl:             baseURL,
@@ -1128,7 +1129,7 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 		s.markGatewayFailed(cleanupCtx, gateway.ID)
 		if isRepoGatewayActiveUniqueViolation(err) {
 			// A concurrent request already holds the active slot; reuse it.
-			winner, winnerErr := s.q.GetActiveRepoGatewayForUserRepo(ctx, db.GetActiveRepoGatewayForUserRepoParams{
+			winner, winnerErr := s.q.GetActiveRepoGatewayForUserRepo(ctx, clusterdb.GetActiveRepoGatewayForUserRepoParams{
 				RepositoryID: input.RepositoryID,
 				UserID:       input.UserID,
 			})
@@ -1281,7 +1282,7 @@ func (s *RepoGatewayService) finishGatewayProvision(
 
 	// Flip 'starting' -> 'running'. The row already occupies the active-unique
 	// slot, so this is a plain status update (no race to resolve here anymore).
-	updated, err := s.q.UpdateRepoGatewayStatus(ctx, db.UpdateRepoGatewayStatusParams{
+	updated, err := s.q.UpdateRepoGatewayStatus(ctx, clusterdb.UpdateRepoGatewayStatusParams{
 		ID:     gatewayID,
 		Status: "running",
 	})
@@ -1537,7 +1538,7 @@ func (s *RepoGatewayService) startGatewayService(ctx context.Context, vmID strin
 
 func (s *RepoGatewayService) markGatewayFailed(ctx context.Context, gatewayID string) {
 	defer meterSandboxUsage(ctx, s.q, 0, "gateway", gatewayID, false)
-	if _, err := s.q.UpdateRepoGatewayStatus(ctx, db.UpdateRepoGatewayStatusParams{
+	if _, err := s.q.UpdateRepoGatewayStatus(ctx, clusterdb.UpdateRepoGatewayStatusParams{
 		ID:     gatewayID,
 		Status: "failed",
 	}); err != nil {

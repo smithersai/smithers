@@ -824,6 +824,24 @@ func (q *Queries) GetWorkflowTaskStepID(ctx context.Context, id int64) (int64, e
 	return workflow_step_id, err
 }
 
+const hasUnsettledRunnerOwnershipForWorkflowRun = `-- name: HasUnsettledRunnerOwnershipForWorkflowRun :one
+SELECT EXISTS (
+    SELECT 1 FROM workflow_tasks wt
+    WHERE wt.workflow_run_id = $1
+      AND wt.status IN ('cancelled', 'failed')
+      AND wt.runner_id IS NOT NULL
+) AS has_unsettled_ownership
+`
+
+// A cancelled or failed task remains owned until its executor explicitly
+// releases runner_id. Resume must fail closed while this marker exists.
+func (q *Queries) HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUnsettledRunnerOwnershipForWorkflowRun, workflowRunID)
+	var has_unsettled_ownership bool
+	err := row.Scan(&has_unsettled_ownership)
+	return has_unsettled_ownership, err
+}
+
 const listBlockedTasksForRun = `-- name: ListBlockedTasksForRun :many
 SELECT wt.id, wt.payload, ws.name as step_name
 FROM workflow_tasks wt

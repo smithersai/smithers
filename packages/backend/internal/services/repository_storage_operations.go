@@ -67,7 +67,7 @@ func newDeleteStorageOperation(repository db.Repository, owner string, staged re
 		RepositoryID:  repository.ID,
 		OperationType: repositoryStorageOperationDelete,
 		Token:         staged.Token,
-		StorageSetID:  repository.StorageSetID,
+		StorageSetID:  staged.StorageSetID,
 		SourceOwner:   owner,
 		SourceRepo:    repository.Name,
 		SourceUserID:  repository.UserID,
@@ -80,7 +80,7 @@ func newMoveStorageOperation(repository db.Repository, owner string, target repo
 		RepositoryID:  repository.ID,
 		OperationType: repositoryStorageOperationMove,
 		Token:         staged.Token,
-		StorageSetID:  repository.StorageSetID,
+		StorageSetID:  staged.StorageSetID,
 		SourceOwner:   owner,
 		SourceRepo:    repository.Name,
 		SourceUserID:  repository.UserID,
@@ -411,7 +411,7 @@ func repositoryOwnerNameInTx(ctx context.Context, tx pgx.Tx, userID, orgID pgtyp
 func loadRepositoryStorageIdentity(ctx context.Context, tx pgx.Tx, repositoryID int64) (db.Repository, error) {
 	var repository db.Repository
 	err := tx.QueryRow(ctx, `
-		SELECT id, user_id, org_id, name, lower_name, storage_set_id
+		SELECT id, user_id, org_id, name, lower_name
 		FROM repositories
 		WHERE id = $1
 		FOR UPDATE
@@ -421,7 +421,6 @@ func loadRepositoryStorageIdentity(ctx context.Context, tx pgx.Tx, repositoryID 
 		&repository.OrgID,
 		&repository.Name,
 		&repository.LowerName,
-		&repository.StorageSetID,
 	)
 	return repository, err
 }

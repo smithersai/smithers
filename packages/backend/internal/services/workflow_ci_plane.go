@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
@@ -30,7 +31,7 @@ type WorkflowRunRepoFileProbe interface {
 // boots for a repository. SandboxEnvironmentImageService implements it; it is
 // the exact lookup a kind=vm workspace already performs.
 type WorkflowRunEnvironmentImageResolver interface {
-	Resolve(ctx context.Context, repositoryID int64, kind string) (db.SandboxEnvironmentImage, error)
+	Resolve(ctx context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error)
 }
 
 // CIExecutionPlaneInput identifies the repository revision a CI run was

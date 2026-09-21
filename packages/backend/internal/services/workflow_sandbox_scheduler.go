@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
@@ -68,10 +69,10 @@ var defaultWorkflowSandboxRegistries = []string{
 
 // WorkflowSandboxSchedulerQuerier is the DB contract needed by the sandbox scheduler.
 type WorkflowSandboxSchedulerQuerier interface {
-	ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]db.ClaimQueuedWorkflowRunsRow, error)
-	RenewWorkflowSandboxClaim(ctx context.Context, arg db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error)
-	MarkWorkflowRunSuccess(ctx context.Context, arg db.MarkWorkflowRunSuccessParams) (db.WorkflowRun, error)
-	MarkWorkflowRunFailure(ctx context.Context, arg db.MarkWorkflowRunFailureParams) (db.WorkflowRun, error)
+	ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]clusterdb.ClaimQueuedWorkflowRunsRow, error)
+	RenewWorkflowSandboxClaim(ctx context.Context, arg clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error)
+	MarkWorkflowRunSuccess(ctx context.Context, arg clusterdb.MarkWorkflowRunSuccessParams) (db.WorkflowRun, error)
+	MarkWorkflowRunFailure(ctx context.Context, arg clusterdb.MarkWorkflowRunFailureParams) (db.WorkflowRun, error)
 	// ResumeWorkflowRun flips a cancelled/failure run back to queued. The
 	// scheduler uses it only to requeue a run whose sandbox create was
 	// refused for fleet capacity; terminal semantics are unchanged otherwise.
@@ -252,7 +253,7 @@ type workflowSandboxRunClaim struct {
 	LeaseExpiresAt time.Time
 }
 
-func workflowSandboxRunClaimFromRow(row db.ClaimQueuedWorkflowRunsRow) workflowSandboxRunClaim {
+func workflowSandboxRunClaimFromRow(row clusterdb.ClaimQueuedWorkflowRunsRow) workflowSandboxRunClaim {
 	return workflowSandboxRunClaim{
 		Run: db.WorkflowRun{
 			ID:                   row.ID,
@@ -267,20 +268,20 @@ func workflowSandboxRunClaimFromRow(row db.ClaimQueuedWorkflowRunsRow) workflowS
 	}
 }
 
-func (claim workflowSandboxRunClaim) successParams() db.MarkWorkflowRunSuccessParams {
-	return db.MarkWorkflowRunSuccessParams{
+func (claim workflowSandboxRunClaim) successParams() clusterdb.MarkWorkflowRunSuccessParams {
+	return clusterdb.MarkWorkflowRunSuccessParams{
 		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
 	}
 }
 
-func (claim workflowSandboxRunClaim) failureParams() db.MarkWorkflowRunFailureParams {
-	return db.MarkWorkflowRunFailureParams{
+func (claim workflowSandboxRunClaim) failureParams() clusterdb.MarkWorkflowRunFailureParams {
+	return clusterdb.MarkWorkflowRunFailureParams{
 		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
 	}
 }
 
-func (claim workflowSandboxRunClaim) renewalParams() db.RenewWorkflowSandboxClaimParams {
-	return db.RenewWorkflowSandboxClaimParams{
+func (claim workflowSandboxRunClaim) renewalParams() clusterdb.RenewWorkflowSandboxClaimParams {
+	return clusterdb.RenewWorkflowSandboxClaimParams{
 		ID: claim.Run.ID, ClaimToken: claim.Token, ClaimGeneration: claim.Generation,
 	}
 }

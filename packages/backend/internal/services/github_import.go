@@ -28,8 +28,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 const (
@@ -1941,7 +1941,6 @@ func (s *GitHubImportService) createImportRepoRow(
 		Name:            params.Name,
 		LowerName:       params.LowerName,
 		Description:     params.Description,
-		StorageSetID:    params.StorageSetID,
 		IsPublic:        params.IsPublic,
 		DefaultBookmark: params.DefaultBookmark,
 	})
@@ -2007,7 +2006,6 @@ func (s *GitHubImportService) ensureLocalRepoFromCandidates(ctx context.Context,
 			Name:            name,
 			LowerName:       strings.ToLower(name),
 			Description:     "Imported from github.com/" + sourceOwner + "/" + repo,
-			StorageSetID:    s.storageSetID,
 			IsPublic:        false,
 			DefaultBookmark: strings.TrimSpace(defaultBookmark),
 		}
@@ -2016,7 +2014,6 @@ func (s *GitHubImportService) ensureLocalRepoFromCandidates(ctx context.Context,
 			Name:            createParams.Name,
 			LowerName:       createParams.LowerName,
 			Description:     createParams.Description,
-			StorageSetID:    createParams.StorageSetID,
 			IsPublic:        createParams.IsPublic,
 			DefaultBookmark: createParams.DefaultBookmark,
 			NotBefore:       requestStartedAt,

@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
@@ -28,7 +29,7 @@ type GitHubProxyStore interface {
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
-	InsertGithubProxyAuditLog(ctx context.Context, arg db.InsertGithubProxyAuditLogParams) error
+	InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
 }
 
 type GitHubProxyInstallationTokenIssuer interface {
@@ -411,7 +412,7 @@ func (s *GitHubProxyService) insertAuditLog(
 		)
 		return
 	}
-	if err := s.store.InsertGithubProxyAuditLog(ctx, db.InsertGithubProxyAuditLogParams{
+	if err := s.store.InsertGithubProxyAuditLog(ctx, clusterdb.InsertGithubProxyAuditLogParams{
 		WorkflowRunID: workflowRunID,
 		Method:        method,
 		Path:          requestPath,

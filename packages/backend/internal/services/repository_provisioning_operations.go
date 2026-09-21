@@ -135,7 +135,7 @@ func newForkProvisioningOperation(
 		SourceRepositoryID: pgtype.Int8{Int64: source.ID, Valid: true},
 		SourceOwner:        pgtype.Text{String: sourceOwner, Valid: true},
 		SourceRepo:         pgtype.Text{String: source.Name, Valid: true},
-		SourceStorageSetID: pgtype.Text{String: source.StorageSetID, Valid: true},
+		SourceStorageSetID: pgtype.Text{String: staged.StorageSetID, Valid: true},
 	}
 }
 
@@ -399,11 +399,11 @@ func (s *postgresRepositoryProvisioningStore) Publish(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO repositories (
-			id, user_id, org_id, name, lower_name, description, storage_set_id,
+			id, user_id, org_id, name, lower_name, description,
 			is_public, default_bookmark, is_fork, fork_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`, current.RepositoryID, nullableInt8(current.UserID), nullableInt8(current.OrgID),
-		current.Name, current.LowerName, current.Description, current.StorageSetID,
+		current.Name, current.LowerName, current.Description,
 		current.IsPublic, current.DefaultBookmark, current.IsFork, nullableInt8(current.ForkID))
 	if err != nil {
 		return db.Repository{}, fmt.Errorf("publish reserved repository row: %w", err)
@@ -738,7 +738,7 @@ func verifyProvisionOwners(ctx context.Context, tx pgx.Tx, operation repositoryP
 	}
 	source, err := loadRepositoryStorageIdentity(ctx, tx, operation.SourceRepositoryID.Int64)
 	sourceMatches := repositoryMatchesStorageIdentity(source, source.UserID, source.OrgID, operation.SourceRepo.String) &&
-		source.StorageSetID == operation.SourceStorageSetID.String
+		operation.SourceStorageSetID.Valid
 	if resultErr := classifyRepositoryProvisionIdentity(err, sourceMatches); resultErr != nil {
 		return resultErr
 	}
@@ -781,7 +781,7 @@ func repositoryMatchesProvision(repository db.Repository, operation repositoryPr
 	return repository.ID == operation.RepositoryID && repository.UserID == operation.UserID &&
 		repository.OrgID == operation.OrgID && repository.Name == operation.Name &&
 		repository.LowerName == operation.LowerName && repository.Description == operation.Description &&
-		repository.StorageSetID == operation.StorageSetID && repository.IsPublic == operation.IsPublic &&
+		repository.IsPublic == operation.IsPublic &&
 		repository.DefaultBookmark == operation.DefaultBookmark && repository.IsFork == operation.IsFork &&
 		repository.ForkID == operation.ForkID
 }

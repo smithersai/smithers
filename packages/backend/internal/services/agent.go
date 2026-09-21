@@ -19,11 +19,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // AgentSessionResponse is the API representation of an agent session.
@@ -233,8 +234,8 @@ type AgentDispatchQuerier interface {
 	// The workspace coding host's own run id for one dispatched turn. It is
 	// the handle every gateway projection selector takes, so a poller that
 	// restarts can find the turn it was streaming.
-	RecordWorkflowRunCodingHost(ctx context.Context, arg db.RecordWorkflowRunCodingHostParams) (db.WorkflowRunCodingHost, error)
-	GetWorkflowRunCodingHost(ctx context.Context, workflowRunID int64) (db.WorkflowRunCodingHost, error)
+	RecordWorkflowRunCodingHost(ctx context.Context, arg clusterdb.RecordWorkflowRunCodingHostParams) (clusterdb.WorkflowRunCodingHost, error)
+	GetWorkflowRunCodingHost(ctx context.Context, workflowRunID int64) (clusterdb.WorkflowRunCodingHost, error)
 	CreateAccessToken(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error)
 	DeleteAccessToken(ctx context.Context, arg db.DeleteAccessTokenParams) error
 	MarkWorkflowTaskVMRunning(ctx context.Context, arg db.MarkWorkflowTaskVMRunningParams) (int64, error)

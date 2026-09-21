@@ -18,23 +18,32 @@ type StorageSetQuerier interface {
 	GetRepoByOwnerAndLowerName(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
 }
 
-// DBStorageSetResolver implements StorageSetResolver by looking up the repository's storage set ID
-// in the database, and mapping that ID to a backend URL.
+// RepoPlacementLookup resolves deployment-specific placement by stable repository ID.
+// The product repository row deliberately carries no storage-set column.
+type RepoPlacementLookup interface {
+	StorageSetForRepository(ctx context.Context, repositoryID int64) (string, error)
+}
+
+// DBStorageSetResolver combines canonical repository identity with a private
+// placement lookup and maps that placement to a backend URL.
 type DBStorageSetResolver struct {
-	queries StorageSetQuerier
+	queries   StorageSetQuerier
+	placement RepoPlacementLookup
 	// In the future this could be a dynamic map from DB, but for now we map predefined
 	// storage set IDs to URLs (or just construct the URL if the storage set ID is the hostname).
 	// We'll use a simple URL template for now since we run them as k8s StatefulSet dns names.
 	baseURLTemplate string
 }
 
-// NewDBStorageSetResolver creates a resolver that queries the DB for the repo's storage_set_id.
-// It uses baseURLTemplate (e.g., "http://%s:8080") to format the final URL.
-func NewDBStorageSetResolver(q StorageSetQuerier, baseURLTemplate string) *DBStorageSetResolver {
-	return &DBStorageSetResolver{
-		queries:         q,
-		baseURLTemplate: baseURLTemplate,
+// NewDBStorageSetResolver creates a resolver for a private placement adapter.
+// The optional variadic parameter keeps composition callers source-compatible
+// while they are converted; without it resolution fails closed.
+func NewDBStorageSetResolver(q StorageSetQuerier, baseURLTemplate string, placement ...RepoPlacementLookup) *DBStorageSetResolver {
+	r := &DBStorageSetResolver{queries: q, baseURLTemplate: baseURLTemplate}
+	if len(placement) > 0 {
+		r.placement = placement[0]
 	}
+	return r
 }
 
 // BuildStorageSetResolverTemplate derives a storage-set-aware URL template from the
@@ -94,11 +103,14 @@ func (r *DBStorageSetResolver) ResolveURL(ctx context.Context, owner, repo strin
 		return "", fmt.Errorf("failed to lookup repository %s/%s storage set info: %w", owner, repo, err)
 	}
 
-	if row.StorageSetID == "" {
-		return "", fmt.Errorf("repository %s/%s has no assigned storage set", owner, repo)
+	if r.placement == nil {
+		return "", fmt.Errorf("repository placement lookup is not configured")
 	}
-
-	return r.ResolveStorageSetURL(ctx, row.StorageSetID)
+	storageSetID, err := r.placement.StorageSetForRepository(ctx, row.ID)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository %d placement: %w", row.ID, err)
+	}
+	return r.ResolveStorageSetURL(ctx, storageSetID)
 }
 
 // ResolveStorageSetURL maps a trusted storage-set identifier without looking

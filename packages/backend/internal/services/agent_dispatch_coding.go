@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -224,7 +225,7 @@ func (d *agentDispatch) dispatchCodingTurn() error {
 
 	// Durable before anything streams it: a poller that restarts, or another
 	// process that picks the run up, finds the turn by this id alone.
-	if _, err := d.svc.dispatchQ.RecordWorkflowRunCodingHost(d.ctx, db.RecordWorkflowRunCodingHostParams{
+	if _, err := d.svc.dispatchQ.RecordWorkflowRunCodingHost(d.ctx, clusterdb.RecordWorkflowRunCodingHostParams{
 		WorkflowRunID: d.run.ID, WorkspaceID: d.workspaceID, HostRunID: receipt.RunID, FlowID: codingDispatchFlowID,
 	}); err != nil {
 		return d.markInfraFailed("record dispatched turn identity: " + err.Error())

@@ -161,6 +161,7 @@ type RepoService struct {
 	repoHost            RepoHostClient
 	dispatcher          webhooks.Dispatcher
 	activeStorageSetID  string
+	placementResolver   repoPlacementResolver
 	billing             BillingPolicy
 	ownershipTx         repoOwnershipTxManager
 	storageOperations   repositoryStorageOperationStore
@@ -376,7 +377,17 @@ type GitRef struct {
 	Object GitRefObject `json:"object"`
 }
 
+// repoPlacementResolver belongs to the private Plue repository adapter. Product
+// repository rows contain no deployment placement; lookups use the stable ID.
+type repoPlacementResolver interface {
+	StorageSetForRepository(ctx context.Context, repositoryID int64) (string, error)
+}
+
 type RepoServiceOption func(*RepoService)
+
+func WithRepoPlacementResolver(resolver repoPlacementResolver) RepoServiceOption {
+	return func(s *RepoService) { s.placementResolver = resolver }
+}
 
 func WithRepoWebhookDispatcher(dispatcher webhooks.Dispatcher) RepoServiceOption {
 	return func(s *RepoService) {
@@ -400,6 +411,22 @@ func NewRepoService(q RepoQuerier, rh RepoHostClient, activeStorageSet string, o
 		if opt != nil {
 			opt(s)
 		}
+	}
+	return s
+}
+
+// NewProductRepoServiceWithPool builds repository behavior against the shared
+// product schema. Placement and cluster operation journals are supplied only
+// by private deployment adapters, never inferred from a product row.
+func NewProductRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, pool *pgxpool.Pool, opts ...RepoServiceOption) *RepoService {
+	s := &RepoService{queries: q, repoHost: rh}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	if pool != nil {
+		s.ownershipTx = &pgxRepoOwnershipTxManager{pool: pool}
 	}
 	return s
 }
@@ -489,7 +516,6 @@ type repositoryCreateExpectation struct {
 	Name            string
 	LowerName       string
 	Description     string
-	StorageSetID    string
 	IsPublic        bool
 	DefaultBookmark string
 	IsFork          bool
@@ -540,7 +566,6 @@ func repositoryMatchesCreateExpectation(repository db.Repository, expected repos
 		repository.Name == expected.Name &&
 		repository.LowerName == expected.LowerName &&
 		repository.Description == expected.Description &&
-		repository.StorageSetID == expected.StorageSetID &&
 		repository.IsPublic == expected.IsPublic &&
 		repository.DefaultBookmark == expected.DefaultBookmark &&
 		repository.IsFork == expected.IsFork &&
@@ -779,7 +804,6 @@ func (s *RepoService) CreateRepo(
 		Name:            name,
 		LowerName:       strings.ToLower(name),
 		Description:     description,
-		StorageSetID:    s.activeStorageSetID,
 		IsPublic:        isPublic,
 		DefaultBookmark: defaultBookmark,
 	}
@@ -788,7 +812,7 @@ func (s *RepoService) CreateRepo(
 			return db.Repository{}, repositoryProvisioningRolloutError()
 		}
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
-			ctx, createParams.StorageSetID, user.Username, name, defaultBookmark, autoInit)
+			ctx, s.activeStorageSetID, user.Username, name, defaultBookmark, autoInit)
 		if prepareErr != nil {
 			return db.Repository{}, errors.Internal("failed to prepare repository storage")
 		}
@@ -813,7 +837,6 @@ func (s *RepoService) CreateRepo(
 		Name:            createParams.Name,
 		LowerName:       createParams.LowerName,
 		Description:     createParams.Description,
-		StorageSetID:    createParams.StorageSetID,
 		IsPublic:        createParams.IsPublic,
 		DefaultBookmark: createParams.DefaultBookmark,
 		NotBefore:       requestStartedAt,
@@ -928,7 +951,6 @@ func (s *RepoService) CreateOrgRepo(
 		Name:            name,
 		LowerName:       strings.ToLower(name),
 		Description:     description,
-		StorageSetID:    s.activeStorageSetID,
 		IsPublic:        isPublic,
 		DefaultBookmark: defaultBookmark,
 	}
@@ -937,7 +959,7 @@ func (s *RepoService) CreateOrgRepo(
 			return db.Repository{}, repositoryProvisioningRolloutError()
 		}
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
-			ctx, createParams.StorageSetID, org.Name, name, defaultBookmark, autoInit)
+			ctx, s.activeStorageSetID, org.Name, name, defaultBookmark, autoInit)
 		if prepareErr != nil {
 			return db.Repository{}, errors.Internal("failed to prepare repository storage")
 		}
@@ -962,7 +984,6 @@ func (s *RepoService) CreateOrgRepo(
 		Name:            createParams.Name,
 		LowerName:       createParams.LowerName,
 		Description:     createParams.Description,
-		StorageSetID:    createParams.StorageSetID,
 		IsPublic:        createParams.IsPublic,
 		DefaultBookmark: createParams.DefaultBookmark,
 		NotBefore:       requestStartedAt,
@@ -1094,15 +1115,10 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 	}
 
 	createParams := db.CreateForkRepoParams{
-		UserID:      pgtype.Int8{Int64: actor.ID, Valid: true},
-		Name:        forkName,
-		LowerName:   strings.ToLower(forkName),
-		Description: forkDescription,
-		// Repo-host currently forks with a same-filesystem copy on the source
-		// storage host. Keep the fork row on that storage set; assigning the active
-		// set here can route every later request to a different host where the copy
-		// does not exist.
-		StorageSetID:    sourceRepo.StorageSetID,
+		UserID:          pgtype.Int8{Int64: actor.ID, Valid: true},
+		Name:            forkName,
+		LowerName:       strings.ToLower(forkName),
+		Description:     forkDescription,
 		IsPublic:        sourceRepo.IsPublic,
 		DefaultBookmark: sourceRepo.DefaultBookmark,
 		ForkID:          pgtype.Int8{Int64: sourceRepo.ID, Valid: true},
@@ -1111,8 +1127,15 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 		if !s.provisioningEnabled {
 			return ForkOutcome{}, repositoryProvisioningRolloutError()
 		}
+		if s.placementResolver == nil {
+			return ForkOutcome{}, errors.Internal("repository placement resolver is not configured")
+		}
+		sourceStorageSet, placementErr := s.placementResolver.StorageSetForRepository(ctx, sourceRepo.ID)
+		if placementErr != nil || sourceStorageSet == "" {
+			return ForkOutcome{}, errors.Internal("failed to resolve repository placement")
+		}
 		staged, prepareErr := s.provisioner.PrepareStagedFork(
-			ctx, sourceRepo.StorageSetID, sourceOwner, sourceRepo.Name, actor.Username, forkName)
+			ctx, sourceStorageSet, sourceOwner, sourceRepo.Name, actor.Username, forkName)
 		if prepareErr != nil {
 			return ForkOutcome{}, errors.Internal("failed to prepare fork storage")
 		}
@@ -1136,7 +1159,6 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 		Name:            createParams.Name,
 		LowerName:       createParams.LowerName,
 		Description:     createParams.Description,
-		StorageSetID:    createParams.StorageSetID,
 		IsPublic:        createParams.IsPublic,
 		DefaultBookmark: createParams.DefaultBookmark,
 		IsFork:          true,
@@ -2028,7 +2050,6 @@ func (s *RepoService) DeleteRepo(ctx context.Context, actor *db.User, owner, rep
 			slog.Error("failed to prepare repository deletion", "repo_id", repository.ID, "error", prepareErr)
 			return errors.Internal("failed to delete repository")
 		}
-		staged.StorageSetID = repository.StorageSetID
 		if createErr := s.storageOperations.Create(ctx, newDeleteStorageOperation(repository, canonicalOwner, staged)); createErr != nil {
 			if stdErrors.Is(createErr, errRepositoryStorageOperationExists) {
 				return errors.Conflict("repository storage operation is already in progress")

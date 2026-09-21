@@ -21,10 +21,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // bootstrapVars holds the dynamic values injected into the bootstrap shell template.
@@ -463,7 +464,7 @@ func (s *WorkspaceService) buildWorkspaceVMRequest(ctx context.Context, snapshot
 // registry. For kind=vm/desktop the request boots the closure image via the
 // worker's init handoff; snapshotID non-empty means "boot the closure's
 // golden snapshot when one is ready" (the container-kind id is never reused).
-func (s *WorkspaceService) buildWorkspaceVMRequestWithImage(ctx context.Context, snapshotID string, gitRepos []sandbox.GitRepositorySpec, repositoryID int64, kind string, fixedImage *db.SandboxEnvironmentImage) (sandbox.CreateRequest, error) {
+func (s *WorkspaceService) buildWorkspaceVMRequestWithImage(ctx context.Context, snapshotID string, gitRepos []sandbox.GitRepositorySpec, repositoryID int64, kind string, fixedImage *clusterdb.SandboxEnvironmentImage) (sandbox.CreateRequest, error) {
 	req, err := s.buildContainerWorkspaceVMRequest(ctx, snapshotID, gitRepos, repositoryID, kind)
 	if err != nil {
 		return sandbox.CreateRequest{}, err
@@ -471,7 +472,7 @@ func (s *WorkspaceService) buildWorkspaceVMRequestWithImage(ctx context.Context,
 	if sandboxKindForWorkspace(kind) == "container" {
 		return req, nil
 	}
-	var image db.SandboxEnvironmentImage
+	var image clusterdb.SandboxEnvironmentImage
 	if fixedImage != nil {
 		image = *fixedImage
 	} else {

@@ -658,3 +658,13 @@ LEFT JOIN LATERAL (
 GROUP BY requested.context
 HAVING NOT bool_and(COALESCE(latest.status = 'success', false))
 ORDER BY requested.context;
+
+-- name: HasUnsettledRunnerOwnershipForWorkflowRun :one
+-- A cancelled or failed task remains owned until its executor explicitly
+-- releases runner_id. Resume must fail closed while this marker exists.
+SELECT EXISTS (
+    SELECT 1 FROM workflow_tasks wt
+    WHERE wt.workflow_run_id = sqlc.arg(workflow_run_id)
+      AND wt.status IN ('cancelled', 'failed')
+      AND wt.runner_id IS NOT NULL
+) AS has_unsettled_ownership;

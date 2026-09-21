@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 // TransferRepo transfers a repository to a new owner (user or organization).
@@ -240,7 +240,6 @@ func (s *RepoService) transferRepoSerialized(ctx context.Context, repository db.
 			slog.Error("failed to prepare repository move", "repo_id", repository.ID, "error", prepareErr)
 			return db.Repository{}, errors.Internal("failed to transfer repository")
 		}
-		staged.StorageSetID = repository.StorageSetID
 		createErr := s.storageOperations.Create(ctx, newMoveStorageOperation(repository, owner, target, staged))
 		if createErr != nil {
 			switch {

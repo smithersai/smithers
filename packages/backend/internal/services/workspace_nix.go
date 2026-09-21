@@ -8,10 +8,11 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // NixOS compute path for kind=vm and kind=desktop workspaces. The container
@@ -23,7 +24,7 @@ import (
 // WorkspaceEnvironmentImageResolver resolves the image a workspace boots.
 // SandboxEnvironmentImageService implements it.
 type WorkspaceEnvironmentImageResolver interface {
-	Resolve(ctx context.Context, repositoryID int64, kind string) (db.SandboxEnvironmentImage, error)
+	Resolve(ctx context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error)
 }
 
 // WithWorkspaceEnvironmentImages wires the NixOS environment image registry.
@@ -97,9 +98,9 @@ func buildWorkspaceNixBootstrapScript() string {
 }
 
 // resolveWorkspaceImage returns the NixOS image for a vm/desktop workspace.
-func (s *WorkspaceService) resolveWorkspaceImage(ctx context.Context, repositoryID int64, kind string) (db.SandboxEnvironmentImage, error) {
+func (s *WorkspaceService) resolveWorkspaceImage(ctx context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
 	if s.environmentImages == nil {
-		return db.SandboxEnvironmentImage{}, pkgerrors.EnvironmentImageUnavailable("kind " + normalizeWorkspaceKind(kind) + " workspaces need a registered NixOS environment image; this deployment has no image registry")
+		return clusterdb.SandboxEnvironmentImage{}, pkgerrors.EnvironmentImageUnavailable("kind " + normalizeWorkspaceKind(kind) + " workspaces need a registered NixOS environment image; this deployment has no image registry")
 	}
 	return s.environmentImages.Resolve(ctx, repositoryID, kind)
 }
@@ -108,7 +109,7 @@ func (s *WorkspaceService) resolveWorkspaceImage(ctx context.Context, repository
 // given image: closure image, no apt packages, golden snapshot keyed by the
 // closure (only when the caller asked for a snapshot boot), the NixOS
 // bootstrap script, and for desktops the streamed session bootstrap.
-func (s *WorkspaceService) applyNixGuest(req *sandbox.CreateRequest, image db.SandboxEnvironmentImage, wantSnapshot bool, snapshotID string) {
+func (s *WorkspaceService) applyNixGuest(req *sandbox.CreateRequest, image clusterdb.SandboxEnvironmentImage, wantSnapshot bool, snapshotID string) {
 	req.Kind = sandboxKindForWorkspace(req.Kind)
 	req.Image = strings.TrimSpace(image.Image)
 	req.Packages = nil
@@ -148,7 +149,7 @@ const nixGoldenSnapshotsEnabled = false
 // the next boot of the closure clones a disk. Registration already bakes;
 // this covers images registered before snapshots were wired or whose bake
 // failed.
-func (s *WorkspaceService) nixGoldenSnapshotFor(ctx context.Context, image db.SandboxEnvironmentImage) string {
+func (s *WorkspaceService) nixGoldenSnapshotFor(ctx context.Context, image clusterdb.SandboxEnvironmentImage) string {
 	if s.goldenSnapshots == nil || !nixGoldenSnapshotsEnabled {
 		return ""
 	}
@@ -164,13 +165,13 @@ func (s *WorkspaceService) nixGoldenSnapshotFor(ctx context.Context, image db.Sa
 // NixBakeVMRequest is the builder request for a closure image's golden
 // snapshot: the exact kind=vm/desktop workspace request booting that image,
 // repository-agnostic (repositoryID 0 binds no secret), bare (no snapshot).
-func (s *WorkspaceService) NixBakeVMRequest(image db.SandboxEnvironmentImage) sandbox.CreateRequest {
+func (s *WorkspaceService) NixBakeVMRequest(image clusterdb.SandboxEnvironmentImage) sandbox.CreateRequest {
 	req, _ := s.buildWorkspaceVMRequestWithImage(context.Background(), "", nil, 0, image.Kind, &image)
 	return req
 }
 
 // recordWorkspaceEnvironment persists the resolved image on the workspace row.
-func (s *WorkspaceService) recordWorkspaceEnvironment(ctx context.Context, workspaceID string, image db.SandboxEnvironmentImage) {
+func (s *WorkspaceService) recordWorkspaceEnvironment(ctx context.Context, workspaceID string, image clusterdb.SandboxEnvironmentImage) {
 	recorder, ok := s.q.(workspaceEnvironmentImageRecorder)
 	if !ok || strings.TrimSpace(workspaceID) == "" {
 		return

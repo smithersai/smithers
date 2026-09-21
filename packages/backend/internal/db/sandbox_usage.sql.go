@@ -10,6 +10,32 @@ import (
 	"time"
 )
 
+const closeOrphanedSandboxUsageIntervals = `-- name: CloseOrphanedSandboxUsageIntervals :exec
+UPDATE sandbox_usage_intervals AS usage
+SET ended_at = GREATEST(usage.started_at, LEAST(now(), COALESCE(
+    CASE usage.sandbox_kind
+        WHEN 'workspace' THEN (SELECT COALESCE(w.suspended_at, w.deleted_at, w.last_activity_at, w.updated_at) FROM workspaces w WHERE w.id::text = usage.sandbox_id)
+        WHEN 'agent' THEN (SELECT COALESCE(a.finished_at, a.deleted_at, a.updated_at) FROM agent_sessions a WHERE a.id::text = usage.sandbox_id)
+    END, now())))
+WHERE usage.ended_at IS NULL AND (
+    (usage.sandbox_kind = 'workspace' AND NOT EXISTS (
+        SELECT 1 FROM workspaces w WHERE w.id::text = usage.sandbox_id
+        AND w.status IN ('pending', 'starting', 'running') AND w.deleted_at IS NULL
+    )) OR
+    (usage.sandbox_kind = 'agent' AND NOT EXISTS (
+        SELECT 1 FROM agent_sessions a WHERE a.id::text = usage.sandbox_id
+        AND a.status = 'active' AND a.deleted_at IS NULL
+    ))
+)
+`
+
+// Workspace and agent intervals are product state. Private gateway adapters
+// reconcile gateway intervals against their own placement records.
+func (q *Queries) CloseOrphanedSandboxUsageIntervals(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, closeOrphanedSandboxUsageIntervals)
+	return err
+}
+
 const closeSandboxUsageInterval = `-- name: CloseSandboxUsageInterval :exec
 UPDATE sandbox_usage_intervals
 SET ended_at = GREATEST(started_at, now())

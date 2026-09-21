@@ -9,12 +9,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type SandboxEgressAuditQuerier interface {
-	ListSandboxEgressAuditByResource(context.Context, db.ListSandboxEgressAuditByResourceParams) ([]db.SandboxEgressAudit, error)
+	ListSandboxEgressAuditByResource(context.Context, clusterdb.ListSandboxEgressAuditByResourceParams) ([]clusterdb.SandboxEgressAudit, error)
 }
 
 type SandboxEgressAuditService struct {
@@ -59,7 +60,7 @@ func (s *SandboxEgressAuditService) List(ctx context.Context, resourceKind, reso
 	if err != nil {
 		return SandboxEgressAuditList{}, pkgerrors.BadRequest("invalid egress audit cursor")
 	}
-	rows, err := s.q.ListSandboxEgressAuditByResource(ctx, db.ListSandboxEgressAuditByResourceParams{
+	rows, err := s.q.ListSandboxEgressAuditByResource(ctx, clusterdb.ListSandboxEgressAuditByResourceParams{
 		ResourceKind:     resourceKind,
 		ResourceID:       resourceID,
 		RepositoryID:     pgtype.Int8{Int64: repositoryID, Valid: true},

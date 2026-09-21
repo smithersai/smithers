@@ -14,10 +14,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 // WorkflowRunQuerier is the DB interface required for workflow run orchestration.
@@ -230,7 +231,7 @@ type AlertRemediationRunBinding struct {
 }
 
 type alertRemediationRunBinder interface {
-	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
 }
 
 // WorkflowRunResult captures the run and tasks created for a workflow definition.
@@ -863,7 +864,7 @@ func createWorkflowRunRows(
 		if !ok {
 			return result, run, pkgerrors.Internal("alert remediation run binding is unavailable")
 		}
-		rowsAffected, bindErr := binder.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, db.BindAlertRemediationJobWorkflowRunAtAttemptParams{
+		rowsAffected, bindErr := binder.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams{
 			WorkflowRunID:    pgtype.Int8{Int64: run.ID, Valid: true},
 			JobID:            binding.JobID,
 			IncidentRowID:    binding.IncidentRowID,
