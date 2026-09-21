@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -590,8 +591,8 @@ type ListOrgMembersRow struct {
 	EmailNotificationsEnabled bool               `json:"email_notifications_enabled"`
 	LastLoginAt               pgtype.Timestamptz `json:"last_login_at"`
 	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                 time.Time          `json:"created_at"`
+	UpdatedAt                 time.Time          `json:"updated_at"`
 	IsSynthetic               bool               `json:"is_synthetic"`
 	Role                      string             `json:"role"`
 }

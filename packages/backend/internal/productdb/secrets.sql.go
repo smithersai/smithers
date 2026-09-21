@@ -7,8 +7,7 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const createOrUpdateOrgSecret = `-- name: CreateOrUpdateOrgSecret :one
@@ -156,11 +155,11 @@ ORDER BY name
 `
 
 type ListOrgSecretsRow struct {
-	ID             int64              `json:"id"`
-	OrganizationID int64              `json:"organization_id"`
-	Name           string             `json:"name"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	Name           string    `json:"name"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (q *Queries) ListOrgSecrets(ctx context.Context, organizationID int64) ([]ListOrgSecretsRow, error) {
@@ -261,11 +260,11 @@ ORDER BY name
 `
 
 type ListSecretsRow struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Name         string    `json:"name"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (q *Queries) ListSecrets(ctx context.Context, repositoryID int64) ([]ListSecretsRow, error) {

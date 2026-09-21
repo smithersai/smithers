@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -357,14 +358,14 @@ RETURNING id, workflow_run_id, workflow_step_id, repository_id, status, priority
 `
 
 type CreateWorkflowTaskParams struct {
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Status         string             `json:"status"`
-	Priority       int16              `json:"priority"`
-	Payload        json.RawMessage    `json:"payload"`
-	AvailableAt    pgtype.Timestamptz `json:"available_at"`
-	VmID           pgtype.Text        `json:"vm_id"`
+	WorkflowRunID  int64           `json:"workflow_run_id"`
+	WorkflowStepID int64           `json:"workflow_step_id"`
+	RepositoryID   int64           `json:"repository_id"`
+	Status         string          `json:"status"`
+	Priority       int16           `json:"priority"`
+	Payload        json.RawMessage `json:"payload"`
+	AvailableAt    time.Time       `json:"available_at"`
+	VmID           pgtype.Text     `json:"vm_id"`
 }
 
 func (q *Queries) CreateWorkflowTask(ctx context.Context, arg CreateWorkflowTaskParams) (WorkflowTask, error) {
@@ -559,9 +560,9 @@ type GetLatestCommitStatusesByChangeIDsAndContextsParams struct {
 }
 
 type GetLatestCommitStatusesByChangeIDsAndContextsRow struct {
-	Context   string             `json:"context"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Context   string    `json:"context"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Returns the latest commit status per context for a set of change IDs.

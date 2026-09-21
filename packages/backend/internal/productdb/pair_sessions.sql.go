@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -312,13 +313,13 @@ RETURNING id, session_id, lower_email, lower_github_username, role, token_hash, 
 `
 
 type CreatePairSessionInviteParams struct {
-	SessionID           string             `json:"session_id"`
-	LowerEmail          pgtype.Text        `json:"lower_email"`
-	LowerGithubUsername pgtype.Text        `json:"lower_github_username"`
-	Role                string             `json:"role"`
-	TokenHash           string             `json:"token_hash"`
-	InvitedBy           int64              `json:"invited_by"`
-	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	SessionID           string      `json:"session_id"`
+	LowerEmail          pgtype.Text `json:"lower_email"`
+	LowerGithubUsername pgtype.Text `json:"lower_github_username"`
+	Role                string      `json:"role"`
+	TokenHash           string      `json:"token_hash"`
+	InvitedBy           int64       `json:"invited_by"`
+	ExpiresAt           time.Time   `json:"expires_at"`
 }
 
 // ---- Pair session invites ----
@@ -419,8 +420,8 @@ type EndPairSessionForOwnerRow struct {
 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
 	AccessMode        string             `json:"access_mode"`
 	Status            string             `json:"status"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 	EndedAt           pgtype.Timestamptz `json:"ended_at"`
 }
 
@@ -514,7 +515,7 @@ RETURNING id, owner_user_id, source_workspace_id, workspace_id, access_mode, sta
 // Compensation sweep: any session stuck in 'provisioning' past the cutoff is
 // flipped to 'failed' so the one-live-session-per-source index cannot wedge the
 // owner.
-func (q *Queries) FailStalePairSessions(ctx context.Context, cutoff pgtype.Timestamptz) ([]PairSession, error) {
+func (q *Queries) FailStalePairSessions(ctx context.Context, cutoff time.Time) ([]PairSession, error) {
 	rows, err := q.db.Query(ctx, failStalePairSessions, cutoff)
 	if err != nil {
 		return nil, err
@@ -961,7 +962,7 @@ type ListLivePairSessionMemberProfilesRow struct {
 	SessionID   string             `json:"session_id"`
 	UserID      int64              `json:"user_id"`
 	Role        string             `json:"role"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
+	JoinedAt    time.Time          `json:"joined_at"`
 	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
 	Username    string             `json:"username"`
 	DisplayName string             `json:"display_name"`

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -24,8 +25,8 @@ WHERE al.actor_id = $1
 `
 
 type CountPublicAuditLogsByActorParams struct {
-	ActorID pgtype.Int8        `json:"actor_id"`
-	Since   pgtype.Timestamptz `json:"since"`
+	ActorID pgtype.Int8 `json:"actor_id"`
+	Since   time.Time   `json:"since"`
 }
 
 func (q *Queries) CountPublicAuditLogsByActor(ctx context.Context, arg CountPublicAuditLogsByActorParams) (int64, error) {
@@ -39,7 +40,7 @@ const deleteAuditLogsOlderThan = `-- name: DeleteAuditLogsOlderThan :exec
 DELETE FROM audit_log WHERE created_at < $1
 `
 
-func (q *Queries) DeleteAuditLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) error {
+func (q *Queries) DeleteAuditLogsOlderThan(ctx context.Context, createdAt time.Time) error {
 	_, err := q.db.Exec(ctx, deleteAuditLogsOlderThan, createdAt)
 	return err
 }
@@ -84,9 +85,9 @@ LIMIT $3 OFFSET $2
 `
 
 type ListAuditLogsParams struct {
-	Since      pgtype.Timestamptz `json:"since"`
-	PageOffset int32              `json:"page_offset"`
-	PageLimit  int32              `json:"page_limit"`
+	Since      time.Time `json:"since"`
+	PageOffset int32     `json:"page_offset"`
+	PageLimit  int32     `json:"page_limit"`
 }
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
@@ -129,10 +130,10 @@ LIMIT $4 OFFSET $3
 `
 
 type ListAuditLogsByActorParams struct {
-	ActorID    pgtype.Int8        `json:"actor_id"`
-	Since      pgtype.Timestamptz `json:"since"`
-	PageOffset int32              `json:"page_offset"`
-	PageLimit  int32              `json:"page_limit"`
+	ActorID    pgtype.Int8 `json:"actor_id"`
+	Since      time.Time   `json:"since"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListAuditLogsByActor(ctx context.Context, arg ListAuditLogsByActorParams) ([]AuditLog, error) {
@@ -184,13 +185,13 @@ LIMIT $7 OFFSET $6
 `
 
 type ListAuditLogsFilteredParams struct {
-	Since      pgtype.Timestamptz `json:"since"`
-	EventType  string             `json:"event_type"`
-	TargetType string             `json:"target_type"`
-	TargetName string             `json:"target_name"`
-	ActorID    int64              `json:"actor_id"`
-	PageOffset int32              `json:"page_offset"`
-	PageLimit  int32              `json:"page_limit"`
+	Since      time.Time `json:"since"`
+	EventType  string    `json:"event_type"`
+	TargetType string    `json:"target_type"`
+	TargetName string    `json:"target_name"`
+	ActorID    int64     `json:"actor_id"`
+	PageOffset int32     `json:"page_offset"`
+	PageLimit  int32     `json:"page_limit"`
 }
 
 // Filtered audit-log listing. Filters are optional: pass empty strings for
@@ -256,10 +257,10 @@ LIMIT $4 OFFSET $3
 `
 
 type ListPublicAuditLogsByActorParams struct {
-	ActorID    pgtype.Int8        `json:"actor_id"`
-	Since      pgtype.Timestamptz `json:"since"`
-	PageOffset int32              `json:"page_offset"`
-	PageLimit  int32              `json:"page_limit"`
+	ActorID    pgtype.Int8 `json:"actor_id"`
+	Since      time.Time   `json:"since"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListPublicAuditLogsByActor(ctx context.Context, arg ListPublicAuditLogsByActorParams) ([]AuditLog, error) {

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -141,10 +142,10 @@ type GetChangeLandingProvenanceParams struct {
 }
 
 type GetChangeLandingProvenanceRow struct {
-	LandingRequestID     int64              `json:"landing_request_id"`
-	LandingRequestNumber int64              `json:"landing_request_number"`
-	LandedAt             pgtype.Timestamptz `json:"landed_at"`
-	LandedBy             string             `json:"landed_by"`
+	LandingRequestID     int64     `json:"landing_request_id"`
+	LandingRequestNumber int64     `json:"landing_request_number"`
+	LandedAt             time.Time `json:"landed_at"`
+	LandedBy             string    `json:"landed_by"`
 }
 
 func (q *Queries) GetChangeLandingProvenance(ctx context.Context, arg GetChangeLandingProvenanceParams) (GetChangeLandingProvenanceRow, error) {
@@ -270,14 +271,14 @@ type GetChangeStackParams struct {
 }
 
 type GetChangeStackRow struct {
-	LandingRequestID     int64              `json:"landing_request_id"`
-	LandingRequestNumber int64              `json:"landing_request_number"`
-	Position             int64              `json:"position"`
-	Size                 int64              `json:"size"`
-	TurnParty            string             `json:"turn_party"`
-	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
-	TurnReason           string             `json:"turn_reason"`
+	LandingRequestID     int64     `json:"landing_request_id"`
+	LandingRequestNumber int64     `json:"landing_request_number"`
+	Position             int64     `json:"position"`
+	Size                 int64     `json:"size"`
+	TurnParty            string    `json:"turn_party"`
+	TurnActorID          string    `json:"turn_actor_id"`
+	TurnSince            time.Time `json:"turn_since"`
+	TurnReason           string    `json:"turn_reason"`
 }
 
 func (q *Queries) GetChangeStack(ctx context.Context, arg GetChangeStackParams) (GetChangeStackRow, error) {
@@ -445,18 +446,18 @@ type ListChangeReviewsParams struct {
 }
 
 type ListChangeReviewsRow struct {
-	ID               int64              `json:"id"`
-	Reviewer         string             `json:"reviewer"`
-	ReviewerKey      string             `json:"reviewer_key"`
-	ReviewerKind     string             `json:"reviewer_kind"`
-	Type             string             `json:"type"`
-	Verdict          string             `json:"verdict"`
-	ConfidenceBucket pgtype.Text        `json:"confidence_bucket"`
-	Summary          string             `json:"summary"`
-	CommitID         string             `json:"commit_id"`
-	Seq              int64              `json:"seq"`
-	LastReviewedSeq  int64              `json:"last_reviewed_seq"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               int64       `json:"id"`
+	Reviewer         string      `json:"reviewer"`
+	ReviewerKey      string      `json:"reviewer_key"`
+	ReviewerKind     string      `json:"reviewer_kind"`
+	Type             string      `json:"type"`
+	Verdict          string      `json:"verdict"`
+	ConfidenceBucket pgtype.Text `json:"confidence_bucket"`
+	Summary          string      `json:"summary"`
+	CommitID         string      `json:"commit_id"`
+	Seq              int64       `json:"seq"`
+	LastReviewedSeq  int64       `json:"last_reviewed_seq"`
+	CreatedAt        time.Time   `json:"created_at"`
 }
 
 func (q *Queries) ListChangeReviews(ctx context.Context, arg ListChangeReviewsParams) ([]ListChangeReviewsRow, error) {
@@ -610,12 +611,12 @@ type ListLinkedIssuesForChangeParams struct {
 }
 
 type ListLinkedIssuesForChangeRow struct {
-	ID        int64              `json:"id"`
-	Number    int64              `json:"number"`
-	Title     string             `json:"title"`
-	State     string             `json:"state"`
-	LinkType  string             `json:"link_type"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64     `json:"id"`
+	Number    int64     `json:"number"`
+	Title     string    `json:"title"`
+	State     string    `json:"state"`
+	LinkType  string    `json:"link_type"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (q *Queries) ListLinkedIssuesForChange(ctx context.Context, arg ListLinkedIssuesForChangeParams) ([]ListLinkedIssuesForChangeRow, error) {

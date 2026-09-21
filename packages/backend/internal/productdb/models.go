@@ -6,6 +6,7 @@ package db
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -19,28 +20,28 @@ type AccessToken struct {
 	Scopes         string             `json:"scopes"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type AgentMessage struct {
-	ID           int64              `json:"id"`
-	SessionID    string             `json:"session_id"`
-	RepositoryID int64              `json:"repository_id"`
-	Role         string             `json:"role"`
-	Sequence     int64              `json:"sequence"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64     `json:"id"`
+	SessionID    string    `json:"session_id"`
+	RepositoryID int64     `json:"repository_id"`
+	Role         string    `json:"role"`
+	Sequence     int64     `json:"sequence"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type AgentPart struct {
-	ID           int64              `json:"id"`
-	MessageID    int64              `json:"message_id"`
-	RepositoryID int64              `json:"repository_id"`
-	SessionID    string             `json:"session_id"`
-	PartIndex    int64              `json:"part_index"`
-	PartType     string             `json:"part_type"`
-	Content      json.RawMessage    `json:"content"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64           `json:"id"`
+	MessageID    int64           `json:"message_id"`
+	RepositoryID int64           `json:"repository_id"`
+	SessionID    string          `json:"session_id"`
+	PartIndex    int64           `json:"part_index"`
+	PartType     string          `json:"part_type"`
+	Content      json.RawMessage `json:"content"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 type AgentSession struct {
@@ -54,8 +55,8 @@ type AgentSession struct {
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	StartedAt     pgtype.Timestamptz `json:"started_at"`
 	FinishedAt    pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
 
@@ -70,18 +71,18 @@ type AlphaWaitlistEntry struct {
 	Source          string             `json:"source"`
 	ApprovedBy      pgtype.Int8        `json:"approved_by"`
 	ApprovedAt      pgtype.Timestamptz `json:"approved_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 type AlphaWhitelistEntry struct {
-	ID                 int64              `json:"id"`
-	IdentityType       string             `json:"identity_type"`
-	IdentityValue      string             `json:"identity_value"`
-	LowerIdentityValue string             `json:"lower_identity_value"`
-	CreatedBy          pgtype.Int8        `json:"created_by"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ID                 int64       `json:"id"`
+	IdentityType       string      `json:"identity_type"`
+	IdentityValue      string      `json:"identity_value"`
+	LowerIdentityValue string      `json:"lower_identity_value"`
+	CreatedBy          pgtype.Int8 `json:"created_by"`
+	CreatedAt          time.Time   `json:"created_at"`
+	UpdatedAt          time.Time   `json:"updated_at"`
 }
 
 type AnalyzerRun struct {
@@ -96,8 +97,8 @@ type AnalyzerRun struct {
 	PausedBy      pgtype.Text        `json:"paused_by"`
 	PausedReason  pgtype.Text        `json:"paused_reason"`
 	FailureReason pgtype.Text        `json:"failure_reason"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 type AnonSandbox struct {
@@ -109,9 +110,9 @@ type AnonSandbox struct {
 	ProvisioningStage string             `json:"provisioning_stage"`
 	TokenHash         string             `json:"token_hash"`
 	ClientIp          string             `json:"client_ip"`
-	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt         time.Time          `json:"expires_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
@@ -121,40 +122,40 @@ type AppTimeline struct {
 	ClientKey   string             `json:"client_key"`
 	Version     int32              `json:"version"`
 	HeadSeq     int64              `json:"head_seq"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type AppTimelineBranch struct {
-	TimelineID string             `json:"timeline_id"`
-	Ordinal    int32              `json:"ordinal"`
-	FromSeq    int64              `json:"from_seq"`
-	Events     json.RawMessage    `json:"events"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	TimelineID string          `json:"timeline_id"`
+	Ordinal    int32           `json:"ordinal"`
+	FromSeq    int64           `json:"from_seq"`
+	Events     json.RawMessage `json:"events"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type AppTimelineEvent struct {
-	TimelineID string             `json:"timeline_id"`
-	Seq        int64              `json:"seq"`
-	Payload    json.RawMessage    `json:"payload"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	TimelineID string          `json:"timeline_id"`
+	Seq        int64           `json:"seq"`
+	Payload    json.RawMessage `json:"payload"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type AppTimelineMember struct {
 	TimelineID string             `json:"timeline_id"`
 	UserID     int64              `json:"user_id"`
 	Role       string             `json:"role"`
-	JoinedAt   pgtype.Timestamptz `json:"joined_at"`
+	JoinedAt   time.Time          `json:"joined_at"`
 	RemovedAt  pgtype.Timestamptz `json:"removed_at"`
 }
 
 type AppTimelineSnapshot struct {
-	TimelineID string             `json:"timeline_id"`
-	Seq        int64              `json:"seq"`
-	State      json.RawMessage    `json:"state"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	TimelineID string          `json:"timeline_id"`
+	Seq        int64           `json:"seq"`
+	State      json.RawMessage `json:"state"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 type Approval struct {
@@ -165,7 +166,7 @@ type Approval struct {
 	Kind         string             `json:"kind"`
 	Title        string             `json:"title"`
 	Description  pgtype.Text        `json:"description"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	CreatedAt    time.Time          `json:"created_at"`
 	DecidedAt    pgtype.Timestamptz `json:"decided_at"`
 	DecidedBy    pgtype.Int8        `json:"decided_by"`
 	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
@@ -173,76 +174,76 @@ type Approval struct {
 }
 
 type AuditLog struct {
-	ID         int64              `json:"id"`
-	EventType  string             `json:"event_type"`
-	ActorID    pgtype.Int8        `json:"actor_id"`
-	ActorName  string             `json:"actor_name"`
-	TargetType string             `json:"target_type"`
-	TargetID   pgtype.Int8        `json:"target_id"`
-	TargetName string             `json:"target_name"`
-	Action     string             `json:"action"`
-	Metadata   json.RawMessage    `json:"metadata"`
-	IpAddress  string             `json:"ip_address"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID         int64           `json:"id"`
+	EventType  string          `json:"event_type"`
+	ActorID    pgtype.Int8     `json:"actor_id"`
+	ActorName  string          `json:"actor_name"`
+	TargetType string          `json:"target_type"`
+	TargetID   pgtype.Int8     `json:"target_id"`
+	TargetName string          `json:"target_name"`
+	Action     string          `json:"action"`
+	Metadata   json.RawMessage `json:"metadata"`
+	IpAddress  string          `json:"ip_address"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 type AuthNonce struct {
 	NonceKey      string             `json:"nonce_key"`
 	WalletAddress pgtype.Text        `json:"wallet_address"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
 	UsedAt        pgtype.Timestamptz `json:"used_at"`
 }
 
 type AuthSession struct {
-	SessionKey string             `json:"session_key"`
-	UserID     int64              `json:"user_id"`
-	Username   string             `json:"username"`
-	IsAdmin    bool               `json:"is_admin"`
-	Data       []byte             `json:"data"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	SessionKey string    `json:"session_key"`
+	UserID     int64     `json:"user_id"`
+	Username   string    `json:"username"`
+	IsAdmin    bool      `json:"is_admin"`
+	Data       []byte    `json:"data"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type BillingAccount struct {
-	ID                  int64              `json:"id"`
-	OwnerType           string             `json:"owner_type"`
-	OwnerID             int64              `json:"owner_id"`
-	StripeCustomerID    string             `json:"stripe_customer_id"`
-	StripeCustomerEmail string             `json:"stripe_customer_email"`
-	StripeCustomerName  string             `json:"stripe_customer_name"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ID                  int64     `json:"id"`
+	OwnerType           string    `json:"owner_type"`
+	OwnerID             int64     `json:"owner_id"`
+	StripeCustomerID    string    `json:"stripe_customer_id"`
+	StripeCustomerEmail string    `json:"stripe_customer_email"`
+	StripeCustomerName  string    `json:"stripe_customer_name"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type BillingCreditBalance struct {
 	BillingAccountID int64              `json:"billing_account_id"`
 	BalanceCents     int64              `json:"balance_cents"`
 	LastGrantAt      pgtype.Timestamptz `json:"last_grant_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 }
 
 type BillingCreditLedger struct {
-	ID                int64              `json:"id"`
-	BillingAccountID  int64              `json:"billing_account_id"`
-	AmountCents       int64              `json:"amount_cents"`
-	BalanceAfterCents int64              `json:"balance_after_cents"`
-	Reason            string             `json:"reason"`
-	Category          string             `json:"category"`
-	MetricKey         string             `json:"metric_key"`
-	IdempotencyKey    string             `json:"idempotency_key"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ID                int64     `json:"id"`
+	BillingAccountID  int64     `json:"billing_account_id"`
+	AmountCents       int64     `json:"amount_cents"`
+	BalanceAfterCents int64     `json:"balance_after_cents"`
+	Reason            string    `json:"reason"`
+	Category          string    `json:"category"`
+	MetricKey         string    `json:"metric_key"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type BillingEntitlement struct {
-	ID               int64              `json:"id"`
-	BillingAccountID int64              `json:"billing_account_id"`
-	FeatureKey       string             `json:"feature_key"`
-	Active           bool               `json:"active"`
-	LastSyncedAt     pgtype.Timestamptz `json:"last_synced_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64     `json:"id"`
+	BillingAccountID int64     `json:"billing_account_id"`
+	FeatureKey       string    `json:"feature_key"`
+	Active           bool      `json:"active"`
+	LastSyncedAt     time.Time `json:"last_synced_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type BillingSubscription struct {
@@ -261,44 +262,44 @@ type BillingSubscription struct {
 	CancelAtPeriodEnd    bool               `json:"cancel_at_period_end"`
 	CanceledAt           pgtype.Timestamptz `json:"canceled_at"`
 	RawPayload           json.RawMessage    `json:"raw_payload"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 }
 
 type BillingUsageCounter struct {
-	ID                       int64              `json:"id"`
-	OwnerType                string             `json:"owner_type"`
-	OwnerID                  int64              `json:"owner_id"`
-	MetricKey                string             `json:"metric_key"`
-	PeriodStart              pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd                pgtype.Timestamptz `json:"period_end"`
-	IncludedQuantity         int64              `json:"included_quantity"`
-	ConsumedQuantity         int64              `json:"consumed_quantity"`
-	OverageQuantity          int64              `json:"overage_quantity"`
-	LastReportedMeterEventID string             `json:"last_reported_meter_event_id"`
-	LastSyncedAt             pgtype.Timestamptz `json:"last_synced_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	ID                       int64     `json:"id"`
+	OwnerType                string    `json:"owner_type"`
+	OwnerID                  int64     `json:"owner_id"`
+	MetricKey                string    `json:"metric_key"`
+	PeriodStart              time.Time `json:"period_start"`
+	PeriodEnd                time.Time `json:"period_end"`
+	IncludedQuantity         int64     `json:"included_quantity"`
+	ConsumedQuantity         int64     `json:"consumed_quantity"`
+	OverageQuantity          int64     `json:"overage_quantity"`
+	LastReportedMeterEventID string    `json:"last_reported_meter_event_id"`
+	LastSyncedAt             time.Time `json:"last_synced_at"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
 }
 
 type Bookmark struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Name           string             `json:"name"`
-	TargetChangeID string             `json:"target_change_id"`
-	IsDefault      bool               `json:"is_default"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Name           string    `json:"name"`
+	TargetChangeID string    `json:"target_change_id"`
+	IsDefault      bool      `json:"is_default"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type BranchLock struct {
-	RepositoryID int64              `json:"repository_id"`
-	Branch       string             `json:"branch"`
-	UserID       int64              `json:"user_id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	HeartbeatAt  pgtype.Timestamptz `json:"heartbeat_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	RepositoryID int64       `json:"repository_id"`
+	Branch       string      `json:"branch"`
+	UserID       int64       `json:"user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	HeartbeatAt  time.Time   `json:"heartbeat_at"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type BranchLockJoinRequest struct {
@@ -308,31 +309,31 @@ type BranchLockJoinRequest struct {
 	RequesterID  int64              `json:"requester_id"`
 	Status       string             `json:"status"`
 	ResolverID   pgtype.Int8        `json:"resolver_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	CreatedAt    time.Time          `json:"created_at"`
 	ResolvedAt   pgtype.Timestamptz `json:"resolved_at"`
 }
 
 type BuildCacheArtifact struct {
-	RepositoryID   int64              `json:"repository_id"`
-	Digest         string             `json:"digest"`
-	SizeBytes      int64              `json:"size_bytes"`
-	GcsKey         string             `json:"gcs_key"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	LastAccessedAt pgtype.Timestamptz `json:"last_accessed_at"`
-	AccessCount    int64              `json:"access_count"`
+	RepositoryID   int64     `json:"repository_id"`
+	Digest         string    `json:"digest"`
+	SizeBytes      int64     `json:"size_bytes"`
+	GcsKey         string    `json:"gcs_key"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastAccessedAt time.Time `json:"last_accessed_at"`
+	AccessCount    int64     `json:"access_count"`
 }
 
 type BuildCacheEntry struct {
-	RepositoryID     int64              `json:"repository_id"`
-	KeyDigest        string             `json:"key_digest"`
-	Body             string             `json:"body"`
-	ResultCanonical  string             `json:"result_canonical"`
-	CreatedAtMs      pgtype.Int8        `json:"created_at_ms"`
-	RecordedRunID    pgtype.Text        `json:"recorded_run_id"`
-	RecordedEventSeq pgtype.Int8        `json:"recorded_event_seq"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	LastAccessedAt   pgtype.Timestamptz `json:"last_accessed_at"`
-	AccessCount      int64              `json:"access_count"`
+	RepositoryID     int64       `json:"repository_id"`
+	KeyDigest        string      `json:"key_digest"`
+	Body             string      `json:"body"`
+	ResultCanonical  string      `json:"result_canonical"`
+	CreatedAtMs      pgtype.Int8 `json:"created_at_ms"`
+	RecordedRunID    pgtype.Text `json:"recorded_run_id"`
+	RecordedEventSeq pgtype.Int8 `json:"recorded_event_seq"`
+	CreatedAt        time.Time   `json:"created_at"`
+	LastAccessedAt   time.Time   `json:"last_accessed_at"`
+	AccessCount      int64       `json:"access_count"`
 }
 
 type BuildCacheEntryArtifact struct {
@@ -350,47 +351,47 @@ type BuildCacheReadToken struct {
 	TokenLastEight string             `json:"token_last_eight"`
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
 	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type Change struct {
-	ID              int64              `json:"id"`
-	RepositoryID    int64              `json:"repository_id"`
-	ChangeID        string             `json:"change_id"`
-	CommitID        string             `json:"commit_id"`
-	Description     string             `json:"description"`
-	AuthorName      string             `json:"author_name"`
-	AuthorEmail     string             `json:"author_email"`
-	HasConflict     bool               `json:"has_conflict"`
-	IsEmpty         bool               `json:"is_empty"`
-	ParentChangeIds json.RawMessage    `json:"parent_change_ids"`
-	RevisionSeq     int64              `json:"revision_seq"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID              int64           `json:"id"`
+	RepositoryID    int64           `json:"repository_id"`
+	ChangeID        string          `json:"change_id"`
+	CommitID        string          `json:"commit_id"`
+	Description     string          `json:"description"`
+	AuthorName      string          `json:"author_name"`
+	AuthorEmail     string          `json:"author_email"`
+	HasConflict     bool            `json:"has_conflict"`
+	IsEmpty         bool            `json:"is_empty"`
+	ParentChangeIds json.RawMessage `json:"parent_change_ids"`
+	RevisionSeq     int64           `json:"revision_seq"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type ChangeRevision struct {
-	ID                  int64              `json:"id"`
-	RepositoryID        int64              `json:"repository_id"`
-	ChangeID            string             `json:"change_id"`
-	Seq                 int64              `json:"seq"`
-	CommitID            string             `json:"commit_id"`
-	ParentCommitID      string             `json:"parent_commit_id"`
-	Source              string             `json:"source"`
-	AgentSessionID      pgtype.UUID        `json:"agent_session_id"`
-	WorkspaceSnapshotID pgtype.UUID        `json:"workspace_snapshot_id"`
-	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
-	OperationIds        []string           `json:"operation_ids"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	ID                  int64       `json:"id"`
+	RepositoryID        int64       `json:"repository_id"`
+	ChangeID            string      `json:"change_id"`
+	Seq                 int64       `json:"seq"`
+	CommitID            string      `json:"commit_id"`
+	ParentCommitID      string      `json:"parent_commit_id"`
+	Source              string      `json:"source"`
+	AgentSessionID      pgtype.UUID `json:"agent_session_id"`
+	WorkspaceSnapshotID pgtype.UUID `json:"workspace_snapshot_id"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+	OperationIds        []string    `json:"operation_ids"`
+	CreatedAt           time.Time   `json:"created_at"`
 }
 
 type ChangeWalkthrough struct {
-	ID               int64              `json:"id"`
-	ChangeRevisionID int64              `json:"change_revision_id"`
-	Sections         json.RawMessage    `json:"sections"`
-	Quiz             json.RawMessage    `json:"quiz"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64           `json:"id"`
+	ChangeRevisionID int64           `json:"change_revision_id"`
+	Sections         json.RawMessage `json:"sections"`
+	Quiz             json.RawMessage `json:"quiz"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 type Changeset struct {
@@ -408,32 +409,32 @@ type Changeset struct {
 	LandedCommitID           string             `json:"landed_commit_id"`
 	CreatedBy                pgtype.Int8        `json:"created_by"`
 	LandedAt                 pgtype.Timestamptz `json:"landed_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                time.Time          `json:"created_at"`
+	UpdatedAt                time.Time          `json:"updated_at"`
 }
 
 type ChangesetMember struct {
-	ID               int64              `json:"id"`
-	ChangesetID      int64              `json:"changeset_id"`
-	RepositoryID     int64              `json:"repository_id"`
-	Path             string             `json:"path"`
-	ChangeID         string             `json:"change_id"`
-	CommitID         string             `json:"commit_id"`
-	TargetBookmark   string             `json:"target_bookmark"`
-	PreviousCommitID string             `json:"previous_commit_id"`
-	LandedCommitID   string             `json:"landed_commit_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64     `json:"id"`
+	ChangesetID      int64     `json:"changeset_id"`
+	RepositoryID     int64     `json:"repository_id"`
+	Path             string    `json:"path"`
+	ChangeID         string    `json:"change_id"`
+	CommitID         string    `json:"commit_id"`
+	TargetBookmark   string    `json:"target_bookmark"`
+	PreviousCommitID string    `json:"previous_commit_id"`
+	LandedCommitID   string    `json:"landed_commit_id"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type CodeSearchDocument struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	FilePath     string             `json:"file_path"`
-	Content      string             `json:"content"`
-	SearchVector interface{}        `json:"search_vector"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64       `json:"id"`
+	RepositoryID int64       `json:"repository_id"`
+	FilePath     string      `json:"file_path"`
+	Content      string      `json:"content"`
+	SearchVector interface{} `json:"search_vector"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type CodeSearchIndexState struct {
@@ -442,30 +443,30 @@ type CodeSearchIndexState struct {
 }
 
 type Collaborator struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	UserID       pgtype.Int8        `json:"user_id"`
-	Permission   string             `json:"permission"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64       `json:"id"`
+	RepositoryID int64       `json:"repository_id"`
+	UserID       pgtype.Int8 `json:"user_id"`
+	Permission   string      `json:"permission"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type CommitStatus struct {
-	ID              int64              `json:"id"`
-	RepositoryID    int64              `json:"repository_id"`
-	ChangeID        pgtype.Text        `json:"change_id"`
-	CommitSha       pgtype.Text        `json:"commit_sha"`
-	Context         string             `json:"context"`
-	Status          string             `json:"status"`
-	Description     string             `json:"description"`
-	TargetUrl       string             `json:"target_url"`
-	WorkflowRunID   pgtype.Int8        `json:"workflow_run_id"`
-	TargetsAffected int64              `json:"targets_affected"`
-	TargetsRan      int64              `json:"targets_ran"`
-	TargetsCached   int64              `json:"targets_cached"`
-	DurationMs      int64              `json:"duration_ms"`
-	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID              int64       `json:"id"`
+	RepositoryID    int64       `json:"repository_id"`
+	ChangeID        pgtype.Text `json:"change_id"`
+	CommitSha       pgtype.Text `json:"commit_sha"`
+	Context         string      `json:"context"`
+	Status          string      `json:"status"`
+	Description     string      `json:"description"`
+	TargetUrl       string      `json:"target_url"`
+	WorkflowRunID   pgtype.Int8 `json:"workflow_run_id"`
+	TargetsAffected int64       `json:"targets_affected"`
+	TargetsRan      int64       `json:"targets_ran"`
+	TargetsCached   int64       `json:"targets_cached"`
+	DurationMs      int64       `json:"duration_ms"`
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
 type Conflict struct {
@@ -478,8 +479,8 @@ type Conflict struct {
 	ResolvedBy       pgtype.Int8        `json:"resolved_by"`
 	ResolutionMethod string             `json:"resolution_method"`
 	ResolvedAt       pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 }
 
 type DeployKey struct {
@@ -490,26 +491,26 @@ type DeployKey struct {
 	PublicKey      string             `json:"public_key"`
 	ReadOnly       bool               `json:"read_only"`
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type DevtoolsSnapshot struct {
-	SessionID    string             `json:"session_id"`
-	RepositoryID int64              `json:"repository_id"`
-	Kind         string             `json:"kind"`
-	Payload      json.RawMessage    `json:"payload"`
-	Timestamp    pgtype.Timestamptz `json:"timestamp"`
+	SessionID    string          `json:"session_id"`
+	RepositoryID int64           `json:"repository_id"`
+	Kind         string          `json:"kind"`
+	Payload      json.RawMessage `json:"payload"`
+	Timestamp    time.Time       `json:"timestamp"`
 }
 
 type EmailAddress struct {
-	ID          int64              `json:"id"`
-	UserID      int64              `json:"user_id"`
-	Email       string             `json:"email"`
-	LowerEmail  string             `json:"lower_email"`
-	IsActivated bool               `json:"is_activated"`
-	IsPrimary   bool               `json:"is_primary"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Email       string    `json:"email"`
+	LowerEmail  string    `json:"lower_email"`
+	IsActivated bool      `json:"is_activated"`
+	IsPrimary   bool      `json:"is_primary"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type EmailVerificationToken struct {
@@ -518,8 +519,8 @@ type EmailVerificationToken struct {
 	Email     string             `json:"email"`
 	TokenHash string             `json:"token_hash"`
 	TokenType string             `json:"token_type"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	CreatedAt time.Time          `json:"created_at"`
 	UsedAt    pgtype.Timestamptz `json:"used_at"`
 }
 
@@ -533,68 +534,68 @@ type FileDraft struct {
 	BaseChangeID string             `json:"base_change_id"`
 	UpdatedBy    pgtype.Int8        `json:"updated_by"`
 	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 type Finding struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	ChangeID     string             `json:"change_id"`
-	RevisionSeq  int64              `json:"revision_seq"`
-	Analyzer     string             `json:"analyzer"`
-	Source       string             `json:"source"`
-	Path         string             `json:"path"`
-	Line         int64              `json:"line"`
-	Side         string             `json:"side"`
-	Severity     string             `json:"severity"`
-	Text         string             `json:"text"`
-	Suggestion   pgtype.Text        `json:"suggestion"`
-	AnchorHash   pgtype.Text        `json:"anchor_hash"`
-	Feedback     pgtype.Text        `json:"feedback"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64       `json:"id"`
+	RepositoryID int64       `json:"repository_id"`
+	ChangeID     string      `json:"change_id"`
+	RevisionSeq  int64       `json:"revision_seq"`
+	Analyzer     string      `json:"analyzer"`
+	Source       string      `json:"source"`
+	Path         string      `json:"path"`
+	Line         int64       `json:"line"`
+	Side         string      `json:"side"`
+	Severity     string      `json:"severity"`
+	Text         string      `json:"text"`
+	Suggestion   pgtype.Text `json:"suggestion"`
+	AnchorHash   pgtype.Text `json:"anchor_hash"`
+	Feedback     pgtype.Text `json:"feedback"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type FindingFeedback struct {
-	FindingID int64              `json:"finding_id"`
-	UserID    int64              `json:"user_id"`
-	Useful    bool               `json:"useful"`
-	Note      pgtype.Text        `json:"note"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	FindingID int64       `json:"finding_id"`
+	UserID    int64       `json:"user_id"`
+	Useful    bool        `json:"useful"`
+	Note      pgtype.Text `json:"note"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type GithubAppInstallation struct {
-	InstallationID      int64              `json:"installation_id"`
-	AccountLogin        string             `json:"account_login"`
-	AccountType         string             `json:"account_type"`
-	RepositorySelection string             `json:"repository_selection"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	InstallationID      int64     `json:"installation_id"`
+	AccountLogin        string    `json:"account_login"`
+	AccountType         string    `json:"account_type"`
+	RepositorySelection string    `json:"repository_selection"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type GithubAppInstallationRepository struct {
-	InstallationID     int64              `json:"installation_id"`
-	GithubRepositoryID int64              `json:"github_repository_id"`
-	OwnerLogin         string             `json:"owner_login"`
-	OwnerLoginLower    string             `json:"owner_login_lower"`
-	RepoName           string             `json:"repo_name"`
-	RepoNameLower      string             `json:"repo_name_lower"`
-	IsPrivate          bool               `json:"is_private"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	InstallationID     int64     `json:"installation_id"`
+	GithubRepositoryID int64     `json:"github_repository_id"`
+	OwnerLogin         string    `json:"owner_login"`
+	OwnerLoginLower    string    `json:"owner_login_lower"`
+	RepoName           string    `json:"repo_name"`
+	RepoNameLower      string    `json:"repo_name_lower"`
+	IsPrivate          bool      `json:"is_private"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type GithubMirrorSyncRefResult struct {
-	ID           int64              `json:"id"`
-	RunID        int64              `json:"run_id"`
-	Name         string             `json:"name"`
-	FromRevision string             `json:"from_revision"`
-	ToRevision   string             `json:"to_revision"`
-	Status       string             `json:"status"`
-	Error        string             `json:"error"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RunID        int64     `json:"run_id"`
+	Name         string    `json:"name"`
+	FromRevision string    `json:"from_revision"`
+	ToRevision   string    `json:"to_revision"`
+	Status       string    `json:"status"`
+	Error        string    `json:"error"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type GithubMirrorSyncRun struct {
@@ -604,18 +605,18 @@ type GithubMirrorSyncRun struct {
 	State        string             `json:"state"`
 	StartedAt    pgtype.Timestamptz `json:"started_at"`
 	FinishedAt   pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 type GithubRepoListing struct {
 	UserID       int64              `json:"user_id"`
 	Payload      json.RawMessage    `json:"payload"`
-	SyncedAt     pgtype.Timestamptz `json:"synced_at"`
+	SyncedAt     time.Time          `json:"synced_at"`
 	SyncError    pgtype.Text        `json:"sync_error"`
 	SyncingSince pgtype.Timestamptz `json:"syncing_since"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 type GithubSyncedIssue struct {
@@ -629,8 +630,8 @@ type GithubSyncedIssue struct {
 	Payload         json.RawMessage    `json:"payload"`
 	GithubCreatedAt pgtype.Timestamptz `json:"github_created_at"`
 	GithubUpdatedAt pgtype.Timestamptz `json:"github_updated_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 type GithubSyncedIssueComment struct {
@@ -641,8 +642,8 @@ type GithubSyncedIssueComment struct {
 	Payload         json.RawMessage    `json:"payload"`
 	GithubCreatedAt pgtype.Timestamptz `json:"github_created_at"`
 	GithubUpdatedAt pgtype.Timestamptz `json:"github_updated_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 type GithubSyncedRepo struct {
@@ -664,8 +665,8 @@ type GithubSyncedRepo struct {
 	SyncingSince        pgtype.Timestamptz `json:"syncing_since"`
 	SyncError           pgtype.Text        `json:"sync_error"`
 	ConsecutiveFailures int32              `json:"consecutive_failures"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
 }
 
 type GithubWebhookJob struct {
@@ -679,10 +680,10 @@ type GithubWebhookJob struct {
 	Status             string             `json:"status"`
 	Attempts           int32              `json:"attempts"`
 	Error              string             `json:"error"`
-	AvailableAt        pgtype.Timestamptz `json:"available_at"`
+	AvailableAt        time.Time          `json:"available_at"`
 	ProcessedAt        pgtype.Timestamptz `json:"processed_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt          time.Time          `json:"created_at"`
+	UpdatedAt          time.Time          `json:"updated_at"`
 }
 
 type ImportJob struct {
@@ -710,9 +711,9 @@ type ImportJob struct {
 	ClaimToken               pgtype.Text        `json:"claim_token"`
 	ClaimedAt                pgtype.Timestamptz `json:"claimed_at"`
 	Attempts                 int32              `json:"attempts"`
-	AvailableAt              pgtype.Timestamptz `json:"available_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	AvailableAt              time.Time          `json:"available_at"`
+	CreatedAt                time.Time          `json:"created_at"`
+	UpdatedAt                time.Time          `json:"updated_at"`
 }
 
 type Issue struct {
@@ -733,8 +734,8 @@ type Issue struct {
 	VerifiedByID             pgtype.Int8        `json:"verified_by_id"`
 	VerifiedByAgentSessionID pgtype.UUID        `json:"verified_by_agent_session_id"`
 	VerifiedAt               pgtype.Timestamptz `json:"verified_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                time.Time          `json:"created_at"`
+	UpdatedAt                time.Time          `json:"updated_at"`
 }
 
 type IssueArtifact struct {
@@ -749,99 +750,99 @@ type IssueArtifact struct {
 	GcsKey        string             `json:"gcs_key"`
 	ConfirmedAt   pgtype.Timestamptz `json:"confirmed_at"`
 	DeletionToken pgtype.Text        `json:"deletion_token"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 type IssueAssignee struct {
-	ID        int64              `json:"id"`
-	IssueID   int64              `json:"issue_id"`
-	UserID    pgtype.Int8        `json:"user_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64       `json:"id"`
+	IssueID   int64       `json:"issue_id"`
+	UserID    pgtype.Int8 `json:"user_id"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type IssueChangeLink struct {
-	RepositoryID int64              `json:"repository_id"`
-	IssueID      int64              `json:"issue_id"`
-	ChangeID     string             `json:"change_id"`
-	LinkType     string             `json:"link_type"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	RepositoryID int64     `json:"repository_id"`
+	IssueID      int64     `json:"issue_id"`
+	ChangeID     string    `json:"change_id"`
+	LinkType     string    `json:"link_type"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type IssueComment struct {
-	ID        int64              `json:"id"`
-	IssueID   int64              `json:"issue_id"`
-	UserID    pgtype.Int8        `json:"user_id"`
-	Commenter string             `json:"commenter"`
-	Body      string             `json:"body"`
-	Type      string             `json:"type"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int64       `json:"id"`
+	IssueID   int64       `json:"issue_id"`
+	UserID    pgtype.Int8 `json:"user_id"`
+	Commenter string      `json:"commenter"`
+	Body      string      `json:"body"`
+	Type      string      `json:"type"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 type IssueDependency struct {
-	IssueID          int64              `json:"issue_id"`
-	DependsOnIssueID int64              `json:"depends_on_issue_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	IssueID          int64     `json:"issue_id"`
+	DependsOnIssueID int64     `json:"depends_on_issue_id"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type IssueEvent struct {
-	ID        int64              `json:"id"`
-	IssueID   int64              `json:"issue_id"`
-	ActorID   pgtype.Int8        `json:"actor_id"`
-	EventType string             `json:"event_type"`
-	Payload   json.RawMessage    `json:"payload"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64           `json:"id"`
+	IssueID   int64           `json:"issue_id"`
+	ActorID   pgtype.Int8     `json:"actor_id"`
+	EventType string          `json:"event_type"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 type IssueLabel struct {
-	IssueID   int64              `json:"issue_id"`
-	LabelID   int64              `json:"label_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	IssueID   int64     `json:"issue_id"`
+	LabelID   int64     `json:"label_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type IssueStateFact struct {
-	RepositoryID  int64              `json:"repository_id"`
-	Sequence      int64              `json:"sequence"`
-	EventID       string             `json:"event_id"`
-	SchemaVersion int16              `json:"schema_version"`
-	EntityType    string             `json:"entity_type"`
-	Operation     string             `json:"operation"`
-	IssueID       int64              `json:"issue_id"`
-	EntityKey     string             `json:"entity_key"`
-	PostImage     []byte             `json:"post_image"`
-	RecordedAt    pgtype.Timestamptz `json:"recorded_at"`
+	RepositoryID  int64     `json:"repository_id"`
+	Sequence      int64     `json:"sequence"`
+	EventID       string    `json:"event_id"`
+	SchemaVersion int16     `json:"schema_version"`
+	EntityType    string    `json:"entity_type"`
+	Operation     string    `json:"operation"`
+	IssueID       int64     `json:"issue_id"`
+	EntityKey     string    `json:"entity_key"`
+	PostImage     []byte    `json:"post_image"`
+	RecordedAt    time.Time `json:"recorded_at"`
 }
 
 type IssueStateJournal struct {
-	RepositoryID      int64              `json:"repository_id"`
-	Head              int64              `json:"head"`
-	CoverageKind      string             `json:"coverage_kind"`
-	CoverageStartedAt pgtype.Timestamptz `json:"coverage_started_at"`
+	RepositoryID      int64     `json:"repository_id"`
+	Head              int64     `json:"head"`
+	CoverageKind      string    `json:"coverage_kind"`
+	CoverageStartedAt time.Time `json:"coverage_started_at"`
 }
 
 type JjOperation struct {
-	ID                int64              `json:"id"`
-	RepositoryID      int64              `json:"repository_id"`
-	OperationID       string             `json:"operation_id"`
-	OperationType     string             `json:"operation_type"`
-	Description       string             `json:"description"`
-	UserID            int64              `json:"user_id"`
-	ParentOperationID string             `json:"parent_operation_id"`
-	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
-	ChangeIds         []string           `json:"change_ids"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ID                int64       `json:"id"`
+	RepositoryID      int64       `json:"repository_id"`
+	OperationID       string      `json:"operation_id"`
+	OperationType     string      `json:"operation_type"`
+	Description       string      `json:"description"`
+	UserID            int64       `json:"user_id"`
+	ParentOperationID string      `json:"parent_operation_id"`
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	ChangeIds         []string    `json:"change_ids"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type Label struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	Color        string             `json:"color"`
-	Description  string             `json:"description"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Name         string    `json:"name"`
+	Color        string    `json:"color"`
+	Description  string    `json:"description"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type LandingRequest struct {
@@ -862,7 +863,7 @@ type LandingRequest struct {
 	AuthorAgentSessionID pgtype.UUID        `json:"author_agent_session_id"`
 	TurnParty            string             `json:"turn_party"`
 	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
+	TurnSince            time.Time          `json:"turn_since"`
 	TurnReason           string             `json:"turn_reason"`
 	TurnRevisionID       int64              `json:"turn_revision_id"`
 	LandedRevisions      json.RawMessage    `json:"landed_revisions"`
@@ -875,16 +876,16 @@ type LandingRequest struct {
 	LandingStartedAt     pgtype.Timestamptz `json:"landing_started_at"`
 	ClosedAt             pgtype.Timestamptz `json:"closed_at"`
 	MergedAt             pgtype.Timestamptz `json:"merged_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 }
 
 type LandingRequestChange struct {
-	ID               int64              `json:"id"`
-	LandingRequestID int64              `json:"landing_request_id"`
-	ChangeID         string             `json:"change_id"`
-	PositionInStack  int64              `json:"position_in_stack"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               int64     `json:"id"`
+	LandingRequestID int64     `json:"landing_request_id"`
+	ChangeID         string    `json:"change_id"`
+	PositionInStack  int64     `json:"position_in_stack"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type LandingRequestComment struct {
@@ -903,36 +904,36 @@ type LandingRequestComment struct {
 	ResolvedInRevision json.RawMessage    `json:"resolved_in_revision"`
 	ResolvedAt         pgtype.Timestamptz `json:"resolved_at"`
 	ResolvedBy         pgtype.Int8        `json:"resolved_by"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt          time.Time          `json:"created_at"`
+	UpdatedAt          time.Time          `json:"updated_at"`
 }
 
 type LandingRequestReview struct {
-	ID               int64              `json:"id"`
-	LandingRequestID int64              `json:"landing_request_id"`
-	ReviewerID       pgtype.Int8        `json:"reviewer_id"`
-	ReviewerKind     string             `json:"reviewer_kind"`
-	AgentSessionID   pgtype.UUID        `json:"agent_session_id"`
-	Type             string             `json:"type"`
-	Verdict          pgtype.Text        `json:"verdict"`
-	ConfidenceBucket pgtype.Text        `json:"confidence_bucket"`
-	Summary          string             `json:"summary"`
-	Body             string             `json:"body"`
-	State            string             `json:"state"`
-	CommitID         string             `json:"commit_id"`
-	ChangeRevisions  json.RawMessage    `json:"change_revisions"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64           `json:"id"`
+	LandingRequestID int64           `json:"landing_request_id"`
+	ReviewerID       pgtype.Int8     `json:"reviewer_id"`
+	ReviewerKind     string          `json:"reviewer_kind"`
+	AgentSessionID   pgtype.UUID     `json:"agent_session_id"`
+	Type             string          `json:"type"`
+	Verdict          pgtype.Text     `json:"verdict"`
+	ConfidenceBucket pgtype.Text     `json:"confidence_bucket"`
+	Summary          string          `json:"summary"`
+	Body             string          `json:"body"`
+	State            string          `json:"state"`
+	CommitID         string          `json:"commit_id"`
+	ChangeRevisions  json.RawMessage `json:"change_revisions"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 type LandingReviewRequest struct {
-	ID               int64              `json:"id"`
-	LandingRequestID int64              `json:"landing_request_id"`
-	RequestedBy      int64              `json:"requested_by"`
-	ReviewerID       pgtype.Int8        `json:"reviewer_id"`
-	AgentName        pgtype.Text        `json:"agent_name"`
-	State            string             `json:"state"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               int64       `json:"id"`
+	LandingRequestID int64       `json:"landing_request_id"`
+	RequestedBy      int64       `json:"requested_by"`
+	ReviewerID       pgtype.Int8 `json:"reviewer_id"`
+	AgentName        pgtype.Text `json:"agent_name"`
+	State            string      `json:"state"`
+	CreatedAt        time.Time   `json:"created_at"`
 }
 
 type LandingTask struct {
@@ -943,56 +944,56 @@ type LandingTask struct {
 	Priority         int16              `json:"priority"`
 	Attempt          int32              `json:"attempt"`
 	LastError        pgtype.Text        `json:"last_error"`
-	AvailableAt      pgtype.Timestamptz `json:"available_at"`
+	AvailableAt      time.Time          `json:"available_at"`
 	StartedAt        pgtype.Timestamptz `json:"started_at"`
 	FinishedAt       pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 	AppendRequest    []byte             `json:"append_request"`
 }
 
 type LfsLock struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Path         string             `json:"path"`
-	OwnerID      int64              `json:"owner_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Path         string    `json:"path"`
+	OwnerID      int64     `json:"owner_id"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type LfsMetaObject struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Oid          string             `json:"oid"`
-	Size         int64              `json:"size"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Oid          string    `json:"oid"`
+	Size         int64     `json:"size"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type LfsObject struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Oid          string             `json:"oid"`
-	Size         int64              `json:"size"`
-	GcsPath      string             `json:"gcs_path"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Oid          string    `json:"oid"`
+	Size         int64     `json:"size"`
+	GcsPath      string    `json:"gcs_path"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type LfsUploadReservation struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Oid          string             `json:"oid"`
-	Size         int64              `json:"size"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Oid          string    `json:"oid"`
+	Size         int64     `json:"size"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type LinearCommentMap struct {
-	ID              int64              `json:"id"`
-	IssueMapID      int64              `json:"issue_map_id"`
-	JjhubCommentID  int64              `json:"jjhub_comment_id"`
-	LinearCommentID string             `json:"linear_comment_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ID              int64     `json:"id"`
+	IssueMapID      int64     `json:"issue_map_id"`
+	JjhubCommentID  int64     `json:"jjhub_comment_id"`
+	LinearCommentID string    `json:"linear_comment_id"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type LinearIntegration struct {
@@ -1015,44 +1016,44 @@ type LinearIntegration struct {
 	LinearActorEmail      string             `json:"linear_actor_email"`
 	IsActive              bool               `json:"is_active"`
 	LastSyncAt            pgtype.Timestamptz `json:"last_sync_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 type LinearIssueMap struct {
-	ID               int64              `json:"id"`
-	IntegrationID    int64              `json:"integration_id"`
-	JjhubIssueID     int64              `json:"jjhub_issue_id"`
-	JjhubIssueNumber int64              `json:"jjhub_issue_number"`
-	LinearIssueID    string             `json:"linear_issue_id"`
-	LinearIdentifier string             `json:"linear_identifier"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64     `json:"id"`
+	IntegrationID    int64     `json:"integration_id"`
+	JjhubIssueID     int64     `json:"jjhub_issue_id"`
+	JjhubIssueNumber int64     `json:"jjhub_issue_number"`
+	LinearIssueID    string    `json:"linear_issue_id"`
+	LinearIdentifier string    `json:"linear_identifier"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type LinearOauthSetup struct {
 	SetupKey         string             `json:"setup_key"`
 	UserID           int64              `json:"user_id"`
 	PayloadEncrypted []byte             `json:"payload_encrypted"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	ExpiresAt        time.Time          `json:"expires_at"`
 	UsedAt           pgtype.Timestamptz `json:"used_at"`
 }
 
 type LinearSyncOp struct {
-	ID            int64              `json:"id"`
-	IntegrationID int64              `json:"integration_id"`
-	RunID         pgtype.Int8        `json:"run_id"`
-	RetryOfID     pgtype.Int8        `json:"retry_of_id"`
-	Source        string             `json:"source"`
-	Target        string             `json:"target"`
-	Entity        string             `json:"entity"`
-	EntityID      string             `json:"entity_id"`
-	Action        string             `json:"action"`
-	Status        string             `json:"status"`
-	ErrorMessage  string             `json:"error_message"`
-	Payload       json.RawMessage    `json:"payload"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID            int64           `json:"id"`
+	IntegrationID int64           `json:"integration_id"`
+	RunID         pgtype.Int8     `json:"run_id"`
+	RetryOfID     pgtype.Int8     `json:"retry_of_id"`
+	Source        string          `json:"source"`
+	Target        string          `json:"target"`
+	Entity        string          `json:"entity"`
+	EntityID      string          `json:"entity_id"`
+	Action        string          `json:"action"`
+	Status        string          `json:"status"`
+	ErrorMessage  string          `json:"error_message"`
+	Payload       json.RawMessage `json:"payload"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 type LinearSyncRun struct {
@@ -1067,19 +1068,19 @@ type LinearSyncRun struct {
 	CommentsFailed int32              `json:"comments_failed"`
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type Mention struct {
-	ID               int64              `json:"id"`
-	RepositoryID     int64              `json:"repository_id"`
-	IssueID          pgtype.Int8        `json:"issue_id"`
-	LandingRequestID pgtype.Int8        `json:"landing_request_id"`
-	CommentType      string             `json:"comment_type"`
-	CommentID        pgtype.Int8        `json:"comment_id"`
-	UserID           pgtype.Int8        `json:"user_id"`
-	MentionedUserID  pgtype.Int8        `json:"mentioned_user_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               int64       `json:"id"`
+	RepositoryID     int64       `json:"repository_id"`
+	IssueID          pgtype.Int8 `json:"issue_id"`
+	LandingRequestID pgtype.Int8 `json:"landing_request_id"`
+	CommentType      string      `json:"comment_type"`
+	CommentID        pgtype.Int8 `json:"comment_id"`
+	UserID           pgtype.Int8 `json:"user_id"`
+	MentionedUserID  pgtype.Int8 `json:"mentioned_user_id"`
+	CreatedAt        time.Time   `json:"created_at"`
 }
 
 type Milestone struct {
@@ -1090,8 +1091,8 @@ type Milestone struct {
 	State        string             `json:"state"`
 	DueDate      pgtype.Timestamptz `json:"due_date"`
 	ClosedAt     pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 type Notification struct {
@@ -1103,49 +1104,49 @@ type Notification struct {
 	Body       string             `json:"body"`
 	Status     string             `json:"status"`
 	ReadAt     pgtype.Timestamptz `json:"read_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt  time.Time          `json:"created_at"`
+	UpdatedAt  time.Time          `json:"updated_at"`
 }
 
 type NotificationFact struct {
-	UserID         int64              `json:"user_id"`
-	Sequence       int64              `json:"sequence"`
-	EventID        string             `json:"event_id"`
-	SchemaVersion  int16              `json:"schema_version"`
-	EventType      string             `json:"event_type"`
-	NotificationID int64              `json:"notification_id"`
-	PostImage      json.RawMessage    `json:"post_image"`
-	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	UserID         int64           `json:"user_id"`
+	Sequence       int64           `json:"sequence"`
+	EventID        string          `json:"event_id"`
+	SchemaVersion  int16           `json:"schema_version"`
+	EventType      string          `json:"event_type"`
+	NotificationID int64           `json:"notification_id"`
+	PostImage      json.RawMessage `json:"post_image"`
+	RecordedAt     time.Time       `json:"recorded_at"`
 }
 
 type NotificationJournal struct {
-	UserID            int64              `json:"user_id"`
-	Head              int64              `json:"head"`
-	CoverageKind      string             `json:"coverage_kind"`
-	CoverageStartedAt pgtype.Timestamptz `json:"coverage_started_at"`
+	UserID            int64     `json:"user_id"`
+	Head              int64     `json:"head"`
+	CoverageKind      string    `json:"coverage_kind"`
+	CoverageStartedAt time.Time `json:"coverage_started_at"`
 }
 
 type Oauth2AccessToken struct {
-	ID        int64              `json:"id"`
-	TokenHash string             `json:"token_hash"`
-	AppID     int64              `json:"app_id"`
-	UserID    int64              `json:"user_id"`
-	Scopes    []string           `json:"scopes"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64     `json:"id"`
+	TokenHash string    `json:"token_hash"`
+	AppID     int64     `json:"app_id"`
+	UserID    int64     `json:"user_id"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Oauth2Application struct {
-	ID               int64              `json:"id"`
-	ClientID         string             `json:"client_id"`
-	ClientSecretHash string             `json:"client_secret_hash"`
-	Name             string             `json:"name"`
-	RedirectUris     []string           `json:"redirect_uris"`
-	Scopes           []string           `json:"scopes"`
-	OwnerID          int64              `json:"owner_id"`
-	Confidential     bool               `json:"confidential"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               int64     `json:"id"`
+	ClientID         string    `json:"client_id"`
+	ClientSecretHash string    `json:"client_secret_hash"`
+	Name             string    `json:"name"`
+	RedirectUris     []string  `json:"redirect_uris"`
+	Scopes           []string  `json:"scopes"`
+	OwnerID          int64     `json:"owner_id"`
+	Confidential     bool      `json:"confidential"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type Oauth2AuthorizationCode struct {
@@ -1156,19 +1157,19 @@ type Oauth2AuthorizationCode struct {
 	RedirectUri         string             `json:"redirect_uri"`
 	CodeChallenge       string             `json:"code_challenge"`
 	CodeChallengeMethod string             `json:"code_challenge_method"`
-	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	ExpiresAt           time.Time          `json:"expires_at"`
 	UsedAt              pgtype.Timestamptz `json:"used_at"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	CreatedAt           time.Time          `json:"created_at"`
 }
 
 type Oauth2RefreshToken struct {
-	ID        int64              `json:"id"`
-	TokenHash string             `json:"token_hash"`
-	AppID     int64              `json:"app_id"`
-	UserID    int64              `json:"user_id"`
-	Scopes    []string           `json:"scopes"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64     `json:"id"`
+	TokenHash string    `json:"token_hash"`
+	AppID     int64     `json:"app_id"`
+	UserID    int64     `json:"user_id"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type OauthAccount struct {
@@ -1180,64 +1181,64 @@ type OauthAccount struct {
 	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
 	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
 	ProfileData           json.RawMessage    `json:"profile_data"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 type OauthState struct {
 	StateKey        string             `json:"state_key"`
 	ContextHash     string             `json:"context_hash"`
 	RequestedScopes []string           `json:"requested_scopes"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	ExpiresAt       time.Time          `json:"expires_at"`
 	UsedAt          pgtype.Timestamptz `json:"used_at"`
 }
 
 type OrgMember struct {
-	ID             int64              `json:"id"`
-	OrganizationID int64              `json:"organization_id"`
-	UserID         int64              `json:"user_id"`
-	Role           string             `json:"role"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	UserID         int64     `json:"user_id"`
+	Role           string    `json:"role"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Organization struct {
-	ID          int64              `json:"id"`
-	Name        string             `json:"name"`
-	LowerName   string             `json:"lower_name"`
-	Description string             `json:"description"`
-	Visibility  string             `json:"visibility"`
-	Website     string             `json:"website"`
-	Location    string             `json:"location"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	LowerName   string    `json:"lower_name"`
+	Description string    `json:"description"`
+	Visibility  string    `json:"visibility"`
+	Website     string    `json:"website"`
+	Location    string    `json:"location"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type OrganizationSecret struct {
-	ID             int64              `json:"id"`
-	OrganizationID int64              `json:"organization_id"`
-	Name           string             `json:"name"`
-	ValueEncrypted []byte             `json:"value_encrypted"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	Name           string    `json:"name"`
+	ValueEncrypted []byte    `json:"value_encrypted"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type OrganizationVariable struct {
-	ID             int64              `json:"id"`
-	OrganizationID int64              `json:"organization_id"`
-	Name           string             `json:"name"`
-	Value          string             `json:"value"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	Name           string    `json:"name"`
+	Value          string    `json:"value"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type OwnerNamespace struct {
-	LowerSlug string             `json:"lower_slug"`
-	OwnerType string             `json:"owner_type"`
-	UserID    pgtype.Int8        `json:"user_id"`
-	OrgID     pgtype.Int8        `json:"org_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	LowerSlug string      `json:"lower_slug"`
+	OwnerType string      `json:"owner_type"`
+	UserID    pgtype.Int8 `json:"user_id"`
+	OrgID     pgtype.Int8 `json:"org_id"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type PairPromptQueue struct {
@@ -1252,7 +1253,7 @@ type PairPromptQueue struct {
 	ClaimExpiresAt   pgtype.Timestamptz `json:"claim_expires_at"`
 	RunID            pgtype.Text        `json:"run_id"`
 	CanceledBy       pgtype.Int8        `json:"canceled_by"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	CreatedAt        time.Time          `json:"created_at"`
 	StartedAt        pgtype.Timestamptz `json:"started_at"`
 	FinishedAt       pgtype.Timestamptz `json:"finished_at"`
 }
@@ -1264,17 +1265,17 @@ type PairSession struct {
 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
 	AccessMode        string             `json:"access_mode"`
 	Status            string             `json:"status"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 	EndedAt           pgtype.Timestamptz `json:"ended_at"`
 }
 
 type PairSessionDraft struct {
-	SessionID string             `json:"session_id"`
-	Content   string             `json:"content"`
-	Version   int64              `json:"version"`
-	UpdatedBy pgtype.Int8        `json:"updated_by"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	SessionID string      `json:"session_id"`
+	Content   string      `json:"content"`
+	Version   int64       `json:"version"`
+	UpdatedBy pgtype.Int8 `json:"updated_by"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 type PairSessionInvite struct {
@@ -1285,11 +1286,11 @@ type PairSessionInvite struct {
 	Role                string             `json:"role"`
 	TokenHash           string             `json:"token_hash"`
 	InvitedBy           int64              `json:"invited_by"`
-	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	ExpiresAt           time.Time          `json:"expires_at"`
 	AcceptedByUserID    pgtype.Int8        `json:"accepted_by_user_id"`
 	AcceptedAt          pgtype.Timestamptz `json:"accepted_at"`
 	RevokedAt           pgtype.Timestamptz `json:"revoked_at"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	CreatedAt           time.Time          `json:"created_at"`
 }
 
 type PairSessionLink struct {
@@ -1299,7 +1300,7 @@ type PairSessionLink struct {
 	Role      string             `json:"role"`
 	CreatedBy int64              `json:"created_by"`
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 type PairSessionMember struct {
@@ -1310,7 +1311,7 @@ type PairSessionMember struct {
 	Presence           json.RawMessage    `json:"presence"`
 	PresenceUpdatedAt  pgtype.Timestamptz `json:"presence_updated_at"`
 	LastSeenAt         pgtype.Timestamptz `json:"last_seen_at"`
-	JoinedAt           pgtype.Timestamptz `json:"joined_at"`
+	JoinedAt           time.Time          `json:"joined_at"`
 	RemovedAt          pgtype.Timestamptz `json:"removed_at"`
 }
 
@@ -1322,38 +1323,38 @@ type PairShareLink struct {
 	CreatedBy int64              `json:"created_by"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 type PairState struct {
-	RoomID    string             `json:"room_id"`
-	State     json.RawMessage    `json:"state"`
-	Version   int64              `json:"version"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	RoomID    string          `json:"room_id"`
+	State     json.RawMessage `json:"state"`
+	Version   int64           `json:"version"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }
 
 type PinnedIssue struct {
-	RepositoryID int64              `json:"repository_id"`
-	IssueID      int64              `json:"issue_id"`
-	PinnedByID   pgtype.Int8        `json:"pinned_by_id"`
-	Position     int16              `json:"position"`
-	PinnedAt     pgtype.Timestamptz `json:"pinned_at"`
+	RepositoryID int64       `json:"repository_id"`
+	IssueID      int64       `json:"issue_id"`
+	PinnedByID   pgtype.Int8 `json:"pinned_by_id"`
+	Position     int16       `json:"position"`
+	PinnedAt     time.Time   `json:"pinned_at"`
 }
 
 type ProtectedBookmark struct {
-	ID                     int64              `json:"id"`
-	RepositoryID           int64              `json:"repository_id"`
-	Pattern                string             `json:"pattern"`
-	RequireReview          bool               `json:"require_review"`
-	RequireHumanApprovals  int64              `json:"require_human_approvals"`
-	RequireAgentLgtm       bool               `json:"require_agent_lgtm"`
-	RequiredChecks         []string           `json:"required_checks"`
-	RequireStatusChecks    bool               `json:"require_status_checks"`
-	RequiredStatusContexts []string           `json:"required_status_contexts"`
-	DismissStaleReviews    bool               `json:"dismiss_stale_reviews"`
-	RestrictPushTeams      []string           `json:"restrict_push_teams"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ID                     int64     `json:"id"`
+	RepositoryID           int64     `json:"repository_id"`
+	Pattern                string    `json:"pattern"`
+	RequireReview          bool      `json:"require_review"`
+	RequireHumanApprovals  int64     `json:"require_human_approvals"`
+	RequireAgentLgtm       bool      `json:"require_agent_lgtm"`
+	RequiredChecks         []string  `json:"required_checks"`
+	RequireStatusChecks    bool      `json:"require_status_checks"`
+	RequiredStatusContexts []string  `json:"required_status_contexts"`
+	DismissStaleReviews    bool      `json:"dismiss_stale_reviews"`
+	RestrictPushTeams      []string  `json:"restrict_push_teams"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 type ProviderConnection struct {
@@ -1376,26 +1377,26 @@ type ProviderConnection struct {
 	RefreshFailures       int32              `json:"refresh_failures"`
 	LastError             string             `json:"last_error"`
 	CreatedBy             pgtype.Int8        `json:"created_by"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
 }
 
 type ProviderConnectionGrant struct {
-	ID              int64              `json:"id"`
-	ConnectionID    string             `json:"connection_id"`
-	RepositoryID    pgtype.Int8        `json:"repository_id"`
-	OrgID           pgtype.Int8        `json:"org_id"`
-	AllRepositories bool               `json:"all_repositories"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ID              int64       `json:"id"`
+	ConnectionID    string      `json:"connection_id"`
+	RepositoryID    pgtype.Int8 `json:"repository_id"`
+	OrgID           pgtype.Int8 `json:"org_id"`
+	AllRepositories bool        `json:"all_repositories"`
+	CreatedAt       time.Time   `json:"created_at"`
 }
 
 type Reaction struct {
-	ID         int64              `json:"id"`
-	UserID     pgtype.Int8        `json:"user_id"`
-	TargetType string             `json:"target_type"`
-	TargetID   int64              `json:"target_id"`
-	Emoji      string             `json:"emoji"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID         int64       `json:"id"`
+	UserID     pgtype.Int8 `json:"user_id"`
+	TargetType string      `json:"target_type"`
+	TargetID   int64       `json:"target_id"`
+	Emoji      string      `json:"emoji"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 type Release struct {
@@ -1411,8 +1412,8 @@ type Release struct {
 	IsPrerelease bool               `json:"is_prerelease"`
 	IsTag        bool               `json:"is_tag"`
 	PublishedAt  pgtype.Timestamptz `json:"published_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
 }
 
 type ReleaseAsset struct {
@@ -1428,34 +1429,34 @@ type ReleaseAsset struct {
 	ConfirmedAt   pgtype.Timestamptz `json:"confirmed_at"`
 	DeletionToken pgtype.Text        `json:"deletion_token"`
 	DeleteAfter   pgtype.Timestamptz `json:"delete_after"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 type ReleaseDeletionIntent struct {
 	ReleaseID         int64              `json:"release_id"`
 	DeletionToken     pgtype.Text        `json:"deletion_token"`
 	EventDispatchedAt pgtype.Timestamptz `json:"event_dispatched_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
 type ReleaseDeletionTagTombstone struct {
-	ReleaseID       int64              `json:"release_id"`
-	OriginalTagName string             `json:"original_tag_name"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ReleaseID       int64     `json:"release_id"`
+	OriginalTagName string    `json:"original_tag_name"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type RepoConnection struct {
-	ID             int64              `json:"id"`
-	UserID         int64              `json:"user_id"`
-	RepoOwner      string             `json:"repo_owner"`
-	RepoName       string             `json:"repo_name"`
-	RepoOwnerLower string             `json:"repo_owner_lower"`
-	RepoNameLower  string             `json:"repo_name_lower"`
-	LicenseSpdxID  string             `json:"license_spdx_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	UserID         int64     `json:"user_id"`
+	RepoOwner      string    `json:"repo_owner"`
+	RepoName       string    `json:"repo_name"`
+	RepoOwnerLower string    `json:"repo_owner_lower"`
+	RepoNameLower  string    `json:"repo_name_lower"`
+	LicenseSpdxID  string    `json:"license_spdx_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Repository struct {
@@ -1496,35 +1497,35 @@ type Repository struct {
 	NumWatches                 int64              `json:"num_watches"`
 	NumIssues                  int64              `json:"num_issues"`
 	NumClosedIssues            int64              `json:"num_closed_issues"`
-	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                  time.Time          `json:"created_at"`
+	UpdatedAt                  time.Time          `json:"updated_at"`
 }
 
 type RepositoryAgentEnvironment struct {
-	RepositoryID                 int64              `json:"repository_id"`
-	SetupScript                  string             `json:"setup_script"`
-	EnvironmentVariables         json.RawMessage    `json:"environment_variables"`
-	ProviderConnectionPreference string             `json:"provider_connection_preference"`
-	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+	RepositoryID                 int64           `json:"repository_id"`
+	SetupScript                  string          `json:"setup_script"`
+	EnvironmentVariables         json.RawMessage `json:"environment_variables"`
+	ProviderConnectionPreference string          `json:"provider_connection_preference"`
+	CreatedAt                    time.Time       `json:"created_at"`
+	UpdatedAt                    time.Time       `json:"updated_at"`
 }
 
 type RepositoryAgentEnvironmentSecret struct {
-	RepositoryID   int64              `json:"repository_id"`
-	Name           string             `json:"name"`
-	ValueEncrypted []byte             `json:"value_encrypted"`
-	Hosts          []string           `json:"hosts"`
-	MatchHeaders   []string           `json:"match_headers"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	RepositoryID   int64     `json:"repository_id"`
+	Name           string    `json:"name"`
+	ValueEncrypted []byte    `json:"value_encrypted"`
+	Hosts          []string  `json:"hosts"`
+	MatchHeaders   []string  `json:"match_headers"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type RepositoryJobComment struct {
-	DispatchID string             `json:"dispatch_id"`
-	Step       string             `json:"step"`
-	Body       string             `json:"body"`
-	CommentID  int64              `json:"comment_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	DispatchID string    `json:"dispatch_id"`
+	Step       string    `json:"step"`
+	Body       string    `json:"body"`
+	CommentID  int64     `json:"comment_id"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type RepositoryJobDispatch struct {
@@ -1546,22 +1547,22 @@ type RepositoryJobDispatch struct {
 	ClaimToken     pgtype.UUID        `json:"claim_token"`
 	LeaseUntil     pgtype.Timestamptz `json:"lease_until"`
 	Attempts       int32              `json:"attempts"`
-	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
+	NextAttemptAt  time.Time          `json:"next_attempt_at"`
 	Error          string             `json:"error"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type RepositoryJobEvent struct {
-	ID           string             `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	DeliveryKey  string             `json:"delivery_key"`
-	Source       string             `json:"source"`
-	EventType    string             `json:"event_type"`
-	EventAction  string             `json:"event_action"`
-	IssueNumber  int64              `json:"issue_number"`
-	Payload      json.RawMessage    `json:"payload"`
-	ReceivedAt   pgtype.Timestamptz `json:"received_at"`
+	ID           string          `json:"id"`
+	RepositoryID int64           `json:"repository_id"`
+	DeliveryKey  string          `json:"delivery_key"`
+	Source       string          `json:"source"`
+	EventType    string          `json:"event_type"`
+	EventAction  string          `json:"event_action"`
+	IssueNumber  int64           `json:"issue_number"`
+	Payload      json.RawMessage `json:"payload"`
+	ReceivedAt   time.Time       `json:"received_at"`
 }
 
 type RepositoryJobRegistration struct {
@@ -1581,59 +1582,59 @@ type RepositoryJobRegistration struct {
 	TrialSource      string             `json:"trial_source"`
 	Schedule         string             `json:"schedule"`
 	NextFireAt       pgtype.Timestamptz `json:"next_fire_at"`
-	ActivatedAt      pgtype.Timestamptz `json:"activated_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ActivatedAt      time.Time          `json:"activated_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 }
 
 type RepositoryJobTrial struct {
-	RepositoryID int64              `json:"repository_id"`
-	Job          string             `json:"job"`
-	RequestID    string             `json:"request_id"`
-	WorkspaceID  string             `json:"workspace_id"`
-	UserID       int64              `json:"user_id"`
-	Revision     int64              `json:"revision"`
-	Digest       string             `json:"digest"`
-	Title        string             `json:"title"`
-	Body         string             `json:"body"`
-	IssueID      pgtype.Int8        `json:"issue_id"`
-	IssueNumber  int64              `json:"issue_number"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	RepositoryID int64       `json:"repository_id"`
+	Job          string      `json:"job"`
+	RequestID    string      `json:"request_id"`
+	WorkspaceID  string      `json:"workspace_id"`
+	UserID       int64       `json:"user_id"`
+	Revision     int64       `json:"revision"`
+	Digest       string      `json:"digest"`
+	Title        string      `json:"title"`
+	Body         string      `json:"body"`
+	IssueID      pgtype.Int8 `json:"issue_id"`
+	IssueNumber  int64       `json:"issue_number"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type RepositorySecret struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Name           string             `json:"name"`
-	ValueEncrypted []byte             `json:"value_encrypted"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Name           string    `json:"name"`
+	ValueEncrypted []byte    `json:"value_encrypted"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type RepositoryVariable struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	Value        string             `json:"value"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	Name         string    `json:"name"`
+	Value        string    `json:"value"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type RevocationEvent struct {
-	ID             int64              `json:"id"`
-	Kind           string             `json:"kind"`
-	UserID         pgtype.Int8        `json:"user_id"`
-	TokenID        pgtype.Int8        `json:"token_id"`
-	TokenHash      string             `json:"token_hash"`
-	RepositoryID   pgtype.Int8        `json:"repository_id"`
-	OrganizationID pgtype.Int8        `json:"organization_id"`
-	WorkspaceID    string             `json:"workspace_id"`
-	SessionID      string             `json:"session_id"`
-	GatewayID      string             `json:"gateway_id"`
-	SandboxIds     []string           `json:"sandbox_ids"`
-	Reason         string             `json:"reason"`
-	ActorID        pgtype.Int8        `json:"actor_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID             int64       `json:"id"`
+	Kind           string      `json:"kind"`
+	UserID         pgtype.Int8 `json:"user_id"`
+	TokenID        pgtype.Int8 `json:"token_id"`
+	TokenHash      string      `json:"token_hash"`
+	RepositoryID   pgtype.Int8 `json:"repository_id"`
+	OrganizationID pgtype.Int8 `json:"organization_id"`
+	WorkspaceID    string      `json:"workspace_id"`
+	SessionID      string      `json:"session_id"`
+	GatewayID      string      `json:"gateway_id"`
+	SandboxIds     []string    `json:"sandbox_ids"`
+	Reason         string      `json:"reason"`
+	ActorID        pgtype.Int8 `json:"actor_id"`
+	CreatedAt      time.Time   `json:"created_at"`
 }
 
 type SandboxUsageInterval struct {
@@ -1641,17 +1642,17 @@ type SandboxUsageInterval struct {
 	UserID      int64              `json:"user_id"`
 	SandboxKind string             `json:"sandbox_kind"`
 	SandboxID   string             `json:"sandbox_id"`
-	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	StartedAt   time.Time          `json:"started_at"`
 	EndedAt     pgtype.Timestamptz `json:"ended_at"`
 }
 
 type SearchRateLimit struct {
-	Scope        string             `json:"scope"`
-	PrincipalKey string             `json:"principal_key"`
-	Tokens       float64            `json:"tokens"`
-	LastRefillAt pgtype.Timestamptz `json:"last_refill_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Scope        string    `json:"scope"`
+	PrincipalKey string    `json:"principal_key"`
+	Tokens       float64   `json:"tokens"`
+	LastRefillAt time.Time `json:"last_refill_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type ShareListing struct {
@@ -1667,97 +1668,97 @@ type ShareListing struct {
 	ContentSnapshot string             `json:"content_snapshot"`
 	UseCount        int64              `json:"use_count"`
 	InstallCount    int64              `json:"install_count"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	PublishedAt     time.Time          `json:"published_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 	UnpublishedAt   pgtype.Timestamptz `json:"unpublished_at"`
 }
 
 type ShareListingEventCooldown struct {
-	ListingID     string             `json:"listing_id"`
-	UserID        int64              `json:"user_id"`
-	EventType     string             `json:"event_type"`
-	LastCountedAt pgtype.Timestamptz `json:"last_counted_at"`
+	ListingID     string    `json:"listing_id"`
+	UserID        int64     `json:"user_id"`
+	EventType     string    `json:"event_type"`
+	LastCountedAt time.Time `json:"last_counted_at"`
 }
 
 type SseTicket struct {
 	TicketHash string             `json:"ticket_hash"`
 	UserID     int64              `json:"user_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt  time.Time          `json:"created_at"`
+	ExpiresAt  time.Time          `json:"expires_at"`
 	UsedAt     pgtype.Timestamptz `json:"used_at"`
 }
 
 type SshKey struct {
-	ID          int64              `json:"id"`
-	UserID      int64              `json:"user_id"`
-	Name        string             `json:"name"`
-	PublicKey   string             `json:"public_key"`
-	Fingerprint string             `json:"fingerprint"`
-	KeyType     string             `json:"key_type"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Name        string    `json:"name"`
+	PublicKey   string    `json:"public_key"`
+	Fingerprint string    `json:"fingerprint"`
+	KeyType     string    `json:"key_type"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Stack struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	UserID       int64              `json:"user_id"`
-	TargetRef    string             `json:"target_ref"`
-	State        string             `json:"state"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	UserID       int64     `json:"user_id"`
+	TargetRef    string    `json:"target_ref"`
+	State        string    `json:"state"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type StackChange struct {
-	ID           int64              `json:"id"`
-	StackID      int64              `json:"stack_id"`
-	ChangeID     string             `json:"change_id"`
-	Position     int32              `json:"position"`
-	BranchName   string             `json:"branch_name"`
-	PrNumber     pgtype.Int8        `json:"pr_number"`
-	PrState      pgtype.Text        `json:"pr_state"`
-	ReviewStatus pgtype.Text        `json:"review_status"`
-	CiStatus     pgtype.Text        `json:"ci_status"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64       `json:"id"`
+	StackID      int64       `json:"stack_id"`
+	ChangeID     string      `json:"change_id"`
+	Position     int32       `json:"position"`
+	BranchName   string      `json:"branch_name"`
+	PrNumber     pgtype.Int8 `json:"pr_number"`
+	PrState      pgtype.Text `json:"pr_state"`
+	ReviewStatus pgtype.Text `json:"review_status"`
+	CiStatus     pgtype.Text `json:"ci_status"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type Star struct {
-	ID           int64              `json:"id"`
-	UserID       int64              `json:"user_id"`
-	RepositoryID int64              `json:"repository_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64     `json:"id"`
+	UserID       int64     `json:"user_id"`
+	RepositoryID int64     `json:"repository_id"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type StripeProcessedEvent struct {
-	EventID     string             `json:"event_id"`
-	EventType   string             `json:"event_type"`
-	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
+	EventID     string    `json:"event_id"`
+	EventType   string    `json:"event_type"`
+	ProcessedAt time.Time `json:"processed_at"`
 }
 
 type Team struct {
-	ID             int64              `json:"id"`
-	OrganizationID int64              `json:"organization_id"`
-	Name           string             `json:"name"`
-	LowerName      string             `json:"lower_name"`
-	Description    string             `json:"description"`
-	Permission     string             `json:"permission"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	Name           string    `json:"name"`
+	LowerName      string    `json:"lower_name"`
+	Description    string    `json:"description"`
+	Permission     string    `json:"permission"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type TeamMember struct {
-	ID        int64              `json:"id"`
-	TeamID    int64              `json:"team_id"`
-	UserID    int64              `json:"user_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        int64     `json:"id"`
+	TeamID    int64     `json:"team_id"`
+	UserID    int64     `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type TeamRepo struct {
-	ID           int64              `json:"id"`
-	TeamID       int64              `json:"team_id"`
-	RepositoryID int64              `json:"repository_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID           int64     `json:"id"`
+	TeamID       int64     `json:"team_id"`
+	RepositoryID int64     `json:"repository_id"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type User struct {
@@ -1778,8 +1779,8 @@ type User struct {
 	EmailNotificationsEnabled bool               `json:"email_notifications_enabled"`
 	LastLoginAt               pgtype.Timestamptz `json:"last_login_at"`
 	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                 time.Time          `json:"created_at"`
+	UpdatedAt                 time.Time          `json:"updated_at"`
 	IsSynthetic               bool               `json:"is_synthetic"`
 }
 
@@ -1791,35 +1792,35 @@ type UserAiKey struct {
 	RotatedAt       pgtype.Timestamptz `json:"rotated_at"`
 	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 type UserDevice struct {
-	ID         int64              `json:"id"`
-	UserID     int64              `json:"user_id"`
-	ApnsToken  string             `json:"apns_token"`
-	Platform   string             `json:"platform"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+	ApnsToken  string    `json:"apns_token"`
+	Platform   string    `json:"platform"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
 }
 
 type UserNotificationPreference struct {
-	UserID         int64              `json:"user_id"`
-	NotifyIssues   bool               `json:"notify_issues"`
-	NotifyLandings bool               `json:"notify_landings"`
-	NotifyMentions bool               `json:"notify_mentions"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	UserID         int64     `json:"user_id"`
+	NotifyIssues   bool      `json:"notify_issues"`
+	NotifyLandings bool      `json:"notify_landings"`
+	NotifyMentions bool      `json:"notify_mentions"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Watch struct {
-	ID           int64              `json:"id"`
-	UserID       int64              `json:"user_id"`
-	RepositoryID int64              `json:"repository_id"`
-	Mode         string             `json:"mode"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	UserID       int64     `json:"user_id"`
+	RepositoryID int64     `json:"repository_id"`
+	Mode         string    `json:"mode"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Webhook struct {
@@ -1830,8 +1831,8 @@ type Webhook struct {
 	Events         []string           `json:"events"`
 	IsActive       bool               `json:"is_active"`
 	LastDeliveryAt pgtype.Timestamptz `json:"last_delivery_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type WebhookDelivery struct {
@@ -1845,41 +1846,41 @@ type WebhookDelivery struct {
 	Attempts       int32              `json:"attempts"`
 	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
 	NextRetryAt    pgtype.Timestamptz `json:"next_retry_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type WikiPage struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Slug         string             `json:"slug"`
-	Title        string             `json:"title"`
-	Body         string             `json:"body"`
-	AuthorID     int64              `json:"author_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Revision     int64              `json:"revision"`
-	CrdtState    []byte             `json:"crdt_state"`
-	CrdtVector   []byte             `json:"crdt_vector"`
-	LastUpdateID pgtype.UUID        `json:"last_update_id"`
-	LastUpdate   []byte             `json:"last_update"`
+	ID           int64       `json:"id"`
+	RepositoryID int64       `json:"repository_id"`
+	Slug         string      `json:"slug"`
+	Title        string      `json:"title"`
+	Body         string      `json:"body"`
+	AuthorID     int64       `json:"author_id"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+	Revision     int64       `json:"revision"`
+	CrdtState    []byte      `json:"crdt_state"`
+	CrdtVector   []byte      `json:"crdt_vector"`
+	LastUpdateID pgtype.UUID `json:"last_update_id"`
+	LastUpdate   []byte      `json:"last_update"`
 }
 
 type WikiPageRevision struct {
-	ID              int64              `json:"id"`
-	RepositoryID    int64              `json:"repository_id"`
-	PageID          int64              `json:"page_id"`
-	Revision        int64              `json:"revision"`
-	Slug            string             `json:"slug"`
-	Title           string             `json:"title"`
-	Body            string             `json:"body"`
-	AuthorID        pgtype.Int8        `json:"author_id"`
-	AuthorUsername  string             `json:"author_username"`
-	UpdateID        pgtype.UUID        `json:"update_id"`
-	UpdateBytes     []byte             `json:"update_bytes"`
-	Deleted         bool               `json:"deleted"`
-	HistoryCommitID string             `json:"history_commit_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ID              int64       `json:"id"`
+	RepositoryID    int64       `json:"repository_id"`
+	PageID          int64       `json:"page_id"`
+	Revision        int64       `json:"revision"`
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	Body            string      `json:"body"`
+	AuthorID        pgtype.Int8 `json:"author_id"`
+	AuthorUsername  string      `json:"author_username"`
+	UpdateID        pgtype.UUID `json:"update_id"`
+	UpdateBytes     []byte      `json:"update_bytes"`
+	Deleted         bool        `json:"deleted"`
+	HistoryCommitID string      `json:"history_commit_id"`
+	CreatedAt       time.Time   `json:"created_at"`
 }
 
 type WorkflowArtifact struct {
@@ -1893,12 +1894,12 @@ type WorkflowArtifact struct {
 	GcsKey            string             `json:"gcs_key"`
 	ConfirmedAt       pgtype.Timestamptz `json:"confirmed_at"`
 	DeletionToken     pgtype.Text        `json:"deletion_token"`
-	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ExpiresAt         time.Time          `json:"expires_at"`
 	ReleaseTag        pgtype.Text        `json:"release_tag"`
 	ReleaseAssetName  pgtype.Text        `json:"release_asset_name"`
 	ReleaseAttachedAt pgtype.Timestamptz `json:"release_attached_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
 type WorkflowCach struct {
@@ -1916,35 +1917,35 @@ type WorkflowCach struct {
 	HitCount        int64              `json:"hit_count"`
 	LastHitAt       pgtype.Timestamptz `json:"last_hit_at"`
 	FinalizedAt     pgtype.Timestamptz `json:"finalized_at"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt       time.Time          `json:"expires_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
 }
 
 type WorkflowDefinition struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	Path         string             `json:"path"`
-	Config       json.RawMessage    `json:"config"`
-	IsActive     bool               `json:"is_active"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64           `json:"id"`
+	RepositoryID int64           `json:"repository_id"`
+	Name         string          `json:"name"`
+	Path         string          `json:"path"`
+	Config       json.RawMessage `json:"config"`
+	IsActive     bool            `json:"is_active"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 type WorkflowLog struct {
-	ID             int64              `json:"id"`
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	Sequence       int64              `json:"sequence"`
-	Stream         string             `json:"stream"`
-	Entry          string             `json:"entry"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID             int64     `json:"id"`
+	WorkflowRunID  int64     `json:"workflow_run_id"`
+	WorkflowStepID int64     `json:"workflow_step_id"`
+	Sequence       int64     `json:"sequence"`
+	Stream         string    `json:"stream"`
+	Entry          string    `json:"entry"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type WorkflowLogBudgetInitialization struct {
-	WorkflowRunID int64              `json:"workflow_run_id"`
-	InitializedAt pgtype.Timestamptz `json:"initialized_at"`
+	WorkflowRunID int64     `json:"workflow_run_id"`
+	InitializedAt time.Time `json:"initialized_at"`
 }
 
 type WorkflowRun struct {
@@ -1963,8 +1964,8 @@ type WorkflowRun struct {
 	CheckRunUrl          pgtype.Text        `json:"check_run_url"`
 	StartedAt            pgtype.Timestamptz `json:"started_at"`
 	CompletedAt          pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 	ExecutionPlane       string             `json:"execution_plane"`
 	LogBytes             int64              `json:"log_bytes"`
 	LogEntryCount        int64              `json:"log_entry_count"`
@@ -1972,13 +1973,13 @@ type WorkflowRun struct {
 }
 
 type WorkflowRunLog struct {
-	ID             int64              `json:"id"`
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	Sequence       int64              `json:"sequence"`
-	Stream         string             `json:"stream"`
-	Entry          string             `json:"entry"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID             int64     `json:"id"`
+	WorkflowRunID  int64     `json:"workflow_run_id"`
+	WorkflowStepID int64     `json:"workflow_step_id"`
+	Sequence       int64     `json:"sequence"`
+	Stream         string    `json:"stream"`
+	Entry          string    `json:"entry"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type WorkflowScheduleSpec struct {
@@ -1986,10 +1987,10 @@ type WorkflowScheduleSpec struct {
 	WorkflowDefinitionID int64              `json:"workflow_definition_id"`
 	RepositoryID         int64              `json:"repository_id"`
 	CronExpression       string             `json:"cron_expression"`
-	NextFireAt           pgtype.Timestamptz `json:"next_fire_at"`
+	NextFireAt           time.Time          `json:"next_fire_at"`
 	PrevFireAt           pgtype.Timestamptz `json:"prev_fire_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 }
 
 type WorkflowStep struct {
@@ -2001,8 +2002,8 @@ type WorkflowStep struct {
 	Status        string             `json:"status"`
 	StartedAt     pgtype.Timestamptz `json:"started_at"`
 	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 type WorkflowTask struct {
@@ -2013,7 +2014,7 @@ type WorkflowTask struct {
 	Status         string             `json:"status"`
 	Priority       int16              `json:"priority"`
 	Payload        json.RawMessage    `json:"payload"`
-	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	AvailableAt    time.Time          `json:"available_at"`
 	Attempt        int32              `json:"attempt"`
 	RunnerID       pgtype.Int8        `json:"runner_id"`
 	VmID           pgtype.Text        `json:"vm_id"`
@@ -2021,20 +2022,20 @@ type WorkflowTask struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
 	LastError      pgtype.Text        `json:"last_error"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 type WorkflowTrigger struct {
-	ID                   int64              `json:"id"`
-	RepositoryID         int64              `json:"repository_id"`
-	WorkflowDefinitionID int64              `json:"workflow_definition_id"`
-	WorkflowPath         string             `json:"workflow_path"`
-	EventType            string             `json:"event_type"`
-	EventAction          string             `json:"event_action"`
-	Enabled              bool               `json:"enabled"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ID                   int64     `json:"id"`
+	RepositoryID         int64     `json:"repository_id"`
+	WorkflowDefinitionID int64     `json:"workflow_definition_id"`
+	WorkflowPath         string    `json:"workflow_path"`
+	EventType            string    `json:"event_type"`
+	EventAction          string    `json:"event_action"`
+	Enabled              bool      `json:"enabled"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type Workspace struct {
@@ -2062,7 +2063,7 @@ type Workspace struct {
 	FailureCode             pgtype.Text        `json:"failure_code"`
 	FailureMessage          pgtype.Text        `json:"failure_message"`
 	ProvisioningStage       string             `json:"provisioning_stage"`
-	LastActivityAt          pgtype.Timestamptz `json:"last_activity_at"`
+	LastActivityAt          time.Time          `json:"last_activity_at"`
 	IdleTimeoutSecs         int32              `json:"idle_timeout_secs"`
 	SuspendedAt             pgtype.Timestamptz `json:"suspended_at"`
 	StartedAt               pgtype.Timestamptz `json:"started_at"`
@@ -2073,51 +2074,51 @@ type Workspace struct {
 	Behind                  int32              `json:"behind"`
 	LastAccessedAt          pgtype.Timestamptz `json:"last_accessed_at"`
 	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt               time.Time          `json:"created_at"`
+	UpdatedAt               time.Time          `json:"updated_at"`
 }
 
 type WorkspaceCapabilityBinding struct {
-	RepositoryID       int64              `json:"repository_id"`
-	UserID             int64              `json:"user_id"`
-	RequiredCapability string             `json:"required_capability"`
-	WorkspaceID        string             `json:"workspace_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	RepositoryID       int64     `json:"repository_id"`
+	UserID             int64     `json:"user_id"`
+	RequiredCapability string    `json:"required_capability"`
+	WorkspaceID        string    `json:"workspace_id"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type WorkspaceSession struct {
-	ID                string             `json:"id"`
-	WorkspaceID       string             `json:"workspace_id"`
-	RepositoryID      int64              `json:"repository_id"`
-	UserID            int64              `json:"user_id"`
-	SshConnectionInfo json.RawMessage    `json:"ssh_connection_info"`
-	Status            string             `json:"status"`
-	Cols              int32              `json:"cols"`
-	Rows              int32              `json:"rows"`
-	LastActivityAt    pgtype.Timestamptz `json:"last_activity_at"`
-	IdleTimeoutSecs   int32              `json:"idle_timeout_secs"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	Kind              string             `json:"kind"`
-	Language          string             `json:"language"`
+	ID                string          `json:"id"`
+	WorkspaceID       string          `json:"workspace_id"`
+	RepositoryID      int64           `json:"repository_id"`
+	UserID            int64           `json:"user_id"`
+	SshConnectionInfo json.RawMessage `json:"ssh_connection_info"`
+	Status            string          `json:"status"`
+	Cols              int32           `json:"cols"`
+	Rows              int32           `json:"rows"`
+	LastActivityAt    time.Time       `json:"last_activity_at"`
+	IdleTimeoutSecs   int32           `json:"idle_timeout_secs"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+	Kind              string          `json:"kind"`
+	Language          string          `json:"language"`
 }
 
 type WorkspaceShare struct {
-	ID            int64              `json:"id"`
-	WorkspaceID   string             `json:"workspace_id"`
-	OwnerUserID   int64              `json:"owner_user_id"`
-	GranteeUserID int64              `json:"grantee_user_id"`
-	Level         string             `json:"level"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ID            int64     `json:"id"`
+	WorkspaceID   string    `json:"workspace_id"`
+	OwnerUserID   int64     `json:"owner_user_id"`
+	GranteeUserID int64     `json:"grantee_user_id"`
+	Level         string    `json:"level"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type WorkspaceSnapshot struct {
-	ID           string             `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	UserID       int64              `json:"user_id"`
-	WorkspaceID  string             `json:"workspace_id"`
-	Name         string             `json:"name"`
-	SnapshotID   string             `json:"snapshot_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           string    `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	UserID       int64     `json:"user_id"`
+	WorkspaceID  string    `json:"workspace_id"`
+	Name         string    `json:"name"`
+	SnapshotID   string    `json:"snapshot_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -64,10 +65,10 @@ WHERE wr.repository_id IN (SELECT id FROM owned_repos)
 `
 
 type CountAgentRunsByOwnerParams struct {
-	PeriodStart pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
-	OwnerType   string             `json:"owner_type"`
-	OwnerID     int64              `json:"owner_id"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	OwnerType   string    `json:"owner_type"`
+	OwnerID     int64     `json:"owner_id"`
 }
 
 // Counts only agent runs whose task actually started executing (the agent VM
@@ -307,11 +308,11 @@ WHERE owner_type = $1
 `
 
 type GetUsageCounterByMetricParams struct {
-	OwnerType   string             `json:"owner_type"`
-	OwnerID     int64              `json:"owner_id"`
-	MetricKey   string             `json:"metric_key"`
-	PeriodStart pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
+	OwnerType   string    `json:"owner_type"`
+	OwnerID     int64     `json:"owner_id"`
+	MetricKey   string    `json:"metric_key"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
 }
 
 func (q *Queries) GetUsageCounterByMetric(ctx context.Context, arg GetUsageCounterByMetricParams) (BillingUsageCounter, error) {
@@ -373,13 +374,13 @@ RETURNING id, owner_type, owner_id, metric_key, period_start, period_end, includ
 `
 
 type IncrementUsageCounterParams struct {
-	OwnerType        string             `json:"owner_type"`
-	OwnerID          int64              `json:"owner_id"`
-	MetricKey        string             `json:"metric_key"`
-	PeriodStart      pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd        pgtype.Timestamptz `json:"period_end"`
-	IncludedQuantity int64              `json:"included_quantity"`
-	ConsumedQuantity int64              `json:"consumed_quantity"`
+	OwnerType        string    `json:"owner_type"`
+	OwnerID          int64     `json:"owner_id"`
+	MetricKey        string    `json:"metric_key"`
+	PeriodStart      time.Time `json:"period_start"`
+	PeriodEnd        time.Time `json:"period_end"`
+	IncludedQuantity int64     `json:"included_quantity"`
+	ConsumedQuantity int64     `json:"consumed_quantity"`
 }
 
 func (q *Queries) IncrementUsageCounter(ctx context.Context, arg IncrementUsageCounterParams) (BillingUsageCounter, error) {
@@ -594,10 +595,10 @@ ORDER BY metric_key ASC
 `
 
 type ListBillingUsageCountersByOwnerAndPeriodParams struct {
-	OwnerType   string             `json:"owner_type"`
-	OwnerID     int64              `json:"owner_id"`
-	PeriodStart pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
+	OwnerType   string    `json:"owner_type"`
+	OwnerID     int64     `json:"owner_id"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
 }
 
 func (q *Queries) ListBillingUsageCountersByOwnerAndPeriod(ctx context.Context, arg ListBillingUsageCountersByOwnerAndPeriodParams) ([]BillingUsageCounter, error) {
@@ -711,10 +712,10 @@ WHERE wr.repository_id IN (SELECT id FROM owned_repos)
 `
 
 type SumWorkflowMinutesByOwnerParams struct {
-	PeriodStart pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd   pgtype.Timestamptz `json:"period_end"`
-	OwnerType   string             `json:"owner_type"`
-	OwnerID     int64              `json:"owner_id"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	OwnerType   string    `json:"owner_type"`
+	OwnerID     int64     `json:"owner_id"`
 }
 
 func (q *Queries) SumWorkflowMinutesByOwner(ctx context.Context, arg SumWorkflowMinutesByOwnerParams) (int64, error) {
@@ -803,10 +804,10 @@ RETURNING id, billing_account_id, feature_key, active, last_synced_at, created_a
 `
 
 type UpsertBillingEntitlementParams struct {
-	BillingAccountID int64              `json:"billing_account_id"`
-	FeatureKey       string             `json:"feature_key"`
-	Active           bool               `json:"active"`
-	LastSyncedAt     pgtype.Timestamptz `json:"last_synced_at"`
+	BillingAccountID int64     `json:"billing_account_id"`
+	FeatureKey       string    `json:"feature_key"`
+	Active           bool      `json:"active"`
+	LastSyncedAt     time.Time `json:"last_synced_at"`
 }
 
 func (q *Queries) UpsertBillingEntitlement(ctx context.Context, arg UpsertBillingEntitlementParams) (BillingEntitlement, error) {
@@ -976,16 +977,16 @@ RETURNING id, owner_type, owner_id, metric_key, period_start, period_end, includ
 `
 
 type UpsertBillingUsageCounterParams struct {
-	OwnerType                string             `json:"owner_type"`
-	OwnerID                  int64              `json:"owner_id"`
-	MetricKey                string             `json:"metric_key"`
-	PeriodStart              pgtype.Timestamptz `json:"period_start"`
-	PeriodEnd                pgtype.Timestamptz `json:"period_end"`
-	IncludedQuantity         int64              `json:"included_quantity"`
-	ConsumedQuantity         int64              `json:"consumed_quantity"`
-	OverageQuantity          int64              `json:"overage_quantity"`
-	LastReportedMeterEventID string             `json:"last_reported_meter_event_id"`
-	LastSyncedAt             pgtype.Timestamptz `json:"last_synced_at"`
+	OwnerType                string    `json:"owner_type"`
+	OwnerID                  int64     `json:"owner_id"`
+	MetricKey                string    `json:"metric_key"`
+	PeriodStart              time.Time `json:"period_start"`
+	PeriodEnd                time.Time `json:"period_end"`
+	IncludedQuantity         int64     `json:"included_quantity"`
+	ConsumedQuantity         int64     `json:"consumed_quantity"`
+	OverageQuantity          int64     `json:"overage_quantity"`
+	LastReportedMeterEventID string    `json:"last_reported_meter_event_id"`
+	LastSyncedAt             time.Time `json:"last_synced_at"`
 }
 
 func (q *Queries) UpsertBillingUsageCounter(ctx context.Context, arg UpsertBillingUsageCounterParams) (BillingUsageCounter, error) {

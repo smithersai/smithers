@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -359,11 +360,11 @@ RETURNING repository_id, branch, user_id, workspace_id, heartbeat_at, created_at
 `
 
 type TakeOverStaleBranchLockParams struct {
-	RepositoryID int64              `json:"repository_id"`
-	Branch       string             `json:"branch"`
-	UserID       int64              `json:"user_id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	HeartbeatAt  pgtype.Timestamptz `json:"heartbeat_at"`
+	RepositoryID int64       `json:"repository_id"`
+	Branch       string      `json:"branch"`
+	UserID       int64       `json:"user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	HeartbeatAt  time.Time   `json:"heartbeat_at"`
 }
 
 // Steal a lock whose heartbeat has gone stale (holder crashed or left without

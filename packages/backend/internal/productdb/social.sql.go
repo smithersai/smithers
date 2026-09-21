@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -331,8 +332,8 @@ type ListRepoWatchersRow struct {
 	EmailNotificationsEnabled bool               `json:"email_notifications_enabled"`
 	LastLoginAt               pgtype.Timestamptz `json:"last_login_at"`
 	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                 time.Time          `json:"created_at"`
+	UpdatedAt                 time.Time          `json:"updated_at"`
 	IsSynthetic               bool               `json:"is_synthetic"`
 	Mode                      string             `json:"mode"`
 }
@@ -511,8 +512,8 @@ type ListUserWatchedReposRow struct {
 	NumWatches                 int64              `json:"num_watches"`
 	NumIssues                  int64              `json:"num_issues"`
 	NumClosedIssues            int64              `json:"num_closed_issues"`
-	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                  time.Time          `json:"created_at"`
+	UpdatedAt                  time.Time          `json:"updated_at"`
 	WatchMode                  string             `json:"watch_mode"`
 }
 

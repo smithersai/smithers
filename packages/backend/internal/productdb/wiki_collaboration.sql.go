@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -57,20 +58,20 @@ type GetWikiDocumentParams struct {
 }
 
 type GetWikiDocumentRow struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Slug           string             `json:"slug"`
-	Title          string             `json:"title"`
-	Body           string             `json:"body"`
-	AuthorID       int64              `json:"author_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	Revision       int64              `json:"revision"`
-	CrdtState      []byte             `json:"crdt_state"`
-	CrdtVector     []byte             `json:"crdt_vector"`
-	LastUpdateID   pgtype.UUID        `json:"last_update_id"`
-	LastUpdate     []byte             `json:"last_update"`
-	AuthorUsername string             `json:"author_username"`
+	ID             int64       `json:"id"`
+	RepositoryID   int64       `json:"repository_id"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	Body           string      `json:"body"`
+	AuthorID       int64       `json:"author_id"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+	Revision       int64       `json:"revision"`
+	CrdtState      []byte      `json:"crdt_state"`
+	CrdtVector     []byte      `json:"crdt_vector"`
+	LastUpdateID   pgtype.UUID `json:"last_update_id"`
+	LastUpdate     []byte      `json:"last_update"`
+	AuthorUsername string      `json:"author_username"`
 }
 
 func (q *Queries) GetWikiDocument(ctx context.Context, arg GetWikiDocumentParams) (GetWikiDocumentRow, error) {
@@ -235,22 +236,22 @@ ORDER BY wr.id LIMIT $1
 `
 
 type ListWikiHistoryRecoveryRow struct {
-	ID              int64              `json:"id"`
-	RepositoryID    int64              `json:"repository_id"`
-	PageID          int64              `json:"page_id"`
-	Revision        int64              `json:"revision"`
-	Slug            string             `json:"slug"`
-	Title           string             `json:"title"`
-	Body            string             `json:"body"`
-	AuthorID        pgtype.Int8        `json:"author_id"`
-	AuthorUsername  string             `json:"author_username"`
-	UpdateID        pgtype.UUID        `json:"update_id"`
-	UpdateBytes     []byte             `json:"update_bytes"`
-	Deleted         bool               `json:"deleted"`
-	HistoryCommitID string             `json:"history_commit_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	OwnerName       string             `json:"owner_name"`
-	RepoName        string             `json:"repo_name"`
+	ID              int64       `json:"id"`
+	RepositoryID    int64       `json:"repository_id"`
+	PageID          int64       `json:"page_id"`
+	Revision        int64       `json:"revision"`
+	Slug            string      `json:"slug"`
+	Title           string      `json:"title"`
+	Body            string      `json:"body"`
+	AuthorID        pgtype.Int8 `json:"author_id"`
+	AuthorUsername  string      `json:"author_username"`
+	UpdateID        pgtype.UUID `json:"update_id"`
+	UpdateBytes     []byte      `json:"update_bytes"`
+	Deleted         bool        `json:"deleted"`
+	HistoryCommitID string      `json:"history_commit_id"`
+	CreatedAt       time.Time   `json:"created_at"`
+	OwnerName       string      `json:"owner_name"`
+	RepoName        string      `json:"repo_name"`
 }
 
 func (q *Queries) ListWikiHistoryRecovery(ctx context.Context, limit int32) ([]ListWikiHistoryRecoveryRow, error) {

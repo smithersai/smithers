@@ -7,8 +7,7 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const countSearchWikiPagesByRepo = `-- name: CountSearchWikiPagesByRepo :one
@@ -121,16 +120,16 @@ type GetWikiPageBySlugParams struct {
 }
 
 type GetWikiPageBySlugRow struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Slug           string             `json:"slug"`
-	Title          string             `json:"title"`
-	Body           string             `json:"body"`
-	AuthorID       int64              `json:"author_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	Revision       int64              `json:"revision"`
-	AuthorUsername string             `json:"author_username"`
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Slug           string    `json:"slug"`
+	Title          string    `json:"title"`
+	Body           string    `json:"body"`
+	AuthorID       int64     `json:"author_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Revision       int64     `json:"revision"`
+	AuthorUsername string    `json:"author_username"`
 }
 
 func (q *Queries) GetWikiPageBySlug(ctx context.Context, arg GetWikiPageBySlugParams) (GetWikiPageBySlugRow, error) {
@@ -177,16 +176,16 @@ type ListWikiPagesByRepoParams struct {
 }
 
 type ListWikiPagesByRepoRow struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Slug           string             `json:"slug"`
-	Title          string             `json:"title"`
-	Body           string             `json:"body"`
-	AuthorID       int64              `json:"author_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	Revision       int64              `json:"revision"`
-	AuthorUsername string             `json:"author_username"`
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Slug           string    `json:"slug"`
+	Title          string    `json:"title"`
+	Body           string    `json:"body"`
+	AuthorID       int64     `json:"author_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Revision       int64     `json:"revision"`
+	AuthorUsername string    `json:"author_username"`
 }
 
 func (q *Queries) ListWikiPagesByRepo(ctx context.Context, arg ListWikiPagesByRepoParams) ([]ListWikiPagesByRepoRow, error) {
@@ -261,16 +260,16 @@ type SearchWikiPagesByRepoParams struct {
 }
 
 type SearchWikiPagesByRepoRow struct {
-	ID             int64              `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	Slug           string             `json:"slug"`
-	Title          string             `json:"title"`
-	Body           string             `json:"body"`
-	AuthorID       int64              `json:"author_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	Revision       int64              `json:"revision"`
-	AuthorUsername string             `json:"author_username"`
+	ID             int64     `json:"id"`
+	RepositoryID   int64     `json:"repository_id"`
+	Slug           string    `json:"slug"`
+	Title          string    `json:"title"`
+	Body           string    `json:"body"`
+	AuthorID       int64     `json:"author_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Revision       int64     `json:"revision"`
+	AuthorUsername string    `json:"author_username"`
 }
 
 func (q *Queries) SearchWikiPagesByRepo(ctx context.Context, arg SearchWikiPagesByRepoParams) ([]SearchWikiPagesByRepoRow, error) {

@@ -171,12 +171,12 @@ RETURNING id, repository_id, workflow_run_id, bookmark_name, cache_key, cache_ve
 `
 
 type FinalizeWorkflowCacheParams struct {
-	ObjectSizeBytes int64              `json:"object_size_bytes"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
-	ID              int64              `json:"id"`
-	RepositoryID    int64              `json:"repository_id"`
-	WorkflowRunID   pgtype.Int8        `json:"workflow_run_id"`
-	ObjectKey       string             `json:"object_key"`
+	ObjectSizeBytes int64       `json:"object_size_bytes"`
+	ExpiresAt       time.Time   `json:"expires_at"`
+	ID              int64       `json:"id"`
+	RepositoryID    int64       `json:"repository_id"`
+	WorkflowRunID   pgtype.Int8 `json:"workflow_run_id"`
+	ObjectKey       string      `json:"object_key"`
 }
 
 // The extra WHERE predicates are a compare-and-swap on the exact reservation

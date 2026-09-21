@@ -513,10 +513,10 @@ LIMIT $4
 `
 
 type ListPrunableWorkflowArtifactsParams struct {
-	PendingCreatedBefore pgtype.Timestamptz `json:"pending_created_before"`
-	ReadyExpiresBefore   pgtype.Timestamptz `json:"ready_expires_before"`
-	DeletionStaleBefore  pgtype.Timestamptz `json:"deletion_stale_before"`
-	LimitRows            int32              `json:"limit_rows"`
+	PendingCreatedBefore time.Time `json:"pending_created_before"`
+	ReadyExpiresBefore   time.Time `json:"ready_expires_before"`
+	DeletionStaleBefore  time.Time `json:"deletion_stale_before"`
+	LimitRows            int32     `json:"limit_rows"`
 }
 
 // Pending capability expiry is independent of artifact retention: pending
@@ -653,8 +653,8 @@ RETURNING
 `
 
 type PruneExpiredWorkflowArtifactsParams struct {
-	ExpiresBefore pgtype.Timestamptz `json:"expires_before"`
-	LimitRows     int32              `json:"limit_rows"`
+	ExpiresBefore time.Time `json:"expires_before"`
+	LimitRows     int32     `json:"limit_rows"`
 }
 
 // Deprecated compatibility query. Production cleanup must use
@@ -748,13 +748,13 @@ RETURNING id, repository_id, workflow_run_id, name, size, content_type, status, 
 `
 
 type RetryWorkflowArtifactDeletionParams struct {
-	DeletionToken pgtype.Text        `json:"deletion_token"`
-	ID            int64              `json:"id"`
-	RepositoryID  int64              `json:"repository_id"`
-	WorkflowRunID int64              `json:"workflow_run_id"`
-	Name          string             `json:"name"`
-	GcsKey        string             `json:"gcs_key"`
-	StaleBefore   pgtype.Timestamptz `json:"stale_before"`
+	DeletionToken pgtype.Text `json:"deletion_token"`
+	ID            int64       `json:"id"`
+	RepositoryID  int64       `json:"repository_id"`
+	WorkflowRunID int64       `json:"workflow_run_id"`
+	Name          string      `json:"name"`
+	GcsKey        string      `json:"gcs_key"`
+	StaleBefore   time.Time   `json:"stale_before"`
 }
 
 func (q *Queries) RetryWorkflowArtifactDeletion(ctx context.Context, arg RetryWorkflowArtifactDeletionParams) (WorkflowArtifact, error) {

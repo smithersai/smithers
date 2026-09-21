@@ -96,7 +96,7 @@ type AdminListTokensRow struct {
 	Scopes     string             `json:"scopes"`
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	CreatedAt  time.Time          `json:"created_at"`
 }
 
 func (q *Queries) AdminListTokens(ctx context.Context, arg AdminListTokensParams) ([]AdminListTokensRow, error) {

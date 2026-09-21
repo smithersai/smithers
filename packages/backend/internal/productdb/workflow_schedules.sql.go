@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -90,7 +91,7 @@ WHERE id = $1
 type UpdateWorkflowScheduleFireTimesParams struct {
 	ID         int64              `json:"id"`
 	PrevFireAt pgtype.Timestamptz `json:"prev_fire_at"`
-	NextFireAt pgtype.Timestamptz `json:"next_fire_at"`
+	NextFireAt time.Time          `json:"next_fire_at"`
 }
 
 func (q *Queries) UpdateWorkflowScheduleFireTimes(ctx context.Context, arg UpdateWorkflowScheduleFireTimesParams) error {
@@ -114,10 +115,10 @@ DO UPDATE SET
 `
 
 type UpsertWorkflowScheduleSpecParams struct {
-	WorkflowDefinitionID int64              `json:"workflow_definition_id"`
-	RepositoryID         int64              `json:"repository_id"`
-	CronExpression       string             `json:"cron_expression"`
-	NextFireAt           pgtype.Timestamptz `json:"next_fire_at"`
+	WorkflowDefinitionID int64     `json:"workflow_definition_id"`
+	RepositoryID         int64     `json:"repository_id"`
+	CronExpression       string    `json:"cron_expression"`
+	NextFireAt           time.Time `json:"next_fire_at"`
 }
 
 func (q *Queries) UpsertWorkflowScheduleSpec(ctx context.Context, arg UpsertWorkflowScheduleSpecParams) error {

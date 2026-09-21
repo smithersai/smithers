@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -69,8 +70,8 @@ type GetWorkflowRunByIDAndRepoRow struct {
 	AgentTokenExpiresAt  pgtype.Timestamptz `json:"agent_token_expires_at"`
 	StartedAt            pgtype.Timestamptz `json:"started_at"`
 	CompletedAt          pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 }
 
 func (q *Queries) GetWorkflowRunByIDAndRepo(ctx context.Context, arg GetWorkflowRunByIDAndRepoParams) (GetWorkflowRunByIDAndRepoRow, error) {
@@ -240,13 +241,13 @@ type InsertWorkflowLogNextSequenceParams struct {
 }
 
 type InsertWorkflowLogNextSequenceRow struct {
-	ID             int64              `json:"id"`
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	Sequence       int64              `json:"sequence"`
-	Stream         string             `json:"stream"`
-	Entry          string             `json:"entry"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID             int64     `json:"id"`
+	WorkflowRunID  int64     `json:"workflow_run_id"`
+	WorkflowStepID int64     `json:"workflow_step_id"`
+	Sequence       int64     `json:"sequence"`
+	Stream         string    `json:"stream"`
+	Entry          string    `json:"entry"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func (q *Queries) InsertWorkflowLogNextSequence(ctx context.Context, arg InsertWorkflowLogNextSequenceParams) (InsertWorkflowLogNextSequenceRow, error) {
@@ -308,13 +309,13 @@ type InsertWorkflowRunLogNextSequenceParams struct {
 }
 
 type InsertWorkflowRunLogNextSequenceRow struct {
-	ID             int64              `json:"id"`
-	WorkflowRunID  int64              `json:"workflow_run_id"`
-	WorkflowStepID int64              `json:"workflow_step_id"`
-	Sequence       int64              `json:"sequence"`
-	Stream         string             `json:"stream"`
-	Entry          string             `json:"entry"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ID             int64     `json:"id"`
+	WorkflowRunID  int64     `json:"workflow_run_id"`
+	WorkflowStepID int64     `json:"workflow_step_id"`
+	Sequence       int64     `json:"sequence"`
+	Stream         string    `json:"stream"`
+	Entry          string    `json:"entry"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func (q *Queries) InsertWorkflowRunLogNextSequence(ctx context.Context, arg InsertWorkflowRunLogNextSequenceParams) (InsertWorkflowRunLogNextSequenceRow, error) {

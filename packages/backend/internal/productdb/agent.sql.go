@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -328,8 +329,8 @@ type GetAgentSessionWithMessageCountRow struct {
 	Metadata      json.RawMessage    `json:"metadata"`
 	StartedAt     pgtype.Timestamptz `json:"started_at"`
 	FinishedAt    pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	MessageCount  int64              `json:"message_count"`
 }
@@ -595,8 +596,8 @@ type ListAgentSessionsByRepoWithMessageCountRow struct {
 	Metadata      json.RawMessage    `json:"metadata"`
 	StartedAt     pgtype.Timestamptz `json:"started_at"`
 	FinishedAt    pgtype.Timestamptz `json:"finished_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	MessageCount  int64              `json:"message_count"`
 }

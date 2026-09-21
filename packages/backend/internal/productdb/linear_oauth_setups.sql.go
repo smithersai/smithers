@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -33,8 +34,8 @@ type ConsumeLinearOAuthSetupByUserRow struct {
 	SetupKey         string             `json:"setup_key"`
 	UserID           int64              `json:"user_id"`
 	PayloadEncrypted []byte             `json:"payload_encrypted"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	ExpiresAt        time.Time          `json:"expires_at"`
 	UsedAt           pgtype.Timestamptz `json:"used_at"`
 }
 
@@ -59,10 +60,10 @@ RETURNING setup_key, user_id, payload_encrypted, created_at, expires_at, used_at
 `
 
 type CreateLinearOAuthSetupParams struct {
-	SetupKey         string             `json:"setup_key"`
-	UserID           int64              `json:"user_id"`
-	PayloadEncrypted []byte             `json:"payload_encrypted"`
-	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	SetupKey         string    `json:"setup_key"`
+	UserID           int64     `json:"user_id"`
+	PayloadEncrypted []byte    `json:"payload_encrypted"`
+	ExpiresAt        time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateLinearOAuthSetup(ctx context.Context, arg CreateLinearOAuthSetupParams) (LinearOauthSetup, error) {

@@ -8,8 +8,6 @@ package db
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countLFSLocks = `-- name: CountLFSLocks :one
@@ -438,10 +436,10 @@ RETURNING id, repository_id, oid, size, expires_at, created_at, updated_at
 `
 
 type UpsertLFSUploadReservationParams struct {
-	RepositoryID int64              `json:"repository_id"`
-	Oid          string             `json:"oid"`
-	Size         int64              `json:"size"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	RepositoryID int64     `json:"repository_id"`
+	Oid          string    `json:"oid"`
+	Size         int64     `json:"size"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 func (q *Queries) UpsertLFSUploadReservation(ctx context.Context, arg UpsertLFSUploadReservationParams) (LfsUploadReservation, error) {

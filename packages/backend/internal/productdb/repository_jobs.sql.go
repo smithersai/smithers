@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -1035,9 +1036,9 @@ type RegisterRepositoryJobRow struct {
 	TrialSource      string             `json:"trial_source"`
 	Schedule         string             `json:"schedule"`
 	NextFireAt       pgtype.Timestamptz `json:"next_fire_at"`
-	ActivatedAt      pgtype.Timestamptz `json:"activated_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ActivatedAt      time.Time          `json:"activated_at"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 }
 
 func (q *Queries) RegisterRepositoryJob(ctx context.Context, arg RegisterRepositoryJobParams) (RegisterRepositoryJobRow, error) {
@@ -1090,10 +1091,10 @@ WHERE id=$1 AND claim_token=$2 AND status='dispatching'
 `
 
 type RetryRepositoryJobSignalParams struct {
-	ID            string             `json:"id"`
-	ClaimToken    pgtype.UUID        `json:"claim_token"`
-	RunID         string             `json:"run_id"`
-	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	ID            string      `json:"id"`
+	ClaimToken    pgtype.UUID `json:"claim_token"`
+	RunID         string      `json:"run_id"`
+	NextAttemptAt time.Time   `json:"next_attempt_at"`
 }
 
 func (q *Queries) RetryRepositoryJobSignal(ctx context.Context, arg RetryRepositoryJobSignalParams) (int64, error) {
@@ -1135,13 +1136,13 @@ WHERE id=$1 AND claim_token=$2 AND status='dispatching'
 `
 
 type SettleRepositoryJobDispatchParams struct {
-	ID            string             `json:"id"`
-	ClaimToken    pgtype.UUID        `json:"claim_token"`
-	Status        string             `json:"status"`
-	RunID         string             `json:"run_id"`
-	Receipt       []byte             `json:"receipt"`
-	Error         string             `json:"error"`
-	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	ID            string      `json:"id"`
+	ClaimToken    pgtype.UUID `json:"claim_token"`
+	Status        string      `json:"status"`
+	RunID         string      `json:"run_id"`
+	Receipt       []byte      `json:"receipt"`
+	Error         string      `json:"error"`
+	NextAttemptAt time.Time   `json:"next_attempt_at"`
 }
 
 func (q *Queries) SettleRepositoryJobDispatch(ctx context.Context, arg SettleRepositoryJobDispatchParams) (int64, error) {

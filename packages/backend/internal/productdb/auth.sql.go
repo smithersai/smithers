@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -223,8 +224,8 @@ type CreateAdminCLIAccessTokenRow struct {
 	Scopes         string             `json:"scopes"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
 // The PAT and its audit event commit together; no credential is returned if
@@ -263,8 +264,8 @@ RETURNING nonce_key, wallet_address, created_at, expires_at, used_at
 `
 
 type CreateAuthNonceParams struct {
-	Nonce     string             `json:"nonce"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Nonce     string    `json:"nonce"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateAuthNonce(ctx context.Context, arg CreateAuthNonceParams) (AuthNonce, error) {
@@ -287,11 +288,11 @@ RETURNING session_key, user_id, username, is_admin, data, expires_at, created_at
 `
 
 type CreateAuthSessionParams struct {
-	SessionKey string             `json:"session_key"`
-	UserID     int64              `json:"user_id"`
-	Username   string             `json:"username"`
-	IsAdmin    bool               `json:"is_admin"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	SessionKey string    `json:"session_key"`
+	UserID     int64     `json:"user_id"`
+	Username   string    `json:"username"`
+	IsAdmin    bool      `json:"is_admin"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) (AuthSession, error) {
@@ -329,11 +330,11 @@ RETURNING id, user_id, email, token_hash, token_type, expires_at, created_at, us
 `
 
 type CreateEmailVerificationTokenParams struct {
-	UserID    int64              `json:"user_id"`
-	Email     string             `json:"email"`
-	TokenHash string             `json:"token_hash"`
-	TokenType string             `json:"token_type"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UserID    int64     `json:"user_id"`
+	Email     string    `json:"email"`
+	TokenHash string    `json:"token_hash"`
+	TokenType string    `json:"token_type"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error) {
@@ -419,10 +420,10 @@ RETURNING state_key, context_hash, requested_scopes, created_at, expires_at, use
 `
 
 type CreateOAuthStateParams struct {
-	State           string             `json:"state"`
-	ContextHash     string             `json:"context_hash"`
-	RequestedScopes []string           `json:"requested_scopes"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	State           string    `json:"state"`
+	ContextHash     string    `json:"context_hash"`
+	RequestedScopes []string  `json:"requested_scopes"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateOAuthState(ctx context.Context, arg CreateOAuthStateParams) (OauthState, error) {
@@ -964,8 +965,8 @@ RETURNING session_key, user_id, username, is_admin, data, expires_at, created_at
 `
 
 type RefreshAuthSessionParams struct {
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	SessionKey string             `json:"session_key"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	SessionKey string    `json:"session_key"`
 }
 
 func (q *Queries) RefreshAuthSession(ctx context.Context, arg RefreshAuthSessionParams) (AuthSession, error) {
@@ -1088,8 +1089,8 @@ WHERE session_key = $2
 `
 
 type UpdateSessionExpiryParams struct {
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	SessionKey string             `json:"session_key"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	SessionKey string    `json:"session_key"`
 }
 
 func (q *Queries) UpdateSessionExpiry(ctx context.Context, arg UpdateSessionExpiryParams) error {
@@ -1137,14 +1138,14 @@ type UpsertEmailAddressParams struct {
 }
 
 type UpsertEmailAddressRow struct {
-	ID          int64              `json:"id"`
-	UserID      int64              `json:"user_id"`
-	Email       string             `json:"email"`
-	LowerEmail  string             `json:"lower_email"`
-	IsActivated bool               `json:"is_activated"`
-	IsPrimary   bool               `json:"is_primary"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Email       string    `json:"email"`
+	LowerEmail  string    `json:"lower_email"`
+	IsActivated bool      `json:"is_activated"`
+	IsPrimary   bool      `json:"is_primary"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (q *Queries) UpsertEmailAddress(ctx context.Context, arg UpsertEmailAddressParams) (UpsertEmailAddressRow, error) {

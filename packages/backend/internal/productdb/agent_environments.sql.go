@@ -8,8 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const deleteRepositoryAgentEnvironmentSecret = `-- name: DeleteRepositoryAgentEnvironmentSecret :exec
@@ -95,12 +94,12 @@ ORDER BY name
 `
 
 type ListRepositoryAgentEnvironmentSecretsRow struct {
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	Hosts        []string           `json:"hosts"`
-	MatchHeaders []string           `json:"match_headers"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	RepositoryID int64     `json:"repository_id"`
+	Name         string    `json:"name"`
+	Hosts        []string  `json:"hosts"`
+	MatchHeaders []string  `json:"match_headers"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (q *Queries) ListRepositoryAgentEnvironmentSecrets(ctx context.Context, repositoryID int64) ([]ListRepositoryAgentEnvironmentSecretsRow, error) {
@@ -202,12 +201,12 @@ type UpsertRepositoryAgentEnvironmentSecretParams struct {
 }
 
 type UpsertRepositoryAgentEnvironmentSecretRow struct {
-	RepositoryID int64              `json:"repository_id"`
-	Name         string             `json:"name"`
-	Hosts        []string           `json:"hosts"`
-	MatchHeaders []string           `json:"match_headers"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	RepositoryID int64     `json:"repository_id"`
+	Name         string    `json:"name"`
+	Hosts        []string  `json:"hosts"`
+	MatchHeaders []string  `json:"match_headers"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (q *Queries) UpsertRepositoryAgentEnvironmentSecret(ctx context.Context, arg UpsertRepositoryAgentEnvironmentSecretParams) (UpsertRepositoryAgentEnvironmentSecretRow, error) {

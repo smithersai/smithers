@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -774,11 +775,11 @@ ORDER BY icl.created_at ASC, c.change_id ASC
 `
 
 type ListLinkedChangesForIssueRow struct {
-	ChangeID    string             `json:"change_id"`
-	CommitID    string             `json:"commit_id"`
-	Description string             `json:"description"`
-	LinkType    string             `json:"link_type"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ChangeID    string    `json:"change_id"`
+	CommitID    string    `json:"commit_id"`
+	Description string    `json:"description"`
+	LinkType    string    `json:"link_type"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func (q *Queries) ListLinkedChangesForIssue(ctx context.Context, issueID int64) ([]ListLinkedChangesForIssueRow, error) {

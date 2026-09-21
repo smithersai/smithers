@@ -7,8 +7,7 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const countActiveAnonSandboxes = `-- name: CountActiveAnonSandboxes :one
@@ -46,11 +45,11 @@ RETURNING id, repo_full_name, branch, vm_id, status, provisioning_stage, token_h
 `
 
 type CreateAnonSandboxParams struct {
-	RepoFullName string             `json:"repo_full_name"`
-	Branch       string             `json:"branch"`
-	TokenHash    string             `json:"token_hash"`
-	ClientIp     string             `json:"client_ip"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	RepoFullName string    `json:"repo_full_name"`
+	Branch       string    `json:"branch"`
+	TokenHash    string    `json:"token_hash"`
+	ClientIp     string    `json:"client_ip"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 // ---- Anonymous sandboxes (../multi SPEC.md §3 signed-out open) ----

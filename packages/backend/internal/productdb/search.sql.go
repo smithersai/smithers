@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -540,8 +541,8 @@ type SearchIssuesFTSRow struct {
 	AuthorID       int64              `json:"author_id"`
 	CommentCount   int64              `json:"comment_count"`
 	ClosedAt       pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
 	RepositoryName string             `json:"repository_name"`
 	OwnerName      string             `json:"owner_name"`
 	Rank           float32            `json:"rank"`
@@ -663,22 +664,22 @@ type SearchRepositoriesFTSParams struct {
 }
 
 type SearchRepositoriesFTSRow struct {
-	ID              int64              `json:"id"`
-	UserID          pgtype.Int8        `json:"user_id"`
-	OrgID           pgtype.Int8        `json:"org_id"`
-	Name            string             `json:"name"`
-	LowerName       string             `json:"lower_name"`
-	Description     string             `json:"description"`
-	IsPublic        bool               `json:"is_public"`
-	DefaultBookmark string             `json:"default_bookmark"`
-	Topics          []string           `json:"topics"`
-	NumStars        int64              `json:"num_stars"`
-	NumWatches      int64              `json:"num_watches"`
-	NumIssues       int64              `json:"num_issues"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	OwnerName       string             `json:"owner_name"`
-	Rank            float32            `json:"rank"`
+	ID              int64       `json:"id"`
+	UserID          pgtype.Int8 `json:"user_id"`
+	OrgID           pgtype.Int8 `json:"org_id"`
+	Name            string      `json:"name"`
+	LowerName       string      `json:"lower_name"`
+	Description     string      `json:"description"`
+	IsPublic        bool        `json:"is_public"`
+	DefaultBookmark string      `json:"default_bookmark"`
+	Topics          []string    `json:"topics"`
+	NumStars        int64       `json:"num_stars"`
+	NumWatches      int64       `json:"num_watches"`
+	NumIssues       int64       `json:"num_issues"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	OwnerName       string      `json:"owner_name"`
+	Rank            float32     `json:"rank"`
 }
 
 func (q *Queries) SearchRepositoriesFTS(ctx context.Context, arg SearchRepositoriesFTSParams) ([]SearchRepositoriesFTSRow, error) {
@@ -760,14 +761,14 @@ type SearchUsersFTSParams struct {
 }
 
 type SearchUsersFTSRow struct {
-	ID          int64              `json:"id"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
-	Bio         string             `json:"bio"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Rank        float32            `json:"rank"`
+	ID          int64     `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarUrl   string    `json:"avatar_url"`
+	Bio         string    `json:"bio"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Rank        float32   `json:"rank"`
 }
 
 func (q *Queries) SearchUsersFTS(ctx context.Context, arg SearchUsersFTSParams) ([]SearchUsersFTSRow, error) {
@@ -844,13 +845,13 @@ type UpsertCodeSearchDocumentParams struct {
 }
 
 type UpsertCodeSearchDocumentRow struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	FilePath     string             `json:"file_path"`
-	Content      string             `json:"content"`
-	SearchVector string             `json:"search_vector"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID           int64     `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	FilePath     string    `json:"file_path"`
+	Content      string    `json:"content"`
+	SearchVector string    `json:"search_vector"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (q *Queries) UpsertCodeSearchDocument(ctx context.Context, arg UpsertCodeSearchDocumentParams) (UpsertCodeSearchDocumentRow, error) {

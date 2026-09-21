@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -1300,7 +1301,7 @@ type GetLandingRequestWithChangeIDsByNumberRow struct {
 	AuthorAgentSessionID pgtype.UUID        `json:"author_agent_session_id"`
 	TurnParty            string             `json:"turn_party"`
 	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
+	TurnSince            time.Time          `json:"turn_since"`
 	TurnReason           string             `json:"turn_reason"`
 	TurnRevisionID       int64              `json:"turn_revision_id"`
 	LandedRevisions      json.RawMessage    `json:"landed_revisions"`
@@ -1313,8 +1314,8 @@ type GetLandingRequestWithChangeIDsByNumberRow struct {
 	LandingStartedAt     pgtype.Timestamptz `json:"landing_started_at"`
 	ClosedAt             pgtype.Timestamptz `json:"closed_at"`
 	MergedAt             pgtype.Timestamptz `json:"merged_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 	ChangeIds            []string           `json:"change_ids"`
 }
 
@@ -1494,7 +1495,7 @@ type GetMergedLandingRequestForChangeRow struct {
 	AuthorAgentSessionID pgtype.UUID        `json:"author_agent_session_id"`
 	TurnParty            string             `json:"turn_party"`
 	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
+	TurnSince            time.Time          `json:"turn_since"`
 	TurnReason           string             `json:"turn_reason"`
 	TurnRevisionID       int64              `json:"turn_revision_id"`
 	LandedRevisions      json.RawMessage    `json:"landed_revisions"`
@@ -1507,8 +1508,8 @@ type GetMergedLandingRequestForChangeRow struct {
 	LandingStartedAt     pgtype.Timestamptz `json:"landing_started_at"`
 	ClosedAt             pgtype.Timestamptz `json:"closed_at"`
 	MergedAt             pgtype.Timestamptz `json:"merged_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 	LandedRevision       string             `json:"landed_revision"`
 }
 
@@ -1740,7 +1741,7 @@ type ListLandingRequestsByRepoFilteredKeysetRow struct {
 	AuthorAgentSessionID pgtype.UUID        `json:"author_agent_session_id"`
 	TurnParty            string             `json:"turn_party"`
 	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
+	TurnSince            time.Time          `json:"turn_since"`
 	TurnReason           string             `json:"turn_reason"`
 	TurnRevisionID       int64              `json:"turn_revision_id"`
 	LandedRevisions      json.RawMessage    `json:"landed_revisions"`
@@ -1753,8 +1754,8 @@ type ListLandingRequestsByRepoFilteredKeysetRow struct {
 	LandingStartedAt     pgtype.Timestamptz `json:"landing_started_at"`
 	ClosedAt             pgtype.Timestamptz `json:"closed_at"`
 	MergedAt             pgtype.Timestamptz `json:"merged_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 	ChangeIds            []string           `json:"change_ids"`
 }
 
@@ -1861,7 +1862,7 @@ type ListLandingRequestsWithChangeIDsByRepoFilteredRow struct {
 	AuthorAgentSessionID pgtype.UUID        `json:"author_agent_session_id"`
 	TurnParty            string             `json:"turn_party"`
 	TurnActorID          string             `json:"turn_actor_id"`
-	TurnSince            pgtype.Timestamptz `json:"turn_since"`
+	TurnSince            time.Time          `json:"turn_since"`
 	TurnReason           string             `json:"turn_reason"`
 	TurnRevisionID       int64              `json:"turn_revision_id"`
 	LandedRevisions      json.RawMessage    `json:"landed_revisions"`
@@ -1874,8 +1875,8 @@ type ListLandingRequestsWithChangeIDsByRepoFilteredRow struct {
 	LandingStartedAt     pgtype.Timestamptz `json:"landing_started_at"`
 	ClosedAt             pgtype.Timestamptz `json:"closed_at"`
 	MergedAt             pgtype.Timestamptz `json:"merged_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
 	ChangeIds            []string           `json:"change_ids"`
 }
 

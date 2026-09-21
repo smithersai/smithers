@@ -37,10 +37,10 @@ WHERE later.repository_id = $1
 `
 
 type CountLaterJjOperationsInWorkspaceParams struct {
-	RepositoryID int64              `json:"repository_id"`
-	WorkspaceID  string             `json:"workspace_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	ID           int64              `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	WorkspaceID  string    `json:"workspace_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
 }
 
 func (q *Queries) CountLaterJjOperationsInWorkspace(ctx context.Context, arg CountLaterJjOperationsInWorkspaceParams) (int64, error) {

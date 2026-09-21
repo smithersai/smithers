@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -1134,10 +1135,10 @@ type ListReadableReposForUserParams struct {
 }
 
 type ListReadableReposForUserRow struct {
-	ID        int64              `json:"id"`
-	Owner     string             `json:"owner"`
-	Name      string             `json:"name"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        int64     `json:"id"`
+	Owner     string    `json:"owner"`
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Ticket 0135: returns every repository the given user can read (owner +

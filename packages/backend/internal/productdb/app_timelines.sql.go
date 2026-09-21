@@ -8,8 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const countAppTimelinesForOwner = `-- name: CountAppTimelinesForOwner :one
@@ -375,13 +374,13 @@ ORDER BY m.joined_at ASC
 `
 
 type ListLiveAppTimelineMemberProfilesRow struct {
-	TimelineID  string             `json:"timeline_id"`
-	UserID      int64              `json:"user_id"`
-	Role        string             `json:"role"`
-	JoinedAt    pgtype.Timestamptz `json:"joined_at"`
-	Username    string             `json:"username"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   string             `json:"avatar_url"`
+	TimelineID  string    `json:"timeline_id"`
+	UserID      int64     `json:"user_id"`
+	Role        string    `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	AvatarUrl   string    `json:"avatar_url"`
 }
 
 // Members with their public identity for the members list (public profile

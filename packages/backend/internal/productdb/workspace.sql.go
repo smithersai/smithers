@@ -1649,9 +1649,9 @@ type ListUserWorkspacesAcrossReposRow struct {
 	Behind            int32              `json:"behind"`
 	StartedAt         pgtype.Timestamptz `json:"started_at"`
 	LastAccessedAt    pgtype.Timestamptz `json:"last_accessed_at"`
-	LastActivityAt    pgtype.Timestamptz `json:"last_activity_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	SortTimestamp     pgtype.Timestamptz `json:"sort_timestamp"`
+	LastActivityAt    time.Time          `json:"last_activity_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	SortTimestamp     time.Time          `json:"sort_timestamp"`
 }
 
 // Ticket 0135: cross-repo switcher listing for the current user.
@@ -2303,7 +2303,7 @@ type StopWorkspaceRetainingRowRow struct {
 	FailureCode             pgtype.Text        `json:"failure_code"`
 	FailureMessage          pgtype.Text        `json:"failure_message"`
 	ProvisioningStage       string             `json:"provisioning_stage"`
-	LastActivityAt          pgtype.Timestamptz `json:"last_activity_at"`
+	LastActivityAt          time.Time          `json:"last_activity_at"`
 	IdleTimeoutSecs         int32              `json:"idle_timeout_secs"`
 	SuspendedAt             pgtype.Timestamptz `json:"suspended_at"`
 	StartedAt               pgtype.Timestamptz `json:"started_at"`
@@ -2314,8 +2314,8 @@ type StopWorkspaceRetainingRowRow struct {
 	Behind                  int32              `json:"behind"`
 	LastAccessedAt          pgtype.Timestamptz `json:"last_accessed_at"`
 	DeletedAt               pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt               time.Time          `json:"created_at"`
+	UpdatedAt               time.Time          `json:"updated_at"`
 }
 
 // Stop the retained workspace and its live sessions atomically. The owner has

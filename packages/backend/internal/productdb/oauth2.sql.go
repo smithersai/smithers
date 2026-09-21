@@ -7,8 +7,7 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const consumeOAuth2AuthorizationCode = `-- name: ConsumeOAuth2AuthorizationCode :one
@@ -79,11 +78,11 @@ RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
 `
 
 type CreateOAuth2AccessTokenParams struct {
-	TokenHash string             `json:"token_hash"`
-	AppID     int64              `json:"app_id"`
-	UserID    int64              `json:"user_id"`
-	Scopes    []string           `json:"scopes"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	TokenHash string    `json:"token_hash"`
+	AppID     int64     `json:"app_id"`
+	UserID    int64     `json:"user_id"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateOAuth2AccessToken(ctx context.Context, arg CreateOAuth2AccessTokenParams) (Oauth2AccessToken, error) {
@@ -189,14 +188,14 @@ VALUES (
 `
 
 type CreateOAuth2AuthorizationCodeParams struct {
-	CodeHash            string             `json:"code_hash"`
-	AppID               int64              `json:"app_id"`
-	UserID              int64              `json:"user_id"`
-	Scopes              []string           `json:"scopes"`
-	RedirectUri         string             `json:"redirect_uri"`
-	CodeChallenge       string             `json:"code_challenge"`
-	CodeChallengeMethod string             `json:"code_challenge_method"`
-	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	CodeHash            string    `json:"code_hash"`
+	AppID               int64     `json:"app_id"`
+	UserID              int64     `json:"user_id"`
+	Scopes              []string  `json:"scopes"`
+	RedirectUri         string    `json:"redirect_uri"`
+	CodeChallenge       string    `json:"code_challenge"`
+	CodeChallengeMethod string    `json:"code_challenge_method"`
+	ExpiresAt           time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateOAuth2AuthorizationCode(ctx context.Context, arg CreateOAuth2AuthorizationCodeParams) error {
@@ -232,11 +231,11 @@ RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
 `
 
 type CreateOAuth2RefreshTokenParams struct {
-	TokenHash string             `json:"token_hash"`
-	AppID     int64              `json:"app_id"`
-	UserID    int64              `json:"user_id"`
-	Scopes    []string           `json:"scopes"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	TokenHash string    `json:"token_hash"`
+	AppID     int64     `json:"app_id"`
+	UserID    int64     `json:"user_id"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2RefreshTokenParams) (Oauth2RefreshToken, error) {
@@ -493,15 +492,15 @@ ORDER BY t.created_at DESC
 `
 
 type ListOAuth2AccessTokensByUserRow struct {
-	ID          int64              `json:"id"`
-	TokenHash   string             `json:"token_hash"`
-	AppID       int64              `json:"app_id"`
-	UserID      int64              `json:"user_id"`
-	Scopes      []string           `json:"scopes"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	AppName     string             `json:"app_name"`
-	AppClientID string             `json:"app_client_id"`
+	ID          int64     `json:"id"`
+	TokenHash   string    `json:"token_hash"`
+	AppID       int64     `json:"app_id"`
+	UserID      int64     `json:"user_id"`
+	Scopes      []string  `json:"scopes"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	CreatedAt   time.Time `json:"created_at"`
+	AppName     string    `json:"app_name"`
+	AppClientID string    `json:"app_client_id"`
 }
 
 func (q *Queries) ListOAuth2AccessTokensByUser(ctx context.Context, userID int64) ([]ListOAuth2AccessTokensByUserRow, error) {

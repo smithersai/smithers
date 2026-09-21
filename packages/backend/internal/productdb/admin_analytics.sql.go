@@ -8,8 +8,6 @@ package db
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const adminSetUserSynthetic = `-- name: AdminSetUserSynthetic :one
@@ -443,11 +441,11 @@ type AnalyticsStuckAgentsParams struct {
 }
 
 type AnalyticsStuckAgentsRow struct {
-	ID         string             `json:"id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	AgeSeconds int64              `json:"age_seconds"`
-	Username   string             `json:"username"`
-	Repository string             `json:"repository"`
+	ID         string    `json:"id"`
+	CreatedAt  time.Time `json:"created_at"`
+	AgeSeconds int64     `json:"age_seconds"`
+	Username   string    `json:"username"`
+	Repository string    `json:"repository"`
 }
 
 // All-time live active sessions older than 1h without started_at, or older than 24h regardless of started_at. Owner filtering uses agent_sessions.user_id; repository names retain organization owners.

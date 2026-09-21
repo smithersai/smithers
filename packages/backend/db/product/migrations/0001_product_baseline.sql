@@ -1088,15 +1088,15 @@ CREATE TABLE public.issues (
     author_id bigint NOT NULL,
     milestone_id bigint,
     comment_count bigint DEFAULT 0 NOT NULL,
-    closed_at timestamp with time zone,
+    closed_at timestamptz,
     fixed_by_id bigint,
     fixed_by_agent_session_id uuid,
-    fixed_at timestamp with time zone,
+    fixed_at timestamptz,
     verified_by_id bigint,
     verified_by_agent_session_id uuid,
-    verified_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    verified_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT issues_distinct_verifier_check CHECK ((((state)::text <> 'verified'::text) OR ((fixed_by_agent_session_id IS NOT NULL) AND ((verified_by_agent_session_id IS NULL) OR (verified_by_agent_session_id <> fixed_by_agent_session_id))) OR ((fixed_by_agent_session_id IS NULL) AND ((verified_by_agent_session_id IS NOT NULL) OR (verified_by_id <> fixed_by_id))))),
     CONSTRAINT issues_fix_metadata_check CHECK (((((state)::text = ANY ((ARRAY['fixed'::character varying, 'verified'::character varying])::text[])) AND (fixed_by_id IS NOT NULL) AND (fixed_at IS NOT NULL)) OR (((state)::text <> ALL ((ARRAY['fixed'::character varying, 'verified'::character varying])::text[])) AND (fixed_by_id IS NULL) AND (fixed_by_agent_session_id IS NULL) AND (fixed_at IS NULL)))),
     CONSTRAINT issues_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying, 'fixed'::character varying, 'verified'::character varying])::text[]))),
@@ -1540,10 +1540,10 @@ CREATE TABLE public.access_tokens (
     token_hash character varying(255) NOT NULL,
     token_last_eight character varying(8) DEFAULT ''::character varying NOT NULL,
     scopes text DEFAULT ''::text NOT NULL,
-    expires_at timestamp with time zone,
-    last_used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    expires_at timestamptz,
+    last_used_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -1576,7 +1576,7 @@ CREATE TABLE public.agent_messages (
     repository_id bigint NOT NULL,
     role character varying(16) NOT NULL,
     sequence bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT agent_messages_role_check CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'assistant'::character varying, 'system'::character varying, 'tool'::character varying])::text[])))
 );
 
@@ -1612,7 +1612,7 @@ CREATE TABLE public.agent_parts (
     part_index bigint NOT NULL,
     part_type character varying(32) NOT NULL,
     content jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT agent_parts_content_check CHECK ((jsonb_typeof(content) = 'object'::text))
 );
 
@@ -1649,11 +1649,11 @@ CREATE TABLE public.agent_sessions (
     status character varying(16) NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     workspace_id uuid,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone,
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    deleted_at timestamptz,
     CONSTRAINT agent_sessions_metadata_check CHECK ((jsonb_typeof(metadata) = 'object'::text)),
     CONSTRAINT agent_sessions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'timed_out'::character varying])::text[])))
 );
@@ -1673,9 +1673,9 @@ CREATE TABLE public.alpha_waitlist_entries (
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     source character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
     approved_by bigint,
-    approved_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    approved_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT alpha_waitlist_entries_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying])::text[])))
 );
 
@@ -1709,8 +1709,8 @@ CREATE TABLE public.alpha_whitelist_entries (
     identity_value character varying(255) NOT NULL,
     lower_identity_value character varying(255) NOT NULL,
     created_by bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT alpha_whitelist_entries_identity_type_check CHECK (((identity_type)::text = ANY ((ARRAY['email'::character varying, 'wallet'::character varying, 'username'::character varying])::text[])))
 );
 
@@ -1745,13 +1745,13 @@ CREATE TABLE public.analyzer_runs (
     revision_seq bigint NOT NULL,
     name text NOT NULL,
     state character varying(16) NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
+    started_at timestamptz,
+    finished_at timestamptz,
     paused_by text,
     paused_reason text,
     failure_reason text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT analyzer_runs_failure_detail_check CHECK (((((state)::text = 'failed'::text) AND (failure_reason IS NOT NULL) AND (btrim(failure_reason) <> ''::text)) OR (((state)::text <> 'failed'::text) AND (failure_reason IS NULL)))),
     CONSTRAINT analyzer_runs_name_check CHECK ((btrim(name) <> ''::text)),
     CONSTRAINT analyzer_runs_pause_detail_check CHECK (((((state)::text = 'paused'::text) AND (paused_by IS NOT NULL) AND (btrim(paused_by) <> ''::text) AND (paused_reason IS NOT NULL) AND (btrim(paused_reason) <> ''::text)) OR (((state)::text <> 'paused'::text) AND (paused_by IS NULL) AND (paused_reason IS NULL)))),
@@ -1792,10 +1792,10 @@ CREATE TABLE public.anon_sandboxes (
     provisioning_stage text DEFAULT ''::text NOT NULL,
     token_hash text NOT NULL,
     client_ip text DEFAULT ''::text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    deleted_at timestamptz,
     CONSTRAINT anon_sandboxes_branch_check CHECK (((length(branch) >= 1) AND (length(branch) <= 128))),
     CONSTRAINT anon_sandboxes_repo_full_name_check CHECK (((length(repo_full_name) >= 3) AND (length(repo_full_name) <= 255))),
     CONSTRAINT anon_sandboxes_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'starting'::text, 'running'::text, 'failed'::text, 'deleted'::text]))),
@@ -1812,7 +1812,7 @@ CREATE TABLE public.app_timeline_branches (
     ordinal integer NOT NULL,
     from_seq bigint NOT NULL,
     events jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT app_timeline_branches_from_seq_check CHECK ((from_seq >= 0)),
     CONSTRAINT app_timeline_branches_ordinal_check CHECK ((ordinal >= 0))
 );
@@ -1826,7 +1826,7 @@ CREATE TABLE public.app_timeline_events (
     timeline_id uuid NOT NULL,
     seq bigint NOT NULL,
     payload jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT app_timeline_events_seq_check CHECK ((seq >= 0))
 );
 
@@ -1839,8 +1839,8 @@ CREATE TABLE public.app_timeline_members (
     timeline_id uuid NOT NULL,
     user_id bigint NOT NULL,
     role text NOT NULL,
-    joined_at timestamp with time zone DEFAULT now() NOT NULL,
-    removed_at timestamp with time zone,
+    joined_at timestamptz DEFAULT now() NOT NULL,
+    removed_at timestamptz,
     CONSTRAINT app_timeline_members_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'editor'::text, 'viewer'::text])))
 );
 
@@ -1853,8 +1853,8 @@ CREATE TABLE public.app_timeline_snapshots (
     timeline_id uuid NOT NULL,
     seq bigint NOT NULL,
     state jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT app_timeline_snapshots_seq_check CHECK ((seq >= 0))
 );
 
@@ -1869,9 +1869,9 @@ CREATE TABLE public.app_timelines (
     client_key text DEFAULT 'default'::text NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     head_seq bigint DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    deleted_at timestamp with time zone,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    deleted_at timestamptz,
     CONSTRAINT app_timelines_client_key_check CHECK (((length(client_key) >= 1) AND (length(client_key) <= 128))),
     CONSTRAINT app_timelines_head_seq_check CHECK ((head_seq >= 0))
 );
@@ -1889,10 +1889,10 @@ CREATE TABLE public.approvals (
     kind text NOT NULL,
     title text NOT NULL,
     description text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    decided_at timestamp with time zone,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    decided_at timestamptz,
     decided_by bigint,
-    expires_at timestamp with time zone,
+    expires_at timestamptz,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT approvals_check CHECK ((((state = 'pending'::text) AND (decided_at IS NULL) AND (decided_by IS NULL)) OR ((state = ANY (ARRAY['approved'::text, 'rejected'::text])) AND (decided_at IS NOT NULL)) OR (state = 'expired'::text))),
     CONSTRAINT approvals_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
@@ -1915,7 +1915,7 @@ CREATE TABLE public.audit_log (
     action character varying(32) NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     ip_address character varying(45) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -1945,9 +1945,9 @@ ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
 CREATE TABLE public.auth_nonces (
     nonce_key character varying(64) NOT NULL,
     wallet_address character varying(42),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone
+    created_at timestamptz DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz
 );
 
 
@@ -1961,9 +1961,9 @@ CREATE TABLE public.auth_sessions (
     username character varying(255) NOT NULL,
     is_admin boolean DEFAULT false NOT NULL,
     data bytea,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -1978,8 +1978,8 @@ CREATE TABLE public.billing_accounts (
     stripe_customer_id character varying(255) NOT NULL,
     stripe_customer_email character varying(255) DEFAULT ''::character varying NOT NULL,
     stripe_customer_name character varying(255) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT billing_accounts_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[])))
 );
 
@@ -2010,8 +2010,8 @@ ALTER SEQUENCE public.billing_accounts_id_seq OWNED BY public.billing_accounts.i
 CREATE TABLE public.billing_credit_balances (
     billing_account_id bigint NOT NULL,
     balance_cents bigint DEFAULT 0 NOT NULL,
-    last_grant_at timestamp with time zone,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    last_grant_at timestamptz,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2028,7 +2028,7 @@ CREATE TABLE public.billing_credit_ledger (
     category character varying(32) NOT NULL,
     metric_key character varying(64) DEFAULT ''::character varying NOT NULL,
     idempotency_key character varying(255) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT billing_credit_ledger_category_check CHECK (((category)::text = ANY ((ARRAY['monthly_grant'::character varying, 'purchase'::character varying, 'deduction'::character varying, 'refund'::character varying, 'gift'::character varying, 'expiration'::character varying, 'adjustment'::character varying])::text[])))
 );
 
@@ -2061,9 +2061,9 @@ CREATE TABLE public.billing_entitlements (
     billing_account_id bigint NOT NULL,
     feature_key character varying(255) NOT NULL,
     active boolean DEFAULT true NOT NULL,
-    last_synced_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    last_synced_at timestamptz DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2099,15 +2099,15 @@ CREATE TABLE public.billing_subscriptions (
     billing_interval character varying(16) DEFAULT ''::character varying NOT NULL,
     status character varying(32) NOT NULL,
     quantity bigint DEFAULT 0 NOT NULL,
-    trial_end timestamp with time zone,
-    current_period_start timestamp with time zone,
-    current_period_end timestamp with time zone,
-    past_due_since timestamp with time zone,
+    trial_end timestamptz,
+    current_period_start timestamptz,
+    current_period_end timestamptz,
+    past_due_since timestamptz,
     cancel_at_period_end boolean DEFAULT false NOT NULL,
-    canceled_at timestamp with time zone,
+    canceled_at timestamptz,
     raw_payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT billing_subscriptions_billing_interval_check CHECK (((billing_interval)::text = ANY ((ARRAY[''::character varying, 'monthly'::character varying, 'annual'::character varying])::text[]))),
     CONSTRAINT billing_subscriptions_quantity_check CHECK ((quantity >= 0)),
     CONSTRAINT billing_subscriptions_raw_payload_check CHECK ((jsonb_typeof(raw_payload) = 'object'::text))
@@ -2142,15 +2142,15 @@ CREATE TABLE public.billing_usage_counters (
     owner_type character varying(16) NOT NULL,
     owner_id bigint NOT NULL,
     metric_key character varying(64) NOT NULL,
-    period_start timestamp with time zone NOT NULL,
-    period_end timestamp with time zone NOT NULL,
+    period_start timestamptz NOT NULL,
+    period_end timestamptz NOT NULL,
     included_quantity bigint DEFAULT 0 NOT NULL,
     consumed_quantity bigint DEFAULT 0 NOT NULL,
     overage_quantity bigint DEFAULT 0 NOT NULL,
     last_reported_meter_event_id character varying(255) DEFAULT ''::character varying NOT NULL,
-    last_synced_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_synced_at timestamptz DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT billing_usage_counters_check CHECK ((period_end > period_start)),
     CONSTRAINT billing_usage_counters_consumed_quantity_check CHECK ((consumed_quantity >= 0)),
     CONSTRAINT billing_usage_counters_included_quantity_check CHECK ((included_quantity >= 0)),
@@ -2188,8 +2188,8 @@ CREATE TABLE public.bookmarks (
     name character varying(255) NOT NULL,
     target_change_id character varying(255) DEFAULT ''::character varying NOT NULL,
     is_default boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2223,8 +2223,8 @@ CREATE TABLE public.branch_lock_join_requests (
     requester_id bigint NOT NULL,
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     resolver_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    resolved_at timestamp with time zone,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    resolved_at timestamptz,
     CONSTRAINT branch_lock_join_requests_branch_check CHECK (((length((branch)::text) >= 1) AND (length((branch)::text) <= 255))),
     CONSTRAINT branch_lock_join_requests_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'denied'::character varying, 'cancelled'::character varying])::text[])))
 );
@@ -2258,9 +2258,9 @@ CREATE TABLE public.branch_locks (
     branch character varying(255) NOT NULL,
     user_id bigint NOT NULL,
     workspace_id uuid,
-    heartbeat_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    heartbeat_at timestamptz DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT branch_locks_branch_check CHECK (((length((branch)::text) >= 1) AND (length((branch)::text) <= 255)))
 );
 
@@ -2274,8 +2274,8 @@ CREATE TABLE public.build_cache_artifacts (
     digest character(64) NOT NULL,
     size_bytes bigint NOT NULL,
     gcs_key text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_accessed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    last_accessed_at timestamptz DEFAULT now() NOT NULL,
     access_count bigint DEFAULT 0 NOT NULL,
     CONSTRAINT build_cache_artifacts_digest_check CHECK ((digest ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT build_cache_artifacts_size_bytes_check CHECK ((size_bytes >= 0))
@@ -2294,8 +2294,8 @@ CREATE TABLE public.build_cache_entries (
     created_at_ms bigint,
     recorded_run_id text,
     recorded_event_seq bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_accessed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    last_accessed_at timestamptz DEFAULT now() NOT NULL,
     access_count bigint DEFAULT 0 NOT NULL,
     CONSTRAINT build_cache_entries_body_check CHECK ((octet_length(body) <= 1048576)),
     CONSTRAINT build_cache_entries_check CHECK (((recorded_run_id IS NULL) = (recorded_event_seq IS NULL))),
@@ -2328,9 +2328,9 @@ CREATE TABLE public.build_cache_read_tokens (
     name character varying(255) DEFAULT ''::character varying NOT NULL,
     token_hash character varying(64) NOT NULL,
     token_last_eight character varying(8) DEFAULT ''::character varying NOT NULL,
-    last_used_at timestamp with time zone,
-    revoked_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    last_used_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2369,7 +2369,7 @@ CREATE TABLE public.change_revisions (
     workspace_snapshot_id uuid,
     workspace_id uuid,
     operation_ids text[] DEFAULT '{}'::text[] NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT change_revisions_seq_check CHECK ((seq > 0)),
     CONSTRAINT change_revisions_source_check CHECK (((source)::text = ANY ((ARRAY['push'::character varying, 'rebase'::character varying, 'agent'::character varying, 'undo'::character varying, 'revert'::character varying, 'split'::character varying])::text[])))
 );
@@ -2403,8 +2403,8 @@ CREATE TABLE public.change_walkthroughs (
     change_revision_id bigint NOT NULL,
     sections jsonb DEFAULT '[]'::jsonb NOT NULL,
     quiz jsonb DEFAULT '[]'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT change_walkthroughs_quiz_check CHECK ((jsonb_typeof(quiz) = 'array'::text)),
     CONSTRAINT change_walkthroughs_sections_check CHECK ((jsonb_typeof(sections) = 'array'::text))
 );
@@ -2445,8 +2445,8 @@ CREATE TABLE public.changes (
     is_empty boolean DEFAULT false NOT NULL,
     parent_change_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     revision_seq bigint DEFAULT 1 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT changes_parent_change_ids_check CHECK ((jsonb_typeof(parent_change_ids) = 'array'::text)),
     CONSTRAINT changes_revision_seq_check CHECK ((revision_seq > 0))
 );
@@ -2485,8 +2485,8 @@ CREATE TABLE public.changeset_members (
     target_bookmark character varying(255) DEFAULT 'main'::character varying NOT NULL,
     previous_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
     landed_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2527,9 +2527,9 @@ CREATE TABLE public.changesets (
     landing_plan jsonb DEFAULT '{}'::jsonb NOT NULL,
     landed_commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
     created_by bigint,
-    landed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    landed_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT changesets_parent_change_ids_check CHECK ((jsonb_typeof(parent_change_ids) = 'array'::text)),
     CONSTRAINT changesets_state_check CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'landing'::character varying, 'landed'::character varying, 'failed'::character varying])::text[])))
 );
@@ -2564,8 +2564,8 @@ CREATE TABLE public.code_search_documents (
     file_path text NOT NULL,
     content text DEFAULT ''::text NOT NULL,
     search_vector tsvector,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2607,7 +2607,7 @@ CREATE TABLE public.collaborators (
     repository_id bigint NOT NULL,
     user_id bigint,
     permission character varying(16) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT collaborators_permission_check CHECK (((permission)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying, 'admin'::character varying])::text[])))
 );
 
@@ -2650,8 +2650,8 @@ CREATE TABLE public.commit_statuses (
     targets_cached bigint DEFAULT 0 NOT NULL,
     duration_ms bigint DEFAULT 0 NOT NULL,
     workspace_id uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT commit_statuses_duration_ms_nonnegative CHECK ((duration_ms >= 0)),
     CONSTRAINT commit_statuses_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'success'::character varying, 'failure'::character varying, 'error'::character varying, 'cancelled'::character varying])::text[]))),
     CONSTRAINT commit_statuses_targets_affected_nonnegative CHECK ((targets_affected >= 0)),
@@ -2692,9 +2692,9 @@ CREATE TABLE public.conflicts (
     resolved boolean DEFAULT false NOT NULL,
     resolved_by bigint,
     resolution_method character varying(32) DEFAULT ''::character varying NOT NULL,
-    resolved_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT conflicts_conflict_type_check CHECK (((conflict_type)::text = ANY ((ARRAY['content'::character varying, 'rename'::character varying, 'delete'::character varying])::text[]))),
     CONSTRAINT conflicts_resolution_method_check CHECK (((resolution_method)::text = ANY ((ARRAY[''::character varying, 'manual'::character varying, 'theirs'::character varying, 'ours'::character varying, 'base'::character varying])::text[])))
 );
@@ -2730,8 +2730,8 @@ CREATE TABLE public.deploy_keys (
     key_fingerprint text NOT NULL,
     public_key text NOT NULL,
     read_only boolean DEFAULT true NOT NULL,
-    last_used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    last_used_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2763,7 +2763,7 @@ CREATE TABLE public.devtools_snapshots (
     repository_id bigint NOT NULL,
     kind text NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    "timestamp" timestamp with time zone DEFAULT now() NOT NULL,
+    "timestamp" timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT devtools_snapshots_kind_check CHECK ((kind = ANY (ARRAY['file_tree'::text, 'screenshot'::text, 'command_output'::text, 'tool_state'::text]))),
     CONSTRAINT devtools_snapshots_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text))
 );
@@ -2780,8 +2780,8 @@ CREATE TABLE public.email_addresses (
     lower_email character varying(255) NOT NULL,
     is_activated boolean DEFAULT false NOT NULL,
     is_primary boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2814,9 +2814,9 @@ CREATE TABLE public.email_verification_tokens (
     email character varying(255) NOT NULL,
     token_hash character varying(64) NOT NULL,
     token_type character varying(20) NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    used_at timestamp with time zone,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    used_at timestamptz,
     CONSTRAINT email_verification_tokens_token_type_check CHECK (((token_type)::text = ANY ((ARRAY['verify'::character varying, 'reset'::character varying])::text[])))
 );
 
@@ -2853,9 +2853,9 @@ CREATE TABLE public.file_drafts (
     version bigint DEFAULT 0 NOT NULL,
     base_change_id text DEFAULT ''::text NOT NULL,
     updated_by bigint,
-    deleted_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    deleted_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2868,7 +2868,7 @@ CREATE TABLE public.finding_feedback (
     user_id bigint NOT NULL,
     useful boolean NOT NULL,
     note text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2891,8 +2891,8 @@ CREATE TABLE public.findings (
     suggestion text,
     anchor_hash text,
     feedback character varying(16),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT findings_analyzer_check CHECK ((btrim(analyzer) <> ''::text)),
     CONSTRAINT findings_feedback_check CHECK (((feedback)::text = ANY ((ARRAY['useful'::character varying, 'not_useful'::character varying, 'fixed'::character varying])::text[]))),
     CONSTRAINT findings_line_check CHECK ((line > 0)),
@@ -2936,8 +2936,8 @@ CREATE TABLE public.github_app_installation_repositories (
     repo_name character varying(255) DEFAULT ''::character varying NOT NULL,
     repo_name_lower character varying(255) DEFAULT ''::character varying NOT NULL,
     is_private boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2950,8 +2950,8 @@ CREATE TABLE public.github_app_installations (
     account_login character varying(255) DEFAULT ''::character varying NOT NULL,
     account_type character varying(64) DEFAULT ''::character varying NOT NULL,
     repository_selection character varying(32) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -2967,8 +2967,8 @@ CREATE TABLE public.github_mirror_sync_ref_results (
     to_revision text DEFAULT ''::text NOT NULL,
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     error text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_mirror_sync_ref_results_check CHECK (((from_revision <> ''::text) OR (to_revision <> ''::text))),
     CONSTRAINT github_mirror_sync_ref_results_name_check CHECK (((length(name) >= 1) AND (length(name) <= 1024))),
     CONSTRAINT github_mirror_sync_ref_results_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'succeeded'::character varying, 'failed'::character varying])::text[])))
@@ -3003,10 +3003,10 @@ CREATE TABLE public.github_mirror_sync_runs (
     repository_id bigint NOT NULL,
     requested_by bigint,
     state character varying(16) DEFAULT 'queued'::character varying NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_mirror_sync_runs_state_check CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying])::text[])))
 );
 
@@ -3037,11 +3037,11 @@ ALTER SEQUENCE public.github_mirror_sync_runs_id_seq OWNED BY public.github_mirr
 CREATE TABLE public.github_repo_listings (
     user_id bigint NOT NULL,
     payload jsonb DEFAULT '[]'::jsonb NOT NULL,
-    synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    synced_at timestamptz DEFAULT now() NOT NULL,
     sync_error text,
-    syncing_since timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    syncing_since timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3055,10 +3055,10 @@ CREATE TABLE public.github_synced_issue_comments (
     issue_number bigint NOT NULL,
     github_id bigint NOT NULL,
     payload jsonb NOT NULL,
-    github_created_at timestamp with time zone,
-    github_updated_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    github_created_at timestamptz,
+    github_updated_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_synced_issue_comments_issue_number_check CHECK ((issue_number > 0))
 );
 
@@ -3095,10 +3095,10 @@ CREATE TABLE public.github_synced_issues (
     state character varying(16) DEFAULT 'open'::character varying NOT NULL,
     title text DEFAULT ''::text NOT NULL,
     payload jsonb NOT NULL,
-    github_created_at timestamp with time zone,
-    github_updated_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    github_created_at timestamptz,
+    github_updated_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_synced_issues_number_check CHECK ((number > 0)),
     CONSTRAINT github_synced_issues_resource_check CHECK (((resource)::text = ANY ((ARRAY['issues'::character varying, 'pulls'::character varying])::text[]))),
     CONSTRAINT github_synced_issues_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying])::text[])))
@@ -3142,13 +3142,13 @@ CREATE TABLE public.github_synced_repos (
     enrolled_via character varying(16) DEFAULT 'lazy'::character varying NOT NULL,
     mirror_owner character varying(255),
     mirror_repo character varying(255),
-    last_synced_at timestamp with time zone,
-    last_webhook_at timestamp with time zone,
-    syncing_since timestamp with time zone,
+    last_synced_at timestamptz,
+    last_webhook_at timestamptz,
+    syncing_since timestamptz,
     sync_error text,
     consecutive_failures integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_synced_repos_enrolled_via_check CHECK (((enrolled_via)::text = ANY ((ARRAY['import'::character varying, 'installation'::character varying, 'lazy'::character varying])::text[]))),
     CONSTRAINT github_synced_repos_owner_login_check CHECK (((length((owner_login)::text) >= 1) AND (length((owner_login)::text) <= 255))),
     CONSTRAINT github_synced_repos_repo_name_check CHECK (((length((repo_name)::text) >= 1) AND (length((repo_name)::text) <= 255))),
@@ -3190,10 +3190,10 @@ CREATE TABLE public.github_webhook_jobs (
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     attempts integer DEFAULT 0 NOT NULL,
     error text DEFAULT ''::text NOT NULL,
-    available_at timestamp with time zone DEFAULT now() NOT NULL,
-    processed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    available_at timestamptz DEFAULT now() NOT NULL,
+    processed_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT github_webhook_jobs_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
     CONSTRAINT github_webhook_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'processing'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
 );
@@ -3245,11 +3245,11 @@ CREATE TABLE public.import_jobs (
     provisioning_repository_id bigint,
     provisioning_token character varying(64),
     claim_token character varying(64),
-    claimed_at timestamp with time zone,
+    claimed_at timestamptz,
     attempts integer DEFAULT 0 NOT NULL,
-    available_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    available_at timestamptz DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT ck_import_jobs_claim CHECK ((((claim_token IS NULL) AND (claimed_at IS NULL)) OR (((claim_token)::text ~ '^[0-9a-f]{64}$'::text) AND (claimed_at IS NOT NULL)))),
     CONSTRAINT ck_import_jobs_progress_bounds CHECK (((refs_done <= refs_total) AND (objects_done <= objects_total) AND (issues_done <= issues_total))),
     CONSTRAINT ck_import_jobs_progress_nonnegative CHECK (((refs_done >= 0) AND (refs_total >= 0) AND (objects_done >= 0) AND (objects_total >= 0) AND (issues_done >= 0) AND (issues_total >= 0))),
@@ -3273,11 +3273,11 @@ CREATE TABLE public.issue_artifacts (
     content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
     status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
     gcs_key text NOT NULL,
-    confirmed_at timestamp with time zone,
+    confirmed_at timestamptz,
     deletion_token character varying(64),
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT issue_artifacts_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
     CONSTRAINT issue_artifacts_size_check CHECK ((size >= 0)),
     CONSTRAINT issue_artifacts_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'deleting'::character varying])::text[])))
@@ -3311,7 +3311,7 @@ CREATE TABLE public.issue_assignees (
     id bigint NOT NULL,
     issue_id bigint NOT NULL,
     user_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3343,7 +3343,7 @@ CREATE TABLE public.issue_change_links (
     issue_id bigint NOT NULL,
     change_id character varying(255) NOT NULL,
     link_type character varying(16) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT issue_change_links_link_type_check CHECK (((link_type)::text = ANY ((ARRAY['issue'::character varying, 'closes'::character varying])::text[])))
 );
 
@@ -3359,8 +3359,8 @@ CREATE TABLE public.issue_comments (
     commenter character varying(255) DEFAULT ''::character varying NOT NULL,
     body text NOT NULL,
     type character varying(32) DEFAULT 'comment'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3390,7 +3390,7 @@ ALTER SEQUENCE public.issue_comments_id_seq OWNED BY public.issue_comments.id;
 CREATE TABLE public.issue_dependencies (
     issue_id bigint NOT NULL,
     depends_on_issue_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT issue_dependencies_check CHECK ((issue_id <> depends_on_issue_id))
 );
 
@@ -3405,7 +3405,7 @@ CREATE TABLE public.issue_events (
     actor_id bigint,
     event_type character varying(64) NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT issue_events_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text))
 );
 
@@ -3436,7 +3436,7 @@ ALTER SEQUENCE public.issue_events_id_seq OWNED BY public.issue_events.id;
 CREATE TABLE public.issue_labels (
     issue_id bigint NOT NULL,
     label_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3454,7 +3454,7 @@ CREATE TABLE public.issue_state_facts (
     issue_id bigint NOT NULL,
     entity_key text NOT NULL,
     post_image jsonb,
-    recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    recorded_at timestamptz DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT issue_state_facts_check CHECK ((((operation = 'deleted'::text) AND (post_image IS NULL)) OR ((operation <> 'deleted'::text) AND (post_image IS NOT NULL)))),
     CONSTRAINT issue_state_facts_entity_type_check CHECK ((entity_type = ANY (ARRAY['issue'::text, 'issue_label'::text, 'issue_assignee'::text]))),
     CONSTRAINT issue_state_facts_operation_check CHECK ((operation = ANY (ARRAY['baseline'::text, 'created'::text, 'updated'::text, 'deleted'::text]))),
@@ -3472,7 +3472,7 @@ CREATE TABLE public.issue_state_journals (
     repository_id bigint NOT NULL,
     head bigint DEFAULT 0 NOT NULL,
     coverage_kind text DEFAULT 'from_creation'::text NOT NULL,
-    coverage_started_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    coverage_started_at timestamptz DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT issue_state_journals_coverage_kind_check CHECK ((coverage_kind = ANY (ARRAY['legacy_snapshot'::text, 'from_creation'::text]))),
     CONSTRAINT issue_state_journals_head_check CHECK ((head >= 0))
 );
@@ -3511,7 +3511,7 @@ CREATE TABLE public.jj_operations (
     parent_operation_id character varying(255) DEFAULT ''::character varying NOT NULL,
     workspace_id uuid,
     change_ids text[] DEFAULT '{}'::text[] NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3544,8 +3544,8 @@ CREATE TABLE public.labels (
     name character varying(255) NOT NULL,
     color character varying(16) NOT NULL,
     description text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3577,7 +3577,7 @@ CREATE TABLE public.landing_request_changes (
     landing_request_id bigint NOT NULL,
     change_id character varying(255) NOT NULL,
     position_in_stack bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3615,13 +3615,13 @@ CREATE TABLE public.landing_request_comments (
     commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
     anchor_hash character varying(64) DEFAULT ''::character varying NOT NULL,
     state character varying(32) DEFAULT 'open'::character varying NOT NULL,
-    done_at timestamp with time zone,
+    done_at timestamptz,
     done_by bigint,
     resolved_in_revision jsonb DEFAULT 'null'::jsonb NOT NULL,
-    resolved_at timestamp with time zone,
+    resolved_at timestamptz,
     resolved_by bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT landing_request_comments_resolved_in_revision_check CHECK (((resolved_in_revision = 'null'::jsonb) OR (jsonb_typeof(resolved_in_revision) = 'object'::text))),
     CONSTRAINT landing_request_comments_side_check CHECK (((side)::text = ANY ((ARRAY['left'::character varying, 'right'::character varying, 'both'::character varying])::text[]))),
     CONSTRAINT landing_request_comments_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'done'::character varying, 'resolved'::character varying])::text[])))
@@ -3665,8 +3665,8 @@ CREATE TABLE public.landing_request_reviews (
     state character varying(32) DEFAULT 'submitted'::character varying NOT NULL,
     commit_id character varying(255) DEFAULT ''::character varying NOT NULL,
     change_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT landing_request_reviews_agent_fields_check CHECK ((((reviewer_kind)::text = 'human'::text) OR ((verdict IS NOT NULL) AND (confidence_bucket IS NOT NULL) AND (length(btrim(summary)) > 0) AND (length(btrim((commit_id)::text)) > 0)))),
     CONSTRAINT landing_request_reviews_change_revisions_check CHECK ((jsonb_typeof(change_revisions) = 'object'::text)),
     CONSTRAINT landing_request_reviews_confidence_bucket_check CHECK (((confidence_bucket)::text = ANY ((ARRAY['high'::character varying, 'medium'::character varying, 'low'::character varying])::text[]))),
@@ -3719,21 +3719,21 @@ CREATE TABLE public.landing_requests (
     author_agent_session_id uuid,
     turn_party character varying(16) DEFAULT 'reviewer'::character varying NOT NULL,
     turn_actor_id text DEFAULT ''::text NOT NULL,
-    turn_since timestamp with time zone DEFAULT now() NOT NULL,
+    turn_since timestamptz DEFAULT now() NOT NULL,
     turn_reason character varying(16) DEFAULT 'request'::character varying NOT NULL,
     turn_revision_id bigint DEFAULT 0 NOT NULL,
     landed_revisions jsonb DEFAULT '{}'::jsonb NOT NULL,
     auto_land_enabled boolean DEFAULT false NOT NULL,
     auto_land_set_by bigint,
-    auto_land_set_at timestamp with time zone,
-    auto_land_checked_at timestamp with time zone,
+    auto_land_set_at timestamptz,
+    auto_land_checked_at timestamptz,
     queued_by bigint,
-    queued_at timestamp with time zone,
-    landing_started_at timestamp with time zone,
-    closed_at timestamp with time zone,
-    merged_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    queued_at timestamptz,
+    landing_started_at timestamptz,
+    closed_at timestamptz,
+    merged_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT landing_requests_auto_land_intent_check CHECK (((auto_land_enabled AND (auto_land_set_by IS NOT NULL) AND (auto_land_set_at IS NOT NULL)) OR ((NOT auto_land_enabled) AND (auto_land_set_by IS NULL) AND (auto_land_set_at IS NULL)))),
     CONSTRAINT landing_requests_conflict_status_check CHECK (((conflict_status)::text = ANY ((ARRAY['clean'::character varying, 'conflicted'::character varying, 'unknown'::character varying])::text[]))),
     CONSTRAINT landing_requests_create_identity CHECK ((((request_id IS NULL) AND (create_request_hash IS NULL)) OR ((request_id IS NOT NULL) AND (create_request_hash IS NOT NULL) AND (octet_length(create_request_hash) = 32)))),
@@ -3774,7 +3774,7 @@ CREATE TABLE public.landing_review_requests (
     reviewer_id bigint,
     agent_name character varying(255),
     state character varying(16) DEFAULT 'requested'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT landing_review_requests_principal_check CHECK ((((reviewer_id IS NOT NULL) AND (agent_name IS NULL)) OR ((reviewer_id IS NULL) AND (agent_name IS NOT NULL) AND (length(btrim((agent_name)::text)) > 0)))),
     CONSTRAINT landing_review_requests_state_check CHECK (((state)::text = ANY ((ARRAY['requested'::character varying, 'fulfilled'::character varying, 'dismissed'::character varying])::text[])))
 );
@@ -3811,11 +3811,11 @@ CREATE TABLE public.landing_tasks (
     priority smallint DEFAULT 1 NOT NULL,
     attempt integer DEFAULT 0 NOT NULL,
     last_error text,
-    available_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    available_at timestamptz DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     append_request jsonb,
     CONSTRAINT landing_tasks_append_dispatch CHECK ((((append_request IS NULL) AND ((status)::text <> 'append_pending'::text)) OR ((append_request IS NOT NULL) AND (jsonb_typeof(append_request) = 'object'::text) AND ((status)::text <> 'pending'::text)))),
     CONSTRAINT landing_tasks_priority_check CHECK (((priority >= 0) AND (priority <= 3))),
@@ -3851,7 +3851,7 @@ CREATE TABLE public.lfs_locks (
     repository_id bigint NOT NULL,
     path character varying(2048) NOT NULL,
     owner_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3883,8 +3883,8 @@ CREATE TABLE public.lfs_meta_objects (
     repository_id bigint NOT NULL,
     oid character varying(255) NOT NULL,
     size bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT lfs_meta_objects_size_check CHECK ((size >= 0))
 );
 
@@ -3918,7 +3918,7 @@ CREATE TABLE public.lfs_objects (
     oid text NOT NULL,
     size bigint NOT NULL,
     gcs_path text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -3950,9 +3950,9 @@ CREATE TABLE public.lfs_upload_reservations (
     repository_id bigint NOT NULL,
     oid text NOT NULL,
     size bigint NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT lfs_upload_reservations_size_check CHECK ((size >= 0))
 );
 
@@ -3985,7 +3985,7 @@ CREATE TABLE public.linear_comment_map (
     issue_map_id bigint NOT NULL,
     jjhub_comment_id bigint NOT NULL,
     linear_comment_id character varying(255) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4021,7 +4021,7 @@ CREATE TABLE public.linear_integrations (
     linear_team_key character varying(32) DEFAULT ''::character varying NOT NULL,
     access_token_encrypted bytea NOT NULL,
     refresh_token_encrypted bytea,
-    token_expires_at timestamp with time zone,
+    token_expires_at timestamptz,
     webhook_key character varying(64) DEFAULT ''::character varying NOT NULL,
     webhook_secret character varying(255) NOT NULL,
     jjhub_repo_id bigint NOT NULL,
@@ -4031,9 +4031,9 @@ CREATE TABLE public.linear_integrations (
     linear_actor_name character varying(255) DEFAULT ''::character varying NOT NULL,
     linear_actor_email character varying(320) DEFAULT ''::character varying NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
-    last_sync_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    last_sync_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4067,8 +4067,8 @@ CREATE TABLE public.linear_issue_map (
     jjhub_issue_number bigint NOT NULL,
     linear_issue_id character varying(255) NOT NULL,
     linear_identifier character varying(64) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4099,9 +4099,9 @@ CREATE TABLE public.linear_oauth_setups (
     setup_key character varying(64) NOT NULL,
     user_id bigint NOT NULL,
     payload_encrypted bytea NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone
+    created_at timestamptz DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz
 );
 
 
@@ -4122,7 +4122,7 @@ CREATE TABLE public.linear_sync_ops (
     status character varying(16) DEFAULT 'success'::character varying NOT NULL,
     error_message text DEFAULT ''::text NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT linear_sync_ops_action_check CHECK (((action)::text = ANY ((ARRAY['create'::character varying, 'update'::character varying, 'delete'::character varying, 'close'::character varying, 'reopen'::character varying, 'initial_sync'::character varying])::text[]))),
     CONSTRAINT linear_sync_ops_entity_check CHECK (((entity)::text = ANY ((ARRAY['issue'::character varying, 'comment'::character varying])::text[]))),
     CONSTRAINT linear_sync_ops_source_check CHECK (((source)::text = ANY ((ARRAY['jjhub'::character varying, 'linear'::character varying])::text[]))),
@@ -4164,9 +4164,9 @@ CREATE TABLE public.linear_sync_runs (
     comments_done integer DEFAULT 0 NOT NULL,
     comments_total integer DEFAULT 0 NOT NULL,
     comments_failed integer DEFAULT 0 NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT linear_sync_runs_comments_done_check CHECK ((comments_done >= 0)),
     CONSTRAINT linear_sync_runs_comments_failed_check CHECK ((comments_failed >= 0)),
     CONSTRAINT linear_sync_runs_comments_total_check CHECK ((comments_total >= 0)),
@@ -4209,7 +4209,7 @@ CREATE TABLE public.mentions (
     comment_id bigint,
     user_id bigint,
     mentioned_user_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT mentions_comment_type_check CHECK (((comment_type)::text = ANY ((ARRAY['issue_comment'::character varying, 'landing_comment'::character varying, 'issue_body'::character varying, 'landing_body'::character varying])::text[])))
 );
 
@@ -4243,10 +4243,10 @@ CREATE TABLE public.milestones (
     title character varying(255) NOT NULL,
     description text DEFAULT ''::text NOT NULL,
     state character varying(16) DEFAULT 'open'::character varying NOT NULL,
-    due_date timestamp with time zone,
-    closed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    due_date timestamptz,
+    closed_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT milestones_state_check CHECK (((state)::text = ANY ((ARRAY['open'::character varying, 'closed'::character varying])::text[])))
 );
 
@@ -4282,7 +4282,7 @@ CREATE TABLE public.notification_facts (
     event_type text NOT NULL,
     notification_id bigint NOT NULL,
     post_image jsonb NOT NULL,
-    recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    recorded_at timestamptz DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT notification_facts_event_type_check CHECK ((event_type = ANY (ARRAY['notification.baseline'::text, 'notification.created'::text, 'notification.read'::text, 'notification.unread'::text, 'notification.updated'::text, 'notification.deleted'::text]))),
     CONSTRAINT notification_facts_post_image_check CHECK ((jsonb_typeof(post_image) = 'object'::text)),
     CONSTRAINT notification_facts_schema_version_check CHECK ((schema_version = 1)),
@@ -4298,7 +4298,7 @@ CREATE TABLE public.notification_journals (
     user_id bigint NOT NULL,
     head bigint DEFAULT 0 NOT NULL,
     coverage_kind text DEFAULT 'from_creation'::text NOT NULL,
-    coverage_started_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    coverage_started_at timestamptz DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT notification_journals_coverage_kind_check CHECK ((coverage_kind = ANY (ARRAY['legacy_snapshot'::text, 'from_creation'::text]))),
     CONSTRAINT notification_journals_head_check CHECK ((head >= 0))
 );
@@ -4316,9 +4316,9 @@ CREATE TABLE public.notifications (
     subject character varying(255) DEFAULT ''::character varying NOT NULL,
     body text DEFAULT ''::text NOT NULL,
     status character varying(16) DEFAULT 'unread'::character varying NOT NULL,
-    read_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    read_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT notifications_status_check CHECK (((status)::text = ANY ((ARRAY['unread'::character varying, 'read'::character varying, 'pinned'::character varying])::text[])))
 );
 
@@ -4352,8 +4352,8 @@ CREATE TABLE public.oauth2_access_tokens (
     app_id bigint NOT NULL,
     user_id bigint NOT NULL,
     scopes text[] DEFAULT '{}'::text[] NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4389,8 +4389,8 @@ CREATE TABLE public.oauth2_applications (
     scopes text[] DEFAULT '{}'::text[] NOT NULL,
     owner_id bigint NOT NULL,
     confidential boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4425,9 +4425,9 @@ CREATE TABLE public.oauth2_authorization_codes (
     redirect_uri text NOT NULL,
     code_challenge text DEFAULT ''::text NOT NULL,
     code_challenge_method character varying(16) DEFAULT ''::character varying NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4441,8 +4441,8 @@ CREATE TABLE public.oauth2_refresh_tokens (
     app_id bigint NOT NULL,
     user_id bigint NOT NULL,
     scopes text[],
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4476,10 +4476,10 @@ CREATE TABLE public.oauth_accounts (
     provider_user_id character varying(255) NOT NULL,
     access_token_encrypted bytea,
     refresh_token_encrypted bytea,
-    expires_at timestamp with time zone,
+    expires_at timestamptz,
     profile_data jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT oauth_accounts_profile_data_check CHECK ((jsonb_typeof(profile_data) = 'object'::text))
 );
 
@@ -4511,9 +4511,9 @@ CREATE TABLE public.oauth_states (
     state_key character varying(64) NOT NULL,
     context_hash character varying(64) NOT NULL,
     requested_scopes text[],
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone
+    created_at timestamptz DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz
 );
 
 
@@ -4526,8 +4526,8 @@ CREATE TABLE public.org_members (
     organization_id bigint NOT NULL,
     user_id bigint NOT NULL,
     role character varying(16) DEFAULT 'member'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT org_members_role_check CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'member'::character varying])::text[])))
 );
 
@@ -4560,8 +4560,8 @@ CREATE TABLE public.organization_secrets (
     organization_id bigint NOT NULL,
     name character varying(255) NOT NULL,
     value_encrypted bytea NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4593,8 +4593,8 @@ CREATE TABLE public.organization_variables (
     organization_id bigint NOT NULL,
     name character varying(255) NOT NULL,
     value text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4629,8 +4629,8 @@ CREATE TABLE public.organizations (
     visibility character varying(16) DEFAULT 'public'::character varying NOT NULL,
     website character varying(2048) DEFAULT ''::character varying NOT NULL,
     location character varying(255) DEFAULT ''::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT ck_organizations_canonical_owner_namespace CHECK ((((lower_name)::text = lower((name)::text)) AND ((name)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text))),
     CONSTRAINT organizations_visibility_check CHECK (((visibility)::text = ANY ((ARRAY['public'::character varying, 'limited'::character varying, 'private'::character varying])::text[])))
 );
@@ -4664,7 +4664,7 @@ CREATE TABLE public.owner_namespaces (
     owner_type character varying(16) NOT NULL,
     user_id bigint,
     org_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT owner_namespaces_check CHECK (((((owner_type)::text = 'user'::text) AND (user_id IS NOT NULL) AND (org_id IS NULL)) OR (((owner_type)::text = 'org'::text) AND (org_id IS NOT NULL) AND (user_id IS NULL)))),
     CONSTRAINT owner_namespaces_lower_slug_check CHECK (((lower_slug)::text = lower((lower_slug)::text))),
     CONSTRAINT owner_namespaces_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[])))
@@ -4684,12 +4684,12 @@ CREATE TABLE public.pair_prompt_queue (
     body text NOT NULL,
     status text DEFAULT 'queued'::text NOT NULL,
     executor_client_id text,
-    claim_expires_at timestamp with time zone,
+    claim_expires_at timestamptz,
     run_id text,
     canceled_by bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    finished_at timestamptz,
     CONSTRAINT pair_prompt_queue_source_check CHECK ((source = ANY (ARRAY['solo'::text, 'together'::text]))),
     CONSTRAINT pair_prompt_queue_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'claimed'::text, 'running'::text, 'done'::text, 'failed'::text, 'canceled'::text])))
 );
@@ -4704,7 +4704,7 @@ CREATE TABLE public.pair_session_draft (
     content text DEFAULT ''::text NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     updated_by bigint,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4720,11 +4720,11 @@ CREATE TABLE public.pair_session_invites (
     role text NOT NULL,
     token_hash text NOT NULL,
     invited_by bigint NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
+    expires_at timestamptz NOT NULL,
     accepted_by_user_id bigint,
-    accepted_at timestamp with time zone,
-    revoked_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    accepted_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT pair_session_invites_join_key_present CHECK (((lower_email IS NOT NULL) OR (lower_github_username IS NOT NULL))),
     CONSTRAINT pair_session_invites_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text])))
 );
@@ -4740,8 +4740,8 @@ CREATE TABLE public.pair_session_links (
     slug text NOT NULL,
     role text NOT NULL,
     created_by bigint NOT NULL,
-    revoked_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT pair_session_links_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text])))
 );
 
@@ -4756,10 +4756,10 @@ CREATE TABLE public.pair_session_members (
     role text NOT NULL,
     invited_via_invite_id uuid,
     presence jsonb DEFAULT '{}'::jsonb NOT NULL,
-    presence_updated_at timestamp with time zone,
-    last_seen_at timestamp with time zone,
-    joined_at timestamp with time zone DEFAULT now() NOT NULL,
-    removed_at timestamp with time zone,
+    presence_updated_at timestamptz,
+    last_seen_at timestamptz,
+    joined_at timestamptz DEFAULT now() NOT NULL,
+    removed_at timestamptz,
     CONSTRAINT pair_session_members_role_check CHECK ((role = ANY (ARRAY['viewer'::text, 'editor'::text, 'owner'::text])))
 );
 
@@ -4775,9 +4775,9 @@ CREATE TABLE public.pair_sessions (
     workspace_id uuid,
     access_mode text DEFAULT 'restricted'::text NOT NULL,
     status text DEFAULT 'provisioning'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    ended_at timestamp with time zone,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    ended_at timestamptz,
     CONSTRAINT pair_sessions_access_mode_check CHECK ((access_mode = ANY (ARRAY['restricted'::text, 'link'::text]))),
     CONSTRAINT pair_sessions_status_check CHECK ((status = ANY (ARRAY['provisioning'::text, 'active'::text, 'ended'::text, 'failed'::text])))
 );
@@ -4793,9 +4793,9 @@ CREATE TABLE public.pair_share_links (
     room_id text NOT NULL,
     level character varying(8) DEFAULT 'view'::character varying NOT NULL,
     created_by bigint NOT NULL,
-    expires_at timestamp with time zone,
-    revoked_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT pair_share_links_level_check CHECK (((level)::text = ANY ((ARRAY['view'::character varying, 'edit'::character varying])::text[])))
 );
 
@@ -4827,7 +4827,7 @@ CREATE TABLE public.pair_state (
     room_id text NOT NULL,
     state jsonb NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -4840,7 +4840,7 @@ CREATE TABLE public.pinned_issues (
     issue_id bigint NOT NULL,
     pinned_by_id bigint,
     "position" smallint DEFAULT 1 NOT NULL,
-    pinned_at timestamp with time zone DEFAULT now() NOT NULL,
+    pinned_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT pinned_issues_position_check CHECK ((("position" >= 1) AND ("position" <= 3)))
 );
 
@@ -4861,8 +4861,8 @@ CREATE TABLE public.protected_bookmarks (
     required_status_contexts text[] DEFAULT '{}'::text[] NOT NULL,
     dismiss_stale_reviews boolean DEFAULT false NOT NULL,
     restrict_push_teams text[] DEFAULT '{}'::text[] NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT protected_bookmarks_require_human_approvals_check CHECK ((require_human_approvals >= 0))
 );
 
@@ -4896,7 +4896,7 @@ CREATE TABLE public.provider_connection_grants (
     repository_id bigint,
     org_id bigint,
     all_repositories boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT provider_connection_grants_check CHECK ((all_repositories OR (repository_id IS NOT NULL) OR (org_id IS NOT NULL)))
 );
 
@@ -4937,15 +4937,15 @@ CREATE TABLE public.provider_connections (
     plan character varying(64) DEFAULT ''::character varying NOT NULL,
     access_token_encrypted bytea NOT NULL,
     refresh_token_encrypted bytea,
-    access_expires_at timestamp with time zone,
+    access_expires_at timestamptz,
     state character varying(16) DEFAULT 'active'::character varying NOT NULL,
-    last_refresh_at timestamp with time zone,
-    next_refresh_at timestamp with time zone,
+    last_refresh_at timestamptz,
+    next_refresh_at timestamptz,
     refresh_failures integer DEFAULT 0 NOT NULL,
     last_error text DEFAULT ''::text NOT NULL,
     created_by bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT provider_connections_check CHECK (((((owner_type)::text = 'user'::text) AND (user_id IS NOT NULL) AND (org_id IS NULL)) OR (((owner_type)::text = 'org'::text) AND (org_id IS NOT NULL) AND (user_id IS NULL)))),
     CONSTRAINT provider_connections_kind_check CHECK (((kind)::text = ANY ((ARRAY['setup_token'::character varying, 'oauth'::character varying])::text[]))),
     CONSTRAINT provider_connections_owner_type_check CHECK (((owner_type)::text = ANY ((ARRAY['user'::character varying, 'org'::character varying])::text[]))),
@@ -4964,7 +4964,7 @@ CREATE TABLE public.reactions (
     target_type character varying(32) NOT NULL,
     target_id bigint NOT NULL,
     emoji character varying(64) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT reactions_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['issue'::character varying, 'issue_comment'::character varying, 'landing_request'::character varying, 'landing_comment'::character varying])::text[])))
 );
 
@@ -5002,11 +5002,11 @@ CREATE TABLE public.release_assets (
     status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
     gcs_key text NOT NULL,
     content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
-    confirmed_at timestamp with time zone,
+    confirmed_at timestamptz,
     deletion_token character varying(64),
-    delete_after timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delete_after timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT release_assets_deletion_state_check CHECK (((((status)::text = 'deleting'::text) AND (delete_after IS NOT NULL)) OR (((status)::text <> 'deleting'::text) AND (deletion_token IS NULL) AND (delete_after IS NULL)))),
     CONSTRAINT release_assets_download_count_check CHECK ((download_count >= 0)),
     CONSTRAINT release_assets_size_check CHECK ((size >= 0)),
@@ -5040,9 +5040,9 @@ ALTER SEQUENCE public.release_assets_id_seq OWNED BY public.release_assets.id;
 CREATE TABLE public.release_deletion_intents (
     release_id bigint NOT NULL,
     deletion_token character varying(64),
-    event_dispatched_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    event_dispatched_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5053,7 +5053,7 @@ CREATE TABLE public.release_deletion_intents (
 CREATE TABLE public.release_deletion_tag_tombstones (
     release_id bigint NOT NULL,
     original_tag_name character varying(255) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5073,9 +5073,9 @@ CREATE TABLE public.releases (
     is_draft boolean DEFAULT false NOT NULL,
     is_prerelease boolean DEFAULT false NOT NULL,
     is_tag boolean DEFAULT false NOT NULL,
-    published_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    published_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5110,8 +5110,8 @@ CREATE TABLE public.repo_connections (
     repo_owner_lower character varying(255) NOT NULL,
     repo_name_lower character varying(255) NOT NULL,
     license_spdx_id character varying(64) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5156,11 +5156,11 @@ CREATE TABLE public.repositories (
     is_template boolean DEFAULT false NOT NULL,
     template_id bigint,
     is_archived boolean DEFAULT false NOT NULL,
-    archived_at timestamp with time zone,
+    archived_at timestamptz,
     is_mirror boolean DEFAULT false NOT NULL,
     mirror_destination text DEFAULT ''::text NOT NULL,
     mirror_status character varying(16) DEFAULT 'unconfigured'::character varying NOT NULL,
-    last_mirror_at timestamp with time zone,
+    last_mirror_at timestamptz,
     last_mirror_error text,
     last_mirror_github_head character varying(64),
     mirror_behind_refs integer DEFAULT 0 NOT NULL,
@@ -5176,8 +5176,8 @@ CREATE TABLE public.repositories (
     num_watches bigint DEFAULT 0 NOT NULL,
     num_issues bigint DEFAULT 0 NOT NULL,
     num_closed_issues bigint DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT ck_repositories_canonical_storage_identity CHECK ((((lower_name)::text = lower((name)::text)) AND (length((name)::text) <= 100) AND ((name)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text) AND (lower((name)::text) !~ '\.(git|wiki|docs)$'::text) AND (lower((name)::text) <> ALL (ARRAY['agent'::text, 'bookmarks'::text, 'changes'::text, 'commits'::text, 'contributors'::text, 'issues'::text, 'labels'::text, 'landings'::text, 'milestones'::text, 'operations'::text, 'pulls'::text, 'settings'::text, 'stargazers'::text, 'watchers'::text, 'workflows'::text])))),
     CONSTRAINT repositories_check CHECK ((num_nonnulls(user_id, org_id) = 1)),
     CONSTRAINT repositories_clone_depth_check CHECK ((clone_depth >= '-1'::integer)),
@@ -5219,8 +5219,8 @@ CREATE TABLE public.repository_agent_environment_secrets (
     value_encrypted bytea NOT NULL,
     hosts text[] DEFAULT '{}'::text[] NOT NULL,
     match_headers text[] DEFAULT '{}'::text[] NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5233,8 +5233,8 @@ CREATE TABLE public.repository_agent_environments (
     setup_script text DEFAULT ''::text NOT NULL,
     environment_variables jsonb DEFAULT '[]'::jsonb NOT NULL,
     provider_connection_preference character varying(16) DEFAULT 'org_first'::character varying CONSTRAINT repository_agent_environmen_provider_connection_prefer_not_null NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT repository_agent_environment_provider_connection_preferen_check CHECK (((provider_connection_preference)::text = ANY ((ARRAY['org_first'::character varying, 'user_first'::character varying, 'org_only'::character varying, 'user_only'::character varying, 'platform_only'::character varying])::text[]))),
     CONSTRAINT repository_agent_environments_environment_variables_check CHECK ((jsonb_typeof(environment_variables) = 'array'::text))
 );
@@ -5249,7 +5249,7 @@ CREATE TABLE public.repository_job_comments (
     step text NOT NULL,
     body text NOT NULL,
     comment_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5274,12 +5274,12 @@ CREATE TABLE public.repository_job_dispatches (
     signal_attempt integer DEFAULT 0 NOT NULL,
     receipt jsonb,
     claim_token uuid,
-    lease_until timestamp with time zone,
+    lease_until timestamptz,
     attempts integer DEFAULT 0 NOT NULL,
-    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    next_attempt_at timestamptz DEFAULT now() NOT NULL,
     error text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT repository_job_dispatches_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'dispatching'::text, 'waiting'::text, 'submitted'::text, 'failed'::text, 'skipped'::text])))
 );
 
@@ -5297,7 +5297,7 @@ CREATE TABLE public.repository_job_events (
     event_action text NOT NULL,
     issue_number bigint DEFAULT 0 NOT NULL,
     payload jsonb NOT NULL,
-    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    received_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT repository_job_events_source_check CHECK ((source = ANY (ARRAY['github'::text, 'smithers-cloud'::text])))
 );
 
@@ -5322,10 +5322,10 @@ CREATE TABLE public.repository_job_registrations (
     trial_issue_number bigint DEFAULT 0 NOT NULL,
     trial_source text DEFAULT ''::text NOT NULL,
     schedule text DEFAULT ''::text NOT NULL,
-    next_fire_at timestamp with time zone,
-    activated_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    next_fire_at timestamptz,
+    activated_at timestamptz DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT repository_job_registrations_check CHECK (((mode <> 'trial'::text) OR ((trial_issue_number > 0) AND (trial_source = ANY (ARRAY['github'::text, 'smithers-cloud'::text]))))),
     CONSTRAINT repository_job_registrations_job_check CHECK ((job = ANY (ARRAY['issues'::text, 'review'::text, 'ci'::text, 'feature'::text, 'chores'::text]))),
     CONSTRAINT repository_job_registrations_mode_check CHECK ((mode = ANY (ARRAY['trial'::text, 'enabled'::text]))),
@@ -5349,7 +5349,7 @@ CREATE TABLE public.repository_job_trials (
     body text NOT NULL,
     issue_id bigint,
     issue_number bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT repository_job_trials_job_check CHECK ((job = ANY (ARRAY['issues'::text, 'review'::text, 'ci'::text, 'feature'::text, 'chores'::text])))
 );
 
@@ -5363,8 +5363,8 @@ CREATE TABLE public.repository_secrets (
     repository_id bigint NOT NULL,
     name character varying(255) NOT NULL,
     value_encrypted bytea NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5396,8 +5396,8 @@ CREATE TABLE public.repository_variables (
     repository_id bigint NOT NULL,
     name character varying(255) NOT NULL,
     value text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5438,7 +5438,7 @@ CREATE TABLE public.revocation_events (
     sandbox_ids text[] DEFAULT '{}'::text[] NOT NULL,
     reason text DEFAULT ''::text NOT NULL,
     actor_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT revocation_events_kind_check CHECK ((kind = ANY (ARRAY['token_revoked'::text, 'token_scopes_narrowed'::text, 'user_disabled'::text, 'user_enabled'::text, 'collaborator_removed'::text, 'workspace_share_removed'::text, 'agent_session_cancelled'::text, 'org_member_removed'::text, 'gateway_revoked'::text])))
 );
 
@@ -5471,8 +5471,8 @@ CREATE TABLE public.sandbox_usage_intervals (
     user_id bigint NOT NULL,
     sandbox_kind text NOT NULL,
     sandbox_id text NOT NULL,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    ended_at timestamp with time zone,
+    started_at timestamptz DEFAULT now() NOT NULL,
+    ended_at timestamptz,
     CONSTRAINT sandbox_usage_intervals_order CHECK (((ended_at IS NULL) OR (ended_at >= started_at))),
     CONSTRAINT sandbox_usage_intervals_sandbox_kind_check CHECK ((sandbox_kind = ANY (ARRAY['workspace'::text, 'gateway'::text, 'agent'::text])))
 );
@@ -5486,9 +5486,9 @@ CREATE TABLE public.search_rate_limits (
     scope text NOT NULL,
     principal_key text NOT NULL,
     tokens double precision NOT NULL,
-    last_refill_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    last_refill_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5500,7 +5500,7 @@ CREATE TABLE public.share_listing_event_cooldowns (
     listing_id uuid NOT NULL,
     user_id bigint NOT NULL,
     event_type character varying(16) NOT NULL,
-    last_counted_at timestamp with time zone NOT NULL,
+    last_counted_at timestamptz NOT NULL,
     CONSTRAINT share_listing_event_cooldowns_event_type_check CHECK (((event_type)::text = ANY ((ARRAY['install'::character varying, 'run'::character varying])::text[])))
 );
 
@@ -5522,9 +5522,9 @@ CREATE TABLE public.share_listings (
     content_snapshot text NOT NULL,
     use_count bigint DEFAULT 0 NOT NULL,
     install_count bigint DEFAULT 0 NOT NULL,
-    published_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    unpublished_at timestamp with time zone,
+    published_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    unpublished_at timestamptz,
     CONSTRAINT share_listings_install_count_check CHECK ((install_count >= 0)),
     CONSTRAINT share_listings_kind_check CHECK (((kind)::text = ANY ((ARRAY['workflow'::character varying, 'connector'::character varying])::text[]))),
     CONSTRAINT share_listings_name_check CHECK (((length((name)::text) >= 1) AND (length((name)::text) <= 128))),
@@ -5540,9 +5540,9 @@ CREATE TABLE public.share_listings (
 CREATE TABLE public.sse_tickets (
     ticket_hash character varying(64) NOT NULL,
     user_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    used_at timestamp with time zone
+    created_at timestamptz DEFAULT now() NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz
 );
 
 
@@ -5557,8 +5557,8 @@ CREATE TABLE public.ssh_keys (
     public_key text NOT NULL,
     fingerprint character varying(255) NOT NULL,
     key_type character varying(32) DEFAULT 'user'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5595,8 +5595,8 @@ CREATE TABLE public.stack_changes (
     pr_state character varying(32),
     review_status character varying(32),
     ci_status character varying(32),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5629,8 +5629,8 @@ CREATE TABLE public.stacks (
     user_id bigint NOT NULL,
     target_ref character varying(255) DEFAULT 'main'::character varying NOT NULL,
     state character varying(32) DEFAULT 'active'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT stacks_state_check CHECK (((state)::text = ANY ((ARRAY['active'::character varying, 'landed'::character varying, 'unsubmitted'::character varying])::text[])))
 );
 
@@ -5662,7 +5662,7 @@ CREATE TABLE public.stars (
     id bigint NOT NULL,
     user_id bigint NOT NULL,
     repository_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5692,7 +5692,7 @@ ALTER SEQUENCE public.stars_id_seq OWNED BY public.stars.id;
 CREATE TABLE public.stripe_processed_events (
     event_id character varying(255) NOT NULL,
     event_type character varying(255) NOT NULL,
-    processed_at timestamp with time zone DEFAULT now() NOT NULL
+    processed_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5704,7 +5704,7 @@ CREATE TABLE public.team_members (
     id bigint NOT NULL,
     team_id bigint NOT NULL,
     user_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5735,7 +5735,7 @@ CREATE TABLE public.team_repos (
     id bigint NOT NULL,
     team_id bigint NOT NULL,
     repository_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5769,8 +5769,8 @@ CREATE TABLE public.teams (
     lower_name character varying(255) NOT NULL,
     description text DEFAULT ''::text NOT NULL,
     permission character varying(16) DEFAULT 'read'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT teams_permission_check CHECK (((permission)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying, 'admin'::character varying])::text[])))
 );
 
@@ -5803,11 +5803,11 @@ CREATE TABLE public.user_ai_keys (
     user_id bigint NOT NULL,
     provider character varying(64) NOT NULL,
     api_key_encrypted text NOT NULL,
-    rotated_at timestamp with time zone,
-    expires_at timestamp with time zone,
-    last_used_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    rotated_at timestamptz,
+    expires_at timestamptz,
+    last_used_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5839,8 +5839,8 @@ CREATE TABLE public.user_devices (
     user_id bigint NOT NULL,
     apns_token text NOT NULL,
     platform text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    last_seen_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT user_devices_platform_check CHECK ((platform = ANY (ARRAY['ios'::text, 'android'::text])))
 );
 
@@ -5873,8 +5873,8 @@ CREATE TABLE public.user_notification_preferences (
     notify_issues boolean DEFAULT true NOT NULL,
     notify_landings boolean DEFAULT true NOT NULL,
     notify_mentions boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -5898,10 +5898,10 @@ CREATE TABLE public.users (
     is_admin boolean DEFAULT false NOT NULL,
     prohibit_login boolean DEFAULT false NOT NULL,
     email_notifications_enabled boolean DEFAULT true NOT NULL,
-    last_login_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_login_at timestamptz,
+    deleted_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     is_synthetic boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_users_canonical_owner_namespace CHECK ((((lower_username)::text = lower((username)::text)) AND ((username)::text ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$'::text))),
     CONSTRAINT users_user_type_check CHECK (((user_type)::text = ANY ((ARRAY['user'::character varying, 'bot'::character varying, 'service'::character varying])::text[])))
@@ -5936,8 +5936,8 @@ CREATE TABLE public.watches (
     user_id bigint NOT NULL,
     repository_id bigint NOT NULL,
     mode character varying(16) DEFAULT 'watching'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT watches_mode_check CHECK (((mode)::text = ANY ((ARRAY['watching'::character varying, 'ignored'::character varying, 'participating'::character varying])::text[])))
 );
 
@@ -5974,10 +5974,10 @@ CREATE TABLE public.webhook_deliveries (
     response_status integer,
     response_body text DEFAULT ''::text NOT NULL,
     attempts integer DEFAULT 0 NOT NULL,
-    delivered_at timestamp with time zone,
-    next_retry_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivered_at timestamptz,
+    next_retry_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT webhook_deliveries_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
     CONSTRAINT webhook_deliveries_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'success'::character varying, 'failed'::character varying])::text[])))
 );
@@ -6013,9 +6013,9 @@ CREATE TABLE public.webhooks (
     secret text DEFAULT ''::text NOT NULL,
     events text[] DEFAULT '{}'::text[] NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
-    last_delivery_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    last_delivery_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6056,7 +6056,7 @@ CREATE TABLE public.wiki_page_revisions (
     update_bytes bytea,
     deleted boolean DEFAULT false NOT NULL,
     history_commit_id text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6090,8 +6090,8 @@ CREATE TABLE public.wiki_pages (
     title text NOT NULL,
     body text DEFAULT ''::text NOT NULL,
     author_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
     crdt_state bytea,
     crdt_vector bytea,
@@ -6134,14 +6134,14 @@ CREATE TABLE public.workflow_artifacts (
     content_type character varying(255) DEFAULT 'application/octet-stream'::character varying NOT NULL,
     status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
     gcs_key text NOT NULL,
-    confirmed_at timestamp with time zone,
+    confirmed_at timestamptz,
     deletion_token character varying(64),
-    expires_at timestamp with time zone NOT NULL,
+    expires_at timestamptz NOT NULL,
     release_tag text,
     release_asset_name text,
-    release_attached_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    release_attached_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_artifacts_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
     CONSTRAINT workflow_artifacts_size_check CHECK ((size >= 0)),
     CONSTRAINT workflow_artifacts_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'deleting'::character varying])::text[])))
@@ -6184,11 +6184,11 @@ CREATE TABLE public.workflow_caches (
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     deletion_token character varying(64),
     hit_count bigint DEFAULT 0 NOT NULL,
-    last_hit_at timestamp with time zone,
-    finalized_at timestamp with time zone,
-    expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_hit_at timestamptz,
+    finalized_at timestamptz,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_caches_deletion_state_check CHECK ((((status)::text = 'deleting'::text) OR (deletion_token IS NULL))),
     CONSTRAINT workflow_caches_object_size_bytes_check CHECK ((object_size_bytes >= 0)),
     CONSTRAINT workflow_caches_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'finalized'::character varying, 'deleting'::character varying])::text[])))
@@ -6225,8 +6225,8 @@ CREATE TABLE public.workflow_definitions (
     path text NOT NULL,
     config jsonb NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_definitions_config_check CHECK ((jsonb_typeof(config) = 'object'::text))
 );
 
@@ -6256,7 +6256,7 @@ ALTER SEQUENCE public.workflow_definitions_id_seq OWNED BY public.workflow_defin
 
 CREATE TABLE public.workflow_log_budget_initializations (
     workflow_run_id bigint NOT NULL,
-    initialized_at timestamp with time zone DEFAULT now() NOT NULL
+    initialized_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6271,7 +6271,7 @@ CREATE TABLE public.workflow_logs (
     sequence bigint NOT NULL,
     stream character varying(16) NOT NULL,
     entry text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_logs_stream_check CHECK (((stream)::text = ANY ((ARRAY['stdout'::character varying, 'stderr'::character varying, 'system'::character varying])::text[])))
 );
 
@@ -6306,7 +6306,7 @@ CREATE TABLE public.workflow_run_logs (
     sequence bigint NOT NULL,
     stream character varying(16) NOT NULL,
     entry text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_run_logs_stream_check CHECK (((stream)::text = ANY ((ARRAY['stdout'::character varying, 'stderr'::character varying, 'system'::character varying])::text[])))
 );
 
@@ -6325,14 +6325,14 @@ CREATE TABLE public.workflow_runs (
     trigger_commit_sha character varying(255) DEFAULT ''::character varying NOT NULL,
     dispatch_inputs jsonb,
     agent_token_hash character varying(64),
-    agent_token_expires_at timestamp with time zone,
+    agent_token_expires_at timestamptz,
     jjhub_token_id bigint,
     check_run_id bigint,
     check_run_url text,
-    started_at timestamp with time zone,
-    completed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     execution_plane character varying(16) DEFAULT 'runner'::character varying NOT NULL,
     log_bytes bigint DEFAULT 0 NOT NULL,
     log_entry_count bigint DEFAULT 0 NOT NULL,
@@ -6372,10 +6372,10 @@ CREATE TABLE public.workflow_schedule_specs (
     workflow_definition_id bigint NOT NULL,
     repository_id bigint NOT NULL,
     cron_expression text NOT NULL,
-    next_fire_at timestamp with time zone NOT NULL,
-    prev_fire_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    next_fire_at timestamptz NOT NULL,
+    prev_fire_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6409,10 +6409,10 @@ CREATE TABLE public.workflow_steps (
     name character varying(255) NOT NULL,
     "position" bigint NOT NULL,
     status character varying(16) NOT NULL,
-    started_at timestamp with time zone,
-    completed_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_steps_status_check CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'success'::character varying, 'failure'::character varying, 'skipped'::character varying, 'cancelled'::character varying])::text[])))
 );
 
@@ -6448,16 +6448,16 @@ CREATE TABLE public.workflow_tasks (
     status character varying(16) NOT NULL,
     priority smallint DEFAULT 1 NOT NULL,
     payload jsonb NOT NULL,
-    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    available_at timestamptz DEFAULT now() NOT NULL,
     attempt integer DEFAULT 0 NOT NULL,
     runner_id bigint,
     vm_id text,
-    assigned_at timestamp with time zone,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
+    assigned_at timestamptz,
+    started_at timestamptz,
+    finished_at timestamptz,
     last_error text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workflow_tasks_payload_check CHECK ((jsonb_typeof(payload) = 'object'::text)),
     CONSTRAINT workflow_tasks_priority_check CHECK (((priority >= 0) AND (priority <= 3))),
     CONSTRAINT workflow_tasks_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'assigned'::character varying, 'running'::character varying, 'done'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'blocked'::character varying, 'skipped'::character varying])::text[])))
@@ -6495,8 +6495,8 @@ CREATE TABLE public.workflow_triggers (
     event_type character varying(64) NOT NULL,
     event_action character varying(64) DEFAULT ''::character varying NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6528,7 +6528,7 @@ CREATE TABLE public.workspace_capability_bindings (
     user_id bigint NOT NULL,
     required_capability text NOT NULL,
     workspace_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workspace_capability_bindings_required_capability_check CHECK ((required_capability = 'repository-jobs/v1'::text))
 );
 
@@ -6546,10 +6546,10 @@ CREATE TABLE public.workspace_sessions (
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     cols integer DEFAULT 80 NOT NULL,
     rows integer DEFAULT 24 NOT NULL,
-    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_activity_at timestamptz DEFAULT now() NOT NULL,
     idle_timeout_secs integer DEFAULT 1800 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     kind character varying(16) DEFAULT 'terminal'::character varying NOT NULL,
     language character varying(32) DEFAULT ''::character varying NOT NULL,
     CONSTRAINT ck_workspace_sessions_kind CHECK (((kind)::text = ANY ((ARRAY['terminal'::character varying, 'lsp'::character varying])::text[]))),
@@ -6569,7 +6569,7 @@ CREATE TABLE public.workspace_shares (
     owner_user_id bigint NOT NULL,
     grantee_user_id bigint NOT NULL,
     level character varying(8) DEFAULT 'read'::character varying NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workspace_shares_level_check CHECK (((level)::text = ANY ((ARRAY['read'::character varying, 'write'::character varying])::text[])))
 );
 
@@ -6604,8 +6604,8 @@ CREATE TABLE public.workspace_snapshots (
     workspace_id text DEFAULT ''::text NOT NULL,
     name text NOT NULL,
     snapshot_id text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL
 );
 
 
@@ -6631,26 +6631,26 @@ CREATE TABLE public.workspaces (
     environment_image text DEFAULT ''::text NOT NULL,
     desktop_session_id text DEFAULT ''::text NOT NULL,
     desktop_session_token_hash text DEFAULT ''::text NOT NULL,
-    desktop_session_expires_at timestamp with time zone,
+    desktop_session_expires_at timestamptz,
     vm_id text DEFAULT ''::text NOT NULL,
     provisioning_generation integer DEFAULT 0 NOT NULL,
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
     failure_code text,
     failure_message text,
     provisioning_stage text DEFAULT ''::text NOT NULL,
-    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_activity_at timestamptz DEFAULT now() NOT NULL,
     idle_timeout_secs integer DEFAULT 1800 NOT NULL,
-    suspended_at timestamp with time zone,
-    started_at timestamp with time zone,
-    resumed_at timestamp with time zone,
+    suspended_at timestamptz,
+    started_at timestamptz,
+    resumed_at timestamptz,
     head_change_id text DEFAULT ''::text NOT NULL,
     head_commit_id text DEFAULT ''::text NOT NULL,
     ahead integer DEFAULT 0 NOT NULL,
     behind integer DEFAULT 0 NOT NULL,
-    last_accessed_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_accessed_at timestamptz,
+    deleted_at timestamptz,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
     CONSTRAINT workspaces_ahead_check CHECK ((ahead >= 0)),
     CONSTRAINT workspaces_behind_check CHECK ((behind >= 0)),
     CONSTRAINT workspaces_failure_detail_check CHECK (((((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (btrim(failure_code) <> ''::text) AND (failure_message IS NOT NULL) AND (btrim(failure_message) <> ''::text)) OR (((status)::text <> 'failed'::text) AND (failure_code IS NULL) AND (failure_message IS NULL)))),

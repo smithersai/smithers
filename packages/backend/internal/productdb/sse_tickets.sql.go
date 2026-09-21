@@ -7,8 +7,7 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const consumeSSETicket = `-- name: ConsumeSSETicket :one
@@ -40,9 +39,9 @@ RETURNING ticket_hash, user_id, created_at, expires_at, used_at
 `
 
 type CreateSSETicketParams struct {
-	TicketHash string             `json:"ticket_hash"`
-	UserID     int64              `json:"user_id"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	TicketHash string    `json:"ticket_hash"`
+	UserID     int64     `json:"user_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 func (q *Queries) CreateSSETicket(ctx context.Context, arg CreateSSETicketParams) (SseTicket, error) {

@@ -8,8 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 const getNotificationJournal = `-- name: GetNotificationJournal :one
@@ -54,15 +53,15 @@ type ListNotificationFactsParams struct {
 }
 
 type ListNotificationFactsRow struct {
-	UserID           int64              `json:"user_id"`
-	Sequence         int64              `json:"sequence"`
-	EventID          string             `json:"event_id"`
-	SchemaVersion    int16              `json:"schema_version"`
-	EventType        string             `json:"event_type"`
-	NotificationID   int64              `json:"notification_id"`
-	PostImage        json.RawMessage    `json:"post_image"`
-	RecordedAt       pgtype.Timestamptz `json:"recorded_at"`
-	CurrentPostImage json.RawMessage    `json:"current_post_image"`
+	UserID           int64           `json:"user_id"`
+	Sequence         int64           `json:"sequence"`
+	EventID          string          `json:"event_id"`
+	SchemaVersion    int16           `json:"schema_version"`
+	EventType        string          `json:"event_type"`
+	NotificationID   int64           `json:"notification_id"`
+	PostImage        json.RawMessage `json:"post_image"`
+	RecordedAt       time.Time       `json:"recorded_at"`
+	CurrentPostImage json.RawMessage `json:"current_post_image"`
 }
 
 // Gate historical snippets against both their original source and the latest

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -156,8 +157,8 @@ type CreateChangesetWithMembersRow struct {
 	LandedCommitID           string             `json:"landed_commit_id"`
 	CreatedBy                pgtype.Int8        `json:"created_by"`
 	LandedAt                 pgtype.Timestamptz `json:"landed_at"`
-	CreatedAt                pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                time.Time          `json:"created_at"`
+	UpdatedAt                time.Time          `json:"updated_at"`
 }
 
 func (q *Queries) CreateChangesetWithMembers(ctx context.Context, arg CreateChangesetWithMembersParams) (CreateChangesetWithMembersRow, error) {
