@@ -5,7 +5,11 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/flows-jj"]
+members = ["crates/flows-jj", "crates/smithers-ffi"]
+
+[workspace.dependencies]
+# Both browser flows and the repository service use the same jj store format.
+jj-lib = { git = "https://github.com/smithersai/jj.git", rev = "47589ada70c12b3e829b5c98ab32503abad49eac", default-features = false }
 
 # No debuginfo in dev builds: jj-lib's debuginfo multiplies the target dir
 # several times over, and this workspace is exercised through tests, not

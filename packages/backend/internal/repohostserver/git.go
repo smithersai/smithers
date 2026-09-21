@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -183,6 +185,17 @@ func listGitRefs(ctx context.Context, gitDir string) (map[string]string, error) 
 // soon as refs/heads/<bookmark> exists, upload-pack advertises both HEAD and
 // symref=HEAD:refs/heads/<bookmark>.
 func setGitDefaultBookmark(ctx context.Context, gitDir, bookmark string) error {
+	// jj export may detach Git HEAD while synchronizing the working-copy
+	// commit. Persist the owner's default before changing HEAD so a later
+	// export, including one retried after a crash, can restore its symref.
+	marker := filepath.Join(gitDir, "smithers-default-bookmark")
+	pending := marker + ".pending"
+	if err := os.WriteFile(pending, []byte(bookmark+"\n"), 0o644); err != nil {
+		return fmt.Errorf("persist default Git bookmark: %w", err)
+	}
+	if err := os.Rename(pending, marker); err != nil {
+		return fmt.Errorf("persist default Git bookmark: %w", err)
+	}
 	ref := "refs/heads/" + bookmark
 	output, err := exec.CommandContext(ctx, "git", "--git-dir", gitDir, "symbolic-ref", "HEAD", ref).CombinedOutput()
 	if err != nil {

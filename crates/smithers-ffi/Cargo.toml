@@ -1,0 +1,33 @@
+[package]
+name = "smithers-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "Native C ABI for Smithers repository and jj operations"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "smithers-fixture"
+path = "src/smithers_fixture.rs"
+
+[[bin]]
+name = "smithers-jj-export"
+path = "src/smithers_jj_export.rs"
+
+[dependencies]
+jj-lib = { workspace = true, features = ["git"] }
+anyhow = "1"
+base64 = "0.22"
+futures = "0.3"
+gix = "0.85"
+pollster = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+toml_edit = "0.25"
+yrs = { version = "=0.27.4", features = ["small-client"] }
+tempfile = "3"
