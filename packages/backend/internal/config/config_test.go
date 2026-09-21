@@ -148,6 +148,10 @@ var allEnvKeys = []string{
 	"SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS",
 	// Blob
 	"SMITHERS_BLOB_GCS_BUCKET",
+	"SMITHERS_BLOB_DATA_DIR",
+	"SMITHERS_BLOB_TRANSFER_SIGNING_KEY",
+	"SMITHERS_BLOB_MAX_BYTES",
+	"SMITHERS_BLOB_RESERVE_BYTES",
 	"SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET",
 	"SMITHERS_BLOB_GCS_PROJECT",
 	"SMITHERS_BLOB_SIGNED_URL_EXPIRY",
@@ -545,11 +549,15 @@ func TestBlobConfig_AgentLogsBucket(t *testing.T) {
 	}
 }
 
-// TestLoad_BlobConfigEnvOverrides verifies SMITHERS_BLOB_GCS_BUCKET and SMITHERS_BLOB_GCS_PROJECT
-// override the defaults.
+// TestLoad_BlobConfigEnvOverrides verifies cluster and local adapter settings
+// override their defaults.
 func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("SMITHERS_BLOB_GCS_BUCKET", "smithers-blobs")
+	t.Setenv("SMITHERS_BLOB_DATA_DIR", "/var/lib/smithers/blobs")
+	t.Setenv("SMITHERS_BLOB_TRANSFER_SIGNING_KEY", "01234567890123456789012345678901")
+	t.Setenv("SMITHERS_BLOB_MAX_BYTES", "987654")
+	t.Setenv("SMITHERS_BLOB_RESERVE_BYTES", "456789")
 	t.Setenv("SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET", "smithers-agent-logs")
 	t.Setenv("SMITHERS_BLOB_GCS_PROJECT", "smithers-prod")
 	t.Setenv("SMITHERS_BLOB_SIGNED_URL_EXPIRY", "15m")
@@ -562,6 +570,10 @@ func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "smithers-blobs", cfg.Blob.GCSBucket)
+	assert.Equal(t, "/var/lib/smithers/blobs", cfg.Blob.DataDir)
+	assert.Equal(t, "01234567890123456789012345678901", cfg.Blob.TransferSigningKey)
+	assert.Equal(t, int64(987654), cfg.Blob.MaxBytes)
+	assert.Equal(t, int64(456789), cfg.Blob.ReserveBytes)
 	assert.Equal(t, "smithers-agent-logs", cfg.Blob.AgentLogsGCSBucket)
 	assert.Equal(t, "smithers-prod", cfg.Blob.GCSProject)
 	assert.Equal(t, "15m", cfg.Blob.SignedURLExpiry)
@@ -897,6 +909,8 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 		},
 		Blob: BlobConfig{
 			GCSBucket:                    "",
+			DataDir:                      "./data/blobs",
+			ReserveBytes:                 256 * 1024 * 1024,
 			GCSProject:                   "",
 			SignedURLExpiry:              "5m",
 			WorkflowCachePrefix:          "workflow-cache",
@@ -1768,7 +1782,7 @@ func TestLoad_SpecCompliance_RunnerConfig(t *testing.T) {
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 190,
+	assert.Len(t, allEnvKeys, 194,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1889,7 +1903,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"AgentsConfig":        1,
 		"RunnerConfig":        4,  // PoolSize, WarmTimeout, TaskTimeout, MaxAgentSessionDuration
 		"CleanupConfig":       3,  // AuthInterval, WorkflowCacheInterval, SandboxEgressAuditRetentionDays
-		"BlobConfig":          9,  // GCSBucket, AgentLogsGCSBucket, GCSProject, SignedURLExpiry, WorkflowCache*
+		"BlobConfig":          14, // cluster/local adapter settings, shared transfer origin, and workflow cache policy
 		"ObservabilityConfig": 7,  // LogLevel, TraceSampleRate, CloudTraceProjectID, OTelExporter, OTLPEndpoint, MetricsExportTarget, MetricsProjectID
 		"EmailConfig":         12, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, BaseURL, RateLimitPerSecond, RateLimitPerRecipientPerHr
 		"FeatureFlagsConfig":  37, // 11 base + 4 remote-client rollout + 21 ticket-12 MVP flags + Changesets (orgs is not a flag)
@@ -1930,7 +1944,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 185, totalSubFields,
+	assert.Equal(t, 190, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 

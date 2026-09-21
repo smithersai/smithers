@@ -33,6 +33,16 @@ func TestInitializeAgentLogStore_MemoryWithoutGCSClient(t *testing.T) {
 	assert.True(t, isMemory, "no GCS client must fall back to the in-memory store")
 }
 
+func TestInitializeAgentLogStore_FilesystemWithoutGCSClient(t *testing.T) {
+	filesystem, err := blob.NewFilesystemStore(blob.FilesystemConfig{
+		Root: t.TempDir(), PublicBaseURL: "https://smithers.test", SigningKey: make([]byte, 32),
+	})
+	require.NoError(t, err)
+	store := initializeAgentLogStore(nil, config.BlobConfig{}, filesystem)
+	_, ok := store.(*blob.FilesystemAgentLogStore)
+	assert.True(t, ok)
+}
+
 func TestInitializeAgentLogStore_DedicatedRetentionBucketWithLegacyReadFallback(t *testing.T) {
 	client := newOfflineGCSClient(t)
 	store := initializeAgentLogStore(client, config.BlobConfig{

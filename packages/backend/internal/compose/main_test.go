@@ -5,7 +5,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,10 +68,10 @@ func TestInitializeBlobStore_EmulatorPath(t *testing.T) {
 	assert.True(t, isGCS, "Expected store to be *blob.GCSStore")
 }
 
-func TestInitializeBlobStore_MemoryStoreFallback(t *testing.T) {
+func TestInitializeBlobStore_FilesystemDefault(t *testing.T) {
 	t.Setenv("SMITHERS_ENV", "development")
 	cfg := config.BlobConfig{
-		GCSBucket: "", // Empty bucket triggers fallback
+		DataDir: t.TempDir(),
 	}
 
 	ctx := context.Background()
@@ -78,15 +81,37 @@ func TestInitializeBlobStore_MemoryStoreFallback(t *testing.T) {
 	require.Nil(t, client)
 	assert.Equal(t, blob.DefaultSignedURLExpiry, expiry)
 
-	_, isMemory := store.(*blob.MemoryStore)
-	assert.True(t, isMemory, "Expected store to be *blob.MemoryStore")
+	_, isFilesystem := store.(*blob.FilesystemStore)
+	assert.True(t, isFilesystem, "Expected store to be *blob.FilesystemStore")
 }
 
-func TestInitializeBlobStore_ProductionRequiresGCSBucket(t *testing.T) {
+func TestMountBlobTransferHandler(t *testing.T) {
+	store, err := blob.NewFilesystemStore(blob.FilesystemConfig{
+		Root: t.TempDir(), PublicBaseURL: "https://smithers.test", SigningKey: []byte(strings.Repeat("s", 32)),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Put(context.Background(), "repos/7/artifacts/result", "text/plain", strings.NewReader("result")))
+	downloadURL, err := store.SignedDownloadURL(context.Background(), "repos/7/artifacts/result", time.Minute)
+	require.NoError(t, err)
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	handler := mountBlobTransferHandler(next, store)
+	req := httptest.NewRequest(http.MethodGet, downloadURL, nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "result", rec.Body.String())
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/unrelated", nil))
+	assert.Equal(t, http.StatusTeapot, rec.Code)
+}
+
+func TestInitializeBlobStore_ProductionRequiresDurableAdapter(t *testing.T) {
 	t.Setenv("SMITHERS_ENV", "production")
 
 	store, client, expiry, err := initializeBlobStore(context.Background(), config.BlobConfig{})
-	require.EqualError(t, err, "SMITHERS_BLOB_GCS_BUCKET is required in production")
+	require.ErrorContains(t, err, "filesystem blob root is required")
 	assert.Nil(t, store)
 	assert.Nil(t, client)
 	assert.Zero(t, expiry)
@@ -95,10 +120,11 @@ func TestInitializeBlobStore_ProductionRequiresGCSBucket(t *testing.T) {
 func TestValidateProductionBlobStoreFailsClosed(t *testing.T) {
 	require.NoError(t, validateProductionBlobStore("development", config.BlobConfig{}))
 	require.NoError(t, validateProductionBlobStore(" production ", config.BlobConfig{GCSBucket: "plue-blobs"}))
+	require.NoError(t, validateProductionBlobStore("production", config.BlobConfig{DataDir: "/var/lib/smithers/blobs"}))
 
 	err := validateProductionBlobStore("PRODUCTION", config.BlobConfig{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "SMITHERS_BLOB_GCS_BUCKET is required")
+	assert.Contains(t, err.Error(), "SMITHERS_BLOB_DATA_DIR or SMITHERS_BLOB_GCS_BUCKET is required")
 }
 
 func TestInitializeBlobStore_ExpiryParsing(t *testing.T) {
@@ -145,6 +171,9 @@ func TestInitializeBlobStore_ExpiryParsing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
+			if tt.cfg.GCSBucket == "" {
+				tt.cfg.DataDir = t.TempDir()
+			}
 			_, _, expiry, err := initializeBlobStore(ctx, tt.cfg)
 			if tt.expectedError {
 				assert.Error(t, err)

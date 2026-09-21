@@ -1,11 +1,11 @@
 package compose
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"io"
 	"log/slog"
 	"net/http"
@@ -546,7 +546,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	workflowAPIService := services.NewWorkflowAPIService(queries, workflowRunService)
 
-	blobStore, gcsClient, expiryDuration, err := selectBlobStore(ctx, cfg.Blob, options.Blobs)
+	blobConfig := cfg.Blob
+	blobConfig.TransferBaseURL = publicBaseURL
+	blobStore, gcsClient, expiryDuration, err := selectBlobStore(ctx, blobConfig, options.Blobs)
 	if err != nil {
 		slog.Error("failed to initialize blob store", "error", err)
 		return err
@@ -656,7 +658,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// dedicated agent-logs bucket, not the versioned long-retention blobs bucket.
 	agentLogStore := options.AgentLogs
 	if agentLogStore == nil {
-		agentLogStore = initializeAgentLogStore(gcsClient, cfg.Blob)
+		agentLogStore = initializeAgentLogStore(gcsClient, cfg.Blob, blobStore)
 	}
 
 	agentSnapshotID := cfg.Sandbox.AgentSnapshotID
@@ -1324,7 +1326,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubImportHandler = nil
 	}
 
-	r := buildRouter(
+	var r http.Handler = buildRouter(
 		cfg,
 		queries,
 		pool,
@@ -1401,6 +1403,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		smithersMetrics,
 		alertRemediationWorker != nil,
 	)
+	r = mountBlobTransferHandler(r, blobStore)
 
 	requestTracker := newInFlightRequestTracker()
 	handler := requestTracker.Wrap(r)
@@ -1638,11 +1641,13 @@ func stopRevocationListener(cancel context.CancelFunc, bus *revocation.Bus, time
 	}
 }
 
-// validateProductionBlobStore fails startup when production would otherwise
-// silently fall back to ephemeral in-memory blob storage.
+// validateProductionBlobStore fails startup unless one durable adapter is
+// configured. Local filesystem storage is the ordinary self-hosted default;
+// GCS remains the cluster adapter.
 func validateProductionBlobStore(environment string, cfg config.BlobConfig) error {
-	if strings.EqualFold(strings.TrimSpace(environment), "production") && strings.TrimSpace(cfg.GCSBucket) == "" {
-		return fmt.Errorf("SMITHERS_BLOB_GCS_BUCKET is required in production; refusing ephemeral in-memory blob storage")
+	if strings.EqualFold(strings.TrimSpace(environment), "production") &&
+		strings.TrimSpace(cfg.GCSBucket) == "" && strings.TrimSpace(cfg.DataDir) == "" {
+		return fmt.Errorf("SMITHERS_BLOB_DATA_DIR or SMITHERS_BLOB_GCS_BUCKET is required in production")
 	}
 	return nil
 }

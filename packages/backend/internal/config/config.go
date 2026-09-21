@@ -467,6 +467,19 @@ type CleanupConfig struct {
 
 type BlobConfig struct {
 	GCSBucket string `mapstructure:"gcs_bucket"`
+	// DataDir selects the durable local adapter when GCSBucket is empty.
+	DataDir string `mapstructure:"data_dir"`
+	// TransferSigningKey optionally supplies the local application-transfer
+	// HMAC key. When empty, the adapter persists a generated key in DataDir.
+	TransferSigningKey string `mapstructure:"transfer_signing_key"`
+	// MaxBytes is a global safety ceiling in addition to product-level owner and
+	// repository quotas. Zero means the product quotas are the only ceiling.
+	MaxBytes int64 `mapstructure:"max_bytes"`
+	// ReserveBytes keeps filesystem capacity available to the API and database.
+	ReserveBytes int64 `mapstructure:"reserve_bytes"`
+	// TransferBaseURL is assigned by shared composition from the trusted public
+	// API origin; it is not a second externally configurable origin.
+	TransferBaseURL string `mapstructure:"-"`
 	// AgentLogsGCSBucket is the dedicated retention-limited bucket for archived
 	// agent session transcripts. When empty, agent logs fall back to GCSBucket
 	// (the versioned long-retention blobs bucket).
@@ -632,6 +645,10 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("cleanup.workflow_cache_interval", "1h")
 	v.SetDefault("cleanup.sandbox_egress_audit_retention_days", 30)
 	v.SetDefault("blob.gcs_bucket", "")
+	v.SetDefault("blob.data_dir", "./data/blobs")
+	v.SetDefault("blob.transfer_signing_key", "")
+	v.SetDefault("blob.max_bytes", 0)
+	v.SetDefault("blob.reserve_bytes", 256*1024*1024)
 	v.SetDefault("blob.agent_logs_gcs_bucket", "")
 	v.SetDefault("blob.gcs_project", "")
 	v.SetDefault("blob.signed_url_expiry", "5m")
@@ -793,6 +810,10 @@ func Load(configFile string) (*Config, error) {
 		{"cleanup.workflow_cache_interval", "SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL"},
 		{"cleanup.sandbox_egress_audit_retention_days", "SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS"},
 		{"blob.gcs_bucket", "SMITHERS_BLOB_GCS_BUCKET"},
+		{"blob.data_dir", "SMITHERS_BLOB_DATA_DIR"},
+		{"blob.transfer_signing_key", "SMITHERS_BLOB_TRANSFER_SIGNING_KEY"},
+		{"blob.max_bytes", "SMITHERS_BLOB_MAX_BYTES"},
+		{"blob.reserve_bytes", "SMITHERS_BLOB_RESERVE_BYTES"},
 		{"blob.agent_logs_gcs_bucket", "SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET"},
 		{"blob.gcs_project", "SMITHERS_BLOB_GCS_PROJECT"},
 		{"blob.signed_url_expiry", "SMITHERS_BLOB_SIGNED_URL_EXPIRY"},

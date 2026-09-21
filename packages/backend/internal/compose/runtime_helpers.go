@@ -572,24 +572,31 @@ func validateGitHubOAuthConfig(cfg config.AuthConfig) error {
 	return nil
 }
 
-// initializeBlobStore creates a blob store based on configuration.
-// Returns the store, GCS client (if created, nil for MemoryStore), expiry duration, and any error.
+// initializeBlobStore creates either the cluster GCS adapter or the durable
+// single-owner filesystem adapter. It never silently substitutes memory.
 func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store, *storage.Client, time.Duration, error) {
-	// Parse expiry first (needed for both GCS and MemoryStore)
+	// Parse expiry first (needed for both adapters).
 	expiry, err := blob.ParseSignedURLExpiry(cfg.SignedURLExpiry)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("invalid signed URL expiry: %w", err)
 	}
 
-	// Local development may use the in-memory implementation, but accepting it
-	// in production would make LFS objects, releases, artifacts, caches, and
-	// agent logs disappear on restart and diverge between API replicas.
 	if strings.TrimSpace(cfg.GCSBucket) == "" {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("SMITHERS_ENV")), "production") {
-			return nil, nil, 0, fmt.Errorf("SMITHERS_BLOB_GCS_BUCKET is required in production")
+		baseURL := strings.TrimSpace(cfg.TransferBaseURL)
+		if baseURL == "" {
+			baseURL = "http://localhost:4000"
 		}
-		slog.Warn("GCS bucket not configured, using MemoryStore for blob storage (data will be lost on restart)")
-		return blob.NewMemoryStore(), nil, expiry, nil
+		store, err := blob.NewFilesystemStore(blob.FilesystemConfig{
+			Root:          cfg.DataDir,
+			PublicBaseURL: baseURL,
+			SigningKey:    []byte(cfg.TransferSigningKey),
+			MaxBytes:      cfg.MaxBytes,
+			ReserveBytes:  cfg.ReserveBytes,
+		})
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("initialize filesystem blob store: %w", err)
+		}
+		return store, nil, expiry, nil
 	}
 
 	// Configure client options for emulator if needed
@@ -614,17 +621,36 @@ func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store
 // bucket when one is configured, otherwise the general blobs bucket (the
 // pre-dedicated-bucket behavior). When a dedicated bucket is in use, reads
 // fall back to the blobs bucket so transcripts archived before the cutover
-// stay retrievable. Without a GCS client (local development), transcripts are
-// kept in memory.
-func initializeAgentLogStore(gcsClient *storage.Client, cfg config.BlobConfig) services.AgentLogStore {
+// stay retrievable. The local adapter stores transcripts in its durable data
+// root; memory remains available only to tests that provide no local store.
+func initializeAgentLogStore(gcsClient *storage.Client, cfg config.BlobConfig, localStore ...blob.Store) services.AgentLogStore {
 	bucket := cfg.AgentLogsBucket()
-	if gcsClient == nil || bucket == "" {
+	if gcsClient == nil {
+		if len(localStore) > 0 {
+			if filesystem, ok := localStore[0].(*blob.FilesystemStore); ok {
+				return blob.NewFilesystemAgentLogStore(filesystem)
+			}
+		}
+		return blob.NewMemoryAgentLogStore()
+	}
+	if bucket == "" {
 		return blob.NewMemoryAgentLogStore()
 	}
 	if legacy := strings.TrimSpace(cfg.GCSBucket); legacy != "" && legacy != bucket {
 		return blob.NewGCSAgentLogStoreWithReadFallback(gcsClient, bucket, legacy)
 	}
 	return blob.NewGCSAgentLogStore(gcsClient, bucket)
+}
+
+func mountBlobTransferHandler(next http.Handler, store blob.Store) http.Handler {
+	transfers, ok := store.(blob.TransferHandlerProvider)
+	if !ok {
+		return next
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/api/blob-transfer/", transfers.TransferHandler())
+	mux.Handle("/", next)
+	return mux
 }
 
 // initEmailTransport creates an email transport from config using the factory.

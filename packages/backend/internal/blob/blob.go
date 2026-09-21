@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -95,6 +96,13 @@ func SignedCreateOnlyUpload(ctx context.Context, store Store, key string, conten
 // client upload would only reintroduce the unverified window.
 type Putter interface {
 	Put(ctx context.Context, key, contentType string, r io.Reader) error
+}
+
+// TransferHandlerProvider is implemented by local stores that proxy signed
+// transfers through the application. Cluster stores can continue returning
+// provider-hosted signed URLs without exposing an application handler.
+type TransferHandlerProvider interface {
+	TransferHandler() http.Handler
 }
 
 // Put writes key through store when it supports server-side writes.

@@ -82,6 +82,14 @@ func TestGCSIntegration_Delete_RemovesObject(t *testing.T) {
 	}
 }
 
+func TestGCSIntegration_StoreContract(t *testing.T) {
+	requireGCSEmulator(t)
+	runStoreContract(t, func(t *testing.T) Store {
+		client, bucket := newEmulatorClientAndBucket(t)
+		return NewGCSStore(client, bucket)
+	})
+}
+
 func TestGCSIntegration_SignedUploadURL_WithHook(t *testing.T) {
 	_, bucket := newEmulatorClientAndBucket(t)
 	store := NewGCSStoreWithHooks(bucket, func(bucket, object string, opts *storage.SignedURLOptions) (string, error) {
