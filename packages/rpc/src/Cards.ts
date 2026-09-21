@@ -1792,7 +1792,11 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** The workspace the import created, when it created one (the done state links its card). */
       workspaceId: z.string().nullable().optional(),
       /** A refused GitHub call's rate-limit line (lane sync; GitHubRateLimitSchema above). */
-      rateLimit: GitHubRateLimitSchema.optional()
+      rateLimit: GitHubRateLimitSchema.optional(),
+      /** Persisted launch identity: fences stale answers and reconnects the exact operation after reload. */
+      requestId: z.string().optional(),
+      requestKind: z.enum(["start", "retry"]).optional(),
+      accountOwner: z.string().nullable().optional()
     })
   }),
   /*

@@ -819,6 +819,8 @@ export const createAppController = (
    */
   const seamCtx: SeamContext = {
     resolveToast,
+    withToast,
+    isDisposed: () => ctx.disposed,
     http: (input, init) => {
       const write = init?.method && !["GET", "HEAD"].includes(init.method.toUpperCase()) && !input.endsWith("/api/repo/files")
       if (write) invalidatePreparedViews(store)
@@ -1997,6 +1999,7 @@ export const createAppController = (
   }
 
   liveTutorial.resume()
+  repoImportSeam.resume()
   workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()
   /*
@@ -2010,6 +2013,7 @@ export const createAppController = (
     queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
+    repoImportSeam.resume()
     runs.resumeApprovalRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())

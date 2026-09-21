@@ -16,11 +16,15 @@ import { resolveTargetRepo } from "../RepoContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
 import { createRunEpochs } from "./RunEpochs"
 import { readGitHubRefusal } from "./SeamContext"
+import { TOAST_SUPERSEDED } from "../controller/failures"
+import { actorSharedState } from "../ActorBindings"
 
 export interface RepoImportSeam {
   readonly importRepository: (repo?: string) => Promise<string | void>
   /** `repos.import.retry <jobId>`: re-run the failed job the card tracks. */
   readonly retryImport: (jobId: string) => Promise<string | void | { readonly value: string }>
+  /** Reconnect persisted starting/running imports after a controller reload. */
+  readonly resume: () => void
 }
 
 /**
@@ -147,6 +151,9 @@ interface CardPatch {
   readonly repository?: ImportJobAnswer["repository"]
   readonly workspaceId?: string | null
   readonly rateLimit?: GitHubRefusal["rateLimit"]
+  readonly requestId?: string
+  readonly requestKind?: "start" | "retry"
+  readonly accountOwner?: string | null
 }
 
 export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
@@ -157,6 +164,15 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
    * card the new run now owns.
    */
   const epochs = createRunEpochs(ctx, "repoimport-epochs")
+  const pending = actorSharedState(ctx, "repoimport-pending", () => new Map<string, Promise<unknown>>())
+  const accountOwner = (): string | null => ctx.store.collections.identitySessions.get("identity")?.accountOwnerLogin ??
+    ctx.store.collections.identitySessions.get("identity")?.login ?? null
+  const pendingKey = (repo: string): string => `${accountOwner() ?? "anonymous"}:${repo}`
+  const requestCurrent = (repo: string, requestId: string): boolean => {
+    const card = ctx.store.collections.cards.get(`repo-import-${repo}`)
+    return ctx.isDisposed?.() !== true && card?.kind === "repo-import" &&
+      card.payload.requestId === requestId && card.payload.accountOwner === accountOwner()
+  }
 
   const upsert = (repo: string, ordinal: number, createdAt: number, patch: CardPatch): void => {
     const id = `repo-import-${repo}`
@@ -205,7 +221,10 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
           ? { rateLimit: patch.rateLimit }
           : prior?.rateLimit !== undefined
           ? { rateLimit: prior.rateLimit }
-          : {})
+          : {}),
+        ...(patch.requestId !== undefined ? { requestId: patch.requestId } : prior?.requestId !== undefined ? { requestId: prior.requestId } : {}),
+        ...(patch.requestKind !== undefined ? { requestKind: patch.requestKind } : prior?.requestKind !== undefined ? { requestKind: prior.requestKind } : {}),
+        ...(patch.accountOwner !== undefined ? { accountOwner: patch.accountOwner } : prior?.accountOwner !== undefined ? { accountOwner: prior.accountOwner } : {})
       }
     }
     ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card })
@@ -216,8 +235,9 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
     jobId: string,
     ordinal: number,
     createdAt: number,
-    epoch: number
-  ): Promise<void> => {
+    epoch: number,
+    requestId: string
+  ): Promise<string | void | typeof TOAST_SUPERSEDED> => {
     /*
      * The fence supersedes stale loops; a loop that has reached a terminal
      * hand-off retires its own live marker, guarded so a re-run's newer
@@ -230,7 +250,9 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
     let failures = 0
     for (let attempt = 0; attempt < repoImportPolling.maxAttempts; attempt += 1) {
       await sleep(repoImportPolling.delayMs)
-      if (!epochs.isLive(repo, epoch)) return
+      const card = ctx.store.collections.cards.get(`repo-import-${repo}`)
+      if (ctx.isDisposed?.() === true || !epochs.isLive(repo, epoch) || card?.kind !== "repo-import" ||
+        card.payload.requestId !== requestId || card.payload.accountOwner !== accountOwner()) return TOAST_SUPERSEDED
       let job: ImportJobAnswer | null = null
       let refusal: GitHubRefusal | null = null
       try {
@@ -240,7 +262,9 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
       } catch {
         // A dropped poll is retried below; the job keeps running upstream.
       }
-      if (!epochs.isLive(repo, epoch)) return
+      const currentCard = ctx.store.collections.cards.get(`repo-import-${repo}`)
+      if (ctx.isDisposed?.() === true || !epochs.isLive(repo, epoch) || currentCard?.kind !== "repo-import" ||
+        currentCard.payload.requestId !== requestId || currentCard.payload.accountOwner !== accountOwner()) return TOAST_SUPERSEDED
       if (refusal !== null) {
         /*
          * The server refused the read (a 401, a 500, a structured 429): its
@@ -257,14 +281,14 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
           ...(refusal.rateLimit !== undefined ? { rateLimit: refusal.rateLimit } : {})
         })
         settleEpoch()
-        return
+        return refusal.message
       }
       if (job === null) {
         failures += 1
         if (failures <= repoImportPolling.networkRetries) continue
         upsert(repo, ordinal, createdAt, { jobId, phase: "running", detail: REPO_IMPORT_LOST_STREAM_DETAIL })
         settleEpoch()
-        return
+        return REPO_IMPORT_LOST_STREAM_DETAIL
       }
       failures = 0
       const progress = { ...jobProgress(job), jobId }
@@ -280,7 +304,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
           detail: job.error ?? "The import failed upstream."
         })
         settleEpoch()
-        return
+        return job.error ?? "The import failed upstream."
       }
       upsert(repo, ordinal, createdAt, { ...progress, phase: "running", detail: stageDetail(job) ?? job.error })
     }
@@ -288,6 +312,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
     // lost stream — the command re-checks the job when run again.
     upsert(repo, ordinal, createdAt, { jobId, phase: "running", detail: REPO_IMPORT_LOST_STREAM_DETAIL })
     settleEpoch()
+    return REPO_IMPORT_LOST_STREAM_DETAIL
   }
 
   /*
@@ -298,11 +323,18 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
   const startJob = async (
     repo: string,
     request: () => Promise<Response>,
+    requestId: string,
     options: { readonly keepOrdinal?: { readonly ordinal: number; readonly createdAt: number } } = {}
-  ): Promise<string | void> => {
+  ): Promise<string | void | typeof TOAST_SUPERSEDED> => {
+    if (!requestCurrent(repo, requestId)) return TOAST_SUPERSEDED
     const ordinal = options.keepOrdinal?.ordinal ?? ctx.nextOrdinal()
     const createdAt = options.keepOrdinal?.createdAt ?? Date.now()
     const epoch = epochs.start(repo)
+    const current = (): boolean => {
+      const card = ctx.store.collections.cards.get(`repo-import-${repo}`)
+      return ctx.isDisposed?.() !== true && epochs.isLive(repo, epoch) && card?.kind === "repo-import" &&
+        card.payload.requestId === requestId && card.payload.accountOwner === accountOwner()
+    }
     /* The job this card already tracks — a 409 "already active" resumes it when the answer names none. */
     const tracked = ctx.store.collections.cards.get(`repo-import-${repo}`)
     const priorJobId = tracked?.kind === "repo-import" ? tracked.payload.jobId : null
@@ -319,41 +351,41 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
     try {
       response = await request()
     } catch (error) {
+      if (!current()) return TOAST_SUPERSEDED
       const reason = error instanceof Error ? error.message : String(error)
       const message = `The import couldn't start — ${reason}`
       upsert(repo, ordinal, createdAt, { phase: "failed", detail: message })
       settleEpoch()
       return message
     }
+    if (!current()) return TOAST_SUPERSEDED
     if (response.status === 409) {
       /*
-       * Plue's conflict verdicts are two different states, both read verbatim
-       * (review finding 7): `github_import_already_active` — the job is on its
-       * way, so the card keeps tracking it (the answer's job id, else the job
-       * this card already tracks) — and "repository … already exists" — the
-       * mirror is already there. Neither is a failure; only the second is done.
+       * An active conflict is trackable only when either the answer or this
+       * exact persisted attempt names a job. Every other 409 remains retryable.
        */
       const body: unknown = await response.json().catch(() => null)
+      if (!current()) return TOAST_SUPERSEDED
       const record = isRecord(body) ? body : {}
       const message = str(record.message)?.slice(0, 240) ?? "The import was refused (HTTP 409)"
       const active = record.code === "github_import_already_active" || /already being imported/i.test(message)
       if (!active) {
-        upsert(repo, ordinal, createdAt, { phase: "done", detail: message })
+        upsert(repo, ordinal, createdAt, { phase: "failed", detail: message, error: message })
         settleEpoch()
-        return undefined
+        return message
       }
       const activeJobId = str(record.importJobId) ?? str(record.import_job_id) ?? str(record.job_id) ?? priorJobId
       if (activeJobId === null) {
-        upsert(repo, ordinal, createdAt, { phase: "running", detail: message })
+        upsert(repo, ordinal, createdAt, { phase: "failed", detail: message, error: message })
         settleEpoch()
-        return undefined
+        return message
       }
       upsert(repo, ordinal, createdAt, { jobId: activeJobId, phase: "running", detail: message })
-      void track(repo, activeJobId, ordinal, createdAt, epoch)
-      return undefined
+      return track(repo, activeJobId, ordinal, createdAt, epoch, requestId)
     }
     if (!response.ok) {
       const refusal = await readGitHubRefusal(response, `The import couldn't start (HTTP ${response.status})`)
+      if (!current()) return TOAST_SUPERSEDED
       upsert(repo, ordinal, createdAt, {
         phase: "failed",
         detail: refusal.message,
@@ -364,6 +396,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
       return refusal.message
     }
     const job = parseImportJob(await response.json().catch(() => undefined))
+    if (!current()) return TOAST_SUPERSEDED
     if (job === null) {
       const message = "The import answer was malformed — the job id never arrived."
       upsert(repo, ordinal, createdAt, { phase: "failed", detail: message })
@@ -383,23 +416,124 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
       return message
     }
     upsert(repo, ordinal, createdAt, { ...progress, phase: "running", detail: stageDetail(job) })
-    // Fire-and-forget: the job started and the card tracks it — success now.
-    void track(repo, job.jobId, ordinal, createdAt, epoch)
-    return undefined
+    // The toast lifetime includes this returned tracking promise.
+    return track(repo, job.jobId, ordinal, createdAt, epoch, requestId)
+  }
+
+  const background = (
+    repo: string,
+    request: () => Promise<Response>,
+    requestId: string,
+    persisted: Promise<unknown>,
+    options: { readonly keepOrdinal?: { readonly ordinal: number; readonly createdAt: number } } = {}
+  ): Promise<unknown> => {
+    const key = pendingKey(repo)
+    const existing = pending.get(key)
+    if (existing !== undefined) return existing
+    const run = (ctx.withToast?.(
+      `repos.import.${repo}`,
+      `Importing ${repo}…`,
+      `${repo} imported`,
+      async () => {
+        try { await persisted } catch {
+          if (!requestCurrent(repo, requestId)) return TOAST_SUPERSEDED
+          const message = "The import request couldn't be saved."
+          upsert(repo, options.keepOrdinal?.ordinal ?? ctx.nextOrdinal(), options.keepOrdinal?.createdAt ?? Date.now(), { phase: "failed", detail: message, error: message })
+          return message
+        }
+        if (!requestCurrent(repo, requestId)) return TOAST_SUPERSEDED
+        return startJob(repo, request, requestId, options)
+      }
+    ) ?? (async () => {
+      try { await persisted } catch {
+        if (!requestCurrent(repo, requestId)) return TOAST_SUPERSEDED
+        const message = "The import request couldn't be saved."
+        upsert(repo, options.keepOrdinal?.ordinal ?? ctx.nextOrdinal(), options.keepOrdinal?.createdAt ?? Date.now(), { phase: "failed", detail: message, error: message })
+        return message
+      }
+      if (!requestCurrent(repo, requestId)) return TOAST_SUPERSEDED
+      return startJob(repo, request, requestId, options)
+    })())
+    pending.set(key, run)
+    void run.finally(() => {
+      if (pending.get(key) === run) pending.delete(key)
+    })
+    return run
   }
 
   const importRepository = async (explicit?: string): Promise<string | void> => {
     const resolved = resolveTargetRepo(ctx.store, explicit)
     if ("error" in resolved) return resolved.error
     const repo = resolved.repo
+    const existing = ctx.store.collections.cards.get(`repo-import-${repo}`)
+    const sameOwner = existing?.kind === "repo-import" &&
+      (existing.payload.accountOwner === accountOwner() || existing.payload.accountOwner === undefined)
+    if (sameOwner && existing?.kind === "repo-import" && (existing.payload.phase === "starting" ||
+      (existing.payload.phase === "running" && existing.payload.detail !== REPO_IMPORT_LOST_STREAM_DETAIL))) {
+      const key = pendingKey(repo)
+      if (!pending.has(key)) {
+        if (existing.payload.requestId === undefined || existing.payload.accountOwner === undefined) {
+          const requestId = crypto.randomUUID()
+          const persisted = ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: { ...existing,
+            payload: { ...existing.payload, requestId, requestKind: existing.payload.requestKind ?? "start", accountOwner: accountOwner() } } }).isPersisted.promise
+          void persisted.then(() => {
+            if (!requestCurrent(repo, requestId)) return
+            return importRepository(repo)
+          }).catch(() => {
+            if (!requestCurrent(repo, requestId)) return
+            const message = "The import request couldn't be saved."
+            upsert(repo, existing.ordinal, existing.createdAt, { phase: "failed", detail: message, error: message })
+          })
+          return
+        }
+        if (existing.payload.phase === "running" && existing.payload.jobId !== null) {
+          const epoch = epochs.start(repo)
+          const requestId = existing.payload.requestId ?? crypto.randomUUID()
+          const run = (ctx.withToast?.(`repos.import.${repo}`, `Importing ${repo}…`, `${repo} imported`, () =>
+            track(repo, existing.payload.jobId as string, existing.ordinal, existing.createdAt, epoch, requestId)) ??
+            track(repo, existing.payload.jobId, existing.ordinal, existing.createdAt, epoch, requestId))
+          pending.set(key, run)
+          void run.finally(() => { if (pending.get(key) === run) pending.delete(key) })
+        } else {
+          const [owner, name] = repo.split("/") as [string, string]
+          const requestId = existing.payload.requestId ?? crypto.randomUUID()
+          const retryJobId = existing.payload.requestKind === "retry" ? existing.payload.jobId : null
+          void background(repo, async () => {
+            if (retryJobId !== null) {
+              const observed = await ctx.http(cloud(`/github/import/${encodeURIComponent(retryJobId)}`))
+              if (!observed.ok) return observed
+              const copy = observed.clone()
+              const job = parseImportJob(await copy.json().catch(() => undefined))
+              if (job?.status !== "failed") return observed
+              if (!requestCurrent(repo, requestId)) throw new Error("The import request was superseded.")
+              return ctx.http(cloud(`/github/import/${encodeURIComponent(retryJobId)}/retry`), { method: "POST" })
+            }
+            return ctx.http(cloud("/github/import"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner, repo: name }) })
+          }, requestId, Promise.resolve(),
+            { keepOrdinal: { ordinal: existing.ordinal, createdAt: existing.createdAt } })
+        }
+      }
+      return
+    }
+    if (existing?.kind === "repo-import" && existing.payload.detail === REPO_IMPORT_LOST_STREAM_DETAIL) pending.delete(pendingKey(repo))
     const [owner, name] = repo.split("/") as [string, string]
-    return startJob(repo, () =>
+    const ordinal = ctx.nextOrdinal()
+    const createdAt = Date.now()
+    const requestId = crypto.randomUUID()
+    const identityOwner = accountOwner()
+    const persisted = ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+      id: `repo-import-${repo}`, kind: "repo-import", title: `Import · ${repo}`, status: "active", createdAt, ordinal,
+      payload: { repo, jobId: existing?.kind === "repo-import" && existing.payload.accountOwner === identityOwner
+        ? existing.payload.jobId : null,
+        phase: "starting", detail: null, requestId, requestKind: "start", accountOwner: identityOwner }
+    } }).isPersisted.promise
+    void background(repo, () =>
       ctx.http(cloud("/github/import"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ owner, repo: name })
-      })
-    )
+      }), requestId, persisted, { keepOrdinal: { ordinal, createdAt } })
+    return
   }
 
   const retryImport: RepoImportSeam["retryImport"] = async (jobId) => {
@@ -413,14 +547,37 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
       return `No import card tracks job ${trimmed} — the retry button lives on the failed import's card.`
     }
     const repo = entry.payload.repo
-    const result = await startJob(
+    if (entry.payload.accountOwner !== undefined && entry.payload.accountOwner !== accountOwner()) {
+      return "This import belongs to another account. Start a new import for the current account."
+    }
+    if (pending.has(pendingKey(repo)) || entry.payload.phase === "starting") {
+      return { value: `Retrying the import of ${repo} — the card tracks it.` }
+    }
+    const requestId = crypto.randomUUID()
+    const owner = accountOwner()
+    const persisted = ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+      ...entry, status: "active", payload: { ...entry.payload, phase: "starting", detail: null, requestId, requestKind: "retry", accountOwner: owner }
+    } }).isPersisted.promise
+    void background(
       repo,
       () => ctx.http(cloud(`/github/import/${encodeURIComponent(trimmed)}/retry`), { method: "POST" }),
+      requestId,
+      persisted,
       { keepOrdinal: { ordinal: entry.ordinal, createdAt: entry.createdAt } }
     )
-    if (typeof result === "string") return result
     return { value: `Retrying the import of ${repo} — the card tracks it.` }
   }
 
-  return { importRepository, retryImport }
+  const resume = (): void => {
+    queueMicrotask(() => {
+      for (const card of ctx.store.collections.cards.values()) {
+        if (card.kind !== "repo-import" || (card.payload.phase !== "starting" && card.payload.phase !== "running")) continue
+        const owner = accountOwner()
+        if (card.payload.accountOwner === undefined || card.payload.accountOwner !== owner) continue
+        void importRepository(card.payload.repo)
+      }
+    })
+  }
+
+  return { importRepository, retryImport, resume }
 }

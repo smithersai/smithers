@@ -226,17 +226,17 @@ describe("repo import — the happy path", () => {
 })
 
 describe("repo import — already imported", () => {
-  test("a 409 'already exists' answers done with plue's message verbatim, not a failure", async () => {
+  test("an unclassified 409 remains a retryable failure", async () => {
     const { store, controller } = await readyStore(
       importBackend(() => json(409, { message: "repository 'flows' already exists" }))
     )
     const outcome = await controller.commands.run("repos.import", "will/flows")
     expect(outcome.status).toBe("executed")
+    await until(() => importCard(store)?.payload.phase === "failed", "the refused import")
     const card = importCard(store)
-    expect(card?.payload.phase).toBe("done")
-    /* Review finding 7: "already imported" was invented for every 409; the server's own verdict reads. */
+    expect(card?.payload.phase).toBe("failed")
     expect(card?.payload.detail).toBe("repository 'flows' already exists")
-    expect(card?.status).toBe("acted")
+    expect(card?.status).toBe("error")
   })
 
   test("a 409 'already active' is not done: plue's message reads verbatim and the card keeps tracking its job", async () => {
@@ -273,6 +273,7 @@ describe("repo import — already imported", () => {
 
       const rerun = await controller.commands.run("repos.import", "will/flows")
       expect(rerun.status).toBe("executed")
+      await until(() => importCard(store)?.payload.jobId === "job-1", "the already-active receipt")
       const card = importCard(store)
       expect(card?.payload.phase).toBe("running")
       expect(card?.payload.detail).toBe("this GitHub repository is already being imported with a different target bookmark")
@@ -302,13 +303,13 @@ describe("repo import — already imported", () => {
 })
 
 describe("repo import — honest failures", () => {
-  test("a 500 start fails the command with the body's message and errors the card", async () => {
+  test("a 500 start is acknowledged immediately and remains visible on the card", async () => {
     const { store, controller } = await readyStore(
       importBackend(() => json(500, { message: "the mirror pool is full" }))
     )
     const outcome = await controller.commands.run("repos.import", "will/flows")
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).toBe("the mirror pool is full")
+    expect(outcome.status).toBe("executed")
+    await until(() => importCard(store)?.payload.phase === "failed", "the failed launch")
     const card = importCard(store)
     expect(card?.payload.phase).toBe("failed")
     expect(card?.status).toBe("error")
@@ -322,8 +323,8 @@ describe("repo import — honest failures", () => {
       }
     })
     const outcome = await controller.commands.run("repos.import", "will/flows")
-    expect(outcome.status).toBe("failed")
-    if (outcome.status === "failed") expect(outcome.error).toContain("socket dropped")
+    expect(outcome.status).toBe("executed")
+    await until(() => importCard(store)?.payload.phase === "failed", "the failed launch")
     const card = importCard(store)
     expect(card?.payload.phase).toBe("failed")
     expect(card?.status).toBe("error")
@@ -455,7 +456,8 @@ describe("repo import — lane sync", () => {
       )
     )
     const outcome = await controller.commands.run("repos.import", "will/flows")
-    expect(outcome.status).toBe("failed")
+    expect(outcome.status).toBe("executed")
+    await until(() => importCard(store)?.payload.phase === "failed", "the rate-limited launch")
     const card = importCard(store)
     expect(card?.payload.detail).toBe("GitHub rate limit exhausted")
     expect(card?.payload.rateLimit).toEqual({ limit: 5000, remaining: 0, resetAt: "2026-09-02T13:00:00Z" })
@@ -501,57 +503,322 @@ describe("repo import — lane sync", () => {
  * The epoch fence between an import's tracking loop and the starts that
  * supersede it.
  */
-describe("repo import — the tracking fence", () => {
-  test("a poll parked across two newer imports never writes the job the card stopped tracking", async () => {
-    /*
-     * Review finding 4: the epoch used to be DELETED when a loop settled, so
-     * the third import was handed epoch 1 again and the first job's parked
-     * poll passed the fence and wrote its phase over the card.
-     */
-    let releaseFirst: (response: Response) => void = () => {}
-    const firstPoll = new Promise<Response>((resolve) => {
-      releaseFirst = resolve
-    })
-    const thirdPoll = new Promise<Response>(() => {})
+describe("repo import — instant background lifecycle", () => {
+  test("the public command returns before launch, deduplicates, and keeps one toast through remote completion", async () => {
+    let releaseLaunch: (response: Response) => void = () => {}
+    const launch = new Promise<Response>((resolve) => { releaseLaunch = resolve })
+    let releasePoll: (response: Response) => void = () => {}
+    const poll = new Promise<Response>((resolve) => { releasePoll = resolve })
     let starts = 0
-    let firstPolled = false
-    const services: AppServices = {
+    const { store, controller } = await readyStore({
+      toastDebounceMs: 5,
       fetchImpl: async (input, init) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-        const path = new URL(url, "https://app.test").pathname
-        const method = init?.method ?? "GET"
-        if (path === "/api/cloud/api/github/import" && method === "POST") {
-          starts += 1
-          if (starts === 1) return json(202, { ...jobBody("cloning", "resolving"), importJobId: "job-1" })
-          /* The second import is already imported: it settles without ever polling. */
-          if (starts === 2) return json(202, { ...jobBody("ready"), importJobId: "job-2" })
-          return json(202, { ...jobBody("cloning", "resolving"), importJobId: "job-3" })
-        }
-        if (path === "/api/cloud/api/github/import/job-1" && method === "GET") {
-          firstPolled = true
-          return firstPoll
-        }
-        if (path === "/api/cloud/api/github/import/job-3" && method === "GET") return thirdPoll
-        return json(404, { message: `no stub for ${path}` })
+        const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+        if (path === "/api/cloud/api/github/import" && (init?.method ?? "GET") === "POST") { starts += 1; return launch }
+        if (path.endsWith("/github/import/job-1")) return poll
+        return json(404, {})
       }
-    }
-    const { store, controller } = await readyStore(services)
+    })
+    const outcome = await controller.commands.run("repos.import", "will/flows")
+    expect(outcome.status).toBe("executed")
+    expect(importCard(store)?.payload.phase).toBe("starting")
+    expect(await controller.commands.run("repos.import", "will/flows")).toMatchObject({ status: "executed" })
+    expect(starts).toBe(1)
+    await until(() => store.collections.toasts.get("toast-repos.import.will/flows")?.status === "running", "the import toast")
+    releaseLaunch(json(202, jobBody("cloning", "resolving")))
+    await until(() => importCard(store)?.payload.phase === "running", "the running receipt")
+    expect(store.collections.toasts.get("toast-repos.import.will/flows")?.status).toBe("running")
+    releasePoll(json(200, jobBody("ready", "provisioning_workspace")))
+    await until(() => store.collections.toasts.get("toast-repos.import.will/flows")?.status === "ok", "the completed toast")
+    expect(importCard(store)?.payload.phase).toBe("done")
+  })
 
-    await controller.commands.run("repos.import", "will/flows")
-    await until(() => firstPolled, "job-1's poll to be in flight")
-    await controller.commands.run("repos.import", "will/flows")
-    await until(() => importCard(store)?.payload.phase === "done", "the already-imported hand-off")
-    await controller.commands.run("repos.import", "will/flows")
-    await until(() => importCard(store)?.payload.jobId === "job-3", "the third job to take the card")
+  test("reload reconnects a persisted running job without launching another import", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "job-1", phase: "running", detail: null,
+        requestId: "persisted-request", requestKind: "start", accountOwner: "will" }
+    } }).isPersisted.promise
+    let starts = 0
+    let polls = 0
+    createAppController(store, unavailableRepositories, unavailableAgent, {
+      toastDebounceMs: 0,
+      fetchImpl: async (input, init) => {
+        const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+        if ((init?.method ?? "GET") === "POST") { starts += 1; return json(500, {}) }
+        if (path.endsWith("/github/import/job-1")) { polls += 1; return json(200, jobBody("ready")) }
+        return json(404, {})
+      }
+    })
+    await until(() => importCard(store)?.payload.phase === "done", "the reconnected import")
+    expect(starts).toBe(0)
+    expect(polls).toBe(1)
+  })
 
-    releaseFirst(json(200, jobBody("failed", "cloning_github", "job-1 gave up")))
-    await settled()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+  test("reload observes an unresolved retry before deciding whether to repeat it", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "job-1", phase: "starting", detail: null,
+        requestId: "persisted-retry", requestKind: "retry", accountOwner: "will" }
+    } }).isPersisted.promise
+    let retries = 0
+    createAppController(store, unavailableRepositories, unavailableAgent, {
+      fetchImpl: async (input, init) => {
+        const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+        if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(409, { message: "only failed import jobs can be retried" }) }
+        if (path.endsWith("/github/import/job-1")) return json(200, jobBody("ready"))
+        return json(404, {})
+      }
+    })
+    await until(() => importCard(store)?.payload.phase === "done", "the recovered retry receipt")
+    expect(retries).toBe(0)
+  })
 
-    /* The card still tracks job-3 and nothing job-1 answered ever landed. */
-    expect(importCard(store)?.payload.jobId).toBe("job-3")
-    expect(importCard(store)?.payload.phase).toBe("running")
-    expect(importUpserts(store).some((entry) => entry.payload.detail === "job-1 gave up")).toBe(false)
+  test("retry recovery does not POST after its held observation crosses an owner switch", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "job-1", phase: "starting", detail: null,
+        requestId: "persisted-retry", requestKind: "retry", accountOwner: "will" }
+    } }).isPersisted.promise
+    let releaseObservation: (response: Response) => void = () => {}
+    const observation = new Promise<Response>(resolve => { releaseObservation = resolve })
+    let retries = 0
+    createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+      const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+      if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(202, jobBody("cloning")) }
+      if (path.endsWith("/github/import/job-1")) return observation
+      return json(404, {})
+    } })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    releaseObservation(json(200, jobBody("failed", null, "retry me")))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(retries).toBe(0)
+  })
+
+  test("retry recovery keeps a failed GET visible and does not guess that retry is safe", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "job-1", phase: "starting", detail: null,
+        requestId: "persisted-retry", requestKind: "retry", accountOwner: "will" }
+    } }).isPersisted.promise
+    let retries = 0
+    createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+      const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+      if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(202, jobBody("cloning")) }
+      if (path.endsWith("/github/import/job-1")) return json(500, { message: "job lookup unavailable" })
+      return json(404, {})
+    } })
+    await until(() => importCard(store)?.payload.phase === "failed", "the failed retry observation")
+    expect(importCard(store)?.payload.detail).toBe("job lookup unavailable")
+    expect(retries).toBe(0)
+  })
+
+  test("two quick retries keep one attempt identity and issue one retry", async () => {
+    let releaseRetry: (response: Response) => void = () => {}
+    const retryResponse = new Promise<Response>(resolve => { releaseRetry = resolve })
+    let retries = 0
+    const { store, controller } = await readyStore(importBackend(
+      () => json(202, jobBody("cloning")),
+      pollSequence([() => json(200, jobBody("failed", null, "clone failed")), () => json(200, jobBody("ready"))]),
+      () => { retries += 1; return retryResponse }
+    ))
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "failed", "the failed import")
+    await controller.commands.run("repos.import.retry", "job-1")
+    const requestId = importCard(store)?.payload.requestId
+    await controller.commands.run("repos.import.retry", "job-1")
+    expect(importCard(store)?.payload.requestId).toBe(requestId)
+    expect(retries).toBe(1)
+    releaseRetry(json(202, jobBody("cloning")))
+    await until(() => importCard(store)?.payload.phase === "done", "the deduplicated retry")
+  })
+
+  test("a rejected request receipt becomes a retryable failure and never launches", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    const dispatch = store.dispatch
+    let rejectReceipt = true
+    Object.assign(store, { dispatch: ((transition: Parameters<AppStore["dispatch"]>[0]) => {
+      const receipt = dispatch(transition)
+      if (!rejectReceipt || transition.type !== "card.upsert" || transition.card.kind !== "repo-import") return receipt
+      rejectReceipt = false
+      return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: Promise.reject(new Error("disk full")) } }
+    }) as AppStore["dispatch"] })
+    let starts = 0
+    const controller = createAppController(store, unavailableRepositories, unavailableAgent, importBackend(() => { starts += 1; return json(202, jobBody("ready")) }))
+    expect((await controller.commands.run("repos.import", "will/flows")).status).toBe("executed")
+    await until(() => importCard(store)?.payload.phase === "failed", "the persistence failure")
+    expect(importCard(store)?.payload.detail).toBe("The import request couldn't be saved.")
+    expect(starts).toBe(0)
+  })
+
+  for (const boundary of ["owner switch", "controller disposal"] as const) {
+    test(`held persistence cannot launch after ${boundary}`, async () => {
+      const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+      await signedIn(store)
+      await reposLoaded(store)
+      let releasePersistence: () => void = () => {}
+      const held = new Promise<void>(resolve => { releasePersistence = resolve })
+      const dispatch = store.dispatch
+      let holdReceipt = true
+      Object.assign(store, { dispatch: ((transition: Parameters<AppStore["dispatch"]>[0]) => {
+        const receipt = dispatch(transition)
+        if (!holdReceipt || transition.type !== "card.upsert" || transition.card.kind !== "repo-import") return receipt
+        holdReceipt = false
+        return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held) } }
+      }) as AppStore["dispatch"] })
+      let starts = 0
+      const controller = createAppController(store, unavailableRepositories, unavailableAgent,
+        importBackend(() => { starts += 1; return json(202, jobBody("ready")) }))
+      await controller.commands.run("repos.import", "will/flows")
+      if (boundary === "owner switch") {
+        await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+          allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      } else {
+        await controller.dispose()
+      }
+      releasePersistence()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(starts).toBe(0)
+    })
+  }
+
+  test("legacy adoption held in persistence cannot turn into a new-owner import", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "legacy-job", phase: "running", detail: null }
+    } }).isPersisted.promise
+    let releasePersistence: () => void = () => {}
+    const held = new Promise<void>(resolve => { releasePersistence = resolve })
+    const dispatch = store.dispatch
+    let holdAdoption = true
+    Object.assign(store, { dispatch: ((transition: Parameters<AppStore["dispatch"]>[0]) => {
+      const receipt = dispatch(transition)
+      if (!holdAdoption || transition.type !== "card.upsert" || transition.card.kind !== "repo-import" ||
+        transition.card.payload.requestId === undefined) return receipt
+      holdAdoption = false
+      return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held) } }
+    }) as AppStore["dispatch"] })
+    let starts = 0
+    const controller = createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+      const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+      if (path.endsWith("/github/import") && init?.method === "POST") starts += 1
+      return json(202, jobBody("ready"))
+    } })
+    await controller.commands.run("repos.import", "will/flows")
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    releasePersistence()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(starts).toBe(0)
+  })
+
+  test("retry refuses a job explicitly owned by another account", async () => {
+    const { store, controller } = await readyStore(importBackend(() => json(202, jobBody("ready"))))
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "error", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "other-job", phase: "failed", detail: "failed",
+        requestId: "other-request", requestKind: "retry", accountOwner: "other" }
+    } }).isPersisted.promise
+    const outcome = await controller.commands.run("repos.import.retry", "other-job")
+    expect(outcome).toMatchObject({ status: "failed", error: "This import belongs to another account. Start a new import for the current account." })
+  })
+
+  test("a stale persistence rejection cannot fail a newer owner's card", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await signedIn(store)
+    await reposLoaded(store)
+    let rejectPersistence: (error: Error) => void = () => {}
+    const held = new Promise<void>((_, reject) => { rejectPersistence = reject })
+    const dispatch = store.dispatch
+    let holdReceipt = true
+    Object.assign(store, { dispatch: ((transition: Parameters<AppStore["dispatch"]>[0]) => {
+      const receipt = dispatch(transition)
+      if (!holdReceipt || transition.type !== "card.upsert" || transition.card.kind !== "repo-import") return receipt
+      holdReceipt = false
+      return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: held } }
+    }) as AppStore["dispatch"] })
+    const controller = createAppController(store, unavailableRepositories, unavailableAgent, importBackend(() => json(202, jobBody("ready"))))
+    await controller.commands.run("repos.import", "will/flows")
+    const old = importCard(store)!
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { ...old,
+      payload: { ...old.payload, requestId: "new-owner-request", accountOwner: "other", phase: "starting", detail: null } } }).isPersisted.promise
+    rejectPersistence(new Error("old receipt failed"))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(importCard(store)?.payload.requestId).toBe("new-owner-request")
+    expect(importCard(store)?.payload.phase).toBe("starting")
+    expect(importCard(store)?.payload.detail).toBeNull()
+  })
+
+  test("an explicit import under a new owner starts fresh without the prior owner's job", async () => {
+    let postedBody: unknown
+    const { store } = await readyStore(importBackend(async () => json(202, jobBody("ready"))))
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      id: CARD_ID, kind: "repo-import", title: "Import · will/flows", status: "active", createdAt: 1, ordinal: 1,
+      payload: { repo: "will/flows", jobId: "owner-a-job", phase: "starting", detail: null,
+        requestId: "owner-a-request", requestKind: "start", accountOwner: "owner-a" }
+    } }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner-b",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    const services: AppServices = { fetchImpl: async (input, init) => {
+      const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
+      if (path.endsWith("/github/import") && init?.method === "POST") { postedBody = JSON.parse(String(init.body)); return json(202, jobBody("ready")) }
+      return json(404, {})
+    } }
+    const fresh = createAppController(store, unavailableRepositories, unavailableAgent, services)
+    await fresh.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "done", "the new owner's import")
+    expect(postedBody).toEqual({ owner: "will", repo: "flows" })
+    expect(importUpserts(store).at(-2)?.payload.jobId).toBeNull()
+  })
+
+  test("an account switch while polling cannot mutate the prior owner's card", async () => {
+    let releasePoll: (response: Response) => void = () => {}
+    const poll = new Promise<Response>(resolve => { releasePoll = resolve })
+    const { store, controller } = await readyStore(importBackend(() => json(202, jobBody("cloning")), () => poll))
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "running", "the running receipt")
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    const upsertsBeforeRelease = importUpserts(store).length
+    releasePoll(json(200, jobBody("failed", null, "old account failed")))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(importUpserts(store)).toHaveLength(upsertsBeforeRelease)
+    expect(importUpserts(store).some(card => card.payload.detail === "old account failed")).toBe(false)
+  })
+
+  test("a stale unresolved launch cannot overwrite a newer persisted attempt", async () => {
+    let releaseLaunch: (response: Response) => void = () => {}
+    const launch = new Promise<Response>((resolve) => { releaseLaunch = resolve })
+    const { store, controller } = await readyStore(importBackend(() => launch))
+    await controller.commands.run("repos.import", "will/flows")
+    const first = importCard(store)
+    expect(first?.payload.phase).toBe("starting")
+    await store.dispatch({ type: "card.upsert", actor: "system", card: {
+      ...first!, payload: { ...first!.payload, requestId: "newer-attempt", phase: "starting", detail: null }
+    } }).isPersisted.promise
+    releaseLaunch(json(500, { message: "old launch failed" }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(importCard(store)?.payload.requestId).toBe("newer-attempt")
+    expect(importCard(store)?.payload.phase).toBe("starting")
+    expect(importCard(store)?.payload.detail).toBeNull()
   })
 })
 

@@ -52,6 +52,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 const runSlash = async (page: Page, command: string): Promise<void> => {
+  if (!await page.getByTestId("composer-input").isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).click()
   await page.getByTestId("composer-input").fill(command)
   await page.getByTestId("composer-send").click()
 }
@@ -68,4 +69,32 @@ test("T1: /repos.import tracks the job to done with the workspace link", async (
   await expect(card).toContainText("done", { timeout: 20_000 })
   await expect(card).toContainText("smithersai/smithers")
   await expect(card.getByRole("button", { name: /Open the workspace/ })).toBeVisible()
+})
+
+test("CAP-004: unresolved import launch stays starting, leaves chat usable, and shows shared progress", async ({ page }) => {
+  await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
+  let release: (() => void) | undefined
+  await page.route("**/api/cloud/api/github/import", async route => {
+    await new Promise<void>(resolve => { release = resolve })
+    await route.fulfill(json({ importJobId: "job-cap004", status: "cloning", stage: "resolving" }, 202))
+  })
+  await page.route("**/api/cloud/api/github/import/job-cap004", route =>
+    route.fulfill(json({ importJobId: "job-cap004", status: "ready", stage: "provisioning_workspace" })))
+  await page.goto("/")
+  await runSlash(page, `/repos.import ${REPO}`)
+  const card = page.getByTestId("card-repo-import-smithersai/smithers")
+  await expect(card).toContainText("starting")
+  await expect(page.locator(".toast-stack")).toContainText(`Importing ${REPO}…`)
+  if (!await page.getByTestId("composer-input").isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).click()
+  await page.getByTestId("composer-input").fill("Chat remains usable while this launches")
+  await expect(page.getByTestId("composer-input")).toHaveValue("Chat remains usable while this launches")
+
+  const evidence = process.env.CAP004_EVIDENCE_DIR
+  if (evidence) {
+    await page.screenshot({ path: `${evidence}/CAP-004-AFTER-LIGHT-r001.png`, fullPage: true })
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"))
+    await page.screenshot({ path: `${evidence}/CAP-004-AFTER-DARK-r001.png`, fullPage: true })
+  }
+  release?.()
+  await expect(card).toContainText("done", { timeout: 15_000 })
 })

@@ -34,6 +34,9 @@ export interface SeamContext {
   readonly store: AppStore
   readonly dispatch: AppStore["dispatch"]
   readonly resolveToast?: FailureController["resolveToast"]
+  /** Run user-requested background work through the app's shared debounced toast stack. */
+  readonly withToast?: FailureController["withToast"]
+  readonly isDisposed?: () => boolean
   /** The acting principal for dispatches: "user", or "smithers" in the agent's actor projection (ActorBindings). */
   readonly actor: () => "user" | "smithers"
   /** The next transcript ordinal — new cards surface at the end, never mid-history. */

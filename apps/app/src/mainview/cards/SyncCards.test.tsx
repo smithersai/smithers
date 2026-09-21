@@ -279,6 +279,11 @@ describe("RepoImportCardBody — the job card (ADR 0005 \"Import a GitHub reposi
     payload: { repo: "acme/web", jobId: "job-1", phase: "running", detail: null, ...payload }
   })
 
+  test("the card header says starting until the launch receipt arrives", () => {
+    expect(pillStatus(importCard({ jobId: null, phase: "starting" }))).toBe("starting")
+    expect(pillStatus(importCard({ phase: "running" }))).toBe("running")
+  })
+
   test("ADR 0005 importing: the counts and the raw stage word, with no act while it runs", () => {
     const { host } = render(
       <RepoImportCardBody

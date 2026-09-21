@@ -92,6 +92,7 @@ export const repoImportCardFamily: CardFamily<"repo-import"> = {
   "repo-import": {
     render: (card, actions) => <RepoImportCardBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: (card) => {
+      if (card.payload.phase === "starting") return "starting"
       if (card.payload.phase === "done") return "done"
       if (card.payload.phase === "failed") return "failed"
       return "running"
