@@ -11,7 +11,10 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/database"
+	productdb "github.com/smithersai/smithers/packages/backend/internal/productdb"
 )
 
 // Set SMITHERS_PRODUCT_TEST_DATABASE_URL to a PostgreSQL URL whose user can
@@ -47,7 +50,15 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	}()
 	dbURL := *adminURL
 	dbURL.Path = "/" + name
-	pool, err := pgxpool.New(ctx, dbURL.String())
+	poolConfig, err := pgxpool.ParseConfig(dbURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		database.ConfigureSQLCTypes(conn.TypeMap())
+		return nil
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +93,16 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO users(username, lower_username) VALUES ('bob', 'bob') RETURNING id`).Scan(&bob); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `INSERT INTO repositories(name, lower_name, user_id, is_public)
-		VALUES ('secret', 'secret', $1, false) RETURNING id`, alice).Scan(&repo); err != nil {
+	queries := productdb.New(pool)
+	repository, err := queries.CreateRepo(ctx, productdb.CreateRepoParams{
+		UserID: pgtype.Int8{Int64: alice, Valid: true}, Name: "secret", LowerName: "secret", DefaultBookmark: "main",
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	repo = repository.ID
+	if got, err := queries.GetRepoByID(ctx, repo); err != nil || got.ID != repo {
+		t.Fatalf("generated repository read: id=%d err=%v", got.ID, err)
 	}
 	var ownerCanRead, outsiderCanRead bool
 	if err := pool.QueryRow(ctx, `SELECT can_view_repository($1, $2), can_view_repository($1, $3)`, repo, alice, bob).Scan(&ownerCanRead, &outsiderCanRead); err != nil {
@@ -98,15 +116,18 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sql := range []string{
-		`INSERT INTO issues(repository_id, number, title, author_id) VALUES ($1, 1, 'issue', $2)`,
-		`INSERT INTO wiki_pages(repository_id, slug, title, author_id) VALUES ($1, 'home', 'Home', $2)`,
-		`INSERT INTO landing_requests(repository_id, number, title, author_id, target_bookmark) VALUES ($1, 1, 'review', $2, 'main')`,
-	} {
-		if _, err := tx.Exec(ctx, sql, repo, alice); err != nil {
-			_ = tx.Rollback(ctx)
-			t.Fatal(err)
-		}
+	inside := queries.WithTx(tx)
+	if _, err := inside.CreateIssue(ctx, productdb.CreateIssueParams{RepositoryID: repo, Title: "issue", AuthorID: alice}); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := inside.CreateWikiPage(ctx, productdb.CreateWikiPageParams{RepositoryID: repo, Slug: "home", Title: "Home", AuthorID: alice}); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if _, err := inside.CreateLandingRequest(ctx, productdb.CreateLandingRequestParams{RepositoryID: repo, Title: "review", AuthorID: alice, TargetBookmark: "main"}); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
 	}
 	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)
@@ -128,6 +149,19 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	}
 	if applied, err := Status(ctx, pool); applied || !errors.Is(err, ErrChecksumMismatch) {
 		t.Fatalf("changed baseline status: applied=%v err=%v", applied, err)
+	}
+	registered, err := registeredMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE smithers_product_migrations SET checksum=$1 WHERE version=$2`, registered[0].checksum, BaselineVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO smithers_product_migrations(version, checksum) VALUES (2, 'future')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, pool); !errors.Is(err, ErrUnsupportedVersion) {
+		t.Fatalf("newer database should be rejected, got %v", err)
 	}
 }
 
