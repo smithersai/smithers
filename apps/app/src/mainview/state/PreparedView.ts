@@ -16,6 +16,8 @@ interface ViewPlan {
   /** Include every input that changes the read, including filters and revisions. */
   readonly key?: string
   readonly pane?: string
+  /** An already-open surface whose explicit navigation should replace it in place. */
+  readonly target?: Card
   readonly read: () => Promise<ViewResult>
   readonly before?: () => Promise<string | void | true>
   readonly after?: () => void | Promise<void>
@@ -79,18 +81,19 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     const scope = scopeOf(ctx)
     let activeScope = scope
     const actor = ctx.actor()
-    const previous = (plan.pane ? paneTarget(ctx, plan.pane) : undefined) ?? ctx.store.collections.cards.get(plan.id)
+    const previous = plan.target ?? (plan.pane ? paneTarget(ctx, plan.pane) : undefined) ?? ctx.store.collections.cards.get(plan.id)
     const id = previous?.id ?? plan.id
     const key = plan.key ?? plan.id
     const token = Symbol()
     state.active.set(id, token)
     const valid = () => live() && state.active.get(id) === token && scopeOf(ctx) === activeScope && ctx.store.collections.cards.has(id)
     const current = () => valid() && ctx.store.collections.cards.get(id)?.viewKey === key
-    const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: plan.pane && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: previous?.tabId }
+    const navigates = plan.pane !== undefined || plan.target !== undefined
+    const common = { id, title: plan.title, viewKey: key, viewRepo: plan.pane ?? previous?.viewRepo, navigation: previous?.navigation, createdAt: previous?.createdAt ?? Date.now(), ordinal: navigates && previous ? previous.ordinal : ctx.nextOrdinal(), tabId: previous?.tabId }
     const pending: Card = previous?.viewKey === key && !previous.loading && previous.status !== "error"
       ? { ...previous, ...common }
       : plan.placeholder ? { ...plan.placeholder, ...common, loading: true } : { ...common, kind: "status", status: "active", loading: true, payload: {} }
-    ctx.dispatch({ type: previous && !previous.loading && previous.viewKey !== key && plan.pane ? "card.navigated" : "card.upsert", actor, card: pending })
+    ctx.dispatch({ type: previous && !previous.loading && previous.viewKey !== key && navigates ? "card.navigated" : "card.upsert", actor, card: pending })
     // The first card creates its frame's workspace and branch synchronously.
     activeScope = scopeOf(ctx)
     try {
@@ -98,7 +101,8 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
       const result = typeof ready === "string" ? ready : await request(plan, scope)
       if (!valid()) return
       if (typeof result === "string") {
-        ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: result } })
+        const navigation = ctx.store.collections.cards.get(id)?.navigation
+        ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, navigation, loading: false, status: "error", body: result } })
         return current() ? result : undefined
       }
       const navigation = ctx.store.collections.cards.get(id)?.navigation
@@ -118,7 +122,8 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
        */
       if (valid()) {
         if (!signInRequired(error)) {
-          ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
+          const navigation = ctx.store.collections.cards.get(id)?.navigation
+          ctx.dispatch({ type: "card.view.loaded", actor, card: { ...pending, navigation, loading: false, status: "error", body: "This view couldn't be loaded. Try opening it again." } })
         } else if (previous !== undefined && !previous.loading) {
           ctx.dispatch({ type: "card.view.loaded", actor, card: previous })
         } else {

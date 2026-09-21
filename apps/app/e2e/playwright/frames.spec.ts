@@ -143,6 +143,48 @@ test("open-in-tab returns the address bar to the root frame and Escape minimizes
   await expect(page.locator(".card-maximize-backdrop")).toHaveCount(0)
 })
 
+test("a maximized Files card reveals pointer and keyboard file navigation with Back and visible failures", async ({ page }) => {
+  await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [
+    { name: "README.md", path: "README.md", type: "file" },
+    { name: "missing.txt", path: "missing.txt", type: "file" }
+  ] }))
+  await page.route("**/api/repos/smithersai/smithers/contents/README.md", route => route.fulfill({ json: {
+    path: "README.md", content: btoa("# CAP-007\n\nVisible file content."), encoding: "base64", size: 33
+  } }))
+  await page.route("**/api/repos/smithersai/smithers/contents/missing.txt", route => route.fulfill({
+    status: 404, json: { message: "Path not found: missing.txt" }
+  }))
+  await page.goto("/")
+  await openWorkspaceChat(page)
+  await sendSlash(page, "/files.list / smithersai/smithers")
+
+  const listed = page.getByTestId("transcript").locator('.smithers-card[data-kind="file-list"]')
+  const cardId = (await listed.getAttribute("data-testid"))?.replace(/^card-/, "")
+  expect(cardId).toBeTruthy()
+  const card = page.getByTestId(`card-${cardId}`)
+  await card.getByTestId(`card-maximize-${cardId}`).click()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  await card.getByRole("button", { name: "README.md", exact: true }).click()
+  await expect(card).toHaveAttribute("data-kind", "file")
+  await expect(card).toContainText("Visible file content.")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  await card.getByRole("button", { name: "Back in frame" }).click()
+  await expect(card).toHaveAttribute("data-kind", "file-list")
+  const missing = card.getByRole("button", { name: "missing.txt", exact: true })
+  await missing.focus()
+  await page.keyboard.press("Enter")
+  await expect(card).toHaveAttribute("data-kind", "status")
+  await expect(card).toContainText("Path not found: missing.txt")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  await card.getByRole("button", { name: "Back in frame" }).click()
+  await expect(card).toHaveAttribute("data-kind", "file-list")
+  await card.getByRole("button", { name: "Restore", exact: true }).click()
+  await expect(card).toHaveAttribute("data-maximized", "false")
+})
+
 for (const sample of [
   { name: "desktop light", width: 1440, height: 960, dark: false },
   { name: "narrow dark", width: 390, height: 844, dark: true },

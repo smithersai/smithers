@@ -178,14 +178,24 @@ const filesBackend = () => {
   return { services, requests }
 }
 
-const freshController = async () => {
+const freshController = async (wrapFetch?: (base: NonNullable<AppServices["fetchImpl"]>) => NonNullable<AppServices["fetchImpl"]>) => {
   const backend = filesBackend()
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const services = wrapFetch === undefined ? backend.services : {
+    ...backend.services,
+    fetchImpl: wrapFetch(backend.services.fetchImpl!)
+  }
   return {
     store,
     requests: backend.requests,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, backend.services)
+    controller: createAppController(store, unavailableRepositories, unavailableAgent, services)
   }
+}
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }
 
 const ready = async (store: AppStore): Promise<void> => {
@@ -318,6 +328,72 @@ describe("files seam — files.list", () => {
 })
 
 describe("files seam — files.read", () => {
+  test("opening from a maximized Files pane reveals the file in place and Restore keeps coherent history", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    expect((await controller.commands.run("files.list", "")).status).toBe("executed")
+    const files = listCard(store, "files-will/flows-/")!
+    controller.maximizeCard(files.id)
+    expect(store.session().maximizedCardId).toBe(files.id)
+
+    expect((await controller.commands.run("files.read", "README.md")).status).toBe("executed")
+    expect(store.collections.cards.get(files.id)).toMatchObject({
+      id: files.id,
+      kind: "file",
+      loading: false,
+      payload: { path: "README.md", content: README_TEXT }
+    })
+    expect(store.session().maximizedCardId).toBe(files.id)
+    expect(store.collections.cards.size).toBe(1)
+
+    controller.moveCardHistory(files.id, -1)
+    expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file-list", payload: { path: "" } })
+    expect(store.session().maximizedCardId).toBe(files.id)
+    controller.minimizeCard()
+    expect(store.session().maximizedCardId).toBeNull()
+  })
+
+  test("a slow file cannot replace a newer maximized navigation", async () => {
+    const release = deferred<void>()
+    const { store, controller } = await freshController((base) => async (input, init) => {
+      if (String(input).includes("/contents/README.md")) await release.promise
+      return base(input, init)
+    })
+    await ready(store)
+    expect((await controller.commands.run("files.list", "")).status).toBe("executed")
+    const files = listCard(store, "files-will/flows-/")!
+    controller.maximizeCard(files.id)
+
+    const stale = controller.commands.run("files.read", "README.md")
+    await settled()
+    expect(store.collections.cards.get(files.id)).toMatchObject({ loading: true })
+    expect((await controller.commands.run("files.read", "plain.txt")).status).toBe("executed")
+    expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file", payload: { path: "plain.txt" } })
+    release.resolve(undefined)
+    await stale
+    expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file", payload: { path: "plain.txt" } })
+    expect(store.session().maximizedCardId).toBe(files.id)
+  })
+
+  test("a failed read replaces the maximized loading destination with a visible retryable error", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    expect((await controller.commands.run("files.list", "")).status).toBe("executed")
+    const files = listCard(store, "files-will/flows-/")!
+    controller.maximizeCard(files.id)
+
+    const outcome = await controller.commands.run("files.read", "missing.txt")
+    expect(outcome.status).toBe("failed")
+    expect(store.collections.cards.get(files.id)).toMatchObject({
+      status: "error",
+      loading: false,
+      body: "Path not found: missing.txt"
+    })
+    expect(store.session().maximizedCardId).toBe(files.id)
+    controller.moveCardHistory(files.id, -1)
+    expect(store.collections.cards.get(files.id)).toMatchObject({ kind: "file-list", payload: { path: "" } })
+  })
+
   test("reads a base64 file into the file card, UTF-8 decoded, untruncated", async () => {
     const { store, controller, requests } = await freshController()
     await ready(store)

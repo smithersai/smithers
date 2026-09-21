@@ -68,6 +68,19 @@ test("failed preloads are silent and activation retries", async () => {
   expect(calls).toBe(2)
 })
 
+test("a failed pane destination stays visible and Back retains its source", async () => {
+  const { ctx, store } = await setup()
+  const home: Card = { id: "home", kind: "issue-list", title: "Issues", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "will/demo", filter: "open", issues: [] } }
+  store.dispatch({ type: "card.upsert", actor: "user", card: home })
+  const open = preparedView(ctx, () => ({ id: "missing", title: "Missing", pane: "will/demo", read: async () => "Not found" }))
+
+  expect(await open()).toBe("Not found")
+  expect(store.collections.cards.get("home")).toMatchObject({ status: "error", body: "Not found", loading: false })
+  expect(store.collections.cardHistories.get("home")).toMatchObject({ index: 1 })
+  store.dispatch({ type: "card.history.moved", actor: "user", id: "home", delta: -1 })
+  expect(store.collections.cards.get("home")).toMatchObject({ title: "Issues", kind: "issue-list" })
+})
+
 test("Back stays put while a pending destination finishes, and Forward shows its loaded content", async () => {
   const { ctx, store } = await setup()
   const home: Card = { id: "home", kind: "issue-list", title: "Issues", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "will/demo", filter: "open", issues: [] } }

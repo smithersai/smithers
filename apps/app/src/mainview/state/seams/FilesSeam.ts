@@ -612,9 +612,18 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     if (kind === "file" && !target.path) return "files.read needs a file path"
     const repoId = target.kind === "local" ? target.repo.id : target.repo
     const label = target.kind === "local" ? target.repo.name : target.repo
+    const maximized = ctx.store.collections.cards.get(ctx.store.session().maximizedCardId ?? "")
+    const ownerCard = maximized?.kind === "file" || maximized?.kind === "file-list"
+      ? maximized
+      : [...(maximized === undefined ? [] : ctx.store.collections.cardHistories.get(maximized.id)?.entries ?? [])]
+        .reverse().find((card) => card.kind === "file" || card.kind === "file-list")
+    const owner = ownerCard?.kind === "file" || ownerCard?.kind === "file-list"
+      ? ownerCard.payload.localRepoId ?? ownerCard.payload.repo
+      : undefined
+    const pane = owner === repoId ? maximized : undefined
     /* The revision is part of the address: one path at two revisions is two files. */
     const id = `${kind}-${repoId}-${target.path || "/"}${ref === undefined ? "" : `@${ref}`}`
-    return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]),
+    return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]), target: pane,
       read: () => kind === "file" ? readers.readFile(path, repo, anchor, ref) : readers.listFiles(path, repo),
       after: kind === "file" ? async () => {
       } : undefined,
