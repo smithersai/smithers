@@ -19,12 +19,25 @@ package main
 
 import (
     "context"
+	"io"
 	"net/http"
+	"time"
 
     "github.com/smithersai/smithers/packages/backend/app"
     "github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/repository"
 )
+
+// A deployment outside the Smithers module must be able to implement the
+// public storage port without importing packages/backend/internal/blob.
+type externalStore struct{}
+func (externalStore) SignedUploadURL(context.Context, string, string, int64, time.Duration) (string, error) { return "", nil }
+func (externalStore) SignedDownloadURL(context.Context, string, time.Duration) (string, error) { return "", nil }
+func (externalStore) Delete(context.Context, string) error { return nil }
+func (externalStore) Exists(context.Context, string) (bool, error) { return false, nil }
+func (externalStore) Stat(context.Context, string) (ports.ObjectAttrs, error) { return ports.ObjectAttrs{}, nil }
+func (externalStore) NewReader(context.Context, string) (io.ReadCloser, error) { return nil, nil }
+var _ ports.BlobStore = externalStore{}
 
 func main() {
     var launch func(context.Context, app.Config) error = app.Run
@@ -33,7 +46,7 @@ func main() {
 	var handler func(*app.Instance) http.Handler = (*app.Instance).Handler
     var executor ports.Executor
 	var repo *repository.Client
-	_, _, _, _, _, _ = launch, migrate, start, handler, executor, repo
+	_, _, _, _, _, _, _ = launch, migrate, start, handler, executor, repo, externalStore{}
 }
 EOF
 cd "$consumer_dir"

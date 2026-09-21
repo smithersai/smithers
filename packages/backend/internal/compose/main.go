@@ -243,14 +243,19 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	database.StartPoolStatsCollector(poolStatsCtx, pool, smithersMetrics, 15*time.Second)
 
 	queries := db.New(pool)
-	runnerStaleSweeper := runnerpool.NewRunnerPool(queries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
+	var runnerStaleSweeper *runnerpool.RunnerPool
 	runtimeMetricsStore := services.NewRuntimeMetricsStore(queries, pool)
-	services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
 	if options.Role.hosted() {
+		// These gauges read runner_pool and other fleet state, which is absent
+		// from the single-owner product schema.
+		services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
 		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(queries))
 		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(queries)
 		smithersMetrics.MustRegister(inventoryMetrics)
 		inventoryMetrics.Start(poolStatsCtx)
+	}
+	if options.Role.clusterWorkers() {
+		runnerStaleSweeper = runnerpool.NewRunnerPool(queries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
 	}
 	// One shared broker multiplexes every SSE stream type (notifications,
 	// workspaces, workflow-run logs, agent sessions, releases) over a SINGLE

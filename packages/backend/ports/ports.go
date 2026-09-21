@@ -26,6 +26,21 @@ type RepositoryEndpointResolver = repository.StorageSetResolver
 // use provider-signed URLs. Callers import this public alias, never internal.
 type BlobStore = blob.Store
 
+// ObjectAttrs and SignedUpload are the value types in the shared blob
+// contract. Re-exporting them lets an external deployment implement BlobStore
+// and its optional capabilities without importing an internal Go package.
+type ObjectAttrs = blob.ObjectAttrs
+type SignedUpload = blob.SignedUpload
+type CreateOnlyUploadSigner = blob.CreateOnlyUploadSigner
+type CreateOnlyPromoter = blob.CreateOnlyPromoter
+type GenerationPurger = blob.GenerationPurger
+type Putter = blob.Putter
+
+const UnknownObjectSize = blob.UnknownObjectSize
+
+var ErrObjectNotFound = blob.ErrObjectNotFound
+var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
+
 // AgentLogStore persists archived session transcripts through the same
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
