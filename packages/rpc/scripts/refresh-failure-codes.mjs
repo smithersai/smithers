@@ -1,18 +1,16 @@
 /*
- * Refresh the vendored copy of plue's failure-code registry.
+ * Refresh the TypeScript copy of Smithers' failure-code registry.
  *
- *   node scripts/refresh-failure-codes.mjs --from ~/plue
- *   node scripts/refresh-failure-codes.mjs --from https://smithers.sh
+ *   node scripts/refresh-failure-codes.mjs
  *   node scripts/refresh-failure-codes.mjs --check
  *
- * plue owns the taxonomy: `go run ./cmd/failurecodes > docs/failure-codes.json`
- * renders it there, and `GET /api/meta/failure-codes` serves the same bytes so
- * a running deployment can be asked what it believes. This script copies those
- * bytes into src/plue-failure-codes.json UNCHANGED — the digest inside them
- * only verifies against the exact payload plue hashed — and regenerates
+ * Smithers Go owns the taxonomy in packages/backend/internal/pkg/errors.
+ * Its checked-in document is docs/api/failure-codes.json, and
+ * GET /api/meta/failure-codes serves the same bytes. This script copies the
+ * document into src/plue-failure-codes.json UNCHANGED and regenerates
  * src/PlueFailureCodes.ts from them, which is where the codes become types.
  *
- * Run it in the same change that picks up a new plue release. Without the
+ * Run it in the same change that edits the Go registry. Without the
  * regeneration a new code has no row, and `satisfies Record<PlueFailureCode,
  * PlueFailureEntry>` in the generated file makes that a compile error rather
  * than a refusal the app renders as a shrug. `--check` fails instead of
@@ -24,11 +22,12 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const here = dirname(fileURLToPath(import.meta.url))
+const canonicalPath = join(here, "..", "..", "..", "docs", "api", "failure-codes.json")
 const jsonPath = join(here, "..", "src", "plue-failure-codes.json")
 const tsPath = join(here, "..", "src", "PlueFailureCodes.ts")
 
 /**
- * The digest plue computes: sha256 over `json.Marshal(records)` — Go's compact
+ * The digest Go computes: sha256 over `json.Marshal(records)` — Go's compact
  * encoding of the code rows in the document's own order, with Go's default
  * HTML escaping. Reproducing it here rather than trusting the field is the
  * whole point of the drift test: a hand-edited row changes the payload and
@@ -56,18 +55,18 @@ const render = (document) => {
     )
     .join(",\n")
   return `/**
- * plue's failure taxonomy, vendored as types.
+ * Smithers' failure taxonomy, generated as types.
  *
  * GENERATED FILE — do not edit. Regenerate with:
  *
- *   node packages/rpc/scripts/refresh-failure-codes.mjs --from <plue checkout or deployment>
+ *   node packages/rpc/scripts/refresh-failure-codes.mjs
  *
- * Source: plue docs/failure-codes.json, rendered by its cmd/failurecodes and
+ * Source: docs/api/failure-codes.json, rendered by Smithers Go and
  * served at GET /api/meta/failure-codes. WHICH revision is the digest below,
  * not a path — a local checkout's location is not provenance, and putting one
  * here would rewrite this file on every machine that regenerated it.
  *
- * plue's closed failure taxonomy (pkg/errors/registry.go), vendored so the
+ * Smithers' closed failure taxonomy, generated so the
  * codes are TYPES here and not strings. Everything downstream — the fault a
  * refusal carries, the copy the app puts in front of it, whether the app may
  * retry on its own — is derived from this table, so a code plue adds and this
@@ -78,7 +77,7 @@ const render = (document) => {
  */
 
 /**
- * The document schema version plue stamps; a bump means the shape changed, not just the rows.
+ * The document schema version Go stamps; a bump means the shape changed, not just the rows.
  *
  * @since 1.0.0
  * @category constants
@@ -86,7 +85,7 @@ const render = (document) => {
 export const PLUE_FAILURE_SCHEMA_VERSION = ${document.schema_version}
 
 /**
- * plue's digest over the code rows. The drift test recomputes it from the
+ * Go's digest over the code rows. The drift test recomputes it from the
  * vendored JSON, so this constant and that file cannot disagree silently.
  *
  * @since 1.0.0
@@ -95,7 +94,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = ${document.schema_version}
 export const PLUE_FAILURE_DIGEST = ${quote(document.digest)}
 
 /**
- * Whose problem a failure is — plue's own word, and the only question the app
+ * Whose problem a failure is — the registry's verdict, and the only question the app
  * actually needs answered to know what to say.
  *
  * - \`user\` the request has to change; retrying it unchanged fails the same way.
@@ -118,7 +117,7 @@ export const PLUE_FAULTS = [${faults}] as const
 export type PlueFault = (typeof PLUE_FAULTS)[number]
 
 /**
- * Every code plue may put on the wire, in the artifact's own sorted order.
+ * Every code Smithers may put on the wire, in the artifact's own sorted order.
  *
  * @since 1.0.0
  * @category constants
@@ -128,7 +127,7 @@ ${codes}
 ] as const
 
 /**
- * One of plue's failure codes.
+ * One of Smithers' failure codes.
  *
  * @since 1.0.0
  * @category models
@@ -136,7 +135,7 @@ ${codes}
 export type PlueFailureCode = (typeof PLUE_FAILURE_CODES)[number]
 
 /**
- * One row: the verdict, the status plue answers with, and the pacing it states (0 = none).
+ * One row: the verdict, the status Smithers answers with, and the pacing it states (0 = none).
  *
  * @since 1.0.0
  * @category models
@@ -183,12 +182,8 @@ const main = async () => {
   const check = args.includes("--check")
   const fromIndex = args.indexOf("--from")
   const from = fromIndex < 0 ? null : args[fromIndex + 1]
-  if (from === null && !check) {
-    console.error("usage: refresh-failure-codes.mjs --from <plue checkout | https://deployment> [--check]")
-    process.exit(2)
-  }
   const { text, source } = from === null
-    ? { text: readFileSync(jsonPath, "utf8"), source: jsonPath }
+    ? { text: readFileSync(canonicalPath, "utf8"), source: canonicalPath }
     : await load(from)
   const document = JSON.parse(text)
   const recomputed = digestOf(document.codes)
@@ -199,7 +194,7 @@ const main = async () => {
   const rendered = render(document)
   if (check) {
     const stale = [
-      ...(from === null ? [] : readFileSync(jsonPath, "utf8") === text ? [] : [jsonPath]),
+      ...(readFileSync(jsonPath, "utf8") === text ? [] : [jsonPath]),
       readFileSync(tsPath, "utf8") === rendered ? null : tsPath
     ].filter((path) => path !== null)
     if (stale.length > 0) {
@@ -209,7 +204,8 @@ const main = async () => {
     console.log(`refresh-failure-codes: fresh against ${source} (${document.codes.length} codes, ${document.digest})`)
     return
   }
-  if (from !== null) writeFileSync(jsonPath, text)
+  if (from !== null) writeFileSync(canonicalPath, text)
+  writeFileSync(jsonPath, text)
   writeFileSync(tsPath, rendered)
   console.log(`refresh-failure-codes: wrote ${document.codes.length} codes from ${source} (${document.digest})`)
 }

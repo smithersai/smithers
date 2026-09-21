@@ -1,16 +1,16 @@
 /**
- * plue's failure taxonomy, vendored as types.
+ * Smithers' failure taxonomy, generated as types.
  *
  * GENERATED FILE — do not edit. Regenerate with:
  *
- *   node packages/rpc/scripts/refresh-failure-codes.mjs --from <plue checkout or deployment>
+ *   node packages/rpc/scripts/refresh-failure-codes.mjs
  *
- * Source: plue docs/failure-codes.json, rendered by its cmd/failurecodes and
+ * Source: docs/api/failure-codes.json, rendered by Smithers Go and
  * served at GET /api/meta/failure-codes. WHICH revision is the digest below,
  * not a path — a local checkout's location is not provenance, and putting one
  * here would rewrite this file on every machine that regenerated it.
  *
- * plue's closed failure taxonomy (pkg/errors/registry.go), vendored so the
+ * Smithers' closed failure taxonomy, generated so the
  * codes are TYPES here and not strings. Everything downstream — the fault a
  * refusal carries, the copy the app puts in front of it, whether the app may
  * retry on its own — is derived from this table, so a code plue adds and this
@@ -21,7 +21,7 @@
  */
 
 /**
- * The document schema version plue stamps; a bump means the shape changed, not just the rows.
+ * The document schema version Go stamps; a bump means the shape changed, not just the rows.
  *
  * @since 1.0.0
  * @category constants
@@ -29,16 +29,16 @@
 export const PLUE_FAILURE_SCHEMA_VERSION = 1
 
 /**
- * plue's digest over the code rows. The drift test recomputes it from the
+ * Go's digest over the code rows. The drift test recomputes it from the
  * vendored JSON, so this constant and that file cannot disagree silently.
  *
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:226ab206efe27406ae7f052d51679e835d35791bb2f8a62b1db6875096e747e1"
+export const PLUE_FAILURE_DIGEST = "sha256:84b5baee98290532cc23c8b3f076bb0dad8542c01a2463ac242db0338a1b56b1"
 
 /**
- * Whose problem a failure is — plue's own word, and the only question the app
+ * Whose problem a failure is — the registry's verdict, and the only question the app
  * actually needs answered to know what to say.
  *
  * - `user` the request has to change; retrying it unchanged fails the same way.
@@ -61,7 +61,7 @@ export const PLUE_FAULTS = ["user", "wait", "infra", "dependency", "bug"] as con
 export type PlueFault = (typeof PLUE_FAULTS)[number]
 
 /**
- * Every code plue may put on the wire, in the artifact's own sorted order.
+ * Every code Smithers may put on the wire, in the artifact's own sorted order.
  *
  * @since 1.0.0
  * @category constants
@@ -71,6 +71,7 @@ export const PLUE_FAILURE_CODES = [
   "NOT_ON_WAITLIST",
   "access_denied",
   "access_not_granted",
+  "agent_loop_retired",
   "append_not_requested",
   "append_prepare_invalid",
   "append_prepare_unavailable",
@@ -152,7 +153,6 @@ export const PLUE_FAILURE_CODES = [
   "quota_exceeded",
   "rate_limit_exceeded",
   "rate_limiter_unavailable",
-  "repository_ci_run_unverified",
   "repository_provisioning_rollout",
   "repository_workspace_pending",
   "request_entity_too_large",
@@ -161,7 +161,6 @@ export const PLUE_FAILURE_CODES = [
   "retained_runtime_not_running",
   "retained_runtime_not_stopped",
   "runtime_error",
-  "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
   "snapshot_in_use",
@@ -193,7 +192,7 @@ export const PLUE_FAILURE_CODES = [
 ] as const
 
 /**
- * One of plue's failure codes.
+ * One of Smithers' failure codes.
  *
  * @since 1.0.0
  * @category models
@@ -201,7 +200,7 @@ export const PLUE_FAILURE_CODES = [
 export type PlueFailureCode = (typeof PLUE_FAILURE_CODES)[number]
 
 /**
- * One row: the verdict, the status plue answers with, and the pacing it states (0 = none).
+ * One row: the verdict, the status Smithers answers with, and the pacing it states (0 = none).
  *
  * @since 1.0.0
  * @category models
@@ -227,8 +226,10 @@ export const PLUE_FAILURES = {
   "NOT_ON_WAITLIST": { fault: "user", status: 403, retryAfter: 0 },
   /** The access grant presented to the controller does not cover this sandbox. */
   "access_denied": { fault: "user", status: 403, retryAfter: 0 },
-  /** The account has not been granted this access: the OAuth2 authorization was not granted to this client, or the account is not on the closed-alpha whitelist. */
+  /** The OAuth2 authorization was not granted to this client. */
   "access_not_granted": { fault: "user", status: 403, retryAfter: 0 },
+  /** plue's own 0.x agent loop was retired and the Smithers 1.0 replacement has no entrypoint for a single dispatched task yet. Nothing the caller did. */
+  "agent_loop_retired": { fault: "bug", status: 501, retryAfter: 0 },
   /** The landing's existing task is not a native append request. */
   "append_not_requested": { fault: "user", status: 409, retryAfter: 0 },
   /** Native append preparation did not return the requested exact source identities. */
@@ -391,8 +392,6 @@ export const PLUE_FAILURES = {
   "rate_limit_exceeded": { fault: "user", status: 429, retryAfter: 0 },
   /** plue's rate-limit store is not answering and the endpoint fails closed rather than let a budget go unenforced. */
   "rate_limiter_unavailable": { fault: "infra", status: 503, retryAfter: 1 },
-  /** The CI check receipt names a run this repository and workspace retain no usable dispatch for. */
-  "repository_ci_run_unverified": { fault: "user", status: 403, retryAfter: 0 },
   /** Repository provisioning is mid-rollout on this deployment and is not accepting new work. */
   "repository_provisioning_rollout": { fault: "infra", status: 503, retryAfter: 0 },
   /** The repository workspace or gateway is still starting. Poll the same request; an unverified primary is not an authoritative workspace selection. */
@@ -409,8 +408,6 @@ export const PLUE_FAILURES = {
   "retained_runtime_not_stopped": { fault: "user", status: 409, retryAfter: 0 },
   /** The worker's runtime driver failed: a VMM, a snapshot restore, or a guest transport on one machine. Another worker may well succeed. */
   "runtime_error": { fault: "infra", status: 500, retryAfter: 0 },
-  /** A control-plane transaction kept losing a race with a concurrent writer. Nothing changed, and the identical request works once the contention clears. */
-  "sandbox_control_busy": { fault: "infra", status: 503, retryAfter: 2 },
   /** This worker build cannot deliver secrets into a guest. */
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */
