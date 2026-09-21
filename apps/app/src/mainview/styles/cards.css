@@ -20,6 +20,11 @@
 	opacity: 0.66;
 }
 
+/* A completed import still contains the enabled next action. */
+.smithers-card[data-kind="repo-import"][data-status="acted"] {
+	opacity: 1;
+}
+
 .smithers-card[data-status="error"] {
 	border-color: var(--danger-border);
 	background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface));
