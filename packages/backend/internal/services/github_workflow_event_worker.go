@@ -1,0 +1,501 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+const (
+	defaultGitHubWebhookEventWorkerInterval   = 2 * time.Second
+	defaultGitHubWebhookEventWorkerClaimLimit = int32(20)
+
+	// GitHub never redelivers a webhook we already acked with 200, so a
+	// transiently failing job must be retried (with backoff) rather than
+	// terminally failed: it only becomes 'failed' after this many claims or
+	// on a permanent error (e.g. an unparseable payload).
+	gitHubWebhookJobMaxAttempts = int32(8)
+
+	gitHubWebhookJobRetryBaseBackoff = 5 * time.Second
+	gitHubWebhookJobRetryMaxBackoff  = 10 * time.Minute
+
+	// Jobs claimed by a worker that crashed before marking them done/failed
+	// stay 'processing'; after this lease they are re-pended for re-dispatch.
+	gitHubWebhookJobStalledAfter = 5 * time.Minute
+)
+
+// GitHubWebhookEventWorkerQuerier contains DB methods needed by the webhook → workflow bridge worker.
+type GitHubWebhookEventWorkerQuerier interface {
+	ClaimPendingGitHubWebhookJobs(ctx context.Context, claimLimit int32) ([]db.GithubWebhookJob, error)
+	MarkGitHubWebhookJobDone(ctx context.Context, id int64) error
+	MarkGitHubWebhookJobFailed(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) error
+	RetryGitHubWebhookJob(ctx context.Context, arg db.RetryGitHubWebhookJobParams) error
+	ResetStalledGitHubWebhookJobs(ctx context.Context, olderThanSeconds float64) (int64, error)
+	ListRepositoryIDsForGitHubWebhookJob(ctx context.Context, arg db.ListRepositoryIDsForGitHubWebhookJobParams) ([]int64, error)
+	ListWorkflowTriggersByRepository(ctx context.Context, repositoryID int64) ([]db.WorkflowTrigger, error)
+}
+
+// permanentGitHubWebhookJobError marks a processing failure that can never
+// succeed on retry, so the job is failed immediately instead of re-pended.
+type permanentGitHubWebhookJobError struct{ err error }
+
+func (e *permanentGitHubWebhookJobError) Error() string { return e.err.Error() }
+func (e *permanentGitHubWebhookJobError) Unwrap() error { return e.err }
+
+// GitHubWebhookEventRunDispatcher creates workflow runs for matching triggers.
+type GitHubWebhookEventRunDispatcher interface {
+	DispatchForEvent(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error)
+}
+
+// GitHubWebhookEventWorker polls github_webhook_jobs and dispatches workflow runs.
+type GitHubWebhookEventWorker struct {
+	queries        GitHubWebhookEventWorkerQuerier
+	dispatcher     GitHubWebhookEventRunDispatcher
+	logger         *slog.Logger
+	interval       time.Duration
+	claimLimit     int32
+	repositoryJobs interface {
+		AdmitGitHubEvent(context.Context, int64, db.GithubWebhookJob, TriggerEvent) error
+	}
+}
+
+// SetRepositoryJobs connects authenticated webhook deliveries to the modern
+// opt-in host. Legacy definitions keep their existing dispatch path.
+func (w *GitHubWebhookEventWorker) SetRepositoryJobs(service interface {
+	AdmitGitHubEvent(context.Context, int64, db.GithubWebhookJob, TriggerEvent) error
+}) {
+	w.repositoryJobs = service
+}
+
+func NewGitHubWebhookEventWorker(
+	queries GitHubWebhookEventWorkerQuerier,
+	dispatcher GitHubWebhookEventRunDispatcher,
+) *GitHubWebhookEventWorker {
+	return &GitHubWebhookEventWorker{
+		queries:    queries,
+		dispatcher: dispatcher,
+		logger:     slog.Default(),
+		interval:   defaultGitHubWebhookEventWorkerInterval,
+		claimLimit: defaultGitHubWebhookEventWorkerClaimLimit,
+	}
+}
+
+// Start runs the polling loop until context cancellation.
+func (w *GitHubWebhookEventWorker) Start(ctx context.Context) {
+	w.logger.Info("github webhook event worker started")
+	for {
+		if err := w.PollOnce(ctx); err != nil {
+			if ctx.Err() != nil {
+				w.logger.Info("github webhook event worker stopping", "reason", ctx.Err())
+				return
+			}
+			w.logger.Error("github webhook event worker poll error", "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			w.logger.Info("github webhook event worker stopped")
+			return
+		case <-time.After(w.interval):
+		}
+	}
+}
+
+// PollOnce claims and processes a batch of GitHub webhook jobs.
+func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
+	if w == nil || w.queries == nil || w.dispatcher == nil {
+		return nil
+	}
+
+	if reclaimed, err := w.queries.ResetStalledGitHubWebhookJobs(ctx, gitHubWebhookJobStalledAfter.Seconds()); err != nil {
+		w.logger.Error("failed to reset stalled github webhook jobs", "error", err)
+	} else if reclaimed > 0 {
+		w.logger.Warn("reclaimed stalled github webhook jobs", "count", reclaimed)
+	}
+
+	jobs, err := w.queries.ClaimPendingGitHubWebhookJobs(ctx, w.claimLimit)
+	if err != nil {
+		return fmt.Errorf("claim github webhook jobs: %w", err)
+	}
+
+	for _, job := range jobs {
+		err := w.processJob(ctx, job)
+		if err == nil {
+			continue
+		}
+
+		var permanent *permanentGitHubWebhookJobError
+		if errors.As(err, &permanent) || job.Attempts >= gitHubWebhookJobMaxAttempts {
+			if markErr := w.queries.MarkGitHubWebhookJobFailed(ctx, db.MarkGitHubWebhookJobFailedParams{
+				ID:    job.ID,
+				Error: err.Error(),
+			}); markErr != nil {
+				// The row stays 'processing' and the stalled-job sweep
+				// re-pends it, so a failed mark cannot strand the job.
+				w.logger.Error("failed to mark github webhook job failed", "job_id", job.ID, "error", markErr)
+			}
+			w.logger.Error("github webhook job failed permanently", "job_id", job.ID, "attempts", job.Attempts, "error", err)
+			continue
+		}
+
+		backoff := gitHubWebhookJobRetryBackoff(job.Attempts)
+		if retryErr := w.queries.RetryGitHubWebhookJob(ctx, db.RetryGitHubWebhookJobParams{
+			ID:             job.ID,
+			Error:          err.Error(),
+			BackoffSeconds: backoff.Seconds(),
+		}); retryErr != nil {
+			// Same safety net: the stalled-job sweep re-pends the row.
+			w.logger.Error("failed to re-pend github webhook job", "job_id", job.ID, "error", retryErr)
+		}
+		w.logger.Warn("github webhook job failed, will retry", "job_id", job.ID, "attempts", job.Attempts, "backoff", backoff.String(), "error", err)
+	}
+
+	return nil
+}
+
+// gitHubWebhookJobRetryBackoff doubles the delay per claim attempt (the claim
+// query increments attempts before processing, so attempts >= 1 here).
+func gitHubWebhookJobRetryBackoff(attempts int32) time.Duration {
+	if attempts < 1 {
+		attempts = 1
+	}
+	shift := uint(attempts - 1)
+	if shift > 16 {
+		return gitHubWebhookJobRetryMaxBackoff
+	}
+	backoff := gitHubWebhookJobRetryBaseBackoff << shift
+	if backoff > gitHubWebhookJobRetryMaxBackoff {
+		return gitHubWebhookJobRetryMaxBackoff
+	}
+	return backoff
+}
+
+func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.GithubWebhookJob) error {
+	payload, err := parseGitHubWorkflowEventPayload(job.Payload)
+	if err != nil {
+		return &permanentGitHubWebhookJobError{err: fmt.Errorf("parse payload: %w", err)}
+	}
+
+	event, supported := mapGitHubWebhookJobToTriggerEvent(job, payload)
+	if !supported {
+		if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
+			return fmt.Errorf("mark job done: %w", err)
+		}
+		return nil
+	}
+
+	selector := buildGitHubWebhookRepositorySelector(job, payload)
+	if selector.InstallationID == 0 && selector.GitHubRepositoryID == 0 &&
+		(strings.TrimSpace(selector.OwnerLoginLower) == "" || strings.TrimSpace(selector.RepoNameLower) == "") {
+		if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
+			return fmt.Errorf("mark job done: %w", err)
+		}
+		return nil
+	}
+	repoIDs, err := w.queries.ListRepositoryIDsForGitHubWebhookJob(ctx, selector)
+	if err != nil {
+		return fmt.Errorf("resolve repositories: %w", err)
+	}
+
+	for _, repositoryID := range repoIDs {
+		if w.repositoryJobs != nil {
+			if err := w.repositoryJobs.AdmitGitHubEvent(ctx, repositoryID, job, event); err != nil {
+				return fmt.Errorf("admit repository job event for repository %d: %w", repositoryID, err)
+			}
+		}
+		triggers, err := w.queries.ListWorkflowTriggersByRepository(ctx, repositoryID)
+		if err != nil {
+			return fmt.Errorf("list workflow triggers for repository %d: %w", repositoryID, err)
+		}
+
+		definitionIDs := matchingWorkflowDefinitionIDs(triggers, event)
+		for _, definitionID := range definitionIDs {
+			workflowDefinitionID := definitionID
+			if _, err := w.dispatcher.DispatchForEvent(ctx, DispatchForEventInput{
+				RepositoryID:         repositoryID,
+				WorkflowDefinitionID: &workflowDefinitionID,
+				Event:                event,
+			}); err != nil {
+				return fmt.Errorf("dispatch workflow definition %d: %w", workflowDefinitionID, err)
+			}
+		}
+	}
+
+	if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
+		return fmt.Errorf("mark job done: %w", err)
+	}
+
+	return nil
+}
+
+func matchingWorkflowDefinitionIDs(triggers []db.WorkflowTrigger, event TriggerEvent) []int64 {
+	normalizedEvent := normalizeTriggerEvent(event)
+	normalizedEventType := normalizeRegisteredEventType(normalizedEvent.Type)
+	if normalizedEventType == "" {
+		return nil
+	}
+
+	unique := make(map[int64]struct{})
+	for _, trigger := range triggers {
+		if !trigger.Enabled {
+			continue
+		}
+		if normalizeRegisteredEventType(trigger.EventType) != normalizedEventType {
+			continue
+		}
+		triggerAction := strings.ToLower(strings.TrimSpace(trigger.EventAction))
+		if triggerAction != "" && triggerAction != strings.ToLower(strings.TrimSpace(normalizedEvent.Action)) {
+			continue
+		}
+		unique[trigger.WorkflowDefinitionID] = struct{}{}
+	}
+
+	definitionIDs := make([]int64, 0, len(unique))
+	for definitionID := range unique {
+		definitionIDs = append(definitionIDs, definitionID)
+	}
+	sort.Slice(definitionIDs, func(i, j int) bool { return definitionIDs[i] < definitionIDs[j] })
+	return definitionIDs
+}
+
+type gitHubWorkflowEventPayload struct {
+	Action       string `json:"action"`
+	Ref          string `json:"ref"`
+	After        string `json:"after"`
+	Installation *struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
+	Repository *struct {
+		ID            int64  `json:"id"`
+		Name          string `json:"name"`
+		FullName      string `json:"full_name"`
+		DefaultBranch string `json:"default_branch"`
+		Owner         struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+	} `json:"repository"`
+	Issue       json.RawMessage `json:"issue"`
+	Comment     json.RawMessage `json:"comment"`
+	Sender      json.RawMessage `json:"sender"`
+	PullRequest *struct {
+		Head struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"head"`
+	} `json:"pull_request"`
+	CheckSuite *struct {
+		HeadBranch string `json:"head_branch"`
+		HeadSHA    string `json:"head_sha"`
+	} `json:"check_suite"`
+	CheckRun *struct {
+		HeadSHA    string `json:"head_sha"`
+		CheckSuite struct {
+			HeadBranch string `json:"head_branch"`
+			HeadSHA    string `json:"head_sha"`
+		} `json:"check_suite"`
+	} `json:"check_run"`
+}
+
+func parseGitHubWorkflowEventPayload(payload json.RawMessage) (gitHubWorkflowEventPayload, error) {
+	if len(payload) == 0 {
+		return gitHubWorkflowEventPayload{}, nil
+	}
+	var parsed gitHubWorkflowEventPayload
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return gitHubWorkflowEventPayload{}, err
+	}
+	return parsed, nil
+}
+
+func mapGitHubWebhookJobToTriggerEvent(job db.GithubWebhookJob, payload gitHubWorkflowEventPayload) (TriggerEvent, bool) {
+	eventType := strings.ToLower(strings.TrimSpace(job.EventType))
+	action := strings.ToLower(strings.TrimSpace(job.Action))
+	if action == "" {
+		action = strings.ToLower(strings.TrimSpace(payload.Action))
+	}
+
+	event := TriggerEvent{Type: eventType, Action: action}
+
+	switch eventType {
+	case "issues", "issue_comment":
+		inputs, ok := gitHubIssueWorkflowInputs(job, payload, action)
+		if !ok {
+			return TriggerEvent{}, false
+		}
+		if payload.Repository != nil {
+			event.Ref = strings.TrimSpace(payload.Repository.DefaultBranch)
+		}
+		event.Inputs = inputs
+		return event, true
+	case "push":
+		event.Ref = strings.TrimSpace(payload.Ref)
+		event.CommitSHA = strings.TrimSpace(payload.After)
+		return event, true
+	case "pull_request":
+		if action != "opened" && action != "synchronize" {
+			return TriggerEvent{}, false
+		}
+		if payload.PullRequest != nil {
+			event.Ref = strings.TrimSpace(payload.PullRequest.Head.Ref)
+			event.CommitSHA = strings.TrimSpace(payload.PullRequest.Head.SHA)
+		}
+		return event, true
+	case "pull_request_review":
+		if payload.PullRequest != nil {
+			event.Ref = strings.TrimSpace(payload.PullRequest.Head.Ref)
+			event.CommitSHA = strings.TrimSpace(payload.PullRequest.Head.SHA)
+		}
+		return event, true
+	case "check_suite":
+		if payload.CheckSuite != nil {
+			event.Ref = strings.TrimSpace(payload.CheckSuite.HeadBranch)
+			event.CommitSHA = strings.TrimSpace(payload.CheckSuite.HeadSHA)
+		}
+		return event, true
+	case "check_run":
+		if payload.CheckRun != nil {
+			event.Ref = strings.TrimSpace(payload.CheckRun.CheckSuite.HeadBranch)
+			event.CommitSHA = strings.TrimSpace(payload.CheckRun.HeadSHA)
+			if event.CommitSHA == "" {
+				event.CommitSHA = strings.TrimSpace(payload.CheckRun.CheckSuite.HeadSHA)
+			}
+		}
+		return event, true
+	default:
+		return TriggerEvent{}, false
+	}
+}
+
+// GitHub issue data remains external input, including its actor IDs: none of
+// it grants a Plue identity or permission. The delivery ID stored by ingress
+// is derived from the HMAC-signed body, so retries retain the same identity
+// even if an unsigned X-GitHub-Delivery header changes. Workflows can use it
+// for idempotent publications or a durable Control dispatch key.
+func gitHubIssueWorkflowInputs(job db.GithubWebhookJob, payload gitHubWorkflowEventPayload, action string) (map[string]interface{}, bool) {
+	var issue struct {
+		ID          int64           `json:"id"`
+		Number      int64           `json:"number"`
+		Title       string          `json:"title"`
+		Body        string          `json:"body"`
+		State       string          `json:"state"`
+		HTMLURL     string          `json:"html_url"`
+		PullRequest json.RawMessage `json:"pull_request"`
+		User        struct {
+			Login string `json:"login"`
+		} `json:"user"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if json.Unmarshal(payload.Issue, &issue) != nil || issue.ID <= 0 || issue.Number <= 0 || action == "" {
+		return nil, false
+	}
+	// GitHub sends PR conversation comments as issue_comment events too. They
+	// belong to the PR review setup, not opt-in issue handling.
+	if len(issue.PullRequest) > 0 && string(issue.PullRequest) != "null" {
+		return nil, false
+	}
+	if strings.TrimSpace(strings.ToLower(job.EventType)) == "issue_comment" {
+		var comment struct {
+			ID int64 `json:"id"`
+		}
+		if json.Unmarshal(payload.Comment, &comment) != nil || comment.ID <= 0 {
+			return nil, false
+		}
+	}
+
+	labels := make([]string, 0, len(issue.Labels))
+	for _, label := range issue.Labels {
+		labels = append(labels, label.Name)
+	}
+	inputs := map[string]interface{}{
+		"source":             "github",
+		"eventType":          strings.ToLower(strings.TrimSpace(job.EventType)),
+		"action":             action,
+		"githubDeliveryId":   job.DeliveryID,
+		"githubWebhookJobId": job.ID,
+		"issue":              payload.Issue,
+		"sender":             payload.Sender,
+		"issueId":            issue.ID,
+		"issueNumber":        issue.Number,
+		"issueTitle":         issue.Title,
+		"issueBody":          issue.Body,
+		"issueState":         issue.State,
+		"issueAuthor":        issue.User.Login,
+		"issueUrl":           issue.HTMLURL,
+		"issueLabels":        labels,
+	}
+	if len(payload.Comment) > 0 {
+		inputs["comment"] = payload.Comment
+	}
+	if payload.Repository != nil {
+		inputs["repository"] = payload.Repository
+		inputs["repoName"] = payload.Repository.Name
+		inputs["repoOwner"] = payload.Repository.Owner.Login
+		fullName := payload.Repository.FullName
+		if fullName == "" && payload.Repository.Owner.Login != "" && payload.Repository.Name != "" {
+			fullName = payload.Repository.Owner.Login + "/" + payload.Repository.Name
+		}
+		inputs["repoFullName"] = fullName
+	}
+	return inputs, true
+}
+
+func buildGitHubWebhookRepositorySelector(job db.GithubWebhookJob, payload gitHubWorkflowEventPayload) db.ListRepositoryIDsForGitHubWebhookJobParams {
+	selector := db.ListRepositoryIDsForGitHubWebhookJobParams{}
+	if job.InstallationID.Valid {
+		selector.InstallationID = job.InstallationID.Int64
+	}
+	if job.GithubRepositoryID.Valid {
+		selector.GitHubRepositoryID = job.GithubRepositoryID.Int64
+	}
+	if selector.InstallationID == 0 && payload.Installation != nil {
+		selector.InstallationID = payload.Installation.ID
+	}
+	if selector.GitHubRepositoryID == 0 && payload.Repository != nil {
+		selector.GitHubRepositoryID = payload.Repository.ID
+	}
+
+	if payload.Repository != nil {
+		selector.OwnerLoginLower = strings.ToLower(strings.TrimSpace(payload.Repository.Owner.Login))
+		selector.RepoNameLower = strings.ToLower(strings.TrimSpace(payload.Repository.Name))
+		if selector.OwnerLoginLower == "" || selector.RepoNameLower == "" {
+			parts := strings.SplitN(strings.TrimSpace(payload.Repository.FullName), "/", 2)
+			if len(parts) == 2 {
+				if selector.OwnerLoginLower == "" {
+					selector.OwnerLoginLower = strings.ToLower(strings.TrimSpace(parts[0]))
+				}
+				if selector.RepoNameLower == "" {
+					selector.RepoNameLower = strings.ToLower(strings.TrimSpace(parts[1]))
+				}
+			}
+		}
+	}
+
+	return selector
+}
+
+// PollScheduledWorkflowTriggers preserves the webhook worker's legacy schedule
+// polling entry point by delegating to the dedicated cron scheduler path.
+func (w *GitHubWebhookEventWorker) PollScheduledWorkflowTriggers(ctx context.Context, now time.Time) error {
+	if w == nil || w.queries == nil || w.dispatcher == nil {
+		return nil
+	}
+
+	scheduleQueries, ok := w.queries.(CronSchedulerQuerier)
+	if !ok {
+		return fmt.Errorf("scheduled workflow polling requires workflow schedule queries")
+	}
+
+	worker := NewCronSchedulerWorker(scheduleQueries, w.dispatcher)
+	worker.logger = w.logger
+	worker.claimLimit = w.claimLimit
+	return worker.pollOnce(ctx, now)
+}

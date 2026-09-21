@@ -1,0 +1,1253 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+const (
+	// Repository installs, builds and the coding host share the guest memory
+	// budget with /tmp tmpfs; the provider's 512 MiB default is insufficient.
+	defaultWorkspaceMemoryMB  = 4096
+	defaultWorkspaceVCPUCount = 2
+	defaultWorkspaceSSHHost   = "vm-ssh.smithers.sh"
+	defaultWorkspaceUser      = "developer"
+	defaultWorkspaceSSHUser   = defaultWorkspaceUser
+	defaultWorkspaceHome      = "/home/developer"
+	defaultWorkspaceClonePath = "/home/developer/workspace"
+	// A resume no longer waits for the (non-re-firing) ready signal, so StartSandbox
+	// returns as soon as sandbox provider accepts the resume (~2s live). 30s is pure
+	// headroom for a slow accept under load; blowing it now means a genuine
+	// sandbox provider failure, not the old ready-signal hang, so reprovisioning is
+	// the right fallback then.
+	workspaceResumeTimeout = 30 * time.Second
+	// Forking is an optimization for derived workspaces, not the provision's
+	// whole job. A wedged Microsandbox fork request must leave enough of the outer
+	// provisioning budget for the cold create+clone fallback.
+	//
+	// A fork is NOT a cheap control-plane call: the controller snapshots the
+	// source VM and streams that snapshot to durable object storage BEFORE
+	// booting the child, because the runtime holds a local snapshot mutation
+	// lock while exporting and a running child consumes the snapshot as its CoW
+	// parent. So the export is unavoidably on the fork's critical path, and a
+	// real workspace snapshot is ~140 MB. The old 30s budget predated working
+	// exports (a NetworkPolicy blocked all DNS from the microsandbox namespace,
+	// so exports never completed at all); once DNS was restored, every fork
+	// started dying at ~32s with "worker request: ... context canceled" —
+	// killing an export that was progressing normally.
+	//
+	// 150s is sized off that export: ~140 MB at a deliberately pessimistic
+	// ~2 MB/s sustained worker->controller->GCS throughput is ~70s, plus child
+	// VM create and control-plane overhead. That is ~5x the old budget and ~4x
+	// the observed failure point, while staying bounded so a genuinely wedged
+	// fork still fails and falls back instead of hanging forever. It matches
+	// workspaceForkSwitchTimeout and sits below workspaceBareVMCreateAttemptTimeout,
+	// keeping the cold create+clone fallback affordable inside
+	// workspaceProvisionTimeout. Both call sites treat a fork failure as a
+	// fallback, never as a provisioning failure.
+	workspaceForkTimeout = 150 * time.Second
+	// Snapshot boots skip the package bootstrap and should either become usable
+	// promptly or leave time for a bare-image fallback. Bare creates are slower:
+	// Microsandbox materializes the image and installs the default packages
+	// synchronously under the create request. Keep separate budgets so a cold
+	// apt mirror is not canceled at the snapshot-optimized deadline while the
+	// complete provision remains bounded by workspaceProvisionTimeout.
+	workspaceGoldenVMCreateAttemptTimeout = 2 * time.Minute
+	workspaceBareVMCreateAttemptTimeout   = 4 * time.Minute
+	// ExecAwait also carries a VM-side timeout. The client-side bounds sit 30
+	// seconds above it for response/transport headroom while ensuring a wedged
+	// Microsandbox HTTP request cannot monopolize the full provisioning context.
+	workspaceForkSwitchTimeout = 150 * time.Second
+	workspaceCloneTimeout      = 210 * time.Second
+	workspaceProvisionTimeout  = 10 * time.Minute
+	workspaceStaleAfter        = 5 * time.Minute
+	// workspaceStartingWithVMStaleAfter is the reap threshold for workspaces
+	// stranded in 'starting' WITH a registered VM (an API crash mid-provision).
+	// It must exceed workspaceProvisionTimeout: a live detached provisioning
+	// goroutine holds 'starting'+vm_id for at most that long before it either
+	// flips the row to running or marks it failed itself, so anything older is
+	// provably orphaned and safe to fail + reclaim.
+	workspaceStartingWithVMStaleAfter = workspaceProvisionTimeout + workspaceStaleAfter
+	// workspaceSessionProvisionGrace is how long CreateSession waits for
+	// provisioning to finish before returning the pending session ticket and
+	// letting provisioning continue in the background. Fast paths (VM already
+	// running, immediate failures) resolve synchronously inside this window so
+	// callers still get the running/failed result; a fresh VM boot exceeds it
+	// and the multi client polls GetSession / the SSE stream instead. This
+	// window must stay far below upstream proxy deadlines (~125s in prod).
+	workspaceSessionProvisionGrace = 1 * time.Second
+	// workspaceReadyTimeoutSeconds is carried on the provider-neutral request
+	// for runtimes that wait on ReadySignal. The signal is deliberately trivial
+	// for container/vm workspaces and independent of the network-heavy
+	// claude/node/jj bootstrap. Desktop requests move it to
+	// smithers-desktop-start so create returns only after noVNC is reachable.
+	// The service-level golden/bare deadlines above remain the outer bounds.
+	workspaceReadyTimeoutSeconds int64 = 90
+	workspaceClaudePackage             = "@anthropic-ai/claude-code"
+	workspaceClaudeScriptPath          = "/usr/local/bin/smithers-install-claude-code"
+	workspaceClaudeService             = "smithers-workspace-claude-bootstrap"
+	workspaceReadyService              = "smithers-workspace-ready"
+	workspaceSmithersCLIPath           = "/usr/local/bin/smithers"
+	workspaceSmithersCLIB64Path        = "/tmp/smithers-workspace-cli.b64"
+	workspaceCLIBinaryEnv              = "SMITHERS_WORKSPACE_CLI_BINARY"
+	workspaceDefaultCLIPath            = "/usr/local/bin/smithers"
+	workspaceCodingHostPath            = "/usr/local/bin/smithers-coding-host"
+	workspaceCodingHostB64Path         = "/tmp/smithers-workspace-coding-host.b64"
+	workspaceCodingHostBinaryEnv       = "SMITHERS_WORKSPACE_CODING_HOST_BINARY"
+	// The coding host's flows shell out to this native jj helper for their
+	// --eligible preflight and tree export, so every workspace kind needs it
+	// staged next to the host. The API image carries it under /usr/local/lib
+	// (cmd/server/Dockerfile jj-export-builder) because that image is musl and
+	// the payload is a glibc binary it must transport, never execute.
+	// Smoke-run logs for the two staged binaries. The bootstrap templates name
+	// these paths literally; the artifact tests redirect them to a temp dir and
+	// assert the constants stay in step with the rendered script.
+	workspaceCodingHostSmokeLog  = "/tmp/smithers-workspace-coding-host-smoke.log"
+	workspaceJJExportSmokeLog    = "/tmp/smithers-workspace-jj-export-smoke.log"
+	workspaceJJExportPath        = "/usr/local/bin/smithers-jj-export"
+	workspaceJJExportB64Path     = "/tmp/smithers-workspace-jj-export.b64"
+	workspaceJJExportBinaryEnv   = "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"
+	workspaceDefaultJJExportPath = "/usr/local/lib/smithers/smithers-jj-export"
+	workspaceJJReleaseAPIURL     = "https://api.github.com/repos/jj-vcs/jj/releases/tags/v0.39.0"
+	workspaceNodeDistIndexURL    = "https://nodejs.org/dist/index.json"
+	workspaceNodeMajor           = "22"
+	workspaceLocalDir            = defaultWorkspaceHome + "/.local"
+	workspaceLocalBinDir         = defaultWorkspaceHome + "/.local/bin"
+	workspaceLocalNodeDir        = defaultWorkspaceHome + "/.local/node"
+	workspaceNodeInstallLog      = defaultWorkspaceHome + "/.smithers/node-install.log"
+	workspaceClaudeInstallLog    = defaultWorkspaceHome + "/.smithers/claude-install.log"
+	// workspaceBunVersion pins the bun runtime installed into workspace VMs
+	// (via the npm `bun` package); keep in sync with BUN_VERSION in
+	// scripts/create-agent-snapshot.ts.
+	workspaceBunVersion = "1.3.9"
+	// workspaceGlobalPackInitLog captures `smithers init --global` output for
+	// the developer user's ~/.smithers workflow pack install.
+	workspaceGlobalPackInitLog = defaultWorkspaceHome + "/.smithers/global-pack-init.log"
+
+	// MaxActiveWorkspacesPerUser caps the number of non-deleted workspaces
+	// any single authenticated user may own (ticket 0105). Enforced on
+	// every create path (CreateWorkspace non-reuse branch, ForkWorkspace,
+	// snapshot-restore branch). Reuse of an existing primary workspace
+	// does NOT count — the user is resuming, not allocating new state.
+	//
+	// Delete semantics are SOFT: DeleteWorkspace tombstones the row
+	// (workspaces.deleted_at), which drops it out of this count, so the
+	// spec promise "delete one to continue" holds.
+	//
+	// This is a PLACEHOLDER for real payment / plan tier logic. When
+	// billing ships, replace the constant with a per-user lookup; do not
+	// treat the number 100 as load-bearing architecture.
+	MaxActiveWorkspacesPerUser = 100
+)
+
+var defaultWorkspacePackages = []string{"ca-certificates", "git", "nodejs", "npm"}
+
+const defaultWorkspaceEnvironmentSource = ".smithers/environment.nix"
+
+// WorkspaceEnvironment identifies the immutable Nix closure selected when a
+// workspace is created. Empty revision/hash values mean the repository's
+// environment has not been built yet; source remains stable for the UI.
+type WorkspaceEnvironment struct {
+	Source      string `json:"source"`
+	Revision    string `json:"revision"`
+	ClosureHash string `json:"closure_hash"`
+	// Image is the NixOS closure image a kind=vm/desktop workspace booted
+	// (empty for container workspaces).
+	Image string `json:"image,omitempty"`
+}
+
+// WorkspaceDesktop is the kind=desktop stream surface.
+type WorkspaceDesktop struct {
+	// Ready is true only after smithers-desktop-start has verified the noVNC
+	// endpoint. Desktop workspaces remain starting until that happens.
+	Ready bool `json:"ready"`
+	// StreamURL is the desktop relay root, relative to the API origin
+	// (like html_url): POST {stream_url}session mints a session and returns
+	// the credentialed viewer URL.
+	StreamURL string `json:"stream_url"`
+	// Session is the current stream session, or null before the first mint.
+	Session *WorkspaceDesktopSession `json:"session"`
+}
+
+// WorkspaceDesktopSession identifies a desktop stream session. The relay
+// token itself is returned once by POST .../desktop/session.
+type WorkspaceDesktopSession struct {
+	ID        string    `json:"id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// WorkspaceHead is the last head reported by the workspace guest after jj
+// snapshotted its working copy.
+type WorkspaceHead struct {
+	ChangeID string `json:"change_id"`
+	CommitID string `json:"commit_id"`
+}
+
+// WorkspaceResponse is the API representation of a first-class workspace.
+type WorkspaceResponse struct {
+	ID             string               `json:"id"`
+	RepositoryID   int64                `json:"repository_id"`
+	UserID         int64                `json:"user_id"`
+	Name           string               `json:"name"`
+	Slug           string               `json:"slug,omitempty"`
+	Branch         string               `json:"branch,omitempty"`
+	TargetBookmark string               `json:"target_bookmark"`
+	RepoFullName   string               `json:"repo_full_name,omitempty"`
+	HTMLURL        string               `json:"html_url,omitempty"`
+	Status         string               `json:"status"`
+	FailureCode    string               `json:"failure_code,omitempty"`
+	FailureMessage string               `json:"failure_message,omitempty"`
+	Kind           string               `json:"kind"`
+	Environment    WorkspaceEnvironment `json:"environment"`
+	// Desktop is present only for kind=desktop workspaces.
+	Desktop *WorkspaceDesktop `json:"desktop,omitempty"`
+	Head    WorkspaceHead     `json:"head"`
+	Ahead   int32             `json:"ahead"`
+	Behind  int32             `json:"behind"`
+	// AgentSessionID is set on kind=agent rows: the run this computer
+	// belongs to (RFD-004).
+	AgentSessionID    string `json:"agent_session_id,omitempty"`
+	ProvisioningStage string `json:"provisioning_stage,omitempty"`
+	IsFork            bool   `json:"is_fork"`
+	ParentWorkspaceID string `json:"parent_workspace_id,omitempty"`
+	VMID              string `json:"vm_id"`
+	Persistence       string `json:"persistence"`
+	SSHHost           string `json:"ssh_host,omitempty"`
+	SnapshotID        string `json:"snapshot_id,omitempty"`
+	// LSP advertises the languages a session of kind lsp can serve (#505).
+	LSP                WorkspaceLSP `json:"lsp"`
+	IdleTimeoutSeconds int32        `json:"idle_timeout_seconds"`
+	LastActivityAt     time.Time    `json:"last_activity_at"`
+	SuspendedAt        *time.Time   `json:"suspended_at"`
+	StartedAt          *time.Time   `json:"started_at"`
+	ResumedAt          *time.Time   `json:"resumed_at"`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
+
+	// Present only when the exact immutable source pin was verified.
+	RetainedSource *WorkspaceRetainedSource `json:"retained_source,omitempty"`
+}
+
+// WorkspaceSessionResponse is the API representation of a workspace session.
+type WorkspaceSessionResponse struct {
+	ID           string `json:"id"`
+	WorkspaceID  string `json:"workspace_id"`
+	RepositoryID int64  `json:"repository_id"`
+	UserID       int64  `json:"user_id"`
+	Status       string `json:"status"`
+	// Kind is terminal or lsp; Language is set for lsp sessions only (#505).
+	Kind            string    `json:"kind"`
+	Language        string    `json:"language,omitempty"`
+	Cols            int32     `json:"cols"`
+	Rows            int32     `json:"rows"`
+	LastActivityAt  time.Time `json:"last_activity_at"`
+	IdleTimeoutSecs int32     `json:"idle_timeout_secs"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// WorkspaceSSHHostKey describes a single accepted SSH gateway host key.
+// Clients must pin the server identity to one of the advertised entries
+// before sending credentials, preventing MITM on the terminal transport.
+//
+// Fields:
+//   - Algorithm: RFC 4253 key-type name, e.g. "ssh-ed25519".
+//   - PublicKey: wire-format public key, base64(standard) encoded. This
+//     is what SSH clients compare byte-for-byte; fingerprints are for
+//     display only.
+//   - FingerprintSHA256: OpenSSH-style "SHA256:..." fingerprint, for
+//     operator diagnostics and error messages. Do not verify from this
+//     alone — a hash collision in display text is easier to spoof than
+//     a byte comparison of the raw key.
+//   - KnownHostsLine: OpenSSH known_hosts-compatible line for clients
+//     that want to write it to a file (e.g. the iOS client does not
+//     have known_hosts).
+type WorkspaceSSHHostKey struct {
+	Algorithm         string `json:"algorithm"`
+	PublicKey         string `json:"public_key"`
+	FingerprintSHA256 string `json:"fingerprint_sha256"`
+	KnownHostsLine    string `json:"known_hosts_line,omitempty"`
+}
+
+// WorkspaceSSHConnectionInfo contains the SSH access details for a workspace session.
+//
+// HostKeys carries every currently-valid gateway host key. During a
+// rotation the list contains both the old and new keys so clients with
+// either pinned continue to succeed. The terminal handler accepts any
+// advertised key and rejects everything else.
+//
+// SECURITY (ticket 0117): this is the in-memory, on-the-wire struct returned
+// by the HTTP route. It contains the minted AccessToken and the executable
+// Command. NEVER persist this struct to a database column or any other
+// replicated/sync surface — use RedactedForPersistence() instead, which
+// strips AccessToken and Command while preserving identifier fields and
+// host_keys.
+type WorkspaceSSHConnectionInfo struct {
+	WorkspaceID string                `json:"workspace_id"`
+	SessionID   string                `json:"session_id"`
+	VMID        string                `json:"vm_id"`
+	Kind        string                `json:"kind"`
+	Host        string                `json:"host"`
+	DialHost    string                `json:"-"`
+	SSHHost     string                `json:"ssh_host"`
+	Username    string                `json:"username"`
+	Port        int                   `json:"port"`
+	Workdir     string                `json:"workdir,omitempty"`
+	AccessToken string                `json:"access_token"`
+	Command     string                `json:"command"`
+	HostKeys    []WorkspaceSSHHostKey `json:"host_keys"`
+}
+
+// PersistedWorkspaceSSHConnectionInfo is the shape-safe subset of
+// WorkspaceSSHConnectionInfo that is stored in
+// workspace_sessions.ssh_connection_info. Ticket 0117 split the
+// persisted half from the minted half specifically so the row can be
+// replicated to clients via the realtime stream without leaking
+// credentials.
+//
+// Field contract:
+//   - WorkspaceID, SessionID, VMID, Kind, Host, SSHHost, Username, Port,
+//     Workdir — stable identifiers the client needs to reconnect or display.
+//     Safe to sync.
+//   - HostKeys — public host-key trust anchors from ticket 0130. Public
+//     keys are not credentials; the client NEEDS them to pin the server
+//     identity on reconnect. Safe to sync.
+//
+// What is deliberately absent:
+//   - access_token — freshly-minted, short-lived SSH credential. NEVER
+//     persisted. Re-minted on demand by GetSSHConnectionInfo.
+//   - command — contains the access_token inline; same concern.
+//
+// The JSON tag set matches WorkspaceSSHConnectionInfo for every field that
+// is present, so a replicated row round-trips cleanly through a client
+// that deserializes into the same struct (with the secret fields simply
+// absent / zero).
+type PersistedWorkspaceSSHConnectionInfo struct {
+	WorkspaceID string                `json:"workspace_id"`
+	SessionID   string                `json:"session_id"`
+	VMID        string                `json:"vm_id"`
+	Kind        string                `json:"kind"`
+	Host        string                `json:"host"`
+	SSHHost     string                `json:"ssh_host"`
+	Username    string                `json:"username"`
+	Port        int                   `json:"port"`
+	Workdir     string                `json:"workdir,omitempty"`
+	HostKeys    []WorkspaceSSHHostKey `json:"host_keys"`
+}
+
+// RedactedForPersistence returns a shape-safe projection of the
+// connection info for storage in workspace_sessions.ssh_connection_info.
+//
+// Returned struct is by value so callers cannot accidentally share the
+// AccessToken or Command fields of the source struct. The only fields
+// that leave this function are the ones explicitly listed in
+// PersistedWorkspaceSSHConnectionInfo.
+func (w WorkspaceSSHConnectionInfo) RedactedForPersistence() PersistedWorkspaceSSHConnectionInfo {
+	return PersistedWorkspaceSSHConnectionInfo{
+		WorkspaceID: w.WorkspaceID,
+		SessionID:   w.SessionID,
+		VMID:        w.VMID,
+		Kind:        w.Kind,
+		Host:        w.Host,
+		SSHHost:     w.SSHHost,
+		Username:    w.Username,
+		Port:        w.Port,
+		Workdir:     w.Workdir,
+		HostKeys:    w.HostKeys,
+	}
+}
+
+// UserWorkspaceRow is the switcher-row DTO returned by
+// GET /api/user/workspaces (ticket 0135). Distinct from WorkspaceResponse:
+// WorkspaceResponse is scoped to one repo and omits repo owner/name and the
+// recency fields the switcher renders. Reusing it here would force the client
+// to cross-reference another endpoint for every row.
+type UserWorkspaceRow struct {
+	WorkspaceID       string        `json:"workspace_id"`
+	RepositoryID      int64         `json:"repository_id"`
+	RepositoryOwner   string        `json:"repository_owner"`
+	RepositoryName    string        `json:"repository_name"`
+	WorkspaceTitle    string        `json:"workspace_title"`
+	State             string        `json:"state"`
+	FailureCode       string        `json:"failure_code,omitempty"`
+	FailureMessage    string        `json:"failure_message,omitempty"`
+	TargetBookmark    string        `json:"target_bookmark"`
+	ProvisioningStage string        `json:"provisioning_stage,omitempty"`
+	SuspendedAt       *time.Time    `json:"suspended_at"`
+	Kind              string        `json:"kind"`
+	Head              WorkspaceHead `json:"head"`
+	Ahead             int32         `json:"ahead"`
+	Behind            int32         `json:"behind"`
+	StartedAt         *time.Time    `json:"started_at"`
+	LastAccessedAt    *time.Time    `json:"last_accessed_at"`
+	LastActivityAt    time.Time     `json:"last_activity_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	SortTimestamp     time.Time     `json:"sort_timestamp"`
+}
+
+// WorkspaceSnapshotResponse is the API representation of a reusable workspace snapshot.
+type WorkspaceSnapshotResponse struct {
+	ID           string    `json:"id"`
+	RepositoryID int64     `json:"repository_id"`
+	UserID       int64     `json:"user_id"`
+	Name         string    `json:"name"`
+	WorkspaceID  string    `json:"workspace_id,omitempty"`
+	SnapshotID   string    `json:"snapshot_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// CreateWorkspaceInput is the input for creating or resuming a first-class workspace.
+type CreateWorkspaceInput struct {
+	RepositoryID       int64
+	UserID             int64
+	RepoOwner          string
+	RepoName           string
+	Name               string
+	SnapshotID         string
+	SourceBookmark     string
+	Kind               string
+	Environment        WorkspaceEnvironment
+	RequiredCapability string
+}
+
+// CreateWorkspaceSessionInput is the input for creating a new workspace session.
+type CreateWorkspaceSessionInput struct {
+	RepositoryID   int64
+	UserID         int64
+	Cols           int32
+	Rows           int32
+	RepoOwner      string
+	RepoName       string
+	WorkspaceID    string
+	SourceBookmark string
+	// Kind is terminal (default) or lsp; Language names the LSP session's
+	// registry row and is required with kind lsp (#505).
+	Kind     string
+	Language string
+}
+
+// ForkWorkspaceInput is the input for forking a running workspace.
+type ForkWorkspaceInput struct {
+	RepositoryID int64
+	UserID       int64
+	WorkspaceID  string
+	Name         string
+}
+
+// CreateWorkspaceSnapshotInput is the input for taking a conditional snapshot from a workspace.
+type CreateWorkspaceSnapshotInput struct {
+	RepositoryID int64
+	UserID       int64
+	WorkspaceID  string
+	Name         string
+}
+
+// UpdateWorkspacePodStatusInput is the input for updating workspace runtime status.
+type UpdateWorkspacePodStatusInput struct {
+	WorkspaceID string
+	Status      string // "running", "suspended", "stopped", "failed"
+}
+
+// UpdateWorkspaceHeadInput is the atomic status report emitted after a guest
+// jj snapshot. Ahead/behind are computed in the guest against TargetBookmark,
+// where the working copy is authoritative, then persisted for cheap API reads.
+type UpdateWorkspaceHeadInput struct {
+	WorkspaceID string
+	ChangeID    string
+	CommitID    string
+	Ahead       int32
+	Behind      int32
+}
+
+// WorkspaceQuerier defines the minimal DB operations needed by WorkspaceService.
+type WorkspaceQuerier interface {
+	CreateWorkspace(ctx context.Context, arg db.CreateWorkspaceParams) (db.Workspace, error)
+	GetWorkspace(ctx context.Context, id string) (db.Workspace, error)
+	GetWorkspaceByRepo(ctx context.Context, arg db.GetWorkspaceByRepoParams) (db.Workspace, error)
+	GetWorkspaceForUserRepo(ctx context.Context, arg db.GetWorkspaceForUserRepoParams) (db.Workspace, error)
+	ListWorkspacesByRepo(ctx context.Context, arg db.ListWorkspacesByRepoParams) ([]db.Workspace, error)
+	CountWorkspacesByRepo(ctx context.Context, arg db.CountWorkspacesByRepoParams) (int64, error)
+	CountActiveWorkspacesByUser(ctx context.Context, userID int64) (int64, error)
+	ListUserWorkspacesAcrossRepos(ctx context.Context, arg db.ListUserWorkspacesAcrossReposParams) ([]db.ListUserWorkspacesAcrossReposRow, error)
+	CountUserWorkspacesAcrossRepos(ctx context.Context, userID int64) (int64, error)
+	GetActiveWorkspaceForUserRepo(ctx context.Context, arg db.GetActiveWorkspaceForUserRepoParams) (db.Workspace, error)
+	GetActiveWorkspaceForUserRepoKind(ctx context.Context, arg db.GetActiveWorkspaceForUserRepoKindParams) (db.Workspace, error)
+	UpdateWorkspaceStatus(ctx context.Context, arg db.UpdateWorkspaceStatusParams) (db.Workspace, error)
+	SuspendRunningWorkspace(ctx context.Context, id string) (db.Workspace, error)
+	SuspendRunningWorkspaceIfSessionless(ctx context.Context, id string) (db.Workspace, error)
+	ResumeWorkspaceToRunning(ctx context.Context, id string) (db.Workspace, error)
+	UpdateWorkspaceExecutionInfo(ctx context.Context, arg db.UpdateWorkspaceExecutionInfoParams) (db.Workspace, error)
+	MarkWorkspaceResumed(ctx context.Context, arg db.MarkWorkspaceResumedParams) error
+	UpdateWorkspaceHead(ctx context.Context, arg db.UpdateWorkspaceHeadParams) (db.Workspace, error)
+	SoftDeleteWorkspace(ctx context.Context, id string) (db.Workspace, error)
+	TouchWorkspaceActivity(ctx context.Context, id string) error
+	TouchWorkspaceLastAccessed(ctx context.Context, id string) error
+	UpdateWorkspaceTargetBookmark(ctx context.Context, arg db.UpdateWorkspaceTargetBookmarkParams) (db.Workspace, error)
+	CountActiveSessionsForWorkspace(ctx context.Context, workspaceID string) (int64, error)
+	ListIdleWorkspaces(ctx context.Context) ([]db.Workspace, error)
+	ListStalePendingWorkspaces(ctx context.Context, staleAfterSecs int32) ([]db.Workspace, error)
+	ListStaleStartingWorkspacesWithVM(ctx context.Context, staleAfterSecs int32) ([]db.Workspace, error)
+	FailStaleStartingWorkspace(ctx context.Context, arg db.FailStaleStartingWorkspaceParams) (db.Workspace, error)
+	CreateWorkspaceSnapshot(ctx context.Context, arg db.CreateWorkspaceSnapshotParams) (db.WorkspaceSnapshot, error)
+	GetWorkspaceSnapshot(ctx context.Context, id string) (db.WorkspaceSnapshot, error)
+	GetWorkspaceSnapshotByRepo(ctx context.Context, arg db.GetWorkspaceSnapshotByRepoParams) (db.WorkspaceSnapshot, error)
+	GetWorkspaceSnapshotForUserRepo(ctx context.Context, arg db.GetWorkspaceSnapshotForUserRepoParams) (db.WorkspaceSnapshot, error)
+	ListWorkspaceSnapshotsByRepo(ctx context.Context, arg db.ListWorkspaceSnapshotsByRepoParams) ([]db.WorkspaceSnapshot, error)
+	CountWorkspaceSnapshotsByRepo(ctx context.Context, arg db.CountWorkspaceSnapshotsByRepoParams) (int64, error)
+	DeleteWorkspaceSnapshot(ctx context.Context, id string) error
+	CreateWorkspaceSession(ctx context.Context, arg db.CreateWorkspaceSessionParams) (db.WorkspaceSession, error)
+	CreateWorkspaceLSPSession(ctx context.Context, arg db.CreateWorkspaceLSPSessionParams) (db.WorkspaceSession, error)
+	GetActiveWorkspaceLSPSession(ctx context.Context, arg db.GetActiveWorkspaceLSPSessionParams) (db.WorkspaceSession, error)
+	GetWorkspaceSession(ctx context.Context, id string) (db.WorkspaceSession, error)
+	GetWorkspaceSessionByRepo(ctx context.Context, arg db.GetWorkspaceSessionByRepoParams) (db.WorkspaceSession, error)
+	GetWorkspaceSessionForUserRepo(ctx context.Context, arg db.GetWorkspaceSessionForUserRepoParams) (db.WorkspaceSession, error)
+	ListWorkspaceSessionsByRepo(ctx context.Context, arg db.ListWorkspaceSessionsByRepoParams) ([]db.WorkspaceSession, error)
+	CountWorkspaceSessionsByRepo(ctx context.Context, arg db.CountWorkspaceSessionsByRepoParams) (int64, error)
+	UpdateWorkspaceSessionStatus(ctx context.Context, arg db.UpdateWorkspaceSessionStatusParams) (db.WorkspaceSession, error)
+	MarkWorkspaceSessionRunning(ctx context.Context, id string) (db.WorkspaceSession, error)
+	FailActiveWorkspaceSession(ctx context.Context, id string) (db.WorkspaceSession, error)
+	UpdateWorkspaceSessionSSHConnectionInfo(ctx context.Context, arg db.UpdateWorkspaceSessionSSHConnectionInfoParams) (db.WorkspaceSession, error)
+	TouchWorkspaceSessionActivity(ctx context.Context, id string) error
+	ListIdleWorkspaceSessions(ctx context.Context) ([]db.WorkspaceSession, error)
+	CreateAccessToken(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error)
+	DeleteAccessToken(ctx context.Context, arg db.DeleteAccessTokenParams) error
+	NotifyWorkspaceStatus(ctx context.Context, arg db.NotifyWorkspaceStatusParams) error
+	GetWorkspaceShare(ctx context.Context, arg db.GetWorkspaceShareParams) (db.WorkspaceShare, error)
+}
+
+// WorkspaceService handles workspace lifecycle on sandbox provider VMs.
+type WorkspaceService struct {
+	launchSessionCleanup         func(string, func())
+	billing                      BillingPolicy
+	sourceReader                 WorkspaceSourceReader
+	q                            WorkspaceQuerier
+	capabilityTransactions       RepositoryJobTransactions
+	capabilityProbe              WorkspaceCapabilityProbe
+	sandbox                      SandboxVMClient
+	sandboxMetrics               SandboxMetricsRecorder
+	gitBaseURL                   string
+	sshHost                      string
+	sshDialHost                  string
+	workspaceUsername            string
+	workspaceSSHUsername         string
+	workspaceIdleTimeoutSeconds  int64
+	workspacePersistence         sandbox.PersistenceMode
+	workspacePersistencePriority int32
+	// sshHostKeyDir is the directory that contains the gateway SSH host
+	// key files (ssh_host_ed25519_key and optionally the rotation
+	// companion ssh_host_ed25519_key.next). It is the same directory
+	// the SSH server reads at boot (see internal/ssh/server.go and
+	// cmd/ssh/main.go). When non-empty, the service publishes matching
+	// public-key material in WorkspaceSSHConnectionInfo.HostKeys.
+	sshHostKeyDir string
+	// hostKeyLoader reads gateway host-key material. Tests can override
+	// to avoid on-disk key files. When nil and sshHostKeyDir is set,
+	// defaultHostKeyLoader is used.
+	hostKeyLoader HostKeyLoader
+	// goldenSnapshots supplies the pre-baked toolchain snapshot fresh VMs boot
+	// from (nil / empty id → bare base image, exactly the old behavior).
+	goldenSnapshots *GoldenSnapshotService
+	// agentEnvironment supplies setup-only secrets and persistent nonsecret
+	// variables for new repository workspace VMs.
+	agentEnvironment    AgentEnvironmentProvisioningProvider
+	providerConnections AgentProviderConnectionResolver
+	providerBootstrap   bool
+	platformProviderEnv map[string]string
+	codingDefaultModel  string
+	// environmentImages resolves the NixOS closure image kind=vm/desktop
+	// workspaces boot (nil → those kinds cannot be created).
+	environmentImages WorkspaceEnvironmentImageResolver
+	// Workspace, agent and desktop kinds have independent resource settings.
+	workspaceMemoryMB  int32
+	workspaceVCPUCount int32
+	agentMemoryMB      int32
+	agentVCPUCount     int32
+	desktopMemoryMB    int32
+	desktopVCPUCount   int32
+	// desktopObserveText allows the focused Chrome tab's document text into
+	// desktop observations. See WithWorkspaceDesktopObserveText.
+	desktopObserveText bool
+}
+
+// WorkspaceServiceOption configures optional dependencies.
+type WorkspaceServiceOption func(*WorkspaceService)
+
+// WithWorkspaceSandboxClient sets the sandbox provider VM client for workspace lifecycle operations.
+func WithWorkspaceSandboxClient(client SandboxVMClient) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.sandbox = client
+	}
+}
+
+// WithWorkspaceGoldenSnapshots wires the golden-snapshot provider so fresh
+// workspace VMs boot from the pre-baked toolchain image instead of the bare
+// base image.
+func WithWorkspaceGoldenSnapshots(golden *GoldenSnapshotService) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.goldenSnapshots = golden }
+}
+
+// WithWorkspaceAgentEnvironment wires the repository environment provider into
+// the VM provisioning lifecycle.
+func WithWorkspaceAgentEnvironment(provider AgentEnvironmentProvisioningProvider) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.agentEnvironment = provider }
+}
+
+// WithWorkspaceProviderConnections binds the workspace owner's subscriptions at each boot.
+func WithWorkspaceProviderConnections(resolver AgentProviderConnectionResolver) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.providerConnections = resolver }
+}
+
+// WithWorkspaceProviderBootstrap supplies the existing platform fallback only
+// to the host-side egress proxy. No raw value is placed in a guest file or env.
+func WithWorkspaceProviderBootstrap(credentials map[string]string, model string) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.providerBootstrap = true
+		s.platformProviderEnv = UsableProviderCredentials(credentials)
+		for name, value := range s.platformProviderEnv {
+			if value == sandbox.EgressProxyPlaceholder(name) || value == "[redacted]" {
+				delete(s.platformProviderEnv, name)
+			}
+		}
+		s.codingDefaultModel = strings.TrimSpace(model)
+	}
+}
+
+// WithWorkspaceSandboxMetrics sets the metrics recorder for sandbox provider workspace lifecycle metrics.
+func WithWorkspaceSandboxMetrics(metrics SandboxMetricsRecorder) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.sandboxMetrics = metrics
+	}
+}
+
+// WithWorkspaceGitBaseURL sets the public Smithers base URL used for cloning repos into workspaces.
+func WithWorkspaceGitBaseURL(url string) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.gitBaseURL = url
+	}
+}
+
+// WithWorkspaceSSHHost overrides the SSH hostname used for workspace connections.
+func WithWorkspaceSSHHost(host string) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if host != "" {
+			s.sshHost = host
+		}
+	}
+}
+
+// WithWorkspaceSSHDialHost overrides the private hostname used by the API
+// when it opens browser terminal SSH sessions. Public SSH metadata still
+// advertises sshHost.
+func WithWorkspaceSSHDialHost(host string) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if host != "" {
+			s.sshDialHost = host
+		}
+	}
+}
+
+// WithWorkspaceSSHHostKeyDir configures the directory containing the SSH
+// gateway host key files (ssh_host_ed25519_key and optionally
+// ssh_host_ed25519_key.next for rotation). This should be the same path
+// the SSH server uses (cfg.SSH.HostKeyDir). Clients use the advertised
+// public-key material for strict host-key verification before SSH auth.
+func WithWorkspaceSSHHostKeyDir(dir string) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.sshHostKeyDir = dir
+	}
+}
+
+// WithWorkspaceSSHHostKeyLoader overrides the host-key loader. Intended
+// for tests; production wiring uses the default disk-backed loader.
+func WithWorkspaceSSHHostKeyLoader(loader HostKeyLoader) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		s.hostKeyLoader = loader
+	}
+}
+
+// WithWorkspaceSandboxConfig configures default sandbox provider workspace behavior.
+func WithWorkspaceSandboxConfig(idleTimeoutSeconds int64, persistence sandbox.PersistenceMode) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if idleTimeoutSeconds > 0 {
+			s.workspaceIdleTimeoutSeconds = idleTimeoutSeconds
+		}
+		if persistence != "" {
+			s.workspacePersistence = persistence
+		}
+	}
+}
+
+// WithWorkspaceResources sizes kind=vm/container workspaces. Non-positive
+// values keep the built-in defaults.
+func WithWorkspaceResources(memoryMB, vcpuCount int32) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if memoryMB > 0 {
+			s.workspaceMemoryMB = memoryMB
+		}
+		if vcpuCount > 0 {
+			s.workspaceVCPUCount = vcpuCount
+		}
+	}
+}
+
+// WithWorkspaceAgentResources sizes kind=agent workspaces using the existing
+// agent sandbox settings. Non-positive values keep the built-in defaults.
+func WithWorkspaceAgentResources(memoryMB, vcpuCount int32) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if memoryMB > 0 {
+			s.agentMemoryMB = memoryMB
+		}
+		if vcpuCount > 0 {
+			s.agentVCPUCount = vcpuCount
+		}
+	}
+}
+
+// WithWorkspaceDesktopResources sizes kind=desktop VMs. A non-positive value
+// keeps the built-in default: an unset or mistyped deployment value must never
+// boot a 0 MiB guest.
+func WithWorkspaceDesktopResources(memoryMB, vcpuCount int32) WorkspaceServiceOption {
+	return func(s *WorkspaceService) {
+		if memoryMB > 0 {
+			s.desktopMemoryMB = memoryMB
+		}
+		if vcpuCount > 0 {
+			s.desktopVCPUCount = vcpuCount
+		}
+	}
+}
+
+// WithWorkspaceDesktopObserveText toggles reading the focused Chrome tab's
+// document text in desktop observations. Off makes every observation report
+// text: null — the operator's kill switch for that prompt-injection channel,
+// with no code change and no client change.
+func WithWorkspaceDesktopObserveText(enabled bool) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.desktopObserveText = enabled }
+}
+
+// NewWorkspaceService returns a new WorkspaceService.
+func NewWorkspaceService(q WorkspaceQuerier, opts ...WorkspaceServiceOption) *WorkspaceService {
+	svc := &WorkspaceService{
+		launchSessionCleanup:         SafeGo,
+		q:                            q,
+		sshHost:                      defaultWorkspaceSSHHost,
+		workspaceUsername:            defaultWorkspaceUser,
+		workspaceSSHUsername:         defaultWorkspaceSSHUser,
+		workspaceIdleTimeoutSeconds:  1800,
+		workspacePersistence:         sandbox.PersistencePersistent,
+		workspacePersistencePriority: 5,
+		workspaceMemoryMB:            defaultWorkspaceMemoryMB,
+		workspaceVCPUCount:           defaultWorkspaceVCPUCount,
+		agentMemoryMB:                4096,
+		agentVCPUCount:               2,
+		desktopMemoryMB:              defaultWorkspaceDesktopMemoryMB,
+		desktopVCPUCount:             defaultWorkspaceDesktopVCPUCount,
+		desktopObserveText:           true,
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	if svc.sshDialHost == "" {
+		svc.sshDialHost = svc.sshHost
+	}
+	return svc
+}
+
+// loadOwnedWorkspace loads a workspace by ID + repo, then enforces that the
+// requester either owns the workspace or holds an explicit WRITE share grant.
+// It is the loader for every mutating caller (suspend, resume, delete, fork,
+// snapshot, session create, SSH credentials). Read-only callers go through
+// loadWorkspaceWithAccess with WorkspaceAccessRead instead.
+func (s *WorkspaceService) loadOwnedWorkspace(ctx context.Context, workspaceID string, repositoryID, userID int64) (db.Workspace, error) {
+	return s.loadWorkspaceWithAccess(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite)
+}
+
+// loadWorkspaceWithAccess loads a workspace by ID + repo, then enforces that
+// the requester either owns the workspace or holds an explicit share grant at
+// or above minLevel. Returns 404 if the workspace does not exist in the repo,
+// or 403 if it exists but the requester has insufficient access.
+func (s *WorkspaceService) loadWorkspaceWithAccess(ctx context.Context, workspaceID string, repositoryID, userID int64, minLevel WorkspaceAccessLevel) (db.Workspace, error) {
+	workspace, err := s.q.GetWorkspaceByRepo(ctx, db.GetWorkspaceByRepoParams{
+		ID:           workspaceID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		// workspaces.id is UUID-typed: a non-UUID id makes Postgres raise
+		// SQLSTATE 22P02. Collapse that (and a genuine no-rows) into a uniform
+		// NotFound so a malformed id returns a clean 404 instead of a 500 that
+		// leaks the raw driver text. Guards every route through this loader
+		// (get/suspend/resume/delete/fork/ssh).
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidTextRepresentation(err) {
+			return db.Workspace{}, pkgerrors.NotFound("workspace not found")
+		}
+		return db.Workspace{}, pkgerrors.Internal("load workspace: " + err.Error())
+	}
+	if err := s.requireWorkspaceAccess(ctx, workspace.ID, workspace.UserID, userID, minLevel); err != nil {
+		return db.Workspace{}, err
+	}
+	return workspace, nil
+}
+
+// VerifyPairSourceWorkspace confirms userID owns (or has write access to) the
+// workspace within repositoryID, collapsing both "missing" and
+// "exists-but-foreign" into a single NotFound. The pair-session create path
+// calls this BEFORE inserting a session row so a client-supplied source
+// workspace id cannot (a) oracle a victim's live-session state via the
+// unique-violation 409, (b) briefly occupy the victim's live-per-source slot,
+// or (c) 500 with a raw driver error on a non-UUID id. Genuine internal errors
+// pass through unchanged.
+func (s *WorkspaceService) VerifyPairSourceWorkspace(ctx context.Context, workspaceID string, repositoryID, userID int64) error {
+	// workspaces.id is UUID-typed, so a malformed id would make Postgres raise
+	// "invalid input syntax for type uuid" (SQLSTATE 22P02). loadOwnedWorkspace
+	// stringifies that into an opaque Internal error, leaking driver text as a
+	// 500. Reject it up front as the same uniform NotFound as a missing/foreign
+	// workspace — a garbage id is, definitionally, not a workspace the caller owns.
+	if !isValidUUID(strings.TrimSpace(workspaceID)) {
+		return pkgerrors.NotFound("source workspace not found")
+	}
+	if _, err := s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID); err != nil {
+		var apiErr *pkgerrors.APIError
+		if errors.As(err, &apiErr) && (apiErr.Status == http.StatusNotFound || apiErr.Status == http.StatusForbidden) {
+			return pkgerrors.NotFound("source workspace not found")
+		}
+		return err
+	}
+	return nil
+}
+
+// loadOwnedWorkspaceSnapshot loads a snapshot by ID + repo, then enforces
+// ownership/share. Snapshots are write-only operations (you take or delete
+// them), so we require write-level access to the owning workspace.
+func (s *WorkspaceService) loadOwnedWorkspaceSnapshot(ctx context.Context, snapshotID string, repositoryID, userID int64) (db.WorkspaceSnapshot, error) {
+	snapshot, err := s.q.GetWorkspaceSnapshotByRepo(ctx, db.GetWorkspaceSnapshotByRepoParams{
+		ID:           snapshotID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		// See loadOwnedWorkspace: a non-UUID id (22P02) is a uniform 404, not a
+		// driver-text-leaking 500.
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidTextRepresentation(err) {
+			return db.WorkspaceSnapshot{}, pkgerrors.NotFound("workspace snapshot not found")
+		}
+		return db.WorkspaceSnapshot{}, pkgerrors.Internal("load workspace snapshot: " + err.Error())
+	}
+	// Snapshots are per-user; their user_id is the owner. A non-owner with
+	// a write share on the parent workspace may also operate on its snapshots.
+	if snapshot.UserID != userID {
+		// Check if the requester has write access to the snapshot's workspace.
+		if snapshot.WorkspaceID != "" {
+			if err := s.requireWorkspaceAccess(ctx, snapshot.WorkspaceID, snapshot.UserID, userID, WorkspaceAccessWrite); err != nil {
+				return db.WorkspaceSnapshot{}, err
+			}
+		} else {
+			return db.WorkspaceSnapshot{}, pkgerrors.Forbidden("access denied")
+		}
+	}
+	return snapshot, nil
+}
+
+// loadOwnedWorkspaceSession loads a session by ID + repo requiring WRITE
+// access to the owning workspace (destroy, SSH credentials, terminal attach).
+// Read-only callers go through loadWorkspaceSessionWithAccess instead.
+func (s *WorkspaceService) loadOwnedWorkspaceSession(ctx context.Context, sessionID string, repositoryID, userID int64) (db.WorkspaceSession, error) {
+	return s.loadWorkspaceSessionWithAccess(ctx, sessionID, repositoryID, userID, WorkspaceAccessWrite)
+}
+
+// loadWorkspaceSessionWithAccess loads a session by ID + repo, then enforces
+// ownership/share against the OWNING WORKSPACE — never the session creator's
+// identity. Creator identity must neither grant access (a revoked collaborator
+// keeps session.user_id forever, so a creator shortcut would outlive share
+// revocation) nor deny it (the workspace owner holds no share row for their
+// own workspace, so passing the creator as "owner" locked owners out of
+// collaborator-created sessions).
+func (s *WorkspaceService) loadWorkspaceSessionWithAccess(ctx context.Context, sessionID string, repositoryID, userID int64, minLevel WorkspaceAccessLevel) (db.WorkspaceSession, error) {
+	session, err := s.q.GetWorkspaceSessionByRepo(ctx, db.GetWorkspaceSessionByRepoParams{
+		ID:           sessionID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		// See loadOwnedWorkspace: a non-UUID id (22P02) is a uniform 404, not a
+		// driver-text-leaking 500.
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidTextRepresentation(err) {
+			return db.WorkspaceSession{}, pkgerrors.NotFound("workspace session not found")
+		}
+		return db.WorkspaceSession{}, pkgerrors.Internal("load workspace session: " + err.Error())
+	}
+	workspace, err := s.q.GetWorkspaceByRepo(ctx, db.GetWorkspaceByRepoParams{
+		ID:           session.WorkspaceID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		// A session whose workspace is gone (deleted) is not operable; collapse
+		// into the same uniform 404 as a missing session.
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidTextRepresentation(err) {
+			return db.WorkspaceSession{}, pkgerrors.NotFound("workspace session not found")
+		}
+		return db.WorkspaceSession{}, pkgerrors.Internal("load workspace session: " + err.Error())
+	}
+	if err := s.requireWorkspaceAccess(ctx, workspace.ID, workspace.UserID, userID, minLevel); err != nil {
+		return db.WorkspaceSession{}, err
+	}
+	return session, nil
+}
+
+// GetWorkspace returns a first-class workspace by ID. Viewing status is a
+// read-level operation, so a read share (e.g. a pair viewer) is sufficient.
+func (s *WorkspaceService) GetWorkspace(ctx context.Context, workspaceID string, repositoryID, userID int64) (WorkspaceResponse, error) {
+	if s.q == nil {
+		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
+	}
+
+	workspace, err := s.loadWorkspaceWithAccess(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead)
+	if err != nil {
+		return WorkspaceResponse{}, err
+	}
+
+	return s.toWorkspaceResponse(workspace), nil
+}
+
+// ListWorkspaces returns paginated workspaces for a repository.
+func (s *WorkspaceService) ListWorkspaces(ctx context.Context, repositoryID, userID int64, page, perPage int) ([]WorkspaceResponse, int64, error) {
+	if s.q == nil {
+		return nil, 0, pkgerrors.Internal("workspace store unavailable")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 30
+	}
+	offset := (page - 1) * perPage
+
+	rows, err := s.q.ListWorkspacesByRepo(ctx, db.ListWorkspacesByRepoParams{
+		RepositoryID: repositoryID,
+		UserID:       userID,
+		PageOffset:   ClampInt32(offset),
+		PageSize:     int32(perPage),
+	})
+	if err != nil {
+		return nil, 0, pkgerrors.Internal("list workspaces: " + err.Error())
+	}
+
+	total, err := s.q.CountWorkspacesByRepo(ctx, db.CountWorkspacesByRepoParams{
+		RepositoryID: repositoryID,
+		UserID:       userID,
+	})
+	if err != nil {
+		return nil, 0, pkgerrors.Internal("count workspaces: " + err.Error())
+	}
+
+	result := make([]WorkspaceResponse, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, s.toWorkspaceResponse(row))
+	}
+	return result, total, nil
+}
+
+// UserWorkspaceListResult carries paginated user-scoped workspaces plus
+// the total count (for pagination headers). Separate from WorkspaceResponse
+// / the existing list result so the switcher-row shape remains explicit.
+type UserWorkspaceListResult struct {
+	Items      []UserWorkspaceRow
+	TotalCount int64
+	Page       int
+	PerPage    int
+}
+
+// MaxUserWorkspacesPerPage caps the /api/user/workspaces limit. The product
+// target is ~100 workspaces per user, so the switcher should typically
+// load in a single request; this matches MaxActiveWorkspacesPerUser.
+const MaxUserWorkspacesPerPage = 100
+
+// ListUserWorkspacesAcrossRepos returns the user's workspaces across every
+// repo they can still read (ticket 0135), ordered by best-available recency
+// (ticket 0136's last_accessed_at takes precedence via COALESCE).
+//
+// Authorization is explicit:
+//   - Only workspaces with user_id = current user appear (owner-scoped).
+//   - Repos the user can no longer read drop out — this is the "revoked
+//     access hides the row" behavior reviewers verify.
+//   - Tombstoned workspaces (deleted_at) are already excluded by the query.
+func (s *WorkspaceService) ListUserWorkspacesAcrossRepos(ctx context.Context, userID int64, page, perPage int) (UserWorkspaceListResult, error) {
+	if s.q == nil {
+		return UserWorkspaceListResult{}, pkgerrors.Internal("workspace store unavailable")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 30
+	}
+	if perPage > MaxUserWorkspacesPerPage {
+		perPage = MaxUserWorkspacesPerPage
+	}
+	// Cap page so the int32 SQL offset (page-1)*perPage cannot overflow to a
+	// negative value, which would 500 the query.
+	if maxPage := math.MaxInt32/perPage + 1; page > maxPage {
+		page = maxPage
+	}
+	offset := ClampInt32((page - 1) * perPage)
+
+	rows, err := s.q.ListUserWorkspacesAcrossRepos(ctx, db.ListUserWorkspacesAcrossReposParams{
+		UserID:     userID,
+		PageOffset: offset,
+		PageSize:   int32(perPage),
+	})
+	if err != nil {
+		return UserWorkspaceListResult{}, pkgerrors.Internal("list user workspaces: " + err.Error())
+	}
+
+	total, err := s.q.CountUserWorkspacesAcrossRepos(ctx, userID)
+	if err != nil {
+		return UserWorkspaceListResult{}, pkgerrors.Internal("count user workspaces: " + err.Error())
+	}
+
+	items := make([]UserWorkspaceRow, 0, len(rows))
+	for _, r := range rows {
+		row := UserWorkspaceRow{
+			WorkspaceID:       r.WorkspaceID,
+			RepositoryID:      r.RepositoryID,
+			RepositoryOwner:   r.RepositoryOwner,
+			RepositoryName:    r.RepositoryName,
+			WorkspaceTitle:    r.WorkspaceTitle,
+			State:             r.Status,
+			FailureCode:       r.FailureCode.String,
+			FailureMessage:    r.FailureMessage.String,
+			TargetBookmark:    targetWorkspaceBookmark(r.TargetBookmark),
+			ProvisioningStage: r.ProvisioningStage,
+			Kind:              normalizeWorkspaceKind(r.Kind),
+			Head:              WorkspaceHead{ChangeID: r.HeadChangeID, CommitID: r.HeadCommitID},
+			Ahead:             r.Ahead,
+			Behind:            r.Behind,
+			LastActivityAt:    r.LastActivityAt,
+			CreatedAt:         r.CreatedAt,
+			SortTimestamp:     r.SortTimestamp,
+		}
+		if r.SuspendedAt.Valid {
+			t := r.SuspendedAt.Time
+			row.SuspendedAt = &t
+		}
+		if r.StartedAt.Valid {
+			t := r.StartedAt.Time
+			row.StartedAt = &t
+		}
+		if r.LastAccessedAt.Valid {
+			t := r.LastAccessedAt.Time
+			row.LastAccessedAt = &t
+		}
+		items = append(items, row)
+	}
+
+	return UserWorkspaceListResult{
+		Items:      items,
+		TotalCount: total,
+		Page:       page,
+		PerPage:    perPage,
+	}, nil
+}
+
+func (s *WorkspaceService) toWorkspaceResponse(workspace db.Workspace) WorkspaceResponse {
+	environmentSource := strings.TrimSpace(workspace.EnvironmentSource)
+	if environmentSource == "" {
+		environmentSource = defaultWorkspaceEnvironmentSource
+	}
+	resp := WorkspaceResponse{
+		ID:             workspace.ID,
+		RepositoryID:   workspace.RepositoryID,
+		UserID:         workspace.UserID,
+		Name:           workspace.Name,
+		TargetBookmark: targetWorkspaceBookmark(workspace.TargetBookmark),
+		Status:         workspace.Status,
+		FailureCode:    workspace.FailureCode.String,
+		FailureMessage: workspace.FailureMessage.String,
+		Kind:           normalizeWorkspaceKind(workspace.Kind),
+		Environment: WorkspaceEnvironment{
+			Source:      environmentSource,
+			Revision:    workspace.EnvironmentRevision,
+			ClosureHash: workspace.EnvironmentClosureHash,
+			Image:       workspace.EnvironmentImage,
+		},
+		Head:               WorkspaceHead{ChangeID: workspace.HeadChangeID, CommitID: workspace.HeadCommitID},
+		Ahead:              workspace.Ahead,
+		Behind:             workspace.Behind,
+		AgentSessionID:     uuidToString(workspace.AgentSessionID),
+		ProvisioningStage:  workspace.ProvisioningStage,
+		IsFork:             workspace.IsFork,
+		ParentWorkspaceID:  uuidToString(workspace.ParentWorkspaceID),
+		VMID:               workspace.VmID,
+		Persistence:        string(s.workspacePersistence),
+		LSP:                WorkspaceLSP{Languages: LSPLanguages()},
+		IdleTimeoutSeconds: workspace.IdleTimeoutSecs,
+		LastActivityAt:     workspace.LastActivityAt,
+		CreatedAt:          workspace.CreatedAt,
+		UpdatedAt:          workspace.UpdatedAt,
+	}
+	if strings.TrimSpace(workspace.VmID) != "" {
+		resp.SSHHost = fmt.Sprintf("%s@%s", workspace.VmID, s.sshHost)
+	}
+	if resp.Kind == "desktop" {
+		resp.Desktop = &WorkspaceDesktop{
+			Ready:     workspace.Status == "running",
+			StreamURL: workspaceDesktopStreamPath(workspace.ID),
+		}
+		if strings.TrimSpace(workspace.DesktopSessionID) != "" && workspace.DesktopSessionExpiresAt.Valid {
+			resp.Desktop.Session = &WorkspaceDesktopSession{
+				ID:        workspace.DesktopSessionID,
+				ExpiresAt: workspace.DesktopSessionExpiresAt.Time,
+			}
+		}
+	}
+	if snapshotID := uuidToString(workspace.SourceSnapshotID); snapshotID != "" {
+		resp.SnapshotID = snapshotID
+	}
+	if workspace.SuspendedAt.Valid {
+		suspendedAt := workspace.SuspendedAt.Time
+		resp.SuspendedAt = &suspendedAt
+	}
+	if workspace.StartedAt.Valid {
+		startedAt := workspace.StartedAt.Time
+		resp.StartedAt = &startedAt
+	}
+	if workspace.ResumedAt.Valid {
+		resumedAt := workspace.ResumedAt.Time
+		resp.ResumedAt = &resumedAt
+	}
+	return resp
+}
+
+func normalizeWorkspaceKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "vm":
+		return "vm"
+	case "desktop":
+		return "desktop"
+	case "agent":
+		// RFD-004: an agent run's computer. Only the control plane creates
+		// these; validateWorkspaceCreateMetadata refuses it from callers.
+		return "agent"
+	default:
+		return "container"
+	}
+}
+
+func validateWorkspaceCreateMetadata(input CreateWorkspaceInput) error {
+	if input.RequiredCapability != "" && (input.RequiredCapability != repositoryJobsCapability || input.Kind != "vm" || strings.TrimSpace(input.SnapshotID) != "" || len(input.Name) > 200) {
+		return pkgerrors.BadRequest("repository-jobs/v1 requires a VM without a supplied snapshot")
+	}
+	kind := strings.TrimSpace(input.Kind)
+	if kind != "" && kind != "container" && kind != "vm" && kind != "desktop" {
+		return pkgerrors.BadRequest("kind must be container, vm, or desktop")
+	}
+	source := strings.TrimSpace(input.Environment.Source)
+	if source != "" && source != defaultWorkspaceEnvironmentSource {
+		return pkgerrors.BadRequest("environment.source must be .smithers/environment.nix")
+	}
+	if (strings.TrimSpace(input.Environment.Revision) == "") != (strings.TrimSpace(input.Environment.ClosureHash) == "") {
+		return pkgerrors.BadRequest("environment revision and closure_hash must be provided together")
+	}
+	return nil
+}
+
+func workspaceCreateParamsMetadata(input CreateWorkspaceInput) (string, WorkspaceEnvironment) {
+	environment := input.Environment
+	environment.Source = strings.TrimSpace(environment.Source)
+	if environment.Source == "" {
+		environment.Source = defaultWorkspaceEnvironmentSource
+	}
+	environment.Revision = strings.TrimSpace(environment.Revision)
+	environment.ClosureHash = strings.TrimSpace(environment.ClosureHash)
+	return normalizeWorkspaceKind(input.Kind), environment
+}
+
+type workspaceCreateMetadata struct {
+	kind        string
+	environment WorkspaceEnvironment
+}
+
+func normalizeWorkspaceCreateMetadata(metadata workspaceCreateMetadata) workspaceCreateMetadata {
+	metadata.kind = normalizeWorkspaceKind(metadata.kind)
+	metadata.environment.Source = strings.TrimSpace(metadata.environment.Source)
+	if metadata.environment.Source == "" {
+		metadata.environment.Source = defaultWorkspaceEnvironmentSource
+	}
+	metadata.environment.Revision = strings.TrimSpace(metadata.environment.Revision)
+	metadata.environment.ClosureHash = strings.TrimSpace(metadata.environment.ClosureHash)
+	return metadata
+}
+
+func toWorkspaceSessionResponse(s db.WorkspaceSession) WorkspaceSessionResponse {
+	kind := s.Kind
+	if kind == "" {
+		kind = WorkspaceSessionKindTerminal
+	}
+	return WorkspaceSessionResponse{
+		ID:              s.ID,
+		WorkspaceID:     s.WorkspaceID,
+		RepositoryID:    s.RepositoryID,
+		UserID:          s.UserID,
+		Status:          s.Status,
+		Kind:            kind,
+		Language:        s.Language,
+		Cols:            s.Cols,
+		Rows:            s.Rows,
+		LastActivityAt:  s.LastActivityAt,
+		IdleTimeoutSecs: s.IdleTimeoutSecs,
+		CreatedAt:       s.CreatedAt,
+		UpdatedAt:       s.UpdatedAt,
+	}
+}
+
+func toWorkspaceSnapshotResponse(snapshot db.WorkspaceSnapshot) WorkspaceSnapshotResponse {
+	return WorkspaceSnapshotResponse{
+		ID:           snapshot.ID,
+		RepositoryID: snapshot.RepositoryID,
+		UserID:       snapshot.UserID,
+		Name:         snapshot.Name,
+		WorkspaceID:  snapshot.WorkspaceID,
+		SnapshotID:   snapshot.SnapshotID,
+		CreatedAt:    snapshot.CreatedAt,
+		UpdatedAt:    snapshot.UpdatedAt,
+	}
+}
+
+// uuidToString converts a pgtype.UUID to its string representation.
+// Returns an empty string if the UUID is not valid (null).
+func uuidToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	b := u.Bytes
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// stringToUUID parses a UUID string into a pgtype.UUID.
+// Returns an invalid (null) pgtype.UUID if the string is empty or malformed.
+func stringToUUID(s string) pgtype.UUID {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return pgtype.UUID{}
+	}
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}
+	}
+	return u
+}
+
+func WithWorkspaceBillingPolicy(policy BillingPolicy) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.billing = policy }
+}

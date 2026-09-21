@@ -1,0 +1,633 @@
+package compose
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
+
+	"github.com/smithersai/smithers/packages/backend/internal/auth"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/email"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/observability"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/services/alertregistry"
+	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+)
+
+var apiCSRFBypassPaths = []string{
+	// OAuth2 token exchange and revocation are anonymous/client-auth protocol
+	// endpoints. They do not accept browser session credentials.
+	"/api/oauth2/token",
+	"/api/oauth2/revoke",
+	// The authorize consent decision is a plain HTML form POST (it cannot
+	// set the X-CSRF-Token header). It carries its own dedicated single-use
+	// double-submit nonce (smithers_oauth2_authorize_csrf) enforced by
+	// OAuth2Handler.PostAuthorizeDecision.
+	"/api/oauth2/authorize",
+	// Gateway relay requests authenticate with the opaque gateway id plus the
+	// gateway operator token. They never accept browser session credentials and
+	// include WebSocket/non-JSON traffic, so CSRF does not apply.
+	"/api/gateways/{gatewayID}",
+	"/api/gateways/{gatewayID}/*",
+	// Publication is a separately registered POST route using the same gateway
+	// bearer authority. Name it explicitly for the route coverage contract.
+	"/api/gateways/{gatewayID}/wiki-pages",
+	// Push-token minting and repository-job reports are separately registered
+	// writes under the same gateway bearer authority; they read no session
+	// cookie. Name them for the route coverage contract.
+	"/api/gateways/{gatewayID}/push-token",
+	"/api/gateways/{gatewayID}/repository-jobs/{job}",
+	"/api/gateways/{gatewayID}/repository-jobs/{job}/trials/{requestID}",
+	"/api/gateways/{gatewayID}/repository-jobs/{job}/comments/{step}",
+	"/api/gateways/{gatewayID}/repository-jobs/{job}/manual/{requestID}",
+}
+
+func apiCSRFMiddleware(next http.Handler) http.Handler {
+	return middleware.ExcludePaths(middleware.CSRF, apiCSRFBypassPaths...)(next)
+}
+
+type workspaceSessionQuotaRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+}
+
+// workspaceSessionWorkspaceLoader loads the workspace row a session create
+// targets, so the quota middleware can tell a pure attach (workspace already
+// running) from a request that will resume/reprovision a VM.
+type workspaceSessionWorkspaceLoader interface {
+	GetWorkspace(ctx context.Context, id string) (db.Workspace, error)
+}
+
+// workspaceSessionSandboxQuota gates POST /workspace/sessions:
+//   - no workspace_id: the service reuses or creates the repo's primary
+//     workspace → createQuotas (the per-user workspace-count cap fires in the
+//     service on the create path, ticket 0105).
+//   - workspace_id of a workspace already RUNNING with a VM: pure attach,
+//     provisions nothing → no sandbox quotas (gating attaches on the
+//     concurrent-sandbox count caused the 2026-07-08 "all terminals dead"
+//     prod outage).
+//   - workspace_id of anything else (suspended/stopped/failed/unknown): the
+//     session path resumes or reprovisions a VM, so it must clear the same
+//     quota stack as the dedicated /workspaces/{id}/resume route — skipping
+//     on any non-empty workspace_id let users resume suspended sandboxes past
+//     the caps (issue #20).
+func workspaceSessionSandboxQuota(store workspaceSessionWorkspaceLoader, createQuotas, resumeQuotas []func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	chain := func(next http.Handler, quotas []func(http.Handler) http.Handler) http.Handler {
+		h := next
+		for i := len(quotas) - 1; i >= 0; i-- {
+			h = quotas[i](h)
+		}
+		return h
+	}
+	return func(next http.Handler) http.Handler {
+		createHandler := chain(next, createQuotas)
+		resumeHandler := chain(next, resumeQuotas)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			workspaceID := workspaceSessionTargetWorkspaceID(r)
+			if workspaceID == "" {
+				createHandler.ServeHTTP(w, r)
+				return
+			}
+			if store != nil {
+				if workspace, err := store.GetWorkspace(r.Context(), workspaceID); err == nil &&
+					workspace.Status == "running" && strings.TrimSpace(workspace.VmID) != "" {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			resumeHandler.ServeHTTP(w, r)
+		})
+	}
+}
+
+// workspaceSessionTargetWorkspaceID extracts the workspace_id a session-create
+// request targets ("" when absent or unreadable). The body is restored for the
+// downstream handler.
+func workspaceSessionTargetWorkspaceID(r *http.Request) string {
+	if r == nil || r.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		r.Body = io.NopCloser(bytes.NewReader(nil))
+		return ""
+	}
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if len(bytes.TrimSpace(body)) == 0 {
+		return ""
+	}
+	var req workspaceSessionQuotaRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(req.WorkspaceID)
+}
+
+type inFlightRequestTracker struct {
+	active                atomic.Int64
+	completed             atomic.Int64
+	shutdownActive        atomic.Int64
+	shutdownCompletedBase atomic.Int64
+}
+
+func newInFlightRequestTracker() *inFlightRequestTracker {
+	return &inFlightRequestTracker{}
+}
+
+func (t *inFlightRequestTracker) Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.active.Add(1)
+		defer func() {
+			t.completed.Add(1)
+			t.active.Add(-1)
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (t *inFlightRequestTracker) BeginShutdown() int64 {
+	t.shutdownCompletedBase.Store(t.completed.Load())
+	active := t.active.Load()
+	t.shutdownActive.Store(active)
+	return active
+}
+
+func (t *inFlightRequestTracker) Snapshot() (drained, killed, activeRemaining int64) {
+	initial := t.shutdownActive.Load()
+	completedAfterShutdown := t.completed.Load() - t.shutdownCompletedBase.Load()
+	if completedAfterShutdown < 0 {
+		completedAfterShutdown = 0
+	}
+	if completedAfterShutdown > initial {
+		completedAfterShutdown = initial
+	}
+	drained = completedAfterShutdown
+	killed = initial - drained
+	activeRemaining = t.active.Load()
+	return drained, killed, activeRemaining
+}
+
+// perUserConcurrentSandboxCap bounds how many active sandbox VMs (workspaces +
+// gateways combined) a single user may hold at once. Enforced by the
+// PerUserConcurrentSandboxes middleware on workspace routes and by the gateway
+// service on its provision path.
+//
+// Sizing: a durable per-repo gateway VM holds a slot for as long as it runs,
+// so a single opened repo already consumes 2 slots (workspace + gateway). The
+// original cap of 3 therefore self-DoSed terminals the moment a second repo
+// was open (2026-07-08 prod outage: every workspace/sessions create 429'd).
+// 10 keeps a real bound on Microsandbox spend while leaving headroom for a
+// handful of concurrently open repos.
+const perUserConcurrentSandboxCap = 10
+
+// appTimelineMaxRequestBodySize bounds app-timeline write bodies. Rewrites
+// carry the whole dump (service-capped at 4 MiB of payload); JSON escaping
+// can inflate past the global 1 MB default, so the timeline mount uses this
+// larger cap.
+const appTimelineMaxRequestBodySize int64 = 6 << 20
+
+// shareListingMaxRequestBodySize bounds publish bodies on /api/share/*. The
+// snapshot itself is capped at 256 KiB by the service
+// (services.ShareListingMaxSnapshotBytes); this leaves generous room for JSON
+// escaping and the surrounding metadata without letting the public sharing
+// surface become an upload endpoint.
+const shareListingMaxRequestBodySize int64 = 1 << 20
+
+// joinedBackgroundWorker gives shutdown a concrete completion boundary for a
+// worker that must finish cancellation cleanup before shared dependencies (in
+// particular the database pool) are closed.
+type joinedBackgroundWorker struct {
+	done <-chan struct{}
+}
+
+func startJoinedBackgroundWorker(run func()) *joinedBackgroundWorker {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		run()
+	}()
+	return &joinedBackgroundWorker{done: done}
+}
+
+func (w *joinedBackgroundWorker) Wait(ctx context.Context) error {
+	if w == nil || w.done == nil {
+		return nil
+	}
+	select {
+	case <-w.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// exitFn is the process-exit hook used only by main(). Tests override it to
+// record the requested exit code instead of terminating the test binary.
+var exitFn = os.Exit
+
+// Startup seams. Each var defaults to the real construction path so the shipped
+// binary behaves identically; tests override them to reach otherwise-unreachable
+// or externally-dependent branches. See the run()-harness tests.
+var (
+	netListen         = net.Listen
+	onListen          = func(net.Listener) {}
+	otelInit          = observability.Init
+	shutdownTimeoutFn = serverShutdownTimeout
+	startSSEBroker    = (*sse.Broker).Start
+	newEmailTransport = initEmailTransport
+	newSESClient      = email.NewSESClient
+	newSecretCodec    = webhook.NewSecretCodec
+	newBlobStore      = initializeBlobStore
+	ensurePairSchema  = (*services.PairService).EnsureSchema
+	loadAlertRegistry = alertregistry.Load
+)
+
+// flagParseError wraps a flag-parsing failure so exitCodeFor can preserve the
+// historical flag.ExitOnError exit code of 2 while run() still returns an error.
+type flagParseError struct{ err error }
+
+func (e *flagParseError) Error() string { return e.err.Error() }
+func (e *flagParseError) Unwrap() error { return e.err }
+
+// exitCodeFor maps a run() error to a process exit code. Flag-parse failures
+// exit 2 (matching flag.ExitOnError's os.Exit(2)); every other failure exits 1.
+func exitCodeFor(err error) int {
+	var fpe *flagParseError
+	if errors.As(err, &fpe) {
+		return 2
+	}
+	return 1
+}
+
+type alertRemediationRepository struct {
+	ID       int64
+	FullName string
+}
+
+func resolveAlertRemediationRepository(ctx context.Context, queries *db.Queries) alertRemediationRepository {
+	configuredID, _ := strconv.ParseInt(strings.TrimSpace(os.Getenv("SMITHERS_ALERT_REMEDIATION_REPOSITORY_ID")), 10, 64)
+	configuredFullName := strings.TrimSpace(os.Getenv("SMITHERS_ALERT_REMEDIATION_REPOSITORY"))
+	if configuredID <= 0 && configuredFullName == "" {
+		return alertRemediationRepository{}
+	}
+	if queries == nil {
+		slog.Error("alert remediation repository configured but database queries are unavailable")
+		return alertRemediationRepository{}
+	}
+
+	// Preserve the legacy numeric-ID configuration without leaving the runner
+	// unable to determine which repository it may clone and push. Resolve the
+	// immutable ID back to its current canonical owner/name and put that value
+	// into every server-authored remediation dispatch.
+	if configuredID > 0 {
+		repo, err := queries.GetRepoByID(ctx, configuredID)
+		if err != nil {
+			slog.Error("failed to resolve legacy alert remediation repository ID; remediation worker disabled",
+				"repository_id", configuredID,
+				"error", err,
+			)
+			return alertRemediationRepository{}
+		}
+
+		var owner string
+		switch {
+		case repo.UserID.Valid && !repo.OrgID.Valid:
+			user, err := queries.GetUserByID(ctx, repo.UserID.Int64)
+			if err != nil {
+				slog.Error("failed to resolve alert remediation repository owner; remediation worker disabled", "repository_id", configuredID, "error", err)
+				return alertRemediationRepository{}
+			}
+			owner = user.Username
+		case repo.OrgID.Valid && !repo.UserID.Valid:
+			org, err := queries.GetOrgByID(ctx, repo.OrgID.Int64)
+			if err != nil {
+				slog.Error("failed to resolve alert remediation repository owner; remediation worker disabled", "repository_id", configuredID, "error", err)
+				return alertRemediationRepository{}
+			}
+			owner = org.Name
+		default:
+			slog.Error("alert remediation repository has invalid ownership; remediation worker disabled", "repository_id", configuredID)
+			return alertRemediationRepository{}
+		}
+
+		resolvedFullName := owner + "/" + repo.Name
+		if configuredFullName != "" && !strings.EqualFold(configuredFullName, resolvedFullName) {
+			slog.Error("alert remediation repository ID and name refer to different repositories; remediation worker disabled",
+				"repository_id", configuredID,
+				"configured_repository", configuredFullName,
+				"resolved_repository", resolvedFullName,
+			)
+			return alertRemediationRepository{}
+		}
+		slog.Info("legacy alert remediation repository ID resolved", "repository", resolvedFullName, "repository_id", configuredID)
+		return alertRemediationRepository{ID: configuredID, FullName: resolvedFullName}
+	}
+
+	owner, repo, ok := strings.Cut(configuredFullName, "/")
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		slog.Error("invalid SMITHERS_ALERT_REMEDIATION_REPOSITORY; expected owner/repo", "repository", configuredFullName)
+		return alertRemediationRepository{}
+	}
+	row, err := queries.GetRepoByOwnerAndName(ctx, db.GetRepoByOwnerAndNameParams{
+		Owner: owner,
+		Name:  repo,
+	})
+	if err != nil {
+		slog.Error("failed to resolve alert remediation repository; remediation worker disabled",
+			"repository", configuredFullName,
+			"error", err,
+		)
+		return alertRemediationRepository{}
+	}
+	fullName := owner + "/" + row.Name
+	slog.Info("alert remediation repository resolved", "repository", fullName, "repository_id", row.ID)
+	return alertRemediationRepository{ID: row.ID, FullName: fullName}
+}
+
+func apiAllowedOrigins(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+
+	if origins := normalizeAllowedOrigins(cfg.Server.AllowedOrigins); len(origins) > 0 {
+		return origins
+	}
+
+	baseURL := strings.TrimSpace(cfg.Email.BaseURL)
+	if baseURL == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		slog.Warn("invalid email.base_url for API CORS origin allowlist", "base_url", cfg.Email.BaseURL, "error", err)
+		return nil
+	}
+
+	return []string{parsed.Scheme + "://" + parsed.Host}
+}
+
+func normalizeAllowedOrigins(values []string) []string {
+	var origins []string
+	seen := make(map[string]struct{})
+	for _, value := range values {
+		for _, raw := range strings.Split(value, ",") {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			parsed, err := url.Parse(raw)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+				slog.Warn("invalid server.allowed_origins entry for API CORS origin allowlist", "origin", raw, "error", err)
+				continue
+			}
+			origin := parsed.Scheme + "://" + parsed.Host
+			key := strings.ToLower(origin)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+func buildRateLimitRejectObserver(metrics *routes.SmithersMetrics) middleware.RateLimitRejectObserver {
+	if metrics == nil || metrics.RateLimitRejectionsTotal == nil {
+		return nil
+	}
+	return func(scope string) {
+		metrics.RateLimitRejectionsTotal.WithLabelValues(scope).Inc()
+	}
+}
+
+func buildAuthProviders(cfg config.AuthConfig) (services.KeyAuthVerifier, services.GitHubClient, error) {
+	if err := validateGitHubOAuthConfig(cfg); err != nil {
+		return nil, nil, err
+	}
+
+	keyAuthVerifier := auth.NewKeyAuthVerifier()
+	var githubClient services.GitHubClient
+	if strings.TrimSpace(cfg.GitHubClientID) != "" && strings.TrimSpace(cfg.GitHubClientSecret) != "" {
+		githubClient = auth.NewGitHubClient(
+			cfg.GitHubClientID,
+			cfg.GitHubClientSecret,
+			cfg.GitHubRedirectURL,
+			cfg.GitHubOAuthBaseURL,
+			cfg.GitHubAPIBaseURL,
+		)
+	}
+
+	return keyAuthVerifier, githubClient, nil
+}
+
+var apiJSONTimeout = 30 * time.Second
+
+const defaultLFSVerifyJSONTimeout = 10 * time.Minute
+const lfsVerifyWriteTimeoutHeadroom = 5 * time.Second
+
+// lfsVerifyTimeout is deliberately much longer than the ordinary JSON API
+// budget: verification streams and hashes the complete object from blob
+// storage. When the HTTP server has a finite write timeout, do not pretend the
+// middleware can outlive it.
+func lfsVerifyTimeout(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.Server.WriteTimeoutSecs > 0 {
+		serverWriteTimeout := time.Duration(cfg.Server.WriteTimeoutSecs) * time.Second
+		headroom := lfsVerifyWriteTimeoutHeadroom
+		if serverWriteTimeout <= 2*headroom {
+			headroom = serverWriteTimeout / 2
+		}
+		middlewareBudget := serverWriteTimeout - headroom
+		if middlewareBudget < defaultLFSVerifyJSONTimeout {
+			return middlewareBudget
+		}
+	}
+	return defaultLFSVerifyJSONTimeout
+}
+
+func buildHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:         cfg.Server.Addr,
+		Handler:      handler,
+		ReadTimeout:  time.Duration(cfg.Server.ReadTimeoutSecs) * time.Second,
+		WriteTimeout: time.Duration(cfg.Server.WriteTimeoutSecs) * time.Second,
+	}
+}
+
+func serverShutdownTimeout(cfg config.ServerConfig) (time.Duration, error) {
+	timeout, err := time.ParseDuration(strings.TrimSpace(cfg.ShutdownTimeout))
+	if err != nil {
+		return 0, fmt.Errorf("server.shutdown_timeout is invalid: %w", err)
+	}
+	if timeout <= 0 {
+		return 0, fmt.Errorf("server.shutdown_timeout must be > 0")
+	}
+	return timeout, nil
+}
+
+func validateGitHubOAuthConfig(cfg config.AuthConfig) error {
+	hasClientID := strings.TrimSpace(cfg.GitHubClientID) != ""
+	hasClientSecret := strings.TrimSpace(cfg.GitHubClientSecret) != ""
+	if hasClientID != hasClientSecret {
+		return fmt.Errorf("github oauth requires both SMITHERS_AUTH_GITHUB_CLIENT_ID and SMITHERS_AUTH_GITHUB_CLIENT_SECRET to be set together")
+	}
+	return nil
+}
+
+// initializeBlobStore creates a blob store based on configuration.
+// Returns the store, GCS client (if created, nil for MemoryStore), expiry duration, and any error.
+func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store, *storage.Client, time.Duration, error) {
+	// Parse expiry first (needed for both GCS and MemoryStore)
+	expiry, err := blob.ParseSignedURLExpiry(cfg.SignedURLExpiry)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("invalid signed URL expiry: %w", err)
+	}
+
+	// Local development may use the in-memory implementation, but accepting it
+	// in production would make LFS objects, releases, artifacts, caches, and
+	// agent logs disappear on restart and diverge between API replicas.
+	if strings.TrimSpace(cfg.GCSBucket) == "" {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("SMITHERS_ENV")), "production") {
+			return nil, nil, 0, fmt.Errorf("SMITHERS_BLOB_GCS_BUCKET is required in production")
+		}
+		slog.Warn("GCS bucket not configured, using MemoryStore for blob storage (data will be lost on restart)")
+		return blob.NewMemoryStore(), nil, expiry, nil
+	}
+
+	// Configure client options for emulator if needed
+	var clientOpts []option.ClientOption
+	if os.Getenv("STORAGE_EMULATOR_HOST") != "" {
+		clientOpts = append(clientOpts, option.WithoutAuthentication())
+	}
+
+	// Create GCS client
+	client, err := storage.NewClient(ctx, clientOpts...)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to create GCS client: %w", err)
+	}
+
+	// Create GCS store
+	store := blob.NewGCSStore(client, cfg.GCSBucket)
+	return store, client, expiry, nil
+}
+
+// initializeAgentLogStore selects the store for archived agent session
+// transcripts. Transcripts go to the dedicated retention-limited agent-logs
+// bucket when one is configured, otherwise the general blobs bucket (the
+// pre-dedicated-bucket behavior). When a dedicated bucket is in use, reads
+// fall back to the blobs bucket so transcripts archived before the cutover
+// stay retrievable. Without a GCS client (local development), transcripts are
+// kept in memory.
+func initializeAgentLogStore(gcsClient *storage.Client, cfg config.BlobConfig) services.AgentLogStore {
+	bucket := cfg.AgentLogsBucket()
+	if gcsClient == nil || bucket == "" {
+		return blob.NewMemoryAgentLogStore()
+	}
+	if legacy := strings.TrimSpace(cfg.GCSBucket); legacy != "" && legacy != bucket {
+		return blob.NewGCSAgentLogStoreWithReadFallback(gcsClient, bucket, legacy)
+	}
+	return blob.NewGCSAgentLogStore(gcsClient, bucket)
+}
+
+// initEmailTransport creates an email transport from config using the factory.
+// Precedence: SendGrid (if API key set) > SMTP (if host set) > SES (if region set) > Noop.
+func initEmailTransport(cfg config.EmailConfig) (email.Transport, error) {
+	from := cfg.From
+	if from == "" {
+		from = cfg.SMTPFrom
+	}
+	if from == "" {
+		from = cfg.SESFrom
+	}
+	var sesClient email.SESAPI
+	if cfg.SendGridAPIKey == "" && cfg.SMTPHost == "" && cfg.SESRegion != "" {
+		sesCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		client, err := newSESClient(sesCtx, cfg.SESRegion)
+		if err != nil {
+			return nil, fmt.Errorf("initialize SES email client: %w", err)
+		}
+		sesClient = client
+	}
+	return email.NewTransport(email.TransportConfig{
+		SendGrid: email.SendGridConfig{
+			APIKey: cfg.SendGridAPIKey,
+			From:   from,
+		},
+		SMTP: email.SMTPConfig{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPass,
+			From: cfg.SMTPFrom,
+		},
+		SES: email.SESConfig{
+			Region: cfg.SESRegion,
+			From:   cfg.SESFrom,
+		},
+		SESClient: sesClient,
+	})
+}
+
+// logStartupConfig emits a single structured log entry summarizing the server's
+// configuration at startup. This makes misconfiguration immediately visible in
+// pod logs without needing to dig through individual error messages.
+func logStartupConfig(cfg *config.Config) {
+	status := func(val string, label string) string {
+		if val == "" {
+			return "(not configured)"
+		}
+		return label
+	}
+
+	// Redact sensitive URL components (password) from database URL.
+	dbStatus := "(not configured)"
+	if cfg.Database.URL != "" {
+		dbStatus = "configured"
+	}
+
+	// Determine email transport type.
+	emailStatus := "noop (log only)"
+	if cfg.Email.SendGridAPIKey != "" {
+		emailStatus = "sendgrid"
+	} else if cfg.Email.SMTPHost != "" {
+		emailStatus = "smtp"
+	} else if cfg.Email.SESRegion != "" {
+		emailStatus = "ses"
+	}
+
+	slog.Info("server configuration summary",
+		"listen_addr", cfg.Server.Addr,
+		"database", dbStatus,
+		"repo_host_url", status(cfg.RepoHost.URL, cfg.RepoHost.URL),
+		"gcs_bucket", status(cfg.Blob.GCSBucket, cfg.Blob.GCSBucket),
+		"cloud_trace", status(cfg.Observability.CloudTraceProjectID, cfg.Observability.CloudTraceProjectID),
+		"github_oauth", status(cfg.Auth.GitHubClientID, "configured"),
+		"closed_alpha_enabled", cfg.Auth.ClosedAlphaEnabled,
+		"email_transport", emailStatus,
+		"log_level", cfg.Observability.LogLevel,
+	)
+}

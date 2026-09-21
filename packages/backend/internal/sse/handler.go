@@ -1,0 +1,394 @@
+package sse
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// StreamConfig configures a single SSE stream served by ServeSSE.
+type StreamConfig struct {
+	// Pool is the pgxpool used to acquire a dedicated connection for LISTEN/NOTIFY.
+	// Must not be nil.
+	Pool *pgxpool.Pool
+
+	// Channels lists the PostgreSQL NOTIFY channel names to subscribe to.
+	// For a single channel, pass a one-element slice.
+	Channels []string
+
+	// KeepAlive is the interval between keep-alive comments sent to the client.
+	// If zero, defaults to 15 seconds.
+	KeepAlive time.Duration
+
+	// EventType is the SSE event type written in each event's "event:" field.
+	// If empty, the event type line is omitted (the sse.Event default).
+	EventType string
+
+	// OnConnect is called after SSE headers have been sent but before entering
+	// the event loop. Use it to replay missed events on reconnection.
+	// The flusher is provided so the callback can flush after writing.
+	// OnConnect may be nil.
+	OnConnect func(w http.ResponseWriter, r *http.Request, flusher http.Flusher)
+
+	// FormatEventID extracts an SSE event ID string from the raw NOTIFY payload.
+	// If nil, no "id:" line is emitted for events.
+	FormatEventID func(payload string) string
+
+	// ActiveConnections is an optional Prometheus gauge that is incremented
+	// when the stream starts and decremented when it ends.
+	ActiveConnections prometheus.Gauge
+}
+
+// ServeSSE handles the full SSE lifecycle: flusher check, response headers,
+// LISTEN/NOTIFY listener setup, keep-alive ticker, and event dispatch loop.
+//
+// The caller is responsible for all auth/validation before invoking ServeSSE.
+// If any pre-condition fails (no flusher, nil pool, listener error), ServeSSE
+// writes an appropriate error response and returns.
+func ServeSSE(w http.ResponseWriter, r *http.Request, cfg StreamConfig) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeSSEError(w, pkgerrors.CodeInternal, "streaming not supported")
+		return
+	}
+
+	if cfg.Pool == nil {
+		writeSSEError(w, pkgerrors.CodeInternal, "SSE not configured: pool is nil")
+		return
+	}
+
+	// Track active connections.
+	if cfg.ActiveConnections != nil {
+		cfg.ActiveConnections.Inc()
+		defer cfg.ActiveConnections.Dec()
+	}
+
+	keepAlive := cfg.KeepAlive
+	if keepAlive == 0 {
+		keepAlive = 15 * time.Second
+	}
+
+	// Subscribe to the PostgreSQL NOTIFY channel(s).
+	var listener *Listener
+	var multi *MultiListener
+	var events <-chan Event
+
+	switch len(cfg.Channels) {
+	case 0:
+		writeSSEError(w, pkgerrors.CodeInternal, "SSE requires at least one channel")
+		return
+	case 1:
+		l, err := NewListener(r.Context(), cfg.Pool, cfg.Channels[0])
+		if err != nil {
+			writeSSEError(w, pkgerrors.CodeSSEUnavailable, "failed to start SSE listener")
+			return
+		}
+		listener = l
+		defer listener.Close()
+		events = listener.Events()
+	default:
+		ml, err := NewMultiListener(r.Context(), cfg.Pool, cfg.Channels)
+		if err != nil {
+			writeSSEError(w, pkgerrors.CodeSSEUnavailable, "failed to start SSE listener")
+			return
+		}
+		multi = ml
+		defer multi.Close()
+		events = multi.Events()
+	}
+
+	// Write SSE headers.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// OnConnect callback (e.g. replay missed events).
+	if cfg.OnConnect != nil {
+		cfg.OnConnect(w, r, flusher)
+	}
+
+	ticker := time.NewTicker(keepAlive)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			var eventID string
+			if cfg.FormatEventID != nil {
+				eventID = cfg.FormatEventID(event.Data)
+			}
+			eventType := cfg.EventType
+			if eventType == "" {
+				// For multi-channel listeners, use the notification channel as the type.
+				eventType = event.Type
+			}
+			evt := Event{
+				ID:   eventID,
+				Type: eventType,
+				Data: event.Data,
+			}
+			_, _ = fmt.Fprint(w, FormatEvent(evt))
+			flusher.Flush()
+		case <-ticker.C:
+			_, _ = fmt.Fprintf(w, ": keep-alive\n\n")
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// BrokerStreamConfig configures a single SSE stream served by ServeBrokerSSE.
+// It is identical to StreamConfig except the Broker replaces the Pool field.
+type BrokerStreamConfig struct {
+	// Broker is the shared multiplexed LISTEN/NOTIFY broker.
+	// Must not be nil.
+	Broker *Broker
+
+	// Channel is the single PostgreSQL NOTIFY channel to subscribe to.
+	// Ignored when Channels is non-empty.
+	Channel string
+
+	// Channels lists multiple PostgreSQL NOTIFY channels to fan in over one
+	// subscription (and one per-user cap slot). When non-empty it takes
+	// precedence over Channel; the originating channel name is used as the
+	// event type unless EventType overrides it.
+	Channels []string
+
+	// UserID is the authenticated user's ID, used to enforce per-user stream caps.
+	UserID int64
+
+	// KeepAlive is the interval between keep-alive comments. Defaults to 15s.
+	KeepAlive time.Duration
+
+	// EventType overrides the SSE event type written in "event:" fields.
+	// If empty, the channel name from the NOTIFY is used.
+	EventType string
+
+	// OnConnect is called after SSE headers are sent, before the event loop.
+	OnConnect func(w http.ResponseWriter, r *http.Request, flusher http.Flusher)
+
+	// FormatEventID extracts an SSE event ID from the raw NOTIFY payload.
+	FormatEventID func(payload string) string
+
+	// Durable replaces raw NOTIFY forwarding with ordered database catch-up.
+	Durable *DurableStream
+
+	// ActiveConnections is an optional Prometheus gauge incremented on open
+	// and decremented on close.
+	ActiveConnections prometheus.Gauge
+	// Revocations, when set, ends the stream the moment an event revokes the
+	// stream's principal: a final "revoked" event is written and the handler
+	// returns. Principal describes what this stream is authorized as; fill in
+	// every field the handler knows (user, token hash, repository, workspace,
+	// agent session).
+	Revocations revocation.Watcher
+	Principal   revocation.Principal
+}
+
+// RevokedEventType is the SSE event type written before a stream is closed
+// because its authorization was revoked. The data is the revocation event.
+const RevokedEventType = "revoked"
+
+// ServeBrokerSSE handles the full SSE lifecycle using the shared Broker instead
+// of acquiring a dedicated pgx connection per client.
+//
+// If the user has reached the per-user stream cap, ServeBrokerSSE writes a 429
+// response and returns immediately.
+func ServeBrokerSSE(w http.ResponseWriter, r *http.Request, cfg BrokerStreamConfig) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeSSEError(w, pkgerrors.CodeInternal, "streaming not supported")
+		return
+	}
+
+	if cfg.Broker == nil {
+		writeSSEError(w, pkgerrors.CodeInternal, "SSE not configured: broker is nil")
+		return
+	}
+
+	// Register revocation before the potentially blocking baseline read. A
+	// separate context cancels that read without consuming the final event
+	// needed by an already-established stream.
+	streamCtx, cancelStream := context.WithCancel(r.Context())
+	defer cancelStream()
+	r = r.WithContext(streamCtx)
+	baselineCtx, cancelBaseline := context.WithCancel(streamCtx)
+	defer cancelBaseline()
+	var revoked <-chan revocation.Event
+	if cfg.Revocations != nil {
+		principal := cfg.Principal
+		if principal.UserID == 0 {
+			principal.UserID = cfg.UserID
+		}
+		rawRevoked := cfg.Revocations.Watch(streamCtx, principal)
+		// The bus Watch API observes future events only. Recheck its existing
+		// token/user cache after subscribing to close those auth-before-watch
+		// races. Repository/organization authorization remains the route gate's
+		// responsibility; this cache does not retain their current permissions.
+		if checker, ok := cfg.Revocations.(revocation.Checker); ok &&
+			(checker.IsTokenRevoked(principal.TokenHash) || checker.IsUserDisabled(principal.UserID)) {
+			pkgerrors.WriteError(w, pkgerrors.Forbidden("stream authorization revoked"))
+			return
+		}
+		forwarded := make(chan revocation.Event, 1)
+		revoked = forwarded
+		go func() {
+			select {
+			case event, ok := <-rawRevoked:
+				if ok {
+					forwarded <- event
+					cancelBaseline()
+				}
+			case <-streamCtx.Done():
+			}
+		}()
+	}
+	refuseRevoked := func() bool {
+		select {
+		case <-revoked:
+			pkgerrors.WriteError(w, pkgerrors.Forbidden("stream authorization revoked"))
+			return true
+		default:
+			return false
+		}
+	}
+
+	var sub *Subscription
+	var err error
+	if len(cfg.Channels) > 0 {
+		sub, err = cfg.Broker.SubscribeMulti(r.Context(), cfg.Channels, cfg.UserID)
+	} else {
+		sub, err = cfg.Broker.Subscribe(r.Context(), cfg.Channel, cfg.UserID)
+	}
+	if err != nil {
+		var tooMany *ErrTooManyStreams
+		if isTooManyStreams(err, &tooMany) {
+			pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodeRateLimitExceeded, "too many SSE streams"))
+			return
+		}
+		writeSSEError(w, pkgerrors.CodeSSEUnavailable, "failed to subscribe to SSE channel")
+		return
+	}
+	defer cfg.Broker.Unsubscribe(sub)
+
+	if cfg.ActiveConnections != nil {
+		cfg.ActiveConnections.Inc()
+		defer cfg.ActiveConnections.Dec()
+	}
+
+	keepAlive := cfg.KeepAlive
+	if keepAlive == 0 {
+		keepAlive = 15 * time.Second
+	}
+
+	// Establish the live-only baseline before advertising readiness. Otherwise
+	// a client could append after receiving : connected and have that row
+	// incorrectly swallowed by a later head read. Subscribe first to retain
+	// every wakeup after this baseline; polling repairs any missing wakeups.
+	if cfg.Durable != nil {
+		if err := cfg.Durable.initialize(r.WithContext(baselineCtx)); err != nil {
+			if refuseRevoked() {
+				return
+			}
+			writeSSEError(w, pkgerrors.CodeSSEUnavailable, "failed to initialize durable SSE stream")
+			return
+		}
+	}
+
+	if refuseRevoked() {
+		return
+	}
+
+	// Write SSE response headers.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	// Send a body frame immediately. Some Fetch implementations do not resolve
+	// the response from headers alone, even after Flush, which can deadlock a
+	// client that waits for the stream before triggering the state transition.
+	_, _ = fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	if cfg.Durable != nil {
+		serveDurableBroker(w, r, flusher, cfg, sub.Events(), revoked, keepAlive)
+		return
+	}
+	if cfg.OnConnect != nil {
+		cfg.OnConnect(w, r, flusher)
+	}
+	ticker := time.NewTicker(keepAlive)
+	defer ticker.Stop()
+	for {
+		select {
+		case ev := <-revoked:
+			// The authorization behind this stream is gone: tell the client
+			// why and end the stream. The client must not reconnect with the
+			// same credential.
+			data, _ := json.Marshal(ev)
+			_, _ = fmt.Fprint(w, FormatEvent(Event{Type: RevokedEventType, Data: string(data)}))
+			flusher.Flush()
+			return
+		case event, ok := <-sub.Events():
+			if !ok {
+				return
+			}
+			var eventID string
+			if cfg.FormatEventID != nil {
+				eventID = cfg.FormatEventID(event.Data)
+			}
+			eventType := cfg.EventType
+			if eventType == "" {
+				eventType = event.Type
+			}
+			evt := Event{
+				ID:   eventID,
+				Type: eventType,
+				Data: event.Data,
+			}
+			_, _ = fmt.Fprint(w, FormatEvent(evt))
+			flusher.Flush()
+		case <-ticker.C:
+			_, _ = fmt.Fprintf(w, ": keep-alive\n\n")
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// isTooManyStreams reports whether err is an *ErrTooManyStreams and sets *out.
+func isTooManyStreams(err error, out **ErrTooManyStreams) bool {
+	if e, ok := err.(*ErrTooManyStreams); ok {
+		*out = e
+		return true
+	}
+	return false
+}
+
+// writeSSEError writes a refused stream as the ONE error envelope plue
+// answers with.
+//
+// It used to hand-roll `{"message":…,"errors":[…]}` with `errors` as an array
+// of strings. APIError also has an `errors` key, and there it is an array of
+// {resource, field, code} objects — so the two shapes disagreed about the type
+// of a field with the same name on the same API, and a generated client could
+// only be right about one of them. Nothing needed the duplicate sentence, so
+// the key is gone rather than retyped.
+func writeSSEError(w http.ResponseWriter, code pkgerrors.Code, message string) {
+	pkgerrors.WriteError(w, pkgerrors.New(code, message))
+}

@@ -1,0 +1,1 @@
+-- Prelaunch no-op retained to keep migration numbering stable.

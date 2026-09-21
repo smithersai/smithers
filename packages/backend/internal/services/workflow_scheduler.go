@@ -1,0 +1,150 @@
+package services
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/robfig/cron/v3"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+// CronSchedulerQuerier contains the database methods needed by the cron scheduler.
+type CronSchedulerQuerier interface {
+	ClaimDueWorkflowScheduleSpecs(ctx context.Context, limitCount int32) ([]db.WorkflowScheduleSpec, error)
+	UpdateWorkflowScheduleFireTimes(ctx context.Context, arg db.UpdateWorkflowScheduleFireTimesParams) error
+}
+
+// CronSchedulerRunDispatcher dispatches workflow runs for schedule events.
+type CronSchedulerRunDispatcher interface {
+	DispatchForEvent(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error)
+}
+
+// CronSchedulerWorker polls for due workflow schedules and fires them.
+type CronSchedulerWorker struct {
+	queries    CronSchedulerQuerier
+	dispatcher CronSchedulerRunDispatcher
+	logger     *slog.Logger
+	interval   time.Duration
+	claimLimit int32
+}
+
+func NewCronSchedulerWorker(
+	queries CronSchedulerQuerier,
+	dispatcher CronSchedulerRunDispatcher,
+) *CronSchedulerWorker {
+	return &CronSchedulerWorker{
+		queries:    queries,
+		dispatcher: dispatcher,
+		logger:     slog.Default(),
+		interval:   30 * time.Second,
+		claimLimit: 50,
+	}
+}
+
+// Start runs the polling loop until ctx is cancelled.
+func (w *CronSchedulerWorker) Start(ctx context.Context) {
+	w.logger.Info("starting cron scheduler worker", "interval", w.interval)
+
+	defer func() {
+		if r := recover(); r != nil {
+			w.logger.Error("cron scheduler worker panicked", "panic", r)
+		}
+	}()
+
+	for {
+		err := w.PollOnce(ctx)
+		if err != nil {
+			w.logger.Error("cron scheduler poll error", "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			w.logger.Info("stopping cron scheduler worker")
+			return
+		case <-time.After(w.interval):
+			// wait before next poll
+		}
+	}
+}
+
+// PollOnce atomically claims due schedules and fires workflow runs.
+// The claim uses SELECT ... FOR UPDATE SKIP LOCKED so concurrent pollers
+// on different API instances never double-fire the same spec.
+func (w *CronSchedulerWorker) PollOnce(ctx context.Context) error {
+	return w.pollOnce(ctx, time.Now())
+}
+
+func (w *CronSchedulerWorker) pollOnce(ctx context.Context, now time.Time) error {
+	// ClaimDueWorkflowScheduleSpecs atomically locks and sets next_fire_at
+	// to a short reclaim lease (not a far-future sentinel), so a crashed or
+	// failed worker's specs become due again automatically once the lease
+	// expires, preventing other pollers from seeing them in the meantime.
+	specs, err := w.queries.ClaimDueWorkflowScheduleSpecs(ctx, w.claimLimit)
+	if err != nil {
+		return err
+	}
+
+	for _, spec := range specs {
+		// check if context cancelled before processing each item
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Fire run
+		_, err := w.dispatcher.DispatchForEvent(ctx, DispatchForEventInput{
+			RepositoryID:         spec.RepositoryID,
+			WorkflowDefinitionID: &spec.WorkflowDefinitionID,
+			Event: TriggerEvent{
+				Type: "schedule",
+			},
+		})
+		if err != nil {
+			w.logger.Error("failed to dispatch scheduled workflow run", "spec_id", spec.ID, "error", err)
+			// Do not acknowledge this occurrence: leave the claim lease in
+			// place so the spec becomes due again at lease expiry and this
+			// occurrence is retried instead of being silently dropped by
+			// advancing next_fire_at past it.
+			continue
+		}
+
+		// Compute and write the real next fire time (claim set it to a lease).
+		nextFire, err := nextFireTime(spec.CronExpression, now)
+		if err != nil {
+			// Unreachable for stored specs: cron expressions are validated
+			// with this same parser at sync time (workflow_sync.go). If it
+			// ever does happen, the lease self-heals the spec rather than
+			// stranding it, and the occurrence is retried.
+			w.logger.Error("failed to compute next fire time", "spec_id", spec.ID, "error", err)
+			continue
+		}
+
+		err = w.queries.UpdateWorkflowScheduleFireTimes(ctx, db.UpdateWorkflowScheduleFireTimesParams{
+			ID:         spec.ID,
+			PrevFireAt: pgtype.Timestamptz{Time: now, Valid: true},
+			NextFireAt: nextFire,
+		})
+		if err != nil {
+			// The lease self-heals: this spec is re-claimed once the lease
+			// expires and may fire one duplicate occurrence (at-least-once),
+			// which is strictly better than being permanently stranded.
+			w.logger.Error("failed to update schedule fire times", "spec_id", spec.ID, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// nextFireTime computes the next fire time from a cron expression.
+func nextFireTime(cronExpr string, from time.Time) (time.Time, error) {
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	schedule, err := parser.Parse(cronExpr)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return schedule.Next(from), nil
+}

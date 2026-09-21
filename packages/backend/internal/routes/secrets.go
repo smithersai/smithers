@@ -1,0 +1,194 @@
+package routes
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+type SecretRouteService interface {
+	SetSecret(ctx context.Context, actor *db.User, owner, repo, name, value string) (services.SecretResponse, error)
+	ListSecrets(ctx context.Context, actor *db.User, owner, repo string) ([]services.SecretResponse, error)
+	DeleteSecret(ctx context.Context, actor *db.User, owner, repo, name string) error
+	SetOrgSecret(ctx context.Context, actor *db.User, orgName, name, value string) (services.SecretResponse, error)
+	ListOrgSecrets(ctx context.Context, actor *db.User, orgName string) ([]services.SecretResponse, error)
+	DeleteOrgSecret(ctx context.Context, actor *db.User, orgName, name string) error
+}
+
+type SecretHandler struct {
+	Service          SecretRouteService
+	AgentEnvironment AgentEnvironmentRouteService
+	Metrics          *SmithersMetrics
+}
+
+type setSecretRequest struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+func (h *SecretHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.UserFromContext(r.Context())
+	owner, repo, err := repoOwnerAndName(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+
+	secrets, err := h.Service.ListSecrets(r.Context(), actor, owner, repo)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusOK, secrets)
+}
+
+func (h *SecretHandler) SetSecret(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	owner, repo, err := repoOwnerAndName(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+
+	var req setSecretRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errors.WriteError(w, errors.BadRequest("invalid request body"))
+		return
+	}
+
+	if apiErr := validateSecretVariableName(req.Name, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "name")
+		errors.WriteError(w, apiErr)
+		return
+	}
+	if apiErr := validateSecretVariableValue(req.Value, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "value")
+		errors.WriteError(w, apiErr)
+		return
+	}
+
+	secret, err := h.Service.SetSecret(r.Context(), actor, owner, repo, req.Name, req.Value)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusCreated, secret)
+}
+
+func (h *SecretHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	owner, repo, err := repoOwnerAndName(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	name, err := routeParam(r, "name", "secret name is required")
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+
+	if apiErr := validateSecretVariableName(name, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "name")
+		errors.WriteError(w, apiErr)
+		return
+	}
+
+	if err := h.Service.DeleteSecret(r.Context(), actor, owner, repo, name); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SecretHandler) ListOrgSecrets(w http.ResponseWriter, r *http.Request) {
+	actor := middleware.UserFromContext(r.Context())
+	orgName, err := routeParam(r, "org", "organization name is required")
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	secrets, err := h.Service.ListOrgSecrets(r.Context(), actor, orgName)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusOK, secrets)
+}
+
+func (h *SecretHandler) SetOrgSecret(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	orgName, err := routeParam(r, "org", "organization name is required")
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+
+	var req setSecretRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errors.WriteError(w, errors.BadRequest("invalid request body"))
+		return
+	}
+	if apiErr := validateSecretVariableName(req.Name, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "name")
+		errors.WriteError(w, apiErr)
+		return
+	}
+	if apiErr := validateSecretVariableValue(req.Value, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "value")
+		errors.WriteError(w, apiErr)
+		return
+	}
+
+	secret, err := h.Service.SetOrgSecret(r.Context(), actor, orgName, req.Name, req.Value)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusCreated, secret)
+}
+
+func (h *SecretHandler) DeleteOrgSecret(w http.ResponseWriter, r *http.Request) {
+	actor, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	orgName, err := routeParam(r, "org", "organization name is required")
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	name, err := routeParam(r, "name", "secret name is required")
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	if apiErr := validateSecretVariableName(name, "Secret"); apiErr != nil {
+		h.Metrics.IncValidationRejection("Secret", "name")
+		errors.WriteError(w, apiErr)
+		return
+	}
+	if err := h.Service.DeleteOrgSecret(r.Context(), actor, orgName, name); err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

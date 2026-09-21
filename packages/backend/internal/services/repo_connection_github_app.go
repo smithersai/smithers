@@ -1,0 +1,933 @@
+package services
+
+import (
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	stdErrors "errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/internal/observability"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+const getGitHubAppInstallationForUserRepoSQL = `
+SELECT gir.installation_id
+FROM repo_connections rc
+JOIN github_app_installation_repositories gir
+  ON gir.owner_login_lower = rc.repo_owner_lower
+ AND gir.repo_name_lower = rc.repo_name_lower
+WHERE rc.user_id = $1
+  AND rc.repo_owner_lower = $2
+  AND rc.repo_name_lower = $3
+LIMIT 1;
+`
+
+const getGitHubAppInstallationForOrgRepoSQL = `
+SELECT gir.installation_id
+FROM repo_connections rc
+JOIN org_members om
+  ON om.user_id = rc.user_id
+ AND om.organization_id = $1
+JOIN github_app_installation_repositories gir
+  ON gir.owner_login_lower = rc.repo_owner_lower
+ AND gir.repo_name_lower = rc.repo_name_lower
+WHERE rc.repo_owner_lower = $2
+  AND rc.repo_name_lower = $3
+LIMIT 1;
+`
+
+const getPublicGitHubAppInstallationExistsForRepoSQL = `
+SELECT TRUE
+FROM github_app_installation_repositories
+WHERE owner_login_lower = $1
+  AND repo_name_lower = $2
+  AND is_private = FALSE
+LIMIT 1;
+`
+
+const getPublicGitHubAppInstallationForRepoSQL = `
+SELECT installation_id
+FROM github_app_installation_repositories
+WHERE owner_login_lower = $1
+  AND repo_name_lower = $2
+  AND is_private = FALSE
+LIMIT 1;
+`
+
+const getReadyImportedSourceProvenanceForUserRepoSQL = `
+SELECT TRUE
+FROM import_jobs
+WHERE user_id = $1
+  AND repository_id = $2
+  AND lower(github_owner) = $3
+  AND lower(github_repo) = $4
+  AND status = 'ready'
+LIMIT 1;
+`
+
+const (
+	defaultGitHubAppInstallURL = "https://github.com/apps/smitherspreviewrelease/installations/new"
+	defaultGitHubAPIBaseURL    = "https://api.github.com"
+
+	envGitHubAppInstallURL = "SMITHERS_GITHUB_APP_INSTALL_URL"
+	envGitHubAppAPIBaseURL = "SMITHERS_GITHUB_APP_API_BASE_URL"
+	envGitHubAppID         = "SMITHERS_GITHUB_APP_ID"
+	envGitHubAppPrivateKey = "SMITHERS_GITHUB_APP_PRIVATE_KEY"
+)
+
+type GitHubAppStatus struct {
+	GitHubAppInstalled bool `json:"github_app_installed"`
+	// GitHubAppConfigured reports whether the server actually has GitHub App
+	// credentials (app id + private key). When false, installing can never help —
+	// the client must render an honest "not configured" state instead of a dead
+	// install prompt, and InstallURL is blanked (unless an explicit override is
+	// set) so we never surface the known-dead default install link.
+	GitHubAppConfigured      bool   `json:"github_app_configured"`
+	InstallationID           int64  `json:"installation_id,omitempty"`
+	InstallURL               string `json:"install_url"`
+	Owner                    string `json:"owner,omitempty"`
+	Repo                     string `json:"repo,omitempty"`
+	GitHubRateLimitLimit     int    `json:"github_rate_limit_limit,omitempty"`
+	GitHubRateLimitRemaining int    `json:"github_rate_limit_remaining,omitempty"`
+	GitHubRateLimitReset     string `json:"github_rate_limit_reset,omitempty"`
+}
+
+type GitHubInstallationToken struct {
+	InstallationID int64     `json:"installation_id"`
+	Token          string    `json:"token"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
+
+var errGitHubImportedSourceProvenanceNotFound = stdErrors.New("github imported source provenance not found")
+
+// GitHubRepositoryInstallationResolver resolves the GitHub App installation
+// for a Smithers repository's owner/repo on background (no-actor) paths,
+// scoped to the repository owner's repo_connections binding. Implemented by
+// *RepoConnectionService.
+type GitHubRepositoryInstallationResolver interface {
+	GetGitHubInstallationIDForRepositoryOwner(ctx context.Context, ownerUserID int64, ownerOrgID int64, owner string, repo string) (int64, error)
+}
+
+func (s *RepoConnectionService) GetGitHubAppStatus(
+	ctx context.Context,
+	userID int64,
+	owner string,
+	repo string,
+) (GitHubAppStatus, error) {
+	if userID <= 0 {
+		return GitHubAppStatus{}, pkgerrors.Unauthorized("authentication required")
+	}
+
+	normalizedOwner, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return GitHubAppStatus{}, err
+	}
+
+	configured := githubAppCredentialsConfigured()
+	status := GitHubAppStatus{
+		GitHubAppConfigured: configured,
+		InstallURL:          githubAppInstallURL(configured),
+		Owner:               strings.TrimSpace(owner),
+		Repo:                strings.TrimSpace(repo),
+	}
+
+	// Authorized path: the caller has connected this repo (repo_connections row
+	// scoped to their user_id). Only this path may expose the installation_id
+	// and rate-limit budget.
+	var installationID int64
+	err = s.db.QueryRow(
+		ctx,
+		getGitHubAppInstallationForUserRepoSQL,
+		userID,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&installationID)
+	if err == nil {
+		status.GitHubAppInstalled = installationID > 0
+		if installationID > 0 {
+			status.InstallationID = installationID
+			if s.gitHubBudgetTracker != nil {
+				rateLimit := s.gitHubBudgetTracker.Status(installationID)
+				status.GitHubRateLimitLimit = rateLimit.Limit
+				status.GitHubRateLimitRemaining = rateLimit.Remaining
+				status.GitHubRateLimitReset = rateLimit.ResetAt.Format(time.RFC3339)
+			} else {
+				status.GitHubRateLimitLimit = GitHubInstallationHourlyBudget
+				status.GitHubRateLimitRemaining = GitHubInstallationHourlyBudget
+				status.GitHubRateLimitReset = time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+			}
+		}
+		return status, nil
+	}
+	if !stdErrors.Is(err, pgx.ErrNoRows) {
+		return GitHubAppStatus{}, pkgerrors.Internal("failed to load github app installation")
+	}
+
+	// Unauthorized-to-repo fallback: needed only for the pre-connection connect
+	// flow, which exclusively targets PUBLIC repos. Reveal ONLY the boolean
+	// installed signal for public repos — never the installation_id or rate-limit
+	// budget, and never any signal about private repos (prevents cross-tenant
+	// enumeration of GitHub App installations).
+	var installedPublic bool
+	err = s.db.QueryRow(
+		ctx,
+		getPublicGitHubAppInstallationExistsForRepoSQL,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&installedPublic)
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return status, nil
+		}
+		return GitHubAppStatus{}, pkgerrors.Internal("failed to load github app installation")
+	}
+	status.GitHubAppInstalled = installedPublic
+	return status, nil
+}
+
+func (s *RepoConnectionService) CreateGitHubInstallationToken(
+	ctx context.Context,
+	userID int64,
+	owner string,
+	repo string,
+) (GitHubInstallationToken, error) {
+	if userID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.Unauthorized("authentication required")
+	}
+
+	normalizedOwner, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+
+	installationID, err := s.lookupGitHubInstallationID(ctx, userID, normalizedOwner, normalizedRepo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if installationID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+
+	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+}
+
+// CreateGitHubInstallationTokenForRepositoryOwner mints a token for internal
+// (no-actor) workflow paths where owner/repo came from Smithers repository
+// state. Resolution is still connection-scoped: a repo_connections row binding
+// the Smithers repository's owning user (or, for org-owned repositories, an
+// org member) to the GitHub owner/repo must exist. Smithers user/org names are
+// freely chosen, so a bare owner/repo string match would let a name-colliding
+// Smithers repo resolve a victim's installation.
+func (s *RepoConnectionService) CreateGitHubInstallationTokenForRepositoryOwner(
+	ctx context.Context,
+	ownerUserID int64,
+	ownerOrgID int64,
+	owner string,
+	repo string,
+) (GitHubInstallationToken, error) {
+	installationID, err := s.GetGitHubInstallationIDForRepositoryOwner(ctx, ownerUserID, ownerOrgID, owner, repo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if installationID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+
+	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+}
+
+// CreateGitHubInstallationTokenForImportedSource mints a token for a public
+// GitHub source repository only when the actor has a completed import_jobs row
+// tying that source to the resolved local Smithers repository. This gives
+// imported public mirrors source-coordinate GitHub access without trusting
+// owner/repo strings or requiring an actor repo_connections row for the source.
+func (s *RepoConnectionService) CreateGitHubInstallationTokenForImportedSource(
+	ctx context.Context,
+	userID int64,
+	repositoryID int64,
+	owner string,
+	repo string,
+) (GitHubInstallationToken, error) {
+	if userID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.Unauthorized("authentication required")
+	}
+	if repositoryID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("repository id must be positive")
+	}
+
+	normalizedOwner, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+
+	provenanceMatches, err := s.readyImportedSourceProvenanceExists(ctx, userID, repositoryID, normalizedOwner, normalizedRepo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if !provenanceMatches {
+		return GitHubInstallationToken{}, errGitHubImportedSourceProvenanceNotFound
+	}
+
+	installationID, err := s.lookupPublicGitHubInstallationID(ctx, normalizedOwner, normalizedRepo)
+	if err != nil {
+		return GitHubInstallationToken{}, err
+	}
+	if installationID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+
+	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+}
+
+// CreateGitHubInstallationTokenForInternalInstallation mints a token when a
+// trusted workflow path already resolved the installation ID from Smithers DB.
+func (s *RepoConnectionService) CreateGitHubInstallationTokenForInternalInstallation(
+	ctx context.Context,
+	installationID int64,
+) (GitHubInstallationToken, error) {
+	if installationID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("installation id must be positive")
+	}
+
+	return s.createGitHubInstallationTokenForInstallationID(ctx, installationID)
+}
+
+func (s *RepoConnectionService) createGitHubInstallationTokenForInstallationID(
+	ctx context.Context,
+	installationID int64,
+) (GitHubInstallationToken, error) {
+	if installationID <= 0 {
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+	}
+
+	// Serve a still-fresh cached installation token: these are valid ~1h and the
+	// github proxy / repo-list / check-runs all mint one PER REQUEST otherwise (a
+	// live ~200ms GitHub round-trip each). The cache is keyed by installationID —
+	// correct because this mints a FULL-installation token (no per-request
+	// scope-down). Resolution + authorization above still runs on every call.
+	if cached, ok := getCachedInstallationToken(installationID); ok {
+		return GitHubInstallationToken{
+			InstallationID: installationID,
+			Token:          cached.token,
+			ExpiresAt:      cached.expiresAt,
+		}, nil
+	}
+
+	appID, privateKey, err := readGitHubAppCredentialsFromEnv()
+	if err != nil {
+		return GitHubInstallationToken{}, pkgerrors.Internal(err.Error())
+	}
+
+	jwt, err := createGitHubAppJWTFunc(appID, privateKey, time.Now().UTC())
+	if err != nil {
+		return GitHubInstallationToken{}, pkgerrors.Internal("failed to create github app jwt")
+	}
+
+	endpoint := fmt.Sprintf(
+		"%s/app/installations/%d/access_tokens",
+		strings.TrimRight(githubAPIBaseURL(), "/"),
+		installationID,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader("{}"))
+	if err != nil {
+		return GitHubInstallationToken{}, pkgerrors.Internal("failed to build github token request")
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "smithers-server")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	httpClient := observability.NewHTTPClient(10 * time.Second)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token request failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	var payload struct {
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+		Message   string `json:"message"`
+	}
+	_ = json.Unmarshal(bodyBytes, &payload)
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		message := strings.TrimSpace(payload.Message)
+		if message == "" {
+			message = "github installation token request was rejected"
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return GitHubInstallationToken{}, pkgerrors.Forbidden(message)
+		}
+		return GitHubInstallationToken{}, pkgerrors.Internal(message)
+	}
+
+	token := strings.TrimSpace(payload.Token)
+	if token == "" {
+		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token response was missing token")
+	}
+
+	expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(payload.ExpiresAt))
+	if err != nil {
+		return GitHubInstallationToken{}, pkgerrors.Internal("github installation token response had invalid expiry")
+	}
+
+	storeCachedInstallationToken(installationID, token, expiresAt)
+	return GitHubInstallationToken{
+		InstallationID: installationID,
+		Token:          token,
+		ExpiresAt:      expiresAt,
+	}, nil
+}
+
+// installationTokenEarlyExpiry treats a cached installation token as expired this
+// long before its real expiry, so a token is never handed out with too little
+// life left for the caller's request (Octokit-convention default).
+const installationTokenEarlyExpiry = 5 * time.Minute
+
+type cachedInstallationToken struct {
+	token     string
+	expiresAt time.Time
+}
+
+var (
+	installationTokenCacheMu sync.Mutex
+	installationTokenCache   = map[int64]cachedInstallationToken{}
+)
+
+// getCachedInstallationToken returns a cached installation token for the id if
+// one is present and still has more than the early-expiry margin of life.
+func getCachedInstallationToken(installationID int64) (cachedInstallationToken, bool) {
+	installationTokenCacheMu.Lock()
+	defer installationTokenCacheMu.Unlock()
+	cached, ok := installationTokenCache[installationID]
+	if !ok || time.Until(cached.expiresAt) < installationTokenEarlyExpiry {
+		return cachedInstallationToken{}, false
+	}
+	return cached, true
+}
+
+func storeCachedInstallationToken(installationID int64, token string, expiresAt time.Time) {
+	installationTokenCacheMu.Lock()
+	defer installationTokenCacheMu.Unlock()
+	installationTokenCache[installationID] = cachedInstallationToken{token: token, expiresAt: expiresAt}
+}
+
+// invalidateCachedInstallationToken drops a cached token — call when an
+// installation is deleted/suspended or a consumer sees a 401/403 (so the next
+// call re-mints rather than re-serving a revoked token).
+func invalidateCachedInstallationToken(installationID int64) {
+	installationTokenCacheMu.Lock()
+	defer installationTokenCacheMu.Unlock()
+	delete(installationTokenCache, installationID)
+}
+
+func (s *RepoConnectionService) lookupGitHubInstallationID(
+	ctx context.Context,
+	userID int64,
+	normalizedOwner string,
+	normalizedRepo string,
+) (int64, error) {
+	var installationID int64
+	err := s.db.QueryRow(
+		ctx,
+		getGitHubAppInstallationForUserRepoSQL,
+		userID,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&installationID)
+	if err == nil {
+		return installationID, nil
+	}
+	if !stdErrors.Is(err, pgx.ErrNoRows) {
+		return 0, pkgerrors.Internal("failed to load github app installation")
+	}
+	return 0, nil
+}
+
+func (s *RepoConnectionService) readyImportedSourceProvenanceExists(
+	ctx context.Context,
+	userID int64,
+	repositoryID int64,
+	normalizedOwner string,
+	normalizedRepo string,
+) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(
+		ctx,
+		getReadyImportedSourceProvenanceForUserRepoSQL,
+		userID,
+		repositoryID,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&exists)
+	if err == nil {
+		return exists, nil
+	}
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return false, pkgerrors.Internal("failed to load imported github source provenance")
+}
+
+func (s *RepoConnectionService) lookupPublicGitHubInstallationID(
+	ctx context.Context,
+	normalizedOwner string,
+	normalizedRepo string,
+) (int64, error) {
+	var installationID int64
+	err := s.db.QueryRow(
+		ctx,
+		getPublicGitHubAppInstallationForRepoSQL,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&installationID)
+	if err == nil {
+		return installationID, nil
+	}
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return 0, pkgerrors.Internal("failed to load github app installation")
+}
+
+// GetGitHubInstallationIDForUserRepo resolves the GitHub App installation for
+// a GitHub owner/repo only when the given user holds a repo_connections row
+// binding them to it. Returns 0 when no scoped binding exists.
+func (s *RepoConnectionService) GetGitHubInstallationIDForUserRepo(
+	ctx context.Context,
+	userID int64,
+	owner string,
+	repo string,
+) (int64, error) {
+	if userID <= 0 {
+		return 0, pkgerrors.Unauthorized("authentication required")
+	}
+	normalizedOwner, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return 0, err
+	}
+	return s.lookupGitHubInstallationID(ctx, userID, normalizedOwner, normalizedRepo)
+}
+
+// GetGitHubInstallationIDForRepositoryOwner resolves the installation for a
+// Smithers repository's GitHub owner/repo on background paths that have no
+// acting user: the binding must come from the repository's owning user, or —
+// for org-owned repositories — from a member of the owning org. Returns 0 when
+// no scoped binding exists.
+func (s *RepoConnectionService) GetGitHubInstallationIDForRepositoryOwner(
+	ctx context.Context,
+	ownerUserID int64,
+	ownerOrgID int64,
+	owner string,
+	repo string,
+) (int64, error) {
+	normalizedOwner, normalizedRepo, err := normalizeRepoRef(owner, repo)
+	if err != nil {
+		return 0, err
+	}
+
+	if ownerUserID > 0 {
+		return s.lookupGitHubInstallationID(ctx, ownerUserID, normalizedOwner, normalizedRepo)
+	}
+	if ownerOrgID <= 0 {
+		return 0, pkgerrors.BadRequest("repository owner is required")
+	}
+
+	var installationID int64
+	err = s.db.QueryRow(
+		ctx,
+		getGitHubAppInstallationForOrgRepoSQL,
+		ownerOrgID,
+		normalizedOwner,
+		normalizedRepo,
+	).Scan(&installationID)
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, pkgerrors.Internal("failed to load github app installation")
+	}
+	return installationID, nil
+}
+
+// githubAppInstallURL resolves the install URL to surface to clients. An explicit
+// SMITHERS_GITHUB_APP_INSTALL_URL override always wins. Otherwise the default is
+// only emitted when the app is actually configured: when creds are absent the
+// default (`apps/smithers-cloud/...`) is a known-dead 404, so we blank it rather
+// than dead-end users into an install prompt that can never help.
+// reconcileInstallation is one entry from GET /app/installations.
+type reconcileInstallation struct {
+	ID                  int64  `json:"id"`
+	RepositorySelection string `json:"repository_selection"`
+	Account             struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"account"`
+}
+
+// reconcileRepository is one entry from GET /installation/repositories.
+type reconcileRepository struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Private bool   `json:"private"`
+	Owner   struct {
+		Login string `json:"login"`
+	} `json:"owner"`
+}
+
+// ReconcileGitHubAppInstallations authenticates as the GitHub App and backfills
+// github_app_installation_repositories from the live installation state. The
+// table is otherwise written only by webhook events, so any installation created
+// before webhook wiring (including all pre-existing installs) never appears —
+// leaving GetGitHubAppStatus to report "not installed" for every repo. This
+// walks GET /app/installations (paginated), lists each installation's
+// repositories, upserts them (owner/repo lowercased), and prunes rows for
+// installations or repositories that no longer exist.
+//
+// It no-ops cleanly (logs, returns nil) when app credentials are unconfigured,
+// so it is safe to call unconditionally on boot and from the admin route.
+func (s *RepoConnectionService) ReconcileGitHubAppInstallations(ctx context.Context) error {
+	if !githubAppCredentialsConfigured() {
+		slog.Info("github_app.reconcile.skipped", "reason", "github app credentials not configured")
+		return nil
+	}
+
+	appID, privateKey, err := readGitHubAppCredentialsFromEnv()
+	if err != nil {
+		slog.Info("github_app.reconcile.skipped", "reason", "github app credentials not configured")
+		return nil
+	}
+
+	jwt, err := createGitHubAppJWTFunc(appID, privateKey, time.Now().UTC())
+	if err != nil {
+		return pkgerrors.Internal("failed to create github app jwt")
+	}
+
+	installations, err := s.listGitHubAppInstallations(ctx, jwt)
+	if err != nil {
+		return err
+	}
+
+	seenInstallationIDs := make([]int64, 0, len(installations))
+	for _, installation := range installations {
+		if installation.ID <= 0 {
+			continue
+		}
+		seenInstallationIDs = append(seenInstallationIDs, installation.ID)
+		// Repository mappings carry a foreign key to the installation. Existing
+		// installs that predate webhook delivery have neither row, so inserting
+		// the child first makes the authoritative boot reconcile fail forever.
+		if _, err := s.db.Exec(
+			ctx,
+			upsertGitHubAppInstallationSQL,
+			installation.ID,
+			strings.TrimSpace(installation.Account.Login),
+			strings.TrimSpace(installation.Account.Type),
+			strings.TrimSpace(installation.RepositorySelection),
+		); err != nil {
+			return pkgerrors.Internal("failed to upsert github app installation")
+		}
+
+		token, err := s.createGitHubInstallationTokenForInstallationID(ctx, installation.ID)
+		if err != nil {
+			slog.Error("github_app.reconcile.token_failed", "installation_id", installation.ID, "error", err)
+			return err
+		}
+
+		repos, err := s.listGitHubInstallationRepositories(ctx, token.Token)
+		if err != nil {
+			slog.Error("github_app.reconcile.repos_failed", "installation_id", installation.ID, "error", err)
+			return err
+		}
+
+		seenRepoIDs := make([]int64, 0, len(repos))
+		for _, repo := range repos {
+			ownerLogin := strings.TrimSpace(repo.Owner.Login)
+			repoName := strings.TrimSpace(repo.Name)
+			if ownerLogin == "" || repoName == "" || repo.ID <= 0 {
+				continue
+			}
+			seenRepoIDs = append(seenRepoIDs, repo.ID)
+			if _, err := s.db.Exec(
+				ctx,
+				upsertGitHubAppInstallationRepositorySQL,
+				installation.ID,
+				repo.ID,
+				ownerLogin,
+				strings.ToLower(ownerLogin),
+				repoName,
+				strings.ToLower(repoName),
+				repo.Private,
+			); err != nil {
+				return pkgerrors.Internal("failed to upsert github app installation repository")
+			}
+		}
+
+		// Prune repositories that were removed from this installation.
+		if _, err := s.db.Exec(
+			ctx,
+			pruneGitHubAppInstallationRepositoriesSQL,
+			installation.ID,
+			seenRepoIDs,
+		); err != nil {
+			return pkgerrors.Internal("failed to prune github app installation repositories")
+		}
+	}
+
+	// Prune installations that no longer exist. The foreign key cascade removes
+	// their repository mappings as one authoritative operation.
+	if _, err := s.db.Exec(
+		ctx,
+		pruneGitHubAppInstallationsSQL,
+		seenInstallationIDs,
+	); err != nil {
+		return pkgerrors.Internal("failed to prune github app installations")
+	}
+
+	slog.Info("github_app.reconcile.ok", "installations", len(seenInstallationIDs))
+	return nil
+}
+
+const pruneGitHubAppInstallationRepositoriesSQL = `
+DELETE FROM github_app_installation_repositories
+WHERE installation_id = $1
+  AND NOT (github_repository_id = ANY($2::bigint[]));
+`
+
+const pruneGitHubAppInstallationsSQL = `
+DELETE FROM github_app_installations
+WHERE NOT (installation_id = ANY($1::bigint[]));
+`
+
+// listGitHubAppInstallations walks GET /app/installations, following rel="next"
+// Link headers until exhausted, authenticated with the app JWT.
+func (s *RepoConnectionService) listGitHubAppInstallations(ctx context.Context, jwt string) ([]reconcileInstallation, error) {
+	endpoint := fmt.Sprintf("%s/app/installations?per_page=100", strings.TrimRight(githubAPIBaseURL(), "/"))
+	var all []reconcileInstallation
+	httpClient := observability.NewHTTPClient(15 * time.Second)
+	for endpoint != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, pkgerrors.Internal("failed to build github installations request")
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Authorization", "Bearer "+jwt)
+		req.Header.Set("User-Agent", "smithers-server")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, pkgerrors.Internal("github installations request failed")
+		}
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		nextURL := parseGitHubNextLink(resp.Header.Get("Link"))
+		_ = resp.Body.Close()
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return nil, pkgerrors.Internal("github installations request was rejected")
+		}
+
+		var page []reconcileInstallation
+		if err := json.Unmarshal(bodyBytes, &page); err != nil {
+			return nil, pkgerrors.Internal("github installations response was invalid")
+		}
+		all = append(all, page...)
+		endpoint = nextURL
+	}
+	return all, nil
+}
+
+// listGitHubInstallationRepositories walks GET /installation/repositories with an
+// installation token, following rel="next" Link headers until exhausted.
+func (s *RepoConnectionService) listGitHubInstallationRepositories(ctx context.Context, token string) ([]reconcileRepository, error) {
+	endpoint := fmt.Sprintf("%s/installation/repositories?per_page=100", strings.TrimRight(githubAPIBaseURL(), "/"))
+	var all []reconcileRepository
+	httpClient := observability.NewHTTPClient(15 * time.Second)
+	for endpoint != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, pkgerrors.Internal("failed to build github repositories request")
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("User-Agent", "smithers-server")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, pkgerrors.Internal("github repositories request failed")
+		}
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		nextURL := parseGitHubNextLink(resp.Header.Get("Link"))
+		_ = resp.Body.Close()
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return nil, pkgerrors.Internal("github repositories request was rejected")
+		}
+
+		var page struct {
+			Repositories []reconcileRepository `json:"repositories"`
+		}
+		if err := json.Unmarshal(bodyBytes, &page); err != nil {
+			return nil, pkgerrors.Internal("github repositories response was invalid")
+		}
+		all = append(all, page.Repositories...)
+		endpoint = nextURL
+	}
+	return all, nil
+}
+
+// parseGitHubNextLink extracts the rel="next" URL from a GitHub Link header, or
+// "" when there is no next page.
+func parseGitHubNextLink(header string) string {
+	if strings.TrimSpace(header) == "" {
+		return ""
+	}
+	for _, part := range strings.Split(header, ",") {
+		segments := strings.Split(strings.TrimSpace(part), ";")
+		if len(segments) < 2 {
+			continue
+		}
+		urlPart := strings.TrimSpace(segments[0])
+		if !strings.HasPrefix(urlPart, "<") || !strings.HasSuffix(urlPart, ">") {
+			continue
+		}
+		for _, attr := range segments[1:] {
+			attr = strings.TrimSpace(attr)
+			if attr == `rel="next"` || attr == "rel=next" {
+				return strings.TrimSuffix(strings.TrimPrefix(urlPart, "<"), ">")
+			}
+		}
+	}
+	return ""
+}
+
+func githubAppInstallURL(configured bool) string {
+	if value := strings.TrimSpace(os.Getenv(envGitHubAppInstallURL)); value != "" {
+		return value
+	}
+	if !configured {
+		return ""
+	}
+	return defaultGitHubAppInstallURL
+}
+
+// githubAppCredentialsConfigured reports whether a usable app id + private key
+// are present in the environment, mirroring readGitHubAppCredentialsFromEnv.
+func githubAppCredentialsConfigured() bool {
+	_, _, err := readGitHubAppCredentialsFromEnv()
+	return err == nil
+}
+
+func githubAPIBaseURL() string {
+	if value := strings.TrimSpace(os.Getenv(envGitHubAppAPIBaseURL)); value != "" {
+		return strings.TrimRight(value, "/")
+	}
+	return defaultGitHubAPIBaseURL
+}
+
+func readGitHubAppCredentialsFromEnv() (int64, *rsa.PrivateKey, error) {
+	appIDRaw := strings.TrimSpace(os.Getenv(envGitHubAppID))
+	if appIDRaw == "" {
+		return 0, nil, fmt.Errorf("github app id is not configured")
+	}
+	appID, err := strconv.ParseInt(appIDRaw, 10, 64)
+	if err != nil || appID <= 0 {
+		return 0, nil, fmt.Errorf("github app id is invalid")
+	}
+
+	privateKeyRaw := strings.TrimSpace(os.Getenv(envGitHubAppPrivateKey))
+	if privateKeyRaw == "" {
+		return 0, nil, fmt.Errorf("github app private key is not configured")
+	}
+	privateKeyRaw = strings.ReplaceAll(privateKeyRaw, `\n`, "\n")
+
+	privateKey, err := parseGitHubAppPrivateKey(privateKeyRaw)
+	if err != nil {
+		return 0, nil, fmt.Errorf("github app private key is invalid")
+	}
+
+	return appID, privateKey, nil
+}
+
+func parseGitHubAppPrivateKey(value string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(value))
+	if block == nil {
+		return nil, stdErrors.New("no pem block found")
+	}
+
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return nil, stdErrors.New("private key must be RSA")
+	}
+	return key, nil
+}
+
+var createGitHubAppJWTFunc = createGitHubAppJWT
+
+func createGitHubAppJWT(appID int64, privateKey *rsa.PrivateKey, now time.Time) (string, error) {
+	header := mustBase64URLEncodeJSON(map[string]string{
+		"alg": "RS256",
+		"typ": "JWT",
+	})
+
+	claims := mustBase64URLEncodeJSON(map[string]any{
+		"iat": now.Add(-30 * time.Second).Unix(),
+		"exp": now.Add(9 * time.Minute).Unix(),
+		"iss": appID,
+	})
+
+	signingInput := header + "." + claims
+	digest := sha256.Sum256([]byte(signingInput))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		return "", err
+	}
+
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+}
+
+func mustBase64URLEncodeJSON(value any) string {
+	encoded, err := base64URLEncodeJSON(value)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
+
+func base64URLEncodeJSON(value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(encoded), nil
+}

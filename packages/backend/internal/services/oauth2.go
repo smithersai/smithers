@@ -1,0 +1,831 @@
+package services
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// OAuth2 token durations.
+const (
+	oauth2AuthCodeTTL     = 10 * time.Minute
+	oauth2AccessTokenTTL  = 1 * time.Hour
+	oauth2RefreshTokenTTL = 90 * 24 * time.Hour // 90 days
+)
+
+// OAuth2Querier defines the database operations needed by OAuth2Service.
+type OAuth2Querier interface {
+	CreateOAuth2Application(ctx context.Context, arg db.CreateOAuth2ApplicationParams) (db.Oauth2Application, error)
+	GetOAuth2ApplicationByID(ctx context.Context, id int64) (db.Oauth2Application, error)
+	GetOAuth2ApplicationByClientID(ctx context.Context, clientID string) (db.Oauth2Application, error)
+	ListOAuth2ApplicationsByOwner(ctx context.Context, ownerID int64) ([]db.Oauth2Application, error)
+	UpdateOAuth2Application(ctx context.Context, arg db.UpdateOAuth2ApplicationParams) (db.Oauth2Application, error)
+	DeleteOAuth2Application(ctx context.Context, arg db.DeleteOAuth2ApplicationParams) (int64, error)
+
+	CreateOAuth2AuthorizationCode(ctx context.Context, arg db.CreateOAuth2AuthorizationCodeParams) error
+	GetOAuth2AuthorizationCodeByHash(ctx context.Context, codeHash string) (db.Oauth2AuthorizationCode, error)
+	ConsumeOAuth2AuthorizationCode(ctx context.Context, codeHash string) (db.Oauth2AuthorizationCode, error)
+
+	CreateOAuth2AccessToken(ctx context.Context, arg db.CreateOAuth2AccessTokenParams) (db.Oauth2AccessToken, error)
+	GetOAuth2AccessTokenByHash(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error)
+	DeleteOAuth2AccessTokenByHash(ctx context.Context, tokenHash string) (int64, error)
+	DeleteOAuth2AccessTokensByAppAndUser(ctx context.Context, arg db.DeleteOAuth2AccessTokensByAppAndUserParams) error
+
+	CreateOAuth2RefreshToken(ctx context.Context, arg db.CreateOAuth2RefreshTokenParams) (db.Oauth2RefreshToken, error)
+	GetOAuth2RefreshTokenByHash(ctx context.Context, tokenHash string) (db.Oauth2RefreshToken, error)
+	ConsumeOAuth2RefreshToken(ctx context.Context, tokenHash string) (db.Oauth2RefreshToken, error)
+	DeleteOAuth2RefreshTokenByHash(ctx context.Context, tokenHash string) (int64, error)
+	DeleteOAuth2RefreshTokensByAppAndUser(ctx context.Context, arg db.DeleteOAuth2RefreshTokensByAppAndUserParams) error
+
+	GetUserByID(ctx context.Context, id int64) (db.User, error)
+}
+
+// FirstPartyClientID is the public OAuth2 client_id used by Smithers's own
+// gui (macOS) and iOS apps. It is registered by a seed migration and the
+// constant is checked by the authorize handler to decide whether the client
+// may be authorized at all: today only this first-party client is accepted,
+// and browser sessions still confirm through the CSRF-bound consent page
+// before a code is minted (see OAuth2Handler.GetAuthorize).
+const FirstPartyClientID = "smithers_first_party_apps"
+
+// OAuth2ApplicationResponse is the API response for an OAuth2 application.
+// It deliberately omits the client_secret_hash.
+type OAuth2ApplicationResponse struct {
+	ID           int64     `json:"id"`
+	ClientID     string    `json:"client_id"`
+	Name         string    `json:"name"`
+	RedirectURIs []string  `json:"redirect_uris"`
+	Scopes       []string  `json:"scopes"`
+	Confidential bool      `json:"confidential"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// CreateOAuth2ApplicationResult includes the plaintext client_secret (shown only on creation).
+type CreateOAuth2ApplicationResult struct {
+	OAuth2ApplicationResponse
+	ClientSecret string `json:"client_secret"`
+}
+
+// OAuth2TokenResponse is the standard OAuth2 token endpoint response.
+type OAuth2TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+}
+
+// OAuth2AuthorizeResult contains the authorization code to be returned to the client.
+type OAuth2AuthorizeResult struct {
+	Code        string `json:"code"`
+	RedirectURI string `json:"redirect_uri"`
+}
+
+// CreateOAuth2ApplicationRequest is the request body for creating an OAuth2 application.
+type CreateOAuth2ApplicationRequest struct {
+	Name         string   `json:"name"`
+	RedirectURIs []string `json:"redirect_uris"`
+	Scopes       []string `json:"scopes"`
+	Confidential *bool    `json:"confidential"`
+}
+
+// OAuth2Service handles OAuth2 provider operations.
+type OAuth2Service struct {
+	queries     OAuth2Querier
+	revocations revocation.Publisher
+	now         func() time.Time
+}
+
+// NewOAuth2Service creates a new OAuth2Service instance.
+func NewOAuth2Service(q OAuth2Querier) *OAuth2Service {
+	return &OAuth2Service{
+		queries: q,
+		now:     func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// CreateApplication registers a new OAuth2 application.
+func (s *OAuth2Service) CreateApplication(ctx context.Context, ownerID int64, req CreateOAuth2ApplicationRequest) (CreateOAuth2ApplicationResult, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return CreateOAuth2ApplicationResult{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
+			Resource: "OAuth2Application",
+			Field:    "name",
+			Code:     "missing_field",
+		})
+	}
+	if len(name) > 255 {
+		return CreateOAuth2ApplicationResult{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
+			Resource: "OAuth2Application",
+			Field:    "name",
+			Code:     "invalid",
+		})
+	}
+
+	if len(req.RedirectURIs) == 0 {
+		return CreateOAuth2ApplicationResult{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
+			Resource: "OAuth2Application",
+			Field:    "redirect_uris",
+			Code:     "missing_field",
+		})
+	}
+	for i, uri := range req.RedirectURIs {
+		parsed, err := url.Parse(uri)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return CreateOAuth2ApplicationResult{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
+				Resource: "OAuth2Application",
+				Field:    fmt.Sprintf("redirect_uris[%d]", i),
+				Code:     "invalid",
+			})
+		}
+	}
+
+	if req.Confidential == nil {
+		return CreateOAuth2ApplicationResult{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{
+			Resource: "OAuth2Application",
+			Field:    "confidential",
+			Code:     "missing_field",
+		})
+	}
+	confidential := *req.Confidential
+
+	clientID, _ := generateOAuth2ClientID()
+	clientSecret, _ := generateOAuth2ClientSecret()
+	secretHash := hashOAuth2Secret(clientSecret)
+
+	scopes := req.Scopes
+	if scopes == nil {
+		scopes = []string{}
+	}
+
+	app, err := s.queries.CreateOAuth2Application(ctx, db.CreateOAuth2ApplicationParams{
+		ClientID:         clientID,
+		ClientSecretHash: secretHash,
+		Name:             name,
+		RedirectUris:     req.RedirectURIs,
+		Scopes:           scopes,
+		OwnerID:          ownerID,
+		Confidential:     confidential,
+	})
+	if err != nil {
+		return CreateOAuth2ApplicationResult{}, pkgerrors.Internal("failed to create oauth2 application")
+	}
+
+	return CreateOAuth2ApplicationResult{
+		OAuth2ApplicationResponse: toOAuth2ApplicationResponse(app),
+		ClientSecret:              clientSecret,
+	}, nil
+}
+
+// ListApplications returns all OAuth2 applications owned by the given user.
+func (s *OAuth2Service) ListApplications(ctx context.Context, ownerID int64) ([]OAuth2ApplicationResponse, error) {
+	apps, err := s.queries.ListOAuth2ApplicationsByOwner(ctx, ownerID)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to list oauth2 applications")
+	}
+
+	result := make([]OAuth2ApplicationResponse, 0, len(apps))
+	for _, app := range apps {
+		result = append(result, toOAuth2ApplicationResponse(app))
+	}
+	return result, nil
+}
+
+// GetApplication returns a single OAuth2 application by ID, ensuring ownership.
+func (s *OAuth2Service) GetApplication(ctx context.Context, appID, ownerID int64) (OAuth2ApplicationResponse, error) {
+	app, err := s.queries.GetOAuth2ApplicationByID(ctx, appID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
+		}
+		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+	}
+	if app.OwnerID != ownerID {
+		return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
+	}
+	return toOAuth2ApplicationResponse(app), nil
+}
+
+// GetApplicationByClientID returns the public-safe OAuth2 application for a
+// given client_id. Used by the browser-native authorize handler to resolve
+// the client (including its registered redirect URIs and scopes) WITHOUT
+// requiring the caller to be authenticated — the authorize endpoint is
+// intentionally callable by unauthenticated browsers so they can discover
+// the consent/IdP page before they have a Smithers session.
+func (s *OAuth2Service) GetApplicationByClientID(ctx context.Context, clientID string) (OAuth2ApplicationResponse, error) {
+	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2ApplicationResponse{}, pkgerrors.NotFound("oauth2 application not found")
+		}
+		return OAuth2ApplicationResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+	}
+	return toOAuth2ApplicationResponse(app), nil
+}
+
+// IsValidRegisteredRedirectURI is a thin wrapper around isValidRedirectURI
+// exposed for use by the authorize route handler (which needs to validate
+// the redirect_uri BEFORE redirecting to upstream IdP, so we never bounce
+// the user to an attacker-controlled URI on error per RFC 6749 §4.1.2.1).
+func (s *OAuth2Service) IsValidRegisteredRedirectURI(ctx context.Context, clientID, redirectURI string) (bool, error) {
+	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, pkgerrors.NotFound("oauth2 application not found")
+		}
+		return false, pkgerrors.Internal("failed to get oauth2 application")
+	}
+	return isValidRedirectURI(app.RedirectUris, redirectURI), nil
+}
+
+// DeleteApplication removes an OAuth2 application and all its tokens.
+func (s *OAuth2Service) DeleteApplication(ctx context.Context, appID, ownerID int64) error {
+	rows, err := s.queries.DeleteOAuth2Application(ctx, db.DeleteOAuth2ApplicationParams{
+		ID:      appID,
+		OwnerID: ownerID,
+	})
+	if err != nil {
+		return pkgerrors.Internal("failed to delete oauth2 application")
+	}
+	if rows == 0 {
+		return pkgerrors.NotFound("oauth2 application not found")
+	}
+	return nil
+}
+
+// Authorize generates an authorization code for the given OAuth2 application.
+// This is called when the user approves the authorization request.
+//
+// callerScopes is the set of scopes granted to the caller's current auth
+// credential (e.g. a PAT or first-party OAuth2 token). Pass nil to indicate
+// a session-authenticated caller whose scopes are unrestricted. The effective
+// scopes stored in the authorization code are:
+//
+//	requested_scopes ∩ app_registered_scopes ∩ caller_scopes (when non-nil)
+func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, redirectURI, scope, codeChallenge, codeChallengeMethod string, callerScopes []string) (OAuth2AuthorizeResult, error) {
+	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2AuthorizeResult{}, pkgerrors.NotFound("oauth2 application not found")
+		}
+		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to get oauth2 application")
+	}
+
+	// Validate redirect_uri is registered.
+	if !isValidRedirectURI(app.RedirectUris, redirectURI) {
+		return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("invalid redirect_uri")
+	}
+
+	// Build the set of scopes allowed for this app registration.
+	normalizedAppScopes := make(map[string]struct{}, len(app.Scopes))
+	for _, registeredScope := range app.Scopes {
+		normalizedScope := middleware.NormalizeTokenScope(registeredScope)
+		if normalizedScope == "" {
+			continue
+		}
+		normalizedAppScopes[string(normalizedScope)] = struct{}{}
+	}
+
+	// Build the set of scopes allowed for the calling credential, if
+	// restricted. A nil callerScopes means the caller has a session (no token
+	// scope bound) and is treated as unrestricted.
+	var normalizedCallerScopes map[string]struct{}
+	if callerScopes != nil {
+		normalizedCallerScopes = make(map[string]struct{}, len(callerScopes))
+		for _, cs := range callerScopes {
+			ns := middleware.NormalizeTokenScope(cs)
+			if ns == "" {
+				continue
+			}
+			normalizedCallerScopes[string(ns)] = struct{}{}
+		}
+	}
+
+	// Parse requested scopes.
+	requestedScopes := parseScopeString(scope)
+	if len(requestedScopes) == 0 {
+		requestedScopes = app.Scopes
+	}
+	normalizedRequestedScopes := make([]string, 0, len(requestedScopes))
+	seenRequestedScopes := make(map[string]struct{}, len(requestedScopes))
+	for _, requestedScope := range requestedScopes {
+		normalizedScope := middleware.NormalizeTokenScope(requestedScope)
+		if normalizedScope == "" {
+			return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("requested scope exceeds application registered scopes")
+		}
+		canonicalScope := string(normalizedScope)
+		// Bound to app's registered scopes.
+		if _, ok := normalizedAppScopes[canonicalScope]; !ok {
+			return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("requested scope exceeds application registered scopes")
+		}
+		// Bound to caller's token scopes (when the caller is token-authenticated).
+		if normalizedCallerScopes != nil {
+			if _, ok := normalizedCallerScopes[canonicalScope]; !ok {
+				return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("requested scope exceeds caller's granted scopes")
+			}
+		}
+		if _, seen := seenRequestedScopes[canonicalScope]; seen {
+			continue
+		}
+		seenRequestedScopes[canonicalScope] = struct{}{}
+		normalizedRequestedScopes = append(normalizedRequestedScopes, canonicalScope)
+	}
+	requestedScopes = normalizedRequestedScopes
+
+	// Validate PKCE parameters.
+	codeChallenge = strings.TrimSpace(codeChallenge)
+	codeChallengeMethod = strings.TrimSpace(codeChallengeMethod)
+	if codeChallengeMethod != "" && codeChallenge == "" {
+		return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("code_challenge is required when code_challenge_method is set")
+	}
+	if codeChallenge != "" && codeChallengeMethod != "S256" {
+		return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("code_challenge_method must be S256")
+	}
+	if !app.Confidential && codeChallenge == "" {
+		return OAuth2AuthorizeResult{}, pkgerrors.BadRequest("code_challenge is required for public clients")
+	}
+
+	// Generate authorization code.
+	code, _ := generateOAuth2Code()
+	codeHash := hashOAuth2Secret(code)
+
+	err = s.queries.CreateOAuth2AuthorizationCode(ctx, db.CreateOAuth2AuthorizationCodeParams{
+		CodeHash:            codeHash,
+		AppID:               app.ID,
+		UserID:              userID,
+		Scopes:              requestedScopes,
+		RedirectUri:         redirectURI,
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+		ExpiresAt:           s.now().Add(oauth2AuthCodeTTL),
+	})
+	if err != nil {
+		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to create authorization code")
+	}
+
+	return OAuth2AuthorizeResult{
+		Code:        code,
+		RedirectURI: redirectURI,
+	}, nil
+}
+
+// ExchangeCode exchanges an authorization code for an access token and refresh token.
+func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI, codeVerifier string) (OAuth2TokenResponse, error) {
+	// Validate client credentials.
+	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_id")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+	}
+
+	// Verify client secret for confidential clients.
+	if app.Confidential {
+		expectedHash := hashOAuth2Secret(clientSecret)
+		if subtle.ConstantTimeCompare([]byte(expectedHash), []byte(app.ClientSecretHash)) != 1 {
+			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_secret")
+		}
+	}
+
+	// Load the authorization code WITHOUT consuming it. Validation must run
+	// before the one-time code is marked used: otherwise an attacker who
+	// observed the code (but not the PKCE verifier or client secret) could
+	// burn it with a failed redemption attempt, denying the legitimate
+	// client its exchange.
+	codeHash := hashOAuth2Secret(code)
+	authCode, err := s.queries.GetOAuth2AuthorizationCodeByHash(ctx, codeHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired authorization code")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate authorization code")
+	}
+
+	// Validate the code belongs to this application.
+	if authCode.AppID != app.ID {
+		return OAuth2TokenResponse{}, pkgerrors.BadRequest("authorization code does not belong to this application")
+	}
+
+	// Validate redirect_uri matches.
+	if authCode.RedirectUri != redirectURI {
+		return OAuth2TokenResponse{}, pkgerrors.BadRequest("redirect_uri mismatch")
+	}
+
+	if !app.Confidential {
+		if authCode.CodeChallenge == "" || authCode.CodeChallengeMethod != "S256" {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("public clients require PKCE")
+		}
+	}
+
+	// Validate PKCE code verifier if challenge was set.
+	if authCode.CodeChallenge != "" {
+		if authCode.CodeChallengeMethod != "S256" {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("code_challenge_method must be S256")
+		}
+		if codeVerifier == "" {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("code_verifier is required")
+		}
+		if !verifyPKCE(authCode.CodeChallenge, authCode.CodeChallengeMethod, codeVerifier) {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid code_verifier")
+		}
+	}
+
+	// Consume the code only after every check passed. The consume query's
+	// used_at IS NULL guard keeps single-use atomic: if two fully-valid
+	// redemptions race, exactly one wins and the other gets ErrNoRows.
+	authCode, err = s.queries.ConsumeOAuth2AuthorizationCode(ctx, codeHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired authorization code")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to consume authorization code")
+	}
+
+	return s.issueTokenPair(ctx, app.ID, authCode.UserID, authCode.Scopes)
+}
+
+// RefreshToken exchanges a refresh token for a new access token and refresh token pair.
+func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret, refreshToken string) (OAuth2TokenResponse, error) {
+	// Validate client credentials.
+	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_id")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to get oauth2 application")
+	}
+
+	// Verify client secret for confidential clients.
+	if app.Confidential {
+		expectedHash := hashOAuth2Secret(clientSecret)
+		if subtle.ConstantTimeCompare([]byte(expectedHash), []byte(app.ClientSecretHash)) != 1 {
+			return OAuth2TokenResponse{}, pkgerrors.Unauthorized("invalid client_secret")
+		}
+	}
+
+	tokenHash := hashOAuth2Secret(refreshToken)
+	// Validate ownership before consuming so one OAuth application cannot burn
+	// another application's refresh token by presenting it with the wrong client_id.
+	token, err := s.queries.GetOAuth2RefreshTokenByHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired refresh token")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate refresh token")
+	}
+	if token.AppID != app.ID {
+		return OAuth2TokenResponse{}, pkgerrors.BadRequest("refresh token does not belong to this application")
+	}
+
+	// Consume the refresh token atomically so concurrent refresh attempts cannot replay it.
+	oldToken, err := s.queries.ConsumeOAuth2RefreshToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired refresh token")
+		}
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate refresh token")
+	}
+	if oldToken.Scopes == nil {
+		return OAuth2TokenResponse{}, pkgerrors.BadRequest("refresh token must be reauthorized")
+	}
+
+	// Intersect the token's stored scopes with the app's current registered
+	// scopes. This ensures that if an app's scope registration was narrowed
+	// after the original grant, rotation cannot re-issue scopes that are no
+	// longer allowed. The new token may be same-or-narrower, never broader.
+	effectiveScopes := scopeIntersection(oldToken.Scopes, app.Scopes)
+
+	return s.issueTokenPair(ctx, app.ID, oldToken.UserID, effectiveScopes)
+}
+
+// RevokeToken revokes an access token or refresh token.
+//
+// The caller MUST identify itself as an OAuth2 client and ownership is
+// always enforced: the token must have been issued to that client (RFC 7009
+// §2.1 — "the authorization server first validates the client credentials
+// ... and then verifies whether the token was issued to the client making
+// the revocation request"). A token value alone is never sufficient to
+// revoke it; that would let anyone who observed a token log the user out of
+// the integration without authenticating as the issuing client.
+//
+// For confidential clients, clientSecret MUST match the registered secret.
+// For public clients (confidential=false), clientSecret is ignored and
+// ownership is enforced by matching client_id against the token's app_id
+// only. This is a known trade-off documented in the PR: a stolen public-
+// client access token could be revoked by any attacker who knows the well-
+// known public client_id, but revoke is not a privileged action (it only
+// destroys access), so the attack surface is limited to denial-of-service.
+//
+// Per RFC 7009 §2.2, revocation of an unknown token is NOT an error: the
+// response is still 200. We preserve that behavior for both the "token
+// not found" and "token not owned by this client" cases so an attacker
+// cannot probe token-to-client mappings by observing error codes.
+func (s *OAuth2Service) RevokeToken(ctx context.Context, clientID, clientSecret, token string) error {
+	tokenHash := hashOAuth2Secret(token)
+
+	// Resolve and authenticate the requesting client (RFC 7009 §2.1).
+	if strings.TrimSpace(clientID) == "" {
+		return pkgerrors.Unauthorized("client_id is required")
+	}
+	requestingApp, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pkgerrors.Unauthorized("invalid client_id")
+		}
+		return pkgerrors.Internal("failed to revoke token")
+	}
+	if requestingApp.Confidential {
+		expectedHash := hashOAuth2Secret(clientSecret)
+		if subtle.ConstantTimeCompare([]byte(expectedHash), []byte(requestingApp.ClientSecretHash)) != 1 {
+			return pkgerrors.Unauthorized("invalid client_secret")
+		}
+	}
+
+	// Try access token first. Load-then-delete so we can enforce ownership.
+	accessToken, err := s.queries.GetOAuth2AccessTokenByHash(ctx, tokenHash)
+	if err == nil {
+		// Ownership check: the token must have been issued to the requesting
+		// client. Silently succeed on mismatch (RFC 7009 §2.2 — avoid
+		// probing).
+		if accessToken.AppID != requestingApp.ID {
+			return nil
+		}
+		if _, delErr := s.queries.DeleteOAuth2AccessTokenByHash(ctx, tokenHash); delErr != nil {
+			return pkgerrors.Internal("failed to revoke token")
+		}
+		revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+			Kind:      revocation.KindTokenRevoked,
+			UserID:    accessToken.UserID,
+			TokenID:   accessToken.ID,
+			TokenHash: tokenHash,
+			Reason:    "oauth2 access token revoked",
+		})
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return pkgerrors.Internal("failed to revoke token")
+	}
+
+	// Try refresh token.
+	refreshToken, err := s.queries.GetOAuth2RefreshTokenByHash(ctx, tokenHash)
+	if err == nil {
+		if refreshToken.AppID != requestingApp.ID {
+			return nil
+		}
+		if _, delErr := s.queries.DeleteOAuth2RefreshTokenByHash(ctx, tokenHash); delErr != nil {
+			return pkgerrors.Internal("failed to revoke token")
+		}
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return pkgerrors.Internal("failed to revoke token")
+	}
+
+	// Per RFC 7009 §2.2, revocation of an invalid token is not an error.
+	return nil
+}
+
+// RevokeAllByAppAndUser deletes every access token and refresh token issued
+// to the given OAuth2 application for the given user.
+func (s *OAuth2Service) RevokeAllByAppAndUser(ctx context.Context, appID, userID int64) error {
+	if err := s.queries.DeleteOAuth2RefreshTokensByAppAndUser(ctx, db.DeleteOAuth2RefreshTokensByAppAndUserParams{
+		AppID:  appID,
+		UserID: userID,
+	}); err != nil {
+		return pkgerrors.Internal("failed to revoke tokens")
+	}
+
+	if err := s.queries.DeleteOAuth2AccessTokensByAppAndUser(ctx, db.DeleteOAuth2AccessTokensByAppAndUserParams{
+		AppID:  appID,
+		UserID: userID,
+	}); err != nil {
+		return pkgerrors.Internal("failed to revoke tokens")
+	}
+
+	return nil
+}
+
+// issueTokenPair creates a new access token and refresh token pair.
+func (s *OAuth2Service) issueTokenPair(ctx context.Context, appID, userID int64, scopes []string) (OAuth2TokenResponse, error) {
+	now := s.now()
+	if scopes == nil {
+		scopes = []string{}
+	}
+
+	// Generate access token.
+	accessTokenValue, _ := generateOAuth2Token()
+	accessToken := "smithers_oat_" + accessTokenValue
+	accessTokenHash := hashOAuth2Secret(accessToken)
+
+	_, err := s.queries.CreateOAuth2AccessToken(ctx, db.CreateOAuth2AccessTokenParams{
+		TokenHash: accessTokenHash,
+		AppID:     appID,
+		UserID:    userID,
+		Scopes:    scopes,
+		ExpiresAt: now.Add(oauth2AccessTokenTTL),
+	})
+	if err != nil {
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create access token")
+	}
+
+	// Generate refresh token.
+	refreshTokenValue, _ := generateOAuth2Token()
+	newRefreshToken := "smithers_ort_" + refreshTokenValue
+	refreshTokenHash := hashOAuth2Secret(newRefreshToken)
+
+	_, err = s.queries.CreateOAuth2RefreshToken(ctx, db.CreateOAuth2RefreshTokenParams{
+		TokenHash: refreshTokenHash,
+		AppID:     appID,
+		UserID:    userID,
+		Scopes:    scopes,
+		ExpiresAt: now.Add(oauth2RefreshTokenTTL),
+	})
+	if err != nil {
+		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create refresh token")
+	}
+
+	return OAuth2TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "bearer",
+		ExpiresIn:    int64(oauth2AccessTokenTTL.Seconds()),
+		RefreshToken: newRefreshToken,
+		Scope:        strings.Join(scopes, " "),
+	}, nil
+}
+
+// toOAuth2ApplicationResponse converts a db model to an API response (omitting secret hash).
+func toOAuth2ApplicationResponse(app db.Oauth2Application) OAuth2ApplicationResponse {
+	redirectURIs := app.RedirectUris
+	if redirectURIs == nil {
+		redirectURIs = []string{}
+	}
+	scopes := app.Scopes
+	if scopes == nil {
+		scopes = []string{}
+	}
+	return OAuth2ApplicationResponse{
+		ID:           app.ID,
+		ClientID:     app.ClientID,
+		Name:         app.Name,
+		RedirectURIs: redirectURIs,
+		Scopes:       scopes,
+		Confidential: app.Confidential,
+		CreatedAt:    app.CreatedAt,
+		UpdatedAt:    app.UpdatedAt,
+	}
+}
+
+// isValidRedirectURI checks if the given URI is in the list of registered redirect URIs.
+//
+// Native-app loopback redirects (RFC 8252 §7.3) are matched with port-agnostic
+// comparison: a registered entry of "http://127.0.0.1/callback" or
+// "http://[::1]/callback" matches any port on the same host+path. This is
+// required because native apps pick a random ephemeral port at runtime.
+// For all other schemes (https, custom URL schemes like smithers://) we do
+// exact-string comparison — no substring / prefix matching.
+func isValidRedirectURI(registered []string, uri string) bool {
+	for _, r := range registered {
+		if r == uri {
+			return true
+		}
+		if isLoopbackMatch(r, uri) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLoopbackMatch implements RFC 8252 §7.3 loopback port-agnostic matching.
+// Only valid for http://127.0.0.1 and http://[::1] — never for https or
+// non-loopback hosts, and never for custom URL schemes.
+func isLoopbackMatch(registered, presented string) bool {
+	reg, err := url.Parse(registered)
+	if err != nil {
+		return false
+	}
+	pres, err := url.Parse(presented)
+	if err != nil {
+		return false
+	}
+	if reg.Scheme != "http" || pres.Scheme != "http" {
+		return false
+	}
+	regHost := reg.Hostname()
+	presHost := pres.Hostname()
+	if regHost != presHost {
+		return false
+	}
+	if regHost != "127.0.0.1" && regHost != "::1" {
+		return false
+	}
+	if reg.Path != pres.Path {
+		return false
+	}
+	if reg.RawQuery != pres.RawQuery {
+		return false
+	}
+	return true
+}
+
+// scopeIntersection returns the canonical scopes that appear in both granted
+// and allowed, after normalizing each entry. Scopes in granted that are not
+// in allowed are silently dropped (never cause an error — the caller is still
+// valid, just operating with a narrower effective set).
+func scopeIntersection(granted, allowed []string) []string {
+	normalizedAllowed := make(map[string]struct{}, len(allowed))
+	for _, s := range allowed {
+		ns := middleware.NormalizeTokenScope(s)
+		if ns == "" {
+			continue
+		}
+		normalizedAllowed[string(ns)] = struct{}{}
+	}
+
+	result := make([]string, 0, len(granted))
+	seen := make(map[string]struct{}, len(granted))
+	for _, s := range granted {
+		ns := middleware.NormalizeTokenScope(s)
+		if ns == "" {
+			continue
+		}
+		canonical := string(ns)
+		if _, ok := normalizedAllowed[canonical]; !ok {
+			continue
+		}
+		if _, alreadySeen := seen[canonical]; alreadySeen {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		result = append(result, canonical)
+	}
+	return result
+}
+
+// parseScopeString splits a space-separated scope string into a slice.
+func parseScopeString(scope string) []string {
+	trimmed := strings.TrimSpace(scope)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Fields(trimmed)
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// verifyPKCE validates a PKCE code_verifier against the stored code_challenge.
+func verifyPKCE(challenge, method, verifier string) bool {
+	if method != "S256" {
+		return false
+	}
+
+	hash := sha256.Sum256([]byte(verifier))
+	computed := base64.RawURLEncoding.EncodeToString(hash[:])
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
+}
+
+// generateOAuth2ClientID generates a unique client ID.
+func generateOAuth2ClientID() (string, error) {
+	return randomHex(20), nil
+}
+
+// generateOAuth2ClientSecret generates a client secret.
+func generateOAuth2ClientSecret() (string, error) {
+	return "smithers_oas_" + randomHex(32), nil
+}
+
+// generateOAuth2Code generates an authorization code.
+func generateOAuth2Code() (string, error) {
+	return randomHex(32), nil
+}
+
+// generateOAuth2Token generates a token value.
+func generateOAuth2Token() (string, error) {
+	return randomHex(32), nil
+}
+
+// hashOAuth2Secret hashes a secret using SHA-256.
+func hashOAuth2Secret(secret string) string {
+	hash := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(hash[:])
+}

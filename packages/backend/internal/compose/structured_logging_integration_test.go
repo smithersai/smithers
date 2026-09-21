@@ -1,0 +1,373 @@
+package compose
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/smithersai/smithers/packages/backend/internal/observability"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/database"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+)
+
+func captureStructuredLogs(t *testing.T, req *http.Request) (int, string) {
+	t.Helper()
+
+	buf := installLogCapture(t)
+	rec := httptest.NewRecorder()
+	defaultRouter(nil).ServeHTTP(rec, req)
+	return rec.Code, buf.String()
+}
+
+// installLogCapture redirects slog.Default() into a buffer for the rest of
+// the test. It must run BEFORE buildRouter: the router binds slog.Default()
+// to StructuredLogger at construction time.
+func installLogCapture(t *testing.T) *syncBuffer {
+	t.Helper()
+	buf := &syncBuffer{}
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(middleware.NewGCPJSONHandler(buf, slog.LevelInfo)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	return buf
+}
+
+// serveCapturingLogs serves req through router and returns the status code
+// plus only the log output produced while serving it.
+func serveCapturingLogs(router http.Handler, buf *syncBuffer, req *http.Request) (int, string) {
+	before := len(buf.String())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec.Code, buf.String()[before:]
+}
+
+// accessLogEntry finds the "http request" access-log line in logs.
+func accessLogEntry(t *testing.T, logs string) map[string]any {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(logs), "\n") {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry["message"] == "http request" {
+			return entry
+		}
+	}
+	require.FailNow(t, "no access log line found", "logs:\n%s", logs)
+	return nil
+}
+
+func TestStructuredLogging_RequestIDCorrelatesInLogs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("X-Request-Id", "structured-log-correlation-123")
+
+	status, logs := captureStructuredLogs(t, req)
+
+	require.Equal(t, http.StatusOK, status)
+	require.NotEmpty(t, logs)
+
+	// Parse JSON log entry
+	var logEntry map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(logs), &logEntry))
+
+	// Verify request_id is present and matches
+	labels, ok := logEntry["labels"].(map[string]interface{})
+	require.True(t, ok, "log entry should have labels")
+	assert.Equal(t, "structured-log-correlation-123", labels["request_id"])
+}
+
+func TestStructuredLogging_LogsAreValidJSON(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("X-Request-Id", "structured-log-json-check")
+
+	status, logs := captureStructuredLogs(t, req)
+
+	require.Equal(t, http.StatusOK, status)
+	require.NotEmpty(t, logs)
+	assert.True(t, json.Valid([]byte(logs)), "logs should be valid JSON")
+
+	var logEntry map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(logs), &logEntry))
+
+	// Verify GCP severity field
+	assert.NotEmpty(t, logEntry["severity"], "should have severity field")
+	assert.NotEmpty(t, logEntry["httpRequest"], "should have httpRequest field")
+}
+
+func TestStructuredLogging_IncludesRequestID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("X-Request-Id", "structured-log-request-id-check")
+	req.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+
+	status, logs := captureStructuredLogs(t, req)
+
+	require.Equal(t, http.StatusOK, status)
+	require.NotEmpty(t, logs)
+
+	var logEntry map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(logs), &logEntry))
+
+	// Verify request_id is in labels
+	labels, ok := logEntry["labels"].(map[string]interface{})
+	require.True(t, ok, "log entry should have labels")
+	assert.Equal(t, "structured-log-request-id-check", labels["request_id"])
+}
+
+func TestStructuredLogging_NotFoundPath(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
+	req.Header.Set("X-Request-Id", "structured-log-404-check")
+
+	status, logs := captureStructuredLogs(t, req)
+
+	require.Equal(t, http.StatusNotFound, status)
+	require.NotEmpty(t, logs)
+
+	var logEntry map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(logs), &logEntry))
+
+	// Verify request ID in labels
+	labels, ok := logEntry["labels"].(map[string]interface{})
+	require.True(t, ok, "log entry should have labels")
+	assert.Equal(t, "structured-log-404-check", labels["request_id"])
+
+	// Verify httpRequest fields
+	httpReq, ok := logEntry["httpRequest"].(map[string]interface{})
+	require.True(t, ok, "log entry should have httpRequest")
+	assert.Equal(t, float64(404), httpReq["status"])
+}
+
+// ---------------------------------------------------------------------------
+// R005: the access log names the authenticated user (live database)
+// ---------------------------------------------------------------------------
+
+// TestStructuredLogging_AuthenticatedRequestCarriesUserID drives the real
+// router (global StructuredLogger, then /api's AuthLoader backed by a live
+// *db.Queries) with a personal access token and asserts the access log carries
+// the token's user. Before the fix the logger only saw the pre-auth context.
+func TestStructuredLogging_AuthenticatedRequestCarriesUserID(t *testing.T) {
+	ctx := context.Background()
+	// The production pool constructor: it registers the sqlc type overrides
+	// (tsvector as text) that the generated user queries depend on.
+	pool, err := database.NewPool(ctx, config.DatabaseConfig{
+		URL: testDatabaseURL(t), MaxConns: 4, MaxConnLifetime: 60, MaxConnIdleTime: 30,
+	})
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	queries := db.New(pool)
+	buf := installLogCapture(t)
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	user, err := queries.CreateUser(ctx, db.CreateUserParams{
+		Username:      "accesslog-" + suffix,
+		LowerUsername: "accesslog-" + suffix,
+		DisplayName:   "Access Log",
+	})
+	require.NoError(t, err)
+
+	var raw [20]byte
+	_, err = rand.Read(raw[:])
+	require.NoError(t, err)
+	token := "smithers_" + hex.EncodeToString(raw[:])
+	sum := sha256.Sum256([]byte(token))
+	_, err = queries.CreateAccessToken(ctx, db.CreateAccessTokenParams{
+		UserID:         user.ID,
+		Name:           "access-log-" + suffix,
+		TokenHash:      hex.EncodeToString(sum[:]),
+		TokenLastEight: token[len(token)-8:],
+		Scopes:         "read:user",
+		ExpiresAt:      pgtype.Timestamptz{},
+	})
+	require.NoError(t, err)
+
+	router := buildRouterCompat(
+		testConfigAllFlagsOn(),
+		queries,
+		nil, // pool
+		&routes.RepoHandler{},
+		&routes.AuthHandler{},
+		&routes.UserHandler{ProfileService: services.NewUserService(queries)},
+		&routes.SSHKeyHandler{},
+		&routes.LabelHandler{},
+
+		&routes.OrgHandler{},
+		&routes.LandingHandler{},
+		&routes.SearchHandler{Service: &mockRouterSearchService{}},
+		&routes.IssueHandler{},
+		nil, // wikiService
+		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
+		nil, // notificationHandler
+		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
+		nil, nil, nil, nil, nil, nil, nil, // admin handlers
+		nil, nil, nil, nil, // webhook, secret, variable, commitStatus
+		nil, nil, nil, nil, nil, nil, // lfs, jjVCS, agentInternal, agentSession, agentSessionStream, pushHook
+		nil, nil, nil, nil, // workflow, workspace, workspaceInternal, workspaceTerminal
+		nil, nil, nil, // telemetry, featureFlag, oauth2
+		nil, // smithersMetrics
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Request-Id", "access-log-user-"+suffix)
+
+	status, logs := serveCapturingLogs(router, buf, req)
+	require.Equal(t, http.StatusOK, status, "logs:\n%s", logs)
+
+	entry := accessLogEntry(t, logs)
+	labels, ok := entry["labels"].(map[string]any)
+	require.True(t, ok, "log entry should have labels: %v", entry)
+	assert.Equal(t, "access-log-user-"+suffix, labels["request_id"])
+	assert.Equal(t, fmt.Sprintf("%d", user.ID), labels["user_id"], "access log must name the PAT's user")
+	assert.NotContains(t, logs, token, "the raw token must never be logged")
+}
+
+// ---------------------------------------------------------------------------
+// R003: desktop relay bearer tokens never reach logs or spans
+// ---------------------------------------------------------------------------
+
+type stubDesktopRelayService struct {
+	authorize func(ctx context.Context, workspaceID, token string) (services.WorkspaceDesktopRelayTarget, error)
+}
+
+func (s *stubDesktopRelayService) CreateDesktopSession(context.Context, string, int64, int64) (services.WorkspaceDesktopSessionResponse, error) {
+	return services.WorkspaceDesktopSessionResponse{}, pkgerrors.Internal("not under test")
+}
+
+func (s *stubDesktopRelayService) AuthorizeDesktopRelay(ctx context.Context, workspaceID, token string) (services.WorkspaceDesktopRelayTarget, error) {
+	return s.authorize(ctx, workspaceID, token)
+}
+
+func (s *stubDesktopRelayService) ObserveDesktop(context.Context, string, int64, int64, services.DesktopObserveRequest) (services.DesktopObservation, error) {
+	return services.DesktopObservation{}, pkgerrors.Internal("not under test")
+}
+
+func (s *stubDesktopRelayService) InputDesktop(context.Context, string, int64, int64, services.DesktopInputRequest) (services.DesktopInputResponse, error) {
+	return services.DesktopInputResponse{}, pkgerrors.Internal("not under test")
+}
+
+// TestStructuredLogging_DesktopRelayTokenNeverReachesTelemetry mounts the
+// production /api/workspaces/{workspaceID}/desktop/{token}/* relay with the
+// real tracer provider installed globally and checks every relay outcome
+// (refused, conflicting, failing upstream authorization, and a successful
+// proxy) leaves neither the access log nor any exported span attribute
+// holding the smithers_desk_ credential.
+func TestStructuredLogging_DesktopRelayTokenNeverReachesTelemetry(t *testing.T) {
+	buf := installLogCapture(t)
+	exporter := tracetest.NewInMemoryExporter()
+	provider := observability.NewTracerProvider(exporter, 1.0)
+	originalProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider) // buildRouter's otelhttp middleware binds the global provider
+	t.Cleanup(func() {
+		otel.SetTracerProvider(originalProvider)
+		_ = provider.Shutdown(context.Background())
+	})
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html>vnc</html>"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	const token = "smithers_desk_0123456789abcdef0123456789abcdef"
+	outcomes := map[string]error{} // token suffix -> authorization result
+	service := &stubDesktopRelayService{authorize: func(_ context.Context, workspaceID, got string) (services.WorkspaceDesktopRelayTarget, error) {
+		if err, refused := outcomes[got]; refused && err != nil {
+			return services.WorkspaceDesktopRelayTarget{}, err
+		}
+		return services.WorkspaceDesktopRelayTarget{Domain: "desktop.example.test", WorkspaceID: workspaceID, UserID: 1, RepositoryID: 1}, nil
+	}}
+
+	router := buildRouterCompat(
+		testConfigAllFlagsOn(),
+		nil,
+		nil, // pool
+		&routes.RepoHandler{},
+		&routes.AuthHandler{},
+		&routes.UserHandler{},
+		&routes.SSHKeyHandler{},
+		&routes.LabelHandler{},
+
+		&routes.OrgHandler{},
+		&routes.LandingHandler{},
+		&routes.SearchHandler{Service: &mockRouterSearchService{}},
+		&routes.IssueHandler{},
+		nil, // wikiService
+		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
+		nil, // notificationHandler
+		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
+		nil, nil, nil, nil, nil, nil, nil, // admin handlers
+		nil, nil, nil, nil, // webhook, secret, variable, commitStatus
+		nil, nil, nil, nil, nil, nil, // lfs, jjVCS, agentInternal, agentSession, agentSessionStream, pushHook
+		nil, // workflowHandler
+		&routes.WorkspaceHandler{Desktop: &routes.WorkspaceDesktopHandler{Service: service, RelayServiceURL: upstream.URL}},
+		nil, nil, // workspaceInternal, workspaceTerminal
+		nil, nil, nil, // telemetry, featureFlag, oauth2
+		nil, // smithersMetrics
+	)
+
+	cases := []struct {
+		name       string
+		suffix     string
+		path       string
+		err        error
+		wantStatus int
+	}{
+		{name: "expired session refused", suffix: "a", path: "/vnc.html", err: pkgerrors.Unauthorized("desktop session expired"), wantStatus: http.StatusUnauthorized},
+		{name: "workspace not running", suffix: "b", path: "/websockify", err: pkgerrors.Conflict("workspace is not running"), wantStatus: http.StatusConflict},
+		{name: "authorization backend failure", suffix: "c", path: "/vnc.html?autoconnect=true&password=secretvnc", err: pkgerrors.Internal("desktop lookup failed"), wantStatus: http.StatusInternalServerError},
+		{name: "successful relay", suffix: "d", path: "/vnc.html", wantStatus: http.StatusOK},
+		{name: "successful relay bare token", suffix: "e", path: "", wantStatus: http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			caseToken := token + tc.suffix
+			outcomes[caseToken] = tc.err
+			exporter.Reset()
+
+			req := httptest.NewRequest(http.MethodGet, "/api/workspaces/ws-desktop/desktop/"+caseToken+tc.path, nil)
+			req.Header.Set("X-Request-Id", "desktop-"+tc.suffix)
+			status, logs := serveCapturingLogs(router, buf, req)
+			require.Equal(t, tc.wantStatus, status, "logs:\n%s", logs)
+
+			assert.NotContains(t, logs, caseToken, "access log must not contain the desktop bearer token")
+			assert.NotContains(t, logs, "secretvnc", "access log must not contain the VNC password")
+			entry := accessLogEntry(t, logs)
+			httpReq, ok := entry["httpRequest"].(map[string]any)
+			require.True(t, ok, "entry: %v", entry)
+			if tc.err != nil {
+				assert.Equal(t, "/api/workspaces/ws-desktop/desktop/smithers_desk_REDACTED"+strings.SplitN(tc.path, "?", 2)[0], httpReq["requestUrl"])
+			}
+
+			require.NoError(t, provider.ForceFlush(context.Background()))
+			spans := exporter.GetSpans()
+			require.NotEmpty(t, spans, "otelhttp must export the server span")
+			for _, span := range spans {
+				for _, attr := range span.Attributes {
+					value := attr.Value.String()
+					assert.NotContains(t, value, caseToken, "span %q attribute %s carries the desktop bearer token", span.Name, attr.Key)
+					assert.NotContains(t, value, "secretvnc", "span %q attribute %s carries the VNC password", span.Name, attr.Key)
+				}
+			}
+		})
+	}
+}

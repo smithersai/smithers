@@ -1,0 +1,1481 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	stdErrors "errors"
+	"fmt"
+	"log/slog"
+	pathpkg "path"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// WorkflowRunQuerier is the DB interface required for workflow run orchestration.
+type WorkflowRunQuerier interface {
+	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
+	GetUserByID(ctx context.Context, id int64) (db.User, error)
+	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
+	CreateWorkflowRun(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
+	CreateWorkflowStep(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
+	CreateWorkflowTask(ctx context.Context, arg db.CreateWorkflowTaskParams) (db.WorkflowTask, error)
+	CreateCommitStatus(ctx context.Context, arg db.CreateCommitStatusParams) (db.CommitStatus, error)
+	ListWorkflowDefinitionsByRepo(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
+	GetWorkflowDefinition(ctx context.Context, arg db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error)
+	EnsureWorkflowDefinitionReference(ctx context.Context, arg db.EnsureWorkflowDefinitionReferenceParams) (db.WorkflowDefinition, error)
+	GetWorkflowRun(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
+	UpdateWorkflowRunAgentToken(ctx context.Context, arg db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error)
+	CancelWorkflowRun(ctx context.Context, id int64) error
+	// FailWorkflowRun terminalizes a run that aborted during dispatch. It is
+	// required, not optional: a querier that silently lacked it left the run
+	// queued forever, because status is otherwise derived from tasks that were
+	// never created.
+	FailWorkflowRun(ctx context.Context, id int64) error
+	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
+	HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error)
+	ResumeWorkflowRun(ctx context.Context, id int64) error
+	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error
+	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error
+	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
+}
+
+// workflowQueryTxStarter and workflowQueryTxFactory are intentionally kept
+// separate from WorkflowRunQuerier. The service has small in-memory fakes in
+// unit tests, while production uses *db.Queries, which can bind generated
+// queries to a pgx transaction.
+type workflowQueryTxStarter interface {
+	BeginTx(ctx context.Context) (pgx.Tx, error)
+}
+
+type workflowQueryTxFactory interface {
+	WithTx(tx pgx.Tx) *db.Queries
+}
+
+func beginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, *db.Queries, bool, error) {
+	starter, canStart := queries.(workflowQueryTxStarter)
+	factory, canBind := queries.(workflowQueryTxFactory)
+	if !canStart || !canBind {
+		return nil, nil, false, nil
+	}
+	tx, err := starter.BeginTx(ctx)
+	if err != nil {
+		return nil, nil, true, err
+	}
+	return tx, factory.WithTx(tx), true, nil
+}
+
+func lockWorkflowRun(ctx context.Context, tx pgx.Tx, runID int64) error {
+	var lockedID int64
+	return tx.QueryRow(ctx,
+		`SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE`,
+		runID,
+	).Scan(&lockedID)
+}
+
+func lockWorkflowRunForRepository(ctx context.Context, tx pgx.Tx, runID, repositoryID int64) error {
+	var lockedID int64
+	return tx.QueryRow(ctx,
+		`SELECT id FROM workflow_runs WHERE id = $1 AND repository_id = $2 FOR UPDATE`,
+		runID,
+		repositoryID,
+	).Scan(&lockedID)
+}
+
+func markWorkflowRunFailed(ctx context.Context, queries WorkflowRunQuerier, runID int64) {
+	if err := queries.FailWorkflowRun(ctx, runID); err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, runID).
+			Error("failed to mark workflow run as failed after dispatch error", "error", err)
+	}
+}
+
+// workflowRunCredentialRevoker is the DB surface needed to revoke a
+// terminal workflow run's live runtime credentials. It is satisfied by
+// *db.Queries in production; the duck-type assertion in
+// revokeWorkflowRunCredentials lets existing narrower test-mock queriers
+// keep compiling without implementing it (same pattern as
+// workflowRunFailureMarker above).
+type workflowRunCredentialRevoker interface {
+	UpdateWorkflowRunAgentToken(ctx context.Context, arg db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error)
+	GetWorkflowRunJJHubTokenID(ctx context.Context, id int64) (pgtype.Int8, error)
+	ClearWorkflowRunJJHubTokenID(ctx context.Context, id int64) error
+	DeleteAccessToken(ctx context.Context, arg db.DeleteAccessTokenParams) error
+	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
+}
+
+// revokeWorkflowRunCredentials clears a terminal workflow run's live agent
+// token and revokes any per-run jjhub API token, so neither credential
+// remains usable after the run finishes.
+//
+// This is safe to call for every terminalization path (cancel, complete,
+// sandbox finalize): resumed runs (cancelled/failed -> queued) need no stored
+// per-run token because the trusted gVisor runner mints a signed, task-scoped
+// callback token only after claiming a task; the shared pod credential never
+// enters the workflow child. GetTaskRuntimeEnvironment returns that caller's
+// task token, the sandbox scheduler never injects the per-run agent token, and
+// agent dispatch mints a fresh token per dispatch. So clearing the stored
+// credentials here never breaks a legitimate resume.
+//
+// All work is best-effort: failures are logged, not returned, so credential
+// cleanup never blocks the terminalization it is attached to. repositoryID
+// of 0 skips jjhub token revocation (used at dispatch-abort time, before any
+// jjhub token could have been minted for the run).
+func revokeWorkflowRunCredentials(ctx context.Context, queries any, runID, repositoryID int64) {
+	revoker, ok := queries.(workflowRunCredentialRevoker)
+	if !ok {
+		return
+	}
+	logger := middleware.LoggerWithWorkflowRun(ctx, runID)
+
+	if _, err := revoker.UpdateWorkflowRunAgentToken(ctx, db.UpdateWorkflowRunAgentTokenParams{
+		AgentTokenHash: pgtype.Text{Valid: false},
+		AgentTokenExpiresAt: pgtype.Timestamptz{
+			Time:  time.Now().UTC().Add(-1 * time.Hour),
+			Valid: true,
+		},
+		ID: runID,
+	}); err != nil {
+		logger.Warn("failed to revoke workflow run agent token", "error", err)
+	}
+
+	if repositoryID <= 0 {
+		return
+	}
+
+	tokenID, err := revoker.GetWorkflowRunJJHubTokenID(ctx, runID)
+	if err != nil {
+		logger.Warn("failed to load workflow run jjhub token id", "error", err)
+		return
+	}
+	if !tokenID.Valid || tokenID.Int64 <= 0 {
+		return
+	}
+
+	repository, err := revoker.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		logger.Warn("failed to load repository for jjhub token revocation", "error", err)
+		return
+	}
+	if !repository.UserID.Valid || repository.UserID.Int64 <= 0 {
+		// jjhub API tokens are only ever minted for the repo-owner user
+		// (org repos never mint one); nothing to revoke.
+		return
+	}
+
+	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), temporaryRepoTokenRevokeTimeout)
+	defer cancel()
+	if err := revoker.DeleteAccessToken(revokeCtx, db.DeleteAccessTokenParams{
+		ID:     tokenID.Int64,
+		UserID: repository.UserID.Int64,
+	}); err != nil {
+		logger.Warn("failed to delete workflow run jjhub token", "error", err)
+	}
+	if err := revoker.ClearWorkflowRunJJHubTokenID(ctx, runID); err != nil {
+		logger.Warn("failed to clear workflow run jjhub token id", "error", err)
+	}
+}
+
+// RerunInput carries the parameters for rerunning a workflow run.
+type RerunInput struct {
+	RepositoryID int64
+	RunID        int64
+	UserID       int64
+}
+
+// WorkflowRunCommitStatusWriter manages commit status rows linked to workflow runs.
+type WorkflowRunCommitStatusWriter interface {
+	PublishCommitStatus(ctx context.Context, status db.CommitStatus)
+	UpdateCommitStatusForWorkflowRun(ctx context.Context, workflowRunID int64, status string, description string, targetURL string) (db.CommitStatus, error)
+}
+
+// WorkflowRunService manages workflow run lifecycle: from event trigger to task dispatch.
+type WorkflowRunService interface {
+	// DispatchForEvent finds matching workflow definitions for the given event and creates
+	// workflow runs with steps and tasks for each matching definition.
+	DispatchForEvent(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error)
+	// CancelRun cancels an in-progress workflow run.
+	CancelRun(ctx context.Context, repositoryID, runID int64) error
+	// RerunRun creates a new workflow run based on an existing run.
+	RerunRun(ctx context.Context, input RerunInput) (*WorkflowRunResult, error)
+	// ResumeRun resumes a cancelled or failed workflow run by re-queuing incomplete tasks.
+	ResumeRun(ctx context.Context, repositoryID, runID int64) error
+}
+
+// DispatchForEventInput carries the trigger event details for workflow dispatch.
+type DispatchForEventInput struct {
+	RepositoryID         int64
+	UserID               int64
+	Event                TriggerEvent
+	UseLoadedDefinitions bool
+	LoadedDefinitions    []LoadedWorkflowDefinition
+	WorkflowDefinitionID *int64 // If set, only dispatch for this specific definition
+	// AlertRemediationBinding is set only by the trusted alert worker. The run
+	// and this exact job/attempt binding are committed atomically.
+	AlertRemediationBinding *AlertRemediationRunBinding
+}
+
+type AlertRemediationRunBinding struct {
+	JobID            int64
+	IncidentRowID    int64
+	DispatchToken    string
+	ExpectedAttempts int32
+}
+
+type alertRemediationRunBinder interface {
+	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+}
+
+// WorkflowRunResult captures the run and tasks created for a workflow definition.
+type WorkflowRunResult struct {
+	WorkflowDefinitionID int64
+	WorkflowRunID        int64
+	Steps                []WorkflowStepResult
+	// AgentToken is the plaintext agent token for this run, populated only at
+	// dispatch time. Only the hash is stored in the DB — never the plaintext.
+	AgentToken string
+	// pendingCommitStatus is created in the same transaction as the run and its
+	// tasks, then published only after that transaction commits.
+	pendingCommitStatus *db.CommitStatus
+}
+
+// WorkflowStepResult captures step and task created for a workflow step.
+type WorkflowStepResult struct {
+	StepID   int64 `json:"step_id"`
+	TaskID   int64 `json:"task_id"`
+	Position int64 `json:"position"`
+}
+
+// Workflow run execution planes. Exactly one consumer claims work per run:
+// runner-plane tasks are claimed by the gVisor task runner (ClaimPendingTask),
+// sandbox-plane runs are claimed whole by the sandbox workflow scheduler
+// (ClaimQueuedWorkflowRuns), and agent-plane runs are driven solely by agent
+// dispatch. The plane is fixed at run creation and never changes.
+const (
+	WorkflowRunPlaneRunner  = "runner"
+	WorkflowRunPlaneSandbox = "sandbox"
+	WorkflowRunPlaneAgent   = "agent"
+)
+
+// JobConfig represents a single job extracted from the workflow config.
+type JobConfig struct {
+	Name   string       `json:"-"` // set from map key
+	Steps  []StepConfig `json:"steps,omitempty"`
+	RunsOn string       `json:"runs-on,omitempty"`
+	Needs  []string     `json:"needs,omitempty"`
+	If     string       `json:"if,omitempty"`
+	// Secrets is nil for the legacy expose-all behavior. An explicit empty
+	// list creates a credential-free task; otherwise only named repository
+	// secrets/variables are delivered to the runner process.
+	Secrets *[]string                 `json:"secrets,omitempty"`
+	Cache   []WorkflowCacheDescriptor `json:"cache,omitempty"`
+}
+
+// StepConfig represents a single step within a job.
+type StepConfig struct {
+	Name  string         `json:"name,omitempty"`
+	Run   string         `json:"run,omitempty"`
+	Uses  string         `json:"uses,omitempty"`
+	Agent map[string]any `json:"agent,omitempty"`
+}
+
+type WorkflowCacheDescriptor struct {
+	Action    string   `json:"action"`
+	Key       string   `json:"key"`
+	HashFiles []string `json:"hash_files,omitempty"`
+	Paths     []string `json:"paths,omitempty"`
+}
+
+type workflowRunService struct {
+	queries              WorkflowRunQuerier
+	dispatcher           webhooks.Dispatcher
+	commitStatusWriter   WorkflowRunCommitStatusWriter
+	checkRunService      GitHubCheckRunService
+	installationResolver GitHubRepositoryInstallationResolver
+	definitionLoader     WorkflowDefinitionCommitLoader
+	bookmarkResolver     WorkflowBookmarkCommitResolver
+	metrics              WorkflowRunMetricsObserver
+	billing              BillingPolicy
+	secretInjector       *SecretInjector
+	repoFileProbe        WorkflowRunRepoFileProbe
+	environmentImages    WorkflowRunEnvironmentImageResolver
+}
+
+// WorkflowDefinitionCommitLoader loads workflow definitions from one immutable
+// repository snapshot without consulting or mutating the persisted definition
+// cache. Alert remediation uses it to bind the executed config to the same
+// commit that the runner checks out.
+type WorkflowDefinitionCommitLoader interface {
+	LoadDefinitionsFromCommit(ctx context.Context, repoID int64, commitSHA string) (WorkflowLoadResult, error)
+}
+
+// WorkflowBookmarkCommitResolver resolves a moving bookmark through the
+// authoritative repository host. PostgreSQL bookmark mirrors are not populated
+// on production push paths and must not be used to pin remediation checkouts.
+type WorkflowBookmarkCommitResolver interface {
+	ResolveBookmarkCommit(ctx context.Context, repoID int64, bookmark string) (string, error)
+}
+
+// WorkflowRunServiceOption applies optional configuration to a workflowRunService.
+type WorkflowRunServiceOption func(*workflowRunService)
+
+// WithWorkflowRunWebhookDispatcher wires a webhook dispatcher into WorkflowRunService.
+func WithWorkflowRunWebhookDispatcher(dispatcher webhooks.Dispatcher) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.dispatcher = dispatcher
+	}
+}
+
+// WithWorkflowRunEnvironmentRouting wires the two lookups ResolveCIExecutionPlane
+// needs to route a CI run onto a NixOS guest: the repository file probe that
+// answers "does this commit declare .smithers/environment.nix" and the closure
+// image registry that answers "has that environment been built". Without both,
+// every CI run stays on the Debian runner plane.
+func WithWorkflowRunEnvironmentRouting(probe WorkflowRunRepoFileProbe, images WorkflowRunEnvironmentImageResolver) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.repoFileProbe = probe
+		s.environmentImages = images
+	}
+}
+
+// WithWorkflowRunCommitStatusWriter wires commit-status persistence into WorkflowRunService.
+func WithWorkflowRunCommitStatusWriter(writer WorkflowRunCommitStatusWriter) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.commitStatusWriter = writer
+	}
+}
+
+// WithWorkflowRunGitHubCheckRunService wires GitHub Checks API publishing.
+func WithWorkflowRunGitHubCheckRunService(service GitHubCheckRunService) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.checkRunService = service
+	}
+}
+
+// WithWorkflowRunGitHubInstallationResolver wires connection-scoped GitHub App
+// installation resolution for check-run publishing.
+func WithWorkflowRunGitHubInstallationResolver(resolver GitHubRepositoryInstallationResolver) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.installationResolver = resolver
+	}
+}
+
+// WithWorkflowRunMetrics wires terminal workflow metrics into WorkflowRunService.
+func WithWorkflowRunMetrics(metrics WorkflowRunMetricsObserver) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.metrics = metrics
+	}
+}
+
+func WithWorkflowRunBillingPolicy(policy BillingPolicy) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.billing = policy
+	}
+}
+
+func WithWorkflowRunSecretInjector(injector *SecretInjector) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.secretInjector = injector
+	}
+}
+
+// WithWorkflowRunDefinitionCommitLoader wires commit-scoped workflow loading
+// into WorkflowRunService. Alert remediation dispatch fails closed when this
+// dependency is unavailable.
+func WithWorkflowRunDefinitionCommitLoader(loader WorkflowDefinitionCommitLoader) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.definitionLoader = loader
+	}
+}
+
+// WithWorkflowRunBookmarkCommitResolver wires authoritative repo-host bookmark
+// resolution into commit-scoped alert remediation dispatch.
+func WithWorkflowRunBookmarkCommitResolver(resolver WorkflowBookmarkCommitResolver) WorkflowRunServiceOption {
+	return func(s *workflowRunService) {
+		s.bookmarkResolver = resolver
+	}
+}
+
+// NewWorkflowRunService creates a new workflow run service.
+func NewWorkflowRunService(queries WorkflowRunQuerier, opts ...WorkflowRunServiceOption) WorkflowRunService {
+	s := &workflowRunService{queries: queries}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func (s *workflowRunService) DispatchForEvent(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error) {
+	if input.RepositoryID <= 0 {
+		return nil, pkgerrors.BadRequest("repository id must be positive")
+	}
+	if input.Event.Type == "" {
+		return nil, pkgerrors.BadRequest("event type is required")
+	}
+	if s.queries == nil {
+		return nil, pkgerrors.Internal("workflow run store unavailable")
+	}
+
+	type dispatchDefinition struct {
+		definition    db.WorkflowDefinition
+		config        json.RawMessage
+		enforceActive bool
+	}
+
+	var defs []dispatchDefinition
+
+	if input.WorkflowDefinitionID != nil {
+		// Targeted dispatch: fetch only the specified definition
+		def, err := s.queries.GetWorkflowDefinition(ctx, db.GetWorkflowDefinitionParams{
+			ID:           *input.WorkflowDefinitionID,
+			RepositoryID: input.RepositoryID,
+		})
+		if err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return nil, pkgerrors.NotFound("workflow definition not found")
+			}
+			return nil, pkgerrors.Internal("failed to fetch workflow definition")
+		}
+		defs = []dispatchDefinition{{definition: def, config: def.Config, enforceActive: true}}
+	} else if input.UseLoadedDefinitions {
+		for _, loaded := range input.LoadedDefinitions {
+			ref, err := s.queries.EnsureWorkflowDefinitionReference(ctx, db.EnsureWorkflowDefinitionReferenceParams{
+				RepositoryID: input.RepositoryID,
+				Name:         loaded.Name,
+				Path:         loaded.Path,
+				Config:       loaded.Config,
+			})
+			if err != nil {
+				return nil, pkgerrors.Internal("failed to ensure workflow definition reference")
+			}
+			defs = append(defs, dispatchDefinition{
+				definition:    ref,
+				config:        loaded.Config,
+				enforceActive: false,
+			})
+		}
+	} else {
+		// Broadcast dispatch: match against all active definitions
+		var err error
+		rows, err := s.queries.ListWorkflowDefinitionsByRepo(ctx, db.ListWorkflowDefinitionsByRepoParams{
+			RepositoryID: input.RepositoryID,
+			PageSize:     int32(100),
+			PageOffset:   int32(0),
+		})
+		if err != nil {
+			return nil, pkgerrors.Internal("failed to list workflow definitions")
+		}
+		for _, def := range rows {
+			defs = append(defs, dispatchDefinition{definition: def, config: def.Config, enforceActive: true})
+		}
+	}
+
+	var results []WorkflowRunResult
+
+	// 2. For each definition, check trigger match and create a run if matched.
+	for _, candidate := range defs {
+		def := candidate.definition
+		// For alert remediation the persisted row is only a stable ID/path
+		// reference. Activity, trigger matching, and jobs all come from the exact
+		// commit loaded in createRunForDefinition below.
+		commitScopedAlert := input.Event.Type == AlertRemediationTriggerEvent
+		if candidate.enforceActive && !def.IsActive && !commitScopedAlert {
+			continue
+		}
+
+		if !commitScopedAlert {
+			matched, err := MatchTrigger(candidate.config, input.Event)
+			if err != nil {
+				// For targeted dispatch the caller named an exact definition, so a
+				// silently skipped unparseable trigger config would surface as a
+				// confusing 201 {"runs":[]}. Report it instead.
+				if input.WorkflowDefinitionID != nil {
+					return nil, pkgerrors.UnprocessableEntity("invalid workflow trigger configuration: " + err.Error())
+				}
+				continue
+			}
+			if !matched {
+				// Same reasoning for a manual dispatch against a workflow that does
+				// not declare a workflow_dispatch trigger.
+				if input.WorkflowDefinitionID != nil && normalizeTriggerName(input.Event.Type) == "workflow_dispatch" {
+					return nil, pkgerrors.UnprocessableEntity("workflow does not declare a workflow_dispatch trigger")
+				}
+				continue
+			}
+		}
+
+		result, err := s.createRunForDefinition(ctx, def, candidate.config, input)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+func (s *workflowRunService) createRunForDefinition(
+	ctx context.Context,
+	def db.WorkflowDefinition,
+	configJSON json.RawMessage,
+	input DispatchForEventInput,
+) (WorkflowRunResult, error) {
+	result := WorkflowRunResult{WorkflowDefinitionID: def.ID}
+
+	// Billing gate: every non-agent run creation funnels through here (manual
+	// dispatch, push/release/schedule triggers, targeted and broadcast event
+	// dispatch), so enforce the owner's CI-minute cap before inserting the run.
+	// Agent runs are created by agent_dispatch.go, which applies its own
+	// AuthorizeAgentRun gate.
+	if s.billing != nil {
+		if err := s.billing.AuthorizeWorkflowDispatch(ctx, input.RepositoryID); err != nil {
+			return WorkflowRunResult{}, err
+		}
+	}
+
+	repository, err := s.resolveRunRepository(ctx, input.RepositoryID)
+	if err != nil {
+		return WorkflowRunResult{}, err
+	}
+	triggerRef := strings.TrimSpace(input.Event.Ref)
+	if triggerRef == "" {
+		triggerRef = repository.DefaultBookmark
+	}
+	// Alert remediation is a multi-task trust boundary: proposal, validation,
+	// and publication each receive a fresh checkout. Pin the run to one exact
+	// Git object at dispatch so a moving default bookmark cannot make us publish
+	// a patch against a different tree than the one that passed validation.
+	if input.Event.Type == AlertRemediationTriggerEvent {
+		commitSHA := strings.TrimSpace(input.Event.CommitSHA)
+		if commitSHA == "" {
+			if s.bookmarkResolver == nil {
+				return WorkflowRunResult{}, pkgerrors.Internal("alert remediation base revision resolver unavailable")
+			}
+			var resolveErr error
+			commitSHA, resolveErr = s.bookmarkResolver.ResolveBookmarkCommit(ctx, input.RepositoryID, triggerRef)
+			commitSHA = strings.TrimSpace(commitSHA)
+			if resolveErr != nil {
+				return WorkflowRunResult{}, pkgerrors.Internal("failed to resolve immutable alert remediation base revision")
+			}
+		}
+		if !isImmutableGitObjectID(commitSHA) {
+			return WorkflowRunResult{}, pkgerrors.Internal("failed to resolve immutable alert remediation base revision")
+		}
+		input.Event.CommitSHA = commitSHA
+
+		configJSON, err = s.loadAlertRemediationDefinitionAtCommit(ctx, input.RepositoryID, commitSHA, def.Path, input.Event)
+		if err != nil {
+			return WorkflowRunResult{}, err
+		}
+	}
+
+	// Schedule, workflow_dispatch, issue, and other ref-backed triggers do not
+	// carry a commit SHA. A workflow commit status cannot be created without a
+	// SHA or jj change ID, while terminal runner completion updates every run by
+	// workflow_run_id. Resolve the authoritative bookmark target before writing
+	// any rows so these runs are commit-backed just like push-triggered runs.
+	if s.commitStatusWriter != nil && strings.TrimSpace(input.Event.CommitSHA) == "" && strings.TrimSpace(input.Event.ChangeID) == "" {
+		if s.bookmarkResolver == nil {
+			return WorkflowRunResult{}, pkgerrors.Internal("workflow commit resolver unavailable")
+		}
+		commitSHA, resolveErr := s.bookmarkResolver.ResolveBookmarkCommit(ctx, input.RepositoryID, triggerRef)
+		commitSHA = strings.TrimSpace(commitSHA)
+		if resolveErr != nil || !isImmutableGitObjectID(commitSHA) {
+			return WorkflowRunResult{}, pkgerrors.Internal("failed to resolve workflow trigger commit")
+		}
+		input.Event.CommitSHA = commitSHA
+	}
+
+	preparedJobs, err := prepareWorkflowJobsForDispatch(configJSON, input.Event)
+	if err != nil {
+		return WorkflowRunResult{}, pkgerrors.BadRequest(err.Error())
+	}
+	resolvedBookmark := normalizeWorkflowCacheBookmark(triggerRef, repository.DefaultBookmark)
+	repoOwner := s.resolveRepoOwner(ctx, repository)
+
+	// Serialize dispatch inputs for persistence (nil when empty).
+	var dispatchInputs []byte
+	if len(input.Event.Inputs) > 0 {
+		dispatchInputs, _ = json.Marshal(input.Event.Inputs)
+	}
+
+	plaintextAgentToken, tokenHash, err := generateAgentToken()
+	if err != nil {
+		return WorkflowRunResult{}, pkgerrors.Internal("failed to generate workflow run agent token")
+	}
+
+	executionPlane := ResolveCIExecutionPlane(ctx, s.repoFileProbe, s.environmentImages, CIExecutionPlaneInput{
+		RepositoryID: input.RepositoryID,
+		Owner:        repoOwner,
+		Repo:         repository.Name,
+		CommitSHA:    input.Event.CommitSHA,
+	})
+
+	tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries)
+	if err != nil {
+		return WorkflowRunResult{}, pkgerrors.Internal("failed to begin workflow run transaction")
+	}
+
+	var run db.WorkflowRun
+	if transactional {
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		result, run, err = createWorkflowRunRows(ctx, txQueries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, tokenHash, plaintextAgentToken, s.commitStatusWriter != nil, executionPlane)
+		if err != nil {
+			return WorkflowRunResult{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return WorkflowRunResult{}, pkgerrors.Internal("failed to commit workflow run")
+		}
+	} else {
+		result, run, err = createWorkflowRunRows(ctx, s.queries, def, input, repository, repoOwner, triggerRef, resolvedBookmark, dispatchInputs, preparedJobs, tokenHash, plaintextAgentToken, s.commitStatusWriter != nil, executionPlane)
+		if err != nil {
+			if result.WorkflowRunID > 0 {
+				abortWorkflowRunDispatch(ctx, s.queries, result.WorkflowRunID)
+			}
+			return WorkflowRunResult{}, err
+		}
+	}
+
+	// A newer push to a ref replaces the older pushes to it. Reap those runs
+	// before publishing this run's own external state, so the freshly created
+	// run is the last writer for the concurrency group. Without this, seven
+	// consecutive pushes to one repository queued seven full runs at once
+	// (2026-09-15: runs 11751-11757, six grouped tasks each) and starved every
+	// other repository on the shared runner pool for over an hour.
+	s.cancelSupersededRuns(ctx, run, configJSON)
+
+	// All database rows are durable before publishing external state. A
+	// malformed definition therefore cannot leave a queued run with no work.
+	_ = s.dispatchWorkflowRunEvent(ctx, run, input.RepositoryID)
+	if result.pendingCommitStatus != nil {
+		s.commitStatusWriter.PublishCommitStatus(ctx, *result.pendingCommitStatus)
+		result.pendingCommitStatus = nil
+	}
+	s.createInProgressCheckRun(ctx, run, def, repository, repoOwner)
+
+	return result, nil
+}
+
+func (s *workflowRunService) loadAlertRemediationDefinitionAtCommit(
+	ctx context.Context,
+	repositoryID int64,
+	commitSHA string,
+	definitionPath string,
+	event TriggerEvent,
+) (json.RawMessage, error) {
+	if s.definitionLoader == nil {
+		return nil, pkgerrors.Internal("alert remediation commit-scoped workflow loader unavailable")
+	}
+
+	loaded, err := s.definitionLoader.LoadDefinitionsFromCommit(ctx, repositoryID, commitSHA)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to load alert remediation workflow at immutable base revision")
+	}
+
+	for _, fileErr := range loaded.FileErrors {
+		if fileErr.Path == definitionPath {
+			return nil, pkgerrors.UnprocessableEntity("alert remediation workflow is invalid at immutable base revision")
+		}
+	}
+
+	var config json.RawMessage
+	for _, candidate := range loaded.Definitions {
+		if candidate.Path != definitionPath {
+			continue
+		}
+		if config != nil {
+			return nil, pkgerrors.UnprocessableEntity("alert remediation workflow path is ambiguous at immutable base revision")
+		}
+		config = candidate.Config
+	}
+	if config == nil {
+		return nil, pkgerrors.UnprocessableEntity("alert remediation workflow is absent at immutable base revision")
+	}
+
+	matched, err := MatchTrigger(config, event)
+	if err != nil {
+		return nil, pkgerrors.UnprocessableEntity("invalid alert remediation workflow trigger at immutable base revision")
+	}
+	if !matched {
+		return nil, pkgerrors.UnprocessableEntity("workflow does not declare the alert remediation trigger at immutable base revision")
+	}
+	return config, nil
+}
+
+func isImmutableGitObjectID(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+type preparedWorkflowJob struct {
+	job       JobConfig
+	shouldRun bool
+}
+
+func prepareWorkflowJobsForDispatch(configJSON json.RawMessage, event TriggerEvent) ([]preparedWorkflowJob, error) {
+	jobs, err := parseJobsFromConfig(configJSON)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow config: %w", err)
+	}
+	return validateAndPrepareWorkflowJobs(jobs, event, true)
+}
+
+func validateWorkflowConfigJobs(cfg *WorkflowConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("workflow config is empty")
+	}
+	_, err := validateAndPrepareWorkflowJobs(workflowJobsFromConfig(cfg), TriggerEvent{}, false)
+	return err
+}
+
+func validateAndPrepareWorkflowJobs(jobs []JobConfig, event TriggerEvent, requireJobs bool) ([]preparedWorkflowJob, error) {
+	if requireJobs && len(jobs) == 0 {
+		return nil, fmt.Errorf("workflow must declare at least one job")
+	}
+	if err := validateWorkflowJobLimits(jobs); err != nil {
+		return nil, err
+	}
+	if err := ValidateDAG(jobs); err != nil {
+		return nil, fmt.Errorf("invalid workflow DAG: %w", err)
+	}
+
+	// Conditions that refer to needs are evaluated after their dependencies
+	// finish. Evaluate them once with a complete placeholder map now so syntax
+	// errors are rejected before any run or external side effect exists.
+	validationNeeds := make(map[string]string, len(jobs))
+	for _, job := range jobs {
+		validationNeeds[job.Name] = "success"
+	}
+
+	prepared := make([]preparedWorkflowJob, 0, len(jobs))
+	for _, job := range jobs {
+		if err := validateWorkflowJobSecrets(job); err != nil {
+			return nil, err
+		}
+		if err := ValidateIfExpression(job.If); err != nil {
+			return nil, fmt.Errorf("invalid if expression for job %s: %w", job.Name, err)
+		}
+		needsResults := validationNeeds
+		if !IfExpressionReferencesNeeds(job.If) {
+			needsResults = nil
+		}
+		shouldRun, err := EvaluateIfExpression(job.If, event, needsResults)
+		if err != nil {
+			return nil, fmt.Errorf("invalid if expression for job %s: %w", job.Name, err)
+		}
+		if IfExpressionReferencesNeeds(job.If) {
+			shouldRun = true
+		}
+		prepared = append(prepared, preparedWorkflowJob{job: job, shouldRun: shouldRun})
+	}
+	return prepared, nil
+}
+
+func validateWorkflowJobSecrets(job JobConfig) error {
+	if job.Secrets == nil {
+		return nil
+	}
+	if len(*job.Secrets) > maxInjectedEnvEntries {
+		return fmt.Errorf("job %s declares too many secrets", job.Name)
+	}
+	seen := make(map[string]struct{}, len(*job.Secrets))
+	for _, rawName := range *job.Secrets {
+		name := strings.TrimSpace(rawName)
+		if name == "" || name != rawName || !isInjectedSecretName(name) {
+			return fmt.Errorf("job %s declares invalid secret name %q", job.Name, rawName)
+		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("job %s declares duplicate secret %q", job.Name, name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func workflowJobsFromConfig(cfg *WorkflowConfig) []JobConfig {
+	if cfg == nil {
+		return nil
+	}
+	jobs := make([]JobConfig, 0, len(cfg.Jobs))
+	for name, job := range cfg.Jobs {
+		job.Name = name
+		jobs = append(jobs, job)
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].Name < jobs[j].Name
+	})
+	return jobs
+}
+
+func createWorkflowRunRows(
+	ctx context.Context,
+	queries WorkflowRunQuerier,
+	def db.WorkflowDefinition,
+	input DispatchForEventInput,
+	repository db.Repository,
+	repoOwner, triggerRef, resolvedBookmark string,
+	dispatchInputs []byte,
+	jobs []preparedWorkflowJob,
+	tokenHash, plaintextAgentToken string,
+	createPendingCommitStatus bool,
+	executionPlane string,
+) (WorkflowRunResult, db.WorkflowRun, error) {
+	result := WorkflowRunResult{WorkflowDefinitionID: def.ID, AgentToken: plaintextAgentToken}
+	run, err := queries.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
+		RepositoryID:         input.RepositoryID,
+		WorkflowDefinitionID: def.ID,
+		Status:               "queued",
+		TriggerEvent:         input.Event.Type,
+		TriggerRef:           triggerRef,
+		TriggerCommitSha:     input.Event.CommitSHA,
+		DispatchInputs:       dispatchInputs,
+		// Owner decision (2026-09-15): a repository that declares
+		// .smithers/environment.nix AND has a registered kind=vm closure image
+		// runs its CI in NixOS guests on the sandbox plane; everything else
+		// stays on the Debian gVisor runner pool, which is the fallback until
+		// every active repository has a closure and the pool is retired. The
+		// decision is ResolveCIExecutionPlane's alone — `runs-on` is workflow
+		// metadata and still must not select a plane, so untrusted CI can
+		// never redirect itself into the agent/workspace plane.
+		ExecutionPlane: normalizeCIExecutionPlane(executionPlane),
+	})
+	if err != nil {
+		return result, db.WorkflowRun{}, pkgerrors.Internal(fmt.Sprintf("failed to create workflow run: %v", err))
+	}
+	result.WorkflowRunID = run.ID
+
+	if binding := input.AlertRemediationBinding; binding != nil {
+		binder, ok := queries.(alertRemediationRunBinder)
+		if !ok {
+			return result, run, pkgerrors.Internal("alert remediation run binding is unavailable")
+		}
+		rowsAffected, bindErr := binder.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, db.BindAlertRemediationJobWorkflowRunAtAttemptParams{
+			WorkflowRunID:    pgtype.Int8{Int64: run.ID, Valid: true},
+			JobID:            binding.JobID,
+			IncidentRowID:    binding.IncidentRowID,
+			DispatchToken:    binding.DispatchToken,
+			ExpectedAttempts: binding.ExpectedAttempts,
+		})
+		if bindErr != nil || rowsAffected != 1 {
+			return result, run, pkgerrors.Internal(fmt.Sprintf(
+				"failed to bind alert remediation workflow run: rows_affected=%d: %v", rowsAffected, bindErr))
+		}
+	}
+
+	if _, err := queries.UpdateWorkflowRunAgentToken(ctx, db.UpdateWorkflowRunAgentTokenParams{
+		AgentTokenHash: pgtype.Text{String: tokenHash, Valid: true},
+		AgentTokenExpiresAt: pgtype.Timestamptz{
+			Time:  time.Now().Add(24 * time.Hour),
+			Valid: true,
+		},
+		ID: run.ID,
+	}); err != nil {
+		return result, run, pkgerrors.Internal(fmt.Sprintf("failed to store workflow run agent token: %v", err))
+	}
+
+	jobHasNeeds := make(map[string]bool, len(jobs))
+	for _, prepared := range jobs {
+		jobHasNeeds[prepared.job.Name] = len(prepared.job.Needs) > 0
+	}
+
+	for pos, prepared := range jobs {
+		job := prepared.job
+		stepStatus := "queued"
+		taskStatus := "pending"
+		if !prepared.shouldRun {
+			stepStatus = "skipped"
+			taskStatus = "skipped"
+		} else if jobHasNeeds[job.Name] {
+			taskStatus = "blocked"
+		}
+
+		step, err := queries.CreateWorkflowStep(ctx, db.CreateWorkflowStepParams{
+			WorkflowRunID: run.ID,
+			Name:          job.Name,
+			Position:      int64(pos + 1),
+			Status:        stepStatus,
+		})
+		if err != nil {
+			return result, run, pkgerrors.Internal(fmt.Sprintf(
+				"failed to create workflow step: %s (status=%s): %v", job.Name, stepStatus, err))
+		}
+
+		payloadMap := map[string]any{
+			"job":     job.Name,
+			"runs_on": job.RunsOn,
+			"steps":   job.Steps,
+			"event":   input.Event.Type,
+			"ref":     triggerRef,
+			"commit":  input.Event.CommitSHA,
+			// agent_token is intentionally absent from the DB-persisted payload.
+			// The runner fetches it at task-start time from /internal/tasks/:id/env,
+			// authenticated with its own SMITHERS_AGENT_TOKEN pod credential.
+			"default_bookmark":  repository.DefaultBookmark,
+			"resolved_bookmark": resolvedBookmark,
+			"workflow_path":     def.Path,
+			"repo_name":         repository.Name,
+			"repo_owner":        repoOwner,
+		}
+		if job.Secrets != nil {
+			payloadMap["secret_names"] = *job.Secrets
+		}
+		if len(job.Needs) > 0 {
+			payloadMap["needs"] = job.Needs
+		}
+		if job.If != "" {
+			payloadMap["if"] = job.If
+		}
+		if len(job.Cache) > 0 {
+			payloadMap["cache"] = job.Cache
+		}
+		if len(input.Event.Inputs) > 0 {
+			payloadMap["inputs"] = input.Event.Inputs
+		}
+		if input.Event.ChangeID != "" {
+			payloadMap["change_id"] = input.Event.ChangeID
+		}
+		payload, _ := json.Marshal(payloadMap)
+
+		task, err := queries.CreateWorkflowTask(ctx, db.CreateWorkflowTaskParams{
+			WorkflowRunID:  run.ID,
+			WorkflowStepID: step.ID,
+			RepositoryID:   input.RepositoryID,
+			Status:         taskStatus,
+			Priority:       int16(0),
+			Payload:        payload,
+			AvailableAt:    time.Now(),
+		})
+		if err != nil {
+			return result, run, pkgerrors.Internal(fmt.Sprintf(
+				"failed to create workflow task: %s (status=%s): %v", job.Name, taskStatus, err))
+		}
+
+		result.Steps = append(result.Steps, WorkflowStepResult{
+			StepID:   step.ID,
+			TaskID:   task.ID,
+			Position: step.Position,
+		})
+	}
+
+	if createPendingCommitStatus {
+		params := pendingWorkflowCommitStatusParams(input, def, run.ID)
+		status, err := queries.CreateCommitStatus(ctx, params)
+		if err != nil {
+			middleware.LoggerWithWorkflowRun(ctx, run.ID).
+				Error("failed to create pending commit status for workflow run", "repository_id", input.RepositoryID, "error", err)
+			return result, run, pkgerrors.Internal(fmt.Sprintf("failed to create pending commit status: %v", err))
+		}
+		result.pendingCommitStatus = &status
+	}
+
+	return result, run, nil
+}
+
+func abortWorkflowRunDispatch(ctx context.Context, queries WorkflowRunQuerier, runID int64) {
+	// A dispatch abort is a failure, not a user cancellation: mark the run
+	// 'failure' via markWorkflowRunFailed below rather than routing it through
+	// the user-facing CancelWorkflowRun path, which would report 'cancelled'.
+	if err := queries.CancelWorkflowTasks(ctx, runID); err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, runID).
+			Warn("failed to cancel partially-created workflow tasks", "error", err)
+	}
+	markWorkflowRunFailed(ctx, queries, runID)
+	// repositoryID is unknown/0 here: a jjhub token can't exist yet at
+	// dispatch-abort time, so this only clears the agent token.
+	revokeWorkflowRunCredentials(ctx, queries, runID, 0)
+}
+
+type workflowRunCheckRunUpdater interface {
+	UpdateWorkflowRunCheckRun(ctx context.Context, arg db.UpdateWorkflowRunCheckRunParams) (db.WorkflowRun, error)
+}
+
+func (s *workflowRunService) createInProgressCheckRun(
+	ctx context.Context,
+	run db.WorkflowRun,
+	def db.WorkflowDefinition,
+	repository db.Repository,
+	repoOwner string,
+) {
+	if s.checkRunService == nil {
+		return
+	}
+
+	status := strings.ToLower(strings.TrimSpace(run.Status))
+	if status != "queued" && status != "running" {
+		return
+	}
+	if strings.TrimSpace(run.TriggerCommitSha) == "" {
+		return
+	}
+
+	owner := strings.TrimSpace(repoOwner)
+	repoName := strings.TrimSpace(repository.Name)
+	if owner == "" || repoName == "" {
+		return
+	}
+
+	if s.installationResolver == nil {
+		return
+	}
+
+	installationID, err := s.installationResolver.GetGitHubInstallationIDForRepositoryOwner(
+		ctx,
+		repository.UserID.Int64,
+		repository.OrgID.Int64,
+		owner,
+		repoName,
+	)
+	if err != nil || installationID <= 0 {
+		return
+	}
+
+	result, err := s.checkRunService.PostCheckRun(ctx, installationID, owner, repoName, GitHubCheckRunInput{
+		Name:    workflowCheckRunName(def),
+		HeadSHA: run.TriggerCommitSha,
+		Status:  "in_progress",
+		Output: &GitHubCheckRunOutput{
+			Title:   "Workflow in progress",
+			Summary: fmt.Sprintf("Workflow `%s` is running (run #%d).", def.Name, run.ID),
+		},
+	})
+	if err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, run.ID).
+			Warn("failed to post github check run", "owner", owner, "repo", repoName, "error", err)
+		return
+	}
+
+	updater, ok := s.queries.(workflowRunCheckRunUpdater)
+	if !ok {
+		return
+	}
+	checkRunID := pgtype.Int8{}
+	if result.ID > 0 {
+		checkRunID = pgtype.Int8{Int64: result.ID, Valid: true}
+	}
+	checkRunURL := pgtype.Text{}
+	if trimmed := strings.TrimSpace(result.HTMLURL); trimmed != "" {
+		checkRunURL = pgtype.Text{String: trimmed, Valid: true}
+	} else if trimmed := strings.TrimSpace(result.URL); trimmed != "" {
+		checkRunURL = pgtype.Text{String: trimmed, Valid: true}
+	}
+	if _, err := updater.UpdateWorkflowRunCheckRun(ctx, db.UpdateWorkflowRunCheckRunParams{
+		ID:          run.ID,
+		CheckRunID:  checkRunID,
+		CheckRunUrl: checkRunURL,
+	}); err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, run.ID).
+			Warn("failed to persist github check run metadata", "error", err)
+	}
+}
+
+func workflowCheckRunName(def db.WorkflowDefinition) string {
+	name := strings.TrimSpace(def.Name)
+	if name == "" {
+		name = "workflow"
+	}
+	return "smithers / " + name
+}
+
+func (s *workflowRunService) resolveRunRepository(ctx context.Context, repositoryID int64) (db.Repository, error) {
+	repository, err := s.queries.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Repository{}, pkgerrors.NotFound("repository not found")
+		}
+		return db.Repository{}, pkgerrors.Internal("failed to load repository")
+	}
+	return repository, nil
+}
+
+func (s *workflowRunService) resolveRepoOwner(ctx context.Context, repository db.Repository) string {
+	if repository.UserID.Valid {
+		user, err := s.queries.GetUserByID(ctx, repository.UserID.Int64)
+		if err != nil {
+			slog.Error("failed to resolve repository owner user", "repository_id", repository.ID, "user_id", repository.UserID.Int64, "error", err)
+			return ""
+		}
+		return user.Username
+	}
+	if repository.OrgID.Valid {
+		org, err := s.queries.GetOrgByID(ctx, repository.OrgID.Int64)
+		if err != nil {
+			slog.Error("failed to resolve repository owner org", "repository_id", repository.ID, "org_id", repository.OrgID.Int64, "error", err)
+			return ""
+		}
+		return org.Name
+	}
+	return ""
+}
+
+func pendingWorkflowCommitStatusParams(input DispatchForEventInput, def db.WorkflowDefinition, workflowRunID int64) db.CreateCommitStatusParams {
+	changeID := strings.TrimSpace(input.Event.ChangeID)
+	sha := strings.TrimSpace(input.Event.CommitSHA)
+	return db.CreateCommitStatusParams{
+		RepositoryID:  input.RepositoryID,
+		ChangeID:      pgtype.Text{String: changeID, Valid: changeID != ""},
+		CommitSha:     pgtype.Text{String: sha, Valid: sha != ""},
+		Context:       workflowCommitStatusContext(def.Name, def.Path),
+		Status:        "pending",
+		Description:   "Workflow queued",
+		WorkflowRunID: pgtype.Int8{Int64: workflowRunID, Valid: true},
+	}
+}
+
+func workflowCommitStatusContext(name, path string) string {
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName != "" {
+		return "smithers/" + trimmedName
+	}
+	stem := strings.TrimSuffix(pathpkg.Base(strings.TrimSpace(path)), pathpkg.Ext(strings.TrimSpace(path)))
+	if stem == "" {
+		stem = "workflow"
+	}
+	return "smithers/" + stem
+}
+
+// dispatchWorkflowRunEvent enqueues a "workflow_run" webhook event (non-fatal).
+func (s *workflowRunService) dispatchWorkflowRunEvent(ctx context.Context, run db.WorkflowRun, repositoryID int64) error {
+	if s.dispatcher == nil {
+		return nil
+	}
+	payload := webhooks.WorkflowRunEventPayload{
+		Action: "queued",
+		WorkflowRun: webhooks.WorkflowRunPayload{
+			ID:           run.ID,
+			Status:       run.Status,
+			TriggerEvent: run.TriggerEvent,
+			TriggerRef:   run.TriggerRef,
+			CommitSHA:    run.TriggerCommitSha,
+			CreatedAt:    run.CreatedAt,
+		},
+		Repository: webhooks.RepositoryPayload{ID: repositoryID},
+	}
+	if err := s.dispatcher.DispatchEvent(ctx, repositoryID, webhooks.EventTypeWorkflowRun, payload); err != nil {
+		return fmt.Errorf("dispatch workflow_run webhook: %w", err)
+	}
+	return nil
+}
+
+// parseJobsFromConfig extracts job definitions from the workflow config JSON.
+func parseJobsFromConfig(configJSON json.RawMessage) ([]JobConfig, error) {
+	if len(configJSON) == 0 {
+		return nil, nil
+	}
+	if len(configJSON) > maxWorkflowFileBytes {
+		return nil, fmt.Errorf("workflow config too large (%d bytes, max %d)", len(configJSON), maxWorkflowFileBytes)
+	}
+
+	var cfg WorkflowConfig
+	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+		return nil, err
+	}
+	return workflowJobsFromConfig(&cfg), nil
+}
+
+// CancelRun cancels an in-progress workflow run and all non-terminal tasks.
+func (s *workflowRunService) CancelRun(ctx context.Context, repositoryID, runID int64) error {
+	if s.queries == nil {
+		return pkgerrors.Internal("workflow run store unavailable")
+	}
+
+	if tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries); transactional {
+		if err != nil {
+			return pkgerrors.Internal("failed to begin workflow run transaction")
+		}
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		if err := lockWorkflowRunForRepository(ctx, tx, runID, repositoryID); err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.NotFound("workflow run not found")
+			}
+			return pkgerrors.Internal("failed to lock workflow run")
+		}
+		run, err := txQueries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
+			ID:           runID,
+			RepositoryID: repositoryID,
+		})
+		if err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.NotFound("workflow run not found")
+			}
+			return pkgerrors.Internal("failed to fetch workflow run")
+		}
+		if isTerminalWorkflowRunStatus(run.Status) {
+			if err := tx.Commit(ctx); err != nil {
+				return pkgerrors.Internal("failed to commit workflow run transaction")
+			}
+			return nil
+		}
+		if err := txQueries.CancelWorkflowTasks(ctx, run.ID); err != nil {
+			return pkgerrors.Internal("failed to cancel workflow tasks")
+		}
+		if err := txQueries.CancelWorkflowRun(ctx, run.ID); err != nil {
+			return pkgerrors.Internal("failed to cancel workflow run")
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return pkgerrors.Internal("failed to commit workflow run transaction")
+		}
+		revokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
+		s.publishCancelledWorkflowRun(ctx, repositoryID, run)
+		return nil
+	}
+
+	run, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
+		ID:           runID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return pkgerrors.NotFound("workflow run not found")
+		}
+		return pkgerrors.Internal("failed to fetch workflow run")
+	}
+	if isTerminalWorkflowRunStatus(run.Status) {
+		return nil
+	}
+
+	if err := s.queries.CancelWorkflowRun(ctx, run.ID); err != nil {
+		return pkgerrors.Internal("failed to cancel workflow run")
+	}
+	if err := s.queries.CancelWorkflowTasks(ctx, run.ID); err != nil {
+		return pkgerrors.Internal("failed to cancel workflow tasks")
+	}
+	revokeWorkflowRunCredentials(ctx, s.queries, run.ID, repositoryID)
+	s.publishCancelledWorkflowRun(ctx, repositoryID, run)
+	return nil
+}
+
+func (s *workflowRunService) publishCancelledWorkflowRun(ctx context.Context, repositoryID int64, run db.WorkflowRun) {
+	observeWorkflowRunCompletion(s.metrics, run, "cancelled")
+	if s.commitStatusWriter != nil {
+		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, "cancelled", workflowRunStatusDescription("cancelled"), ""); err != nil {
+			middleware.LoggerWithWorkflowRun(ctx, run.ID).
+				Error("failed to update commit status for cancelled workflow run", "repository_id", repositoryID, "error", err)
+		}
+	}
+	if s.checkRunService != nil {
+		if err := s.completeGitHubCheckRunForCancellation(ctx, run); err != nil {
+			middleware.LoggerWithWorkflowRun(ctx, run.ID).
+				Warn("failed to update github check run for cancelled workflow run", "repository_id", repositoryID, "error", err)
+		}
+	}
+}
+
+func (s *workflowRunService) completeGitHubCheckRunForCancellation(ctx context.Context, run db.WorkflowRun) error {
+	if s.checkRunService == nil {
+		return nil
+	}
+	if !run.CheckRunID.Valid || run.CheckRunID.Int64 <= 0 {
+		return nil
+	}
+
+	if s.installationResolver == nil {
+		return nil
+	}
+
+	repository, err := s.queries.GetRepoByID(ctx, run.RepositoryID)
+	if err != nil {
+		return nil
+	}
+	owner := strings.TrimSpace(s.resolveRepoOwner(ctx, repository))
+	repoName := strings.TrimSpace(repository.Name)
+	if owner == "" || repoName == "" {
+		return nil
+	}
+
+	installationID, err := s.installationResolver.GetGitHubInstallationIDForRepositoryOwner(
+		ctx,
+		repository.UserID.Int64,
+		repository.OrgID.Int64,
+		owner,
+		repoName,
+	)
+	if err != nil || installationID <= 0 {
+		return nil
+	}
+
+	_, err = s.checkRunService.UpdateCheckRun(ctx, installationID, owner, repoName, run.CheckRunID.Int64, GitHubCheckRunUpdate{
+		Status:     "completed",
+		Conclusion: "neutral",
+		Output: &GitHubCheckRunOutput{
+			Title:   "Workflow cancelled",
+			Summary: fmt.Sprintf("Workflow run #%d was cancelled.", run.ID),
+		},
+	})
+	return err
+}
+
+// ResumeRun resumes a cancelled or failed workflow run by re-queuing its
+// incomplete (cancelled/failed) tasks and steps, then setting the run status
+// back to queued. Only cancelled or failed runs may be resumed.
+func (s *workflowRunService) ResumeRun(ctx context.Context, repositoryID, runID int64) error {
+	if s.queries == nil {
+		return pkgerrors.Internal("workflow run store unavailable")
+	}
+
+	if tx, txQueries, transactional, err := beginWorkflowQueryTx(ctx, s.queries); transactional {
+		if err != nil {
+			return pkgerrors.Internal("failed to begin workflow run transaction")
+		}
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		if err := lockWorkflowRunForRepository(ctx, tx, runID, repositoryID); err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.NotFound("workflow run not found")
+			}
+			return pkgerrors.Internal("failed to lock workflow run")
+		}
+		run, err := txQueries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
+			ID:           runID,
+			RepositoryID: repositoryID,
+		})
+		if err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.NotFound("workflow run not found")
+			}
+			return pkgerrors.Internal("failed to fetch workflow run")
+		}
+		if err := rejectInternalAlertRemediationReplay(run); err != nil {
+			return err
+		}
+		if run.Status != "cancelled" && run.Status != "failure" {
+			return pkgerrors.Conflict(fmt.Sprintf("cannot resume workflow run with status %q; only cancelled or failed runs can be resumed", run.Status))
+		}
+		unsettled, err := txQueries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
+		if err != nil {
+			return pkgerrors.Internal("failed to check workflow runner ownership")
+		}
+		if unsettled {
+			return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
+		}
+		if err := txQueries.ResumeWorkflowTasks(ctx, run.ID); err != nil {
+			return pkgerrors.Internal("failed to resume workflow tasks")
+		}
+		if err := txQueries.ResumeWorkflowSteps(ctx, run.ID); err != nil {
+			return pkgerrors.Internal("failed to resume workflow steps")
+		}
+		if err := txQueries.ResumeWorkflowRun(ctx, run.ID); err != nil {
+			return pkgerrors.Internal("failed to resume workflow run")
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return pkgerrors.Internal("failed to commit workflow run transaction")
+		}
+		notifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
+		return nil
+	}
+	run, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
+		ID:           runID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return pkgerrors.NotFound("workflow run not found")
+		}
+		return pkgerrors.Internal("failed to fetch workflow run")
+	}
+	if err := rejectInternalAlertRemediationReplay(run); err != nil {
+		return err
+	}
+
+	if run.Status != "cancelled" && run.Status != "failure" {
+		return pkgerrors.Conflict(fmt.Sprintf("cannot resume workflow run with status %q; only cancelled or failed runs can be resumed", run.Status))
+	}
+	unsettled, err := s.queries.HasUnsettledRunnerOwnershipForWorkflowRun(ctx, run.ID)
+	if err != nil {
+		return pkgerrors.Internal("failed to check workflow runner ownership")
+	}
+	if unsettled {
+		return pkgerrors.Conflict("cannot resume workflow run while its previous runner is still settling a task")
+	}
+
+	if err := s.queries.ResumeWorkflowTasks(ctx, run.ID); err != nil {
+		return pkgerrors.Internal("failed to resume workflow tasks")
+	}
+	if err := s.queries.ResumeWorkflowSteps(ctx, run.ID); err != nil {
+		return pkgerrors.Internal("failed to resume workflow steps")
+	}
+	if err := s.queries.ResumeWorkflowRun(ctx, run.ID); err != nil {
+		return pkgerrors.Internal("failed to resume workflow run")
+	}
+
+	notifyWorkflowRunEvent(ctx, s.queries, run.ID, "workflow.resume")
+	return nil
+}
+
+// RerunRun creates a new workflow run based on an existing run.
+// It fetches the original run and definition, then dispatches a new run
+// with the same configuration.
+func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*WorkflowRunResult, error) {
+	if s.queries == nil {
+		return nil, pkgerrors.Internal("workflow run store unavailable")
+	}
+
+	// Fetch the original run
+	originalRun, err := s.queries.GetWorkflowRun(ctx, db.GetWorkflowRunParams{
+		ID:           input.RunID,
+		RepositoryID: input.RepositoryID,
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return nil, pkgerrors.NotFound("workflow run not found")
+		}
+		return nil, pkgerrors.Internal("failed to fetch workflow run")
+	}
+	if err := rejectInternalAlertRemediationReplay(originalRun); err != nil {
+		return nil, err
+	}
+
+	// Fetch the workflow definition
+	def, err := s.queries.GetWorkflowDefinition(ctx, db.GetWorkflowDefinitionParams{
+		ID:           originalRun.WorkflowDefinitionID,
+		RepositoryID: input.RepositoryID,
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return nil, pkgerrors.NotFound("workflow definition not found")
+		}
+		return nil, pkgerrors.Internal("failed to fetch workflow definition")
+	}
+
+	// Reconstruct dispatch inputs from the original run.
+	var inputs map[string]interface{}
+	if len(originalRun.DispatchInputs) > 0 {
+		_ = json.Unmarshal(originalRun.DispatchInputs, &inputs)
+	}
+
+	// Create a new run using the same trigger details as the original
+	result, err := s.createRunForDefinition(ctx, def, def.Config, DispatchForEventInput{
+		RepositoryID: input.RepositoryID,
+		UserID:       input.UserID,
+		Event: TriggerEvent{
+			Type:      originalRun.TriggerEvent,
+			Ref:       originalRun.TriggerRef,
+			CommitSHA: originalRun.TriggerCommitSha,
+			Inputs:    inputs,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func rejectInternalAlertRemediationReplay(run db.WorkflowRun) error {
+	if run.TriggerEvent == AlertRemediationTriggerEvent {
+		return pkgerrors.Conflict("internal alert remediation runs cannot be resumed or rerun")
+	}
+	return nil
+}

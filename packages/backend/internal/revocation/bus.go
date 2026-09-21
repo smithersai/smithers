@@ -1,0 +1,468 @@
+package revocation
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+)
+
+const (
+	defaultPollInterval = 5 * time.Second
+	defaultRetention    = 24 * time.Hour
+	catchUpBatch        = 500
+	reconnectBackoff    = time.Second
+)
+
+// Lister reads the durable event log (matched by *db.Queries).
+type Lister interface {
+	ListRevocationEventsAfter(ctx context.Context, arg db.ListRevocationEventsAfterParams) ([]db.RevocationEvent, error)
+	LatestRevocationEventID(ctx context.Context) (int64, error)
+}
+
+// Checker is the cheap per-request view the auth middleware consults.
+type Checker interface {
+	IsTokenRevoked(tokenHash string) bool
+	IsUserDisabled(userID int64) bool
+}
+
+// Watcher hands a long-lived handler a channel that yields the first event
+// revoking its principal.
+type Watcher interface {
+	Watch(ctx context.Context, principal Principal) <-chan Event
+}
+
+// notifier is the connection surface the bus needs; a pgx pool connection in
+// production, a fake in tests.
+type notifier interface {
+	Exec(ctx context.Context, sql string) error
+	WaitForNotification(ctx context.Context) (*pgconn.Notification, error)
+	Release()
+}
+
+type poolNotifier struct{ conn *pgxpool.Conn }
+
+func (p *poolNotifier) Exec(ctx context.Context, sql string) error {
+	_, err := p.conn.Exec(ctx, sql)
+	return err
+}
+
+func (p *poolNotifier) WaitForNotification(ctx context.Context) (*pgconn.Notification, error) {
+	return p.conn.Conn().WaitForNotification(ctx)
+}
+
+func (p *poolNotifier) Release() { p.conn.Release() }
+
+// Bus listens for revocations, keeps a bounded recent view for per-request
+// checks, and fans events out to subscribers.
+type Bus struct {
+	acquire func(ctx context.Context) (notifier, error)
+	lister  Lister
+
+	// PollInterval bounds how long a lost NOTIFY can go unnoticed; every tick
+	// re-reads the log after the cursor. Zero means 5s.
+	PollInterval time.Duration
+	// Retention bounds the in-memory recently-revoked sets. Zero means 24h.
+	Retention time.Duration
+
+	mu            sync.Mutex
+	cursor        int64
+	seen          map[int64]time.Time
+	revokedTokens map[string]time.Time
+	disabledUsers map[int64]time.Time
+	userEvents    map[int64]int64
+	subs          map[int]func(Event)
+	nextSub       int
+	started       bool
+	positioned    bool
+	done          chan struct{}
+}
+
+// NewBus builds a bus over the pool for LISTEN and the lister for catch-up.
+func NewBus(pool *pgxpool.Pool, lister Lister) *Bus {
+	b := newBus(lister)
+	if pool != nil {
+		b.acquire = func(ctx context.Context) (notifier, error) {
+			conn, err := pool.Acquire(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &poolNotifier{conn: conn}, nil
+		}
+	}
+	return b
+}
+
+func newBus(lister Lister) *Bus {
+	return &Bus{
+		lister:        lister,
+		seen:          make(map[int64]time.Time),
+		revokedTokens: make(map[string]time.Time),
+		disabledUsers: make(map[int64]time.Time),
+		userEvents:    make(map[int64]int64),
+		subs:          make(map[int]func(Event)),
+		done:          make(chan struct{}),
+	}
+}
+
+// Start positions the cursor at the newest stored event and begins listening.
+// Events older than the cursor are never replayed: a pod that restarts has no
+// live connections from before its restart to terminate, and the auth path
+// re-reads the database on every request anyway.
+func (b *Bus) Start(ctx context.Context) error {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	if b.started {
+		b.mu.Unlock()
+		return nil
+	}
+	b.started = true
+	b.mu.Unlock()
+	go b.run(ctx)
+	return nil
+}
+
+// positionCursor reads the newest stored event ID so history is never
+// replayed. It retries until the database answers or ctx ends, because a
+// process that cannot read the log yet must not start fanning out from zero:
+// that would replay old suspensions of users who were since unsuspended.
+func (b *Bus) positionCursor(ctx context.Context) bool {
+	if b.lister == nil {
+		return true
+	}
+	for {
+		latest, err := b.lister.LatestRevocationEventID(ctx)
+		if err == nil {
+			b.mu.Lock()
+			if latest > b.cursor {
+				b.cursor = latest
+			}
+			b.positioned = true
+			b.mu.Unlock()
+			return true
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		slog.Warn("revocation bus: cannot read the event log yet; retrying", "error", err)
+		if !sleepCtx(ctx, reconnectBackoff) {
+			return false
+		}
+	}
+}
+
+// Done is closed when the listen loop exits.
+func (b *Bus) Done() <-chan struct{} { return b.done }
+
+// Positioned reports whether the cursor has been read from the log, which is
+// when events start being applied. Until then nothing is replayed or fanned
+// out; a revocation that lands in that window has no live consumer in this
+// process to terminate, and the auth path re-reads the database anyway.
+func (b *Bus) Positioned() bool {
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.positioned
+}
+
+func (b *Bus) pollInterval() time.Duration {
+	if b.PollInterval > 0 {
+		return b.PollInterval
+	}
+	return defaultPollInterval
+}
+
+func (b *Bus) retention() time.Duration {
+	if b.Retention > 0 {
+		return b.Retention
+	}
+	return defaultRetention
+}
+
+func (b *Bus) run(ctx context.Context) {
+	defer close(b.done)
+	if !b.positionCursor(ctx) {
+		return
+	}
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if b.acquire == nil {
+			// No connection source: poll the log only.
+			b.catchUp(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(b.pollInterval()):
+			}
+			continue
+		}
+		conn, err := b.acquire(ctx)
+		if err != nil {
+			slog.Warn("revocation bus: acquire connection failed", "error", err)
+			if !sleepCtx(ctx, reconnectBackoff) {
+				return
+			}
+			continue
+		}
+		b.serve(ctx, conn)
+		conn.Release()
+		if !sleepCtx(ctx, reconnectBackoff) {
+			return
+		}
+	}
+}
+
+func (b *Bus) serve(ctx context.Context, conn notifier) {
+	if err := conn.Exec(ctx, "LISTEN "+Channel); err != nil {
+		slog.Warn("revocation bus: LISTEN failed", "error", err)
+		return
+	}
+	// Anything published between the cursor read and LISTEN is picked up here.
+	b.catchUp(ctx)
+	for {
+		waitCtx, cancel := context.WithTimeout(ctx, b.pollInterval())
+		notification, err := conn.WaitForNotification(waitCtx)
+		cancel()
+		switch {
+		case err == nil:
+			b.deliverPayload(ctx, notification.Payload)
+		case errors.Is(err, context.DeadlineExceeded):
+			b.catchUp(ctx)
+		case ctx.Err() != nil:
+			return
+		default:
+			slog.Warn("revocation bus: connection lost; reconnecting", "error", err)
+			return
+		}
+	}
+}
+
+func (b *Bus) deliverPayload(ctx context.Context, payload string) {
+	var event Event
+	if err := json.Unmarshal([]byte(payload), &event); err != nil || event.ID == 0 {
+		// A malformed or foreign payload: the log is the source of truth.
+		b.catchUp(ctx)
+		return
+	}
+	// Notifications are hints, never durable scan progress. A later event may
+	// arrive before an earlier notification (or after it was lost).
+	b.catchUp(ctx)
+	b.apply(event)
+}
+
+// catchUp reads every stored event after the cursor.
+func (b *Bus) catchUp(ctx context.Context) {
+	if b.lister == nil {
+		return
+	}
+	for {
+		b.mu.Lock()
+		after := b.cursor
+		b.mu.Unlock()
+		rows, err := b.lister.ListRevocationEventsAfter(ctx, db.ListRevocationEventsAfterParams{AfterID: after, LimitCount: catchUpBatch})
+		if err != nil {
+			if ctx.Err() == nil {
+				slog.Warn("revocation bus: catch-up read failed", "after", after, "error", err)
+			}
+			return
+		}
+		for _, row := range rows {
+			b.apply(FromRow(row))
+			b.mu.Lock()
+			if row.ID > b.cursor {
+				b.cursor = row.ID
+			}
+			b.mu.Unlock()
+		}
+		if len(rows) < catchUpBatch {
+			return
+		}
+	}
+}
+
+// apply records the event once and fans it out. It is idempotent per event ID.
+func (b *Bus) apply(event Event) {
+	now := time.Now()
+	b.mu.Lock()
+	if event.ID != 0 {
+		if _, dup := b.seen[event.ID]; dup {
+			b.mu.Unlock()
+			return
+		}
+		b.seen[event.ID] = now
+	}
+	switch event.Kind {
+	case KindTokenRevoked, KindTokenScopesNarrowed:
+		if event.TokenHash != "" {
+			b.revokedTokens[event.TokenHash] = now
+		}
+	case KindUserDisabled, KindUserEnabled:
+		if event.ID != 0 && event.ID < b.userEvents[event.UserID] {
+			b.mu.Unlock()
+			return // A delayed suspension must not close a newly authorized stream.
+		}
+		if event.UserID != 0 && (event.ID == 0 || event.ID >= b.userEvents[event.UserID]) {
+			b.userEvents[event.UserID] = event.ID
+			if event.Kind == KindUserDisabled {
+				b.disabledUsers[event.UserID] = now
+			} else {
+				delete(b.disabledUsers, event.UserID)
+			}
+		}
+	}
+	b.pruneLocked(now)
+	subs := make([]func(Event), 0, len(b.subs))
+	for _, fn := range b.subs {
+		subs = append(subs, fn)
+	}
+	b.mu.Unlock()
+	for _, fn := range subs {
+		b.dispatch(fn, event)
+	}
+}
+
+func (b *Bus) dispatch(fn func(Event), event Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("revocation subscriber panicked", "kind", event.Kind, "id", event.ID, "panic", r)
+		}
+	}()
+	fn(event)
+}
+
+func (b *Bus) pruneLocked(now time.Time) {
+	cutoff := now.Add(-b.retention())
+	for id, at := range b.seen {
+		if at.Before(cutoff) {
+			delete(b.seen, id)
+		}
+	}
+	for userID, eventID := range b.userEvents {
+		if _, retained := b.seen[eventID]; !retained {
+			delete(b.userEvents, userID)
+		}
+	}
+	for hash, at := range b.revokedTokens {
+		if at.Before(cutoff) {
+			delete(b.revokedTokens, hash)
+		}
+	}
+	for id, at := range b.disabledUsers {
+		if at.Before(cutoff) {
+			delete(b.disabledUsers, id)
+		}
+	}
+}
+
+// Deliver applies an event that arrived by some path other than the listener,
+// for example the publisher in the same process. Safe before Start.
+func (b *Bus) Deliver(event Event) {
+	if b == nil {
+		return
+	}
+	b.apply(event)
+}
+
+// Subscribe registers fn for every event. fn runs on the bus goroutine and
+// must return quickly; hand slow work to another goroutine. The returned func
+// unsubscribes.
+func (b *Bus) Subscribe(fn func(Event)) func() {
+	if b == nil || fn == nil {
+		return func() {}
+	}
+	b.mu.Lock()
+	id := b.nextSub
+	b.nextSub++
+	b.subs[id] = fn
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		delete(b.subs, id)
+		b.mu.Unlock()
+	}
+}
+
+// Watch returns a channel that yields the first event revoking principal. The
+// subscription ends when ctx is done. A nil bus returns a channel that never
+// yields, so callers can select on it unconditionally.
+func (b *Bus) Watch(ctx context.Context, principal Principal) <-chan Event {
+	ch := make(chan Event, 1)
+	if b == nil {
+		return ch
+	}
+	var once sync.Once
+	done := make(chan struct{})
+	unsubscribe := b.Subscribe(func(event Event) {
+		if !event.Affects(principal) {
+			return
+		}
+		once.Do(func() {
+			ch <- event
+			// The first hit is the terminal one; stop listening on behalf of
+			// this watcher.
+			close(done)
+		})
+	})
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-done:
+		}
+		unsubscribe()
+	}()
+	return ch
+}
+
+// IsTokenRevoked reports whether a token with this hash was revoked recently.
+func (b *Bus) IsTokenRevoked(tokenHash string) bool {
+	if b == nil || tokenHash == "" {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	at, ok := b.revokedTokens[tokenHash]
+	return ok && time.Since(at) <= b.retention()
+}
+
+// IsUserDisabled reports whether the user was disabled recently.
+func (b *Bus) IsUserDisabled(userID int64) bool {
+	if b == nil || userID == 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	at, ok := b.disabledUsers[userID]
+	return ok && time.Since(at) <= b.retention()
+}
+
+// Cursor returns the highest event ID read from the durable log.
+func (b *Bus) Cursor() int64 {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.cursor
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}

@@ -1,0 +1,250 @@
+{
+  "$comment": "Alert auto-remediation registry. Maps every GCP Cloud Monitoring alert policy in infra/terraform/modules/monitoring/main.tf (matched by display_name prefix; display names are '<prefix> - <environment>') to its runbook and remediation workflow. Consumed by internal/services/alertregistry (via docs/runbooks/embed.go) and by .smithers/workflows/remediate-runner.ts. Consistency is enforced by internal/services/alertregistry tests.",
+  "alerts": [
+    {
+      "policyDisplayNamePrefix": "Smithers High Error Rate",
+      "runbook": "docs/runbooks/high-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers API Unavailable",
+      "runbook": "docs/runbooks/pod-restart-loop.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers SSH Unavailable",
+      "runbook": "docs/runbooks/pod-restart-loop.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers High Latency",
+      "runbook": "docs/runbooks/high-latency.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Frontend Error Rate",
+      "runbook": "docs/runbooks/high-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Pod Restart Loop",
+      "runbook": "docs/runbooks/pod-restart-loop.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers DB Connection Saturation",
+      "runbook": "docs/runbooks/db-connection-exhaustion.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Runner Pool Exhaustion",
+      "runbook": "docs/runbooks/runner-pool-exhaustion.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Repo-Host Down",
+      "runbook": "docs/runbooks/pod-restart-loop.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Waitlist Failures",
+      "runbook": "docs/runbooks/high-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Production Canary Failure",
+      "runbook": "docs/runbooks/canary-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Playwright Canary Stale",
+      "runbook": "docs/runbooks/canary-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Cloud SQL High CPU",
+      "runbook": "docs/runbooks/cloud-sql-cpu.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 1
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Workflow Push-Hook Load Failures",
+      "runbook": "docs/runbooks/high-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Workflow Push-Hook Persistence Failures",
+      "runbook": "docs/runbooks/high-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Workflow Commit Status Creation Failures",
+      "runbook": "docs/runbooks/webhook-delivery-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Workflow Commit Status Update Failures",
+      "runbook": "docs/runbooks/webhook-delivery-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers DB Replication Lag",
+      "runbook": "docs/runbooks/db-replication-lag.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 1
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Runner Pod Stuck",
+      "runbook": "docs/runbooks/runner-pod-stuck.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Webhook Delivery Failures",
+      "runbook": "docs/runbooks/webhook-delivery-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers SSE Connection Count High",
+      "runbook": "docs/runbooks/sse-connection-high.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Repo-Host Disk Usage High",
+      "runbook": "docs/runbooks/disk-usage-repo-host.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 1
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Certificate Expiry Soon",
+      "runbook": "docs/runbooks/certificate-expiry.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Task Queue Growing",
+      "runbook": "docs/runbooks/task-queue-growing.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Agent Session Timeout Rate High",
+      "runbook": "docs/runbooks/agent-session-timeout.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Workspace Session Provisioning Failures",
+      "runbook": "docs/runbooks/workspace-session-provisioning.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers GCS Error Rate High",
+      "runbook": "docs/runbooks/gcs-error-rate.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox Controller Unavailable",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox No Ready Workers",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox Reconciliation Unhealthy",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox Degraded State",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox Worker Control Lost",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Microsandbox Capacity Headroom Low",
+      "runbook": "docs/runbooks/microsandbox.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": false,
+      "maxAutoAttemptsPerDay": 0
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Backend Canary Failure",
+      "runbook": "docs/runbooks/canary-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    },
+    {
+      "policyDisplayNamePrefix": "Smithers Backend Canary Stale",
+      "runbook": "docs/runbooks/canary-failure.md",
+      "workflow": ".smithers/workflows/remediate.tsx",
+      "remediable": true,
+      "maxAutoAttemptsPerDay": 2
+    }
+  ]
+}

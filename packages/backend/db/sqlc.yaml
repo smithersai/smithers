@@ -1,0 +1,45 @@
+version: "2"
+# Source-of-truth policy:
+# - Schema and queries live in db/ in this repo.
+# - This config generates Go from those same files.
+# - Any schema change must be made in db/schema.sql first.
+# - sqlc generates Go here.
+sql:
+  - engine: "postgresql"
+    schema: "schema.sql"
+    queries: "queries/"
+    gen:
+      go:
+        package: "db"
+        out: "../internal/db"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_empty_slices: true
+        overrides:
+          - db_type: "uuid"
+            go_type: "string"
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          # This control deliberately starts at PostgreSQL infinity. Keep the
+          # richer pgtype representation for its generated read/attest APIs.
+          - column: "storage_legacy_capability_horizons.valid_until"
+            go_type:
+              import: "github.com/jackc/pgx/v5/pgtype"
+              type: "Timestamptz"
+          - db_type: "jsonb"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - db_type: "tsvector"
+            go_type: "string"
+          - db_type: "pg_catalog.tsvector"
+            go_type: "string"
+          - column: "users.search_vector"
+            go_type: "string"
+            go_struct_tag: 'json:"-"'
+          - column: "repositories.search_vector"
+            go_type: "string"
+            go_struct_tag: 'json:"-"'
+          - column: "issues.search_vector"
+            go_type: "string"
+            go_struct_tag: 'json:"-"'

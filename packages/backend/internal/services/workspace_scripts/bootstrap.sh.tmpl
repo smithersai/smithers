@@ -1,0 +1,166 @@
+#!/bin/bash
+set -euo pipefail
+install -d -o {{.User}} -g {{.User}} -m 700 {{.Home}}/.smithers
+install -d -o {{.User}} -g {{.User}} -m 755 {{.LocalDir}}
+install -d -o {{.User}} -g {{.User}} -m 755 {{.LocalBinDir}}
+# CLI staging degrades softly: a broken payload must not fail the bootstrap
+# unit (jj/node/claude installs below still run, and callers that re-run this
+# script — e.g. the clone command's jj fallback — must not die on a CLI-only
+# problem). A workspace without the smithers CLI is degraded but usable.
+if [ -s {{printf "%q" .CLIB64Path}} ]; then
+  if ! base64 -d {{printf "%q" .CLIB64Path}} | gzip -dc > {{printf "%q" .CLIPath}}.tmp; then
+    echo "smithers workspace bootstrap: failed to decode/decompress smithers cli payload; continuing without cli" >&2
+    rm -f {{printf "%q" .CLIPath}}.tmp
+  elif [ ! -s {{printf "%q" .CLIPath}}.tmp ]; then
+    echo "smithers workspace bootstrap: decoded smithers cli payload is empty; continuing without cli" >&2
+    rm -f {{printf "%q" .CLIPath}}.tmp
+  else
+    install -m 755 {{printf "%q" .CLIPath}}.tmp {{printf "%q" .CLIPath}}
+    rm -f {{printf "%q" .CLIPath}}.tmp
+    if ! {{printf "%q" .CLIPath}} --help >/tmp/smithers-workspace-cli-help.log 2>&1; then
+      echo "smithers workspace bootstrap: installed smithers cli failed --help smoke; removing it" >&2
+      rm -f {{printf "%q" .CLIPath}}
+    else
+      echo "smithers workspace bootstrap: installed smithers cli" >&2
+    fi
+  fi
+else
+  echo "smithers workspace bootstrap: smithers cli payload absent" >&2
+fi
+# Bun + the global smithers workflow pack (~/.smithers). Entirely best-effort:
+# a transient network failure must not fail workspace provisioning. Bun is
+# installed system-wide (pinned via npm, the image ships nodejs/npm but no
+# bun) so `smithers init --global` can run the pack's `bun install` and pack
+# workflows can execute later.
+if ! command -v bun >/dev/null 2>&1; then
+  npm install -g --prefix /usr/local bun@{{.BunVersion}} >/tmp/smithers-workspace-bun-install.log 2>&1 || \
+    echo "smithers workspace bootstrap: bun install failed; continuing without bun" >&2
+fi
+if [ -x {{printf "%q" .CLIPath}} ]; then
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u {{.User}} -- env -i HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/usr/local/bin:/usr/bin:/bin bash -lc {{printf "%q" .PackInitScript}} || \
+      echo "smithers workspace bootstrap: global smithers pack init failed; continuing" >&2
+  else
+    su - {{.User}} -c {{printf "%q" .PackInitScript}} || \
+      echo "smithers workspace bootstrap: global smithers pack init failed; continuing" >&2
+  fi
+else
+  echo "smithers workspace bootstrap: smithers cli missing; skipping global pack init" >&2
+fi
+# A base image can ship a newer, incompatible JJ. The native coding adapter
+# requires this exact release, so existence alone cannot satisfy bootstrap.
+smithers_jj_compatible() {
+  jj --version 2>/dev/null | grep -Eq '^jj 0\.39\.0([-+].*)?$'
+}
+if ! smithers_jj_compatible && command -v node >/dev/null 2>&1; then
+  # Microsandbox mounts /tmp as a deliberately small tmpfs. Release archives
+  # and their extracted trees belong on the writable OCI disk instead.
+  export SMITHERS_JJ_ARCHIVE="/var/tmp/smithers-jj-release.tar.gz"
+  export SMITHERS_JJ_EXTRACT_DIR="/var/tmp/smithers-jj-release"
+  export SMITHERS_JJ_RELEASE_API_URL={{printf "%q" .JJReleaseAPIURL}}
+  export SMITHERS_DOWNLOAD_MODE=jj
+  rm -rf "$SMITHERS_JJ_ARCHIVE" "$SMITHERS_JJ_EXTRACT_DIR"
+  mkdir -p "$SMITHERS_JJ_EXTRACT_DIR"
+  node -e {{printf "%q" "void eval(Buffer.from(process.argv[1], \"base64\").toString(\"utf8\"));"}} {{printf "%q" .DownloadScript}} >/tmp/smithers-workspace-jj-bootstrap.log 2>&1 || true
+  if [ -f "$SMITHERS_JJ_ARCHIVE" ]; then
+    tar -xzf "$SMITHERS_JJ_ARCHIVE" -C "$SMITHERS_JJ_EXTRACT_DIR" >/tmp/smithers-workspace-jj-bootstrap.log 2>&1 || true
+    jj_bin="$(find "$SMITHERS_JJ_EXTRACT_DIR" -type f -name jj | head -n 1)"
+    if [ -n "${jj_bin:-}" ] && [ -f "$jj_bin" ]; then
+      install -m 755 "$jj_bin" /usr/local/bin/jj || true
+    fi
+  fi
+fi
+if ! smithers_jj_compatible; then
+  echo "smithers workspace bootstrap: required JJ 0.39.0 could not be installed" >&2
+  exit 1
+fi
+if [ ! -x {{printf "%q" (printf "%s/node" .LocalBinDir)}} ] || [ ! -x {{printf "%q" (printf "%s/npm" .LocalBinDir)}} ]; then
+  if command -v node >/dev/null 2>&1; then
+    export SMITHERS_NODE_ARCHIVE="/var/tmp/smithers-node-release.tar.gz"
+    export SMITHERS_NODE_EXTRACT_DIR="/var/tmp/smithers-node-release"
+    export SMITHERS_NODE_INDEX_URL={{printf "%q" .NodeDistIndexURL}}
+    export SMITHERS_NODE_MAJOR={{printf "%q" .NodeMajor}}
+    export SMITHERS_DOWNLOAD_MODE=node
+    rm -rf "$SMITHERS_NODE_ARCHIVE" "$SMITHERS_NODE_EXTRACT_DIR" {{printf "%q" .LocalNodeDir}}
+    mkdir -p "$SMITHERS_NODE_EXTRACT_DIR"
+    node -e {{printf "%q" "void eval(Buffer.from(process.argv[1], \"base64\").toString(\"utf8\"));"}} {{printf "%q" .DownloadScript}} >{{.NodeInstallLog}} 2>&1 || true
+    node_dir=""
+    if tar -xzf "$SMITHERS_NODE_ARCHIVE" -C "$SMITHERS_NODE_EXTRACT_DIR" >>{{.NodeInstallLog}} 2>&1; then
+      node_dir="$(find "$SMITHERS_NODE_EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d -name 'node-*' | head -n 1)"
+    fi
+    if [ -n "${node_dir:-}" ] && [ -x "$node_dir/bin/node" ] && [ -x "$node_dir/bin/npm" ]; then
+      mv "$node_dir" {{printf "%q" .LocalNodeDir}}
+      ln -sfn ../node/bin/node {{printf "%q" (printf "%s/node" .LocalBinDir)}}
+      ln -sfn ../node/bin/npm {{printf "%q" (printf "%s/npm" .LocalBinDir)}}
+      ln -sfn ../node/bin/npx {{printf "%q" (printf "%s/npx" .LocalBinDir)}}
+    fi
+  fi
+fi
+# The configured coding host is separate from the interactive/general CLI.
+# Failure leaves the workspace usable; a bound gateway preflight refuses it.
+if [ -s {{printf "%q" .CodingHostB64Path}} ]; then
+  if ! base64 -d < {{printf "%q" .CodingHostB64Path}} | gzip -dc > {{printf "%q" .CodingHostPath}}.tmp; then
+    echo "smithers workspace bootstrap: coding host payload decode failed" >&2
+    rm -f {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+  elif [ ! -s {{printf "%q" .CodingHostPath}}.tmp ]; then
+    echo "smithers workspace bootstrap: coding host payload is empty" >&2
+    rm -f {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+  else
+    install -m 755 {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+    rm -f {{printf "%q" .CodingHostPath}}.tmp
+    # Same contract as the jj export helper below: diagnostic only, inherited
+    # environment (nix-ld reads NIX_LD), and never delete a staged binary
+    # because it could not be exec'd during the pre-activation window.
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .CodingHostPath}} --help >/tmp/smithers-workspace-coding-host-smoke.log 2>&1; then
+      echo "smithers workspace bootstrap: coding host runtime smoke failed; keeping the staged binary" >&2
+      sed -e "s|^|smithers workspace bootstrap: coding host smoke: |" /tmp/smithers-workspace-coding-host-smoke.log >&2 || true
+    fi
+  fi
+fi
+# End configured coding host staging.
+# The native jj helper the coding host's flows exec for their --eligible
+# preflight and tree export. The bootstrap unit runs as root, so `install`
+# lands a root-owned 0755 binary the developer user can only execute. Failure
+# leaves the workspace usable; the coding flow refuses instead of corrupting.
+if [ -s {{printf "%q" .JJExportB64Path}} ]; then
+  if ! base64 -d < {{printf "%q" .JJExportB64Path}} | gzip -dc > {{printf "%q" .JJExportPath}}.tmp; then
+    echo "smithers workspace bootstrap: jj export helper payload decode failed" >&2
+    rm -f {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+  elif [ ! -s {{printf "%q" .JJExportPath}}.tmp ]; then
+    echo "smithers workspace bootstrap: jj export helper payload is empty" >&2
+    rm -f {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+  else
+    install -m 0755 {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+    rm -f {{printf "%q" .JJExportPath}}.tmp
+    # The smoke run is a diagnostic, never a gate. It keeps the inherited
+    # environment (env -i drops NIX_LD/NIX_LD_LIBRARY_PATH, which nix-ld needs)
+    # and never deletes the helper: this unit can run before NixOS activation
+    # creates /lib64/ld-linux-x86-64.so.2, so a helper that is not yet
+    # executable is still far better than no helper at all. Deleting it
+    # strands every coding flow on the guest with no way back (prod
+    # 2026-09-15 19:31Z: "jj export helper runtime smoke failed" on a kind=vm
+    # guest whose nix-ld loader link appeared 2.2s AFTER the bootstrap ran).
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .JJExportPath}} --version >/tmp/smithers-workspace-jj-export-smoke.log 2>&1; then
+      echo "smithers workspace bootstrap: jj export helper runtime smoke failed; keeping the staged binary" >&2
+      sed -e "s|^|smithers workspace bootstrap: jj export smoke: |" /tmp/smithers-workspace-jj-export-smoke.log >&2 || true
+    else
+      echo "smithers workspace bootstrap: installed jj export helper" >&2
+    fi
+  fi
+else
+  echo "smithers workspace bootstrap: jj export helper payload absent" >&2
+fi
+# End configured jj export staging.
+if [ -x {{printf "%q" (printf "%s/claude" .LocalBinDir)}} ] || command -v claude >/dev/null 2>&1; then
+  chown -R {{.User}}:{{.User}} {{.LocalDir}} {{.Home}}/.smithers
+  exit 0
+fi
+if [ ! -x {{printf "%q" (printf "%s/npm" .LocalBinDir)}} ]; then
+  exit 0
+fi
+if command -v runuser >/dev/null 2>&1; then
+  runuser -u {{.User}} -- env -i HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/usr/local/bin:/usr/bin:/bin bash -lc {{printf "%q" .ClaudeInstallScript}} || exit 0
+else
+  su - {{.User}} -c {{printf "%q" .ClaudeInstallScript}} || exit 0
+fi
+chown -R {{.User}}:{{.User}} {{.LocalDir}} {{.Home}}/.smithers
