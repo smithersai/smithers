@@ -143,6 +143,64 @@ test("open-in-tab returns the address bar to the root frame and Escape minimizes
   await expect(page.locator(".card-maximize-backdrop")).toHaveCount(0)
 })
 
+for (const sample of [
+  { name: "desktop light", width: 1440, height: 960, dark: false },
+  { name: "narrow dark", width: 390, height: 844, dark: true },
+]) test(`maximized cards keep navigation and Chat operable by pointer and keyboard: ${sample.name}`, async ({ page }) => {
+  await page.setViewportSize({ width: sample.width, height: sample.height })
+  await page.goto("/")
+  await openWorkspaceChat(page)
+  if (sample.dark) {
+    await page.getByRole("button", { name: "Toggle light and dark mode" }).click()
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+  }
+  await sendSlash(page, "/appearance.theme")
+
+  const card = page.getByTestId("transcript").locator('.smithers-card[data-kind="theme-picker"]')
+  const cardId = (await card.getAttribute("data-testid"))?.replace(/^card-/, "")
+  expect(cardId).toBeTruthy()
+  await card.getByTestId(`card-maximize-${cardId}`).click()
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  const chat = page.getByRole("button", { name: "Chat", exact: true })
+  const rail = page.getByRole("navigation", { name: "Chrome" })
+  const railButtons = rail.getByRole("button")
+  expect(await railButtons.count()).toBeGreaterThan(0)
+  for (const target of [chat, ...await railButtons.all()]) {
+    const box = await target.boundingBox()
+    expect(box).not.toBeNull()
+    expect(await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y)
+      return hit?.closest("button")?.getAttribute("aria-label") ?? hit?.closest("button")?.textContent?.trim()
+    }, { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 })).toBe(await target.getAttribute("aria-label") ?? (await target.textContent())?.trim())
+  }
+
+  await chat.click()
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await expect(chat).toBeFocused()
+
+  let reachedRailButtons = 0
+  for (let presses = 0; presses < 100 && reachedRailButtons < await railButtons.count(); presses++) {
+    await page.keyboard.press("Tab")
+    if (await railButtons.nth(reachedRailButtons).evaluate(node => node === document.activeElement)) reachedRailButtons++
+  }
+  expect(reachedRailButtons).toBe(await railButtons.count())
+  await page.keyboard.press("Shift+Tab")
+  await expect(railButtons.nth((await railButtons.count()) - 2)).toBeFocused()
+  const theme = page.getByRole("button", { name: "Toggle light and dark mode" })
+  await page.keyboard.press("Tab")
+  await expect(theme).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", sample.dark ? "light" : "dark")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+
+  await card.getByRole("button", { name: "Restore", exact: true }).click()
+  await expect(card).toHaveAttribute("data-maximized", "false")
+  await expect(card.getByTestId(`card-maximize-${cardId}`)).toBeFocused()
+})
+
 test("booted from a repository path, the address bar keeps it while back and forward still switch frames", async ({ page }) => {
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.goto("/smithersai/smithers")

@@ -165,6 +165,14 @@ describe("the maximized card keeps Restore reachable (ask 8)", () => {
   })
 })
 
+describe("a maximized card keeps global chrome usable", () => {
+  test("navigation and Chat stay above the backdrop", () => {
+    expect(cards).toMatch(
+      /\.session-shell:has\(\.app-shell\[data-frame-maximized="true"\]\) \.session-navigation,[\s\S]*\.chrome-dock\s*\{[^}]*z-index: 75;[\s\S]*\.app-shell\[data-frame-maximized="true"\] \.app-chat-controls\s*\{[^}]*z-index: 75;/
+    )
+  })
+})
+
 describe("the shell shrinks to a phone viewport (no sideways scroll)", () => {
   test("the shell is a flex item that may shrink below its min-content width", () => {
     const shell = /\.app-shell\s*\{[^}]*\}/.exec(chat)?.[0] ?? ""

@@ -508,6 +508,19 @@
 	position: relative;
 	z-index: 75;
 }
+
+/* Maximizing expands the frame without taking over the app. Keep the shared
+ * navigation rail and Chat door above the presentation backdrop so they stay
+ * visible and keep their real pointer and keyboard targets. */
+.session-shell:has(.app-shell[data-frame-maximized="true"]) .session-navigation,
+.session-shell:has(.app-shell[data-frame-maximized="true"]) .chrome-dock {
+	z-index: 75;
+}
+
+.app-shell[data-frame-maximized="true"] .app-chat-controls {
+	position: relative;
+	z-index: 75;
+}
 @media (prefers-reduced-motion: no-preference) {
 	.smithers-card[data-maximized="true"] {
 		animation: card-maximize-in var(--dur) var(--ease-current);
