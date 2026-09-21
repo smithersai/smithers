@@ -141,7 +141,7 @@ func TestAdminStopWorkspaceRetainsRowAndEndsSessions(t *testing.T) {
 	}
 	deleted := 0
 	var gauge float64
-	lifecycle := newWorkspaceServiceForTests(q, services.WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{deleteVMFn: func(_ context.Context, vm string) error {
+	lifecycle := services.NewWorkspaceService(q, services.WithWorkspaceSandboxClient(&deleteWorkspaceProvider{deleteVMFn: func(_ context.Context, vm string) error {
 		require.Equal(t, "stop-vm", vm)
 		// The real lifecycle cannot reach teardown until the intent is persisted.
 		var outcome string
@@ -149,7 +149,7 @@ func TestAdminStopWorkspaceRetainsRowAndEndsSessions(t *testing.T) {
 		require.Equal(t, "attempted", outcome)
 		deleted++
 		return nil
-	}}), services.WithWorkspaceSandboxMetrics(&mockSandboxMetricsRecorder{addActiveVMsFn: func(_ string, delta float64) { gauge += delta }}))
+	}}), services.WithWorkspaceSandboxMetrics(&workspaceMetricsRecorder{addActiveVMsFn: func(_ string, delta float64) { gauge += delta }}))
 	_, err = lifecycle.StopWorkspace(ctx, id, repo, user+1)
 	require.Error(t, err)
 	require.Zero(t, deleted)

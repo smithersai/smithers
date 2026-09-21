@@ -1,16 +1,16 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
+
 	"github.com/go-chi/chi/v5"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -115,9 +115,9 @@ func toSystemIncidentResponse(inc clusterservices.AdminSystemIncident) systemInc
 // GET /api/admin/system/incidents.
 func parseSystemIncidentsQuery(r *http.Request) (clusterservices.AdminSystemIncidentListInput, *pkgerrors.APIError) {
 	input := clusterservices.AdminSystemIncidentListInput{
-		State:  services.AdminSystemIncidentStateActive,
+		State:  clusterservices.AdminSystemIncidentStateActive,
 		Policy: r.URL.Query().Get("policy"),
-		Limit:  services.AdminSystemIncidentDefaultLimit,
+		Limit:  clusterservices.AdminSystemIncidentDefaultLimit,
 	}
 
 	if raw := strings.TrimSpace(r.URL.Query().Get("state")); raw != "" {
@@ -129,7 +129,7 @@ func parseSystemIncidentsQuery(r *http.Request) (clusterservices.AdminSystemInci
 
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
-		if err != nil || limit < 1 || limit > services.AdminSystemIncidentMaxLimit {
+		if err != nil || limit < 1 || limit > clusterservices.AdminSystemIncidentMaxLimit {
 			return input, pkgerrors.BadRequest("invalid limit: must be between 1 and 200")
 		}
 		input.Limit = limit

@@ -52,7 +52,7 @@ func TestAdminSystemIncidentsHandler_ListIncidents(t *testing.T) {
 		h := &AdminSystemIncidentsHandler{
 			Service: &mockAdminSystemIncidentsService{
 				listIncidentsFn: func(_ context.Context, input clusterservices.AdminSystemIncidentListInput) ([]clusterservices.AdminSystemIncident, error) {
-					assert.Equal(t, services.AdminSystemIncidentStateActive, input.State)
+					assert.Equal(t, clusterservices.AdminSystemIncidentStateActive, input.State)
 					assert.Equal(t, 50, input.Limit)
 					return []clusterservices.AdminSystemIncident{
 						{
