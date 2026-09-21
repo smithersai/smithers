@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockLandingRouteService struct {
@@ -37,7 +37,7 @@ type mockLandingRouteService struct {
 	markThreadDoneFn       func(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
 	ackThreadFn            func(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
 	reopenThreadFn         func(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
-	listChangesFn          func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error)
+	listChangesFn          func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]services.LandingChangeResponse, int64, error)
 	getConflictsFn         func(ctx context.Context, viewer *db.User, owner, repo string, number int64) (services.LandingConflictsResponse, error)
 	dismissReviewFn        func(ctx context.Context, actor *db.User, owner, repo string, number int64, reviewID int64, req services.DismissLandingReviewInput) (db.LandingRequestReview, error)
 	getLandingDiffFn       func(ctx context.Context, viewer *db.User, owner, repo string, number int64, opts services.LandingDiffOptions) (services.LandingDiffResponse, error)
@@ -188,7 +188,7 @@ func (m *mockLandingRouteService) ReopenLandingThread(ctx context.Context, actor
 	return db.LandingRequestComment{}, nil
 }
 
-func (m *mockLandingRouteService) ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error) {
+func (m *mockLandingRouteService) ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]services.LandingChangeResponse, int64, error) {
 	if m.listChangesFn != nil {
 		return m.listChangesFn(ctx, viewer, owner, repo, number, page, perPage)
 	}
@@ -794,8 +794,8 @@ func TestLandingHandler_ReviewsCommentsChangesAndConflicts(t *testing.T) {
 					UpdatedAt:        now,
 				}, nil
 			},
-			listChangesFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error) {
-				return []db.LandingRequestChange{{ID: 1, LandingRequestID: 11, ChangeID: "k1", PositionInStack: 1, CreatedAt: now}}, 2, nil
+			listChangesFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]services.LandingChangeResponse, int64, error) {
+				return []services.LandingChangeResponse{{LandingRequestChange: db.LandingRequestChange{ID: 1, LandingRequestID: 11, ChangeID: "k1", PositionInStack: 1, CreatedAt: now}}}, 2, nil
 			},
 			getConflictsFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64) (services.LandingConflictsResponse, error) {
 				return services.LandingConflictsResponse{

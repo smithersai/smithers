@@ -24,9 +24,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/diffview"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/ownership"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // maxLandingStackChanges caps the number of change IDs in a single landing
@@ -120,6 +120,14 @@ type LandingCommentResponse struct {
 type LandingRequestAuthor struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
+}
+
+type LandingChangeResponse struct {
+	db.LandingRequestChange
+	CommitID    string `json:"commit_id"`
+	Description string `json:"description"`
+	AuthorName  string `json:"author_name"`
+	Timestamp   string `json:"timestamp"`
 }
 
 // LandingReviewRequestResponse identifies the human or named agent asked to
@@ -248,6 +256,7 @@ type LandingQuerier interface {
 
 	ListLandingRequestChanges(ctx context.Context, arg db.ListLandingRequestChangesParams) ([]db.LandingRequestChange, error)
 	CountLandingRequestChanges(ctx context.Context, landingRequestID int64) (int64, error)
+	GetChangeByChangeID(ctx context.Context, arg db.GetChangeByChangeIDParams) (db.Change, error)
 	ListAllProtectedBookmarksByRepo(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
 	CountApprovedLandingRequestReviews(ctx context.Context, landingRequestID int64) (int64, error)
 
@@ -311,6 +320,10 @@ type landingOwnershipQuerier interface {
 
 type landingRevisionQuerier interface {
 	ListChangeRevisions(ctx context.Context, arg db.ListChangeRevisionsParams) ([]db.ChangeRevision, error)
+}
+
+type landingRevisionDiffRepoHost interface {
+	GetRevisionDiff(ctx context.Context, owner, repo, changeID, fromCommitID, toCommitID, path string) (repohost.ChangeDiff, error)
 }
 
 type landingAgentReviewQuerier interface {
@@ -2802,7 +2815,7 @@ func (s *LandingService) currentLandingTipRevision(ctx context.Context, reposito
 	return revision, nil
 }
 
-func (s *LandingService) ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error) {
+func (s *LandingService) ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]LandingChangeResponse, int64, error) {
 	repository, landingRow, err := s.resolveReadableLanding(ctx, viewer, owner, repo, number)
 	if err != nil {
 		return nil, 0, err
@@ -2822,7 +2835,35 @@ func (s *LandingService) ListLandingChanges(ctx context.Context, viewer *db.User
 	if err != nil {
 		return nil, 0, pkgerrors.Internal("failed to count landing changes")
 	}
-	return changes, total, nil
+	items := make([]LandingChangeResponse, 0, len(changes))
+	for _, ref := range changes {
+		// An unmerged request still follows its live change head. Reading it
+		// must not depend on a review/landing having recorded a revision yet.
+		if landingRow.State != landingStateMerged {
+			change, err := s.repoHost.GetChange(ctx, strings.TrimSpace(owner), repository.Name, ref.ChangeID)
+			if err != nil {
+				return nil, 0, mapLandingRepoHostError(err, "failed to load landing change")
+			}
+			items = append(items, LandingChangeResponse{LandingRequestChange: ref, CommitID: change.CommitID, Description: change.Description, AuthorName: change.AuthorName, Timestamp: change.Timestamp})
+			continue
+		}
+		change, err := s.queries.GetChangeByChangeID(ctx, db.GetChangeByChangeIDParams{RepositoryID: repository.ID, ChangeID: ref.ChangeID})
+		if err != nil {
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return nil, 0, pkgerrors.NotFound("landing change not found")
+			}
+			return nil, 0, pkgerrors.Internal("failed to load landing change")
+		}
+		revision, err := s.landingDisplayRevision(ctx, repository.ID, landingRow, ref.ChangeID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if change.CommitID != revision.CommitID {
+			return nil, 0, pkgerrors.Conflict("landing commit metadata no longer matches its retained revision")
+		}
+		items = append(items, LandingChangeResponse{LandingRequestChange: ref, CommitID: revision.CommitID, Description: change.Description, AuthorName: change.AuthorName, Timestamp: revision.CreatedAt.Format(time.RFC3339Nano)})
+	}
+	return items, total, nil
 }
 
 func (s *LandingService) GetLandingConflicts(ctx context.Context, viewer *db.User, owner, repo string, number int64) (LandingConflictsResponse, error) {
@@ -2932,10 +2973,21 @@ func (s *LandingService) GetLandingDiff(ctx context.Context, viewer *db.User, ow
 	}
 
 	entries := make([]LandingDiffEntry, 0, len(landingRow.ChangeIds))
+	revisionHost, ok := s.repoHost.(landingRevisionDiffRepoHost)
+	if landingRow.State == landingStateMerged && !ok {
+		return LandingDiffResponse{}, pkgerrors.Internal("landing revision diff unavailable")
+	}
 	for _, changeID := range landingRow.ChangeIds {
-		diff, err := diffview.BuildChangeDiff(ctx, s.repoHost, strings.TrimSpace(owner), repository.Name, changeID, diffview.BuildOptions{
-			IgnoreWhitespace: opts.IgnoreWhitespace,
-		})
+		var diff repohost.ChangeDiff
+		if landingRow.State == landingStateMerged {
+			revision, revisionErr := s.landingDisplayRevision(ctx, repository.ID, landingRow, changeID)
+			if revisionErr != nil {
+				return LandingDiffResponse{}, revisionErr
+			}
+			diff, err = diffview.BuildRevisionDiff(ctx, revisionHost, strings.TrimSpace(owner), repository.Name, changeID, revision.ParentCommitID, revision.CommitID, "", diffview.BuildOptions{IgnoreWhitespace: opts.IgnoreWhitespace})
+		} else {
+			diff, err = diffview.BuildChangeDiff(ctx, s.repoHost, strings.TrimSpace(owner), repository.Name, changeID, diffview.BuildOptions{IgnoreWhitespace: opts.IgnoreWhitespace})
+		}
 		if err != nil {
 			return LandingDiffResponse{}, mapLandingRepoHostError(err, "failed to load change diff")
 		}
@@ -2949,6 +3001,42 @@ func (s *LandingService) GetLandingDiff(ctx context.Context, viewer *db.User, ow
 		LandingNumber: landingRow.Number,
 		Changes:       entries,
 	}, nil
+}
+
+// landingDisplayRevision pins a landing read to the immutable revision it
+// merged. Open requests use the latest recorded revision. The live change head
+// may no longer exist after jj abandons a landed change, so display reads must
+// never resolve history through GetChange(changeID).
+func (s *LandingService) landingDisplayRevision(ctx context.Context, repositoryID int64, landing db.GetLandingRequestWithChangeIDsByNumberRow, changeID string) (db.ChangeRevision, error) {
+	q, ok := s.queries.(landingRevisionQuerier)
+	if !ok {
+		return db.ChangeRevision{}, pkgerrors.Internal("landing revision history unavailable")
+	}
+	revisions, err := q.ListChangeRevisions(ctx, db.ListChangeRevisionsParams{RepositoryID: repositoryID, ChangeID: changeID})
+	if err != nil {
+		return db.ChangeRevision{}, pkgerrors.Internal("failed to load landing revision")
+	}
+	wanted := ""
+	if landing.State == landingStateMerged {
+		if len(landing.LandedRevisions) == 0 {
+			return db.ChangeRevision{}, pkgerrors.NotFound("landed revision not recorded")
+		}
+		var pins map[string]approvalRevision
+		if err := json.Unmarshal(landing.LandedRevisions, &pins); err != nil {
+			return db.ChangeRevision{}, pkgerrors.Internal("failed to decode landed revisions")
+		}
+		wanted = pins[changeID].CommitID
+		if wanted == "" {
+			return db.ChangeRevision{}, pkgerrors.NotFound("landed revision not recorded")
+		}
+	}
+	for index := len(revisions) - 1; index >= 0; index-- {
+		revision := revisions[index]
+		if wanted == "" || revision.CommitID == wanted {
+			return revision, nil
+		}
+	}
+	return db.ChangeRevision{}, pkgerrors.NotFound("landing revision not found")
 }
 
 func mapLandingRepoHostError(err error, fallbackMessage string) error {

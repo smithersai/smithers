@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 func TestLanding_Cov_PgxCreateTxCommitAndRollback(t *testing.T) {
@@ -330,8 +330,8 @@ func TestLanding_Cov_DismissReviewAndDiffErrorBranches(t *testing.T) {
 			},
 		}
 		rh := &mockLandingRepoHostClient{
-			getChangeFn: func(ctx context.Context, owner, repo, changeID string) (repohost.Change, error) {
-				return repohost.Change{}, fmt.Errorf("repo-host returned status 409 conflict")
+			getChangeDiffFn: func(ctx context.Context, owner, repo, changeID string) (repohost.ChangeDiff, error) {
+				return repohost.ChangeDiff{}, fmt.Errorf("repo-host returned status 409 conflict")
 			},
 		}
 		svc := NewLandingService(q, rh)

@@ -20,6 +20,10 @@ type benchLandingQuerier struct {
 	user       db.User
 }
 
+func (m *benchLandingQuerier) GetChangeByChangeID(_ context.Context, arg db.GetChangeByChangeIDParams) (db.Change, error) {
+	return db.Change{RepositoryID: arg.RepositoryID, ChangeID: arg.ChangeID, CommitID: arg.ChangeID}, nil
+}
+
 func (m *benchLandingQuerier) GetRepoByOwnerAndLowerName(_ context.Context, _ db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 	return m.repo, nil
 }

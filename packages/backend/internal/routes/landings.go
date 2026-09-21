@@ -9,9 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type LandingRouteService interface {
@@ -32,7 +32,7 @@ type LandingRouteService interface {
 	MarkLandingThreadDone(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
 	AckLandingThread(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
 	ReopenLandingThread(ctx context.Context, actor *db.User, owner, repo string, number, threadID int64) (db.LandingRequestComment, error)
-	ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error)
+	ListLandingChanges(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]services.LandingChangeResponse, int64, error)
 	GetLandingConflicts(ctx context.Context, viewer *db.User, owner, repo string, number int64) (services.LandingConflictsResponse, error)
 	GetLandingDiff(ctx context.Context, viewer *db.User, owner, repo string, number int64, opts services.LandingDiffOptions) (services.LandingDiffResponse, error)
 }

@@ -20,9 +20,9 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type landingDispatchCall struct {
@@ -67,6 +67,7 @@ type mockLandingQuerier struct {
 	getHighestTeamPermissionForRepoUserFn          func(ctx context.Context, arg db.GetHighestTeamPermissionForRepoUserParams) (string, error)
 	getCollaboratorPermissionForRepoUserFn         func(ctx context.Context, arg db.GetCollaboratorPermissionForRepoUserParams) (string, error)
 	getUserByIDFn                                  func(ctx context.Context, id int64) (db.User, error)
+	getChangeByChangeIDFn                          func(ctx context.Context, arg db.GetChangeByChangeIDParams) (db.Change, error)
 	getAgentSessionFn                              func(ctx context.Context, id string) (db.AgentSession, error)
 	getUserByLowerUsernameFn                       func(ctx context.Context, lowerUsername string) (db.User, error)
 	createLandingRequestFn                         func(ctx context.Context, arg db.CreateLandingRequestParams) (db.LandingRequest, error)
@@ -539,7 +540,14 @@ func (m *mockLandingQuerier) ListChangeRevisions(ctx context.Context, arg db.Lis
 	if m.listChangeRevisionsFn != nil {
 		return m.listChangeRevisionsFn(ctx, arg)
 	}
-	return nil, nil
+	return []db.ChangeRevision{{RepositoryID: arg.RepositoryID, ChangeID: arg.ChangeID, Seq: 1, CommitID: arg.ChangeID, ParentCommitID: "parent-" + arg.ChangeID}}, nil
+}
+
+func (m *mockLandingQuerier) GetChangeByChangeID(ctx context.Context, arg db.GetChangeByChangeIDParams) (db.Change, error) {
+	if m.getChangeByChangeIDFn != nil {
+		return m.getChangeByChangeIDFn(ctx, arg)
+	}
+	return db.Change{RepositoryID: arg.RepositoryID, ChangeID: arg.ChangeID, CommitID: arg.ChangeID, Description: arg.ChangeID, AuthorName: "author"}, nil
 }
 
 func (m *mockLandingQuerier) ListLandingRequestChanges(ctx context.Context, arg db.ListLandingRequestChangesParams) ([]db.LandingRequestChange, error) {
@@ -609,6 +617,7 @@ type mockLandingRepoHostClient struct {
 	getChangeFn          func(ctx context.Context, owner, repo, changeID string) (repohost.Change, error)
 	getChangeFilesFn     func(ctx context.Context, owner, repo, changeID string) ([]repohost.ChangeFile, error)
 	getChangeDiffFn      func(ctx context.Context, owner, repo, changeID string) (repohost.ChangeDiff, error)
+	getRevisionDiffFn    func(ctx context.Context, owner, repo, changeID, fromCommitID, toCommitID, path string) (repohost.ChangeDiff, error)
 	getFileAtChangeFn    func(ctx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error)
 	lastLandOwner        string
 	lastLandRepo         string
@@ -654,6 +663,13 @@ func (m *mockLandingRepoHostClient) GetChangeDiff(ctx context.Context, owner, re
 		return m.getChangeDiffFn(ctx, owner, repo, changeID)
 	}
 	return repohost.ChangeDiff{ChangeID: changeID}, nil
+}
+
+func (m *mockLandingRepoHostClient) GetRevisionDiff(ctx context.Context, owner, repo, changeID, fromCommitID, toCommitID, path string) (repohost.ChangeDiff, error) {
+	if m.getRevisionDiffFn != nil {
+		return m.getRevisionDiffFn(ctx, owner, repo, changeID, fromCommitID, toCommitID, path)
+	}
+	return m.GetChangeDiff(ctx, owner, repo, changeID)
 }
 
 func (m *mockLandingRepoHostClient) GetChangeFiles(ctx context.Context, owner, repo, changeID string) ([]repohost.ChangeFile, error) {
@@ -2606,17 +2622,12 @@ func TestLandingService_GetLandingDiff_AggregatesPerChangeDiffs(t *testing.T) {
 		},
 	}
 	rh := &mockLandingRepoHostClient{
-		getChangeFn: func(ctx context.Context, owner, repo, changeID string) (repohost.Change, error) {
-			return repohost.Change{ChangeID: changeID, ParentChangeIDs: []string{"parent-" + changeID}}, nil
-		},
 		getChangeDiffFn: func(ctx context.Context, owner, repo, changeID string) (repohost.ChangeDiff, error) {
 			diffCalls = append(diffCalls, changeID)
-			return repohost.ChangeDiff{
-				ChangeID: changeID,
-				FileDiffs: []repohost.FileDiff{
-					{Path: "README.md", ChangeType: "modified"},
-				},
-			}, nil
+			return repohost.ChangeDiff{ChangeID: changeID, FileDiffs: []repohost.FileDiff{{Path: "README.md", ChangeType: "modified", OldContent: "before line\n", NewContent: "after line\n"}}}, nil
+		},
+		getChangeFn: func(ctx context.Context, owner, repo, changeID string) (repohost.Change, error) {
+			return repohost.Change{ChangeID: changeID, ParentChangeIDs: []string{"parent-" + changeID}}, nil
 		},
 		getFileAtChangeFn: func(ctx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error) {
 			content := "before line\n"
@@ -2647,6 +2658,93 @@ func TestLandingService_GetLandingDiff_AggregatesPerChangeDiffs(t *testing.T) {
 	assert.Equal(t, "markdown", resp.Changes[0].FileDiffs[0].Language)
 	// Verify diff calls were made for each change in stack order.
 	assert.Equal(t, []string{"k1", "k2"}, diffCalls)
+}
+
+func TestLandingService_OpenLandingReadsCurrentHeadWithoutRecordedRevision(t *testing.T) {
+	t.Parallel()
+	actor := landingTestUser(1, "alice")
+	repo := landingRepo(func(r *db.Repository) { r.IsPublic = true })
+	landing := landingDBRequestWithChangeIDs(41, repo.ID, 9, actor.ID, []string{"live-change"})
+	landing.State = landingStateOpen
+	q := &mockLandingQuerier{
+		getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) { return repo, nil },
+		getLandingRequestWithChangeIDsByNumberFn: func(context.Context, db.GetLandingRequestWithChangeIDsByNumberParams) (db.GetLandingRequestWithChangeIDsByNumberRow, error) {
+			return landing, nil
+		},
+		listLandingRequestChangesFn: func(context.Context, db.ListLandingRequestChangesParams) ([]db.LandingRequestChange, error) {
+			return []db.LandingRequestChange{{ChangeID: "live-change"}}, nil
+		},
+		listChangeRevisionsFn: func(context.Context, db.ListChangeRevisionsParams) ([]db.ChangeRevision, error) {
+			t.Fatal("an open request must not require retained landing history")
+			return nil, nil
+		},
+	}
+	head := "first-commit"
+	rh := &mockLandingRepoHostClient{
+		getChangeFn: func(_ context.Context, _, _, id string) (repohost.Change, error) {
+			assert.Equal(t, "live-change", id)
+			return repohost.Change{ChangeID: id, CommitID: head, Description: head, AuthorName: "alice", Timestamp: "2026-09-21T10:00:00Z"}, nil
+		},
+		getChangeDiffFn: func(_ context.Context, _, _, id string) (repohost.ChangeDiff, error) {
+			return repohost.ChangeDiff{ChangeID: id}, nil
+		},
+		getRevisionDiffFn: func(context.Context, string, string, string, string, string, string) (repohost.ChangeDiff, error) {
+			t.Fatal("an open diff must still follow the current head")
+			return repohost.ChangeDiff{}, nil
+		},
+	}
+	svc := NewLandingService(q, rh)
+	for _, commit := range []string{"first-commit", "amended-commit"} {
+		head = commit
+		changes, _, err := svc.ListLandingChanges(context.Background(), actor, "alice", "demo", 9, 1, 20)
+		require.NoError(t, err)
+		require.Len(t, changes, 1)
+		assert.Equal(t, commit, changes[0].CommitID)
+		assert.Equal(t, commit, changes[0].Description)
+		_, err = svc.GetLandingDiff(context.Background(), actor, "alice", "demo", 9, LandingDiffOptions{})
+		require.NoError(t, err)
+	}
+}
+
+func TestLandingService_GetLandingDiff_MergedLandingUsesRetainedLandedRevision(t *testing.T) {
+	t.Parallel()
+	actor := landingTestUser(1, "alice")
+	repo := landingRepo(func(r *db.Repository) { r.IsPublic = true; r.UserID = pgtype.Int8{Int64: actor.ID, Valid: true} })
+	landing := landingDBRequestWithChangeIDs(41, repo.ID, 9, actor.ID, []string{"dead-change"})
+	landing.State = landingStateMerged
+	landing.LandedRevisions = json.RawMessage(`{"dead-change":{"commit_id":"retained-commit","seq":2}}`)
+	q := &mockLandingQuerier{
+		getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) { return repo, nil },
+		getLandingRequestWithChangeIDsByNumberFn: func(context.Context, db.GetLandingRequestWithChangeIDsByNumberParams) (db.GetLandingRequestWithChangeIDsByNumberRow, error) {
+			return landing, nil
+		},
+		listChangeRevisionsFn: func(context.Context, db.ListChangeRevisionsParams) ([]db.ChangeRevision, error) {
+			return []db.ChangeRevision{{RepositoryID: repo.ID, ChangeID: "dead-change", Seq: 1, CommitID: "old", ParentCommitID: "base"}, {RepositoryID: repo.ID, ChangeID: "dead-change", Seq: 2, CommitID: "retained-commit", ParentCommitID: "retained-parent"}, {RepositoryID: repo.ID, ChangeID: "dead-change", Seq: 3, CommitID: "newer-unrelated", ParentCommitID: "newer-parent"}}, nil
+		},
+	}
+	var gotFrom, gotTo string
+	rh := &mockLandingRepoHostClient{getRevisionDiffFn: func(_ context.Context, _, _, changeID, fromCommitID, toCommitID, _ string) (repohost.ChangeDiff, error) {
+		gotFrom, gotTo = fromCommitID, toCommitID
+		return repohost.ChangeDiff{ChangeID: changeID}, nil
+	}}
+	resp, err := NewLandingService(q, rh).GetLandingDiff(context.Background(), actor, "alice", "demo", 9, LandingDiffOptions{})
+	require.NoError(t, err)
+	require.Len(t, resp.Changes, 1)
+	assert.Equal(t, "retained-parent", gotFrom)
+	assert.Equal(t, "retained-commit", gotTo)
+}
+
+func TestLandingService_GetLandingDiff_MergedLandingWithoutRetainedPinRefusesLatestRevision(t *testing.T) {
+	t.Parallel()
+	actor := landingTestUser(1, "alice")
+	repo := landingRepo(func(r *db.Repository) { r.IsPublic = true })
+	landing := landingDBRequestWithChangeIDs(41, repo.ID, 9, actor.ID, []string{"dead-change"})
+	landing.State = landingStateMerged
+	q := &mockLandingQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) { return repo, nil }, getLandingRequestWithChangeIDsByNumberFn: func(context.Context, db.GetLandingRequestWithChangeIDsByNumberParams) (db.GetLandingRequestWithChangeIDsByNumberRow, error) {
+		return landing, nil
+	}}
+	_, err := NewLandingService(q, &mockLandingRepoHostClient{}).GetLandingDiff(context.Background(), actor, "alice", "demo", 9, LandingDiffOptions{})
+	assert.Equal(t, http.StatusNotFound, landingAPIStatus(t, err))
 }
 
 func TestLandingService_GetLandingDiff_RepoHostError(t *testing.T) {

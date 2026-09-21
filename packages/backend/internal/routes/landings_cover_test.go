@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func TestLandings_Cov_ListAndContextFailures(t *testing.T) {
@@ -197,7 +197,7 @@ func TestLandings_Cov_ReviewCommentChangeAndConflictErrorBranches(t *testing.T) 
 			createCommentFn: func(ctx context.Context, actor *db.User, owner, repo string, number int64, req services.CreateLandingCommentInput) (db.LandingRequestComment, error) {
 				return db.LandingRequestComment{}, pkgerrors.BadRequest("body is required")
 			},
-			listChangesFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]db.LandingRequestChange, int64, error) {
+			listChangesFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64, page, perPage int) ([]services.LandingChangeResponse, int64, error) {
 				return nil, 0, pkgerrors.Forbidden("no access")
 			},
 			getConflictsFn: func(ctx context.Context, viewer *db.User, owner, repo string, number int64) (services.LandingConflictsResponse, error) {
