@@ -249,13 +249,15 @@ describe("landings seam — prs.view", () => {
         { context: "ci/lint", state: "failure" }
       ],
       baseBranch: "main",
-      createdAt: "2026-08-10T10:00:00.000Z"
-      /* No commits or files: the stack's change reads 404 here, so both tabs stay "not carried", never empty. */
+      createdAt: "2026-08-10T10:00:00.000Z",
+      readErrors: {
+        commits: "Commits unavailable (no stub for /api/repos/will/flows/landings/3/changes?limit=20)",
+        files: "Files unavailable (no stub for /api/repos/will/flows/landings/3/diff)"
+      }
     })
   })
 
   test("reads the stack for the Commits and Files tabs: commits bottom → top, files merged by path, a patch only for a file one change touched", async () => {
-    const CHANGES = "/api/repos/will/flows/changes"
     const change = (id: string, sha: string, description: string) => ({ change_id: id, commit_id: sha, description, author_name: "Will", timestamp: "2026-08-10T10:00:00.000Z" })
     const fileDiff = (path: string, additions: number, deletions: number, patch: string) => ({ path, change_type: "modified", additions, deletions, patch })
     const { store, controller } = await ready(
@@ -263,10 +265,11 @@ describe("landings seam — prs.view", () => {
         [`${LANDINGS}/3`]: json(200, landing(3, "open")),
         [`${LANDINGS}/3/reviews`]: json(200, []),
         [STATUSES]: json(200, []),
-        [`${CHANGES}/chg-a`]: json(200, change("chg-a", "aaa111", "Add the logger\n\nbody")),
-        [`${CHANGES}/chg-b`]: json(200, change("chg-b", "bbb222", "Wire it")),
-        [`${CHANGES}/chg-a/diff`]: json(200, { file_diffs: [fileDiff("src/log.ts", 10, 0, "@@ a"), fileDiff("src/server.ts", 2, 1, "@@ b")] }),
-        [`${CHANGES}/chg-b/diff`]: json(200, { file_diffs: [fileDiff("src/server.ts", 3, 0, "@@ c")] })
+        [`${LANDINGS}/3/changes`]: json(200, [change("chg-a", "aaa111", "Add the logger\n\nbody"), change("chg-b", "bbb222", "Wire it")]),
+        [`${LANDINGS}/3/diff`]: json(200, { changes: [
+          { change_id: "chg-a", file_diffs: [fileDiff("src/log.ts", 10, 0, "@@ a"), fileDiff("src/server.ts", 2, 1, "@@ b")] },
+          { change_id: "chg-b", file_diffs: [fileDiff("src/server.ts", 3, 0, "@@ c")] }
+        ] })
       })
     )
     const outcome = await controller.commands.run("prs.view", "3 will/flows")
@@ -297,6 +300,40 @@ describe("landings seam — prs.view", () => {
     if (outcome.status === "failed") {
       expect(outcome.error).toBe("Pull request #3 couldn't be read — the platform didn't answer.")
     }
+  })
+
+  test("retry replaces failed section state without retaining another read's stale content", async () => {
+    let attempt = 0
+    const services = backend({
+      [`${LANDINGS}/3`]: json(200, landing(3, "merged")),
+      [`${LANDINGS}/3/reviews`]: json(200, []),
+      [STATUSES]: json(200, []),
+      [`${LANDINGS}/3/changes`]: () => attempt === 0
+        ? json(404, { message: "change not found" })
+        : json(200, [{ change_id: "chg-a", commit_id: "aaa111", description: "Retained commit", author_name: "Will", timestamp: "2026-08-10T10:00:00.000Z" }]),
+      [`${LANDINGS}/3/diff`]: () => {
+        attempt += 1
+        return attempt === 1
+          ? json(503, { message: "repo host unavailable" })
+          : json(200, { changes: [{ change_id: "chg-a", file_diffs: [] }] })
+      }
+    })
+    const { store, controller } = await ready(services)
+    expect((await controller.commands.run("prs.view", "3 will/flows")).status).toBe("executed")
+    await settled()
+    let card = store.collections.cards.get("pr-will/flows-3")
+    if (card?.kind !== "pr") throw new Error("expected the pr card")
+    expect(card.payload.readErrors).toEqual({ commits: "Commits unavailable (change not found)", files: "Files unavailable (repo host unavailable)" })
+    expect(card.payload.commits).toBeUndefined()
+    expect(card.payload.files).toBeUndefined()
+
+    expect((await controller.commands.run("prs.view", "3 will/flows")).status).toBe("executed")
+    await settled()
+    card = store.collections.cards.get("pr-will/flows-3")
+    if (card?.kind !== "pr") throw new Error("expected the pr card")
+    expect(card.payload.readErrors).toBeUndefined()
+    expect(card.payload.commits?.map(commit => commit.message)).toEqual(["Retained commit"])
+    expect(card.payload.files).toEqual([])
   })
 })
 

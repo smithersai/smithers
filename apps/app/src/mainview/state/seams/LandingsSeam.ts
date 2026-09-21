@@ -290,32 +290,35 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   }
 
   /*
-   * The landing's stack for the PR card's Commits and Files changed tabs: each
-   * change (GET …/changes/{id}) and its diff (GET …/changes/{id}/diff,
-   * `file_diffs[]`), the routes the commit card reads. Files merge by path:
+   * The landing's retained stack for the PR card's Commits and Files changed
+   * tabs: GET …/landings/{number}/changes and its revision-pinned aggregate
+   * diff. Files merge by path:
    * counts add up, and the patch rides only when one change touched the file
    * (a later change's patch alone is not the file's diff). A tab's field is
    * set only when every read answered, so a failed read never looks empty.
    */
-  const fetchStack = async (repo: string, changeIds: readonly string[]): Promise<Pick<PrPayload, "commits" | "files">> => {
-    const root = `${ctx.baseUrl}${repoApiRoot(repo)}/changes`
-    const read = async (url: string): Promise<unknown> => {
+  const fetchStack = async (repo: string, number: number): Promise<Pick<PrPayload, "commits" | "files" | "readErrors">> => {
+    const root = `${ctx.baseUrl}${repoApiRoot(repo)}/landings/${number}`
+    const read = async (url: string): Promise<{ readonly body?: unknown; readonly error?: string }> => {
       try {
         const response = await ctx.http(url)
-        return response.ok ? await response.json().catch(() => undefined) : undefined
+        if (!response.ok) return { error: await readErrorMessage(response, "Read failed.") }
+        return { body: await response.json().catch(() => undefined) }
       } catch {
-        return undefined
+        return { error: "The platform didn't answer." }
       }
     }
-    const ids = changeIds.slice(-STACK_CAP)
-    const rows = await Promise.all(ids.map(async (id) => {
-      const [change, diff] = await Promise.all([read(`${root}/${encodeURIComponent(id)}`), read(`${root}/${encodeURIComponent(id)}/diff`)])
-      return { id, change, diff }
-    }))
-    const commits: NonNullable<PrPayload["commits"]> = rows.flatMap(({ id, change }) => isRecord(change) ? [{
-      changeId: id,
-      ...(typeof change.commit_id === "string" && change.commit_id !== "" ? { commitId: change.commit_id } : {}),
-      message: typeof change.description === "string" ? change.description : "",
+    const [changesRead, diffRead] = await Promise.all([read(`${root}/changes?limit=${STACK_CAP}`), read(`${root}/diff`)])
+    const changes = Array.isArray(changesRead.body) ? changesRead.body : undefined
+    type RetainedChange = Record<string, unknown> & { change_id: string; commit_id: string; description: string; timestamp: string }
+    const validChange = (change: unknown): change is RetainedChange => isRecord(change) &&
+      typeof change.change_id === "string" && change.change_id !== "" &&
+      typeof change.commit_id === "string" && change.commit_id !== "" &&
+      typeof change.description === "string" && typeof change.timestamp === "string"
+    const commits: NonNullable<PrPayload["commits"]> = (changes ?? []).flatMap((change) => validChange(change) ? [{
+      changeId: change.change_id,
+      commitId: change.commit_id,
+      message: change.description,
       author: stringOrNull(change.author_name),
       timestamp: stringOrNull(change.timestamp)
     }] : [])
@@ -323,12 +326,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const statusOf = (value: unknown): FileRow["status"] =>
       value === "added" || value === "renamed" ? value : value === "deleted" || value === "removed" ? "removed" : value === "modified" ? "modified" : undefined
     const files = new Map<string, FileRow & { touched: number }>()
-    let diffsRead = 0
-    for (const { diff } of rows) {
-      if (!isRecord(diff) || !Array.isArray(diff.file_diffs)) continue
-      diffsRead++
+    const diffChanges = isRecord(diffRead.body) && Array.isArray(diffRead.body.changes) ? diffRead.body.changes : undefined
+    let malformedDiff = false
+    for (const diff of diffChanges ?? []) {
+      if (!isRecord(diff) || typeof diff.change_id !== "string" || !Array.isArray(diff.file_diffs)) { malformedDiff = true; continue }
       for (const value of diff.file_diffs) {
-        if (!isRecord(value) || typeof value.path !== "string" || value.path === "") continue
+        if (!isRecord(value) || typeof value.path !== "string" || value.path === "") { malformedDiff = true; continue }
         const prior = files.get(value.path)
         const oldPath = stringOrNull(value.old_path)
         const status = statusOf(value.change_type)
@@ -345,9 +348,15 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         })
       }
     }
+    const commitError = changesRead.error ?? (changes === undefined || !changes.every(validChange) ? "The platform returned an unreadable response." : undefined)
+    const diffError = diffRead.error ?? (diffChanges === undefined || malformedDiff ? "The platform returned an unreadable response." : undefined)
     return {
-      ...(commits.length === ids.length ? { commits } : {}),
-      ...(diffsRead === ids.length ? { files: [...files.values()].map(({ touched: _touched, ...file }) => file) } : {})
+      ...(commitError === undefined ? { commits } : {}),
+      ...(diffError === undefined ? { files: [...files.values()].map(({ touched: _touched, ...file }) => file) } : {}),
+      ...(commitError !== undefined || diffError !== undefined ? { readErrors: {
+        ...(commitError !== undefined ? { commits: `Commits unavailable (${commitError})` } : {}),
+        ...(diffError !== undefined ? { files: `Files unavailable (${diffError})` } : {})
+      } } : {})
     }
   }
 
@@ -377,8 +386,9 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const [reviews, checks, stack] = await Promise.all([
       fetchReviews(repo, number),
       fetchChecks(repo, landing.changeIds.at(-1)),
-      fetchStack(repo, landing.changeIds)
+      fetchStack(repo, number)
     ])
+    const current = ctx.store.collections.cards.get(`pr-${repo}-${number}`)
     const payload: PrPayload = {
       repo,
       number,
@@ -388,6 +398,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       prBody: landing.body,
       reviews,
       checks,
+      ...(current?.kind === "pr" && current.payload.tab !== undefined ? { tab: current.payload.tab } : {}),
       ...(landing.targetBookmark !== null ? { baseBranch: landing.targetBookmark } : {}),
       ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
       ...stack

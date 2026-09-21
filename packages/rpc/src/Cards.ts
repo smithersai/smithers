@@ -1588,12 +1588,16 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         })
       ),
       checks: z.array(z.object({ context: z.string(), state: z.string() })),
+      readErrors: z.object({
+        commits: z.string().optional(),
+        files: z.string().optional()
+      }).optional(),
       /*
        * GitHub-like facts and the Commits / Files changed tabs, when the read
        * carried them (see the issue-list row). All optional: an absent field
-       * renders "this read carried no …", never an empty stack. Commits run
-       * bottom → top (GET …/changes/{id}); files merge the stack's diffs
-       * (GET …/changes/{id}/diff) by path, with a patch only when one change
+       * has a matching readErrors entry, never an invented empty stack. Commits run
+       * bottom → top (GET …/landings/{number}/changes); files merge the stack's
+       * retained diffs (GET …/landings/{number}/diff) by path, with a patch only when one change
        * touched the file.
        */
       branch: z.string().optional(),

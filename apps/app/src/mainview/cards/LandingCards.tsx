@@ -178,13 +178,18 @@ const checksSummary = (checks: LandingPayload["checks"]): { readonly tone: Tone;
   return { tone: "open", icon: "check-circle-fill", text: "All checks have passed" }
 }
 
-const CommitsTab = ({ commits }: { readonly commits: ReadonlyArray<LandingCommit> | undefined }) => {
-  if (commits === undefined) return <p className="ghc-tab-empty">This read carried no commits.</p>
+const ReadFailure = ({ message, retry }: { readonly message: string; readonly retry: ReturnType<typeof flowAction> }) => (
+  <div className="ghc-tab-empty" role="alert"><p>{message}</p><Button size="sm" variant="outline" {...retry}>Retry</Button></div>
+)
+
+const CommitsTab = ({ commits, error, retry }: { readonly commits: ReadonlyArray<LandingCommit> | undefined; readonly error?: string; readonly retry: ReturnType<typeof flowAction> }) => {
+  if (error !== undefined) return <ReadFailure message={error} retry={retry} />
+  if (commits === undefined) return <p className="ghc-tab-empty">Commits unavailable.</p>
   if (commits.length === 0) return <p className="ghc-tab-empty">No commits in this stack.</p>
   return (
     <ul className="ghc-box ghc-rows ghc-commits">
       {commits.map((commit, index) => {
-        const id = commit.changeId ?? commit.commitId ?? ""
+        const id = commit.commitId ?? commit.changeId ?? ""
         return (
           <li key={id === "" ? index : id} className="ghc-commit">
             <span className="ghc-commit-icon"><Octicon name="git-commit" /></span>
@@ -204,8 +209,9 @@ const CommitsTab = ({ commits }: { readonly commits: ReadonlyArray<LandingCommit
   )
 }
 
-const FilesTab = ({ files }: { readonly files: ReadonlyArray<LandingFile> | undefined }) => {
-  if (files === undefined) return <p className="ghc-tab-empty">This read carried no file changes.</p>
+const FilesTab = ({ files, error, retry }: { readonly files: ReadonlyArray<LandingFile> | undefined; readonly error?: string; readonly retry: ReturnType<typeof flowAction> }) => {
+  if (error !== undefined) return <ReadFailure message={error} retry={retry} />
+  if (files === undefined) return <p className="ghc-tab-empty">Files unavailable.</p>
   if (files.length === 0) return <p className="ghc-tab-empty">No file changes in this pull request.</p>
   return (
     <div className="ghc-files">
@@ -255,6 +261,7 @@ export const LandingCardBody = ({
   ]
   const reviewers = [...new Set(reviews.flatMap((review) => review.author !== null ? [review.author] : []))]
   const commitCount = extra.commits?.length
+  const retry = flowAction(onRunCommand, "prs.view", flowArgs("prs.view", { number, repo }))
   return (
     <article className="ghc ghc-detail" data-landing={number}>
       <header className="ghc-detail-head">
@@ -327,8 +334,8 @@ export const LandingCardBody = ({
               </>
             ) :
             null}
-          {tab === "commits" ? <CommitsTab commits={extra.commits} /> : null}
-          {tab === "files" ? <FilesTab files={extra.files} /> : null}
+          {tab === "commits" ? <CommitsTab commits={extra.commits} error={extra.readErrors?.commits} retry={retry} /> : null}
+          {tab === "files" ? <FilesTab files={extra.files} error={extra.readErrors?.files} retry={retry} /> : null}
           {tab === "conversation" || tab === "checks" ?
             (
               <section className="ghc-box ghc-merge" aria-label="Checks and landing">
