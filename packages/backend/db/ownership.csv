@@ -1,0 +1,215 @@
+table,target_owner,status
+users,product,extracted
+alpha_whitelist_entries,product,extracted
+alpha_waitlist_entries,product,extracted
+organizations,product,extracted
+owner_namespaces,product,extracted
+auth_sessions,product,extracted
+auth_nonces,product,extracted
+oauth_states,product,extracted
+linear_oauth_setups,product,extracted
+email_addresses,product,extracted
+email_verification_tokens,product,extracted
+oauth_accounts,product,extracted
+ssh_keys,product,extracted
+access_tokens,product,extracted
+user_ai_keys,product,extracted
+repositories,product,extracted
+repository_storage_operations,infrastructure-seam,extracted; split pending
+legacy_mutation_fence_control,infrastructure-seam,extracted; split pending
+repo_storage_sets,infrastructure-seam,extracted; split pending
+repo_storage_nodes,infrastructure-seam,extracted; split pending
+repo_replicas,infrastructure-seam,extracted; split pending
+repo_write_locks,infrastructure-seam,extracted; split pending
+repo_replication_jobs,infrastructure-seam,extracted; split pending
+deploy_keys,product,extracted
+lfs_objects,product,extracted
+lfs_upload_reservations,product,extracted
+storage_legacy_capability_horizons,infrastructure-seam,extracted; split pending
+storage_deletion_queue,infrastructure-seam,extracted; split pending
+lfs_locks,product,extracted
+lfs_meta_objects,product,extracted
+code_search_documents,product,extracted
+search_rate_limits,product,extracted
+org_members,product,extracted
+teams,product,extracted
+team_members,product,extracted
+team_repos,product,extracted
+collaborators,product,extracted
+milestones,product,extracted
+issues,product,extracted
+issue_comments,product,extracted
+labels,product,extracted
+issue_labels,product,extracted
+issue_assignees,product,extracted
+issue_state_journals,product,extracted
+issue_state_facts,product,extracted
+issue_events,product,extracted
+issue_dependencies,product,extracted
+pinned_issues,product,extracted
+landing_requests,product,extracted
+landing_tasks,product,extracted
+landing_request_changes,product,extracted
+landing_review_requests,product,extracted
+landing_request_reviews,product,extracted
+landing_request_comments,product,extracted
+stacks,product,extracted
+stack_changes,product,extracted
+bookmarks,product,extracted
+changes,product,extracted
+change_revisions,product,extracted
+issue_change_links,product,extracted
+analyzer_runs,product,extracted
+findings,product,extracted
+finding_feedback,product,extracted
+change_walkthroughs,product,extracted
+conflicts,product,extracted
+protected_bookmarks,product,extracted
+jj_operations,product,extracted
+reactions,product,extracted
+mentions,product,extracted
+workflow_definitions,product,extracted
+workflow_triggers,product,extracted
+workflow_schedule_specs,product,extracted
+workflow_runs,product,extracted
+workflow_log_budget_initializations,product,extracted
+workflow_sandbox_claims,infrastructure-seam,extracted; split pending
+workflow_steps,product,extracted
+workflow_tasks,product,extracted
+workflow_logs,product,extracted
+workflow_run_logs,product,extracted
+github_proxy_audit_log,infrastructure-seam,extracted; split pending
+commit_statuses,product,extracted
+runner_pool,infrastructure-seam,extracted; split pending
+agent_sessions,product,extracted
+agent_messages,product,extracted
+agent_parts,product,extracted
+notifications,product,extracted
+notification_journals,product,extracted
+notification_facts,product,extracted
+user_notification_preferences,product,extracted
+user_devices,product,extracted
+stars,product,extracted
+watches,product,extracted
+webhooks,product,extracted
+webhook_deliveries,product,extracted
+github_app_installations,product,extracted
+github_app_installation_repositories,product,extracted
+github_webhook_jobs,product,extracted
+repo_connections,product,extracted
+import_jobs,product,extracted
+wiki_pages,product,extracted
+workspaces,product,extracted
+workflow_run_coding_hosts,infrastructure-seam,extracted; split pending
+workspace_snapshots,product,extracted
+workspace_sessions,product,extracted
+workspace_shares,product,extracted
+repository_secrets,product,extracted
+repository_variables,product,extracted
+repository_agent_environments,product,extracted
+repository_agent_environment_secrets,product,extracted
+organization_secrets,product,extracted
+organization_variables,product,extracted
+audit_log,product,extracted
+oauth2_applications,product,extracted
+oauth2_authorization_codes,product,extracted
+oauth2_access_tokens,product,extracted
+oauth2_refresh_tokens,product,extracted
+workflow_caches,product,extracted
+workflow_artifacts,product,extracted
+releases,product,extracted
+release_assets,product,extracted
+release_deletion_intents,product,extracted
+release_deletion_tag_tombstones,product,extracted
+billing_accounts,product,extracted
+billing_subscriptions,product,extracted
+billing_entitlements,product,extracted
+billing_usage_counters,product,extracted
+billing_credit_ledger,product,extracted
+billing_credit_balances,product,extracted
+stripe_processed_events,product,extracted
+linear_integrations,product,extracted
+linear_issue_map,product,extracted
+linear_comment_map,product,extracted
+linear_sync_runs,product,extracted
+linear_sync_ops,product,extracted
+canary_results,infrastructure-seam,extracted; split pending
+sse_tickets,product,extracted
+issue_artifacts,product,extracted
+sandbox_access_tokens,product,extracted
+_sync_queue,retire-candidate,extracted; split pending
+_id_remap,retire-candidate,extracted; split pending
+devtools_snapshots,product,extracted
+approvals,product,extracted
+pair_state,product,extracted
+pair_share_links,product,extracted
+alert_incidents,infrastructure-seam,extracted; split pending
+alert_incident_deliveries,infrastructure-seam,extracted; split pending
+alert_remediation_jobs,infrastructure-seam,extracted; split pending
+repo_gateways,infrastructure-seam,extracted; split pending
+github_repo_listings,product,extracted
+pair_sessions,product,extracted
+pair_session_members,product,extracted
+pair_prompt_queue,product,extracted
+pair_session_invites,product,extracted
+pair_session_draft,product,extracted
+pair_session_links,product,extracted
+sandbox_golden_snapshots,infrastructure-seam,extracted; split pending
+sandbox_environment_images,infrastructure-seam,extracted; split pending
+file_drafts,product,extracted
+app_timelines,product,extracted
+app_timeline_members,product,extracted
+app_timeline_events,product,extracted
+app_timeline_branches,product,extracted
+app_timeline_snapshots,product,extracted
+anon_sandboxes,product,extracted
+repository_provisioning_control,infrastructure-seam,extracted; split pending
+repository_provisioning_operations,infrastructure-seam,extracted; split pending
+sandbox_hosts,infrastructure-seam,extracted; split pending
+sandbox_instances,infrastructure-seam,extracted; split pending
+sandbox_egress_audit,infrastructure-seam,extracted; split pending
+sandbox_operations,infrastructure-seam,extracted; split pending
+sandbox_snapshots,infrastructure-seam,extracted; split pending
+sandbox_volumes,infrastructure-seam,extracted; split pending
+sandbox_access_identities,product,extracted
+sandbox_access_permissions,product,extracted
+sandbox_access_grants,product,extracted
+sandbox_domain_mappings,product,extracted
+sandbox_orphans,infrastructure-seam,extracted; split pending
+memory_provisioning_tasks,infrastructure-seam,extracted; split pending
+memory_promotion_tasks,infrastructure-seam,extracted; split pending
+memory_promotion_items,infrastructure-seam,extracted; split pending
+memory_ingest_cursors,infrastructure-seam,extracted; split pending
+memory_maintenance_cursors,infrastructure-seam,extracted; split pending
+memory_ingest_batches,infrastructure-seam,extracted; split pending
+memory_cleanup_tasks,infrastructure-seam,extracted; split pending
+memory_cleanup_items,infrastructure-seam,extracted; split pending
+memory_write_freezes,infrastructure-seam,extracted; split pending
+memory_restore_manifests,infrastructure-seam,extracted; split pending
+branch_locks,product,extracted
+branch_lock_join_requests,product,extracted
+github_synced_repos,product,extracted
+github_synced_issues,product,extracted
+github_synced_issue_comments,product,extracted
+github_mirror_sync_runs,product,extracted
+github_mirror_sync_ref_results,product,extracted
+share_listings,product,extracted
+share_listing_event_cooldowns,product,extracted
+changesets,product,extracted
+changeset_members,product,extracted
+build_cache_entries,product,extracted
+build_cache_artifacts,product,extracted
+build_cache_entry_artifacts,product,extracted
+build_cache_read_tokens,product,extracted
+revocation_events,product,extracted
+provider_connections,product,extracted
+provider_connection_grants,product,extracted
+wiki_page_revisions,product,extracted
+code_search_index_state,product,extracted
+sandbox_usage_intervals,product,extracted
+repository_job_registrations,product,extracted
+repository_job_events,product,extracted
+repository_job_dispatches,product,extracted
+repository_job_trials,product,extracted
+repository_job_comments,product,extracted
+workspace_capability_bindings,product,extracted
