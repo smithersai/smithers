@@ -12,6 +12,7 @@ import { startPlueTargets } from "./mode-matrix/plue-target"
 import type { PlueSession } from "./mode-matrix/plue-target"
 import { startNativeOwn } from "./mode-matrix/native-own"
 import type { NativeOwnSession } from "./mode-matrix/native-own"
+import { sourceRevision } from "./mode-matrix/source-revision"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const rootDir = resolve(appDir, "../..")
@@ -29,20 +30,7 @@ const option = (name: string): string | undefined => {
   return value
 }
 
-// Force the working-copy snapshot before building. Otherwise an unsnapshotted
-// source tree could receive the preceding commit's revision in every receipt.
-const sourceRevision = async (): Promise<string> => {
-  for (const command of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
-    try {
-      const child = Bun.spawn(command, { cwd: rootDir, stdin: "ignore", stdout: "pipe", stderr: "pipe" })
-      const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
-      const revision = stdout.trim()
-      if (code === 0 && /^[0-9a-f]{40,64}$/.test(revision)) return revision
-    } catch { /* Git-only release checkouts have no jj. */ }
-  }
-  throw new Error("cannot identify the exact source revision")
-}
-const revision = await sourceRevision()
+const revision = await sourceRevision(rootDir)
 
 const outputDir = resolve(option("--output-dir") ?? process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? resolve(appDir, "test-results/mode-matrix"))
 const modeSelection = option("--modes")

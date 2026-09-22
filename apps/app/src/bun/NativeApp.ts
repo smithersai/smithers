@@ -13,6 +13,7 @@ import { startNativeBackend } from "./NativeBackendProcess"
 import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
+import { startNativePlueServer } from "./NativePlueServer"
 
 // This must stay dynamic: Bun hoists external static imports even from lazy
 // local modules. A daemon must never dlopen/initialize Electrobun's native SDK.
@@ -53,6 +54,9 @@ if (stubAgent === undefined && (Bun.env.SMITHERS_WEB_ROOT?.trim() ?? "") === "")
 const backendProcess = stubAgent === undefined
   ? await startNativeBackend({ stateDir })
   : undefined
+const plueServer = backendProcess?.mode === "plue"
+  ? startNativePlueServer(defaultDistDir(import.meta.dir), Bun.env.SMITHERS_API_ORIGIN ?? "")
+  : undefined
 
 // The retired Bun product host survives only as the deterministic packaged
 // test fixture. Production receives the actual shared Go backend origin from
@@ -67,7 +71,11 @@ const testServer = stubAgent === undefined ? undefined : await startLocalServer(
 const backend = await (async () => {
   try {
     return testServer === undefined
-      ? nativeBackendConfig(Bun.env, backendProcess!)
+      ? nativeBackendConfig(plueServer === undefined ? Bun.env : {
+          SMITHERS_API_ORIGIN: plueServer.origin,
+          SMITHERS_RENDERER_ORIGIN: plueServer.origin,
+          SMITHERS_API_TOKEN: Bun.env.SMITHERS_API_TOKEN
+        }, backendProcess!)
       : {
         rendererOrigin: testServer.origin,
         target: {
@@ -82,6 +90,7 @@ const backend = await (async () => {
         bootstrapToken: null
       }
   } catch (error) {
+    plueServer?.stop()
     await backendProcess?.stop()
     throw error
   }
@@ -93,6 +102,7 @@ let backendFailure: Error | undefined
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
+    plueServer?.stop()
     const results = await Promise.allSettled([
       testServer?.stop() ?? Promise.resolve(),
       backendProcess?.stop() ?? Promise.resolve()

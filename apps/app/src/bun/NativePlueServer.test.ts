@@ -1,0 +1,39 @@
+import { afterEach, expect, test } from "bun:test"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { startNativePlueServer } from "./NativePlueServer"
+
+const close: Array<() => void> = []
+afterEach(() => { for (const stop of close.splice(0)) stop() })
+
+test("packaged Plue window serves its UI and forwards authenticated product API calls", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-plue-ui-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  mkdirSync(join(dist, "assets"))
+  writeFileSync(join(dist, "index.html"), "<html><body>packaged UI</body></html>")
+  writeFileSync(join(dist, "assets", "main.js"), "window.packaged = true")
+  const seen: Array<{ path: string; auth: string | null; body: string }> = []
+  const remote = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+    seen.push({ path: new URL(request.url).pathname, auth: request.headers.get("authorization"), body: await request.text() })
+    return Response.json({ buildSha: "remote" })
+  } })
+  close.push(() => remote.stop(true))
+  const native = startNativePlueServer(dist, `http://127.0.0.1:${remote.port}`)
+  close.push(native.stop)
+
+  expect(await (await fetch(`${native.origin}/owner/repo`)).text()).toContain("packaged UI")
+  expect(await (await fetch(`${native.origin}/assets/main.js`)).text()).toBe("window.packaged = true")
+  const response = await fetch(`${native.origin}/api/bootstrap`, { headers: { authorization: "Bearer owner-token" } })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ buildSha: "remote" })
+  const mutation = await fetch(`${native.origin}/api/issues`, { method: "POST", headers: {
+    authorization: "Bearer owner-token", "content-type": "application/json"
+  }, body: JSON.stringify({ title: "Native issue" }) })
+  expect(mutation.status).toBe(200)
+  expect(seen).toEqual([
+    { path: "/api/bootstrap", auth: "Bearer owner-token", body: "" },
+    { path: "/api/issues", auth: "Bearer owner-token", body: '{"title":"Native issue"}' }
+  ])
+  expect(() => startNativePlueServer(dist, "file:///private/backend")).toThrow("Plue API origin")
+})

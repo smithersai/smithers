@@ -305,9 +305,14 @@ export class PackagedApp {
     const deadline = Date.now() + this.startupTimeoutMs
     let lastError: unknown
     while (Date.now() < deadline) {
-      if (this.child === undefined || processExited(this.child)) {
+      if (this.child === undefined) throw new Error("Packaged app process was not launched.")
+      if (processExited(this.child)) {
         const exited = this.exit === undefined ? undefined : await this.exit
-        throw new Error(`Packaged app exited during startup (${JSON.stringify(exited)}).\n${this.logs()}`)
+        // The macOS self-extractor exits successfully after handing off to
+        // its installed app. That app owns the E2E bridge, so keep waiting.
+        if (exited?.code !== 0) {
+          throw new Error(`Packaged app exited during startup (${JSON.stringify(exited)}).\n${this.logs()}`)
+        }
       }
       try {
         const health = await this.json<{ readonly ok?: boolean }>("/health")
