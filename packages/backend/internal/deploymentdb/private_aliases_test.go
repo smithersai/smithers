@@ -1,8 +1,6 @@
 package deploymentdb
 
-// Legacy full-schema query tests use unqualified sqlc DTO names. These
-// test-only aliases preserve those fixtures while production code imports
-// product db and private clusterdb types explicitly.
+// Test-only aliases preserve legacy full-schema fixtures.
 
 import (
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
@@ -34,6 +32,7 @@ type ClaimPairPromptParams = db.ClaimPairPromptParams
 type ClaimStripeProcessedEventParams = db.ClaimStripeProcessedEventParams
 type ClaimWorkflowCacheDeletionParams = db.ClaimWorkflowCacheDeletionParams
 type ClearPairSessionDraftParams = db.ClearPairSessionDraftParams
+type CloseSandboxUsageIntervalParams = db.CloseSandboxUsageIntervalParams
 type CompleteLinearSyncOpRetryParams = db.CompleteLinearSyncOpRetryParams
 type ConsumeOAuthStateParams = db.ConsumeOAuthStateParams
 type CountAgentRunsByOwnerParams = db.CountAgentRunsByOwnerParams
@@ -149,6 +148,7 @@ type MarkWorkflowTaskRunningParams = db.MarkWorkflowTaskRunningParams
 type MarkWorkflowTaskVMRunningParams = db.MarkWorkflowTaskVMRunningParams
 type NotifyWorkflowLogParams = db.NotifyWorkflowLogParams
 type NotifyWorkflowRunEventParams = db.NotifyWorkflowRunEventParams
+type OpenSandboxUsageIntervalParams = db.OpenSandboxUsageIntervalParams
 type PairSession = db.PairSession
 type RecentLinearSyncOpExistsParams = db.RecentLinearSyncOpExistsParams
 type RecordLinearSyncRunResultParams = db.RecordLinearSyncRunResultParams

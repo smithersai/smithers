@@ -1,4 +1,4 @@
-package db
+package deploymentdb
 
 import (
 	"context"

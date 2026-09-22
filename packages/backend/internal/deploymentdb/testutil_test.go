@@ -1,7 +1,8 @@
 package deploymentdb
 
-// This fixture loads the hosted schema for tests of private query adapters.
-// Product-only schema checks live in db/product and use product.Apply.
+// This fixture loads the transitional hosted schema for private query tests.
+// Final hosted acceptance must apply canonical product migrations plus private
+// placement; product-only schema checks live in db/product and use product.Apply.
 
 import (
 	"context"
@@ -258,8 +259,8 @@ BEGIN
        OR EXISTS (SELECT 1 FROM repository_provisioning_operations WHERE repository_id = NEW.id) THEN
         RETURN NEW;
     END IF;
-	-- Product SQLC inserts no placement column; hosted fixture placement is
-	-- supplied by this test-only adapter before hosted provenance checks.
+	-- Transitional old-schema fixture only. The final hosted schema applies
+	-- product migrations plus private placement without this product column.
 	NEW.storage_set_id := COALESCE(NEW.storage_set_id, 's1');
     SELECT COALESCE(u.username, o.name) INTO v_owner
     FROM (SELECT NEW.user_id AS user_id, NEW.org_id AS org_id) identity
