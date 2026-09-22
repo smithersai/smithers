@@ -105,7 +105,6 @@ type Options struct {
 	MetricsDoer           services.GMPDoer
 	Repository            *repohost.Client
 	RepositoryPlacement   services.RepoPlacementLookup
-	HostedRollout         ports.HostedRollout
 	Workspace             workspace.WorkspaceRuntime
 	FlowHostRegistry      *flowmanifest.Registry
 	FlowHostProductAPIURL string
@@ -253,9 +252,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	provisioningEnforced := false
 	if options.Role.hosted() {
-		if options.HostedRollout == nil {
-			return errors.New("hosted role requires a private rollout adapter")
-		}
 		provisioningEnforcementRequested := false
 		if raw := strings.TrimSpace(os.Getenv("SMITHERS_REPOSITORY_PROVISIONING_ENFORCE")); raw != "" {
 			provisioningEnforcementRequested, err = strconv.ParseBool(raw)
@@ -263,7 +259,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 				return fmt.Errorf("parse SMITHERS_REPOSITORY_PROVISIONING_ENFORCE: %w", err)
 			}
 		}
-		provisioningEnforced, err = options.HostedRollout.ConfigureRepositoryProvisioningEnforcement(ctx, provisioningEnforcementRequested)
+		provisioningEnforced, err = services.ConfigureRepositoryProvisioningEnforcement(ctx, pool, provisioningEnforcementRequested)
 		if err != nil {
 			return err
 		}
@@ -273,7 +269,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			slog.Error("REPOSITORY PROVISIONING LEGACY INSERT COMPATIBILITY IS ENABLED",
 				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
 		}
-		legacyMutationFences, fenceErr := options.HostedRollout.ConfigureLegacyMutationFences(ctx, provisioningEnforcementRequested)
+		legacyMutationFences, fenceErr := services.ConfigureLegacyMutationFences(ctx, pool, provisioningEnforcementRequested)
 		if fenceErr != nil {
 			return fenceErr
 		}
@@ -1232,15 +1228,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
-	repositoryJobService := services.NewRepositoryJobService(queries, repoGatewayService, pool)
-	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService)
+	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService)
 	if err != nil {
 		return err
 	}
 	var flowWorker *criticalWorker
 	if flow != nil {
 		agentService.SetFlowDispatcher(flow.dispatcher)
-		repositoryJobService.SetFlowDispatcher(flow.dispatcher)
 		if options.Role.workers() {
 			flowWorker = newCriticalWorker()
 		}
@@ -1271,6 +1265,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	workspaceInternalHandler := &routes.WorkspaceInternalHandler{
 		Service: workspaceService,
 	}
+	repositoryJobService := services.NewRepositoryJobService(queries, repoGatewayService, pool)
 	gitHubWebhookEventWorker.SetRepositoryJobs(repositoryJobService)
 	repoGatewayHandler := &routes.RepoGatewayHandler{
 		RepositoryJobs:  repositoryJobService,

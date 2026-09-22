@@ -15,6 +15,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -27,7 +28,7 @@ type flowComposition struct {
 	stopper    flowhost.RetirementStopper
 }
 
-func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService) (*flowComposition, error) {
+func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService) (*flowComposition, error) {
 	if options.FlowHostRegistry == nil {
 		return nil, nil
 	}
@@ -56,10 +57,15 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("Flow host bindings: %w", err)
 	}
-	targets, err := services.NewAgentFlowHostTargetResolver(agents)
+	agentTargets, err := services.NewAgentFlowHostTargetResolver(agents)
 	if err != nil {
-		return nil, fmt.Errorf("Flow host targets: %w", err)
+		return nil, fmt.Errorf("agent Flow host targets: %w", err)
 	}
+	repositoryJobTargets, err := services.NewRepositoryJobFlowHostTargetResolver(repositoryJobs)
+	if err != nil {
+		return nil, fmt.Errorf("repository job Flow host targets: %w", err)
+	}
+	targets := flowTargetResolver(agentTargets, repositoryJobTargets)
 	launcher, err := flowhost.NewWorkspaceLauncher(options.Workspace)
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
@@ -76,7 +82,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("Flow jobs: %w", err)
 	}
-	dispatcher, err := flowdispatch.New(flowdispatch.Config{Store: store, Resolver: resolver, Projector: agents})
+	dispatcher, err := flowdispatch.New(flowdispatch.Config{Store: store, Resolver: resolver, Projector: flowProjector(agents, repositoryJobs)})
 	if err != nil {
 		return nil, fmt.Errorf("Flow dispatcher: %w", err)
 	}
@@ -85,13 +91,34 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 
 func (flow *flowComposition) recover(ctx context.Context) error {
 	if _, err := flow.jobs.RecoverExpiredForOperations(ctx,
-		[]string{flowdispatch.OperationLaunch, flowdispatch.OperationApprove}, 100); err != nil {
+		[]string{flowdispatch.OperationLaunch, flowdispatch.OperationApprove, flowdispatch.OperationSignal}, 100); err != nil {
 		return fmt.Errorf("recover Flow operations: %w", err)
 	}
 	if err := flow.bindings.ReconcileRetired(ctx, flow.stopper, 100); err != nil {
 		return fmt.Errorf("retire Flow hosts: %w", err)
 	}
 	return nil
+}
+
+func flowTargetResolver(agents, repositoryJobs flowhost.TargetResolver) flowhost.TargetResolver {
+	return flowhost.TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (flowhost.Authority, error) {
+		switch target.BindingKind {
+		case "agent-session":
+			return agents.ResolveFlowHostTarget(ctx, target)
+		case "repository-job-dispatch":
+			return repositoryJobs.ResolveFlowHostTarget(ctx, target)
+		default:
+			return flowhost.Authority{}, fmt.Errorf("unsupported Flow host binding kind %q", target.BindingKind)
+		}
+	})
+}
+
+func flowProjector(agents, repositoryJobs flowdispatch.Projector) flowdispatch.Projector {
+	return flowdispatch.ProjectorFunc(func(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
+		// Both projectors ignore foreign binding kinds. Always invoke both so a
+		// failed product projection does not hide the other product's receipt.
+		return errors.Join(agents.ProjectFlowRuntime(ctx, update), repositoryJobs.ProjectFlowRuntime(ctx, update))
+	})
 }
 
 func (flow *flowComposition) maintainRetired(ctx context.Context) {
