@@ -21,6 +21,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
@@ -105,7 +106,7 @@ func TestOrgMemberRemoval_EndsPrivateRepositoryStream(t *testing.T) {
 	SetRevocationSource(bus)
 	t.Cleanup(func() { SetRevocationSource(previous) })
 
-	agentService := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(queries))
+	agentService := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(deploymentdb.New(pool)))
 	server, _ := setupRoutesIntegrationServer(t, queries, routesIntegrationServerOptions{
 		agentSessionStreamService: agentService,
 		agentSessionStreamPool:    pool,
@@ -201,10 +202,10 @@ func routesIntegrationCreateOrgRepo(t *testing.T, pool *pgxpool.Pool, org db.Org
 	err := pool.QueryRow(
 		context.Background(),
 		`INSERT INTO repositories (
-			 org_id, name, lower_name, description, storage_set_id, is_public,
+			 org_id, name, lower_name, description, is_public,
 			 default_bookmark, next_issue_number, next_landing_number
 		 )
-		 VALUES ($1, $2, $3, '', 's1', FALSE, 'main', 1, 1)
+		 VALUES ($1, $2, $3, '', FALSE, 'main', 1, 1)
 		 RETURNING id`,
 		org.ID,
 		name,

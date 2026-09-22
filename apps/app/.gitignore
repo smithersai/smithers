@@ -42,3 +42,6 @@ reports/playwright/
 # Playwright run artifacts
 test-results/
 playwright-report/
+
+# Bundled backend, toolchain, and database payloads
+.native/

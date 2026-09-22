@@ -10,20 +10,22 @@ COPY packages/smithers/flows/jj/wasm/flows_jj.wasm packages/smithers/flows/jj/wa
 RUN rustup target add wasm32-wasip1 \
   && CARGO_BUILD_JOBS=2 node crates/flows-jj/build-wasm.mjs --verify
 
-FROM rust:1.98.0-bookworm AS smithers-rust
+FROM rust:1.98.0-bookworm AS jj-cli
 ARG JJ_REVISION=47589ada70c12b3e829b5c98ab32503abad49eac
+RUN CARGO_BUILD_JOBS=2 NIX_JJ_GIT_HASH="$JJ_REVISION" cargo install --locked \
+    --git https://github.com/smithersai/jj.git \
+    --rev "$JJ_REVISION" \
+    --root /out/jj \
+    jj-cli \
+  && /out/jj/bin/jj --version | grep -Fx "jj 0.44.0-${JJ_REVISION}"
+
+FROM rust:1.98.0-bookworm AS smithers-rust
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN CARGO_BUILD_JOBS=2 cargo build --locked --release --package smithers-ffi \
   && install -D -m 0555 target/release/libsmithers_ffi.so /out/lib/libsmithers_ffi.so \
   && install -D -m 0555 target/release/smithers-jj-export /out/bin/smithers-jj-export \
-  && CARGO_BUILD_JOBS=2 NIX_JJ_GIT_HASH="$JJ_REVISION" cargo install --locked \
-    --git https://github.com/smithersai/jj.git \
-    --rev "$JJ_REVISION" \
-    --root /out/jj \
-    jj-cli \
-  && /out/jj/bin/jj --version | grep -Fx "jj 0.44.0-${JJ_REVISION}" \
   && rm -rf target
 
 # Git is built from an authenticated HTTPS source archive whose bytes and
@@ -99,7 +101,7 @@ COPY --from=web /usr/local/bin/node /opt/smithers/bin/node
 COPY --from=web /out/flow-hosts/ /opt/smithers/bin/
 COPY --from=web /usr/local/LICENSE /opt/smithers/licenses/node-LICENSE
 COPY --from=smithers-rust /out/bin/smithers-jj-export /opt/smithers/bin/smithers-jj-export
-COPY --from=smithers-rust /out/jj/bin/jj /opt/smithers/bin/jj
+COPY --from=jj-cli /out/jj/bin/jj /opt/smithers/bin/jj
 COPY --from=git-cli /out/opt/smithers/git /opt/smithers/git
 COPY --from=web /src/apps/app/dist /opt/smithers/web
 COPY --from=smithers-rust /out/lib/libsmithers_ffi.so /opt/smithers/lib/libsmithers_ffi.so

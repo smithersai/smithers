@@ -7,7 +7,6 @@ import {
   realpathSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync
 } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -229,11 +228,28 @@ const configuredPath = (pgConfig: string, option: "--bindir" | "--sharedir" | "-
 const underSyntheticRoot = (destination: string, absolutePath: string): string =>
   join(destination, "root", absolutePath.replace(/^\/+/, ""))
 
-const directoryAlias = (target: string, alias: string): void => {
+const copyConfiguredDirectory = (target: string, alias: string): void => {
   if (resolve(target) === resolve(alias)) return
   rmSync(alias, { recursive: true, force: true })
   mkdirSync(dirname(alias), { recursive: true })
-  symlinkSync(relative(dirname(alias), target), alias, "dir")
+  // Electrobun materializes directory symlinks as empty files. PostgreSQL
+  // looks up these configured paths at runtime, so ship real directories.
+  cpSync(target, alias, { recursive: true, dereference: true })
+}
+
+const verifyConfiguredLibraries = (root: string): void => {
+  for (const file of filesUnder(root).filter(isMachO)) {
+    for (const dependency of dependencies(file)) {
+      if (isSystemPath(dependency)) continue
+      if (!dependency.startsWith("@loader_path/")) {
+        throw new Error(`Bundled PostgreSQL retains external dependency ${dependency} in ${file}`)
+      }
+      const resolved = resolve(dirname(file), dependency.slice("@loader_path/".length))
+      if (!existsSync(resolved)) {
+        throw new Error(`Bundled PostgreSQL dependency is missing: ${dependency} in ${file}`)
+      }
+    }
+  }
 }
 
 const bundleMacOS = (sourceRoot: string, destination: string): string => {
@@ -248,15 +264,15 @@ const bundleMacOS = (sourceRoot: string, destination: string): string => {
   mkdirSync(dirname(payload), { recursive: true })
   cpSync(sourceRoot, payload, { recursive: true, dereference: true })
 
-  directoryAlias(
+  relocateMacOS(sourceRoot, payload)
+  copyConfiguredDirectory(
     join(payload, "share", "postgresql"),
     underSyntheticRoot(destination, configuredPath(pgConfig, "--sharedir"))
   )
-  directoryAlias(
-    join(payload, "lib", "postgresql"),
-    underSyntheticRoot(destination, configuredPath(pgConfig, "--pkglibdir"))
-  )
-  relocateMacOS(sourceRoot, payload)
+  const configuredLib = underSyntheticRoot(destination, configuredPath(pgConfig, "--pkglibdir"))
+  copyConfiguredDirectory(join(payload, "lib", "postgresql"), configuredLib)
+  copyConfiguredDirectory(join(payload, "lib", "smithers-vendor"), join(dirname(configuredLib), "smithers-vendor"))
+  verifyConfiguredLibraries(dirname(configuredLib))
 
   const runtimeBin = join(payload, "bin")
   const destinationReal = realpathSync(destination)

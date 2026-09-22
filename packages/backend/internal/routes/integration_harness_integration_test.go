@@ -354,10 +354,10 @@ func routesIntegrationCreateRepo(t *testing.T, pool *pgxpool.Pool, owner routesI
 	err := pool.QueryRow(
 		context.Background(),
 		`INSERT INTO repositories (
-			 user_id, name, lower_name, description, storage_set_id, is_public,
+			 user_id, name, lower_name, description, is_public,
 			 default_bookmark, next_issue_number, next_landing_number
 		 )
-		 VALUES ($1, $2, $3, '', 's1', $4, 'main', 1, 1)
+		 VALUES ($1, $2, $3, '', $4, 'main', 1, 1)
 		 RETURNING id`,
 		owner.ID,
 		name,

@@ -1,6 +1,7 @@
 package repohost
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // NewLocalClient uses the same repository client and server protocol in the
@@ -35,6 +38,10 @@ func (t *handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if req.URL.Scheme != "http" || req.URL.Host != "repository.local" {
 		return nil, errors.New("local repository request escaped its handler")
 	}
+	// A local client may be called inside an API chi route. Give the embedded
+	// repository router its own route context while retaining cancellation and
+	// tracing from the caller.
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, chi.NewRouteContext()))
 	reader, writer := io.Pipe()
 	ready := make(chan localResponse, 1)
 	done := make(chan struct{})

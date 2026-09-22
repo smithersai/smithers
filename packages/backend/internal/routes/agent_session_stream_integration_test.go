@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
@@ -38,7 +39,7 @@ func TestAgentSessionStream_LiveRouteStreamsNotifyAndReplaysOnReconnect(t *testi
 	})
 	require.NoError(t, err)
 
-	service := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(queries))
+	service := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(deploymentdb.New(pool)))
 	server, _ := setupRoutesIntegrationServer(t, queries, routesIntegrationServerOptions{
 		agentSessionStreamService: service,
 		agentSessionStreamPool:    pool,

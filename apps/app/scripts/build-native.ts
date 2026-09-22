@@ -2,19 +2,17 @@ import { createHash } from "node:crypto"
 import {
   cpSync,
   existsSync,
-  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
-  readlinkSync,
   realpathSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs"
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { bundlePostgres } from "./bundle-postgres"
+import { validateGitBundle } from "./validate-git-bundle"
 
 const appDir = resolve(import.meta.dir, "..")
 const root = resolve(appDir, "..", "..")
@@ -97,33 +95,6 @@ const verifyChecksumSidecar = (path: string): void => {
     throw new Error(`Packaged checksum is invalid: ${path}.sha256`)
   }
 }
-const walk = (path: string, visit: (entry: string) => void): void => {
-  visit(path)
-  if (!lstatSync(path).isDirectory()) return
-  for (const name of readdirSync(path)) walk(join(path, name), visit)
-}
-const validateGitBundle = (bundleRoot: string, payloadRoots: ReadonlyArray<string>): void => {
-  for (const payloadRoot of payloadRoots) walk(payloadRoot, (entry) => {
-    const info = lstatSync(entry)
-    if (info.isSymbolicLink()) {
-      const target = readlinkSync(entry)
-      if (isAbsolute(target)) throw new Error(`Pinned Git contains an absolute symlink: ${entry}`)
-      const escaped = relative(bundleRoot, resolve(dirname(entry), target))
-      if (escaped === ".." || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) {
-        throw new Error(`Pinned Git symlink escapes its bundle: ${entry}`)
-      }
-      return
-    }
-    if (!info.isFile() || (info.mode & 0o111) === 0) return
-    if (!output(["/usr/bin/file", "-b", entry]).includes("Mach-O")) return
-    for (const line of output(["/usr/bin/otool", "-L", entry]).split("\n").slice(1)) {
-      const dependency = line.trim().split(" (compatibility version", 1)[0]
-      if (dependency.startsWith("/System/Library/") || dependency.startsWith("/usr/lib/")) continue
-      throw new Error(`Pinned Git is not relocatable: ${entry} depends on ${dependency}`)
-    }
-  })
-}
-
 const run = async (
   label: string,
   argv: ReadonlyArray<string>,
@@ -269,6 +240,10 @@ cpSync(gitExecSource, join(nativeDir, "libexec", "git-core"), {
   recursive: true,
   verbatimSymlinks: true
 })
+// Xcode links these optional commands into git-core, but the app ships only bin/git.
+for (const unused of ["git-shell", "scalar"]) {
+  rmSync(join(nativeDir, "libexec", "git-core", unused), { force: true })
+}
 cpSync(gitShareSource, join(nativeDir, "share", "git-core"), {
   recursive: true,
   verbatimSymlinks: true

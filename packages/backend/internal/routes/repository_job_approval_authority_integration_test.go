@@ -6,6 +6,9 @@ package routes
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,6 +21,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -30,6 +35,33 @@ const repositoryJobApprovalBearer = "gateway-bearer"
 
 type repositoryJobApprovalGateway struct {
 	target services.RepoGatewayRelayTarget
+}
+
+func repositoryJobsCollaborator(t *testing.T, pool *pgxpool.Pool, repo routesIntegrationRepo, user routesIntegrationUser, permission string) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO collaborators (repository_id, user_id, permission) VALUES ($1, $2, $3)`,
+		repo.ID, user.ID, permission)
+	require.NoError(t, err)
+}
+
+func repositoryJobsToken(t *testing.T, pool *pgxpool.Pool, user routesIntegrationUser, scopes string) string {
+	t.Helper()
+	// These are internal workspace/agent credentials with restriction scopes;
+	// the public user-token API intentionally does not mint them.
+	var entropy [20]byte
+	_, err := rand.Read(entropy[:])
+	require.NoError(t, err)
+	raw := "smithers_" + hex.EncodeToString(entropy[:])
+	sum := sha256.Sum256([]byte(raw))
+	hash := hex.EncodeToString(sum[:])
+	_, err = db.New(pool).CreateAccessToken(context.Background(), db.CreateAccessTokenParams{
+		UserID: user.ID, Name: "repository-job-approval-test", TokenHash: hash,
+		TokenLastEight: hash[len(hash)-8:], Scopes: scopes,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+	require.NoError(t, err)
+	return raw
 }
 
 func (g repositoryJobApprovalGateway) AuthorizeRelay(_ context.Context, gatewayID, bearer string) (services.RepoGatewayRelayTarget, error) {

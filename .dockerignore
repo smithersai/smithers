@@ -40,3 +40,9 @@ vendor/jj/target
 
 # Sources later phases port from; never part of an image.
 legacy
+
+# Native and web distributions are rebuilt inside their own release stages.
+apps/app/.native
+apps/app/build
+apps/app/artifacts
+apps/app/dist
