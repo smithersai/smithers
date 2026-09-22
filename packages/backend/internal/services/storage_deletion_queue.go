@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 const purgedStorageDeletionClearTimeout = 5 * time.Second

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 // SandboxOrphanQuerier is the DB contract for the orphan sweep. *db.Queries

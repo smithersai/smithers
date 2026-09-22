@@ -1,11 +1,25 @@
--- Private cluster queries kept separate from the product graph.
+-- name: UpsertSandboxEnvironmentImage :one
+-- Registers a built NixOS environment image. Re-registering the same
+-- (repository, kind, closure hash) refreshes the image reference and revives a
+-- retired row: the closure hash is the content identity. Platform base-image
+-- registration atomically retires every prior ready base for the same kind;
+-- repository images retain their explicit history until the repo admin retires
+-- them.
+SELECT * FROM register_sandbox_environment_image(
+    sqlc.narg(repository_id)::bigint,
+    sqlc.arg(kind)::text,
+    sqlc.arg(source)::text,
+    sqlc.arg(source_revision)::text,
+    sqlc.arg(closure_hash)::text,
+    sqlc.arg(image)::text,
+    sqlc.narg(created_by)::bigint
+);
 
 -- name: ListReadySandboxEnvironmentImageReferences :many
 SELECT image
 FROM sandbox_environment_images
 WHERE status = 'ready'
 ORDER BY image;
-
 
 -- name: ListProtectedWorkerSnapshotLocalIDs :many
 -- The one-hour handoff protects a provider snapshot while the API service is
@@ -28,7 +42,6 @@ WHERE ss.worker_id = sqlc.arg(worker_id)::text
   )
 ORDER BY ss.provider_local_id;
 
-
 -- name: GetLatestReadySandboxEnvironmentImage :one
 -- repository_id NULL selects the platform base image for the kind.
 SELECT *
@@ -39,14 +52,12 @@ WHERE COALESCE(repository_id, 0) = COALESCE(sqlc.narg(repository_id)::bigint, 0)
 ORDER BY created_at DESC
 LIMIT 1;
 
-
 -- name: ListSandboxEnvironmentImages :many
 SELECT *
 FROM sandbox_environment_images
 WHERE COALESCE(repository_id, 0) = COALESCE(sqlc.narg(repository_id)::bigint, 0)
 ORDER BY created_at DESC
 LIMIT 100;
-
 
 -- name: RetireSandboxEnvironmentImage :one
 UPDATE sandbox_environment_images

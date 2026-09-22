@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
@@ -35,7 +34,7 @@ var (
 
 // SandboxEnvironmentImageQuerier is the persistence surface (generated sqlc).
 type SandboxEnvironmentImageQuerier interface {
-	UpsertSandboxEnvironmentImage(ctx context.Context, arg db.UpsertSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
+	UpsertSandboxEnvironmentImage(ctx context.Context, arg clusterdb.UpsertSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
 	GetLatestReadySandboxEnvironmentImage(ctx context.Context, arg clusterdb.GetLatestReadySandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
 	ListSandboxEnvironmentImages(ctx context.Context, repositoryID pgtype.Int8) ([]clusterdb.SandboxEnvironmentImage, error)
 	RetireSandboxEnvironmentImage(ctx context.Context, arg clusterdb.RetireSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
@@ -142,7 +141,7 @@ func (s *SandboxEnvironmentImageService) Register(ctx context.Context, input Reg
 	if len(revision) > 128 {
 		return SandboxEnvironmentImageResponse{}, pkgerrors.BadRequest("source_revision is too long")
 	}
-	row, err := s.q.UpsertSandboxEnvironmentImage(ctx, db.UpsertSandboxEnvironmentImageParams{
+	row, err := s.q.UpsertSandboxEnvironmentImage(ctx, clusterdb.UpsertSandboxEnvironmentImageParams{
 		RepositoryID:   repositoryIDArg(input.RepositoryID),
 		Kind:           kind,
 		Source:         source,
