@@ -548,7 +548,7 @@ export interface ModelSeat {
  * @category constants
  */
 export const MODEL_SEATS = [
-  { id: "chat", label: "Chat", kind: "generation", hosts: ["local", "cloud"] },
+  { id: "chat", label: "Chat", kind: "generation", hosts: ["local"] },
   { id: "explainer", label: "Explainer", kind: "generation", hosts: ["local", "cloud"] },
   { id: "front-door", label: "Front door", kind: "decision", hosts: ["cloud"] },
   { id: "recommend", label: "Recommendations", kind: "decision", hosts: ["cloud"] }
