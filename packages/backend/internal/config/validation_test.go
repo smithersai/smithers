@@ -78,6 +78,20 @@ func TestValidateServerStartup_Valid(t *testing.T) {
 	require.NoError(t, ValidateServerStartup(validStartupConfig()))
 }
 
+func TestValidateServerStartupWithInjectedLocalDependencies(t *testing.T) {
+	cfg := validStartupConfig()
+	cfg.RepoHost.URL = ""
+	cfg.Sandbox.MicrosandboxControlURL = ""
+	require.ErrorContains(t, ValidateServerStartup(cfg), "repo_host.url is required")
+	require.ErrorContains(t, ValidateServerStartup(cfg), "sandbox.microsandbox_control_url is required")
+	require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
+		InProcessRepository: true, WorkspaceRuntime: true,
+	}))
+	require.ErrorContains(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
+		InProcessRepository: true,
+	}), "sandbox.microsandbox_control_url is required")
+}
+
 func TestValidateServerStartup_AgentIdleTimeoutMustBePositive(t *testing.T) {
 	t.Parallel()
 

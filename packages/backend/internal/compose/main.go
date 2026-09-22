@@ -153,7 +153,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("failed to load config", "error", err)
 		return err
 	}
-	if err := config.ValidateServerStartup(cfg); err != nil {
+	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
+		InProcessRepository: !options.Role.hosted() && options.Repository != nil,
+	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
 	}
@@ -1449,6 +1451,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		billingCheckout: billingComposition.Service != nil,
 		isolatedSandbox: provider != nil,
 	}), apiCORSOptions(cfg))
+	if options.Role == RoleLocal || options.Role == "" {
+		if options.Repository != nil {
+			r = withLocalReadiness(r, pool, options.Repository)
+		}
+	}
 	r = mountBlobTransferHandler(r, transferStore, cfg)
 
 	requestTracker := newInFlightRequestTracker()

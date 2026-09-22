@@ -10,13 +10,24 @@ import (
 
 // ValidateServerStartup performs fail-fast checks for API startup-critical settings.
 func ValidateServerStartup(cfg *Config) error {
+	return ValidateServerStartupWithDependencies(cfg, StartupDependencies{})
+}
+
+// StartupDependencies names capabilities supplied by the deployment rather
+// than by network URLs in Config. Only actual injected adapters may set them.
+type StartupDependencies struct {
+	InProcessRepository bool
+	WorkspaceRuntime    bool
+}
+
+func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDependencies) error {
 	if cfg == nil {
 		return fmt.Errorf("config must not be nil")
 	}
 
 	var errs []string
 
-	validateCommonStartup(cfg, &errs)
+	validateCommonStartupWithRepository(cfg, &errs, !dependencies.InProcessRepository)
 
 	if strings.TrimSpace(cfg.Auth.SessionSecret) == "" {
 		errs = append(errs, "auth.session_secret must not be empty")
@@ -37,7 +48,7 @@ func ValidateServerStartup(cfg *Config) error {
 		cfg.FeatureFlags.Workspaces ||
 		cfg.FeatureFlags.Agents ||
 		cfg.FeatureFlags.RemoteSandboxEnabled {
-		if strings.TrimSpace(cfg.Sandbox.MicrosandboxControlURL) == "" {
+		if !dependencies.WorkspaceRuntime && strings.TrimSpace(cfg.Sandbox.MicrosandboxControlURL) == "" {
 			errs = append(errs, "sandbox.microsandbox_control_url is required when sandbox-backed features are enabled")
 		}
 	}
@@ -147,6 +158,10 @@ func ValidateSSHStartup(cfg *Config) error {
 }
 
 func validateCommonStartup(cfg *Config, errs *[]string) {
+	validateCommonStartupWithRepository(cfg, errs, true)
+}
+
+func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRepositoryURL bool) {
 	if publicURL := strings.TrimSpace(cfg.Server.PublicURL); publicURL == "" {
 		*errs = append(*errs, "server.public_url is required")
 	} else {
@@ -159,7 +174,7 @@ func validateCommonStartup(cfg *Config, errs *[]string) {
 	if strings.TrimSpace(cfg.Database.URL) == "" {
 		*errs = append(*errs, "database.url is required")
 	}
-	if strings.TrimSpace(cfg.RepoHost.URL) == "" {
+	if requireRepositoryURL && strings.TrimSpace(cfg.RepoHost.URL) == "" {
 		*errs = append(*errs, "repo_host.url is required")
 	}
 	if strings.TrimSpace(cfg.RepoHost.AuthToken) == "" {
@@ -197,8 +212,10 @@ func validateCommonStartup(cfg *Config, errs *[]string) {
 	if err := validateURL(cfg.Database.URL, false); err != nil {
 		*errs = append(*errs, fmt.Sprintf("database.url is invalid: %v", err))
 	}
-	if err := validateURL(cfg.RepoHost.URL, true); err != nil {
-		*errs = append(*errs, fmt.Sprintf("repo_host.url is invalid: %v", err))
+	if requireRepositoryURL {
+		if err := validateURL(cfg.RepoHost.URL, true); err != nil {
+			*errs = append(*errs, fmt.Sprintf("repo_host.url is invalid: %v", err))
+		}
 	}
 	if strings.TrimSpace(cfg.Sandbox.MicrosandboxControlURL) != "" {
 		if err := validateURL(cfg.Sandbox.MicrosandboxControlURL, true); err != nil {
