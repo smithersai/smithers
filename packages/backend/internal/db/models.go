@@ -427,6 +427,48 @@ type ChangesetMember struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+type ChatTurn struct {
+	ID                     string             `json:"id"`
+	RepositoryID           int64              `json:"repository_id"`
+	UserID                 int64              `json:"user_id"`
+	RunID                  string             `json:"run_id"`
+	LegID                  string             `json:"leg_id"`
+	RequestPayload         []byte             `json:"request_payload"`
+	RequestHash            string             `json:"request_hash"`
+	OwnerHash              pgtype.Text        `json:"owner_hash"`
+	AccessHash             string             `json:"access_hash"`
+	WriterHash             pgtype.Text        `json:"writer_hash"`
+	Acceptance             []byte             `json:"acceptance"`
+	AcceptanceHash         pgtype.Text        `json:"acceptance_hash"`
+	AcceptedAtMs           pgtype.Int8        `json:"accepted_at_ms"`
+	HeadBatch              int64              `json:"head_batch"`
+	HeadPosition           int64              `json:"head_position"`
+	CursorHash             pgtype.Text        `json:"cursor_hash"`
+	HeadHash               pgtype.Text        `json:"head_hash"`
+	OutputBytes            int64              `json:"output_bytes"`
+	Terminal               bool               `json:"terminal"`
+	State                  string             `json:"state"`
+	ProducerGeneration     int64              `json:"producer_generation"`
+	ProducerTokenHash      pgtype.Text        `json:"producer_token_hash"`
+	ProducerLeaseExpiresAt pgtype.Timestamptz `json:"producer_lease_expires_at"`
+	ProducerStartedAt      pgtype.Timestamptz `json:"producer_started_at"`
+	CancelRequestedAt      pgtype.Timestamptz `json:"cancel_requested_at"`
+	Retirement             []byte             `json:"retirement"`
+	CreatedAt              time.Time          `json:"created_at"`
+	UpdatedAt              time.Time          `json:"updated_at"`
+}
+
+type ChatTurnBatch struct {
+	TurnID         string          `json:"turn_id"`
+	BatchNumber    int64           `json:"batch_number"`
+	FromPosition   int64           `json:"from_position"`
+	PreviousHash   string          `json:"previous_hash"`
+	Frames         json.RawMessage `json:"frames"`
+	Hash           string          `json:"hash"`
+	CanonicalBytes int32           `json:"canonical_bytes"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
 type CodeSearchDocument struct {
 	ID           int64       `json:"id"`
 	RepositoryID int64       `json:"repository_id"`
@@ -563,6 +605,28 @@ type FindingFeedback struct {
 	Useful    bool        `json:"useful"`
 	Note      pgtype.Text `json:"note"`
 	CreatedAt time.Time   `json:"created_at"`
+}
+
+type FlowRuntimeHostBinding struct {
+	ID                    string    `json:"id"`
+	TenantID              string    `json:"tenant_id"`
+	PrincipalID           string    `json:"principal_id"`
+	BindingKind           string    `json:"binding_kind"`
+	BindingID             string    `json:"binding_id"`
+	RepositoryID          int64     `json:"repository_id"`
+	UserID                int64     `json:"user_id"`
+	WorkspaceID           string    `json:"workspace_id"`
+	CatalogKey            string    `json:"catalog_key"`
+	ServiceName           string    `json:"service_name"`
+	RuntimeArtifactDigest string    `json:"runtime_artifact_digest"`
+	SourceRevision        string    `json:"source_revision"`
+	OwnerGeneration       int64     `json:"owner_generation"`
+	CredentialCiphertext  string    `json:"credential_ciphertext"`
+	CredentialHash        []byte    `json:"credential_hash"`
+	State                 string    `json:"state"`
+	LastErrorCode         string    `json:"last_error_code"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type GithubAppInstallation struct {

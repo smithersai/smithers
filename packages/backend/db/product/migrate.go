@@ -41,6 +41,8 @@ var migrationRegistry = []migrationSpec{
 	{6, "migrations/0006_durable_product_jobs.sql"},
 	{7, "migrations/0007_repository_storage_operations.sql"},
 	{8, "migrations/0008_provider_connection_web_request.sql"},
+	{9, "migrations/0009_chat_turns.sql"},
+	{10, "migrations/0010_flow_runtime_host_bindings.sql"},
 }
 
 type migration struct {

@@ -142,6 +142,10 @@ type Changeset = db.Changeset
 
 type ChangesetMember = db.ChangesetMember
 
+type ChatTurn = db.ChatTurn
+
+type ChatTurnBatch = db.ChatTurnBatch
+
 type CodeSearchDocument = db.CodeSearchDocument
 
 type CodeSearchIndexState = db.CodeSearchIndexState
@@ -165,6 +169,8 @@ type FileDraft = db.FileDraft
 type Finding = db.Finding
 
 type FindingFeedback = db.FindingFeedback
+
+type FlowRuntimeHostBinding = db.FlowRuntimeHostBinding
 
 type GithubAppInstallation = db.GithubAppInstallation
 

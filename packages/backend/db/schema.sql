@@ -14725,6 +14725,130 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_connections_web_request
     ON public.provider_connections (user_id, label) WHERE owner_type = 'user' AND label LIKE 'web-%';
 -- END product/migrations/0008_provider_connection_web_request.sql
 
+-- BEGIN product/migrations/0009_chat_turns.sql
+CREATE TABLE IF NOT EXISTS chat_turns (
+  id text PRIMARY KEY,
+  repository_id bigint NOT NULL DEFAULT 0,
+  user_id bigint NOT NULL,
+  run_id text NOT NULL,
+  leg_id text NOT NULL,
+  request_payload jsonb,
+  request_hash text NOT NULL,
+  owner_hash text,
+  access_hash text NOT NULL,
+  writer_hash text,
+  acceptance jsonb,
+  acceptance_hash text,
+  accepted_at_ms bigint,
+  head_batch bigint NOT NULL DEFAULT 0 CHECK (head_batch >= 0),
+  head_position bigint NOT NULL DEFAULT 0 CHECK (head_position >= 0),
+  cursor_hash text,
+  head_hash text,
+  output_bytes bigint NOT NULL DEFAULT 0 CHECK (output_bytes >= 0),
+  terminal boolean NOT NULL DEFAULT false,
+  state text NOT NULL CHECK (state IN ('accepted','running','completed','failed','cancelled','uncertain','retired')),
+  producer_generation bigint NOT NULL DEFAULT 0 CHECK (producer_generation >= 0),
+  producer_token_hash text,
+  producer_lease_expires_at timestamptz,
+  producer_started_at timestamptz,
+  cancel_requested_at timestamptz,
+  retirement jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, run_id, leg_id)
+);
+
+CREATE INDEX IF NOT EXISTS chat_turns_recovery_idx
+  ON chat_turns(state, producer_lease_expires_at, created_at)
+  WHERE state IN ('accepted','running');
+CREATE INDEX IF NOT EXISTS chat_turns_run_idx
+  ON chat_turns(user_id, run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_turn_batches (
+  turn_id text NOT NULL REFERENCES chat_turns(id) ON DELETE CASCADE,
+  batch_number bigint NOT NULL CHECK (batch_number > 0),
+  from_position bigint NOT NULL CHECK (from_position > 0),
+  previous_hash text NOT NULL,
+  frames jsonb NOT NULL,
+  hash text NOT NULL,
+  canonical_bytes integer NOT NULL CHECK (canonical_bytes > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (turn_id, batch_number)
+);
+-- END product/migrations/0009_chat_turns.sql
+
+-- BEGIN product/migrations/0010_flow_runtime_host_bindings.sql
+-- Durable authority for one canonical TypeScript host per authorized
+-- workspace/catalog binding. These rows do not contain graph or run state;
+-- Control's journal remains the only runtime authority.
+CREATE TABLE IF NOT EXISTS flow_runtime_host_bindings (
+    id UUID PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL,
+    binding_kind TEXT NOT NULL,
+    binding_id TEXT NOT NULL,
+    repository_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    workspace_id UUID NOT NULL,
+    catalog_key TEXT NOT NULL,
+    service_name TEXT NOT NULL,
+    runtime_artifact_digest TEXT NOT NULL CHECK (runtime_artifact_digest ~ '^[0-9a-f]{64}$'),
+    source_revision TEXT NOT NULL CHECK (source_revision ~ '^[0-9a-f]{40}$'),
+    owner_generation BIGINT NOT NULL CHECK (owner_generation > 0),
+    credential_ciphertext TEXT NOT NULL,
+    credential_hash BYTEA NOT NULL CHECK (octet_length(credential_hash) = 32),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'starting', 'running', 'failed', 'retired')),
+    last_error_code TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    UNIQUE (workspace_id, catalog_key),
+    CHECK (tenant_id <> '' AND principal_id <> '' AND binding_kind <> '' AND binding_id <> ''),
+    CHECK (catalog_key ~ '^[a-z][a-z0-9._-]{0,63}$'),
+    CHECK (service_name ~ '^[A-Za-z0-9_.@:-]{1,128}$'),
+    CHECK (credential_ciphertext <> '')
+);
+
+CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_repository
+    ON flow_runtime_host_bindings (repository_id, user_id, workspace_id);
+
+-- These immutable identifiers deliberately survive parent deletion. A live
+-- binding is admitted only while Store holds a share lock on its workspace.
+-- Workspace deletion (also reached through repository/user FK cascades) leaves
+-- a durable cleanup record, never a lost process/bearer or a blocked deletion.
+CREATE OR REPLACE FUNCTION retire_deleted_workspace_flow_hosts() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE flow_runtime_host_bindings
+       SET state = 'retired', updated_at = clock_timestamp()
+     WHERE workspace_id = OLD.id AND state <> 'retired';
+    RETURN OLD;
+END;
+$$;
+DROP TRIGGER IF EXISTS retire_deleted_workspace_flow_hosts ON workspaces;
+CREATE TRIGGER retire_deleted_workspace_flow_hosts
+    BEFORE DELETE ON workspaces FOR EACH ROW
+    EXECUTE FUNCTION retire_deleted_workspace_flow_hosts();
+
+CREATE OR REPLACE FUNCTION retire_tombstoned_workspace_flow_hosts() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.deleted_at IS NOT NULL THEN
+        UPDATE flow_runtime_host_bindings
+           SET state = 'retired', updated_at = clock_timestamp()
+         WHERE workspace_id = NEW.id AND state <> 'retired';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS retire_tombstoned_workspace_flow_hosts ON workspaces;
+CREATE TRIGGER retire_tombstoned_workspace_flow_hosts
+    AFTER UPDATE OF deleted_at ON workspaces FOR EACH ROW
+    EXECUTE FUNCTION retire_tombstoned_workspace_flow_hosts();
+
+CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_retired
+    ON flow_runtime_host_bindings (updated_at, id) WHERE state = 'retired';
+-- END product/migrations/0010_flow_runtime_host_bindings.sql
+
 -- BEGIN cluster/private_baseline.sql
 -- Plue hosted infrastructure baseline. Extracted from the previous full schema.
 -- Product tables and durable repository storage operations are authored only by
