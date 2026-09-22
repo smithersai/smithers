@@ -20,6 +20,10 @@ const (
 
 var ErrHostNotRunning = errors.New("flow host is not running")
 
+// ErrSourceRevisionRequired asks the resolver to capture a workspace snapshot
+// only when there is no durable binding to reconnect to.
+var ErrSourceRevisionRequired = errors.New("flow host creation requires a workspace source revision")
+
 // SecretCodec protects the host bearer at rest. The existing application
 // secret codec satisfies this interface; a plaintext fallback is deliberately
 // not provided.
@@ -36,7 +40,6 @@ type Catalog struct {
 	Family         string
 	Executable     string
 	ArtifactDigest string
-	SourceRevision string
 	ServiceName    string
 	// Port is the stable guest port for an isolated workspace. It may be zero
 	// when the trusted-process adapter allocates a host port before building
@@ -73,6 +76,9 @@ type Authority struct {
 	WorkspaceID  string
 	CatalogKey   string
 	Repository   string
+	// SourceRevision names the actual workspace snapshot read by the host.
+	// It may be empty when reconnecting to an existing, pinned binding.
+	SourceRevision string
 }
 
 // TargetResolver maps a durable product target to its current authorized
@@ -132,6 +138,13 @@ type Connection struct {
 type Launcher interface {
 	InspectFlowHost(context.Context, Binding, Authority, Catalog) (Connection, error)
 	StartFlowHost(context.Context, HostLaunch) (Connection, error)
+}
+
+// SourceResolver is an optional launcher facet. It captures the authorized
+// workspace's immutable source snapshot; artifact build provenance is unrelated.
+// A missing/dirty/unreadable snapshot must fail, never manufacture a revision.
+type SourceResolver interface {
+	ResolveFlowHostSource(context.Context, Authority) (string, error)
 }
 
 // BindingLease holds the cross-replica ensure lock. Resolver deliberately

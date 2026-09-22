@@ -26,13 +26,16 @@ func (store *memoryBindingStore) Acquire(_ context.Context, authority Authority,
 	defer store.mu.Unlock()
 	store.acquires++
 	if store.binding.ID == "" {
+		if authority.SourceRevision == "" {
+			return nil, ErrSourceRevisionRequired
+		}
 		store.binding = Binding{
 			ID:       "11111111-1111-4111-8111-111111111111",
 			TenantID: authority.Target.TenantID, PrincipalID: authority.Target.PrincipalID,
 			BindingKind: authority.Target.BindingKind, BindingID: authority.Target.BindingID,
 			RepositoryID: authority.RepositoryID, UserID: authority.UserID, WorkspaceID: authority.WorkspaceID,
 			CatalogKey: catalog.Key, ServiceName: catalog.ServiceName,
-			RuntimeArtifactDigest: catalog.ArtifactDigest, SourceRevision: catalog.SourceRevision,
+			RuntimeArtifactDigest: catalog.ArtifactDigest, SourceRevision: authority.SourceRevision,
 			OwnerGeneration: 1, State: "pending",
 		}
 		store.credential = "server-held-bearer"
@@ -136,15 +139,15 @@ func testResolver(t *testing.T) (*Resolver, *memoryBindingStore, *memoryLauncher
 	t.Helper()
 	target := flowruntime.Target{TenantID: "repository:5", PrincipalID: "user:9", BindingKind: "agent-session", BindingID: "session-1"}
 	authority := Authority{Target: target, RepositoryID: 5, UserID: 9,
-		WorkspaceID: "22222222-2222-4222-8222-222222222222", CatalogKey: CatalogCoding}
+		WorkspaceID: "22222222-2222-4222-8222-222222222222", CatalogKey: CatalogCoding, SourceRevision: strings.Repeat("b", 40)}
 	store := &memoryBindingStore{}
 	launcher := &memoryLauncher{transport: &identityTransport{}}
 	resolver, err := New(Config{
 		Store: store, Launcher: launcher,
 		Targets: TargetResolverFunc(func(context.Context, flowruntime.Target) (Authority, error) { return authority, nil }),
 		Catalogs: []Catalog{{Key: CatalogCoding, Family: CatalogCoding, Executable: "/opt/smithers/coding-host",
-			ArtifactDigest: strings.Repeat("a", 64), SourceRevision: strings.Repeat("b", 40),
-			ServiceName: "smithers-flow-coding", Port: 7331, ImplementationModel: "openai:gpt-5"}},
+			ArtifactDigest: strings.Repeat("a", 64),
+			ServiceName:    "smithers-flow-coding", Port: 7331, ImplementationModel: "openai:gpt-5"}},
 	})
 	require.NoError(t, err)
 	return resolver, store, launcher, target
@@ -217,7 +220,7 @@ func TestResolverRefusesTargetResolverScopeSubstitution(t *testing.T) {
 		changed := target
 		changed.PrincipalID = "user:10"
 		return Authority{Target: changed, RepositoryID: 5, UserID: 10,
-			WorkspaceID: "22222222-2222-4222-8222-222222222222", CatalogKey: CatalogCoding}, nil
+			WorkspaceID: "22222222-2222-4222-8222-222222222222", CatalogKey: CatalogCoding, SourceRevision: strings.Repeat("b", 40)}, nil
 	})
 	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
 	require.Error(t, err)
@@ -226,8 +229,54 @@ func TestResolverRefusesTargetResolverScopeSubstitution(t *testing.T) {
 
 func TestCatalogRejectsReservedIdentityEnvironment(t *testing.T) {
 	_, err := validateCatalog(Catalog{Key: CatalogCoding, Family: CatalogCoding, Executable: "/host",
-		ArtifactDigest: strings.Repeat("a", 64), SourceRevision: strings.Repeat("b", 40),
-		ServiceName: "host", Port: 7331, ImplementationModel: "openai:gpt-5",
+		ArtifactDigest: strings.Repeat("a", 64),
+		ServiceName:    "host", Port: 7331, ImplementationModel: "openai:gpt-5",
 		Environment: map[string]string{"SMITHERS_API_KEY": "caller-value"}})
 	require.Error(t, err)
+}
+
+type snapshotLauncher struct {
+	*memoryLauncher
+	revision string
+	captures int
+}
+
+func (launcher *snapshotLauncher) ResolveFlowHostSource(context.Context, Authority) (string, error) {
+	launcher.captures++
+	return launcher.revision, nil
+}
+
+func TestResolverCapturesSourceOnlyForNewBindingAndReauthorizesEveryTarget(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	captures := &snapshotLauncher{memoryLauncher: launcher, revision: strings.Repeat("d", 40)}
+	resolver.launcher = captures
+	original := resolver.targets
+	authorized := true
+	requests := 0
+	resolver.targets = TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (Authority, error) {
+		requests++
+		if !authorized {
+			return Authority{}, failure{code: "runtime_target_forbidden"}
+		}
+		authority, err := original.ResolveFlowHostTarget(ctx, target)
+		authority.SourceRevision = ""
+		authority.Target = target
+		return authority, err
+	})
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	require.Equal(t, 1, captures.captures)
+	require.Equal(t, captures.revision, store.binding.SourceRevision)
+	captures.revision = strings.Repeat("e", 40)
+	target.BindingID = "second-authorized-session"
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	require.Equal(t, 1, captures.captures)
+	require.Equal(t, strings.Repeat("d", 40), store.binding.SourceRevision)
+	require.Len(t, launcher.starts, 1)
+	authorized = false
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	require.Error(t, err)
+	require.Equal(t, 3, requests)
+	require.Equal(t, 3, store.acquires) // first attempt asks for source; forbidden request never acquires.
 }

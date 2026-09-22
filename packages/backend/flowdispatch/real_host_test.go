@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -30,6 +31,27 @@ type productHostProcess struct {
 	logs     *bytes.Buffer
 	stopOnce sync.Once
 	stopped  chan struct{}
+}
+
+type observedAcceptanceRuntime struct {
+	flowruntime.Runtime
+	t *testing.T
+}
+
+func (runtime observedAcceptanceRuntime) Observe(ctx context.Context, runID, cursor string, limit int) (flowruntime.Observation, error) {
+	observation, err := runtime.Runtime.Observe(ctx, runID, cursor, limit)
+	if err == nil && (!validObservationPage(cursor, observation) || observation.Run.FlowID != "librarian/history" || observation.Run.RunID != runID || observation.Terminal != terminalStatus(observation.Run.Status)) {
+		sequences := make([]int64, 0, len(observation.Events))
+		for _, event := range observation.Events {
+			sequence := event.Sequence
+			if event.Cursor != nil {
+				sequence = event.Cursor.Sequence
+			}
+			sequences = append(sequences, sequence)
+		}
+		runtime.t.Logf("invalid real-host observation: run=%+v after=%s next=%s terminal=%t sequences=%v", observation.Run, cursor, observation.NextCursor, observation.Terminal, sequences)
+	}
+	return observation, err
 }
 
 func startProductHost(
@@ -118,6 +140,7 @@ func startAcceptanceWorker(service *Service, workerID string) (context.CancelFun
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
+		defer close(done)
 		done <- service.RunWorker(ctx, jobs.WorkerConfig{
 			WorkerID: workerID, Capacity: 2, Lease: 5 * time.Second,
 			PollInterval: 10 * time.Millisecond, RetryDelay: 20 * time.Millisecond,
@@ -181,7 +204,7 @@ func TestRealBundledHostAdmissionReconnectCompletionAndCancellation(t *testing.T
 			if client == nil {
 				return nil, &testRuntimeFailure{code: "runtime_not_started", retryable: true}
 			}
-			return client, nil
+			return observedAcceptanceRuntime{Runtime: client, t: t}, nil
 		}), ObservationDelay: 10 * time.Millisecond,
 	})
 	require.NoError(t, err)
@@ -213,6 +236,7 @@ func TestRealBundledHostAdmissionReconnectCompletionAndCancellation(t *testing.T
 	t.Cleanup(func() { host.stop(t) })
 
 	stopFirst, firstDone := startAcceptanceWorker(service, "real-host-owner-1")
+	t.Cleanup(func() { stopAcceptanceWorker(t, stopFirst, firstDone) })
 	parked := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
 		return operation.State == jobs.StateWaiting && bytes.Contains(operation.ExternalReceipt, []byte(`"Parked"`))
 	})
@@ -225,10 +249,14 @@ func TestRealBundledHostAdmissionReconnectCompletionAndCancellation(t *testing.T
 
 	host, client = startProductHost(t, node, artifact, fixtureRoot, port, digest, revision, 2)
 	stopSecond, secondDone := startAcceptanceWorker(service, "real-host-owner-2")
+	t.Cleanup(func() { stopAcceptanceWorker(t, stopSecond, secondDone) })
 	completed := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
 		return operation.State == jobs.StateCompleted
 	})
-	require.Contains(t, string(completed.TerminalReceipt), `"status":"completed"`)
+	var terminal terminalReceipt
+	require.NoError(t, json.Unmarshal(completed.TerminalReceipt, &terminal))
+	require.NotNil(t, terminal.Run)
+	require.Equal(t, "completed", terminal.Run.Status)
 	page, err := store.Replay(context.Background(), request.Scope, 0, 1000)
 	require.NoError(t, err)
 	require.NotEmpty(t, page.Events)

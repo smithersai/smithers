@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -55,8 +56,10 @@ type lease struct {
 }
 
 func bindingLockKey(authority Authority, catalog Catalog) string {
-	return strings.Join([]string{"smithers:flow-host", authority.Target.TenantID, authority.Target.PrincipalID,
-		authority.Target.BindingKind, authority.Target.BindingID, authority.WorkspaceID, catalog.Key}, "\x00")
+	// Match the database uniqueness and lookup exactly. JSON is collision-free
+	// for this tuple and, unlike a NUL delimiter, is valid PostgreSQL text.
+	key, _ := json.Marshal([]string{"smithers:flow-host", authority.WorkspaceID, catalog.Key})
+	return string(key)
 }
 
 func (store *Store) Acquire(ctx context.Context, authority Authority, catalog Catalog) (BindingLease, error) {
@@ -79,7 +82,7 @@ func (store *Store) Acquire(ctx context.Context, authority Authority, catalog Ca
 	}
 	lockKey := bindingLockKey(authority, validated)
 	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
-		connection.Release()
+		closeLockedConnection(connection)
 		return nil, err
 	}
 	result := &lease{store: store, connection: connection, lockKey: lockKey}
@@ -95,12 +98,30 @@ func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catal
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(cleanupCtx)
+	}()
+	// A target resolver authorizes the product request; this lock independently
+	// verifies that its workspace still belongs to that repository/user. Keep
+	// deletion and insertion ordered, including repository/user cascades.
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM workspaces
+		WHERE id=$1 AND repository_id=$2 AND user_id=$3 AND deleted_at IS NULL
+		FOR SHARE`, authority.WorkspaceID, authority.RepositoryID, authority.UserID).Scan(&workspaceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return failure{code: "runtime_target_forbidden"}
+		}
+		return err
+	}
 	binding, encrypted, credentialHash, err := scanBinding(tx.QueryRow(ctx, bindingSelect+`
-		WHERE tenant_id=$1 AND principal_id=$2 AND binding_kind=$3 AND binding_id=$4 AND catalog_key=$5
-		FOR UPDATE`, authority.Target.TenantID, authority.Target.PrincipalID, authority.Target.BindingKind,
-		authority.Target.BindingID, catalog.Key))
+		WHERE workspace_id=$1 AND catalog_key=$2
+		FOR UPDATE`, authority.WorkspaceID, catalog.Key))
 	if errors.Is(err, pgx.ErrNoRows) {
+		if !lowerHex(authority.SourceRevision, 40) {
+			return ErrSourceRevisionRequired
+		}
 		credential, credentialErr := value.store.newCredential()
 		if credentialErr != nil {
 			return credentialErr
@@ -115,7 +136,7 @@ func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catal
 			BindingKind: authority.Target.BindingKind, BindingID: authority.Target.BindingID,
 			RepositoryID: authority.RepositoryID, UserID: authority.UserID, WorkspaceID: authority.WorkspaceID,
 			CatalogKey: catalog.Key, ServiceName: catalog.ServiceName,
-			RuntimeArtifactDigest: catalog.ArtifactDigest, SourceRevision: catalog.SourceRevision,
+			RuntimeArtifactDigest: catalog.ArtifactDigest, SourceRevision: authority.SourceRevision,
 			OwnerGeneration: 1, State: "pending",
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO flow_runtime_host_bindings
@@ -174,11 +195,10 @@ func scanBinding(row pgx.Row) (Binding, string, []byte, error) {
 
 func bindingMatches(binding Binding, authority Authority, catalog Catalog) error {
 	if binding.TenantID != authority.Target.TenantID || binding.PrincipalID != authority.Target.PrincipalID ||
-		binding.BindingKind != authority.Target.BindingKind || binding.BindingID != authority.Target.BindingID ||
 		binding.RepositoryID != authority.RepositoryID || binding.UserID != authority.UserID ||
 		binding.WorkspaceID != authority.WorkspaceID || binding.CatalogKey != catalog.Key ||
 		binding.ServiceName != catalog.ServiceName || binding.RuntimeArtifactDigest != catalog.ArtifactDigest ||
-		binding.SourceRevision != catalog.SourceRevision || binding.OwnerGeneration <= 0 {
+		(authority.SourceRevision != "" && binding.SourceRevision != authority.SourceRevision) || !lowerHex(binding.SourceRevision, 40) || binding.OwnerGeneration <= 0 || binding.State == "retired" {
 		return errors.New("flow host durable binding conflicts with resolved authority")
 	}
 	return nil
@@ -201,7 +221,7 @@ func (value *lease) PrepareStart(ctx context.Context, replaceOwner bool) (Bindin
 	var generation int64
 	err := value.connection.QueryRow(ctx, `UPDATE flow_runtime_host_bindings
 		SET owner_generation=$2, state='starting', last_error_code='', updated_at=clock_timestamp()
-		WHERE id=$1 AND owner_generation <= $2
+		WHERE id=$1 AND owner_generation <= $2 AND state <> 'retired'
 		RETURNING owner_generation`, value.binding.ID, value.binding.OwnerGeneration).Scan(&generation)
 	if err != nil {
 		return Binding{}, err
@@ -219,7 +239,7 @@ func (value *lease) MarkRunning(ctx context.Context) error {
 	}
 	tag, err := value.connection.Exec(ctx, `UPDATE flow_runtime_host_bindings
 		SET state='running', last_error_code='', updated_at=clock_timestamp()
-		WHERE id=$1 AND owner_generation=$2`, value.binding.ID, value.binding.OwnerGeneration)
+		WHERE id=$1 AND owner_generation=$2 AND state <> 'retired'`, value.binding.ID, value.binding.OwnerGeneration)
 	if err != nil {
 		return err
 	}
@@ -238,10 +258,24 @@ func (value *lease) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := value.connection.Exec(ctx, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, value.lockKey)
-	value.connection.Release()
+	if err != nil {
+		// Returning a session with an unknown advisory-lock state poisons the
+		// pool. Closing the physical connection releases every session lock.
+		closeLockedConnection(value.connection)
+	} else {
+		value.connection.Release()
+	}
 	value.connection = nil
 	return err
 }
 
 var _ BindingStore = (*Store)(nil)
 var _ BindingLease = (*lease)(nil)
+
+// A cancelled lock query may have acquired the lock before its reply was lost.
+// Never return an ambiguous session lock to the connection pool.
+func closeLockedConnection(connection *pgxpool.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = connection.Hijack().Close(ctx)
+}

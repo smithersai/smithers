@@ -268,16 +268,30 @@ func startTestWorker(t *testing.T, service *Service, workerID string) context.Ca
 func waitOperation(t *testing.T, store *jobs.Store, scope jobs.Scope, operationID string, match func(jobs.Operation) bool) jobs.Operation {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
+	var last jobs.Operation
 	for time.Now().Before(deadline) {
 		operation, err := store.Get(context.Background(), scope, operationID)
 		require.NoError(t, err)
+		last = operation
 		if match(operation) {
 			return operation
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("operation did not reach expected state")
+	t.Fatalf("operation did not reach expected state: state=%s attempt=%d reconcile=%t terminal=%s", last.State, last.Attempt, last.NeedsReconciliation, last.TerminalReceipt)
 	return jobs.Operation{}
+}
+
+func TestObservationCursorDistinguishesBeginningFromSequenceZero(t *testing.T) {
+	page := flowruntime.Observation{
+		Events: []flowruntime.Event{{Sequence: 0}, {Sequence: 1}}, NextCursor: "1",
+	}
+	require.True(t, validObservationPage("", page))
+	require.False(t, validObservationPage("0", page), "an explicit cursor must not replay its event")
+	page.Events = page.Events[1:]
+	require.True(t, validObservationPage("0", page))
+	page.Events = append(page.Events, page.Events[0])
+	require.False(t, validObservationPage("0", page), "duplicate events remain invalid")
 }
 
 func TestAdmissionReturnsDuringUnresolvedLaunchAndAutoApprovalReachesTerminal(t *testing.T) {

@@ -470,7 +470,9 @@ func validMutationResult(result flowruntime.FlowRuntimeMutationResult, operation
 }
 
 func validObservationPage(previous string, observation flowruntime.FlowRuntimeObservation) bool {
-	before := int64(0)
+	// Control journals start at sequence zero. An absent cursor means no
+	// event has been consumed; an explicit "0" means event zero was consumed.
+	before := int64(-1)
 	if previous != "" {
 		parsed, err := strconv.ParseInt(previous, 10, 64)
 		if err != nil || parsed < 0 {

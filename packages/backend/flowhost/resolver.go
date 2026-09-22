@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/runtimebridge"
 )
@@ -74,19 +76,17 @@ func validateCatalog(catalog Catalog) (Catalog, error) {
 	if !serviceNamePattern.MatchString(catalog.ServiceName) {
 		return Catalog{}, fmt.Errorf("flow host catalog %q service name is invalid", catalog.Key)
 	}
-	if !lowerHex(catalog.ArtifactDigest, 64) || !lowerHex(catalog.SourceRevision, 40) {
+	if !lowerHex(catalog.ArtifactDigest, 64) {
 		return Catalog{}, fmt.Errorf("flow host catalog %q immutable identity is invalid", catalog.Key)
 	}
 	if catalog.ReadyTimeout <= 0 {
 		catalog.ReadyTimeout = 30 * time.Second
 	}
-	if catalog.Family == CatalogCoding && !explicitModel(catalog.ImplementationModel) {
-		return Catalog{}, fmt.Errorf("flow host catalog %q needs an explicit coding model", catalog.Key)
+	if catalog.ImplementationModel != "" && !explicitModel(catalog.ImplementationModel) {
+		return Catalog{}, fmt.Errorf("flow host catalog %q model must be provider:model", catalog.Key)
 	}
-	if catalog.Family == CatalogLibrarian {
-		if catalog.ProductAPIURL == "" || !explicitModel(catalog.ImplementationModel) {
-			return Catalog{}, fmt.Errorf("flow host catalog %q needs product API and model configuration", catalog.Key)
-		}
+	if catalog.Family == CatalogLibrarian && catalog.ProductAPIURL == "" {
+		return Catalog{}, fmt.Errorf("flow host catalog %q needs product API configuration", catalog.Key)
 	}
 	copyEnvironment := make(map[string]string, len(catalog.Environment))
 	for name, value := range catalog.Environment {
@@ -123,6 +123,13 @@ func validateAuthority(target flowruntime.Target, authority Authority) error {
 	if authority.RepositoryID <= 0 || authority.UserID <= 0 || strings.TrimSpace(authority.WorkspaceID) == "" || strings.TrimSpace(authority.CatalogKey) == "" {
 		return failure{code: "runtime_target_invalid"}
 	}
+	workspaceID, err := uuid.Parse(authority.WorkspaceID)
+	if err != nil || workspaceID.String() != authority.WorkspaceID {
+		return failure{code: "runtime_target_invalid"}
+	}
+	if authority.SourceRevision != "" && !lowerHex(authority.SourceRevision, 40) {
+		return failure{code: "runtime_source_revision_invalid"}
+	}
 	if target.WorkspaceID != "" && target.WorkspaceID != authority.WorkspaceID {
 		return failure{code: "runtime_workspace_replaced"}
 	}
@@ -145,6 +152,20 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 		return nil, failure{code: "runtime_catalog_unavailable"}
 	}
 	lease, err := resolver.store.Acquire(ctx, authority, catalog)
+	if errors.Is(err, ErrSourceRevisionRequired) {
+		source, ok := resolver.launcher.(SourceResolver)
+		if !ok {
+			return nil, failure{code: "runtime_source_revision_unavailable"}
+		}
+		authority.SourceRevision, err = source.ResolveFlowHostSource(ctx, authority)
+		if err != nil {
+			return nil, sanitizeFailure("runtime_source_revision_unavailable", err)
+		}
+		if !lowerHex(authority.SourceRevision, 40) {
+			return nil, failure{code: "runtime_source_revision_invalid"}
+		}
+		lease, err = resolver.store.Acquire(ctx, authority, catalog)
+	}
 	if err != nil {
 		return nil, sanitizeFailure("runtime_binding_unavailable", err)
 	}
