@@ -9,10 +9,14 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2807 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2819 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **matrix:** verify owned deployment modes and distribution image ([d3da1f55ca](https://github.com/smithersai/smithers/commit/d3da1f55caf81a9f7f13396aeef865a0e1ec8f38))
+- **schema:** audit product baseline adoption before Plue cutover ([ddf659f227](https://github.com/smithersai/smithers/commit/ddf659f2277a3f9ecc1990dcc3875bffaee26356))
+- **chat:** serve hosted producer callbacks on shared API listener ([5cdf9619b6](https://github.com/smithersai/smithers/commit/5cdf9619b6ff713a0efacd5821a21dc165998885))
+- **coding:** use packaged Rust workspace helper across hosts ([3539244639](https://github.com/smithersai/smithers/commit/35392446395af76faf67648ecce98cba04af94e2))
 - **chat:** resolve owner model credentials for UI turns ([21c3ef163e](https://github.com/smithersai/smithers/commit/21c3ef163e1089e622b8d1552fd792808b6a5a29))
 - **coding:** add native local coding operations and file recovery ([8298553633](https://github.com/smithersai/smithers/commit/829855363347d6a6ae5997dac7229872eef0a330))
 - **chat:** launch local model host with owner repository secrets ([23f3fc612e](https://github.com/smithersai/smithers/commit/23f3fc612e1e0c69b595286615a01d7568954aa8))
@@ -287,6 +291,12 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** clear rc.1 package gates ([de42b7e1fa](https://github.com/smithersai/smithers/commit/de42b7e1fa64ec98f2ff12066968bd32691ffb17))
+- **chat:** recover hosted turns on API replicas with ChatHost ([cbb2de6e01](https://github.com/smithersai/smithers/commit/cbb2de6e016af2217b4bc4f2fb4c186431814ab6))
+- **flows:** restore gate inventory and gateway dependency ([a3aaf9f203](https://github.com/smithersai/smithers/commit/a3aaf9f2039a0972a80dcc7f6facc481a14ad68a))
+- **chat:** dispatch hosted turns through API callback listener ([446d4935e6](https://github.com/smithersai/smithers/commit/446d4935e65aae167cb0a40ca55cc028e4fec383))
+- **coding:** validate native projection markers before reporting ([2721154605](https://github.com/smithersai/smithers/commit/2721154605fbdcb1cd53710b148986beb637b619))
+- **native:** package owned backend and verify Go composition ([d10ef5163f](https://github.com/smithersai/smithers/commit/d10ef5163f97b0f325693028a9402126b0c54d3c))
 - **models:** hide chat seat from legacy cloud worker ([5b2a365ba9](https://github.com/smithersai/smithers/commit/5b2a365ba910d46b1c4a6f2c53ec56a19f641308))
 - **engine:** fence concurrent work and preserve replay and failure boundaries ([9743661f16](https://github.com/smithersai/smithers/commit/9743661f16b37395aa6df21f7503da6cb310d949))
 - **app:** route hosted sign-in through cloud OAuth ([a9588050ce](https://github.com/smithersai/smithers/commit/a9588050ce4834337d9ce8ea2278edab6b7862b2))
@@ -2345,6 +2355,8 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(coding):** retire Plue Python adapter fixtures ([1ca8e42b8e](https://github.com/smithersai/smithers/commit/1ca8e42b8e704f6bcb912cc9ea29148420a013d4))
+- **test(native):** exercise installed process shutdown and Plue lifecycle ([28b1a76bee](https://github.com/smithersai/smithers/commit/28b1a76beee650d4ec0b0b39f71177c77b6c2639))
 - **test(backend):** isolate database fixtures and keep infrastructure tests private ([be10062958](https://github.com/smithersai/smithers/commit/be100629584a3dd7a3b6eb5425ece4886aa3561d))
 - **test(app):** verify initialized workspaces and owner sign-in behavior ([334c52a927](https://github.com/smithersai/smithers/commit/334c52a92790a02a0683eb7fcce4afd29e4b0700))
 - **test(ci):** gate shared Go and native FFI with cross-platform fixes ([0ea458d7e2](https://github.com/smithersai/smithers/commit/0ea458d7e26690f81fcedf8cfb2b9045d4e84b78))
