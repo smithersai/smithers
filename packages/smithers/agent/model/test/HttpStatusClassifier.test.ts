@@ -3,6 +3,7 @@ import { Effect, Layer, Redacted, Result, Stream } from "effect"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
+import { classifyHttpStatus } from "../src/HttpStatusClassifier.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
@@ -91,3 +92,21 @@ for (const [name, toModel] of routes) {
     })
   })
 }
+
+describe("in-stream failures", () => {
+  // A `response.failed` or `error` event arrives after HTTP 200, so only the
+  // provider's code and words classify it. These are transient provider
+  // faults and must stay retryable.
+  it.each([
+    [undefined, "Our servers are currently overloaded. Please try again later."],
+    ["server_is_overloaded", "The server is overloaded"],
+    ["overloaded_error", "Overloaded"],
+    [undefined, "Service unavailable"]
+  ] as const)("classifies %s / %s as provider_internal", (code, message) => {
+    expect(classifyHttpStatus(undefined, code, message)).toBe("provider_internal")
+  })
+
+  it("leaves unrelated stream failures unknown", () => {
+    expect(classifyHttpStatus(undefined, undefined, "OpenAI Responses stream failed")).toBe("unknown")
+  })
+})

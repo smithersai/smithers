@@ -33,7 +33,14 @@ export const classifyHttpStatus = (
     status === 400 || status === 404 || status === 409 || status === 413 || status === 422 ||
     /invalid[-_\s]?request/.test(normalized)
   ) return "invalid_request"
-  if ((status !== undefined && status >= 500) || /server[-_\s]?error|internal[-_\s]?error/.test(normalized)) {
+  // A stream that fails after HTTP 200 carries no status, only the provider's
+  // words: ChatGPT's `response.failed` says "Our servers are currently
+  // overloaded" and Anthropic's event says `overloaded_error`. Both are the
+  // provider's transient fault, so they retry like the 5xx they stand for.
+  if (
+    (status !== undefined && status >= 500) ||
+    /server[-_\s]?error|internal[-_\s]?error|overloaded|service[-_\s]?unavailable/.test(normalized)
+  ) {
     return "provider_internal"
   }
   return "unknown"
