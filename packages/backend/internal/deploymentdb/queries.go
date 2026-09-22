@@ -51,3 +51,15 @@ func (q *Queries) CountActiveSandboxesForUser(ctx context.Context, userID int64)
 func (q *Queries) SuspendRunningWorkspaceIfSessionless(ctx context.Context, id string) (db.Workspace, error) {
 	return q.ClusterQueries.SuspendRunningWorkspaceIfSessionless(ctx, id)
 }
+
+// Hosted billing retains physical allocations while its deletion queue waits
+// for object-store cleanup. The product query deliberately has no such table.
+func (q *Queries) SumStorageBytesByOwner(ctx context.Context, arg db.SumStorageBytesByOwnerParams) (int64, error) {
+	return q.ClusterQueries.SumStorageBytesByOwner(ctx, clusterdb.SumStorageBytesByOwnerParams{
+		OwnerType: arg.OwnerType, OwnerID: arg.OwnerID,
+	})
+}
+
+func (q *Queries) SumStorageBytesByRepository(ctx context.Context, repositoryID int64) (int64, error) {
+	return q.ClusterQueries.SumStorageBytesByRepository(ctx, repositoryID)
+}
