@@ -15,6 +15,7 @@ export interface ModeDescriptor {
   readonly id: DeploymentMode
   readonly surface: ProductSurface
   readonly provider: ProductProvider
+  /** Existing scenario tag for the selected backend; surface proof stays in the execution receipt. */
   readonly legacyHost: RealHost
   readonly requiredProcessRoles: readonly ProcessRole[]
   readonly forbiddenProcessRoles: readonly ProcessRole[]
@@ -46,32 +47,38 @@ export const MODE_DESCRIPTORS: Readonly<Record<DeploymentMode, ModeDescriptor>> 
     requiredProcessRoles: ["local-ui", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true
   },
   "local-plue": {
-    id: "local-plue", surface: "local", provider: "plue", legacyHost: "local",
+    id: "local-plue", surface: "local", provider: "plue", legacyHost: "production",
     requiredProcessRoles: ["local-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false
   },
   "native-own": {
-    id: "native-own", surface: "native", provider: "selfhost", legacyHost: "native",
+    id: "native-own", surface: "native", provider: "selfhost", legacyHost: "local",
     requiredProcessRoles: ["native-ui", "supervisor", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true
   },
   "native-plue": {
-    id: "native-plue", surface: "native", provider: "plue", legacyHost: "native",
+    id: "native-plue", surface: "native", provider: "plue", legacyHost: "production",
     requiredProcessRoles: ["native-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false
   }
 }
 
+const MATRIX_SURFACE_DRIVERS: Readonly<Record<ProductSurface, "playwright" | undefined>> = {
+  web: "playwright",
+  local: "playwright",
+  native: undefined
+}
+
 /** One obligation catalog. Modes inject topology; they do not copy scenario bodies. */
 export const MATRIX_OBLIGATIONS: readonly MatrixObligation[] = [
-  { id: "signed-in", scenarios: [{ id: "auth.session-preflight-cookie-persistence", capabilities: ["identity"] }], tier: "local-infrastructure" },
-  { id: "repository-create", scenarios: [], tier: "local-infrastructure" },
-  { id: "github-import", scenarios: [], tier: "live-provider" },
+  { id: "signed-in", scenarios: [{ id: "auth.mode-session-cookie-persistence", capabilities: ["identity"] }], tier: "local-infrastructure" },
+  { id: "repository-create", scenarios: [{ id: "repositories.product-create-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
+  { id: "github-import", scenarios: [{ id: "repositories.github-import-direct-readback", capabilities: ["identity", "cloud"] }], tier: "live-provider" },
   { id: "chat", scenarios: [{ id: "chat.stream-grounded", capabilities: ["agent"] }], tier: "local-infrastructure" },
   { id: "tool", scenarios: [{ id: "chat.tool-browser-open", capabilities: ["agent", "browser.read"] }], tier: "local-infrastructure" },
   { id: "workspace", scenarios: [{ id: "workspaces.cloud-lifecycle-suspend-resume-delete", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "terminal", scenarios: [{ id: "workspaces.cloud-terminal-keyboard-output", capabilities: ["identity", "cloud", "cloud.terminal"] }], tier: "local-infrastructure" },
   { id: "job-admission", scenarios: [{ id: "flows.production-create-reconnect-execute", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "approval-decision", scenarios: [], tier: "local-infrastructure" },
+  { id: "approval-decision", scenarios: [{ id: "flows.production-approval-decision-roundtrip", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "artifact", scenarios: [{ id: "issues.practice-live-implementation-artifacts", capabilities: [] }], tier: "local-infrastructure" },
-  { id: "review", scenarios: [], tier: "local-infrastructure" },
+  { id: "review", scenarios: [{ id: "pull-requests.production-review-permission", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "landing", scenarios: [{ id: "pull-requests.production-land-git-proof", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "reload", scenarios: [{ id: "local-eventual-page-restart-persistence", capabilities: [] }], tier: "local-infrastructure" },
   { id: "cancel", scenarios: [
@@ -119,6 +126,10 @@ export interface ExecutionReceipt {
   readonly freshLaunch: boolean
   readonly restarted: boolean
   readonly dataPreserved: boolean
+  readonly persistenceProof?: {
+    readonly database: { readonly before: string; readonly after: string }
+    readonly dataVolume: { readonly before: string; readonly after: string }
+  }
   readonly observedAt: string
 }
 
@@ -141,6 +152,8 @@ export interface MatrixScenarioReceipt {
   readonly origin?: string
   readonly reason?: string
 }
+
+type MatrixFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
 const exactRevision = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{40,64}$/.test(value)
@@ -178,7 +191,11 @@ export const readExecutionReceipt = (path: string): ExecutionReceipt => {
   const value = JSON.parse(readFileSync(path, "utf8")) as unknown
   if (!isObject(value) || !deploymentMode(value.mode) || !exactRevision(value.revision) || typeof value.origin !== "string" || typeof value.ready !== "boolean" ||
       !Array.isArray(value.startedRoles) || value.startedRoles.some((role) => typeof role !== "string" || !(PROCESS_ROLES as readonly string[]).includes(role)) || typeof value.freshLaunch !== "boolean" ||
-      typeof value.restarted !== "boolean" || typeof value.dataPreserved !== "boolean" || typeof value.observedAt !== "string" || !Number.isFinite(Date.parse(value.observedAt))) {
+      typeof value.restarted !== "boolean" || typeof value.dataPreserved !== "boolean" ||
+      (value.persistenceProof !== undefined && (!isObject(value.persistenceProof) || !isObject(value.persistenceProof.database) || !isObject(value.persistenceProof.dataVolume) ||
+        typeof value.persistenceProof.database.before !== "string" || typeof value.persistenceProof.database.after !== "string" ||
+        typeof value.persistenceProof.dataVolume.before !== "string" || typeof value.persistenceProof.dataVolume.after !== "string")) ||
+      typeof value.observedAt !== "string" || !Number.isFinite(Date.parse(value.observedAt))) {
     throw new Error(`malformed execution receipt: ${path}`)
   }
   return value as unknown as ExecutionReceipt
@@ -194,7 +211,14 @@ export const validateExecutionReceipt = (config: ModeConfig, revision: string, r
   for (const role of descriptor.requiredProcessRoles) if (!receipt.startedRoles.includes(role)) reasons.push(`launcher did not prove ${role} started`)
   for (const role of descriptor.forbiddenProcessRoles) if (receipt.startedRoles.includes(role)) reasons.push(`remote mode unexpectedly started ${role}`)
   if (!receipt.freshLaunch) reasons.push("launcher did not prove a fresh launch")
-  if (descriptor.requiresPersistentRestart && (!receipt.restarted || !receipt.dataPreserved)) reasons.push("persistent restart with preserved data was not proven")
+  if (descriptor.requiresPersistentRestart) {
+    if (!receipt.restarted || !receipt.dataPreserved) reasons.push("persistent restart with preserved data was not proven")
+    const proof = receipt.persistenceProof
+    if (proof === undefined || proof.database.before === "" || proof.dataVolume.before === "" ||
+        proof.database.before !== proof.database.after || proof.dataVolume.before !== proof.dataVolume.after) {
+      reasons.push("persistent restart markers for the database and data volume were not proven")
+    }
+  }
   return reasons
 }
 
@@ -202,11 +226,13 @@ export const probeMode = async (
   config: ModeConfig,
   revision: string,
   environment: Readonly<Record<string, string | undefined>> = process.env,
-  fetcher: typeof fetch = fetch
+  fetcher: MatrixFetcher = fetch
 ): Promise<ModeReadiness> => {
   const reasons: string[] = []
+  if (MATRIX_SURFACE_DRIVERS[MODE_DESCRIPTORS[config.mode].surface] === undefined) {
+    reasons.push("native application scenario driver is not integrated; browser assertions cannot prove native UI conformance")
+  }
   if (!environment[config.auth.environment]?.trim()) reasons.push(`auth environment ${config.auth.environment} is unavailable`)
-  if (config.auth.kind === "owner-session") reasons.push("owner-session injection is not implemented by the real product fixture")
   try { reasons.push(...validateExecutionReceipt(config, revision, readExecutionReceipt(config.executionReceipt))) }
   catch (error) { reasons.push(error instanceof Error ? error.message : String(error)) }
   let capabilities: readonly string[] = []
@@ -216,9 +242,20 @@ export const probeMode = async (
     const bootstrap = await fetcher(new URL("/api/bootstrap", config.origin))
     if (!bootstrap.ok) reasons.push(`bootstrap returned HTTP ${bootstrap.status}`)
     else {
-      const parsed = AppBootstrapSchema.safeParse(await bootstrap.json())
+      const body = await bootstrap.json()
+      if (config.auth.kind === "owner-session" && (!isObject(body) || body.authFlow !== "credentials")) {
+        reasons.push(`bootstrap authFlow ${isObject(body) ? String(body.authFlow) : "unknown"} does not advertise owner credentials`)
+      }
+      const parsed = AppBootstrapSchema.safeParse(body)
       if (!parsed.success) reasons.push(`bootstrap contract is invalid: ${parsed.error.message}`)
-      else capabilities = parsed.data.capabilities
+      else {
+        capabilities = parsed.data.capabilities
+        const bootstrapHost: RealHost = parsed.data.host === "cloud" ? "production" : "local"
+        if (bootstrapHost !== MODE_DESCRIPTORS[config.mode].legacyHost) {
+          reasons.push(`bootstrap host ${parsed.data.host} does not match ${config.mode} provider ${MODE_DESCRIPTORS[config.mode].provider}`)
+        }
+        if (parsed.data.buildSha !== revision) reasons.push(`bootstrap revision ${parsed.data.buildSha} does not match ${revision}`)
+      }
     }
   } catch (error) { reasons.push(`readiness request failed: ${error instanceof Error ? error.message : String(error)}`) }
   return {

@@ -380,7 +380,9 @@ export const test = base.extend<RealFixtures>({
       if (body.buildSha !== process.env.SMITHERS_REAL_E2E_BUILD_SHA) throw new Error("Production build changed since preflight; restart the canary against a consistent deployment.")
       testInfo.annotations.push({ type: "real-build-sha", description: body.buildSha })
     }
-    if (body.host === "local" && !token) throw new Error("Local real host preflight found no local-session token in the served product document.")
+    if (body.host === "local" && !token && process.env.SMITHERS_REAL_AUTH_KIND !== "owner-session") {
+      throw new Error("Local real host preflight found neither a local-session token nor configured owner-session authentication.")
+    }
     if (body.host === "local") {
       const health = await request.get(new URL("/api/health", baseURL).toString())
       if (!health.ok()) throw new Error(`Local real host health preflight failed: HTTP ${health.status()} ${await health.text()}`)

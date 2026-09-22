@@ -24,6 +24,34 @@ type ProfileLease = { readonly release: () => Promise<void> }
 type LockRecord = { readonly pid?: unknown; readonly nonce?: unknown }
 type AuthenticatedProfileOptions = { readonly profileEnvironment: string | undefined }
 type AuthenticatedProfileFixtures = { readonly _authenticatedReady: void }
+type RealAuthKind = "browser-profile" | "owner-session"
+type OwnerCredentials = { readonly username: string; readonly password: string; readonly bootstrapToken: string }
+
+const realAuthKind = (): RealAuthKind => {
+  const configured = process.env.SMITHERS_REAL_AUTH_KIND?.trim()
+  if (configured === "browser-profile" || configured === "owner-session") return configured
+  if (configured !== undefined && configured !== "") throw new Error(`Unsupported SMITHERS_REAL_AUTH_KIND: ${configured}`)
+  return "browser-profile"
+}
+
+const ownerCredentialsFromEnvironment = (): OwnerCredentials => {
+  const name = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
+  if (!name || !/^[A-Z][A-Z0-9_]+$/.test(name)) {
+    throw new Error("SMITHERS_REAL_AUTH_ENVIRONMENT must name the owner credential environment variable.")
+  }
+  const raw = process.env[name]?.trim()
+  if (!raw) throw new Error(`${name} is required for this real owner-session scenario.`)
+  let value: unknown
+  try { value = JSON.parse(raw) } catch { throw new Error(`${name} must contain a JSON owner credential envelope.`) }
+  if (typeof value !== "object" || value === null) throw new Error(`${name} must contain a JSON owner credential envelope.`)
+  const candidate = value as { readonly username?: unknown; readonly password?: unknown; readonly bootstrapToken?: unknown }
+  if (typeof candidate.username !== "string" || candidate.username.trim() === "" ||
+      typeof candidate.password !== "string" || candidate.password.length < 12 ||
+      typeof candidate.bootstrapToken !== "string" || candidate.bootstrapToken.trim() === "") {
+    throw new Error(`${name} must contain non-empty username, password, and bootstrapToken fields.`)
+  }
+  return { username: candidate.username.trim(), password: candidate.password, bootstrapToken: candidate.bootstrapToken.trim() }
+}
 
 const profileFromEnvironment = (requiredEnvironment?: string): string => {
   if (requiredEnvironment !== undefined) {
@@ -114,6 +142,40 @@ const readSessionAtOrigin = async (context: BrowserContext, origin: string): Pro
   const response = await context.request.get(new URL("/api/auth/session", origin).toString())
   const body = await response.json().catch(() => undefined) as SessionBody | undefined
   return parseSession(response.status(), body)
+}
+
+const establishOwnerSession = async (context: BrowserContext, page: Page, baseURL: string): Promise<AuthenticatedSession> => {
+  const origin = new URL(baseURL).origin
+  const credentials = ownerCredentialsFromEnvironment()
+  const statusResponse = await context.request.get(new URL("/api/auth/local/status", origin).toString())
+  const status = await statusResponse.json().catch(() => undefined) as {
+    readonly enabled?: unknown
+    readonly initialized?: unknown
+    readonly username?: unknown
+  } | undefined
+  if (statusResponse.status() !== 200 || status?.enabled !== true || typeof status.initialized !== "boolean") {
+    throw new Error(`Owner identity status preflight failed: HTTP ${statusResponse.status()}.`)
+  }
+  if (status.initialized && status.username !== undefined && status.username !== credentials.username) {
+    throw new Error(`The initialized owner ${String(status.username)} does not match the configured matrix owner.`)
+  }
+  const path = status.initialized ? "/api/auth/local/login" : "/api/auth/local/bootstrap"
+  const response = await context.request.post(new URL(path, origin).toString(), {
+    data: { username: credentials.username, password: credentials.password },
+    headers: {
+      Origin: origin,
+      ...(status.initialized ? {} : { "X-Smithers-Bootstrap-Token": credentials.bootstrapToken })
+    }
+  })
+  if (response.status() !== 200) throw new Error(`Owner authentication failed at ${path}: HTTP ${response.status()}.`)
+  const session = await readSessionAtOrigin(context, origin)
+  if (session === undefined || session.login !== credentials.username) {
+    throw new Error("Owner authentication returned without the configured authenticated session.")
+  }
+  const startedAt = performance.now()
+  await page.goto(new URL(appEntryPath(), origin).toString(), { waitUntil: "domcontentloaded" })
+  await awaitBoot(page, "navigate", startedAt)
+  return session
 }
 
 export const readAuthenticatedSession = async (page: Page): Promise<AuthenticatedSession | undefined> => {
@@ -234,12 +296,21 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
   video: "off",
   profileEnvironment: [undefined, { option: true }],
   context: async ({ playwright, browserName, profileEnvironment }, use, testInfo) => {
-    if (process.env.SMITHERS_REAL_E2E_HOST !== "production") {
-      throw new Error("The authenticated persistent-profile fixture is production-only.")
-    }
     if (browserName !== "chromium") throw new Error("The authenticated profile fixture requires Chromium.")
     const baseURL = testInfo.project.use.baseURL
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
+    if (realAuthKind() === "owner-session") {
+      const browser = await playwright.chromium.launch({ headless: process.env.SMITHERS_REAL_HEADED !== "1" })
+      const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
+      try { await use(context) } finally {
+        await context.close()
+        await browser.close()
+      }
+      return
+    }
+    if (process.env.SMITHERS_REAL_E2E_HOST !== "production") {
+      throw new Error("The authenticated persistent-profile fixture is production-only unless owner-session auth is selected.")
+    }
     const requiredEnvironment = profileEnvironment
     if (requiredEnvironment !== undefined && !process.env[requiredEnvironment]?.trim()) {
       // Still run the canonical production/build/capability preflight before
@@ -286,7 +357,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     try {
       await use(page)
     } finally {
-      if (profileAvailable) {
+      if (realAuthKind() === "browser-profile" && profileAvailable) {
         const restorePage = page.isClosed()
           ? context.pages().find((candidate) => !candidate.isClosed()) ?? await context.newPage()
           : page
@@ -302,6 +373,12 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     void request
     const baseURL = testInfo.project.use.baseURL
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
+    if (realAuthKind() === "owner-session") {
+      await establishOwnerSession(context, page, baseURL)
+      testInfo.annotations.push({ type: "real-authenticated-owner", description: "local-session-established-after-lifecycle" })
+      await use()
+      return
+    }
     const profileAvailable = profileEnvironment === undefined || Boolean(process.env[profileEnvironment]?.trim())
     if (!profileAvailable) throw new Error(`${profileEnvironment} is required for this real identity scenario.`)
     if (profileAvailable) {

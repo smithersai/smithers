@@ -1,6 +1,9 @@
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
+import { authenticatedTest } from "./auth-permissions/profile"
 import { awaitBoot, command, closeComposer, expect, openApp, reloadApp, test } from "./support"
+
+const matrixTest = process.env.SMITHERS_REAL_E2E_MODE === undefined ? test : authenticatedTest
 
 const boot = async (page: Page) => {
   const startedAt = performance.now()
@@ -60,7 +63,7 @@ test("Wiki card edit survives immediate reload", scenario("local-wiki-immediate-
   await expect(page.getByTestId(`card-${note.cardId}`).locator(".ProseMirror")).toContainText(marker)
 })
 
-test("Wiki edit survives a settled page restart", scenario("local-eventual-page-restart-persistence", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "host:local", "path:persistence", "door:slash", "door:button", "dimension:eventual-durability-page-restart", "evidence:wiki-card-readback"] }), async ({ page, context }) => {
+matrixTest("Wiki edit survives a settled page restart", scenario("local-eventual-page-restart-persistence", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "host:local", "path:persistence", "door:slash", "door:button", "dimension:eventual-durability-page-restart", "evidence:wiki-card-readback"] }), async ({ page, context }) => {
   await boot(page); const note = await createNote(page); const marker = `durable-restart-${Date.now()}`
   await edit(page, note.card, `# ${note.title}\n\n${marker}`); await page.waitForTimeout(1_500); await page.close()
   const restarted = await context.newPage(); await boot(restarted)

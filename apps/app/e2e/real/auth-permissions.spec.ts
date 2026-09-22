@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import type { BrowserContext, Page } from "@playwright/test"
-import { awaitBoot, command, expect, openApp, realApi, reloadApp, test } from "./support/test"
+import { appEntryPath, awaitBoot, command, expect, openApp, realApi, reloadApp, test } from "./support/test"
 import {
   authenticatedTest,
   clearProductSession,
@@ -30,6 +30,45 @@ const authCookieNames = async (context: BrowserContext, baseURL: string): Promis
     .filter((cookie) => ["smithers_identity", "user_session", "logged_in", "dotcom_user"].includes(cookie.name))
     .map((cookie) => `${cookie.domain}:${cookie.name}`)
     .sort()
+
+authenticatedTest("the selected mode retains its authenticated session through document, bootstrap, and reload", scenario("auth.mode-session-cookie-persistence", {
+  capabilities: ["identity"],
+  coverage: [
+    "action:account.show", "host:local", "host:production", "host:native", "path:persistence", "door:slash", "door:user-only",
+    "dimension:mode-auth-session", "dimension:document-bootstrap-cookie-persistence",
+    "evidence:session-readback-and-cookie-names"
+  ],
+  description: "Use the mode-selected browser profile or single-owner credential envelope, then require the same authenticated identity and browser cookies after product document, bootstrap, and reload reads."
+}), async ({ page, context, request }, testInfo) => {
+  const baseURL = String(testInfo.project.use.baseURL)
+  const origin = new URL(baseURL).origin
+  const expected = await readAuthenticatedSession(page)
+  expect(expected).toBeDefined()
+  const beforeCookies = (await context.cookies(origin)).map(({ name }) => name).sort()
+  expect(beforeCookies.length).toBeGreaterThan(0)
+
+  const document = await request.get(new URL(appEntryPath(), origin).toString())
+  expect(document.status()).toBe(200)
+  const bootstrap = await request.get(new URL("/api/bootstrap", origin).toString())
+  expect(bootstrap.status()).toBe(200)
+  const bootstrapBody = await bootstrap.json() as { readonly host?: unknown }
+  expect(["local", "cloud", "native"]).toContain(bootstrapBody.host)
+  expect(await readAuthenticatedSession(page)).toEqual(expected)
+  expect((await context.cookies(origin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
+
+  await openChat(page)
+  await command(page, "/account.show")
+  await expect(page.locator('.smithers-card[data-kind="account"]').last().getByTestId("account-login"))
+    .toContainText(`@${expected!.login}`)
+
+  await reloadApp(page)
+  expect(await readAuthenticatedSession(page)).toEqual(expected)
+  expect((await context.cookies(origin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
+  await testInfo.attach("mode-auth-session", {
+    body: Buffer.from(JSON.stringify({ login: expected?.login, cookieNames: beforeCookies, host: bootstrapBody.host }, null, 2)),
+    contentType: "application/json"
+  })
+})
 
 test("a signed-out required action parks behind a durable GitHub sign-in step", scenario("auth.signed-out-deferred-persistence", {
   capabilities: ["identity"],

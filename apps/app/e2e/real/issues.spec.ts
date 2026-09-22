@@ -16,7 +16,7 @@ import { attachProductionJson, repositoryApiPath, drainOwnedCloudWorkspaces } fr
 
 test.setTimeout(600_000)
 test.use({ actionTimeout: 20_000 })
-const tutorialTest = test.extend({ trace: "off", video: "off" })
+const tutorialTest = (process.env.SMITHERS_REAL_E2E_MODE === undefined ? test : authenticatedTest).extend({ trace: "off", video: "off" })
 
 test(
   "the real practice issue exposes its flow catalog through slash and card doors and restores it after reload",

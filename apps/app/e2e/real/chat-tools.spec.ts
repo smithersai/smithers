@@ -23,7 +23,9 @@ import {
   test
 } from "./support/test"
 
-const chatTest = process.env.SMITHERS_REAL_E2E_HOST === "production" ? authenticatedTest : test
+const chatTest = process.env.SMITHERS_REAL_E2E_MODE !== undefined || process.env.SMITHERS_REAL_E2E_HOST === "production"
+  ? authenticatedTest
+  : test
 
 test.setTimeout(180_000)
 test.use({ actionTimeout: 20_000 })
@@ -60,7 +62,7 @@ chatTest("a grounded answer arrives as multiple real stream frames and completes
   await attachJson(testInfo, "real-stream-frames", frames)
 })
 
-test("the model invokes browser.open and cites content returned by the real fetch service", scenario("chat.tool-browser-open", {
+chatTest("the model invokes browser.open and cites content returned by the real fetch service", scenario("chat.tool-browser-open", {
   capabilities: ["agent", "browser.read"],
   coverage: ["action:chat.send", "action:browser.open", "host:local", "host:production", "path:success", "door:agent", "dimension:tool-loop", "dimension:network", "evidence:browser-tool-and-fetch"],
   description: "Require a real backend tool call to browser.open, correlate it with browser-fetch traffic, and verify the model reads the public page."
@@ -126,7 +128,7 @@ chatTest("Stop generating cancels the live backend turn and leaves an honest sta
   await attachJson(testInfo, "cancel-evidence", cancelBody)
 })
 
-test("a killed real chat transport fails visibly and Retry succeeds after the process returns", scenario("chat.failure-retry-process", {
+chatTest("a killed real chat transport fails visibly and Retry succeeds after the process returns", scenario("chat.failure-retry-process", {
   capabilities: ["agent"],
   coverage: ["action:chat.send", "action:chat.retry", "host:local", "path:error", "path:success", "door:button", "dimension:process-fault", "dimension:retry", "evidence:killed-upstream-process-and-retry"],
   description: "Kill an actual passthrough process used by a real product server, observe the failed turn, restart it, and retry through the UI."

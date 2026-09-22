@@ -1,7 +1,7 @@
 import { fixtureInputText } from "./support/values"
 import type { Locator, Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { awaitBoot, closeComposer, command, expect, reloadApp, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, realApi, reloadApp, test } from "./support/test"
 import { attachProductionJson, bootProductionRepository, enableProductionVerbose } from "./repositories-github/production"
 import { configuredGatewayTest, workflowTest } from "./flow-execution/fixture"
 import {
@@ -80,6 +80,29 @@ const bootPrivateWorkflowRepository = async (page: Page, repo: string, workspace
   }
 }
 
+const approvalCardId = (repo: string, runId: string, requestId: string, workspaceId?: string): string =>
+  workspaceId === undefined
+    ? `approval-${runId}-${requestId}`
+    : `approval@${[repo, workspaceId, runId].map(encodeURIComponent).join("@")}@${encodeURIComponent(requestId)}`
+
+type ApprovalProjectionRow = {
+  readonly runId: string
+  readonly requestId: string
+  readonly title: string
+  readonly status: "pending" | "approved" | "denied"
+}
+
+const approvalProjectionRows = (answer: Awaited<ReturnType<typeof gatewayCall>>, runId: string): ReadonlyArray<ApprovalProjectionRow> => {
+  const rows = (answer.payload as { readonly rows?: unknown })?.rows
+  if (!Array.isArray(rows)) throw new Error(`Approval projection for ${runId} did not expose rows.`)
+  return rows.filter((value): value is ApprovalProjectionRow => {
+    if (typeof value !== "object" || value === null) return false
+    const row = value as { readonly runId?: unknown; readonly requestId?: unknown; readonly title?: unknown; readonly status?: unknown }
+    return row.runId === runId && typeof row.requestId === "string" && typeof row.title === "string" &&
+      (row.status === "pending" || row.status === "approved" || row.status === "denied")
+  })
+}
+
 const waitForCompletedRun = async (
   page: Page,
   request: Parameters<typeof gatewayCall>[1],
@@ -92,17 +115,9 @@ const waitForCompletedRun = async (
     const approvals = await gatewayCall(page, request, repo, "Projection.Snapshot", {
       selector: { _tag: "approvals", runId }
     }, workspaceId)
-    const approvalRows = (approvals.payload as { readonly rows?: unknown })?.rows
-    if (!Array.isArray(approvalRows)) throw new Error(`Approval projection for ${runId} did not expose rows.`)
-    const pending = approvalRows.filter((value): value is { readonly runId: string; readonly requestId: string; readonly status: string } => {
-      if (typeof value !== "object" || value === null) return false
-      const row = value as { readonly runId?: unknown; readonly requestId?: unknown; readonly status?: unknown }
-      return row.runId === runId && typeof row.requestId === "string" && row.status === "pending"
-    })
+    const pending = approvalProjectionRows(approvals, runId).filter(({ status }) => status === "pending")
     for (const approval of pending) {
-      const cardId = workspaceId === undefined
-        ? `approval-${runId}-${approval.requestId}`
-        : `approval@${[repo, workspaceId, runId].map(encodeURIComponent).join("@")}@${encodeURIComponent(approval.requestId)}`
+      const cardId = approvalCardId(repo, runId, approval.requestId, workspaceId)
       const approve = page.getByTestId(`card-${cardId}`).locator('[data-slot="confirmation-action"][data-decision="approve"]')
       if (await approve.isVisible().catch(() => false)) await approve.click()
     }
@@ -271,6 +286,136 @@ workflowTest(
     expect((executed.finalOutput as { readonly message?: unknown }).message).toBe(inputMarker)
     await attachProductionJson(testInfo, "workflow-create-execute", {
       repo, marker, before, createRunId, accepted, created, after, inputMarker, executeRunId, executed
+    })
+  }
+)
+
+workflowTest(
+  "a create-flow approval decision round-trips through the real card and provider projection",
+  scenario("flows.production-approval-decision-roundtrip", {
+    capabilities: ["identity", "cloud"],
+    description: "Run the built-in authoring pipeline until its contractually required post-design gate, approve the exact projected request through its card, and require the gateway to retain the approved decision before cancelling the owned run.",
+    coverage: [
+      "action:flow.create", "action:flow.run.stop", "host:production", "path:success", "door:slash", "door:button",
+      "dimension:provider-run", "dimension:approval-decision", "dimension:exact-run-id",
+      "dimension:projection-readback", "dimension:approval-conflict-retry",
+      "evidence:approval-submit-replay-conflict-and-decided-projection"
+    ]
+  }),
+  async ({ page, request, workflowRepo }, testInfo) => {
+    const repo = workflowRepo.repo
+    const workspaceId = workflowRepo.workspaceId
+    await bootPrivateWorkflowRepository(page, repo, workspaceId)
+    const marker = `s16-approval-${Date.now().toString(36)}`
+    const [runId] = await Promise.all([
+      acceptedRunId(page, repo, workflowRepo),
+      command(page, `/flow.create create a workflow with the exact id ${marker}; it must accept one required string named value and return that exact string; include a deterministic unit test ${repo}`)
+    ])
+    await closeComposer(page)
+    const runCard = page.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${runId}"]`)
+    await expect(runCard).toBeVisible({ timeout: 180_000 })
+
+    let pending: ApprovalProjectionRow | undefined
+    await expect.poll(async () => {
+      const approvals = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+        selector: { _tag: "approvals", runId }
+      }, workspaceId)
+      pending = approvalProjectionRows(approvals, runId).find(({ status }) => status === "pending")
+      if (pending !== undefined) return pending.status
+      const summary = runSummary(await gatewayCall(page, request, repo, "Projection.Snapshot", {
+        selector: { _tag: "run-summary", runId }
+      }, workspaceId))
+      if (summary !== undefined && /^(completed|failed|cancelled)$/.test(summary.status)) {
+        throw new Error(`Run ${runId} reached ${summary.status} before its required design approval appeared.`)
+      }
+      return undefined
+    }, { timeout: 9 * 60_000, intervals: [1_000, 2_000, 5_000] }).toBe("pending")
+    if (pending === undefined) throw new Error(`Run ${runId} exposed no pending approval.`)
+
+    const cardId = approvalCardId(repo, runId, pending.requestId, workspaceId)
+    const approvalCard = page.getByTestId(`card-${cardId}`)
+    await expect(approvalCard).toBeVisible({ timeout: 60_000 })
+    const approve = approvalCard.locator('[data-slot="confirmation-action"][data-decision="approve"]')
+    await expect(approve).toBeVisible()
+    const submitted = page.waitForResponse((response) => {
+      if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/workflow/rpc") return false
+      const body = response.request().postDataJSON() as {
+        readonly procedure?: unknown
+        readonly payload?: { readonly target?: { readonly _tag?: unknown; readonly runId?: unknown; readonly requestId?: unknown } }
+      } | null
+      return body?.procedure === "Approval.Submit" && body.payload?.target?._tag === "Node" &&
+        body.payload.target.runId === runId && body.payload.target.requestId === pending?.requestId
+    })
+    await approve.click()
+    const decisionResponse = await submitted
+    const decisionAnswer = await decisionResponse.json().catch(() => undefined) as {
+      readonly ok?: unknown
+      readonly payload?: { readonly decision?: { readonly _tag?: unknown } }
+    } | undefined
+    expect(decisionResponse.status()).toBe(200)
+    expect(decisionAnswer?.ok).toBe(true)
+    expect(["Accepted", "AlreadyApplied"]).toContain(decisionAnswer?.payload?.decision?._tag)
+    const submission = decisionResponse.request().postDataJSON() as {
+      readonly repo?: unknown
+      readonly procedure?: unknown
+      readonly payload?: Record<string, unknown>
+      readonly workspaceId?: unknown
+    } | null
+    expect(submission?.repo).toBe(repo)
+    expect(submission?.procedure).toBe("Approval.Submit")
+    expect(typeof submission?.payload?.idempotencyKey).toBe("string")
+
+    const replayResponse = await realApi(page, request, "POST", "/api/workflow/rpc", submission)
+    expect(replayResponse.status()).toBe(200)
+    const replayAnswer = await replayResponse.json() as {
+      readonly ok?: unknown
+      readonly payload?: { readonly decision?: { readonly _tag?: unknown } }
+    }
+    expect(replayAnswer.ok).toBe(true)
+    expect(replayAnswer.payload?.decision?._tag).toBe("AlreadyApplied")
+
+    const conflictResponse = await realApi(page, request, "POST", "/api/workflow/rpc", {
+      ...submission,
+      payload: {
+        ...submission!.payload,
+        decision: "deny",
+        idempotencyKey: `${String(submission!.payload!.idempotencyKey)}:conflict:${crypto.randomUUID()}`
+      }
+    })
+    expect(conflictResponse.status()).toBe(200)
+    const conflictAnswer = await conflictResponse.json() as {
+      readonly ok?: unknown
+      readonly error?: { readonly _tag?: unknown; readonly message?: unknown }
+    }
+    expect(conflictAnswer.ok).toBe(false)
+    expect(`${String(conflictAnswer.error?._tag)} ${String(conflictAnswer.error?.message)}`).toContain("AlreadyResolved")
+
+    let decided: ApprovalProjectionRow | undefined
+    await expect.poll(async () => {
+      const approvals = await gatewayCall(page, request, repo, "Projection.Snapshot", {
+        selector: { _tag: "approvals", runId }
+      }, workspaceId)
+      decided = approvalProjectionRows(approvals, runId).find(({ requestId }) => requestId === pending?.requestId)
+      return decided?.status
+    }, { timeout: 60_000, intervals: [500, 1_000, 2_000] }).toBe("approved")
+
+    const stop = runCard.getByTestId(`flow-run-stop-${runId}`)
+    await expect(stop).toBeVisible()
+    await stop.click()
+    const terminal = await waitForTerminalRun(page, request, repo, runId, 180_000, workspaceId)
+    expect(terminal.status).toBe("cancelled")
+    await attachProductionJson(testInfo, "workflow-approval-decision", {
+      repo,
+      marker,
+      runId,
+      requestId: pending.requestId,
+      title: pending.title,
+      submitStatus: decisionResponse.status(),
+      receipt: decisionAnswer?.payload?.decision?._tag,
+      replayReceipt: replayAnswer.payload?.decision?._tag,
+      conflict: conflictAnswer.error?._tag ?? conflictAnswer.error?.message,
+      projectedStatus: decided?.status,
+      terminalStatus: terminal.status
     })
   }
 )

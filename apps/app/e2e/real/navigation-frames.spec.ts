@@ -1,4 +1,5 @@
 import { scenario } from "./coverage/types"
+import { authenticatedTest } from "./auth-permissions/profile"
 import { awaitBoot, closeComposer, command, expect, openComposer, reloadApp, test } from "./support/test"
 import {
   decodedFramePath,
@@ -12,6 +13,8 @@ import {
   FORM_VEHICLE_FIELD_TESTID
 } from "./navigation-frames/cards"
 import { downloadRecovery, takeDatabaseControl } from "./navigation-frames/storage"
+
+const matrixTest = process.env.SMITHERS_REAL_E2E_MODE === undefined ? test : authenticatedTest
 
 test("a portable form card keeps its component and unfinished value through keyboard maximize/minimize, then Cancel dismisses durably", scenario("navigation.card.identity-dismiss", {
   capabilities: [],
@@ -513,7 +516,7 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
   ))).toContain(marker)
 })
 
-test("a future-schema physical OPFS database fails closed, exports exact rows, and boots after its real bytes are restored", scenario("navigation.storage.opfs-failure-recovery", {
+matrixTest("a future-schema physical OPFS database fails closed, exports exact rows, and boots after its real bytes are restored", scenario("navigation.storage.opfs-failure-recovery", {
   capabilities: [],
   coverage: [
     "action:tab.read",

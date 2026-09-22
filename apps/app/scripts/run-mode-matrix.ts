@@ -29,7 +29,9 @@ const option = (name: string): string | undefined => {
 }
 
 const detectRevision = async (): Promise<string> => {
-  const child = Bun.spawn(["jj", "--ignore-working-copy", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { cwd: appDir, stdout: "pipe", stderr: "pipe" })
+  // Let jj snapshot first: a stale @ would label tests of unsnapshotted source
+  // with the previous tree's revision.
+  const child = Bun.spawn(["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { cwd: appDir, stdout: "pipe", stderr: "pipe" })
   const revision = (await new Response(child.stdout).text()).trim()
   if (await child.exited !== 0 || !/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("cannot identify the exact jj revision")
   return revision
@@ -81,6 +83,8 @@ for (const mode of DEPLOYMENT_MODES) {
       SMITHERS_REAL_E2E_HOST: MODE_DESCRIPTORS[mode].legacyHost,
       SMITHERS_REAL_E2E_REVISION: config.revision,
       SMITHERS_REAL_E2E_RESULTS: evidence,
+      SMITHERS_REAL_AUTH_KIND: modeConfig.auth.kind,
+      SMITHERS_REAL_AUTH_ENVIRONMENT: modeConfig.auth.environment,
       ...(modeConfig.auth.kind === "browser-profile" ? { SMITHERS_E2E_PROFILE: process.env[modeConfig.auth.environment] } : {})
     },
     stdin: "inherit",

@@ -19,15 +19,21 @@ import type { ProcessRole } from "./matrix"
 
 const roots: string[] = []
 const revision = "a".repeat(40)
-const receipt = (mode: "native-own" | "native-plue", startedRoles: readonly ProcessRole[]) => ({
+const receipt = (mode: "local-own" | "local-plue" | "native-own" | "native-plue", startedRoles: readonly ProcessRole[]) => ({
   mode,
   revision,
   origin: "https://example.test",
   ready: true,
   startedRoles,
   freshLaunch: true,
-  restarted: mode === "native-own",
-  dataPreserved: mode === "native-own",
+  restarted: mode.endsWith("-own"),
+  dataPreserved: mode.endsWith("-own"),
+  ...(mode.endsWith("-own") ? {
+    persistenceProof: {
+      database: { before: "database-marker", after: "database-marker" },
+      dataVolume: { before: "volume-marker", after: "volume-marker" }
+    }
+  } : {}),
   observedAt: "2026-09-21T00:00:00.000Z"
 })
 
@@ -38,6 +44,11 @@ describe("deployment mode matrix", () => {
     expect(Object.keys(MODE_DESCRIPTORS)).toEqual([...DEPLOYMENT_MODES])
     expect(MATRIX_OBLIGATIONS.length).toBeGreaterThan(10)
     expect(new Set(MATRIX_OBLIGATIONS.map(({ id }) => id)).size).toBe(MATRIX_OBLIGATIONS.length)
+    expect(DEPLOYMENT_MODES.map((mode) => [mode, MODE_DESCRIPTORS[mode].legacyHost])).toEqual([
+      ["web-selfhost", "local"], ["web-plue", "production"],
+      ["local-own", "local"], ["local-plue", "production"],
+      ["native-own", "local"], ["native-plue", "production"]
+    ])
   })
 
   test("every implemented matrix scenario resolves to the canonical real suite", () => {
@@ -47,9 +58,7 @@ describe("deployment mode matrix", () => {
     })
     const declared = new Set(report.scenarios.map(({ id }) => id))
     expect(MATRIX_SCENARIO_IDS.filter((id) => !declared.has(id))).toEqual([])
-    expect(MATRIX_OBLIGATIONS.filter(({ scenarios }) => scenarios.length === 0).map(({ id }) => id)).toEqual([
-      "repository-create", "github-import", "approval-decision", "review"
-    ])
+    expect(MATRIX_OBLIGATIONS.filter(({ scenarios }) => scenarios.length === 0).map(({ id }) => id)).toEqual([])
   })
 
   test("parses credential-free origins and secret references without requiring every mode", () => {
@@ -86,11 +95,11 @@ describe("deployment mode matrix", () => {
     expect(validateExecutionReceipt(remoteConfig, revision, receipt("native-plue", ["native-ui"]))).toEqual([])
   })
 
-  test("reports missing scenarios and missing executions as unavailable, never passed", () => {
+  test("reports unavailable modes and missing executions as unavailable, never passed", () => {
     const readiness = { ...missingModeReadiness("web-selfhost", "not launched"), origin: "https://example.test" }
     const rows = scenarioReceipts(readiness, revision, [])
     expect(rows.every(({ status }) => status === "unavailable")).toBe(true)
-    expect(rows.find(({ obligation }) => obligation === "approval-decision")?.reason).toBe("no real product scenario is implemented")
+    expect(rows.find(({ obligation }) => obligation === "approval-decision")?.reason).toBe("not launched")
     expect(rows.find(({ obligation }) => obligation === "chat")?.reason).toBe("not launched")
   })
 
@@ -105,9 +114,9 @@ describe("deployment mode matrix", () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
     roots.push(root)
     const path = join(root, "receipt.json")
-    writeFileSync(path, JSON.stringify(receipt("native-own", ["native-ui", "supervisor", "app", "postgres"])))
+    writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
     const config = parseMatrixConfig({ revision, modes: [{
-      mode: "native-own", origin: "https://example.test", auth: { kind: "browser-profile", environment: "OWNER" }, executionReceipt: path
+      mode: "local-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
     }] }).modes[0]!
     const fetcher = (async (input: string | URL | Request) => {
       const url = new URL(String(input))
@@ -115,18 +124,52 @@ describe("deployment mode matrix", () => {
         ? new Response("ok")
         : Response.json({
           apiVersion: 1,
-          host: "local",
+          host: "cloud",
           version: "test",
           buildSha: revision,
           capabilities: ["agent", "browser.read", "identity", "cloud", "cloud.terminal"],
           authFlow: "both",
           sandbox: null
         })
-    }) as typeof fetch
-    expect((await probeMode(config, revision, { OWNER: "configured" }, fetcher)).status).toBe("passed")
+    })
+    expect((await probeMode(config, revision, { PROFILE: "configured" }, fetcher)).status).toBe("passed")
   })
 
-  test("an owner session cannot claim readiness before the real fixture can inject it", async () => {
+  test("readiness rejects a bootstrap from the wrong provider or revision", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
+    roots.push(root)
+    const path = join(root, "receipt.json")
+    writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
+    const config = parseMatrixConfig({ revision, modes: [{
+      mode: "local-plue", origin: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
+    }] }).modes[0]!
+    const result = await probeMode(config, revision, { PROFILE: "configured" }, async () => Response.json({
+      apiVersion: 1, host: "local", version: "test", buildSha: "b".repeat(40),
+      capabilities: [], authFlow: "redirect", sandbox: null
+    }))
+    expect(result.status).toBe("unavailable")
+    expect(result.reasons).toContain("bootstrap host local does not match local-plue provider plue")
+    expect(result.reasons).toContain(`bootstrap revision ${"b".repeat(40)} does not match ${revision}`)
+  })
+
+  test("an owner session cannot enter readiness without an owner-credentials bootstrap contract", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
+    roots.push(root)
+    const path = join(root, "receipt.json")
+    writeFileSync(path, JSON.stringify(receipt("local-own", ["local-ui", "app", "postgres"])))
+    const config = parseMatrixConfig({ revision, modes: [{
+      mode: "local-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
+    }] }).modes[0]!
+    const fetcher = (async () => Response.json({
+      apiVersion: 1, host: "local", version: "test", buildSha: revision,
+      capabilities: [], authFlow: "none", sandbox: null
+    }))
+    const result = await probeMode(config, revision, { OWNER: "configured" }, fetcher)
+    expect(result.status).toBe("unavailable")
+    expect(result.reasons).toContain("bootstrap authFlow none does not advertise owner credentials")
+  })
+
+  test("native readiness remains unavailable until scenarios drive the packaged native UI", async () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
     roots.push(root)
     const path = join(root, "receipt.json")
@@ -134,13 +177,12 @@ describe("deployment mode matrix", () => {
     const config = parseMatrixConfig({ revision, modes: [{
       mode: "native-own", origin: "https://example.test", auth: { kind: "owner-session", environment: "OWNER" }, executionReceipt: path
     }] }).modes[0]!
-    const fetcher = (async () => Response.json({
+    const result = await probeMode(config, revision, { OWNER: "configured" }, async () => Response.json({
       apiVersion: 1, host: "local", version: "test", buildSha: revision,
       capabilities: [], authFlow: "none", sandbox: null
-    })) as typeof fetch
-    const result = await probeMode(config, revision, { OWNER: "configured" }, fetcher)
+    }))
     expect(result.status).toBe("unavailable")
-    expect(result.reasons).toContain("owner-session injection is not implemented by the real product fixture")
+    expect(result.reasons).toContain("native application scenario driver is not integrated; browser assertions cannot prove native UI conformance")
   })
 
   test("rejects invented launcher roles", () => {

@@ -119,7 +119,9 @@ if (args[0] === "serve") {
   if (selection.grep !== undefined) process.env.SMITHERS_REAL_TEST_GREP = selection.grep
   if (process.env.SMITHERS_CHAT_STUB === "1") throw new Error("The real E2E runner refuses SMITHERS_CHAT_STUB=1.")
   let detectedRevision: string | undefined
-  for (const invocation of [["jj", "--ignore-working-copy", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
+  // A jj checkout must snapshot before source identity is read. Git-only CI
+  // falls back to HEAD, whose checkout is created clean by the release job.
+  for (const invocation of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
     try {
       const revision = Bun.spawn(invocation, { cwd: appDir, stdout: "pipe", stderr: "pipe" })
       const value = (await new Response(revision.stdout).text()).trim()
