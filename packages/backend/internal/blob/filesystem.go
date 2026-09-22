@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,15 +21,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
 const (
-	filesystemTransferPath = "/api/blob-transfer/"
-	filesystemKeyFile      = ".smithers-transfer-key"
-	filesystemTempDir      = ".tmp"
+	filesystemTransferPath        = "/api/blob-transfer/"
+	filesystemKeyFile             = ".smithers-transfer-key"
+	filesystemLockFile            = ".smithers.lock"
+	filesystemObjectsDir          = ".objects"
+	filesystemTempDir             = ".tmp"
+	filesystemTransferIdleTimeout = 30 * time.Second
 )
 
 var (
@@ -51,10 +57,13 @@ type FilesystemConfig struct {
 // interrupted request or process crash never exposes a partial object.
 type FilesystemStore struct {
 	root          string
+	fsRoot        *os.Root
+	lockFile      *os.File
 	publicBaseURL string
 	signingKey    []byte
 	maxBytes      int64
 	reserveBytes  int64
+	idleTimeout   time.Duration
 	now           func() time.Time
 
 	quotaMu  sync.Mutex
@@ -64,6 +73,8 @@ type FilesystemStore struct {
 	// supported local app process. It complements the services' durable
 	// ownership fences and keeps filesystem mutations in a definite order.
 	mutationMu sync.Mutex
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 type transferClaims struct {
@@ -102,19 +113,56 @@ func NewFilesystemStore(cfg FilesystemConfig) (*FilesystemStore, error) {
 	if info, err := os.Lstat(root); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("filesystem blob root must be a real directory")
 	}
-	tempDir := filepath.Join(root, filesystemTempDir)
-	if err := os.RemoveAll(tempDir); err != nil {
+	fsRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open filesystem blob root: %w", err)
+	}
+	lockFile, err := fsRoot.OpenFile(filesystemLockFile, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW, 0o600)
+	if err != nil {
+		_ = fsRoot.Close()
+		return nil, fmt.Errorf("open filesystem blob owner lock: %w", err)
+	}
+	lockInfo, err := lockFile.Stat()
+	if err != nil || !lockInfo.Mode().IsRegular() || lockInfo.Mode().Perm()&0o077 != 0 {
+		_ = lockFile.Close()
+		_ = fsRoot.Close()
+		return nil, errors.New("filesystem blob owner lock must be a private regular file")
+	}
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		_ = lockFile.Close()
+		_ = fsRoot.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return nil, errors.New("filesystem blob root is already owned by another process")
+		}
+		return nil, fmt.Errorf("lock filesystem blob root: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+			_ = lockFile.Close()
+			_ = fsRoot.Close()
+		}
+	}()
+
+	// The exclusive owner may now reclaim spools left by a crashed predecessor.
+	// Acquiring the lock first prevents an overlapping process from deleting a
+	// live upload.
+	if err := fsRoot.RemoveAll(filesystemTempDir); err != nil {
 		return nil, fmt.Errorf("remove incomplete blob uploads: %w", err)
 	}
-	if err := os.Mkdir(tempDir, 0o700); err != nil {
+	if err := fsRoot.Mkdir(filesystemTempDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create blob upload directory: %w", err)
 	}
+	if err := ensurePrivateDirectory(fsRoot, filesystemObjectsDir); err != nil {
+		return nil, fmt.Errorf("create blob object directory: %w", err)
+	}
 
-	key, err := loadOrCreateSigningKey(root, cfg.SigningKey)
+	key, err := loadOrCreateSigningKey(fsRoot, cfg.SigningKey)
 	if err != nil {
 		return nil, err
 	}
-	used, err := committedBytes(root)
+	used, err := committedBytes(fsRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -122,32 +170,48 @@ func NewFilesystemStore(cfg FilesystemConfig) (*FilesystemStore, error) {
 		return nil, fmt.Errorf("committed blobs use %d bytes, exceeding configured quota %d", used, cfg.MaxBytes)
 	}
 	s := &FilesystemStore{
-		root: root, publicBaseURL: strings.TrimRight(base.String(), "/"),
-		signingKey: key, maxBytes: cfg.MaxBytes, reserveBytes: cfg.ReserveBytes,
-		now: time.Now, used: used,
+		root: root, fsRoot: fsRoot, lockFile: lockFile,
+		publicBaseURL: strings.TrimRight(base.String(), "/"),
+		signingKey:    key, maxBytes: cfg.MaxBytes, reserveBytes: cfg.ReserveBytes,
+		idleTimeout: filesystemTransferIdleTimeout, now: time.Now, used: used,
 	}
 	if err := s.checkDiskHeadroom(0); err != nil {
 		return nil, err
 	}
+	cleanup = false
 	return s, nil
 }
 
-func loadOrCreateSigningKey(root string, configured []byte) ([]byte, error) {
+func ensurePrivateDirectory(root *os.Root, name string) error {
+	err := root.Mkdir(name, 0o700)
+	if err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("path is not a real directory")
+	}
+	return syncRootDirectory(root, path.Dir(name))
+}
+
+func loadOrCreateSigningKey(root *os.Root, configured []byte) ([]byte, error) {
 	if len(configured) > 0 {
 		if len(configured) < 32 {
 			return nil, errors.New("filesystem blob signing key must be at least 32 bytes")
 		}
 		return append([]byte(nil), configured...), nil
 	}
-	keyPath := filepath.Join(root, filesystemKeyFile)
-	if info, statErr := os.Lstat(keyPath); statErr == nil {
+	if info, statErr := root.Lstat(filesystemKeyFile); statErr == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
 			return nil, errors.New("filesystem blob signing key file must be a private regular file")
 		}
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("inspect filesystem blob signing key: %w", statErr)
 	}
-	key, err := os.ReadFile(keyPath)
+	key, err := root.ReadFile(filesystemKeyFile)
 	if err == nil {
 		if len(key) != 32 {
 			return nil, errors.New("filesystem blob signing key file is invalid")
@@ -161,7 +225,7 @@ func loadOrCreateSigningKey(root string, configured []byte) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate filesystem blob signing key: %w", err)
 	}
-	f, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := root.OpenFile(filesystemKeyFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0o600)
 	if errors.Is(err, os.ErrExist) {
 		return loadOrCreateSigningKey(root, nil)
 	}
@@ -172,40 +236,54 @@ func loadOrCreateSigningKey(root string, configured []byte) ([]byte, error) {
 	syncErr := f.Sync()
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		_ = os.Remove(keyPath)
+		_ = root.Remove(filesystemKeyFile)
 		return nil, fmt.Errorf("persist filesystem blob signing key: %w", err)
 	}
-	if err := syncDirectory(root); err != nil {
+	if err := syncRootDirectory(root, "."); err != nil {
 		return nil, err
 	}
 	return key, nil
 }
 
-func committedBytes(root string) (int64, error) {
+type filesystemFileID struct {
+	device uint64
+	inode  uint64
+}
+
+func filesystemIdentity(info os.FileInfo) (filesystemFileID, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return filesystemFileID{}, false
+	}
+	return filesystemFileID{device: uint64(stat.Dev), inode: uint64(stat.Ino)}, true
+}
+
+func filesystemLinkCount(info os.FileInfo) uint64 {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 1
+	}
+	return uint64(stat.Nlink)
+}
+
+func committedBytes(root *os.Root) (int64, error) {
 	var total int64
-	err := filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
+	seen := make(map[filesystemFileID]struct{})
+	err := fs.WalkDir(root.FS(), filesystemObjectsDir, func(_ string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
-		}
-		if name == root {
-			return nil
-		}
-		rel, err := filepath.Rel(root, name)
-		if err != nil {
-			return err
-		}
-		first := strings.Split(rel, string(filepath.Separator))[0]
-		if entry.IsDir() && first == filesystemTempDir {
-			return filepath.SkipDir
-		}
-		if first == filesystemKeyFile {
-			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
 		if info.Mode().IsRegular() {
+			if id, ok := filesystemIdentity(info); ok {
+				if _, duplicate := seen[id]; duplicate {
+					return nil
+				}
+				seen[id] = struct{}{}
+			}
 			total += info.Size()
 		}
 		return nil
@@ -221,50 +299,53 @@ func cleanObjectKey(key string) (string, error) {
 		return "", errors.New("invalid blob object key")
 	}
 	for i, part := range strings.Split(key, "/") {
-		if part == "" || part == "." || part == ".." || (i == 0 && (part == filesystemTempDir || part == filesystemKeyFile)) {
+		if part == "" || part == "." || part == ".." || (i == 0 && (part == filesystemTempDir || part == filesystemKeyFile || part == filesystemLockFile || part == filesystemObjectsDir)) {
 			return "", errors.New("invalid blob object key")
 		}
 	}
 	return key, nil
 }
 
-func (s *FilesystemStore) objectPath(key string) (string, error) {
+func (s *FilesystemStore) objectName(key string) (string, error) {
 	key, err := cleanObjectKey(key)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(s.root, filepath.FromSlash(key)), nil
+	digest := sha256.Sum256([]byte(key))
+	encoded := hex.EncodeToString(digest[:])
+	return path.Join(filesystemObjectsDir, encoded[:2], encoded), nil
 }
 
 func (s *FilesystemStore) ensureParent(key string) (string, error) {
-	key, err := cleanObjectKey(key)
+	name, err := s.objectName(key)
 	if err != nil {
 		return "", err
 	}
-	parts := strings.Split(key, "/")
-	dir := s.root
-	for _, part := range parts[:len(parts)-1] {
-		dir = filepath.Join(dir, part)
-		info, statErr := os.Lstat(dir)
-		switch {
-		case errors.Is(statErr, os.ErrNotExist):
-			if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-				return "", err
-			}
-			if err := syncDirectory(filepath.Dir(dir)); err != nil {
-				return "", err
-			}
-			info, statErr = os.Lstat(dir)
-			fallthrough
-		case statErr == nil:
-			if info == nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-				return "", errors.New("blob object path crosses a non-directory")
-			}
-		default:
-			return "", statErr
-		}
+	dir := path.Dir(name)
+	if err := ensurePrivateDirectory(s.fsRoot, dir); err != nil {
+		return "", err
 	}
-	return filepath.Join(dir, parts[len(parts)-1]), nil
+	return name, nil
+}
+
+// Close releases the single-owner lock. Production keeps the store for the
+// process lifetime; tests and embedded callers may close it explicitly.
+func (s *FilesystemStore) Close() error {
+	if s == nil {
+		return nil
+	}
+	s.closeOnce.Do(func() {
+		var unlockErr, lockCloseErr, rootCloseErr error
+		if s.lockFile != nil {
+			unlockErr = unix.Flock(int(s.lockFile.Fd()), unix.LOCK_UN)
+			lockCloseErr = s.lockFile.Close()
+		}
+		if s.fsRoot != nil {
+			rootCloseErr = s.fsRoot.Close()
+		}
+		s.closeErr = errors.Join(unlockErr, lockCloseErr, rootCloseErr)
+	})
+	return s.closeErr
 }
 
 func ownerScope(key string) (string, error) {
@@ -373,10 +454,7 @@ func (s *FilesystemStore) SignedCreateOnlyUploadURL(_ context.Context, key, cont
 	return SignedUpload{URL: u, Header: headers}, nil
 }
 
-func (s *FilesystemStore) SignedDownloadURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	if _, err := s.Stat(ctx, key); err != nil {
-		return "", err
-	}
+func (s *FilesystemStore) SignedDownloadURL(_ context.Context, key string, expiry time.Duration) (string, error) {
 	expiry = normalizeSignedURLExpiry(expiry)
 	return s.signTransfer(transferClaims{Operation: http.MethodGet, Key: key, SizeLimit: UnknownObjectSize, ExpiresUnix: s.now().Add(expiry).Unix()})
 }
@@ -411,7 +489,7 @@ func (s *FilesystemStore) checkDiskHeadroom(pending int64) error {
 	if err := unix.Statfs(s.root, &stat); err != nil {
 		return fmt.Errorf("inspect blob filesystem capacity: %w", err)
 	}
-	available := int64(stat.Bavail) * int64(stat.Bsize)
+	available := filesystemAvailableBytes(&stat)
 	if pending > available || available-pending < s.reserveBytes {
 		return ErrStorageFull
 	}
@@ -434,18 +512,14 @@ func (s *FilesystemStore) writeObject(ctx context.Context, key string, body io.R
 	}
 	defer func() { s.releaseReservation(reservation) }()
 
-	temp, err := os.CreateTemp(filepath.Join(s.root, filesystemTempDir), "upload-*")
+	temp, tempName, err := createRootTemp(s.fsRoot)
 	if err != nil {
 		return ObjectAttrs{}, err
 	}
-	tempName := temp.Name()
 	defer func() {
 		_ = temp.Close()
-		_ = os.Remove(tempName)
+		_ = s.fsRoot.Remove(tempName)
 	}()
-	if err := temp.Chmod(0o600); err != nil {
-		return ObjectAttrs{}, err
-	}
 	hash := sha256.New()
 	reader := &contextReader{ctx: ctx, reader: body}
 	var source io.Reader = reader
@@ -487,30 +561,34 @@ func (s *FilesystemStore) writeObject(ctx context.Context, key string, body io.R
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 	var previousSize int64
-	if info, statErr := os.Lstat(destination); statErr == nil {
+	if info, statErr := s.fsRoot.Lstat(destination); statErr == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return ObjectAttrs{}, errors.New("blob destination is not a regular file")
 		}
-		previousSize = info.Size()
+		// Replacing one name releases bytes only when no promotion alias still
+		// references the previous inode.
+		if filesystemLinkCount(info) <= 1 {
+			previousSize = info.Size()
+		}
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return ObjectAttrs{}, statErr
 	}
 	if createOnly {
-		if err := os.Link(tempName, destination); err != nil {
+		if err := s.fsRoot.Link(tempName, destination); err != nil {
 			if errors.Is(err, os.ErrExist) {
 				return ObjectAttrs{}, ErrObjectAlreadyExists
 			}
 			return ObjectAttrs{}, err
 		}
-	} else if err := os.Rename(tempName, destination); err != nil {
+	} else if err := s.fsRoot.Rename(tempName, destination); err != nil {
 		return ObjectAttrs{}, err
 	}
 	s.quotaMu.Lock()
 	s.used += size - previousSize
 	s.quotaMu.Unlock()
-	if err := syncDirectory(filepath.Dir(destination)); err != nil {
+	if err := syncRootDirectory(s.fsRoot, path.Dir(destination)); err != nil {
 		if createOnly {
-			_ = os.Remove(destination)
+			_ = s.fsRoot.Remove(destination)
 			s.quotaMu.Lock()
 			s.used -= size
 			s.quotaMu.Unlock()
@@ -518,6 +596,24 @@ func (s *FilesystemStore) writeObject(ctx context.Context, key string, body io.R
 		return ObjectAttrs{}, err
 	}
 	return ObjectAttrs{Size: size, SHA256: digest}, nil
+}
+
+func createRootTemp(root *os.Root) (*os.File, string, error) {
+	for range 100 {
+		var entropy [16]byte
+		if _, err := rand.Read(entropy[:]); err != nil {
+			return nil, "", fmt.Errorf("generate blob spool name: %w", err)
+		}
+		name := path.Join(filesystemTempDir, "upload-"+hex.EncodeToString(entropy[:]))
+		f, err := root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0o600)
+		if err == nil {
+			return f, name, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, "", err
+		}
+	}
+	return nil, "", errors.New("could not allocate unique blob spool")
 }
 
 type quotaWriter struct {
@@ -552,8 +648,8 @@ func (r *contextReader) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
-func syncDirectory(dir string) error {
-	f, err := os.Open(dir)
+func syncRootDirectory(root *os.Root, dir string) error {
+	f, err := root.Open(dir)
 	if err != nil {
 		return err
 	}
@@ -572,11 +668,11 @@ func (s *FilesystemStore) PromoteCreateOnly(ctx context.Context, sourceKey, dest
 	}
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	source, err := s.objectPath(sourceKey)
+	source, err := s.objectName(sourceKey)
 	if err != nil {
 		return err
 	}
-	info, err := os.Lstat(source)
+	info, err := s.fsRoot.Lstat(source)
 	if errors.Is(err, os.ErrNotExist) {
 		return ErrObjectNotFound
 	}
@@ -590,22 +686,22 @@ func (s *FilesystemStore) PromoteCreateOnly(ctx context.Context, sourceKey, dest
 	if err != nil {
 		return err
 	}
-	if err := os.Link(source, destination); err != nil {
+	if err := s.fsRoot.Link(source, destination); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return ErrObjectAlreadyExists
 		}
 		return err
 	}
-	if err := syncDirectory(filepath.Dir(destination)); err != nil {
-		_ = os.Remove(destination)
+	if err := syncRootDirectory(s.fsRoot, path.Dir(destination)); err != nil {
+		_ = s.fsRoot.Remove(destination)
 		return err
 	}
-	if err := os.Remove(source); err != nil {
+	if err := s.fsRoot.Remove(source); err != nil {
 		// Both names refer to the same immutable inode. Leaving the staging name
 		// is safe and lets the existing cleanup worker retry removal.
 		return err
 	}
-	_ = syncDirectory(filepath.Dir(source))
+	_ = syncRootDirectory(s.fsRoot, path.Dir(source))
 	return nil
 }
 
@@ -615,11 +711,11 @@ func (s *FilesystemStore) Delete(ctx context.Context, key string) error {
 	}
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	name, err := s.objectPath(key)
+	name, err := s.objectName(key)
 	if err != nil {
 		return err
 	}
-	info, err := os.Lstat(name)
+	info, err := s.fsRoot.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -629,16 +725,18 @@ func (s *FilesystemStore) Delete(ctx context.Context, key string) error {
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("blob object is not a regular file")
 	}
-	if err := os.Remove(name); err != nil {
+	if err := s.fsRoot.Remove(name); err != nil {
 		return err
 	}
-	s.quotaMu.Lock()
-	s.used -= info.Size()
-	if s.used < 0 {
-		s.used = 0
+	if filesystemLinkCount(info) <= 1 {
+		s.quotaMu.Lock()
+		s.used -= info.Size()
+		if s.used < 0 {
+			s.used = 0
+		}
+		s.quotaMu.Unlock()
 	}
-	s.quotaMu.Unlock()
-	return syncDirectory(filepath.Dir(name))
+	return syncRootDirectory(s.fsRoot, path.Dir(name))
 }
 
 func (s *FilesystemStore) PurgeAllGenerations(ctx context.Context, key string) error {
@@ -649,11 +747,11 @@ func (s *FilesystemStore) Exists(ctx context.Context, key string) (bool, error) 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	name, err := s.objectPath(key)
+	name, err := s.objectName(key)
 	if err != nil {
 		return false, err
 	}
-	info, err := os.Lstat(name)
+	info, err := s.fsRoot.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -664,44 +762,57 @@ func (s *FilesystemStore) Exists(ctx context.Context, key string) (bool, error) 
 }
 
 func (s *FilesystemStore) Stat(ctx context.Context, key string) (ObjectAttrs, error) {
-	r, err := s.NewReader(ctx, key)
+	if err := ctx.Err(); err != nil {
+		return ObjectAttrs{}, err
+	}
+	name, err := s.objectName(key)
 	if err != nil {
 		return ObjectAttrs{}, err
 	}
-	defer func() { _ = r.Close() }()
-	hash := sha256.New()
-	size, err := io.Copy(hash, &contextReader{ctx: ctx, reader: r})
+	info, err := s.fsRoot.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return ObjectAttrs{}, ErrObjectNotFound
+	}
 	if err != nil {
 		return ObjectAttrs{}, err
 	}
-	return ObjectAttrs{Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return ObjectAttrs{}, errors.New("blob object is not a regular file")
+	}
+	// Match the clustered adapter: Stat is metadata-only. Call ComputeSHA256
+	// explicitly when a caller needs a content digest.
+	return ObjectAttrs{Size: info.Size()}, nil
 }
 
 func (s *FilesystemStore) NewReader(ctx context.Context, key string) (io.ReadCloser, error) {
+	f, _, err := s.openObject(ctx, key)
+	return f, err
+}
+
+func (s *FilesystemStore) openObject(ctx context.Context, key string) (*os.File, os.FileInfo, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	name, err := s.objectPath(key)
+	name, err := s.objectName(key)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	fd, err := unix.Open(name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
-	if errors.Is(err, unix.ENOENT) {
-		return nil, ErrObjectNotFound
+	f, err := s.fsRoot.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, ErrObjectNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	f := os.NewFile(uintptr(fd), name)
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		_ = f.Close()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, errors.New("blob object is not a regular file")
+		return nil, nil, errors.New("blob object is not a regular file")
 	}
-	return f, nil
+	return f, info, nil
 }
 
 func expectedKeyDigest(key string) string {
@@ -739,12 +850,17 @@ func (s *FilesystemStore) TransferHandler() http.Handler {
 			http.Error(w, "invalid or expired blob transfer", http.StatusForbidden)
 			return
 		}
-		if r.Method != claims.Operation {
-			w.Header().Set("Allow", claims.Operation)
+		download := claims.Operation == http.MethodGet && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+		if r.Method != claims.Operation && !download {
+			allowed := claims.Operation
+			if claims.Operation == http.MethodGet {
+				allowed = http.MethodGet + ", " + http.MethodHead
+			}
+			w.Header().Set("Allow", allowed)
 			http.Error(w, "blob transfer operation not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if claims.Operation == http.MethodGet {
+		if download {
 			s.serveDownload(w, r, claims)
 			return
 		}
@@ -773,7 +889,18 @@ func (s *FilesystemStore) serveUpload(w http.ResponseWriter, r *http.Request, cl
 	} else if claims.SizeLimit > 0 {
 		maximum = claims.SizeLimit
 	}
-	attrs, err := s.writeObject(r.Context(), claims.Key, r.Body, claims.CreateOnly, exact, maximum, expectedKeyDigest(claims.Key))
+	controller := http.NewResponseController(w)
+	body := &idleDeadlineReader{
+		controller: controller,
+		reader:     r.Body,
+		timeout:    s.idleTimeout,
+	}
+	attrs, err := s.writeObject(r.Context(), claims.Key, body, claims.CreateOnly, exact, maximum, expectedKeyDigest(claims.Key))
+	// A long upload may outlive the server's ordinary absolute WriteTimeout.
+	// Give the final response one bounded idle window without disabling limits.
+	if deadlineErr := controller.SetWriteDeadline(time.Now().Add(s.idleTimeout)); deadlineErr != nil && !errors.Is(deadlineErr, http.ErrNotSupported) && err == nil {
+		err = deadlineErr
+	}
 	switch {
 	case err == nil:
 		w.Header().Set("ETag", `"sha256:`+attrs.SHA256+`"`)
@@ -786,13 +913,15 @@ func (s *FilesystemStore) serveUpload(w http.ResponseWriter, r *http.Request, cl
 		http.Error(w, "blob upload failed validation", http.StatusUnprocessableEntity)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		http.Error(w, "blob upload interrupted", http.StatusRequestTimeout)
+	case isNetworkTimeout(err):
+		http.Error(w, "blob upload idle timeout", http.StatusRequestTimeout)
 	default:
 		http.Error(w, "blob upload failed", http.StatusInternalServerError)
 	}
 }
 
 func (s *FilesystemStore) serveDownload(w http.ResponseWriter, r *http.Request, claims transferClaims) {
-	reader, err := s.NewReader(r.Context(), claims.Key)
+	reader, info, err := s.openObject(r.Context(), claims.Key)
 	if errors.Is(err, ErrObjectNotFound) {
 		http.NotFound(w, r)
 		return
@@ -802,16 +931,62 @@ func (s *FilesystemStore) serveDownload(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	defer func() { _ = reader.Close() }()
-	attrs, err := s.Stat(r.Context(), claims.Key)
-	if err != nil {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("ETag", filesystemETag(info))
+	w.Header().Set("Cache-Control", "private, no-store")
+	controller := http.NewResponseController(w)
+	if err := controller.SetWriteDeadline(time.Now().Add(s.idleTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		http.Error(w, "blob download failed", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.FormatInt(attrs.Size, 10))
-	w.Header().Set("ETag", `"sha256:`+attrs.SHA256+`"`)
-	w.Header().Set("Cache-Control", "private, no-store")
-	_, _ = io.Copy(w, &contextReader{ctx: r.Context(), reader: reader})
+	deadlineWriter := &idleDeadlineResponseWriter{
+		ResponseWriter: w,
+		controller:     controller,
+		timeout:        s.idleTimeout,
+	}
+	http.ServeContent(deadlineWriter, r, path.Base(claims.Key), info.ModTime(), reader)
+}
+
+type idleDeadlineReader struct {
+	controller *http.ResponseController
+	reader     io.Reader
+	timeout    time.Duration
+}
+
+func (r *idleDeadlineReader) Read(p []byte) (int, error) {
+	if r.timeout > 0 {
+		if err := r.controller.SetReadDeadline(time.Now().Add(r.timeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return 0, err
+		}
+	}
+	return r.reader.Read(p)
+}
+
+type idleDeadlineResponseWriter struct {
+	http.ResponseWriter
+	controller *http.ResponseController
+	timeout    time.Duration
+}
+
+func (w *idleDeadlineResponseWriter) Write(p []byte) (int, error) {
+	if w.timeout > 0 {
+		if err := w.controller.SetWriteDeadline(time.Now().Add(w.timeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return 0, err
+		}
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func isNetworkTimeout(err error) bool {
+	var networkError net.Error
+	return errors.As(err, &networkError) && networkError.Timeout()
+}
+
+func filesystemETag(info os.FileInfo) string {
+	if id, ok := filesystemIdentity(info); ok {
+		return fmt.Sprintf(`"%x-%x-%x-%x"`, id.device, id.inode, info.Size(), info.ModTime().UnixNano())
+	}
+	return fmt.Sprintf(`"%x-%x"`, info.Size(), info.ModTime().UnixNano())
 }
 
 var _ Store = (*FilesystemStore)(nil)
