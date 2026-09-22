@@ -134,6 +134,14 @@ describe("RuntimeBridge", () => {
       ])
     }))
 
+  it.effect("omits an execution digest when the plan does not provide one", () =>
+    Effect.gen(function*() {
+      const { executionDigest: _executionDigest, ...withoutDigest } = plan
+      const control = service({ plan: () => Effect.succeed(withoutDigest as PlanCard) })
+      const result = yield* RuntimeBridge.execute(config, control, principal, launch)
+      expect(result).not.toHaveProperty("executionDigest")
+    }))
+
   it.effect("keeps admitted command identity stable across owner replacement", () =>
     Effect.gen(function*() {
       const keys: Array<string> = []
