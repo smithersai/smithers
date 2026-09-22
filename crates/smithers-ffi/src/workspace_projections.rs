@@ -17,12 +17,37 @@ fn op_args(operation: &Value) -> &str {
         .unwrap_or("")
 }
 
-fn projection(operation: &Value, workspace: &str) -> Option<Value> {
-    let args = op_args(operation);
-    let marker = "smithers.coding-projection=\"";
-    let start = args.find(marker)? + marker.len();
-    let end = args[start..].find('"')? + start;
-    let raw = BASE64_STANDARD.decode(&args[start..end]).ok()?;
+fn projection(operation: &Value, workspace: &str, repo: &Path) -> Option<Value> {
+    // JJ's operation args use JJ quoting, not shell quoting. Accept only the
+    // generated prefix and one exact config argument; arbitrary message text
+    // and an unrelated user config cannot become a coding receipt.
+    let path = repo.to_str()?;
+    let quoted = if path
+        .bytes()
+        .all(|c| c.is_ascii_alphanumeric() || b",./:@_-".contains(&c))
+    {
+        path.to_owned()
+    } else {
+        format!("'{}'", path.replace('\'', "\\'"))
+    };
+    let prefix = format!("jj -R {quoted} --no-pager '--color=never' ");
+    let mut args = op_args(operation).strip_prefix(&prefix)?;
+    let mut marker = None;
+    while let Some(after) = args.strip_prefix("--config 'smithers.") {
+        let (kind, after) = after.split_once("=\"")?;
+        if !["coding-request", "coding-projection"].contains(&kind) {
+            return None;
+        }
+        let (encoded, remaining) = after.split_once("\"' ")?;
+        if encoded.contains('"') {
+            return None;
+        }
+        if kind == "coding-projection" && marker.replace(encoded).is_some() {
+            return None;
+        }
+        args = remaining;
+    }
+    let raw = BASE64_STANDARD.decode(marker?).ok()?;
     let value: Value = serde_json::from_slice(&raw).ok()?;
     (value["version"] == 1 && value["workspaceId"] == workspace).then_some(value["request"].clone())
 }
@@ -154,7 +179,7 @@ pub fn run(repo: &Path, workspace: &str, after: &str) -> Result<Value> {
     for operation in operations.iter().skip(offset) {
         scanned += 1;
         cursor = field(operation, "id")?.to_owned();
-        let Some(request) = projection(operation, workspace) else {
+        let Some(request) = projection(operation, workspace, repo) else {
             continue;
         };
         if operation["parents"].as_array().is_none_or(|parents| {
@@ -190,6 +215,26 @@ mod tests {
     use super::*;
     use std::process::Command;
     use tempfile::tempdir;
+
+    #[test]
+    fn ignores_forged_projection_text_and_duplicate_config_markers() {
+        let repo = Path::new("/tmp/projection-repo");
+        let workspace = "22222222-2222-4222-8222-222222222222";
+        let encoded = BASE64_STANDARD.encode(
+            serde_json::to_vec(&json!({
+                "version":1, "workspaceId":workspace, "request":{"operation":"create"}
+            }))
+            .unwrap(),
+        );
+        let marker = format!("--config 'smithers.coding-projection=\"{encoded}\"' ");
+        let prefix = "jj -R /tmp/projection-repo --no-pager '--color=never' ";
+        let legitimate = json!({"tags":{"args":format!("{prefix}{marker}new")}});
+        assert!(projection(&legitimate, workspace, repo).is_some());
+        let message = json!({"tags":{"args":format!("{prefix}describe -m \"{marker}\"")}});
+        assert!(projection(&message, workspace, repo).is_none());
+        let duplicate = json!({"tags":{"args":format!("{prefix}{marker}{marker}new")}});
+        assert!(projection(&duplicate, workspace, repo).is_none());
+    }
 
     #[test]
     fn projects_the_exact_native_receipt_after_an_accepted_edit() {
