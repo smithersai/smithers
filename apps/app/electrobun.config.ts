@@ -19,7 +19,10 @@ export default {
     // serves that same dist/ over the local origin.
     copy: {
       "dist/index.html": "views/mainview/index.html",
-      "dist/assets": "views/mainview/assets"
+      "dist/assets": "views/mainview/assets",
+      ".native/bin": "bin",
+      ".native/postgres": "postgres",
+      ".native/licenses": "licenses"
     },
     watchIgnore: ["dist/**"],
     mac: {

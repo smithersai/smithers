@@ -1,0 +1,94 @@
+# Self-hosted distribution
+
+Run one unprivileged Smithers application container with an external PostgreSQL 18 service and one persistent data volume. The application container needs no privileged mode, KVM, Docker socket, system service manager, or execution broker. Local jobs are trusted processes for one owner.
+
+```sh
+umask 077
+cat >smithers.env <<EOF
+DATABASE_URL=postgres://smithers:replace-me@postgres:5432/smithers?sslmode=require
+SMITHERS_AUTH_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+EOF
+export SMITHERS_DOCKER_NETWORK=smithers # a network that reaches PostgreSQL
+docker run --name smithers --restart unless-stopped -p 4000:4000 \
+  --network "$SMITHERS_DOCKER_NETWORK" \
+  --env-file ./smithers.env \
+  -v smithers-data:/var/lib/smithers \
+  ghcr.io/smithersai/smithers:0.1.0
+```
+
+`DATABASE_URL` (or `SMITHERS_DATABASE_URL`) must name the external PostgreSQL 18 database. The bootstrap token is required only until the first owner account exists; keep it private and remove it from the service environment after setup. Set `PORT` when the application must listen on a port other than 4000.
+
+On Railway, attach PostgreSQL 18 and a volume mounted at `/var/lib/smithers`, set `SMITHERS_AUTH_BOOTSTRAP_TOKEN` to `openssl rand -hex 32`, and use Railway's existing `DATABASE_URL`, `PORT`, and `RAILWAY_PUBLIC_DOMAIN` variables. The entrypoint maps `DATABASE_URL` before startup and the backend derives its public HTTPS origin from `RAILWAY_PUBLIC_DOMAIN`.
+
+The image contains the web build, `apps/backend`, the canonical coding and librarian TypeScript hosts with an exact SHA-256 manifest, embedded product migrations, the Rust 1.98 glibc FFI library, the canonical Rust 1.89 jj WebAssembly artifact, Node 22, and PostgreSQL 18 client tools. Startup verifies the host artifacts and never downloads an executable. The backend listens on port 4000 and owns the process adapter; PostgreSQL is external.
+
+## Native application
+
+The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the FFI library, jj helper, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.
+
+A release build supplies a PostgreSQL 18 distribution at build time:
+
+```sh
+export SMITHERS_NODE_BINARY=/path/to/node-v22/bin/node
+SMITHERS_POSTGRES_BUNDLE_DIR=/opt/homebrew/Cellar/postgresql@18/18.6 \
+  pnpm --dir apps/app run build:native
+```
+
+After installing the generated application, the real lifecycle acceptance is:
+
+```sh
+bun apps/app/scripts/test-native-owned.ts \
+  /Applications/Smithers.app/Contents/MacOS/launcher
+```
+
+It initializes bundled PostgreSQL, serves the real UI and API, bootstraps the owner, creates a real repository, stops PostgreSQL, restarts against the same state, and verifies that Plue mode starts no local backend or database.
+
+For a native whole-state backup, quit Smithers and copy `~/Library/Application Support/Smithers` while the app is stopped. Record the installed Smithers version with the backup and restore it only while Smithers is stopped, initially with that same version. The PostgreSQL supervisor refuses a different PostgreSQL major and the product migrator refuses a schema newer than the installed application. This stopped-state copy includes the clean PostgreSQL cluster and runtime journals and never copies live WAL or SQLite writers.
+
+## Backup, restore, and upgrade
+
+Stop the app container first. The maintenance lock refuses backup, restore, or upgrade while the app owns the volume. This example publishes a complete backup under `./backups`:
+
+```sh
+docker stop smithers
+mkdir -p ./backups
+docker run --rm --network "$SMITHERS_DOCKER_NETWORK" \
+  --env-file ./smithers.env \
+  -e SMITHERS_BACKUP_ROOT=/backups \
+  -v smithers-data:/var/lib/smithers \
+  -v "$PWD/backups:/backups" \
+  --entrypoint /opt/smithers/backup.sh \
+  ghcr.io/smithersai/smithers:0.1.0
+```
+
+The command uses `pg_dump`, archives repositories, blobs, workspaces, journals, and configuration, and writes checksums before publishing the backup. Copy the resulting backup directory away from the host. Browser-only drafts remain on their originating device and are outside the server backup.
+
+On a clean target with an empty database and empty data volume, restore with the exact image version recorded in the backup manifest:
+
+```sh
+docker run --rm --network "$SMITHERS_DOCKER_NETWORK" \
+  --env-file ./smithers.env \
+  -v smithers-restored-data:/var/lib/smithers \
+  -v "$PWD/backups:/backups:ro" \
+  --entrypoint /opt/smithers/restore.sh \
+  ghcr.io/smithersai/smithers:0.1.0 \
+  /backups/smithers-YYYYMMDDTHHMMSSZ
+```
+
+Restore verifies archive checksums, the distribution/schema/PostgreSQL versions, and the archived state manifest before changing PostgreSQL. It stages files inside the writable data volume, restores PostgreSQL in one transaction, then publishes the files.
+
+For an upgrade, first create the backup with the old image as above. Then run the new image against the stopped installation and that verified backup:
+
+```sh
+docker run --rm --network "$SMITHERS_DOCKER_NETWORK" \
+  --env-file ./smithers.env \
+  -v smithers-data:/var/lib/smithers \
+  -v "$PWD/backups:/backups:ro" \
+  --entrypoint /opt/smithers/upgrade.sh \
+  ghcr.io/smithersai/smithers:NEW_VERSION \
+  /backups/smithers-YYYYMMDDTHHMMSSZ
+```
+
+Migration is exclusive under the maintenance lock. The state manifest changes only after migration succeeds. Normal startup refuses a distribution, schema, or PostgreSQL version mismatch.
+
+This edition targets one host and local disk, with maintenance downtime. It makes no high availability or autoscaling claim.
