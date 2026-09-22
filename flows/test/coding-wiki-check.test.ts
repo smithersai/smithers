@@ -31,10 +31,10 @@ const citationsSupported = makeHostJudge().layer
 
 const CheckRun = Flow.make("acceptance/WikiCheck", { payload: RunCheck.payloadSchema, success: Receipt, error: CodingError,
   body: input => RunCheck.call(input) })
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 
 test("native wiki check captures immutable pages, returns owner findings, reuses reviews and survives cold replay", {
-  skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the existing Plue immutable exporter" : false, timeout: 300_000
+  skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the existing Plue immutable exporter" : false, timeout: 300_000
 }, async t => {
   const temporary = await mkdtemp(join(tmpdir(), "coding-wiki-check-"))
   let dispose = async () => {}

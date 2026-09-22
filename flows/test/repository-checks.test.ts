@@ -12,9 +12,9 @@ import { assessSemantic, captureChecks, CaptureChecks, checkLocations, checksSum
 import type { Work } from "../repository/jobs.ts"
 import type { Check } from "../repository/schema.ts"
 
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 test("repository checks use a committed PR comparison and immutable executable source, including proposed edits", {
-  skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the built Plue exporter" : false, timeout: 180_000
+  skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the packaged exporter" : false, timeout: 180_000
 }, async t => {
   const temporary = await realpath(await mkdtemp(join(tmpdir(), "repository-checks-")))
   t.after(() => rm(temporary, { recursive: true, force: true }))

@@ -6,14 +6,11 @@ import { fileURLToPath } from "node:url"
 import { spawn } from "node:child_process"
 import { bundle } from "../coding/build.mjs"
 
-if (!process.env.PLUE_CODING_ADAPTER_SOURCE || !process.env.PLUE_JJ_EXPORT_BINARY) {
-  throw new Error("Native bundle acceptance requires the provisioned Plue adapter source and exporter binary")
-}
 const temporary = await mkdtemp(join(tmpdir(), "smithers-host-bundle-"))
 try {
   const mode = process.argv[2] ?? "plan"
   if (mode !== "plan" && mode !== "request") throw new Error("Host bundle acceptance mode must be plan or request")
-  const fixture = mode === "request" ? "coding-request-host" : "coding-host-native"
+  const fixture = mode === "request" ? "coding-workspace-helper" : "coding-native"
   const output = join(temporary, `${fixture}.test.mjs`)
   await bundle(fileURLToPath(new URL(`./${fixture}.test.ts`, import.meta.url)), output)
   const status = await new Promise((resolve, reject) => {

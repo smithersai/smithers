@@ -24,9 +24,9 @@ const CheckRun = Flow.make("acceptance/RegisteredCheck", {
   body: input => RunCheck.call(input)
 })
 
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 test("native command checks read immutable source during edits and replay exact process evidence", {
-  skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to Plue's smithers-jj-export binary" : false,
+  skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to packaged smithers-jj-export binary" : false,
   timeout: 900_000
 }, async t => {
   const nativeRuntime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime

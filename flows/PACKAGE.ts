@@ -195,7 +195,7 @@ const egress = Smithers.NodeTest({
 // this target `egress` was the only one of its family declared anywhere, so the
 // rest ran under bare `pnpm test`, which no workflow invokes.
 //
-// Native-only fixtures run in the separate gate, where a missing helper is a failure.
+// Legacy Plue adapter fixtures were removed with the Python adapter.
 const fixture = (name: string) => Smithers.file(`//flows/test/${name}`)
 const repositoryFixtures = ["apply-proof", "budget", "check-context", "check-receipt", "checks", "chore-events",
   "ci-policy", "consolidated-reply", "evaluation", "feature-issue-mode", "heldout", "inspection-sources",

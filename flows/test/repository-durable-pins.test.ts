@@ -10,8 +10,8 @@ import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { NativeCoding, type NativeRevision } from "../coding/native.ts"
 import { captureRepository } from "../repository/inspection.ts"
 
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
-const gate = { skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the native source exporter" : false, timeout: 120_000 }
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+const gate = { skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the native source exporter" : false, timeout: 120_000 }
 
 /**
  * One repository host holding an ordinary automation workspace: a bookmarked

@@ -11,7 +11,7 @@ import { assessSemantic, captureChecks, selectedComparison, type Comparison } fr
 import { captureCheckContext, contextFailure, rulePaths, sourceImports } from "../repository/check-context.ts"
 import type { Work } from "../repository/jobs.ts"
 
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const check = { id: "telemetry", name: "Telemetry", kind: "ai" as const, rule: "Follow the local helper", paths: ["src/**"], policy: "report" as const }
 const revision = "a".repeat(40)
 test("context selection distinguishes explicit files and local module edges from prose, examples and packages", () => {
@@ -101,7 +101,7 @@ test("context budget and depth exhaustion stay visible; complete source is diges
 })
 
 test("committed check context captures local helpers and rule files without using later editor bytes", {
-  skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the built Plue exporter" : false, timeout: 120_000
+  skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the packaged exporter" : false, timeout: 120_000
 }, async t => {
   const temporary = await realpath(await mkdtemp(join(tmpdir(), "check-context-native-")))
   t.after(() => rm(temporary, { recursive: true, force: true }))
@@ -195,7 +195,7 @@ async function deletedFixture(t: TestContext, candidateHelper = "export const re
   const capture = (override = options) => Effect.runPromise(captureChecks(override, work).pipe(Effect.provide(platform)))
   return { temporary, root, work, options, capture, base, old }
 }
-const deletedNative = { skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the built Plue exporter" : false, timeout: 120_000 }
+const deletedNative = { skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the packaged exporter" : false, timeout: 120_000 }
 test("committed deletions keep exact base preimages and helpers separate from modified candidate context", deletedNative, async t => {
   const fixture = await deletedFixture(t)
   await writeFile(join(fixture.root, "helper.ts"), "EDITOR_HELPER_MUST_NOT_ENTER_EITHER_SIDE\n")

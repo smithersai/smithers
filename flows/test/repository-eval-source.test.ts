@@ -19,8 +19,8 @@ import { FinishJob, Investigate, RunSteps } from "../repository/jobs.ts"
 import { suggestedSetupDraft } from "../repository/setup.ts"
 import { EvalCase, SetupInput, type Draft, type JobResult, type RepositoryEvidence } from "../repository/schema.ts"
 
-const exporter = process.env.PLUE_JJ_EXPORT_BINARY
-const gate = { skip: exporter === undefined ? "Set PLUE_JJ_EXPORT_BINARY to the native source exporter" : false, timeout: 120_000 }
+const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+const gate = { skip: exporter === undefined ? "Set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the native source exporter" : false, timeout: 120_000 }
 const RunEvaluate = Flow.make("test/RunEvaluate", { payload: Evaluate.payloadSchema, success: Evaluate.successSchema,
   error: CodingError, body: input => Evaluate.call(input) })
 const short = (id: string) => id.slice(0, 12)
