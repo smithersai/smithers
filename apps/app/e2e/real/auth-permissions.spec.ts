@@ -45,11 +45,11 @@ authenticatedTest("the selected mode retains its authenticated session through d
   const expected = await readAuthenticatedSession(page)
   expect(expected).toBeDefined()
   const beforeCookies = (await context.cookies(origin)).map(({ name }) => name).sort()
-  expect(beforeCookies.length).toBeGreaterThan(0)
+  if (process.env.SMITHERS_REAL_AUTH_KIND !== "application-token") expect(beforeCookies.length).toBeGreaterThan(0)
 
   const document = await request.get(new URL(appEntryPath(), origin).toString())
   expect(document.status()).toBe(200)
-  const bootstrap = await request.get(new URL("/api/bootstrap", origin).toString())
+  const bootstrap = await realApi(page, request, "GET", "/api/bootstrap")
   expect(bootstrap.status()).toBe(200)
   const bootstrapBody = await bootstrap.json() as { readonly host?: unknown }
   expect(["local", "cloud", "native"]).toContain(bootstrapBody.host)

@@ -60,10 +60,10 @@ export const MODE_DESCRIPTORS: Readonly<Record<DeploymentMode, ModeDescriptor>> 
   }
 }
 
-const MATRIX_SURFACE_DRIVERS: Readonly<Record<ProductSurface, "playwright" | undefined>> = {
+export const MATRIX_SURFACE_DRIVERS: Readonly<Record<ProductSurface, "playwright" | "electrobun-cdp">> = {
   web: "playwright",
   local: "playwright",
-  native: undefined
+  native: "electrobun-cdp"
 }
 
 /** One obligation catalog. Modes inject topology; they do not copy scenario bodies. */
@@ -108,8 +108,10 @@ export const MANDATORY_DETERMINISTIC_BROWSER_SPECS = [
 export interface ModeConfig {
   readonly mode: DeploymentMode
   readonly origin: string
-  readonly auth: { readonly kind: "browser-profile" | "owner-session"; readonly environment: string }
+  readonly auth: { readonly kind: "browser-profile" | "owner-session" | "application-token"; readonly environment: string }
   readonly executionReceipt: string
+  /** Secret-free reference to a JSON launch envelope held only in the runner environment. */
+  readonly surfaceDriver?: { readonly kind: "electrobun-cdp"; readonly environment: string }
 }
 
 export interface MatrixConfig {
@@ -177,11 +179,26 @@ export const parseMatrixConfig = (value: unknown): MatrixConfig => {
     }
     if (seen.has(entry.mode)) throw new Error(`duplicate matrix mode ${entry.mode}`)
     seen.add(entry.mode)
-    if ((entry.auth.kind !== "browser-profile" && entry.auth.kind !== "owner-session") || typeof entry.auth.environment !== "string" || !/^[A-Z][A-Z0-9_]+$/.test(entry.auth.environment)) {
-      throw new Error(`${entry.mode} auth must name a browser-profile or owner-session environment variable`)
+    if ((entry.auth.kind !== "browser-profile" && entry.auth.kind !== "owner-session" && entry.auth.kind !== "application-token") || typeof entry.auth.environment !== "string" || !/^[A-Z][A-Z0-9_]+$/.test(entry.auth.environment)) {
+      throw new Error(`${entry.mode} auth must name a browser-profile, owner-session, or application-token environment variable`)
     }
     if (!entry.executionReceipt.trim()) throw new Error(`${entry.mode} executionReceipt is required`)
-    return { mode: entry.mode, origin: httpOrigin(entry.origin), auth: { kind: entry.auth.kind, environment: entry.auth.environment }, executionReceipt: entry.executionReceipt }
+    let surfaceDriver: ModeConfig["surfaceDriver"]
+    if (entry.surfaceDriver !== undefined) {
+      if (!isObject(entry.surfaceDriver) || entry.surfaceDriver.kind !== "electrobun-cdp" ||
+          typeof entry.surfaceDriver.environment !== "string" || !/^[A-Z][A-Z0-9_]+$/.test(entry.surfaceDriver.environment)) {
+        throw new Error(`${entry.mode} surfaceDriver must name an electrobun-cdp environment variable`)
+      }
+      if (MODE_DESCRIPTORS[entry.mode].surface !== "native") throw new Error(`${entry.mode} must not configure a native surface driver`)
+      surfaceDriver = { kind: "electrobun-cdp", environment: entry.surfaceDriver.environment }
+    }
+    return {
+      mode: entry.mode,
+      origin: httpOrigin(entry.origin),
+      auth: { kind: entry.auth.kind, environment: entry.auth.environment },
+      executionReceipt: entry.executionReceipt,
+      ...(surfaceDriver ? { surfaceDriver } : {})
+    }
   })
   return { revision: value.revision, modes }
 }
@@ -229,8 +246,17 @@ export const probeMode = async (
   fetcher: MatrixFetcher = fetch
 ): Promise<ModeReadiness> => {
   const reasons: string[] = []
-  if (MATRIX_SURFACE_DRIVERS[MODE_DESCRIPTORS[config.mode].surface] === undefined) {
-    reasons.push("native application scenario driver is not integrated; browser assertions cannot prove native UI conformance")
+  if (MODE_DESCRIPTORS[config.mode].surface === "native") {
+    if (config.surfaceDriver === undefined) reasons.push("native mode has no packaged Electrobun CDP driver configuration")
+    else if (!environment[config.surfaceDriver.environment]?.trim()) {
+      reasons.push(`native driver environment ${config.surfaceDriver.environment} is unavailable`)
+    }
+    if (config.mode === "native-own" && config.auth.kind !== "owner-session") {
+      reasons.push("native-own requires the packaged owner-session bootstrap flow")
+    }
+    if (config.mode === "native-plue" && config.auth.kind !== "application-token") {
+      reasons.push("native-plue requires the packaged application-token flow")
+    }
   }
   if (!environment[config.auth.environment]?.trim()) reasons.push(`auth environment ${config.auth.environment} is unavailable`)
   try { reasons.push(...validateExecutionReceipt(config, revision, readExecutionReceipt(config.executionReceipt))) }

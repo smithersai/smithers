@@ -169,7 +169,7 @@ describe("deployment mode matrix", () => {
     expect(result.reasons).toContain("bootstrap authFlow none does not advertise owner credentials")
   })
 
-  test("native readiness remains unavailable until scenarios drive the packaged native UI", async () => {
+  test("native readiness remains unavailable without a packaged native driver envelope", async () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
     roots.push(root)
     const path = join(root, "receipt.json")
@@ -182,7 +182,52 @@ describe("deployment mode matrix", () => {
       capabilities: [], authFlow: "none", sandbox: null
     }))
     expect(result.status).toBe("unavailable")
-    expect(result.reasons).toContain("native application scenario driver is not integrated; browser assertions cannot prove native UI conformance")
+    expect(result.reasons).toContain("native mode has no packaged Electrobun CDP driver configuration")
+  })
+
+  test("native readiness accepts only an explicit available driver reference", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
+    roots.push(root)
+    const path = join(root, "receipt.json")
+    writeFileSync(path, JSON.stringify(receipt("native-plue", ["native-ui"])))
+    const config = parseMatrixConfig({ revision, modes: [{
+      mode: "native-plue",
+      origin: "https://example.test",
+      auth: { kind: "application-token", environment: "PLUE_TOKEN" },
+      executionReceipt: path,
+      surfaceDriver: { kind: "electrobun-cdp", environment: "NATIVE_PLUE_DRIVER" }
+    }] }).modes[0]!
+    const fetcher = async (input: string | URL | Request) => new URL(String(input)).pathname === "/api/health"
+      ? new Response("ok")
+      : Response.json({
+        apiVersion: 1, host: "cloud", version: "test", buildSha: revision,
+        capabilities: [], authFlow: "both", sandbox: null
+      })
+    expect((await probeMode(config, revision, { PLUE_TOKEN: "configured" }, fetcher)).reasons)
+      .toContain("native driver environment NATIVE_PLUE_DRIVER is unavailable")
+    expect((await probeMode(config, revision, {
+      PLUE_TOKEN: "configured", NATIVE_PLUE_DRIVER: "configured"
+    }, fetcher)).status).toBe("passed")
+  })
+
+  test("native auth follows the package handshake instead of a browser-profile substitute", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
+    roots.push(root)
+    const path = join(root, "receipt.json")
+    writeFileSync(path, JSON.stringify(receipt("native-plue", ["native-ui"])))
+    const config = parseMatrixConfig({ revision, modes: [{
+      mode: "native-plue",
+      origin: "https://example.test",
+      auth: { kind: "browser-profile", environment: "PROFILE" },
+      executionReceipt: path,
+      surfaceDriver: { kind: "electrobun-cdp", environment: "NATIVE_DRIVER" }
+    }] }).modes[0]!
+    const result = await probeMode(config, revision, { PROFILE: "x", NATIVE_DRIVER: "x" }, async (input) =>
+      new URL(String(input)).pathname === "/api/health" ? new Response("ok") : Response.json({
+        apiVersion: 1, host: "cloud", version: "test", buildSha: revision,
+        capabilities: [], authFlow: "both", sandbox: null
+      }))
+    expect(result.reasons).toContain("native-plue requires the packaged application-token flow")
   })
 
   test("rejects invented launcher roles", () => {

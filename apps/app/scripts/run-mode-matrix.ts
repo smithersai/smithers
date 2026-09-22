@@ -73,12 +73,20 @@ for (const mode of DEPLOYMENT_MODES) {
   if (command !== "run" || state.status !== "passed" || modeConfig === undefined || !deterministicPassed) continue
 
   const evidence = resolve(appDir, "test-results", "mode-matrix", `${mode}.real-e2e.json`)
-  const invocation = ["bun", "scripts/run-real-e2e.ts"]
+  const nativeDriver = modeConfig.surfaceDriver
+  const invocation = nativeDriver === undefined
+    ? ["bun", "scripts/run-real-e2e.ts"]
+    : ["bun", "scripts/run-native-mode-matrix.ts"]
   const child = Bun.spawn(invocation, {
     cwd: appDir,
     env: {
       ...process.env,
-      SMITHERS_REAL_BASE_URL: modeConfig.origin,
+      ...(nativeDriver === undefined
+        ? { SMITHERS_REAL_BASE_URL: modeConfig.origin }
+        : {
+          SMITHERS_REAL_API_ORIGIN: modeConfig.origin,
+          SMITHERS_NATIVE_MATRIX_DRIVER_ENVIRONMENT: nativeDriver.environment
+        }),
       SMITHERS_REAL_E2E_MODE: mode,
       SMITHERS_REAL_E2E_HOST: MODE_DESCRIPTORS[mode].legacyHost,
       SMITHERS_REAL_E2E_REVISION: config.revision,

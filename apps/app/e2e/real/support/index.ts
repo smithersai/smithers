@@ -33,6 +33,7 @@ type Lifecycle = {
   readonly request: APIRequestContext
   readonly baseURL: URL
   readonly sessionToken?: string
+  readonly authorization?: string
   readonly ptys: Set<string>
   readonly repos: Map<string, RegisteredRepo>
   readonly localRepos: Set<string>
@@ -44,6 +45,33 @@ const supportDir = __dirname
 const appDir = resolve(supportDir, "../../..")
 const defaultFixture = join(supportDir, "../../fixtures/repo-plugin")
 const fixtureRoot = resolve(supportDir, "../../fixtures")
+
+const nativeCDPEndpoint = process.env.SMITHERS_REAL_NATIVE_CDP_ENDPOINT?.trim()
+const nativeWindowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL?.trim()
+const nativeTargetNonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE?.trim()
+const selectedBase = nativeCDPEndpoint === undefined || nativeCDPEndpoint === "" ? base : base.extend({
+  browser: [async ({ playwright }, use) => {
+    const browser = await playwright.chromium.connectOverCDP(nativeCDPEndpoint)
+    await use(browser)
+    // Electrobun owns the browser process. Its launcher performs teardown.
+  }, { scope: "worker" }],
+  context: async ({ browser }, use) => {
+    const context = browser.contexts()[0]
+    if (context === undefined) throw new Error("The packaged Electrobun CDP target exposed no default context.")
+    await use(context)
+  },
+  page: async ({ context }, use) => {
+    if (!nativeWindowUrl || !nativeTargetNonce) {
+      throw new Error("Native CDP attachment requires the packaged window URL and bridge correlation nonce.")
+    }
+    const page = context.pages().find((candidate) => candidate.url() === nativeWindowUrl)
+    if (page === undefined) throw new Error(`The packaged Electrobun CDP target did not expose ${nativeWindowUrl}.`)
+    const nonce = await page.evaluate(() =>
+      (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget)
+    if (nonce !== nativeTargetNonce) throw new Error("The Playwright page is not the bridge-correlated packaged window.")
+    await use(page)
+  }
+})
 
 const run = async (command: string, args: readonly string[], cwd: string): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
@@ -63,23 +91,41 @@ const requireLifecycle = (): Lifecycle => {
   return activeLifecycle
 }
 
+const selectedApiOrigin = (page: Page): string =>
+  new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? page.url()).origin
+
+const applicationAuthorization = (): string | undefined => {
+  if (process.env.SMITHERS_REAL_AUTH_KIND !== "application-token") return undefined
+  const name = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
+  if (!name || !/^[A-Z][A-Z0-9_]+$/.test(name)) {
+    throw new Error("Application-token auth requires SMITHERS_REAL_AUTH_ENVIRONMENT.")
+  }
+  const token = process.env[name]?.trim()
+  if (!token) throw new Error(`${name} is required for application-token auth.`)
+  return `Bearer ${token}`
+}
+
 const requireSameOrigin = (page: Page, target: URL): void => {
   const current = new URL(page.url())
-  if (!/^https?:$/.test(current.protocol) || current.origin !== target.origin) {
-    throw new Error(`realApi refuses a cross-origin request: page=${current.origin}, request=${target.origin}`)
+  const apiOrigin = selectedApiOrigin(page)
+  if (!/^https?:$/.test(current.protocol) || apiOrigin !== target.origin) {
+    throw new Error(`realApi refuses an undeclared API origin: page=${current.origin}, api=${apiOrigin}, request=${target.origin}`)
   }
 }
 
 const isDescendant = (root: string, candidate: string): boolean => candidate.startsWith(`${root}${sep}`)
 
 const authorizedFetch = (
-  lifecycle: Pick<Lifecycle, "request" | "baseURL" | "sessionToken">,
+  lifecycle: Pick<Lifecycle, "request" | "baseURL" | "sessionToken" | "authorization">,
   method: string,
   path: string,
   data?: unknown
 ): Promise<APIResponse> => lifecycle.request.fetch(new URL(path, lifecycle.baseURL).toString(), {
   method,
-  ...(lifecycle.sessionToken ? { headers: { "x-smithers-local-session": lifecycle.sessionToken } } : {}),
+    ...(lifecycle.sessionToken || lifecycle.authorization ? { headers: {
+      ...(lifecycle.sessionToken ? { "x-smithers-local-session": lifecycle.sessionToken } : {}),
+      ...(lifecycle.authorization ? { authorization: lifecycle.authorization } : {})
+    } } : {}),
   ...(data === undefined ? {} : { data })
 })
 
@@ -91,15 +137,19 @@ export const realApi = async (
   path: string,
   data?: unknown
 ): Promise<APIResponse> => {
-  const target = new URL(path, page.url())
+  const target = new URL(path, selectedApiOrigin(page))
   requireSameOrigin(page, target)
   // Cloud pages use their browser session and do not carry the local host's
   // session tag. Read the optional tag without waiting for one to appear.
   const token = await page.evaluate(() =>
     document.querySelector('meta[name="smithers-local-session"]')?.getAttribute("content") ?? null)
+  const authorization = applicationAuthorization()
   return page.context().request.fetch(target.toString(), {
     method,
-    ...(token ? { headers: { "x-smithers-local-session": token } } : {}),
+    ...(token || authorization ? { headers: {
+      ...(token ? { "x-smithers-local-session": token } : {}),
+      ...(authorization ? { authorization } : {})
+    } } : {}),
     ...(data === undefined ? {} : { data })
   })
 }
@@ -345,7 +395,7 @@ type RealFixtures = { readonly realScenario: RealScenarioMetadata | undefined; r
  * ../coverage/types. `test.use({ realScenario })` remains a suite-level
  * fallback for a describe containing exactly one scenario.
  */
-export const test = base.extend<RealFixtures>({
+export const test = selectedBase.extend<RealFixtures>({
   realScenario: [undefined, { option: true }],
   _realLifecycle: [async ({ page, realScenario }, use, testInfo) => {
     const scenario = scenarioFromAnnotations(testInfo.annotations, realScenario)
@@ -357,12 +407,17 @@ export const test = base.extend<RealFixtures>({
     }
 
     const request = page.context().request
-    const baseURL = new URL(testInfo.project.use.baseURL ?? page.url())
-    const html = await request.get(new URL(appEntryPath(), baseURL).toString())
+    const rendererBaseURL = new URL(testInfo.project.use.baseURL ?? page.url())
+    const baseURL = new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? rendererBaseURL)
+    const html = await request.get(new URL(appEntryPath(), rendererBaseURL).toString())
     if (!html.ok()) throw new Error(`Real host document preflight failed: HTTP ${html.status()}`)
     const token = /<meta\s+name=["']smithers-local-session["']\s+content=["']([^"']+)["']/i.exec(await html.text())?.[1]
+    const authorization = applicationAuthorization()
     const bootstrap = await request.get(new URL("/api/bootstrap", baseURL).toString(), {
-      ...(token ? { headers: { "x-smithers-local-session": token } } : {})
+      ...(token || authorization ? { headers: {
+        ...(token ? { "x-smithers-local-session": token } : {}),
+        ...(authorization ? { authorization } : {})
+      } } : {})
     })
     if (!bootstrap.ok()) throw new Error(`Real host bootstrap preflight failed: HTTP ${bootstrap.status()} ${await bootstrap.text()}`)
     const body = await bootstrap.json() as { host?: unknown; capabilities?: unknown; buildSha?: unknown }
@@ -396,7 +451,15 @@ export const test = base.extend<RealFixtures>({
       const url = new URL(response.url())
       if (url.pathname.startsWith("/api/")) events.push({ method: response.request().method(), path: url.pathname, status: response.status() })
     })
-    const lifecycle: Lifecycle = { request, baseURL, ...(token ? { sessionToken: token } : {}), ptys: new Set(), repos: new Map(), localRepos: new Set() }
+    const lifecycle: Lifecycle = {
+      request,
+      baseURL,
+      ...(token ? { sessionToken: token } : {}),
+      ...(authorization ? { authorization } : {}),
+      ptys: new Set(),
+      repos: new Map(),
+      localRepos: new Set()
+    }
     if (activeLifecycle) throw new Error("The real E2E lifecycle requires workers=1 and fullyParallel=false.")
     activeLifecycle = lifecycle
     try {

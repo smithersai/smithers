@@ -8,10 +8,8 @@ import { expect, test as realTest } from "../support/test"
 import { appEntryPath, awaitBoot } from "../support"
 
 type SessionBody = {
-  readonly status?: unknown
-  readonly login?: unknown
-  readonly allowlisted?: unknown
-  readonly admin?: unknown
+  readonly username?: unknown
+  readonly is_admin?: unknown
 }
 
 export type AuthenticatedSession = {
@@ -24,12 +22,12 @@ type ProfileLease = { readonly release: () => Promise<void> }
 type LockRecord = { readonly pid?: unknown; readonly nonce?: unknown }
 type AuthenticatedProfileOptions = { readonly profileEnvironment: string | undefined }
 type AuthenticatedProfileFixtures = { readonly _authenticatedReady: void }
-type RealAuthKind = "browser-profile" | "owner-session"
+type RealAuthKind = "browser-profile" | "owner-session" | "application-token"
 type OwnerCredentials = { readonly username: string; readonly password: string; readonly bootstrapToken: string }
 
 const realAuthKind = (): RealAuthKind => {
   const configured = process.env.SMITHERS_REAL_AUTH_KIND?.trim()
-  if (configured === "browser-profile" || configured === "owner-session") return configured
+  if (configured === "browser-profile" || configured === "owner-session" || configured === "application-token") return configured
   if (configured !== undefined && configured !== "") throw new Error(`Unsupported SMITHERS_REAL_AUTH_KIND: ${configured}`)
   return "browser-profile"
 }
@@ -125,27 +123,34 @@ export const requireProfileEnvironment = (environment: string): void => {
   profileFromEnvironment(environment)
 }
 
-const parseSession = (status: number, body: SessionBody | undefined): AuthenticatedSession | undefined => {
-  if (status !== 200) throw new Error(`Authentication session preflight failed: HTTP ${status}.`)
+export const parseAuthenticatedUser = (status: number, body: SessionBody | undefined): AuthenticatedSession | undefined => {
+  if (status === 401) return undefined
+  if (status !== 200) throw new Error(`Authenticated-user preflight failed: HTTP ${status}.`)
   if (body === undefined || typeof body !== "object" || body === null) {
-    throw new Error("Authentication session preflight returned malformed JSON.")
+    throw new Error("Authenticated-user preflight returned malformed JSON.")
   }
-  if (body.status === "signed-out" && Object.keys(body).length === 1) return undefined
-  if (
-    typeof body.login !== "string" || body.login === "" ||
-    typeof body.allowlisted !== "boolean" || typeof body.admin !== "boolean"
-  ) throw new Error("Authentication session preflight returned an unrecognized session body.")
-  return { login: body.login, allowlisted: body.allowlisted, admin: body.admin }
+  if (typeof body.username !== "string" || body.username === "" ||
+      (body.is_admin !== undefined && typeof body.is_admin !== "boolean")) {
+    throw new Error("Authenticated-user preflight returned an unrecognized user body.")
+  }
+  return { login: body.username, allowlisted: true, admin: body.is_admin ?? false }
 }
 
 const readSessionAtOrigin = async (context: BrowserContext, origin: string): Promise<AuthenticatedSession | undefined> => {
-  const response = await context.request.get(new URL("/api/auth/session", origin).toString())
+  const authKind = realAuthKind()
+  const environment = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
+  const token = authKind === "application-token" && environment ? process.env[environment]?.trim() : undefined
+  if (authKind === "application-token" && !token) throw new Error(`${environment ?? "application token"} is required.`)
+  const apiOrigin = process.env.SMITHERS_REAL_API_ORIGIN ?? origin
+  const response = await context.request.get(new URL("/api/user", apiOrigin).toString(), {
+    ...(token ? { headers: { authorization: `Bearer ${token}` } } : {})
+  })
   const body = await response.json().catch(() => undefined) as SessionBody | undefined
-  return parseSession(response.status(), body)
+  return parseAuthenticatedUser(response.status(), body)
 }
 
 const establishOwnerSession = async (context: BrowserContext, page: Page, baseURL: string): Promise<AuthenticatedSession> => {
-  const origin = new URL(baseURL).origin
+  const origin = new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? baseURL).origin
   const credentials = ownerCredentialsFromEnvironment()
   const statusResponse = await context.request.get(new URL("/api/auth/local/status", origin).toString())
   const status = await statusResponse.json().catch(() => undefined) as {
@@ -173,7 +178,7 @@ const establishOwnerSession = async (context: BrowserContext, page: Page, baseUR
     throw new Error("Owner authentication returned without the configured authenticated session.")
   }
   const startedAt = performance.now()
-  await page.goto(new URL(appEntryPath(), origin).toString(), { waitUntil: "domcontentloaded" })
+  await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
   await awaitBoot(page, "navigate", startedAt)
   return session
 }
@@ -295,10 +300,19 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
   trace: "off",
   video: "off",
   profileEnvironment: [undefined, { option: true }],
-  context: async ({ playwright, browserName, profileEnvironment }, use, testInfo) => {
+  context: async ({ playwright, browser, browserName, profileEnvironment }, use, testInfo) => {
     if (browserName !== "chromium") throw new Error("The authenticated profile fixture requires Chromium.")
     const baseURL = testInfo.project.use.baseURL
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
+    if (process.env.SMITHERS_REAL_NATIVE_CDP_ENDPOINT) {
+      const context = browser.contexts()[0]
+      if (context === undefined) throw new Error("The packaged Electrobun target exposed no browser context.")
+      await use(context)
+      return
+    }
+    if (realAuthKind() === "application-token") {
+      throw new Error("Application-token auth is only valid for the packaged native-window driver.")
+    }
     if (realAuthKind() === "owner-session") {
       const browser = await playwright.chromium.launch({ headless: process.env.SMITHERS_REAL_HEADED !== "1" })
       const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
@@ -350,7 +364,18 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
   page: async ({ context, profileEnvironment }, use, testInfo) => {
     const baseURL = testInfo.project.use.baseURL
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
-    const page = context.pages()[0] ?? await context.newPage()
+    const nativeWindowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL
+    const page = nativeWindowUrl === undefined
+      ? context.pages()[0] ?? await context.newPage()
+      : context.pages().find((candidate) => candidate.url() === nativeWindowUrl) ?? (() => {
+        throw new Error(`The packaged Electrobun context did not expose ${nativeWindowUrl}.`)
+      })()
+    if (nativeWindowUrl !== undefined) {
+      const expectedNonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE
+      const nonce = await page.evaluate(() =>
+        (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget)
+      if (!expectedNonce || nonce !== expectedNonce) throw new Error("The authenticated page is not the bridge-correlated packaged window.")
+    }
     await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
     const requiredEnvironment = profileEnvironment
     const profileAvailable = requiredEnvironment === undefined || Boolean(process.env[requiredEnvironment]?.trim())
@@ -376,6 +401,13 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     if (realAuthKind() === "owner-session") {
       await establishOwnerSession(context, page, baseURL)
       testInfo.annotations.push({ type: "real-authenticated-owner", description: "local-session-established-after-lifecycle" })
+      await use()
+      return
+    }
+    if (realAuthKind() === "application-token") {
+      const session = await readAuthenticatedSession(page)
+      if (session === undefined) throw new Error("The packaged application token did not authenticate GET /api/user.")
+      testInfo.annotations.push({ type: "real-authenticated-token", description: "native-token-verified-after-lifecycle" })
       await use()
       return
     }
