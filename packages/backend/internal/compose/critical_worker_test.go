@@ -12,13 +12,14 @@ import (
 
 func TestCriticalWorkerFailureChangesReadinessAndIsReturned(t *testing.T) {
 	stop := make(chan struct{})
-	worker := startCriticalWorker(context.Background(), "flow dispatch", func(context.Context) error {
-		<-stop
-		return errors.New("claim loop failed")
-	})
+	worker := newCriticalWorker()
 	handler := withCriticalWorkerReadiness(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}), worker)
+	worker.Start(context.Background(), "flow dispatch", func(context.Context) error {
+		<-stop
+		return errors.New("claim loop failed")
+	})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if response.Code != http.StatusOK {

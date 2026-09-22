@@ -18,8 +18,20 @@ type criticalWorker struct {
 	done    chan struct{}
 }
 
+func newCriticalWorker() *criticalWorker {
+	return &criticalWorker{failed: make(chan error, 1), done: make(chan struct{})}
+}
+
 func startCriticalWorker(ctx context.Context, name string, run func(context.Context) error) *criticalWorker {
-	worker := &criticalWorker{failed: make(chan error, 1), done: make(chan struct{})}
+	worker := newCriticalWorker()
+	worker.Start(ctx, name, run)
+	return worker
+}
+
+// Start is called after the complete route graph has been built, before the
+// composed handler is published. This allows readiness to hold the same
+// worker reference throughout the instance lifetime.
+func (worker *criticalWorker) Start(ctx context.Context, name string, run func(context.Context) error) {
 	go func() {
 		defer close(worker.done)
 		defer func() {
@@ -36,7 +48,6 @@ func startCriticalWorker(ctx context.Context, name string, run func(context.Cont
 		}
 		worker.fail(fmt.Errorf("%s: %w", name, err))
 	}()
-	return worker
 }
 
 func (worker *criticalWorker) fail(err error) {
