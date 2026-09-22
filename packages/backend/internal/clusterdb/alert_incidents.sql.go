@@ -210,6 +210,7 @@ func (q *Queries) CountAlertRemediationJobsForPolicySince(ctx context.Context, a
 }
 
 const createAlertIncident = `-- name: CreateAlertIncident :one
+
 WITH created AS (
     INSERT INTO alert_incidents (
         incident_id, policy_name, condition_name, state, summary, incident_url, runbook, workflow, source
@@ -261,6 +262,7 @@ type CreateAlertIncidentRow struct {
 	ResolutionNote   pgtype.Text        `json:"resolution_note"`
 }
 
+// Private cluster queries kept separate from the product graph.
 // An already-associated delivery must never create a new canonical incident.
 func (q *Queries) CreateAlertIncident(ctx context.Context, arg CreateAlertIncidentParams) (CreateAlertIncidentRow, error) {
 	row := q.db.QueryRow(ctx, createAlertIncident,
@@ -374,54 +376,6 @@ func (q *Queries) FailTerminalAlertRemediationIncidents(ctx context.Context) ([]
 	return items, nil
 }
 
-const findAlertRemediationWorkflowRun = `-- name: FindAlertRemediationWorkflowRun :one
-SELECT wr.id, wr.repository_id, wr.workflow_definition_id, wr.status, wr.trigger_event, wr.trigger_ref, wr.trigger_commit_sha, wr.dispatch_inputs, wr.agent_token_hash, wr.agent_token_expires_at, wr.jjhub_token_id, wr.check_run_id, wr.check_run_url, wr.started_at, wr.completed_at, wr.created_at, wr.updated_at, wr.execution_plane, wr.log_bytes, wr.log_entry_count, wr.cancel_reason
-FROM workflow_runs AS wr
-WHERE wr.trigger_event = 'monitoring_alert'
-  AND wr.execution_plane = 'runner'
-  AND wr.dispatch_inputs ->> 'remediation_job_id' = $1::text
-  AND wr.dispatch_inputs ->> 'remediation_dispatch_token' = $2
-ORDER BY wr.id ASC
-LIMIT 1
-`
-
-type FindAlertRemediationWorkflowRunParams struct {
-	JobID         string `json:"job_id"`
-	DispatchToken []byte `json:"dispatch_token"`
-}
-
-// Recover a committed dispatch after a worker stops before it can bind the run
-// ID back to the job. The unguessable token was allocated with the job, before
-// dispatch, so a retry adopts the original run instead of creating another.
-func (q *Queries) FindAlertRemediationWorkflowRun(ctx context.Context, arg FindAlertRemediationWorkflowRunParams) (WorkflowRun, error) {
-	row := q.db.QueryRow(ctx, findAlertRemediationWorkflowRun, arg.JobID, arg.DispatchToken)
-	var i WorkflowRun
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.WorkflowDefinitionID,
-		&i.Status,
-		&i.TriggerEvent,
-		&i.TriggerRef,
-		&i.TriggerCommitSha,
-		&i.DispatchInputs,
-		&i.AgentTokenHash,
-		&i.AgentTokenExpiresAt,
-		&i.JjhubTokenID,
-		&i.CheckRunID,
-		&i.CheckRunUrl,
-		&i.StartedAt,
-		&i.CompletedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ExecutionPlane,
-		&i.LogBytes,
-		&i.LogEntryCount,
-		&i.CancelReason,
-	)
-	return i, err
-}
-
 const getAlertIncident = `-- name: GetAlertIncident :one
 SELECT id, incident_id, policy_name, condition_name, state, summary, incident_url, runbook, workflow, remediation_pr_url, attempts, created_at, resolved_at, updated_at, source, occurrences, last_seen_at, acknowledged_at, acknowledged_by, snoozed_until, resolved_by, resolution_note FROM alert_incidents WHERE id = $1
 `
@@ -522,34 +476,6 @@ func (q *Queries) GetAlertIncidentForUpdate(ctx context.Context, id int64) (Aler
 		&i.ResolutionNote,
 	)
 	return i, err
-}
-
-const hasLegacyAlertRemediationWorkflowRun = `-- name: HasLegacyAlertRemediationWorkflowRun :one
-SELECT EXISTS (
-    SELECT 1
-    FROM workflow_runs AS wr
-    WHERE wr.trigger_event = 'monitoring_alert'
-      AND wr.execution_plane = 'runner'
-      AND NOT (wr.dispatch_inputs ? 'remediation_dispatch_token')
-      AND wr.dispatch_inputs ->> 'incident_row_id' = $1::text
-      AND wr.dispatch_inputs ->> 'incident_id' = $2::text
-)
-`
-
-type HasLegacyAlertRemediationWorkflowRunParams struct {
-	IncidentRowID string `json:"incident_row_id"`
-	IncidentID    string `json:"incident_id"`
-}
-
-// During the one-release rollout, a previous-version worker can commit a run
-// before it records incident state. Such runs have no dispatch token, so the
-// new worker must fence on the immutable incident identities instead of
-// treating a token lookup miss as permission to dispatch again.
-func (q *Queries) HasLegacyAlertRemediationWorkflowRun(ctx context.Context, arg HasLegacyAlertRemediationWorkflowRunParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasLegacyAlertRemediationWorkflowRun, arg.IncidentRowID, arg.IncidentID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }
 
 const incrementActiveAlertIncident = `-- name: IncrementActiveAlertIncident :execrows

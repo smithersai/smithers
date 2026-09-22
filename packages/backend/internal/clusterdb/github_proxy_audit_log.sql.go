@@ -10,6 +10,7 @@ import (
 )
 
 const insertGithubProxyAuditLog = `-- name: InsertGithubProxyAuditLog :exec
+
 INSERT INTO github_proxy_audit_log (
     workflow_run_id,
     method,
@@ -30,6 +31,7 @@ type InsertGithubProxyAuditLogParams struct {
 	Reason        string `json:"reason"`
 }
 
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) InsertGithubProxyAuditLog(ctx context.Context, arg InsertGithubProxyAuditLogParams) error {
 	_, err := q.db.Exec(ctx, insertGithubProxyAuditLog,
 		arg.WorkflowRunID,

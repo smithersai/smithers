@@ -12,6 +12,7 @@ import (
 )
 
 const claimQueuedWorkflowRuns = `-- name: ClaimQueuedWorkflowRuns :many
+
 WITH candidates AS MATERIALIZED (
     SELECT wr.id
     FROM workflow_runs AS wr
@@ -85,6 +86,7 @@ type ClaimQueuedWorkflowRunsRow struct {
 	ClaimLeaseExpiresAt  pgtype.Timestamptz `json:"claim_lease_expires_at"`
 }
 
+// Private cluster queries kept separate from the product graph.
 // Atomically acquire renewable, generation-fenced ownership of queued
 // sandbox-plane workflow runs. Expired new-style leases are reclaimed
 // immediately. Previous-version schedulers did not persist a lease, so an

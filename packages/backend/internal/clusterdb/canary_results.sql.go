@@ -11,11 +11,13 @@ import (
 )
 
 const listCanaryResults = `-- name: ListCanaryResults :many
+
 SELECT id, suite, test_name, status, duration_seconds, error_message, run_id, reported_at, created_at, updated_at
 FROM canary_results
 ORDER BY suite ASC, test_name ASC
 `
 
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) ListCanaryResults(ctx context.Context) ([]CanaryResult, error) {
 	rows, err := q.db.Query(ctx, listCanaryResults)
 	if err != nil {

@@ -43,6 +43,7 @@ func (q *Queries) AttestLegacyFinalKeyCapabilityHorizon(ctx context.Context, arg
 }
 
 const claimStorageDeletions = `-- name: ClaimStorageDeletions :many
+
 WITH candidates AS (
     SELECT id
     FROM storage_deletion_queue
@@ -79,6 +80,7 @@ type ClaimStorageDeletionsParams struct {
 	LimitRows    int32       `json:"limit_rows"`
 }
 
+// Private cluster queries kept separate from the product graph.
 // Claim due rows in a short transaction. Each row is subsequently re-locked
 // with LockClaimedStorageDeletion while its exact key is physically purged.
 func (q *Queries) ClaimStorageDeletions(ctx context.Context, arg ClaimStorageDeletionsParams) ([]StorageDeletionQueue, error) {
@@ -267,48 +269,6 @@ SELECT COALESCE((
 // applies this guard to direct service purges as well as queue cleanup.
 func (q *Queries) IsLegacyFinalKeyPurgeAllowed(ctx context.Context) (bool, error) {
 	row := q.db.QueryRow(ctx, isLegacyFinalKeyPurgeAllowed)
-	var column_1 bool
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const isStorageDeletionObjectActive = `-- name: IsStorageDeletionObjectActive :one
-WITH lfs_allocation AS (
-    SELECT split_part($2::text, ':', 3) AS oid
-    WHERE split_part($2::text, ':', 1) = 'lfs'
-      AND split_part($2::text, ':', 2) = $1::bigint::text
-      AND split_part($2::text, ':', 3) <> ''
-      AND split_part($2::text, ':', 4) = ''
-)
-SELECT EXISTS (
-    SELECT 1
-    FROM lfs_allocation AS allocation
-    WHERE EXISTS (
-        SELECT 1
-        FROM lfs_objects AS lo
-        WHERE lo.repository_id = $1::bigint
-          AND lo.oid = allocation.oid
-    ) OR EXISTS (
-        SELECT 1
-        FROM lfs_upload_reservations AS lur
-        WHERE lur.repository_id = $1::bigint
-          AND lur.oid = allocation.oid
-    )
-)::boolean
-`
-
-type IsStorageDeletionObjectActiveParams struct {
-	RepositoryID  int64  `json:"repository_id"`
-	AllocationKey string `json:"allocation_key"`
-}
-
-// LFS names are the only reusable object namespace. Decode their durable
-// allocation identity once, then probe the indexed (repository_id, oid)
-// constraints. Non-LFS allocations return false without scanning either LFS
-// table, and legacy/custom final gcs_path values remain protected by the same
-// authoritative repository+OID identity.
-func (q *Queries) IsStorageDeletionObjectActive(ctx context.Context, arg IsStorageDeletionObjectActiveParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isStorageDeletionObjectActive, arg.RepositoryID, arg.AllocationKey)
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err

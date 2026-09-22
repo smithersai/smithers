@@ -27,6 +27,7 @@ func (q *Queries) DeleteSandboxEgressAuditOlderThan(ctx context.Context, retenti
 }
 
 const insertSandboxEgressAuditBatch = `-- name: InsertSandboxEgressAuditBatch :execrows
+
 WITH batch AS (
     SELECT
         item ->> 'sandbox_id' AS sandbox_id,
@@ -92,6 +93,7 @@ type InsertSandboxEgressAuditBatchParams struct {
 	Records  json.RawMessage `json:"records"`
 }
 
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) InsertSandboxEgressAuditBatch(ctx context.Context, arg InsertSandboxEgressAuditBatchParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertSandboxEgressAuditBatch, arg.WorkerID, arg.Records)
 	if err != nil {

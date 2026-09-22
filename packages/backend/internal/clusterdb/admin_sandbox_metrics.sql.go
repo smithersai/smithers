@@ -10,6 +10,7 @@ import (
 )
 
 const getSandboxActiveVMsByKind = `-- name: GetSandboxActiveVMsByKind :many
+
 SELECT COALESCE(resource_kind, 'unknown')::text AS kind,
        COUNT(*) FILTER (WHERE reservation_held AND deleted_at IS NULL)::bigint AS count
 FROM sandbox_instances
@@ -21,6 +22,7 @@ type GetSandboxActiveVMsByKindRow struct {
 	Count int64  `json:"count"`
 }
 
+// Private cluster queries kept separate from the product graph.
 // Retain zero series for known kinds after their last reservation is released.
 func (q *Queries) GetSandboxActiveVMsByKind(ctx context.Context) ([]GetSandboxActiveVMsByKindRow, error) {
 	rows, err := q.db.Query(ctx, getSandboxActiveVMsByKind)

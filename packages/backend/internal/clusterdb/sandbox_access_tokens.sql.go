@@ -37,7 +37,7 @@ type CreateSandboxAccessTokenParams struct {
 	ExpiresAt   time.Time   `json:"expires_at"`
 }
 
-// ---- Sandbox Access Tokens (SSH/Terminal gateway auth) ----
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) CreateSandboxAccessToken(ctx context.Context, arg CreateSandboxAccessTokenParams) (SandboxAccessToken, error) {
 	row := q.db.QueryRow(ctx, createSandboxAccessToken,
 		arg.WorkspaceID,

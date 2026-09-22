@@ -43,7 +43,7 @@ type CreateRepoGatewayParams struct {
 	Status       string      `json:"status"`
 }
 
-// ---- Repo gateways (durable `smithers gateway` VM per user+repo) ----
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) CreateRepoGateway(ctx context.Context, arg CreateRepoGatewayParams) (RepoGateway, error) {
 	row := q.db.QueryRow(ctx, createRepoGateway,
 		arg.RepositoryID,
@@ -114,20 +114,6 @@ func (q *Queries) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg GetAc
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const hasWritableWorkspaceShares = `-- name: HasWritableWorkspaceShares :one
-SELECT EXISTS (
-    SELECT 1 FROM workspace_shares
-    WHERE workspace_id = $1::uuid AND level = 'write'
-)
-`
-
-func (q *Queries) HasWritableWorkspaceShares(ctx context.Context, workspaceID string) (bool, error) {
-	row := q.db.QueryRow(ctx, hasWritableWorkspaceShares, workspaceID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }
 
 const listDiscardedWorkspaceGateways = `-- name: ListDiscardedWorkspaceGateways :many

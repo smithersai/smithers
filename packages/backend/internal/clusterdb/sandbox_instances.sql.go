@@ -48,7 +48,7 @@ type ListOrphanedSandboxInstancesRow struct {
 	CreatedAt     time.Time   `json:"created_at"`
 }
 
-// ---- Sandbox instances (control-plane placement rows, read-only from the app) ----
+// Private cluster queries kept separate from the product graph.
 // Backstop reaper input: live micro-VMs whose owning product row no longer
 // exists, so nothing will ever collect them.
 //

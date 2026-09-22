@@ -89,12 +89,14 @@ func (q *Queries) ListProtectedWorkerSnapshotLocalIDs(ctx context.Context, worke
 }
 
 const listReadySandboxEnvironmentImageReferences = `-- name: ListReadySandboxEnvironmentImageReferences :many
+
 SELECT image
 FROM sandbox_environment_images
 WHERE status = 'ready'
 ORDER BY image
 `
 
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) ListReadySandboxEnvironmentImageReferences(ctx context.Context) ([]string, error) {
 	rows, err := q.db.Query(ctx, listReadySandboxEnvironmentImageReferences)
 	if err != nil {
@@ -170,61 +172,6 @@ type RetireSandboxEnvironmentImageParams struct {
 
 func (q *Queries) RetireSandboxEnvironmentImage(ctx context.Context, arg RetireSandboxEnvironmentImageParams) (SandboxEnvironmentImage, error) {
 	row := q.db.QueryRow(ctx, retireSandboxEnvironmentImage, arg.ID, arg.RepositoryID)
-	var i SandboxEnvironmentImage
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.Kind,
-		&i.Source,
-		&i.SourceRevision,
-		&i.ClosureHash,
-		&i.Image,
-		&i.Status,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertSandboxEnvironmentImage = `-- name: UpsertSandboxEnvironmentImage :one
-SELECT id, repository_id, kind, source, source_revision, closure_hash, image, status, created_by, created_at, updated_at FROM register_sandbox_environment_image(
-    $1::bigint,
-    $2::text,
-    $3::text,
-    $4::text,
-    $5::text,
-    $6::text,
-    $7::bigint
-)
-`
-
-type UpsertSandboxEnvironmentImageParams struct {
-	RepositoryID   pgtype.Int8 `json:"repository_id"`
-	Kind           string      `json:"kind"`
-	Source         string      `json:"source"`
-	SourceRevision string      `json:"source_revision"`
-	ClosureHash    string      `json:"closure_hash"`
-	Image          string      `json:"image"`
-	CreatedBy      pgtype.Int8 `json:"created_by"`
-}
-
-// Registers a built NixOS environment image. Re-registering the same
-// (repository, kind, closure hash) refreshes the image reference and revives a
-// retired row: the closure hash is the content identity. Platform base-image
-// registration atomically retires every prior ready base for the same kind;
-// repository images retain their explicit history until the repo admin retires
-// them.
-func (q *Queries) UpsertSandboxEnvironmentImage(ctx context.Context, arg UpsertSandboxEnvironmentImageParams) (SandboxEnvironmentImage, error) {
-	row := q.db.QueryRow(ctx, upsertSandboxEnvironmentImage,
-		arg.RepositoryID,
-		arg.Kind,
-		arg.Source,
-		arg.SourceRevision,
-		arg.ClosureHash,
-		arg.Image,
-		arg.CreatedBy,
-	)
 	var i SandboxEnvironmentImage
 	err := row.Scan(
 		&i.ID,

@@ -28,6 +28,7 @@ func (q *Queries) GetWorkflowRunCodingHost(ctx context.Context, workflowRunID in
 }
 
 const recordWorkflowRunCodingHost = `-- name: RecordWorkflowRunCodingHost :one
+
 INSERT INTO workflow_run_coding_hosts (workflow_run_id, workspace_id, host_run_id, flow_id)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (workflow_run_id) DO UPDATE
@@ -45,6 +46,7 @@ type RecordWorkflowRunCodingHostParams struct {
 	FlowID        string `json:"flow_id"`
 }
 
+// Private cluster queries kept separate from the product graph.
 // Written once the workspace gateway accepts a dispatched turn. A retry of the
 // same dispatch re-asserts the same identity rather than creating a second row.
 func (q *Queries) RecordWorkflowRunCodingHost(ctx context.Context, arg RecordWorkflowRunCodingHostParams) (WorkflowRunCodingHost, error) {

@@ -64,22 +64,6 @@ func (q *Queries) GetAlertIncidentStateCounts(ctx context.Context) (GetAlertInci
 	return i, err
 }
 
-const getLandingQueueDepth = `-- name: GetLandingQueueDepth :one
-SELECT COUNT(*)::bigint AS depth
-FROM landing_tasks
-WHERE status IN ('pending', 'append_pending')
-`
-
-// Landing work still waiting for a worker. Retries whose backoff has not
-// elapsed are queued work too, so this counts every pending task rather than
-// mirroring ClaimPendingLandingTask's available_at gate.
-func (q *Queries) GetLandingQueueDepth(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, getLandingQueueDepth)
-	var depth int64
-	err := row.Scan(&depth)
-	return depth, err
-}
-
 const listAlertIncidents = `-- name: ListAlertIncidents :many
 
 SELECT id, incident_id, policy_name, condition_name, state, summary, incident_url, runbook, workflow, remediation_pr_url, attempts, created_at, resolved_at, updated_at, source, occurrences, last_seen_at, acknowledged_at, acknowledged_by, snoozed_until, resolved_by, resolution_note FROM alert_incidents
@@ -104,7 +88,7 @@ type ListAlertIncidentsParams struct {
 	PageLimit   int32       `json:"page_limit"`
 }
 
-// ---- Admin system console (GET /api/admin/system/{status,canaries,incidents}) ----
+// Private cluster queries kept separate from the product graph.
 // State filters are lifecycle views; snoozing does not change active state.
 func (q *Queries) ListAlertIncidents(ctx context.Context, arg ListAlertIncidentsParams) ([]AlertIncident, error) {
 	rows, err := q.db.Query(ctx, listAlertIncidents, arg.Policy, arg.StateFilter, arg.PageLimit)

@@ -272,6 +272,7 @@ func (q *Queries) TouchRunnerHeartbeat(ctx context.Context, id int64) (RunnerPoo
 }
 
 const upsertRunner = `-- name: UpsertRunner :one
+
 INSERT INTO runner_pool (name, status, last_heartbeat_at, metadata)
 VALUES ($1, 'idle', NOW(), $2)
 ON CONFLICT (name) DO UPDATE
@@ -290,6 +291,7 @@ type UpsertRunnerParams struct {
 	Metadata json.RawMessage `json:"metadata"`
 }
 
+// Private cluster queries kept separate from the product graph.
 func (q *Queries) UpsertRunner(ctx context.Context, arg UpsertRunnerParams) (RunnerPool, error) {
 	row := q.db.QueryRow(ctx, upsertRunner, arg.Name, arg.Metadata)
 	var i RunnerPool
