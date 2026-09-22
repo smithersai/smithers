@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +20,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
 )
 
 func codingFixture() WorkspaceCodingInput {
@@ -161,7 +163,7 @@ func TestWorkspaceCoding_ProvenanceRetryKeepsNativeReceiptAndFreshTransportKey(t
 		key, keyErr := sandbox.RequestIdempotencyKey(ctx)
 		require.NoError(t, keyErr)
 		keys = append(keys, key)
-		require.Contains(t, req.Command, "python3 -")
+		require.Contains(t, req.Command, shellQuote(workspaceJJExportPath)+" --local")
 		require.True(t, strings.HasPrefix(req.Command, "runuser -u 'developer' -- env -u JJ_CONFIG HOME='/home/developer'"))
 		require.Contains(t, req.Command, "XDG_CONFIG_HOME='/home/developer/.config' USER='developer' LOGNAME='developer'")
 		return sandbox.ExecResult{StatusCode: &zero, Stdout: string(raw)}, nil
@@ -191,6 +193,10 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	if os.Getenv("SMITHERS_CODING_NATIVE_TEST") == "" {
 		t.Skip("SMITHERS_CODING_NATIVE_TEST enables actual guest command + PostgreSQL acceptance")
 	}
+	helper := os.Getenv(workspaceJJExportBinaryEnv)
+	if helper == "" {
+		t.Skip("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY must name the built native helper")
+	}
 	require.NotNil(t, agentTestDB)
 	ctx := context.Background()
 	q := db.New(agentTestDB)
@@ -200,8 +206,6 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	_, err = agentTestDB.Exec(ctx, `UPDATE workspaces SET vm_id='coding-test-vm' WHERE id=$1`, workspace.ID)
 	require.NoError(t, err)
 	repo := t.TempDir()
-	reporterPath := t.TempDir() + "/test-head-reporter"
-	require.NoError(t, os.WriteFile(reporterPath, []byte("old unlocked reporter"), 0600))
 	command := exec.Command("jj", "git", "init", repo)
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
@@ -210,13 +214,15 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 		require.NoError(t, err, string(output))
 	}
 	vm := &mockWorkspaceSandboxVMClient{execAwaitFn: func(ctx context.Context, _ string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
-		guestCommand := strings.Replace(req.Command, shellQuote(defaultWorkspaceClonePath), shellQuote(repo), 1)
-		guestCommand = strings.Replace(guestCommand, "/usr/local/bin/smithers-workspace-head", reporterPath, 1)
+		guestCommand := strings.ReplaceAll(req.Command, defaultWorkspaceClonePath, repo)
 		// This local transport adapter runs on macOS; the production command's
 		// Linux runuser boundary is asserted above, while native JJ executes as
 		// this test's owner against its isolated configured repository.
-		guestCommand = guestCommand[strings.Index(guestCommand, "python3 - "):]
+		start := strings.Index(guestCommand, shellQuote(workspaceJJExportPath)+" --local")
+		require.GreaterOrEqual(t, start, 0)
+		guestCommand = strings.Replace(guestCommand[start:], shellQuote(workspaceJJExportPath), shellQuote(helper), 1)
 		cmd := exec.CommandContext(ctx, "sh", "-c", guestCommand)
+		cmd.Env = append(os.Environ(), "SMITHERS_CODING_LOCAL_OWNER=1")
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		stdout, runErr := cmd.Output()
@@ -231,10 +237,6 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	require.NoError(t, err)
 	description := "feat: literal $(touch /tmp/smithers-coding-injection) `echo nope`"
 	input := WorkspaceCodingInput{Operation: "create", RequestID: uuid.NewString(), ExpectedOperationID: read.OperationID, Target: *read.Head, Description: &description}
-	_, err = svc.ApplyCodingOperation(ctx, workspace.ID, repoID, userID, input)
-	assertAPIErrorStatus(t, err, http.StatusServiceUnavailable)
-	require.Contains(t, err.Error(), "head reporter")
-	require.NoError(t, os.WriteFile(reporterPath, []byte(workspaceHeadReporterScript), 0600))
 	result, err := svc.ApplyCodingOperation(ctx, workspace.ID, repoID, userID, input)
 	require.NoError(t, err)
 	require.Equal(t, "accepted", result.Status)
@@ -265,9 +267,12 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 	count, err = q.CountJjOperationsByRepo(ctx, repoID)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), count, "local native acceptance has not claimed cloud provenance yet")
-	script := t.TempDir() + "/coding.py"
-	require.NoError(t, os.WriteFile(script, []byte(workspace_scripts.CodingScript), 0600))
-	projectionBytes, err := exec.Command("python3", script, "--projections", repo, workspace.ID, "").CombinedOutput()
+	canonicalRoot, err := filepath.EvalSymlinks(repo)
+	require.NoError(t, err)
+	digest := sha256.Sum256([]byte(canonicalRoot))
+	hexDigest := fmt.Sprintf("%x", digest)
+	ownerID := fmt.Sprintf("%s-%s-4%s-8%s-%s", hexDigest[:8], hexDigest[8:12], hexDigest[13:16], hexDigest[17:20], hexDigest[20:32])
+	projectionBytes, err := exec.Command(helper, "--projections", repo, ownerID, "").CombinedOutput()
 	require.NoError(t, err, string(projectionBytes))
 	var projection struct {
 		Operations []WorkspaceCodingProjection `json:"coding_operations"`

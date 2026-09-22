@@ -29,7 +29,6 @@ func (s *RepoGatewayService) addProductGatewayHost(files map[string]sandbox.Sand
 func (s *RepoGatewayService) installProductGatewayHost(ctx context.Context, vmID string) error {
 	command := strings.Join([]string{
 		"set -euo pipefail",
-		"/usr/bin/python3 --version",
 		"install -d /usr/local/lib/smithers /workspace/.tmp /workspace/.cache",
 		"base64 -d " + shellQuote(repoGatewayProductHostB64Path) + " | gzip -d > " + shellQuote(repoGatewayProductHostPath),
 		"chmod 755 " + shellQuote(repoGatewayProductHostPath),

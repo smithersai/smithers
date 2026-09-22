@@ -1,6 +1,6 @@
 # Configured coding host
 
-`host.ts` is this repository's private deployment recipe. It composes the existing native Control host, executable catalog, `AgentAction`, QuickJS sandbox, Plue JJ adapter and immutable command checks. It is not a public coding service, database, gateway extension or second executor.
+`host.ts` is this repository's private deployment recipe. It composes the existing native Control host, executable catalog, `AgentAction`, QuickJS sandbox, packaged JJ helper and immutable command checks. It is not a public coding service, database, gateway extension or second executor.
 
 The same Effect composition runs on Node and Bun. The concrete adapters supply filesystem, path, subprocess containment, crypto, SQLite, model transport and HTTP. No Node sidecar is required on Bun. Runtime-specific imports stay at the executable boundary; repository workflows do not select a runtime.
 
@@ -73,7 +73,7 @@ These checks validate documentation, not an application test suite. The generate
 project configuration is selected with
 `SMITHERS_CODING_PROJECT=.smithers/coding-project.json`.
 
-`coding-plan/v1` is advertised only after the configured catalog includes `coding` and `coding/implementation` with their expected native delegates, and Plue's adapter verifies the repository's provisioned native binding. Conflicted JJ state refuses startup. The gateway reports the existing protocol version and workspace hash, plus the owning gateway row ID. The ordinary CLI does not advertise this capability.
+`coding-plan/v1` is advertised only after the configured catalog includes `coding` and `coding/implementation` with their expected native delegates, and the packaged helper verifies the repository's provisioned native binding. Conflicted JJ state refuses startup. The gateway reports the existing protocol version and workspace hash, plus the owning gateway row ID. The ordinary CLI does not advertise this capability.
 
 Providing the private `planning` operator configuration also enables
 [`coding/request`](request.md) and its `coding-request/v1` health capability.
@@ -114,20 +114,17 @@ The default queue delivers a root steer to its first consuming boundary and does
 
 The host catalog is pinned for its process lifetime. Deploying a changed executable definition requires restarting the host. A source change after approval explicitly fails the old plan; restarting cannot make that old approval describe the new source. An ordinary host without the configured catalog leaves native module runs parked.
 
-The native acceptance fixture uses a scripted model behind the existing `SeatResolver`, while exercising the actual `AgentAction`, QuickJS cell, guarded write, Plue adapter, immutable checks and durable Control/engine journals. This distinguishes executable evidence from an agent's claimed summary. Both required fast and slow checks must inspect the implemented revision before validation succeeds.
+The native acceptance fixture uses a scripted model behind the existing `SeatResolver`, while exercising the actual `AgentAction`, QuickJS cell, guarded write, packaged helper, immutable checks and durable Control/engine journals. This distinguishes executable evidence from an agent's claimed summary. Both required fast and slow checks must inspect the implemented revision before validation succeeds.
 
 ## Deployment artifact
 
 `node flows/coding/build.mjs /path/to/smithers-coding-host` uses the repository's existing esbuild dependency to emit one executable ESM file. It fits Plue's current gzip/base64 single-executable staging path. The Node shebang selects the default runtime; `bun smithers-coding-host ...` uses the Bun adapters in the same artifact. A build-only lazy wrapper keeps the Bun SQLite builtin behind the existing dynamic platform import, preventing an eager Node import of `bun:sqlite`. It changes no SQL or gateway protocol.
 
-QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. Plue separately provisions JJ, Python, the owning coding adapter/configuration and `smithers-jj-export`; these are explicit native dependencies, not files hidden inside the JavaScript artifact. Declared repository modules still resolve their own project dependencies as usual. This artifact is private deployment composition, not another published package or runtime primitive.
+QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. Plue separately provisions JJ, the owning coding configuration and the packaged `smithers-jj-export` workspace helper. Declared repository modules still resolve their own project dependencies as usual. This artifact is private deployment composition.
 
-The filesystem helper requires CPython 3 at `/usr/bin/python3` by default. Set
-`SMITHERS_PYTHON3=/run/current-system/sw/bin/python3` on NixOS, or to another
-absolute CPython 3 path, before starting the coding host. Both Node and Bun
-control hosts (also used by the product gateway host) honor this variable.
-Unset or empty keeps the default; a relative path fails startup with an error
-naming `SMITHERS_PYTHON3`. The host never searches `PATH` for Python.
+The coding host requires `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to name the
+packaged helper by an absolute path. Both Node and Bun use that executable for
+file eligibility, snapshots and native coding operations.
 
 The configured executable is staged separately from the general Smithers CLI.
 Plue's existing `SMITHERS_WORKSPACE_CODING_HOST_BINARY` operator option selects

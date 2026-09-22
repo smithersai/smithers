@@ -1,4 +1,5 @@
 //! Native coding requests share the packaged helper and the JJ operation lock.
+use base64::prelude::{Engine as _, BASE64_STANDARD};
 use std::path::Path;
 use std::process::Command;
 
@@ -9,13 +10,16 @@ use serde_json::{json, Value};
 use smithers_ffi::jj_core::{create_settings, load_repo_at_head, UserConfig};
 
 use super::source_create;
+use super::source_import;
 use super::source_publish;
 use super::workspace_engine::{commit, field, id, invalid, jj, CodingLock, Failure};
 use super::workspace_files::FilePatch;
 
 type Result<T> = std::result::Result<T, Failure>;
+#[cfg(test)]
+pub(super) static LOCAL_OWNER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn revision(repo: &Path, value: &Value, operation: &str) -> Result<Value> {
+pub(super) fn revision(repo: &Path, value: &Value, operation: &str) -> Result<Value> {
     let settings = create_settings(&UserConfig::default());
     let (_, loaded) = load_repo_at_head(repo, &settings)
         .map_err(|_| Failure::new("unsupported_jj", "native repository is unavailable"))?;
@@ -88,8 +92,12 @@ fn read(repo: &Path, input: &Value) -> Result<Value> {
         let selector = format!("change_id(\"{change_id}\")");
         revisions.push(revision(repo, &commit(repo, &selector)?, operation_id)?);
     }
+    let mut capabilities = vec!["apply-files/v1", "create-source/v1"];
+    if source_import::available(repo) {
+        capabilities.push("import-source/v1");
+    }
     let mut result = json!({"status":"read", "operationId":operation_id, "head":head,
-        "revisions":revisions, "capabilities":["apply-files/v1", "import-source/v1", "create-source/v1"]});
+        "revisions":revisions, "capabilities":capabilities});
     if let Some(limit) = input.get("historyLimit") {
         let count = limit
             .as_u64()
@@ -125,7 +133,7 @@ fn read(repo: &Path, input: &Value) -> Result<Value> {
     Ok(result)
 }
 
-fn operation(repo: &Path) -> Result<Value> {
+pub(super) fn operation(repo: &Path) -> Result<Value> {
     serde_json::from_str(&jj(
         repo,
         &["op", "log", "-n", "1", "--no-graph", "-T", "json(self)"],
@@ -167,11 +175,36 @@ fn expected_revision(repo: &Path, input: &Value, name: &str, at: &str) -> Result
     Ok(actual)
 }
 
-fn mutate_command(repo: &Path, marker: &str, args: &[String]) -> Result<()> {
-    let output = Command::new("jj")
+fn projection_marker(repo: &Path, input: &Value) -> Option<String> {
+    let owner = local_owner(repo).ok()?;
+    let mut request =
+        json!({"operation":input["operation"], "expectedOperationId":input["expectedOperationId"]});
+    for name in ["target", "source", "after"] {
+        if let Some(value) = input.get(name) {
+            request[name] = json!({"changeId":value["changeId"], "commitId":value["commitId"]});
+        }
+    }
+    let encoded = BASE64_STANDARD.encode(
+        json!({"version":1, "workspaceId":owner.workspace_id, "request":request}).to_string(),
+    );
+    Some(format!("smithers.coding-projection=\"{encoded}\""))
+}
+
+fn mutate_command(
+    repo: &Path,
+    marker: &str,
+    projection: Option<&str>,
+    args: &[String],
+) -> Result<()> {
+    let mut command = Command::new("jj");
+    command
         .arg("-R")
         .arg(repo)
-        .args(["--no-pager", "--color=never", "--config", marker])
+        .args(["--no-pager", "--color=never", "--config", marker]);
+    if let Some(value) = projection {
+        command.args(["--config", value]);
+    }
+    let output = command
         .args(args)
         .env("JJ_EDITOR", "false")
         .env("PAGER", "cat")
@@ -350,7 +383,8 @@ fn mutate(repo: &Path, input: &Value) -> Result<Value> {
             ));
         }
     }
-    mutate_command(repo, &marker, &command)?;
+    let projection = projection_marker(repo, input);
+    mutate_command(repo, &marker, projection.as_deref(), &command)?;
     match receipt(repo, request_id, &digest)? {
         Some(accepted) => mutation_result(repo, input, &accepted, false),
         None if field(&operation(repo)?, "id")? == before_id => {
@@ -410,7 +444,8 @@ fn apply_files(repo: &Path, input: &Value, digest: &str) -> Result<Value> {
     }
     patch.verify()?;
     let marker = format!("smithers.coding-request=\"{request_id}:{digest}\"");
-    mutate_command(repo, &marker, &["status".into()])?;
+    let projection = projection_marker(repo, input);
+    mutate_command(repo, &marker, projection.as_deref(), &["status".into()])?;
     let accepted = receipt(repo, request_id, digest)?.ok_or_else(|| {
         Failure::new(
             "file_recovery_required",
@@ -499,7 +534,7 @@ fn mutation_result(repo: &Path, input: &Value, receipt: &Value, replayed: bool) 
     )
 }
 
-fn jj_at(repo: &Path, op: &str, args: &[&str]) -> Result<String> {
+pub(super) fn jj_at(repo: &Path, op: &str, args: &[&str]) -> Result<String> {
     let output = Command::new("jj")
         .arg("-R")
         .arg(repo)
@@ -519,7 +554,7 @@ fn jj_at(repo: &Path, op: &str, args: &[&str]) -> Result<String> {
         .map_err(|_| Failure::new("unsupported_jj", "JJ returned non-UTF8 output"))
 }
 
-fn local_owner(repo: &Path) -> Result<source_create::Owner> {
+pub(super) fn local_owner(repo: &Path) -> Result<source_create::Owner> {
     if let Ok(owner) = source_create::provisioned_owner(repo) {
         return Ok(owner);
     }
@@ -628,6 +663,7 @@ pub fn run(raw: &[u8]) -> Result<Value> {
         }
         "create_source" => create_source(repo, &input),
         "publish_source" => publish_source(repo, &input),
+        "import_source" => source_import::run(repo, &input),
         _ => Err(invalid("unsupported local coding operation")),
     }
 }
@@ -792,6 +828,7 @@ mod tests {
 
     #[test]
     fn create_source_keeps_the_editor_head_and_creates_an_immutable_child() {
+        let _guard = LOCAL_OWNER_TEST_LOCK.lock().unwrap();
         let dir = tempdir().unwrap();
         let output = Command::new("jj")
             .args(["git", "init", dir.path().to_str().unwrap()])

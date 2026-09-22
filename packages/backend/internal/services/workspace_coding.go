@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
 )
 
 // WorkspaceCodingRevision is native JJ identity. Kind=conflicted has TreeTerms
@@ -245,7 +243,6 @@ func (s *WorkspaceService) ApplyCodingOperation(ctx context.Context, workspaceID
 	raw, _ := json.Marshal(input)
 	var request map[string]any
 	_ = json.Unmarshal(raw, &request)
-	request["actorId"], request["workspaceId"] = userID, workspaceID
 	result, err := s.executeCoding(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite, request)
 	if err == nil && result.Status == "accepted" {
 		err = s.recordCodingOperation(ctx, workspaceID, repositoryID, userID, input.Operation, result)
@@ -294,7 +291,6 @@ func (s *WorkspaceService) executeCoding(ctx context.Context, workspaceID string
 	if current.VmID != workspace.VmID {
 		return WorkspaceCodingResult{}, pkgerrors.Conflict("workspace execution changed before coding; read its current revision")
 	}
-	request["requireReporterLock"] = true
 	user := strings.TrimSpace(s.workspaceUsername)
 	if user == "" {
 		user = defaultWorkspaceUser
@@ -354,10 +350,24 @@ func buildWorkspaceCodingCommand(repo, user string, request any) (string, error)
 	if err != nil {
 		return "", err
 	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", err
+	}
+	delete(payload, "actorId")
+	delete(payload, "workspaceId")
+	delete(payload, "reportProvenance")
+	delete(payload, "requireReporterLock")
+	payload["repositoryPath"] = repo
+	raw, err = json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
 	// Match repository provisioning's developer identity. The sandbox control
 	// channel executes as root; running JJ there would create root-owned native
 	// metadata and bypass the workspace user's JJ author/configuration.
 	asDev := "runuser -u " + shellQuote(user) + " -- env -u JJ_CONFIG HOME=" + shellQuote(defaultWorkspaceHome) +
-		" XDG_CONFIG_HOME=" + shellQuote(defaultWorkspaceHome+"/.config") + " USER=" + shellQuote(user) + " LOGNAME=" + shellQuote(user) + " "
-	return asDev + fmt.Sprintf("python3 - %s %s <<'SMITHERS_CODING_PY'\n%s\nSMITHERS_CODING_PY", shellQuote(repo), shellQuote(base64.StdEncoding.EncodeToString(raw)), workspace_scripts.CodingScript), nil
+		" XDG_CONFIG_HOME=" + shellQuote(defaultWorkspaceHome+"/.config") + " USER=" + shellQuote(user) + " LOGNAME=" + shellQuote(user) +
+		" PATH=/usr/local/bin:/run/current-system/sw/bin:/usr/bin:/bin "
+	return asDev + shellQuote(workspaceJJExportPath) + " --local <<'SMITHERS_CODING_JSON'\n" + string(raw) + "\nSMITHERS_CODING_JSON", nil
 }

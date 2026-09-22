@@ -7,7 +7,7 @@ import { resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 export const nativeTests = [
-  "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts", "coding-wiki-check.test.ts",
+  "coding-native.test.ts", "coding-workspace-helper.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts", "coding-wiki-check.test.ts",
   "coding-atoms.test.ts", "coding-correction.test.ts", "coding-planning.test.ts", "coding-planning-wiki.test.ts",
   "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts",
   "coding-dispatch-host.test.ts", "coding-vibe-cleanup.test.ts",
@@ -60,21 +60,19 @@ export const main = async (mode = "source", selected) => {
   if (selected !== undefined && (mode !== "source" || !available.includes(selected))) {
     throw new Error("Select an existing source fixture for this runtime, or omit the selection for the full gate")
   }
-  const adapter = process.env.PLUE_CODING_ADAPTER_SOURCE ?? "/usr/local/lib/smithers/workspace-coding.py"
-  const exporter = process.env.PLUE_JJ_EXPORT_BINARY ?? "/usr/local/bin/smithers-jj-export"
-  if (!adapter || !exporter) throw new Error("Native coding gates require nonempty Plue adapter/exporter paths")
+  const helper = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ?? "/usr/local/bin/smithers-jj-export"
+  if (!helper) throw new Error("Native coding gates require the packaged workspace helper")
   try {
-    await access(adapter, constants.R_OK); await access(exporter, constants.R_OK | constants.X_OK)
-    if (!(await stat(adapter)).isFile() || !(await stat(exporter)).isFile()) throw new Error("Expected regular tool files")
+    await access(helper, constants.R_OK | constants.X_OK)
+    if (!(await stat(helper)).isFile()) throw new Error("Expected a regular helper")
   }
-  catch { throw new Error("Native coding prerequisites are missing: install the Plue adapter/exporter or set PLUE_CODING_ADAPTER_SOURCE and PLUE_JJ_EXPORT_BINARY for direct local acceptance") }
+  catch { throw new Error("Native coding prerequisite is missing: set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to the built helper") }
   const jj = execFileSync("jj", ["--version"], { encoding: "utf8", timeout: 30_000, maxBuffer: 65_536 }).trim()
-  execFileSync("python3", ["--version"], { encoding: "utf8", timeout: 30_000, maxBuffer: 65_536 })
   // These are measured preflight facts, not claims that host tools are build outputs.
   console.log(JSON.stringify({ runtime: process.versions.bun ? "bun" : "node",
     runtimeVersion: process.versions.bun ?? process.versions.node, jj,
-    adapterSha256: await digest(adapter), exporterSha256: await digest(exporter) }))
-  const env = { ...process.env, PLUE_CODING_ADAPTER_SOURCE: resolve(adapter), PLUE_JJ_EXPORT_BINARY: resolve(exporter) }
+    helperSha256: await digest(helper) }))
+  const env = { ...process.env, SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: resolve(helper) }
   if (mode === "bundle") {
     for (const mode of ["plan", "request"]) await run(["flows/test/coding-host-bundle.mjs", mode], env)
   } else {

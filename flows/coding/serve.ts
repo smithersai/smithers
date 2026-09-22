@@ -32,7 +32,7 @@ if (parsed.values.version) {
     "Requires SMITHERS_GATEWAY_ID and SMITHERS_CODING_IMPLEMENT_MODEL; SMITHERS_API_KEY authenticates the existing gateway.\n" +
     "SMITHERS_CODING_PROJECT explicitly selects project JSON for the prompt route.\n" +
     "SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION and SMITHERS_OWNER_GENERATION bind the runtime bridge.\n" +
-    "SMITHERS_PYTHON3 selects an absolute CPython 3 path; unset or empty uses /usr/bin/python3. Relative paths fail startup; PATH is never searched.\n" +
+    "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY selects the packaged native workspace helper.\n" +
     "Optional SMITHERS_CODING_PLAN_MODEL, SMITHERS_CODING_POC_MODEL and SMITHERS_CODING_WIKI_MODEL select provider:model roles.\n" +
     "The provisioned SMITHERS_JJHUB_TOKEN and SMITHERS_JJHUB_API_URL enable coding/vibe; the token is consumed before any tool starts.\n")
 } else {
@@ -59,6 +59,7 @@ if (parsed.values.version) {
   const runtimeSourceRevision = process.env.SMITHERS_SOURCE_REVISION ?? ""
   if (!/^[0-9a-f]{40}$/.test(runtimeSourceRevision)) throw new Error("SMITHERS_SOURCE_REVISION must be an immutable 40-character revision")
   const options = { repositoryPath: root, stateRoot, credential: bind.credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "",
+    sourcePublication: process.env.SMITHERS_CODING_LOCAL_OWNER === "1" ? "local-only" as const : "cloud" as const,
     runtimeArtifactDigest, runtimeSourceRevision, ownerGeneration,
     implementationModel: process.env.SMITHERS_CODING_IMPLEMENT_MODEL ?? "",
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),

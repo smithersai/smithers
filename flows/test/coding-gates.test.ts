@@ -63,11 +63,10 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
 test("native gate refuses absent prerequisites before an opt-in fixture can skip", () => {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("./coding-native-gate.mjs", import.meta.url))], {
     encoding: "utf8", timeout: 15_000, env: { PATH: process.env.PATH,
-      PLUE_CODING_ADAPTER_SOURCE: "/smithers-acceptance-does-not-exist/adapter.py",
-      PLUE_JJ_EXPORT_BINARY: "/smithers-acceptance-does-not-exist/exporter" }
+      SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/smithers-acceptance-does-not-exist/helper" }
   })
   assert.equal(result.status, 1, result.stderr)
-  assert.match(result.stderr, /Native coding prerequisites are missing/)
+  assert.match(result.stderr, /Native coding prerequisite is missing/)
   assert.doesNotMatch(result.stdout, /Native coding gate:/)
   const unlisted = spawnSync(process.execPath, [fileURLToPath(new URL("./coding-native-gate.mjs", import.meta.url)), "source", "../unlisted.ts"], {
     encoding: "utf8", timeout: 15_000, env: { PATH: process.env.PATH }

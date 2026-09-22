@@ -17,7 +17,6 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
 )
 
 // RFD-004: every workspace VM runs a guest head reporter that publishes the
@@ -28,7 +27,6 @@ import (
 const (
 	workspaceHeadReporterService    = "smithers-workspace-head"
 	workspaceHeadReporterScriptPath = "/usr/local/bin/smithers-workspace-head"
-	workspaceCodingScriptPath       = "/usr/local/lib/smithers/workspace-coding.py"
 	workspaceCodingConfigPath       = "/etc/smithers/workspace-coding.json"
 	workspaceGitCredentialEnvPath   = "/etc/smithers/workspace-git.env"
 	workspaceGitCredentialSocket    = defaultWorkspaceHome + "/.cache/smithers/git-credential/socket"
@@ -111,7 +109,7 @@ while :; do
   ahead="${ahead:-0}"; behind="${behind:-0}"
   # Read immutable native receipt recipes under the SAME operation view/lock.
   # The cursor is process-local; reboot replays idempotent native DB projections.
-  projections=$(python3 /usr/local/lib/smithers/workspace-coding.py --projections "$repo" "$ws" "$coding_cursor") || { flock -u 9; sleep "$poll"; continue; }
+  projections=$(/usr/local/bin/smithers-jj-export --head-projections "$repo" "$ws" "$coding_cursor" "$change_id" "$commit_id" "$ahead" "$behind") || { flock -u 9; sleep "$poll"; continue; }
   flock -u 9
   if [ "$commit_id" != "$last_commit" ]; then
     if ! git -C "$repo" push --quiet --force --no-verify origin "${commit_id}:${ref}" >/dev/null 2>&1; then
@@ -119,11 +117,13 @@ while :; do
     fi
     last_commit="$commit_id"
   fi
-  next_cursor=$(printf '%s' "$projections" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cursor"])') || { sleep "$poll"; continue; }
-  more=$(printf '%s' "$projections" | python3 -c 'import json,sys; print("yes" if json.load(sys.stdin)["more"] else "no")') || { sleep "$poll"; continue; }
+  mapfile -t projection_lines <<< "$projections"
+  if [ "${#projection_lines[@]}" -ne 3 ]; then sleep "$poll"; continue; fi
+  next_cursor="${projection_lines[0]}"
+  more="${projection_lines[1]}"
   report="$change_id $commit_id $ahead $behind $next_cursor"
   if [ "$report" != "$last_report" ]; then
-    body=$(printf '%s' "$projections" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(json.dumps(dict(change_id=sys.argv[1],commit_id=sys.argv[2],ahead=int(sys.argv[3]),behind=int(sys.argv[4]),coding_operations=p["coding_operations"])))' "$change_id" "$commit_id" "$ahead" "$behind") || { sleep "$poll"; continue; }
+    body="${projection_lines[2]}"
     if curl -fsS -m 20 -o /dev/null -X POST "${api}/api/repos/${slug}/workspaces/${ws}/head" \
          -H "Authorization: Bearer ${SMITHERS_WORKSPACE_TOKEN}" -H 'Content-Type: application/json' -d "$body" 2>/dev/null; then
       last_report="$report"
@@ -329,11 +329,10 @@ func buildWorkspaceCodingInstallCommand(workspace db.Workspace, user, baseURL, s
 		"apiBaseUrl": baseURL + "/api", "gitUrl": gitURL, "credentialSocket": workspaceGitCredentialSocket,
 	})
 	return strings.Join([]string{
-		"install -d -m 755 /usr/local/lib/smithers /etc/smithers",
-		"cat > " + shellQuote(workspaceCodingScriptPath) + " <<'SMITHERS_CODING_EOF'\n" + workspace_scripts.CodingScript + "\nSMITHERS_CODING_EOF",
+		"install -d -m 755 /etc/smithers",
 		"cat > " + shellQuote(workspaceCodingConfigPath) + " <<'SMITHERS_CODING_CONFIG_EOF'\n" + string(config) + "\nSMITHERS_CODING_CONFIG_EOF",
-		"chown root:root " + shellQuote(workspaceCodingScriptPath) + " " + shellQuote(workspaceCodingConfigPath),
-		"chmod 644 " + shellQuote(workspaceCodingScriptPath) + " " + shellQuote(workspaceCodingConfigPath),
+		"chown root:root " + shellQuote(workspaceCodingConfigPath),
+		"chmod 644 " + shellQuote(workspaceCodingConfigPath),
 	}, "\n")
 }
 
@@ -348,18 +347,16 @@ func (s *WorkspaceService) ensureWorkspaceHeadReporter(ctx context.Context, work
 	if !ok {
 		return workspace, pkgerrors.Conflict("workspace source publisher execution is unavailable")
 	}
-	probe := `python3 - <<'PY'
-import pathlib, pwd
-uid = pwd.getpwnam('developer').pw_uid
-socket = pathlib.Path('/home/developer/.cache/smithers/git-credential/socket')
-for proc in pathlib.Path('/proc').iterdir():
-    try:
-        if proc.name.isdigit() and proc.stat().st_uid == uid and b'/usr/local/bin/smithers-workspace-head' in (proc/'cmdline').read_bytes().split(b'\0'):
-            raise SystemExit(0 if socket.is_socket() else 2)
-    except (FileNotFoundError, ProcessLookupError, PermissionError):
-        pass
-raise SystemExit(1)
-PY`
+	probe := `owner_uid=$(id -u developer) || exit 2
+for proc in /proc/[0-9]*; do
+  [ -r "$proc/cmdline" ] || continue
+  [ "$(stat -c %u "$proc" 2>/dev/null)" = "$owner_uid" ] || continue
+  if tr '\000' '\n' < "$proc/cmdline" | grep -Fxq '/usr/local/bin/smithers-workspace-head'; then
+    test -S '/home/developer/.cache/smithers/git-credential/socket'
+    exit $?
+  fi
+done
+exit 1`
 	timeout := int64(10000)
 	result, err := execClient.Execute(ctx, workspace.VmID, sandbox.ExecRequest{Command: probe, TimeoutMS: &timeout})
 	if err != nil || result.StatusCode == nil {

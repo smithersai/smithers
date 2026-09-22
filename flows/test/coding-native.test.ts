@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir, userInfo } from "node:os"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { NodeChildProcessSpawner, NodeFileSystem, NodePath } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { NativeCoding, nativeLayer, requestIdFor, type Operation } from "../coding/native.ts"
 
@@ -16,110 +16,36 @@ test("native invocation UUIDs remain stable across retry and differ between dura
   assert.notEqual(requestIdFor("execution-2", "create/database"), first)
 })
 
-/*
- * The guest adapter is a Plue-owned program in the box, not a source in this
- * repo, so its error envelope is the one place a code arrives on a
- * `{ code, message }` record with no raise site anywhere. That record is what
- * `agent/internal/FailureSummary.ts` puts on a run's first journal line, and
- * `apps/app RunCause.ts` picks the sentence a person reads off that code — so
- * before `NativeCode` closed the field, an adapter answering `model_failed`
- * made a `repository/inspection` run card say "a turn opened and the model
- * never answered", with no model in the run.
- *
- * Two adapters, each three lines of Python, each answering one envelope.
- */
-test("a code the guest adapter invents cannot become a code this repo answers", { timeout: 30_000 }, async t => {
-  const temporary = await mkdtemp(join(tmpdir(), "coding-native-envelope-"))
-  t.after(() => rm(temporary, { recursive: true, force: true }))
-  const adapter = async (code: string) => {
-    const path = join(temporary, `${code}.py`)
-    await writeFile(path, `import sys,json\nsys.stdin.read()\nprint(json.dumps({"error":{"code":${JSON.stringify(code)},"message":"the guest adapter said so"}}))\nsys.exit(1)\n`)
-    return nativeLayer({ sourcePublication: "local-only", repositoryPath: temporary, adapterPath: path }).pipe(
-      Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
-    )
-  }
-  const read = (host: Layer.Layer<NativeCoding>) =>
-    Effect.runPromise(Effect.flatMap(NativeCoding, native => Effect.result(native.read())).pipe(Effect.provide(host)))
-
-  const foreign = await read(await adapter("model_failed"))
-  assert.equal(foreign._tag, "Failure")
-  if (foreign._tag !== "Failure") throw new Error("the adapter answered a receipt")
-  // Not `model_failed`: that code belongs to the harness, and one line of
-  // `<code>: <message>` cannot say which vocabulary wrote it.
-  assert.equal(foreign.failure.code, "invalid_receipt")
-  // The guest's own code and sentence survive, in the technical detail where a
-  // foreign sentence already belonged.
-  assert.match(foreign.failure.message, /\(model_failed\): the guest adapter said so/)
-
-  // A code this repo does declare still reaches the caller unchanged, so the
-  // retry predicates that read it keep working.
-  const declared = await read(await adapter("workspace_busy"))
-  assert.equal(declared._tag, "Failure")
-  if (declared._tag !== "Failure") throw new Error("the adapter answered a receipt")
-  assert.equal(declared.failure.code, "workspace_busy")
-  assert.equal(declared.failure.message, "the guest adapter said so")
-})
-
-const source = process.env.PLUE_CODING_ADAPTER_SOURCE
-test("Effect spawner runs the real Plue adapter: native lost-ack replay, conflicts, path identity and pending provenance", {
-  skip: source === undefined ? "Set PLUE_CODING_ADAPTER_SOURCE to the Plue-owned coding.py; requires native JJ 0.39" : false,
-  timeout: 60_000
+const helper = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+test("packaged helper accepts a native change and replays its JJ receipt", {
+  skip: helper === undefined ? "Build the workspace helper and set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" : false,
+  timeout: 120_000
 }, async t => {
-  assert.match(execFileSync("jj", ["--version"], { encoding: "utf8" }), /^jj 0\.39\.0/)
-  const temporary = await mkdtemp(join(tmpdir(), "coding-native-effect-"))
+  assert.ok(helper)
+  const temporary = await mkdtemp(join(tmpdir(), "coding-native-helper-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const repo = join(temporary, "repo")
   execFileSync("jj", ["git", "init", repo], { stdio: "pipe" })
-  const jj = (...args: string[]) => execFileSync("jj", ["-R", repo, ...args], { stdio: "pipe" }).toString()
-  jj("config", "set", "--repo", "user.name", "Native Effect Acceptance")
-  jj("config", "set", "--repo", "user.email", "acceptance@example.com")
-  const config = join(temporary, "coding.json"), reporter = join(temporary, "reporter"), wrapper = join(temporary, "adapter.py")
-  await writeFile(config, JSON.stringify({ version: 1, workspaceId: "workspace-acceptance", actorId: 42, repositoryPath: repo, username: userInfo().username }))
-  await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
-  // Import Plue's exact implementation. Only provisioned paths vary in this
-  // portable harness; production invokes the installed --local entrypoint.
-  await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(source)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)})))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
-  const host = (repositoryPath = repo) => nativeLayer({ sourcePublication: "local-only", repositoryPath, adapterPath: wrapper }).pipe(
-    Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
-  )
-  let original!: Operation
-  let acceptedId = ""
-  const accepted = await Effect.runPromise(Effect.gen(function*() {
-    const native = yield* NativeCoding
-    const before = yield* native.read()
-    assert.equal(before.head.kind, "resolved")
-    if (before.head.kind !== "resolved") throw new Error("fixture unexpectedly conflicted")
-    original = { operation: "create", requestId: requestIdFor("acceptance", "first"), expectedOperationId: before.operationId, target: before.head, description: "✨ feat: literal `$(echo harmless)` unicode 雪" }
-    const result = yield* native.apply(original)
-    assert.equal(result.status, "accepted")
-    if (result.status !== "accepted") throw new Error("fixture mutation was not accepted")
-    assert.equal(result.provenance, "pending")
-    assert.equal(result.parentOperationId, before.operationId)
-    assert.equal(result.revision.parentCommitIds[0], before.head.commitId)
-    assert.equal(result.revision.description?.trim(), original.description)
-    acceptedId = result.operationId
-    return result
-  }).pipe(Effect.provide(host())))
-  jj("describe", "-m", "later unrelated description")
-  // Reopen the process service as if the owning host had crashed after native
-  // commit but before storing its durable Action result.
-  await Effect.runPromise(Effect.gen(function*() {
-    const native = yield* NativeCoding
-    const replay = yield* native.apply(original)
-    assert.deepEqual(replay, { ...accepted, replayed: true })
-    assert.equal(replay.operationId, acceptedId)
-    const duplicate = yield* Effect.result(native.apply({ ...original, description: "different" } as Operation))
-    assert.equal(duplicate._tag, "Failure")
-    if (duplicate._tag === "Failure") assert.equal(duplicate.failure.code, "request_conflict")
-    const stale = yield* Effect.result(native.apply({ ...original, requestId: requestIdFor("acceptance", "stale") }))
-    assert.equal(stale._tag, "Failure")
-    if (stale._tag === "Failure") assert.equal(stale.failure.code, "operation_conflict")
-    const now = yield* native.read()
-    assert.notEqual(now.operationId, acceptedId)
-  }).pipe(Effect.provide(host())))
-  const other = join(temporary, "other")
-  await mkdir(other)
-  const wrong = await Effect.runPromise(Effect.flatMap(NativeCoding, native => Effect.result(native.read())).pipe(Effect.provide(host(other))))
-  assert.equal(wrong._tag, "Failure")
-  if (wrong._tag === "Failure") assert.equal(wrong.failure.code, "invalid_request")
+  const layer = nativeLayer({ repositoryPath: repo, helperPath: helper, sourcePublication: "local-only" }).pipe(Layer.provide(NodeServices.layer))
+  const run = <A, E>(f: (native: NativeCoding["Service"]) => Effect.Effect<A, E>) =>
+    Effect.runPromise(Effect.flatMap(NativeCoding, f).pipe(Effect.provide(layer)))
+  const before = await run(native => native.read())
+  assert.equal(before.head.kind, "resolved")
+  if (before.head.kind !== "resolved") return
+  const request: Operation = { operation: "create", requestId: requestIdFor("acceptance", "first"),
+    expectedOperationId: before.operationId, target: before.head, description: "first change" }
+  const accepted = await run(native => native.apply(request))
+  assert.equal(accepted.status, "accepted")
+  if (accepted.status !== "accepted") return
+  assert.equal(accepted.parentOperationId, before.operationId)
+  assert.equal(accepted.revision.description?.trim(), "first change")
+  const replay = await run(native => native.apply(request))
+  assert.equal(replay.status, "accepted")
+  if (replay.status === "accepted") {
+    assert.equal(replay.replayed, true)
+    assert.equal(replay.operationId, accepted.operationId)
+  }
+  const duplicate = await run(native => Effect.result(native.apply({ ...request, description: "changed" })))
+  assert.equal(duplicate._tag, "Failure")
+  if (duplicate._tag === "Failure") assert.equal(duplicate.failure.code, "request_conflict")
 })

@@ -128,6 +128,8 @@ func workspaceGatewayCommand(g clusterdb.RepoGateway) string {
 		"if [ -n \"$smithers_bound_landing_token\" ] && [ -n \"$smithers_bound_landing_api\" ]; then export SMITHERS_JJHUB_TOKEN=\"$smithers_bound_landing_token\" SMITHERS_JJHUB_API_URL=\"$smithers_bound_landing_api\"; else unset SMITHERS_JJHUB_TOKEN SMITHERS_JJHUB_API_URL; fi",
 		"unset smithers_bound_landing_token smithers_bound_landing_api",
 		"export HOME=/home/developer PATH=/usr/local/bin:/run/current-system/sw/bin:/usr/bin:/bin TMPDIR=/home/developer/.cache/smithers/tmp XDG_CACHE_HOME=/home/developer/.cache XDG_CONFIG_HOME=/home/developer/.config",
+		"export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=" + shellQuote(workspaceJJExportPath),
+		"unset SMITHERS_CODING_LOCAL_OWNER",
 		fmt.Sprintf("exec flock --nonblock --no-fork --conflict-exit-code 75 %s env PATH=/home/developer/.local/bin:/usr/local/bin:/home/developer/.bun/bin:/run/current-system/sw/bin:/usr/bin:/bin %s serve --root %s --host 0.0.0.0 --port %d --listen",
 			shellQuote(workspaceGatewayLockPath(g)), workspaceCodingHostPath, defaultWorkspaceClonePath, repoGatewayPort),
 	}, "\n")
@@ -461,10 +463,10 @@ func workspaceGatewayPreflight(gateway clusterdb.RepoGateway) string {
 		"touch " + shellQuote(workspaceGatewayLockPath(gateway)),
 		"chown root:root " + shellQuote(workspaceGatewayLockPath(gateway)),
 		"chmod 0644 " + shellQuote(workspaceGatewayLockPath(gateway)),
-		"test -r " + workspaceCodingScriptPath,
+		"test -x " + workspaceJJExportPath,
 		"test -r " + workspaceCodingConfigPath,
 		"case $(runuser -u developer -- env -i HOME=/home/developer USER=developer LOGNAME=developer PATH=/home/developer/.local/bin:/usr/local/bin:/run/current-system/sw/bin:/usr/bin:/bin " + workspaceCodingHostPath + " --version) in 1.*|smithers\\ 1.*) ;; *) exit 42;; esac",
-		"python3 -c " + shellQuote("import json; c=json.load(open('"+workspaceCodingConfigPath+"')); assert c['version']==1 and c['workspaceId']=='"+gatewayWorkspaceID(gateway)+"' and c['actorId']=="+fmt.Sprint(gateway.UserID)+" and c['repositoryPath']=='"+defaultWorkspaceClonePath+"' and c['username']=='"+defaultWorkspaceUser+"'"),
+		workspaceJJExportPath + " --check-config " + shellQuote(defaultWorkspaceClonePath) + " " + shellQuote(gatewayWorkspaceID(gateway)) + " " + shellQuote(fmt.Sprint(gateway.UserID)),
 		// Read the same workspace-owned model selection as the service. Never
 		// print environment values or copy platform credentials into the VM.
 		"runuser -u developer -- /bin/sh -c " + shellQuote("if [ -r /etc/profile.d/10-smithers-agent-environment.sh ]; then . /etc/profile.d/10-smithers-agent-environment.sh; fi\n"+workspaceCodingModelFallbackScript()+"\nprintf '%s\\n' \"${SMITHERS_CODING_IMPLEMENT_MODEL-}\" | grep -Eq '^[a-z0-9-]+:[^[:space:]:]+$' || exit 43"),

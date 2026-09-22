@@ -21,24 +21,18 @@ existing test file at a time, with a 25 minute child limit in addition to each
 fixture's own timeout. The enclosing existing `Shell.Test` also bounds the entire
 gate. They are uncached, so an installed external tool is never mistaken for a
 repository build output with a stable content key. Gate output records measured
-preflight adapter/exporter SHA256 values and JJ version.
+preflight helper SHA256 and JJ version.
 
-Native gates require a POSIX host with JJ, Python 3, and the actual Plue
-adapter/exporter. Current fixtures were validated with JJ 0.39.0; individual
-fixtures retain their owning native compatibility assertions. The launcher
-records the version without imposing another version policy. It uses the installed paths
-`/usr/local/lib/smithers/workspace-coding.py` and
-`/usr/local/bin/smithers-jj-export`. Missing/unreadable tools refuse the gate
-before an opt-in test can report a skip. The build executor deliberately does
-not inherit arbitrary environment variables; configure tool locations in its
-existing declared execution environment if the deployment uses different paths.
+Native gates require a POSIX host with JJ and the packaged Rust helper. The
+launcher records the JJ version and uses
+`/usr/local/bin/smithers-jj-export` by default. Missing tools refuse the gate
+before a test can report a skip.
 
 For a direct local acceptance run, existing fixture variables may point at
 explicit artifacts instead:
 
 ```sh
-PLUE_CODING_ADAPTER_SOURCE=/path/to/workspace-coding.py \
-PLUE_JJ_EXPORT_BINARY=/path/to/smithers-jj-export \
+SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=/path/to/smithers-jj-export \
 node flows/test/coding-native-gate.mjs source
 ```
 

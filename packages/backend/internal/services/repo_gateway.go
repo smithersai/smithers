@@ -1326,7 +1326,7 @@ func (s *RepoGatewayService) createGatewayVM(ctx context.Context, gatewayIDs ...
 		// toolchain — bun, jj, node, git — so the runtime-install exec step
 		// becomes a fast verify instead of cold downloads.
 		SnapshotID:         s.goldenSnapshots.Current(ctx),
-		Packages:           []string{"git", "curl", "ca-certificates", "unzip", "python3"},
+		Packages:           []string{"git", "curl", "ca-certificates", "unzip"},
 		IdleTimeoutSeconds: &s.idleTimeoutSeconds,
 		MemSizeMB:          &memSizeMB,
 		Persistence: &sandbox.PersistencePolicy{

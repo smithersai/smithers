@@ -364,7 +364,7 @@ func TestRepoGatewayService_Provision_CreatesGatewayVM(t *testing.T) {
 	require.Len(t, vm.createVMReqs, 1)
 	req := vm.createVMReqs[0]
 	assert.Empty(t, req.Ports)
-	assert.ElementsMatch(t, []string{"git", "curl", "ca-certificates", "unzip", "python3"}, req.Packages)
+	assert.ElementsMatch(t, []string{"git", "curl", "ca-certificates", "unzip"}, req.Packages)
 	assert.Empty(t, req.Workdir, "the runtime step creates /workspace before the service starts")
 	require.NotNil(t, req.WaitForReady)
 	assert.True(t, *req.WaitForReady)

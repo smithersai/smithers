@@ -1,4 +1,4 @@
-/** Private host configuration of the existing Jj service. Plue owns snapshots;
+/** Private host configuration of the existing Jj service. The helper owns snapshots;
  * the engine keeps immutable preimage references in its existing journal.
  */
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
@@ -6,6 +6,7 @@ import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { Cause, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import type { NativeOptions } from "./native.ts"
+import { helperPath } from "./helper.ts"
 
 const CommitId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
 const Snapshot = Schema.Struct({ changeId: CommitId })
@@ -22,7 +23,7 @@ type Method = "snapshot" | "restore" | "diff"
  * `apps/app/src/mainview/state/RunCause.ts` picks the sentence a person reads
  * off that one line. `Jj.jjErrorCause` copies any string `code` off any object,
  * and the objects projected here come from outside this repo's vocabulary — a
- * guest adapter's JSON envelope, the host's own errno. Such a word does not
+ * helper's JSON envelope, the host's own errno. Such a word does not
  * land on the record: it is kept in the message, which is prose and is never
  * read as a code.
  */
@@ -40,10 +41,10 @@ const failure = (method: Method, code: Jj.JjErrorCode, message: string, cause?: 
   ...(cause === undefined ? {} : { cause: causeOf(cause) })
 })
 
-/** Every code the guest `--engine` adapter is admitted to speak, and the
+/** Every code the native `--engine` helper is admitted to speak, and the
  * `JjErrorCode` each becomes here.
  *
- * The adapter is a Plue-owned program in the box, not a source in this repo, so
+ * The helper is packaged from this repo, so
  * its code is a string until this table admits it. A word this table does not
  * hold never becomes a code: it would otherwise reach a person as whatever
  * sentence some other vocabulary attaches to it. The mapping is total over its
@@ -72,7 +73,7 @@ const capture = <E>(method: Method, stream: Stream.Stream<Uint8Array, E>, limit:
   }).pipe(Effect.map(state => state.text + state.decoder.decode()))
 
 /** Supply the host's existing contained spawner. This same layer runs on Node
- * and Bun; neither it nor the Python adapter owns an execution database.
+ * and Bun; neither it nor the helper owns an execution database.
  *
  * The opaque `snapshot().changeId` is a full immutable commit ID here. It is
  * deliberately distinct from the JJ change ID used by a planned atomic change.
@@ -86,30 +87,29 @@ export const layerAt = (options: NativeOptions) => Layer.effect(Jj.Jj)(Effect.ge
     if (new TextEncoder().encode(input).length > 64 * 1024) {
       return yield* failure(method, "invalid_ref", "Native snapshot request exceeds 64 KiB")
     }
-    const process = yield* spawner.spawn(ChildProcess.make(options.python ?? "python3", [
-      options.adapterPath ?? "/usr/local/lib/smithers/workspace-coding.py", "--engine"
-    ], { stdin: Stream.make(new TextEncoder().encode(input)), cwd: options.repositoryPath }))
+    const process = yield* spawner.spawn(ChildProcess.make(helperPath(options), ["--engine"],
+      { stdin: Stream.make(new TextEncoder().encode(input)), cwd: options.repositoryPath }))
     const [stdout, , exitCode] = yield* Effect.all([
       capture(method, process.stdout, 16 * 1024 * 1024),
       capture(method, process.stderr, 64 * 1024), process.exitCode
     ], { concurrency: "unbounded" })
     const result = yield* Effect.try({
       try: () => JSON.parse(stdout) as unknown,
-      catch: error => failure(method, "unknown", "Native snapshot adapter returned no valid result", error)
+      catch: error => failure(method, "unknown", "Native snapshot helper returned no valid result", error)
     })
     if (result !== null && typeof result === "object" && "error" in result) {
       const error = yield* Schema.decodeUnknownEffect(NativeError)(result.error).pipe(
-        Effect.mapError(error => failure(method, "unknown", "Native snapshot adapter returned an invalid error envelope", error))
+        Effect.mapError(error => failure(method, "unknown", "Native snapshot helper returned an invalid error envelope", error))
       )
-      // The guest's own code and sentence survive either way, in the message
+      // The helper's own code and sentence survive either way, in the message
       // and the cause message, where a word from outside this repo belongs.
       const admitted = codeFor(error.code)
       const detail = { code: admitted ?? "unknown", message: `${error.message} (${error.code})` }
       return yield* admitted === undefined
-        ? failure(method, "unknown", `Native snapshot adapter answered with a code this build does not declare (${error.code}): ${error.message}`, detail)
+        ? failure(method, "unknown", `Native snapshot helper answered with a code this build does not declare (${error.code}): ${error.message}`, detail)
         : failure(method, admitted, error.message, detail)
     }
-    if (exitCode !== 0) return yield* failure(method, "unknown", "Native snapshot adapter exited without a successful result")
+    if (exitCode !== 0) return yield* failure(method, "unknown", "Native snapshot helper exited without a successful result")
     return result
   }).pipe(
     Effect.scoped,

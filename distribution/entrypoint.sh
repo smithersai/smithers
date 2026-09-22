@@ -29,6 +29,7 @@ export SMITHERS_MODEL_HOST_BUNDLE=/opt/smithers/bin/smithers-model-host
 export SMITHERS_NODE_BINARY=/opt/smithers/bin/node
 export SMITHERS_FLOW_HOST_MANIFEST=/opt/smithers/bin/flow-hosts.json
 export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=/opt/smithers/bin/smithers-jj-export
+export SMITHERS_CODING_LOCAL_OWNER=1
 export SMITHERS_JJ_PATH=/opt/smithers/bin/jj
 export SMITHERS_FFI_LIBRARY_PATH=/opt/smithers/lib/libsmithers_ffi.so
 export PATH="/opt/smithers/bin:/opt/smithers/git/bin:/usr/lib/postgresql/18/bin:$PATH"

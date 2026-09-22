@@ -124,6 +124,7 @@ describe("native backend ownership", () => {
     expect(env.SMITHERS_FLOW_HOST_MANIFEST).toEndWith("flow-hosts.json")
     expect(env.PATH?.split(delimiter)[0]).toBe(runtime.root)
     expect(env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY).toEndWith("smithers-jj-export")
+    expect(env.SMITHERS_CODING_LOCAL_OWNER).toBe("1")
     expect(env.SMITHERS_JJ_PATH).toEndWith("jj")
     expect(env.GIT_EXEC_PATH).toEndWith(join("libexec", "git-core"))
     expect(env.GIT_TEMPLATE_DIR).toEndWith(join("share", "git-core", "templates"))

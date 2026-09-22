@@ -61,6 +61,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.mjs tsconf
 COPY patches patches
 COPY packages packages
 COPY flows flows
+COPY evals evals
 COPY apps apps
 COPY scripts scripts
 COPY distribution/flow-host-manifest.mjs distribution/flow-host-manifest.mjs

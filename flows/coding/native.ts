@@ -1,4 +1,4 @@
-/** Private recipe composition over the Plue-owned adapter installed in a guest.
+/** Private recipe composition over the packaged native workspace helper.
  * No credential, JJ implementation, process runtime, or receipt ledger lives here.
  */
 import { Action } from "@smthrs/flow"
@@ -7,6 +7,7 @@ import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 
 import { CreateSource, SourceCreation, ChangeId, FileRecovery, ImportSource, isNativeCode, NativeCode, NativeCodingError, NativeRevision, Operation, OperationResult, PublishSource, ReadResult, SourceImport, SourcePublication } from "./native-schema.ts"
+import { helperPath } from "./helper.ts"
 export * from "./native-schema.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow
@@ -31,7 +32,7 @@ export interface NativeOptions {
   readonly repositoryPath: string
   /** Host-selected executable location; never part of a flow input. */
   readonly adapterPath?: string
-  readonly python?: string
+  readonly helperPath?: string
   /** Explicit development capability. Local requests may run but cannot
    * produce cloud retention or become eligible for Vibe publication. */
   readonly sourcePublication?: "cloud" | "local-only"
@@ -46,7 +47,7 @@ const capture = <E>(stream: Stream.Stream<Uint8Array, E>, limit: number) =>
   }).pipe(Effect.map(state => state.text + state.decoder.decode()))
 
 /** Effect's injected spawner owns acquisition, cancellation and process cleanup
- * on both Node and Bun. The guest Python program owns native JJ and identity.
+ * on both Node and Bun. The native helper owns JJ and identity.
  */
 export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding)(Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -54,26 +55,25 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
     const input = JSON.stringify({ ...request, repositoryPath: options.repositoryPath })
     const bound = "operation" in request && (request.operation === "apply_files" || request.operation === "create_source") ? 2 * 1024 * 1024 : 64 * 1024
     if (new TextEncoder().encode(input).length > bound) return yield* failure("invalid_request", "Native coding request exceeds its bounded payload size")
-    const process = yield* spawner.spawn(ChildProcess.make(options.python ?? "python3", [
-      options.adapterPath ?? "/usr/local/lib/smithers/workspace-coding.py", "--local"
-    ], { stdin: Stream.make(new TextEncoder().encode(input)), cwd: options.repositoryPath }))
+    const process = yield* spawner.spawn(ChildProcess.make(helperPath(options), ["--local"],
+      { stdin: Stream.make(new TextEncoder().encode(input)), cwd: options.repositoryPath }))
     const [stdout, , exitCode] = yield* Effect.all([
       capture(process.stdout, 16 * 1024 * 1024), capture(process.stderr, 64 * 1024), process.exitCode
     ], { concurrency: "unbounded" })
-    const result = yield* Effect.try({ try: () => JSON.parse(stdout) as unknown, catch: () => failure("outcome_unknown", "Native adapter returned no valid receipt; retry the identical operation") })
+    const result = yield* Effect.try({ try: () => JSON.parse(stdout) as unknown, catch: () => failure("outcome_unknown", "Native helper returned no valid receipt; retry the identical operation") })
     if (result !== null && typeof result === "object" && "error" in result) {
       const error = yield* Schema.decodeUnknownEffect(Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.optionalKey(FileRecovery) }))(result.error)
-        .pipe(Effect.mapError(() => failure("outcome_unknown", "Native adapter returned an invalid error envelope")))
-      // The envelope comes from a program outside this repo, so its code is a
+        .pipe(Effect.mapError(() => failure("outcome_unknown", "Native helper returned an invalid error envelope")))
+      // The envelope comes from another process, so its code is a
       // string until this repo's own vocabulary admits it. A code nothing here
       // declares is not passed through: it would put an unauthored code on the
       // `{ code, message }` record a run card reads its sentence off, and no
-      // source sweep can see a string. The guest's own words are kept.
+      // source sweep can see a string. The helper's own words are kept.
       return yield* isNativeCode(error.code)
         ? failure(error.code, error.message, error.recovery)
-        : failure("invalid_receipt", `Native adapter answered with a code this build does not declare (${error.code}): ${error.message}`, error.recovery)
+        : failure("invalid_receipt", `Native helper answered with a code this build does not declare (${error.code}): ${error.message}`, error.recovery)
     }
-    if (exitCode !== 0) return yield* failure("outcome_unknown", "Native adapter exited without an accepted receipt; retry the identical operation")
+    if (exitCode !== 0) return yield* failure("outcome_unknown", "Native helper exited without an accepted receipt; retry the identical operation")
     return result
   }).pipe(
     Effect.scoped,

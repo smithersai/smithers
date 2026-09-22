@@ -352,6 +352,7 @@ export const startNativeBackend = async (
     binaryRoot,
     "smithers-jj-export"
   )
+  environment.SMITHERS_CODING_LOCAL_OWNER = "1"
   environment.SMITHERS_JJ_PATH = jj
   environment.GIT_EXEC_PATH = gitExecPath
   environment.GIT_TEMPLATE_DIR = gitTemplateDir

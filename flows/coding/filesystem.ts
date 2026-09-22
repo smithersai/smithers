@@ -3,6 +3,7 @@ import { Cause, Effect, FileSystem, PlatformError, Schema, Sink, Stream } from "
 import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process"
 import { basename, isAbsolute, relative, resolve, sep } from "node:path"
 import type { NativeOptions } from "./native.ts"
+import { helperPath } from "./helper.ts"
 
 const Eligibility = Schema.Union([
   Schema.Struct({ eligible: Schema.Literal(true) }),
@@ -14,7 +15,7 @@ const denied = (method: string, description: string) => PlatformError.systemErro
 const refusal = (method: string) => Effect.fail(denied(method, "This file mutation has no native JJ compensation policy in the configured coding host"))
 
 /** Keep the guarded filesystem and the privileged eligibility process separate.
- * The latter can invoke only the provisioned adapter's fixed native operation.
+ * The latter can invoke only the packaged helper's fixed native operation.
  */
 export const make = (options: NativeOptions, fs: FileSystem.FileSystem,
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"], canonicalRoot: string): FileSystem.FileSystem => {
@@ -39,9 +40,8 @@ export const make = (options: NativeOptions, fs: FileSystem.FileSystem,
     if (target === "" || !inside(target) ||
       !Number.isSafeInteger(byteLength) || byteLength < 0) return yield* refusal(method)
     const request = JSON.stringify({ repositoryPath: root, operation: "eligible", path: target.split(sep).join("/"), byteLength })
-    const child = yield* spawner.spawn(ChildProcess.make(options.python ?? "python3", [
-      options.adapterPath ?? "/usr/local/lib/smithers/workspace-coding.py", "--engine"
-    ], { cwd: root, stdin: Stream.make(new TextEncoder().encode(request)) }))
+    const child = yield* spawner.spawn(ChildProcess.make(helperPath(options), ["--engine"],
+      { cwd: root, stdin: Stream.make(new TextEncoder().encode(request)) }))
     const capture = (stream: typeof child.stdout) => Stream.runFoldEffect(stream, () => ({ bytes: 0, text: "", decoder: new TextDecoder() }), (state, chunk) => {
       if (state.bytes + chunk.length > 64 * 1024) return refusal(method)
       return Effect.succeed({ bytes: state.bytes + chunk.length, text: state.text + state.decoder.decode(chunk, { stream: true }), decoder: state.decoder })

@@ -343,6 +343,7 @@ func (q *tombstoneGatewayAtReadiness) UpdateRepoGatewayStatus(ctx context.Contex
 }
 
 func TestWorkspaceGateway_PostgresReaperFencesReadiness(t *testing.T) {
+	prepareRuntimeTestHelper(t)
 	pool := getAgentTestPool(t)
 	ctx := context.Background()
 	q := &tombstoneGatewayAtReadiness{Queries: deploymentdb.New(pool)}

@@ -257,6 +257,7 @@ func TestEnsureWorkspaceHeadReporter_RecoversOnlyMissingPublisher(t *testing.T) 
 		{"healthy", 0, 0, false}, {"cold restart", 1, 1, false}, {"probe failure", 2, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			prepareRuntimeTestHelper(t)
 			workspace := db.Workspace{ID: "workspace-498", RepositoryID: 77, UserID: 9, VmID: "vm-498", Status: "running", TargetBookmark: "main"}
 			q := &workspaceHeadTestQuerier{mockWorkspaceQuerier: &mockWorkspaceQuerier{
 				getWorkspaceByRepoFn: func(context.Context, db.GetWorkspaceByRepoParams) (db.Workspace, error) { return workspace, nil },
@@ -268,10 +269,10 @@ func TestEnsureWorkspaceHeadReporter_RecoversOnlyMissingPublisher(t *testing.T) 
 					status := int32(0)
 					if calls == 1 {
 						status = tc.status
-						assert.Contains(t, req.Command, "socket.is_socket()")
+						assert.Contains(t, req.Command, "test -S")
 					}
 					if calls == 2 && tc.status == 0 {
-						assert.Contains(t, req.Command, "SMITHERS_CODING_RUNTIME")
+						assert.Contains(t, req.Command, "--check-config")
 						return sandbox.ExecResult{StatusCode: &status, Stdout: runtimeTestReceipt(t, workspace, "unchanged")}, nil
 					}
 					return sandbox.ExecResult{StatusCode: &status}, nil
