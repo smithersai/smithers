@@ -1,0 +1,55 @@
+{
+  "name": "@smthrs/model-host",
+  "type": "module",
+  "version": "1.0.0-rc.0",
+  "license": "MIT",
+  "private": true,
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Shared provider-neutral model turn host and durable chat producer",
+  "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./internal/*": null,
+    "./*/index": null
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "test": "bun test",
+    "lint": "TSESTREE_SINGLE_RUN=true eslint src --max-warnings=0 && dprint check"
+  },
+  "dependencies": {
+    "@smthrs/kernel": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
+    "effect": "4.0.0-rc.115",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@eslint/js": "9.39.5",
+    "@types/bun": "latest",
+    "@types/node": "26.4.1",
+    "dprint": "0.57.1",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0"
+  }
+}

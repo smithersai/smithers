@@ -1,0 +1,177 @@
+/**
+ * Authenticated Fetch binding for the shared model turn host.
+ *
+ * @since 1.0.0-rc.0
+ */
+import type * as Model from "@smthrs/model/Model"
+import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
+import type { FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { Effect } from "effect"
+import { z } from "zod"
+import { runDurableChatTurn } from "./DurableChatProducer.ts"
+import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import type { ModelTurnOptions } from "./ModelTurnHost.ts"
+
+/** The model host wire protocol identifier.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_PROTOCOL = "smithers.chat-model-host/v1"
+/** The authenticated model turn endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_TURN_PATH = "/v1/chat/turn"
+/** The protocol identity endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const MODEL_HOST_HEALTH_PATH = "/health"
+
+const Identity = z.string().min(1).max(160)
+const WireGrantSchema = z.object({
+  turnId: z.string().min(1).max(160),
+  ownerId: z.number().int().positive(),
+  repositoryId: z.number().int().positive().optional(),
+  runId: Identity,
+  legId: Identity,
+  generation: z.number().int().positive(),
+  token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
+  cursor: AgentTurnCursorSchema,
+  expiresAt: z.string().min(1).max(64),
+  request: z.unknown(),
+  producerBaseUrl: z.string().url()
+}).strict()
+
+/**
+ * The model and projection options resolved inside the trusted host.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelTurnResolution {
+  readonly model: Model.Model
+  readonly options: ModelTurnOptions
+}
+
+/** Resolves the owner's configured provider inside the trusted host process.
+ * Provider credentials stay in this result and never cross the Go grant wire.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ModelTurnResolver = (grant: DurableChatGrant) => Effect.Effect<ModelTurnResolution, Error>
+
+/**
+ * Dependencies for the authenticated model host request handler.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ModelTurnHandlerOptions {
+  readonly authorization: string
+  readonly callbackBaseUrl: string
+  readonly resolve: ModelTurnResolver
+  readonly fetchImpl?: FetchLike
+}
+
+const normalizedBaseUrl = (raw: string): string => {
+  const value = new URL(raw)
+  if (
+    (value.protocol !== "http:" && value.protocol !== "https:") || value.username !== "" || value.password !== "" ||
+    value.search !== "" || value.hash !== ""
+  ) {
+    throw new Error("invalid model host callback URL")
+  }
+  value.pathname = "/"
+  return value.toString()
+}
+
+const turnRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const body = value as Record<string, unknown>
+  if (typeof body.runId !== "string" || typeof body.instructions !== "string" || !Array.isArray(body.messages)) {
+    return undefined
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  return value as StartAgentTurnRequest
+}
+
+const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant | undefined => {
+  const parsed = WireGrantSchema.safeParse(value)
+  if (!parsed.success) return undefined
+  const wire = parsed.data
+  const request = turnRequest(wire.request)
+  if (
+    request === undefined || request.runId !== wire.runId || wire.cursor.runId !== wire.runId ||
+    wire.cursor.legId !== wire.legId || normalizedBaseUrl(wire.producerBaseUrl) !== callbackBaseUrl ||
+    !Number.isFinite(Date.parse(wire.expiresAt)) || Date.parse(wire.expiresAt) <= Date.now()
+  ) return undefined
+  return {
+    turnId: wire.turnId,
+    ownerId: wire.ownerId,
+    ...(wire.repositoryId === undefined ? {} : { repositoryId: wire.repositoryId }),
+    runId: wire.runId,
+    legId: wire.legId,
+    generation: wire.generation,
+    token: wire.token,
+    cursor: wire.cursor,
+    expiresAt: wire.expiresAt,
+    request,
+    producerBaseUrl: callbackBaseUrl
+  }
+}
+
+const boundedJson = async (request: Request): Promise<unknown | undefined> => {
+  const length = Number(request.headers.get("content-length") ?? "0")
+  if (!Number.isFinite(length) || length < 0 || length > 2 * 1024 * 1024) return undefined
+  const bytes = new Uint8Array(await request.arrayBuffer())
+  if (bytes.byteLength === 0 || bytes.byteLength > 2 * 1024 * 1024) return undefined
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Creates the Fetch handler shared by the local executable and Plue service.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (request: Request) => Promise<Response> => {
+  if (options.authorization.trim() === "") throw new Error("model host authorization is required")
+  const callbackBaseUrl = normalizedBaseUrl(options.callbackBaseUrl)
+  return async (request) => {
+    const url = new URL(request.url)
+    if (url.pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
+      return Response.json({ protocol: MODEL_HOST_PROTOCOL })
+    }
+    if (url.pathname !== MODEL_HOST_TURN_PATH) return new Response("Not found", { status: 404 })
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+    if (request.headers.get("authorization") !== `Bearer ${options.authorization}`) {
+      return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+    }
+    const grant = decodeGrant(await boundedJson(request), callbackBaseUrl)
+    if (grant === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
+    try {
+      await Effect.runPromise(
+        options.resolve(grant).pipe(
+          Effect.flatMap(({ model, options: modelOptions }) =>
+            runDurableChatTurn(model, grant, modelOptions, callbackBaseUrl, options.fetchImpl)
+          )
+        ),
+        { signal: request.signal }
+      )
+      return new Response(null, { status: 204 })
+    } catch {
+      // Provider and transport causes can hold signed requests. The durable Go
+      // boundary records the generic terminal receipt after this refusal.
+      return Response.json({ status: "error", code: "turn_failed" }, { status: 502 })
+    }
+  }
+}

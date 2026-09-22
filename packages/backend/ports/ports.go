@@ -5,7 +5,9 @@ package ports
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
@@ -151,4 +153,36 @@ var WorkspaceOperationFromContext = workspace.OperationFromContext
 // not need the full runtime contract.
 type WorkspaceAccess interface {
 	OpenTerminal(ctx context.Context, workspaceID string) (Terminal, error)
+}
+
+// ChatTurnGrant authorizes one trusted TypeScript host generation to produce
+// frames for one already-admitted turn. Token is an opaque short-lived
+// capability and Request contains no resolved provider credential value.
+type ChatTurnCursor struct {
+	Version  int    `json:"version"`
+	RunID    string `json:"runId"`
+	LegID    string `json:"legId"`
+	Batch    int64  `json:"batch"`
+	Position int64  `json:"position"`
+	Hash     string `json:"hash"`
+}
+
+type ChatTurnGrant struct {
+	TurnID          string          `json:"turnId"`
+	OwnerID         int64           `json:"ownerId"`
+	RepositoryID    int64           `json:"repositoryId,omitempty"`
+	RunID           string          `json:"runId"`
+	LegID           string          `json:"legId"`
+	Generation      int64           `json:"generation"`
+	Token           string          `json:"token"`
+	Cursor          ChatTurnCursor  `json:"cursor"`
+	ExpiresAt       time.Time       `json:"expiresAt"`
+	Request         json.RawMessage `json:"request"`
+	ProducerBaseURL string          `json:"producerBaseUrl"`
+}
+
+// ChatHost runs the canonical TypeScript model runtime. Go owns admission and
+// receipts; adapters differ only in where this same packaged host runs.
+type ChatHost interface {
+	RunChatTurn(ctx context.Context, grant ChatTurnGrant) error
 }

@@ -1,0 +1,49 @@
+CREATE TABLE IF NOT EXISTS chat_turns (
+  id text PRIMARY KEY,
+  repository_id bigint NOT NULL DEFAULT 0,
+  user_id bigint NOT NULL,
+  run_id text NOT NULL,
+  leg_id text NOT NULL,
+  request_payload jsonb,
+  request_hash text NOT NULL,
+  owner_hash text,
+  access_hash text NOT NULL,
+  writer_hash text,
+  acceptance jsonb,
+  acceptance_hash text,
+  accepted_at_ms bigint,
+  head_batch bigint NOT NULL DEFAULT 0 CHECK (head_batch >= 0),
+  head_position bigint NOT NULL DEFAULT 0 CHECK (head_position >= 0),
+  cursor_hash text,
+  head_hash text,
+  output_bytes bigint NOT NULL DEFAULT 0 CHECK (output_bytes >= 0),
+  terminal boolean NOT NULL DEFAULT false,
+  state text NOT NULL CHECK (state IN ('accepted','running','completed','failed','cancelled','uncertain','retired')),
+  producer_generation bigint NOT NULL DEFAULT 0 CHECK (producer_generation >= 0),
+  producer_token_hash text,
+  producer_lease_expires_at timestamptz,
+  producer_started_at timestamptz,
+  cancel_requested_at timestamptz,
+  retirement jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, run_id, leg_id)
+);
+
+CREATE INDEX IF NOT EXISTS chat_turns_recovery_idx
+  ON chat_turns(state, producer_lease_expires_at, created_at)
+  WHERE state IN ('accepted','running');
+CREATE INDEX IF NOT EXISTS chat_turns_run_idx
+  ON chat_turns(user_id, run_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_turn_batches (
+  turn_id text NOT NULL REFERENCES chat_turns(id) ON DELETE CASCADE,
+  batch_number bigint NOT NULL CHECK (batch_number > 0),
+  from_position bigint NOT NULL CHECK (from_position > 0),
+  previous_hash text NOT NULL,
+  frames jsonb NOT NULL,
+  hash text NOT NULL,
+  canonical_bytes integer NOT NULL CHECK (canonical_bytes > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (turn_id, batch_number)
+);

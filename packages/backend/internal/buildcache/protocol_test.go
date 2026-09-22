@@ -17,6 +17,15 @@ func TestCanonicalJSON_SortsKeysAndRendersNumbersLikeJavaScript(t *testing.T) {
 	assert.Equal(t, `{"a":{"x":true,"y":"<&>","z":null},"b":[1,2.5,1e+21,0.000001,1e-7,100000000000000000000]}`, canonical)
 }
 
+func TestCanonicalJSON_RendersLineSeparatorsLikeJSONStringify(t *testing.T) {
+	t.Parallel()
+	value, err := ParseJSON("{\"actual\":\"a\\u2028b\\u2029c\",\"literal\":\"\\\\u2028/\\\\u2029\",\"mixed\":\"\\\\\\u2028\"}")
+	require.NoError(t, err)
+	canonical, err := CanonicalJSON(value)
+	require.NoError(t, err)
+	assert.Equal(t, "{\"actual\":\"a\u2028b\u2029c\",\"literal\":\"\\\\u2028/\\\\u2029\",\"mixed\":\"\\\\\u2028\"}", canonical)
+}
+
 func TestCanonicalJSON_RefusesNegativeZeroAndDepth(t *testing.T) {
 	t.Parallel()
 	value, err := ParseJSON(`{"n":-0}`)

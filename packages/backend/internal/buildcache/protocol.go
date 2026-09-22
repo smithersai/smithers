@@ -263,7 +263,42 @@ func jsonString(value string) string {
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(value)
-	return strings.TrimSuffix(buffer.String(), "\n")
+	return unescapeJSONLineSeparators(strings.TrimSuffix(buffer.String(), "\n"))
+}
+
+// encoding/json always escapes U+2028 and U+2029, including when HTML
+// escaping is disabled. JSON.stringify leaves both characters literal. Walk
+// complete backslash runs so a literal `\u2028` string stays escaped while an
+// actual line separator after any literal backslashes is restored.
+func unescapeJSONLineSeparators(value string) string {
+	var output strings.Builder
+	output.Grow(len(value))
+	for index := 0; index < len(value); {
+		if value[index] != '\\' {
+			output.WriteByte(value[index])
+			index++
+			continue
+		}
+		runEnd := index
+		for runEnd < len(value) && value[runEnd] == '\\' {
+			runEnd++
+		}
+		runLength := runEnd - index
+		if runLength%2 == 1 && runEnd+5 <= len(value) && value[runEnd] == 'u' &&
+			(value[runEnd+1:runEnd+5] == "2028" || value[runEnd+1:runEnd+5] == "2029") {
+			output.WriteString(value[index : runEnd-1])
+			if value[runEnd+4] == '8' {
+				output.WriteString("\u2028")
+			} else {
+				output.WriteString("\u2029")
+			}
+			index = runEnd + 5
+			continue
+		}
+		output.WriteString(value[index:runEnd])
+		index = runEnd
+	}
+	return output.String()
 }
 
 func lessUTF16(a, b string) bool {

@@ -47,6 +47,7 @@
     "@smthrs/kernel": "workspace:*",
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
+    "@smthrs/model-host": "workspace:*",
     "@smthrs/patterns": "workspace:*",
     "@smthrs/platform-browser": "workspace:*",
     "@smthrs/registry": "workspace:*",

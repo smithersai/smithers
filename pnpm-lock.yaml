@@ -170,6 +170,9 @@ importers:
       '@smthrs/model':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model
+      '@smthrs/model-host':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/model-host
       '@smthrs/patterns':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/patterns
@@ -1405,6 +1408,25 @@ importers:
         version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
+        version: 5.9.3
+
+  apps/model-host:
+    dependencies:
+      '@smthrs/model-host':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/model-host
+      effect:
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115
+    devDependencies:
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      typescript:
+        specifier: 5.9.3
         version: 5.9.3
 
   apps/review:
@@ -2965,6 +2987,61 @@ importers:
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  packages/smithers/agent/model-host:
+    dependencies:
+      '@smthrs/kernel':
+        specifier: workspace:*
+        version: link:../../flows/kernel
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../model
+      '@smthrs/rpc':
+        specifier: workspace:*
+        version: link:../../../rpc
+      effect:
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@effect/language-service':
+        specifier: 0.87.2
+        version: 0.87.2
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/bun':
+        specifier: latest
+        version: 1.4.2
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-jsdoc:
+        specifier: 64.3.4
+        version: 64.3.4(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
 
   packages/smithers/agent/plugin:
     dependencies:

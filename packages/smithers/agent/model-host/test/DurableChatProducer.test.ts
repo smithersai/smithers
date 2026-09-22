@@ -1,0 +1,114 @@
+import * as Model from "@smthrs/model/Model"
+import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
+import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { describe, expect, test } from "bun:test"
+import { Effect, Stream } from "effect"
+import { createHash } from "node:crypto"
+import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
+
+const request: StartAgentTurnRequest = {
+  runId: "run",
+  instructions: "answer",
+  messages: [{ role: "user", content: "hi" }]
+}
+const cursor: AgentTurnCursor = { version: 1, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
+const grant = {
+  turnId: "turn",
+  ownerId: 1,
+  runId: "run",
+  legId: "leg",
+  generation: 3,
+  token: "capability_capability_capability_1234",
+  cursor,
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  request,
+  producerBaseUrl: "http://host.test/"
+}
+const digest = (kind: "batch", value: unknown): string =>
+  createHash("sha256").update(agentTurnJournalDigestInput(kind, value)).digest("hex")
+const reply = (expected: AgentTurnCursor, frame: AgentTurnFrame) => {
+  const unsigned = {
+    version: 1 as const,
+    runId: "run",
+    legId: "leg",
+    batch: expected.batch + 1,
+    from: expected.position + 1,
+    previousHash: expected.hash,
+    frames: [frame]
+  }
+  const batch: AgentTurnBatch = { ...unsigned, hash: digest("batch", unsigned) }
+  return {
+    status: "committed" as const,
+    batch,
+    cursor: {
+      version: 1 as const,
+      runId: "run",
+      legId: "leg",
+      batch: batch.batch,
+      position: batch.from,
+      hash: batch.hash
+    }
+  }
+}
+
+describe("DurableChatProducer", () => {
+  test("retries a lost receipt with the identical expected cursor and body", async () => {
+    const calls: Array<string> = []
+    let attempt = 0
+    const frame = { runId: "run", type: "delta" as const, kind: "text" as const, text: "a" }
+    const fetchImpl: FetchLike = async (_input, init) => {
+      calls.push(typeof init?.body === "string" ? init.body : "")
+      if (++attempt === 1) throw new Error("response lost")
+      return Response.json(reply(cursor, frame))
+    }
+    const producer = new DurableChatProducer("http://host.test", grant, fetchImpl)
+    await Effect.runPromise(producer.write(frame))
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toBe(calls[1])
+    expect(JSON.parse(calls[0] ?? "{}").expected).toEqual(cursor)
+  })
+
+  test("refuses a receipt whose batch seal does not match the exact frame", async () => {
+    const frame = { runId: "run", type: "delta" as const, kind: "text" as const, text: "a" }
+    const forged = reply(cursor, frame)
+    forged.batch.hash = "f".repeat(64)
+    forged.cursor.hash = forged.batch.hash
+    const producer = new DurableChatProducer("http://host.test", grant, async () => Response.json(forged))
+    await expect(Effect.runPromise(producer.write(frame))).rejects.toThrow("did not extend")
+  })
+
+  test("records provider start then commits deterministic text, tool, and terminal frames", async () => {
+    const order: Array<string> = []
+    let expected = cursor
+    const fetchImpl: FetchLike = async (input, init) => {
+      const url = String(input)
+      if (url.includes("provider-started")) {
+        order.push("started")
+        return new Response(null, { status: 204 })
+      }
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
+      order.push(body.frames[0].type)
+      const answer = reply(expected, body.frames[0])
+      expected = answer.cursor
+      return Response.json(answer)
+    }
+    const events: ReadonlyArray<ModelEvent.ModelEvent> = [
+      { type: "text-delta", id: "t", text: "hi" },
+      { type: "tool-call-start", id: "call", name: "inspect" },
+      { type: "tool-call-end", id: "call", arguments: "{}" },
+      { type: "settle", stopReason: "tool-calls" }
+    ]
+    await Effect.runPromise(
+      runDurableChatTurn(
+        Model.make({ stream: () => Stream.fromIterable(events) }),
+        grant,
+        { modelId: "m" },
+        "http://host.test",
+        fetchImpl
+      )
+    )
+    expect(order).toEqual(["started", "delta", "tool_call", "done"])
+  })
+})

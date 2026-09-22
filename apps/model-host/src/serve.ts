@@ -1,0 +1,85 @@
+import { createModelTurnHandler, environmentModelResolver, MODEL_HOST_PROTOCOL } from "@smthrs/model-host"
+import { createServer } from "node:http"
+import { parseArgs } from "node:util"
+
+const parsed = parseArgs({
+  args: process.argv.slice(2),
+  allowPositionals: true,
+  options: {
+    host: { type: "string", default: "127.0.0.1" },
+    port: { type: "string", default: "0" },
+    help: { type: "boolean", short: "h" }
+  }
+})
+
+if (parsed.values.help) {
+  process.stdout.write("smithers-model-host serve --host 127.0.0.1 --port 0\n")
+  process.exit(0)
+}
+if (parsed.positionals.length !== 1 || parsed.positionals[0] !== "serve") throw new Error("Expected serve command")
+if (parsed.values.host !== "127.0.0.1" && parsed.values.host !== "::1" && parsed.values.host !== "localhost") {
+  throw new Error("The public local model host must bind loopback")
+}
+const port = Number(parsed.values.port)
+if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid port")
+const authorization = process.env.SMITHERS_CHAT_HOST_TOKEN ?? ""
+const callbackBaseUrl = process.env.SMITHERS_CHAT_CALLBACK_URL ?? ""
+const rawBinding = process.env.SMITHERS_CHAT_MODEL ?? ""
+if (authorization === "" || callbackBaseUrl === "" || rawBinding === "") {
+  throw new Error("Model host configuration is incomplete")
+}
+let binding: unknown
+try {
+  binding = JSON.parse(rawBinding)
+} catch {
+  throw new Error("SMITHERS_CHAT_MODEL must be JSON")
+}
+const requestedMaxTokens = Number(process.env.SMITHERS_CHAT_MAX_TOKENS ?? "4096")
+if (!Number.isSafeInteger(requestedMaxTokens) || requestedMaxTokens <= 0 || requestedMaxTokens > 1_000_000) {
+  throw new Error("SMITHERS_CHAT_MAX_TOKENS is invalid")
+}
+const handle = createModelTurnHandler({
+  authorization,
+  callbackBaseUrl,
+  resolve: environmentModelResolver({ binding, env: process.env, maxTokens: requestedMaxTokens })
+})
+const server = createServer(async (incoming, outgoing) => {
+  const abort = new AbortController()
+  outgoing.on("close", () => {
+    if (!outgoing.writableEnded) abort.abort()
+  })
+  try {
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const raw of incoming) {
+      const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
+      size += chunk.byteLength
+      if (size > 2 * 1024 * 1024) throw new Error("request too large")
+      chunks.push(chunk)
+    }
+    const method = incoming.method ?? "GET"
+    const body = method === "GET" || method === "HEAD" ? undefined : Buffer.concat(chunks)
+    const request = new Request(`http://${incoming.headers.host ?? "127.0.0.1"}${incoming.url ?? "/"}`, {
+      method,
+      headers: incoming.headers as HeadersInit,
+      ...(body === undefined ? {} : { body }),
+      signal: abort.signal
+    })
+    const response = await handle(request)
+    outgoing.writeHead(response.status, Object.fromEntries(response.headers.entries()))
+    outgoing.end(Buffer.from(await response.arrayBuffer()))
+  } catch {
+    if (!outgoing.headersSent) outgoing.writeHead(500, { "content-type": "application/json" })
+    outgoing.end("{\"status\":\"error\",\"code\":\"turn_failed\"}\n")
+  }
+})
+server.listen(port, parsed.values.host, () => {
+  const address = server.address()
+  const boundPort = typeof address === "object" && address !== null ? address.port : port
+  process.stdout.write(
+    `${JSON.stringify({ protocol: MODEL_HOST_PROTOCOL, host: parsed.values.host, port: boundPort })}\n`
+  )
+})
+const stop = () => server.close(() => process.exit(0))
+process.on("SIGINT", stop)
+process.on("SIGTERM", stop)
