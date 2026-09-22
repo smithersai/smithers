@@ -73,7 +73,7 @@
 #
 # Spends no tokens, needs no docker, needs no dataset. Run it after touching
 # scorecard.ts, prices.ts, the journal's event shapes, patch capture,
-# flows.sh, lib/subject.mjs, lib/check-liveness.mjs, lib/write-flow.mjs,
+# flows.sh, run-instance.sh, lib/subject.mjs, lib/check-liveness.mjs, lib/write-flow.mjs,
 # lib/write-prompt-codex.mjs, lib/run-paths.sh, lib/lock.sh,
 # lib/journal-facts.mjs, select-candidate.mjs, run-matrix.sh, matrix-report.mjs,
 # fullbench.sh, fullbench-report.mjs, lib/grade.py, lib/httpbin.sh,
@@ -146,6 +146,9 @@ node "$S/fixtures/check-agreement.mjs"
 
 echo "== the CLI flows.sh execs"
 node "$S/fixtures/check-cli-path.mjs"
+
+echo "== the environment the lane hands that CLI"
+node "$S/fixtures/check-env-names.mjs"
 
 echo "== the read-only liveness reading"
 node "$S/fixtures/check-liveness-report.mjs"

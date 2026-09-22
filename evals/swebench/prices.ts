@@ -57,6 +57,24 @@ export const prices: Record<string, Price> = {
     cachedInput: 0.5,
     output: 30,
     source: "OpenAI API list price, verified 2026-08-19"
+  },
+  // The standard-tier short-context rate; prompts over 272K input tokens are
+  // billed at 2x input and 1.5x output for the whole request, which no row here
+  // models. A run served by the ChatGPT subscription (`SMITHERS_OPENAI_AUTH=
+  // chatgpt`) is billed by the month, not by the token: the price below is
+  // what the same tokens WOULD cost on the API, and `evals/harbor` leaves such
+  // runs unpriced rather than quote it as spend.
+  "gpt-6-sol": {
+    input: 2,
+    cachedInput: 0.2,
+    output: 10,
+    source: "OpenAI API list price, https://developers.openai.com/api/docs/models/gpt-6-sol, verified 2026-09-22"
+  },
+  "openai:gpt-6-sol": {
+    input: 2,
+    cachedInput: 0.2,
+    output: 10,
+    source: "OpenAI API list price, https://developers.openai.com/api/docs/models/gpt-6-sol, verified 2026-09-22"
   }
 }
 

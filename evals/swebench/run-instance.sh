@@ -255,10 +255,16 @@ else
     # container and the container-side path are the same ones `bash` uses, and
     # the pristine base the flow diffs against is the ref snapshot-base.sh
     # already wrote.
-    export FLOWS_TEST_COMMAND="$TEST_CMD"
-    export FLOWS_TEST_CONTAINER="$CONTAINER"
-    export FLOWS_TEST_CWD="/testbed"
-    export FLOWS_OPENAI_AUTH="$OPENAI_AUTH"
+    #
+    # The names are the CLI's own: `packages/smithers/src/Environment.ts` lists
+    # every variable it reads, and nothing there begins with `FLOWS_`. The lane
+    # exported `FLOWS_*` from 2026-08 until 2026-09-22, so the `test` flow was
+    # never bound and the chatgpt seat fell back to the API key without a word.
+    # `fixtures/check-env-names.mjs` refuses any export the CLI does not read.
+    export SMITHERS_TEST_COMMAND="$TEST_CMD"
+    export SMITHERS_TEST_CONTAINER="$CONTAINER"
+    export SMITHERS_TEST_CWD="/testbed"
+    export SMITHERS_OPENAI_AUTH="$OPENAI_AUTH"
     A=$("$S/flows.sh" --json plan fix | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
     "$S/flows.sh" --json approve "$A" --scope run >/dev/null 2>&1 || {
       echo "[$RUN_ID] APPROVAL FAILED"; exit 1;
