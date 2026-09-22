@@ -193,7 +193,7 @@ func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 			continue
 		}
 		for _, frame := range delivery.Batch.Frames {
-			foundTool = foundTool || bytes.Contains(frame, []byte(`"type":"tool_call"`))
+			foundTool = foundTool || frameHasStringField(frame, "type", "tool_call")
 		}
 	}
 	if !foundTool {
@@ -253,7 +253,7 @@ func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 	cancelReplay := postJSON(t, server.Client(), server.URL+ReplayPath, cancelReplayBody)
 	defer cancelReplay.Body.Close()
 	var cancelled ReplayResult
-	if cancelReplay.StatusCode != http.StatusOK || json.NewDecoder(cancelReplay.Body).Decode(&cancelled) != nil || !cancelled.Terminal || len(cancelled.Batches) != 1 || !bytes.Contains(cancelled.Batches[0].Frames[0], []byte(`"reason":"cancelled"`)) {
+	if cancelReplay.StatusCode != http.StatusOK || json.NewDecoder(cancelReplay.Body).Decode(&cancelled) != nil || !cancelled.Terminal || len(cancelled.Batches) != 1 || !frameHasStringField(cancelled.Batches[0].Frames[0], "reason", "cancelled") {
 		t.Fatalf("cancel replay after disconnect: %d %#v", cancelReplay.StatusCode, cancelled)
 	}
 	if err = store.Verify(context.Background(), scope, cancelRun, cancelJournal); err != nil {

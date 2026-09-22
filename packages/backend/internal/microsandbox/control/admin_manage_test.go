@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 func TestAdminDrainHostUsesStickyControllerState(t *testing.T) {
@@ -43,7 +43,7 @@ func TestAdminPruneStaleHostsRequiresOldLeaseAndNoLiveInstances(t *testing.T) {
 	pool := openMicrosandboxTestDatabase(t)
 	ctx := context.Background()
 	s := NewPGStore(pool)
-	q := db.New(pool)
+	q := clusterdb.New(pool)
 	for _, id := range []string{"old-empty", "old-live", "old-deleted", "recent-empty", "live-empty"} {
 		_, err := s.Heartbeat(ctx, heartbeatForTest(id, "https://worker.internal"))
 		require.NoError(t, err)
@@ -66,18 +66,18 @@ func TestAdminPruneStaleHostsRequiresOldLeaseAndNoLiveInstances(t *testing.T) {
 	_, err = pool.Exec(ctx, `CREATE TABLE audit_log (id bigserial PRIMARY KEY, event_type text, actor_id bigint, actor_name text, target_type text, target_name text, action text, metadata jsonb, ip_address varchar(45))`)
 	require.NoError(t, err)
 	// A failed audit insert must roll back the deletion, preserving targets for retry.
-	_, err = q.AdminPruneStaleSandboxHosts(ctx, db.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24, IpAddress: strings.Repeat("x", 46)})
+	_, err = q.AdminPruneStaleSandboxHosts(ctx, clusterdb.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24, IpAddress: strings.Repeat("x", 46)})
 	require.Error(t, err)
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM sandbox_hosts`).Scan(&count))
 	require.Equal(t, 5, count)
-	n, err := q.AdminPruneStaleSandboxHosts(ctx, db.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24})
+	n, err := q.AdminPruneStaleSandboxHosts(ctx, clusterdb.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
 	var metadata string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT metadata::text FROM audit_log`).Scan(&metadata))
 	require.JSONEq(t, `{"outcome":"succeeded","older_than_hours":24,"pruned":2,"host_ids":["old-deleted","old-empty"]}`, metadata)
-	n, err = q.AdminPruneStaleSandboxHosts(ctx, db.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24})
+	n, err = q.AdminPruneStaleSandboxHosts(ctx, clusterdb.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24})
 	require.NoError(t, err)
 	require.Zero(t, n)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT metadata::text FROM audit_log ORDER BY id LIMIT 1`).Scan(&metadata))
@@ -120,7 +120,7 @@ func TestAdminNeverStartedQueryGuardsAndPreservesMetadata(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `UPDATE agent_sessions SET status='completed' WHERE id=$1`, ids[4])
 	require.NoError(t, err)
-	q := db.New(pool)
+	q := clusterdb.New(pool)
 	cutoff := time.Now().UTC().Add(-time.Hour)
 	rows, err := q.ListNeverStartedAgentSessions(ctx, cutoff)
 	require.NoError(t, err)

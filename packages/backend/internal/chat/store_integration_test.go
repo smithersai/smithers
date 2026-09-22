@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 )
 
 var testStore *Store
+var scopeID atomic.Int64
 
 func TestMain(m *testing.M) {
 	base := os.Getenv("SMITHERS_CHAT_TEST_DATABASE_URL")
@@ -84,7 +86,8 @@ func needStore(t *testing.T) *Store {
 }
 
 func testScope() Scope {
-	value := time.Now().UnixNano()
+	// IDs cross the canonical TypeScript number wire and must stay JS-safe.
+	value := scopeID.Add(1)
 	return Scope{RepositoryID: value, UserID: value, Owner: fmt.Sprintf("owner-%d", value)}
 }
 
@@ -327,7 +330,7 @@ func TestCancelAndExpiredProviderAreDurableTerminalBatches(t *testing.T) {
 		t.Fatalf("cancel: %#v err=%v", cancelled, err)
 	}
 	page, err := store.Replay(context.Background(), ReplayInput{Scope: scope, RunID: runID, Journal: journal})
-	if err != nil || !page.Terminal || len(page.Batches) != 1 || !bytes.Contains(page.Batches[0].Frames[0], []byte(`"reason":"cancelled"`)) {
+	if err != nil || !page.Terminal || len(page.Batches) != 1 || !frameHasStringField(page.Batches[0].Frames[0], "reason", "cancelled") {
 		t.Fatalf("cancel replay: %#v err=%v", page, err)
 	}
 	if err = store.FailProducer(context.Background(), grant, "cancelled"); err != nil {
@@ -535,4 +538,9 @@ func TestRendererRoutesAcknowledgeBeforeHostAndReconnectExactly(t *testing.T) {
 		raw, _ := io.ReadAll(retired.Body)
 		t.Fatalf("retire: %d %s", retired.StatusCode, raw)
 	}
+}
+
+func frameHasStringField(frame json.RawMessage, field, expected string) bool {
+	var value map[string]any
+	return json.Unmarshal(frame, &value) == nil && value[field] == expected
 }
