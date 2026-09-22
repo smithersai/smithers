@@ -205,7 +205,7 @@ describe("package boundaries", () => {
 
   it("publishes the release candidate on the next tag", () => {
     expect(manifest.private).toBeUndefined()
-    expect(manifest.version).toBe("1.0.0-rc.0")
+    expect(manifest.version).toMatch(/^1\.0\.0-rc\.\d+$/)
     expect(manifest.publishConfig).toMatchObject({ access: "public", provenance: true, tag: "next" })
   })
 })

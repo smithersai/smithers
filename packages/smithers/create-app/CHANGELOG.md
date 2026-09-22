@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-09-22
+
+### Changed
+
+- Release candidate 1 with the workspace package train.
+
 ## [1.0.0-rc.0]
 
 ### Added

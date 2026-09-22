@@ -188,10 +188,18 @@ describe("RuntimeBridge", () => {
       expect(source).toMatchObject({ code: "source_mismatch", retryable: false })
       for (const graph of [undefined, { edges: [] }]) {
         let runs = 0
-        const missing = yield* Effect.flip(RuntimeBridge.execute(config, service({
-          plan: () => Effect.succeed({ ...plan, graph }),
-          run: () => { runs++; return Effect.succeed(accepted) }
-        }), principal, launch))
+        const missing = yield* Effect.flip(RuntimeBridge.execute(
+          config,
+          service({
+            plan: () => Effect.succeed({ ...plan, graph }),
+            run: () => {
+              runs++
+              return Effect.succeed(accepted)
+            }
+          }),
+          principal,
+          launch
+        ))
         expect(missing).toMatchObject({ code: "source_mismatch", retryable: false })
         expect(runs).toBe(0)
       }
@@ -202,18 +210,35 @@ describe("RuntimeBridge", () => {
       let runs = 0
       const control = service({
         plan: () => Effect.succeed({ ...plan, graph: undefined }),
-        run: () => { runs++; return Effect.succeed(accepted) }
+        run: () => {
+          runs++
+          return Effect.succeed(accepted)
+        }
       })
-      const result = yield* RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: revision }, control, principal, launch)
+      const result = yield* RuntimeBridge.execute(
+        { ...config, verifiedCatalogSourceRevision: revision },
+        control,
+        principal,
+        launch
+      )
       expect(result).toMatchObject({ operation: "launch", receipt: accepted })
       expect(runs).toBe(1)
       const missing = yield* Effect.flip(RuntimeBridge.execute(config, control, principal, launch))
       expect(missing).toMatchObject({ code: "source_mismatch" })
-      const changed = yield* Effect.flip(RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: "c".repeat(40) }, control, principal, launch))
+      const changed = yield* Effect.flip(
+        RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: "c".repeat(40) }, control, principal, launch)
+      )
       expect(changed).toMatchObject({ code: "source_mismatch" })
-      const contradicted = yield* Effect.flip(RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: revision }, service({
-        plan: () => Effect.succeed({ ...plan, graph: { edges: [], sourceRevision: "c".repeat(40) } })
-      }), principal, launch))
+      const contradicted = yield* Effect.flip(
+        RuntimeBridge.execute(
+          { ...config, verifiedCatalogSourceRevision: revision },
+          service({
+            plan: () => Effect.succeed({ ...plan, graph: { edges: [], sourceRevision: "c".repeat(40) } })
+          }),
+          principal,
+          launch
+        )
+      )
       expect(contradicted).toMatchObject({ code: "source_mismatch" })
       expect(runs).toBe(1)
     }))

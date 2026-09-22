@@ -953,13 +953,18 @@ export const make = (
         // admission or gateway readiness. Generic native/library compositions
         // omit this requirement and may continue to report no source revision.
         const revisionAfter = SourceRevision.read(workspaceRoot)
-        const capturedRevision = catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
-          ? undefined
-          : revisionBefore
+        const capturedRevision =
+          catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
+            ? undefined
+            : revisionBefore
         if (options.expectedSourceRevision !== undefined && capturedRevision !== options.expectedSourceRevision) {
-          return yield* Effect.die(new Error(capturedRevision === undefined
-            ? "Flow host source revision is unavailable; require a stable JJ snapshot or clean Git checkout"
-            : "Flow host source revision does not match its authorized workspace binding"))
+          return yield* Effect.die(
+            new Error(
+              capturedRevision === undefined
+                ? "Flow host source revision is unavailable; require a stable JJ snapshot or clean Git checkout"
+                : "Flow host source revision does not match its authorized workspace binding"
+            )
+          )
         }
         if (catalog !== undefined) yield* Deferred.succeed(catalogReady, catalog)
         // Planning reads this reference; see `hostCatalog`. The value is the
@@ -1272,15 +1277,20 @@ export const make = (
           launch: (health, options, root) =>
             Effect.suspend(() => {
               if (options.runtimeBridge !== undefined && hostRevision !== options.runtimeBridge.sourceRevision) {
-                return Effect.die(new Error("Flow host source revision is unavailable or does not match the registered catalog"))
+                return Effect.die(
+                  new Error("Flow host source revision is unavailable or does not match the registered catalog")
+                )
               }
               // Some admitted Flow bodies cannot be statically graphed. Their
               // source authority is still the catalog snapshot verified during
               // registration, never the environment's unverified revision.
               const verifiedOptions = options.runtimeBridge === undefined ? options : {
-                ...options, runtimeBridge: { ...options.runtimeBridge, verifiedCatalogSourceRevision: hostRevision }
+                ...options,
+                runtimeBridge: { ...options.runtimeBridge, verifiedCatalogSourceRevision: hostRevision }
               }
-              return Layer.launch(layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService)))
+              return Layer.launch(
+                layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService))
+              )
             })
               .pipe(
                 Effect.provideService(Control.Control, controlService),

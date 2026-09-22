@@ -71,10 +71,11 @@ const scaffoldExample = (): string => {
  * What a discovered module flow is: a declaration naming the delegate that
  * runs it. The authored file is one of these, written by a run.
  */
-const declaration = (delegate: string, writes: ReadonlyArray<string>) =>
+const declaration = (name: string, delegate: string, writes: ReadonlyArray<string>) =>
   `import { Flow } from "@smthrs/core"
 import { Schema } from "effect"
 export default Flow.make({
+  name: ${JSON.stringify(name)},
   description: "Written by a run of this host",
   input: Schema.Struct({}),
   output: Schema.Unknown,
@@ -201,7 +202,7 @@ const project = async (authored?: string) => {
   await writeFile(join(root, "package.json"), "{\"type\":\"module\"}\n")
   await symlink(modulesRoot, join(root, "node_modules"), "dir")
   await mkdir(join(root, "flows", "author"), { recursive: true })
-  await writeFile(join(root, "flows", "author", "flow.ts"), declaration("catalog/Author", ["flows/**"]))
+  await writeFile(join(root, "flows", "author", "flow.ts"), declaration("author", "catalog/Author", ["flows/**"]))
   await writeFile(join(root, "delegate.ts"), delegates)
   if (authored !== undefined) {
     await mkdir(join(root, "flows", "authored"), { recursive: true })
@@ -228,7 +229,7 @@ it("plans and runs a flow one of its own runs wrote, without restarting", async 
     // Loaded the way the project's own registration file would be, so the
     // nodes it declares are declared inside the root the host serves.
     const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates
-    const authoredText = declaration("catalog/Authored", [])
+    const authoredText = declaration("authored", "catalog/Authored", [])
     const registry = NodeControl.layerRegistry(root)
     const modules = Executable.layer({
       delegates: [registered.Author, registered.Authored, registered.Revised]
@@ -351,7 +352,7 @@ it("re-plans and runs a flow one of its own runs edited, without restarting", as
   // rebuilt plan is an approval card for one body and an execution of
   // another, which the control plane then refuses `execution_changed`, on
   // that plan and on every replacement plan that carries the same digest.
-  const root = await project(declaration("catalog/Authored", []))
+  const root = await project(declaration("authored", "catalog/Authored", []))
   try {
     const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates
     const registry = NodeControl.layerRegistry(root)
@@ -389,7 +390,11 @@ it("re-plans and runs a flow one of its own runs edited, without restarting", as
           })
 
         const before = yield* control.plan({ flowId: "authored", input: {} })
-        const edit = yield* plan("author", { text: declaration("catalog/Revised", []), revision: 1 }, "edit")
+        const edit = yield* plan(
+          "author",
+          { text: declaration("authored", "catalog/Revised", []), revision: 1 },
+          "edit"
+        )
         const after = yield* plan("authored", {}, "authored")
 
         const actions = (events: ReadonlyArray<{ readonly kind: string; readonly payload: unknown }>) =>
@@ -463,7 +468,7 @@ it("leaves a flow its run wrote unplannable until it is started again, when the 
   const root = await project()
   try {
     const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates
-    const authoredText = declaration("catalog/Authored", [])
+    const authoredText = declaration("authored", "catalog/Authored", [])
     const registry = NodeControl.layerRegistry(root)
     const modules = Executable.layer({
       delegates: [registered.Author, registered.Authored, registered.Revised]
@@ -542,7 +547,10 @@ it("plans and runs the @smthrs/flow graph file the scaffold teaches, whose nodes
     // The authoring half: a declaration naming the delegate that writes a
     // graph file, standing where the project's own flows stand.
     await mkdir(join(root, "flows", "author-graph"), { recursive: true })
-    await writeFile(join(root, "flows", "author-graph", "flow.ts"), declaration("catalog/AuthorGraph", ["flows/**"]))
+    await writeFile(
+      join(root, "flows", "author-graph", "flow.ts"),
+      declaration("author-graph", "catalog/AuthorGraph", ["flows/**"])
+    )
     const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates
     const registry = NodeControl.layerRegistry(root)
     const modules = Executable.layer({

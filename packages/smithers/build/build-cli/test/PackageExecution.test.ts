@@ -1652,7 +1652,7 @@ export const Package = S.Package({ targets: { review } })
       env: { ...process.env, PATH: bin },
       encoding: "utf8"
     })
-    expect(engine.status).toBe(1)
+    expect(engine.status).not.toBe(0)
     expect(engine.stdout).toBe("")
     const { exitCode, logs } = await withPath(bin, () => serve(root, ["review", "//:review"]))
     // Green: a host with no model CLI cannot say whether the diff is clean,

@@ -362,6 +362,37 @@ describe("BrowserChildProcessSpawner", () => {
       })
   )
 
+  it.effect("preserves a Windows absolute cwd for the mounted backend", () =>
+    Effect.gen(function*() {
+      const { bash, calls } = stub(ok())
+      const cwd = "C:\\workspace"
+      const statted: Array<string> = []
+      const layer = BrowserChildProcessSpawner.layer(bash).pipe(
+        Layer.provide(Layer.mergeAll(
+          BrowserFileSystem.layer({
+            ...NodeFsPromises,
+            stat: (candidate) => {
+              statted.push(candidate)
+              return NodeFsPromises.stat(root)
+            }
+          }),
+          Path.layer
+        ))
+      )
+
+      const exit = yield* Effect.exit(Effect.provide(
+        Effect.flatMap(
+          ChildProcessSpawner,
+          (spawner) => spawner.exitCode(ChildProcess.make("thing", [], { cwd }))
+        ),
+        layer
+      ))
+
+      expect(exit).toEqual(Exit.succeed(0))
+      expect(statted).toEqual([cwd])
+      expect(calls[0]?.cwd).toBe(cwd)
+    }))
+
   it.effect("omits cwd and env entirely when the command declares neither", () =>
     Effect.gen(function*() {
       const { bash, calls } = stub(ok())

@@ -134,7 +134,7 @@ the shared implementation it loads, and the runner before importing this
 subpath:
 
 ```sh
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @smthrs/testing@1.0.0-rc.1 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
 ```
 
 ```ts

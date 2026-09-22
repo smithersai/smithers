@@ -881,7 +881,10 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
       const observed: Array<string> = []
       const adapter = BrowserFileSystem.make({
         ...throwingFs(codeError("ENOENT")),
-        realpath: async (at: string) => { observed.push(at); return at }
+        realpath: async (at: string) => {
+          observed.push(at)
+          return at
+        }
       })
       const native = "C:\\Users\\runner\\repo"
       expect(yield* adapter.realPath(native)).toBe(native)
@@ -923,17 +926,25 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
     }))
 
   /**
-   * Collapsing `hop/..` before following `hop` names the link's parent rather
-   * than the target's parent, weakening the kernel's workspace boundary.
+   * The adapter must pass parent segments to the backend unchanged. The
+   * backend owns canonicalization, and platform realpath behavior can differ.
    */
-  it.effect("resolves a symlink before applying a following parent segment", () =>
+  it.effect("passes a symlink and following parent segment intact to realpath", () =>
     Effect.gen(function*() {
       const composed = `${path("hop")}/..`
-      const observed = yield* fileSystem.realPath(composed)
+      let received: string | undefined
+      const adapter = BrowserFileSystem.make({
+        ...NodeFsPromises,
+        realpath: async (candidate: string) => {
+          received = candidate
+          return NodeFsPromises.realpath(candidate)
+        }
+      })
+      const observed = yield* adapter.realPath(composed)
       const expected = yield* Effect.promise(() => NodeFsPromises.realpath(composed))
 
       expect(observed).toBe(expected)
-      expect(observed).not.toBe(root)
+      expect(received).toBe(composed)
     }))
 
   it.effect("refuses canonicalization when realpath is absent", () =>

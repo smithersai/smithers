@@ -242,6 +242,12 @@ export const MODEL_STREAM_PATH = "/api/model/stream"
  * @category constants
  */
 export const MODEL_CATALOG_PATH = "/api/model/catalog"
+/**
+ * The default model route.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
 export const MODEL_DEFAULT_PATH = "/api/model/default"
 /**
  * The model test route: `POST { model }` makes one real call and answers

@@ -20,6 +20,8 @@ Each route family has one home module, and a route constant is declared only the
 
 | Family                                                                                                                                                                                         | Module                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `/api/auth/github/start`, `/api/auth/github/callback`                                                                                                                                          | `AgentApiRoutes.ts`        |
+| `/api/auth/local`, `/api/auth/sse-ticket`, `/api/auth/github`, `/api/user`                                                                                                                     | `ApplicationAuth.ts`       |
 | `/api/harnesses`, `/api/repos`, `/api/repo`, `/api/pty`, `/api/targets/query`, `/api/targets/run`                                                                                              | `LocalApp.ts`              |
 | `/api/lsp`                                                                                                                                                                                     | `LocalLsp.ts`              |
 | `/api/cloud`, `/api/cloud-ws`, `/api/cloud-auth`                                                                                                                                               | `CloudTunnel.ts`           |

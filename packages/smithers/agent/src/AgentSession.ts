@@ -101,6 +101,7 @@ import { agentOutcome } from "./internal/AgentOutcome.ts"
 import { callId } from "./internal/CallIdentity.ts"
 import { failureJson } from "./internal/FailureJson.ts"
 import { failureSummary } from "./internal/FailureSummary.ts"
+import { waitingAnnotation } from "./internal/WaitingAnnotation.ts"
 import type * as QuotaPolicy from "./QuotaPolicy.ts"
 import { contextWindowResolver, SeatResolver } from "./SeatResolver.ts"
 import * as StandardFlows from "./StandardFlows.ts"
@@ -2921,10 +2922,7 @@ export const make = (
             const clocks = controlRun.status === "parked"
               ? yield* engineState.pendingClocks({ executionId: payload.runId })
               : []
-            yield* FlowRuntime.annotateWaiting({
-              reason: controlRun.status === "waiting-approval" ? "approval" : clocks.length > 0 ? "timer" : "event",
-              ...(clocks.length > 0 ? { wakeAt: Math.min(...clocks.map((clock) => clock.dueAtMs)) } : {})
-            })
+            yield* FlowRuntime.annotateWaiting(waitingAnnotation(controlRun.status, clocks))
             return yield* Flow.suspend(instance)
           }
           yield* claimForResume(payload.runId)

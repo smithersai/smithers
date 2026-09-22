@@ -42,7 +42,7 @@ describe("documented entry points", () => {
 
   it.each([
     ["@effect/platform-node", "4.0.0-rc.115"],
-    ["@smthrs/database", "1.0.0-rc.0"]
+    ["@smthrs/database", manifest.version]
   ])("declares integration-only %s as a development dependency", async (dependency, version) => {
     const files = await readdir(new URL("../test/", import.meta.url))
     const sources = await Promise.all(

@@ -289,22 +289,31 @@ describe("ControlLive listings", () => {
 
   it("pages terminal runs newest-first in memory and intersects exact filters", async () => {
     let now = 1
-    await run(Effect.gen(function*() {
-      const control = yield* Control
-      const first = yield* start("system/test", "latest-a")
-      now = 2
-      const middle = yield* start("system/test", "latest-b")
-      const last = yield* start("system/test", "latest-c")
-      yield* control.cancel({ runId: first.runId, reason: "test", idempotencyKey: "cancel-a" })
-      yield* control.cancel({ runId: last.runId, reason: "test", idempotencyKey: "cancel-c" })
-      const request = { _tag: "runs" as const, filters: { terminal: true }, order: "newest" as const, limit: 1 }
-      const page = yield* control.list(request)
-      expect(items(page)).toEqual([last.runId])
-      expect(items(yield* control.list({ ...request, cursor: page.nextCursor }))).toEqual([first.runId])
-      expect(items(yield* control.list({ _tag: "runs", filters: { terminal: false } }))).toEqual([middle.runId])
-      expect(items(yield* control.list({ _tag: "runs", filters: { runId: middle.runId, terminal: true } }))).toEqual([])
-      expect(items(yield* control.list({ _tag: "runs", order: "newest" }))).toEqual([last.runId, middle.runId, first.runId])
-    }), live({ runtime: memoryRuntime({ flows, now: () => now }) }))
+    await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const first = yield* start("system/test", "latest-a")
+        now = 2
+        const middle = yield* start("system/test", "latest-b")
+        const last = yield* start("system/test", "latest-c")
+        yield* control.cancel({ runId: first.runId, reason: "test", idempotencyKey: "cancel-a" })
+        yield* control.cancel({ runId: last.runId, reason: "test", idempotencyKey: "cancel-c" })
+        const request = { _tag: "runs" as const, filters: { terminal: true }, order: "newest" as const, limit: 1 }
+        const page = yield* control.list(request)
+        expect(items(page)).toEqual([last.runId])
+        expect(items(yield* control.list({ ...request, cursor: page.nextCursor }))).toEqual([first.runId])
+        expect(items(yield* control.list({ _tag: "runs", filters: { terminal: false } }))).toEqual([middle.runId])
+        expect(items(yield* control.list({ _tag: "runs", filters: { runId: middle.runId, terminal: true } }))).toEqual(
+          []
+        )
+        expect(items(yield* control.list({ _tag: "runs", order: "newest" }))).toEqual([
+          last.runId,
+          middle.runId,
+          first.runId
+        ])
+      }),
+      live({ runtime: memoryRuntime({ flows, now: () => now }) })
+    )
   })
 
   it("rejects invalid run cursors and cursors reused with different filters", async () => {
@@ -1147,22 +1156,32 @@ describe("ControlLive trigger listings", () => {
 describe("a status filter over an executor's observation", () => {
   it("filters terminal state from executor evidence and preserves other filters", async () => {
     const executor = ControlExecutor.makeNoop({
-      readExecution: runId => Effect.succeed(runId === "run-2"
-        ? { _tag: "Observed", status: "completed" } as const
-        : { _tag: "Observed", status: "running" } as const)
+      readExecution: (runId) =>
+        Effect.succeed(
+          runId === "run-2"
+            ? { _tag: "Observed", status: "completed" } as const
+            : { _tag: "Observed", status: "running" } as const
+        )
     })
-    await run(Effect.gen(function*() {
-      const control = yield* Control
-      const running = yield* start("system/test", "observed-running")
-      const completed = yield* start("system/test", "observed-completed")
-      yield* start("review/pull-request", "other-flow")
-      expect(items(yield* control.list({ _tag: "runs", filters: { flowId: "system/test", terminal: true }, limit: 1 })))
-        .toEqual([completed.runId])
-      expect(items(yield* control.list({ _tag: "runs", filters: { flowId: "system/test", terminal: false }, limit: 1 })))
-        .toEqual([running.runId])
-      expect(items(yield* control.list({ _tag: "runs", filters: { status: "completed", terminal: false } })))
-        .toEqual([])
-    }), live({ runtime: memoryRuntime({ flows }), executor }))
+    await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const running = yield* start("system/test", "observed-running")
+        const completed = yield* start("system/test", "observed-completed")
+        yield* start("review/pull-request", "other-flow")
+        expect(
+          items(yield* control.list({ _tag: "runs", filters: { flowId: "system/test", terminal: true }, limit: 1 }))
+        )
+          .toEqual([completed.runId])
+        expect(
+          items(yield* control.list({ _tag: "runs", filters: { flowId: "system/test", terminal: false }, limit: 1 }))
+        )
+          .toEqual([running.runId])
+        expect(items(yield* control.list({ _tag: "runs", filters: { status: "completed", terminal: false } })))
+          .toEqual([])
+      }),
+      live({ runtime: memoryRuntime({ flows }), executor })
+    )
   })
 
   /**

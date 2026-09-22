@@ -2539,9 +2539,14 @@ describe("every persisted card kind", () => {
 
   test("PR read failures and repository import launch identity refuse invalid persisted values", () => {
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readErrors: { commits: 500 } })).success).toBe(false)
-    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestId: 1 })).success).toBe(false)
-    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestKind: "resume" })).success).toBe(false)
-    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, accountOwner: 1 })).success).toBe(false)
+    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestId: 1 })).success).toBe(
+      false
+    )
+    expect(
+      CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestKind: "resume" })).success
+    ).toBe(false)
+    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, accountOwner: 1 })).success)
+      .toBe(false)
   })
 })
 

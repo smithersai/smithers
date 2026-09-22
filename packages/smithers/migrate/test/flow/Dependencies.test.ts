@@ -149,7 +149,7 @@ describe("the flow surface's dependency boundary", () => {
     // both on a bump, and this pins them until it does.
     expect(Report.tool.version).toBe(manifest.version)
     expect(Cli.version).toBe(manifest.version)
-    expect(manifest.version).toBe("1.0.0-rc.0")
+    expect(manifest.version).toMatch(/^1\.0\.0-rc\.\d+$/)
   })
 
   it("declares the executable as the side effect it is", () => {

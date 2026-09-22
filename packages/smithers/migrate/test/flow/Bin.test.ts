@@ -67,7 +67,7 @@ describe("smithers-migrate", () => {
     const result = runBin(["--version"])
 
     expect(result.status).toBe(0)
-    expect(result.stdout.trim()).toContain("1.0.0-rc.0")
+    expect(result.stdout.trim()).toContain("1.0.0-rc.1")
     expect(result.stdout).not.toContain("0.1.0")
   })
 

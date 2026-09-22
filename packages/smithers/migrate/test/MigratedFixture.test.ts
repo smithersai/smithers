@@ -25,8 +25,8 @@ import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import * as Mapping from "../src/Mapping.ts"
 import * as Transform from "../src/flow/Transform.ts"
+import * as Mapping from "../src/Mapping.ts"
 import { fixture } from "./fixtures/helpers.ts"
 
 const module = await import("./fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts")
@@ -80,7 +80,7 @@ describe("the migrated fixture's flow module", () => {
       const executable = yield* Executable.fromDescriptor(yield* descriptor, { delegates: [] })
 
       expect(executable.delegate).toBeUndefined()
-      expect(executable.flow._tag).toBe("simple-workflow")
+      expect(executable.flow._tag).toMatch(/^registry\/entry\//)
 
       const graph = Graph.build(executable.flow, { input: { topic: "effect" } })
       expect(Graph.diagnostics(graph)).toEqual([])

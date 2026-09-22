@@ -618,10 +618,12 @@ describe("parseWorkflow", () => {
       "test",
       "apps-e2e",
       "rust",
+      "rust-ffi",
       "wasm-repro",
       "e2e-faults",
       "browser",
       "packages",
+      "go-backend",
       // Advisory, and not in `requiredJobs`: it runs the model reviews, which
       // need a full-history checkout and a model CLI the runner does not ship.
       "review-lints"

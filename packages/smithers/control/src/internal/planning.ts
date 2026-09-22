@@ -13,7 +13,16 @@ import { Sha256 } from "@smthrs/crypto"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
 import { Effect, Schema } from "effect"
 import type { ApprovalTarget } from "../Control.ts"
-import type { Envelope, FlowId, IdempotencyKey, PlanCard, PlanGraph, PlanNode, Receipt, RunId } from "../ControlSchema.ts"
+import type {
+  Envelope,
+  FlowId,
+  IdempotencyKey,
+  PlanCard,
+  PlanGraph,
+  PlanNode,
+  Receipt,
+  RunId
+} from "../ControlSchema.ts"
 
 /**
  * The envelope a flow with no declared capabilities carries.
