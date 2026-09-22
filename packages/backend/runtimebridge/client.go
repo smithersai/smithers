@@ -96,6 +96,9 @@ type commandEnvelope struct {
 		RuntimeArtifactDigest string                         `json:"runtimeArtifactDigest,omitempty"`
 		SourceRevision        string                         `json:"sourceRevision,omitempty"`
 		PlanID                string                         `json:"planId,omitempty"`
+		PlanDigest            string                         `json:"planDigest,omitempty"`
+		ExecutionDigest       string                         `json:"executionDigest,omitempty"`
+		Envelope              json.RawMessage                `json:"envelope,omitempty"`
 		Approval              json.RawMessage                `json:"approval,omitempty"`
 		Receipt               flowruntime.FlowRuntimeReceipt `json:"receipt"`
 	} `json:"value"`
@@ -260,6 +263,9 @@ func (c *Client) Launch(ctx context.Context, request flowruntime.FlowRuntimeLaun
 		RuntimeArtifactDigest: envelope.Value.RuntimeArtifactDigest,
 		SourceRevision:        envelope.Value.SourceRevision,
 		PlanID:                envelope.Value.PlanID,
+		PlanDigest:            envelope.Value.PlanDigest,
+		ExecutionDigest:       envelope.Value.ExecutionDigest,
+		Envelope:              envelope.Value.Envelope,
 		Approval:              envelope.Value.Approval,
 		Receipt:               envelope.Value.Receipt,
 	}, nil

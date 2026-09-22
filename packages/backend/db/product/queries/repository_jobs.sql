@@ -41,6 +41,12 @@ SELECT * FROM repository_job_registrations WHERE repository_id=$1 ORDER BY job,m
 UPDATE repository_job_registrations SET enabled=false, updated_at=now()
 WHERE repository_id=$1 AND job=$2 RETURNING *;
 
+-- name: ListRepositoryJobDispatchesForCancellation :many
+SELECT d.* FROM repository_job_dispatches d
+JOIN repository_job_registrations r ON r.id=d.registration_id
+WHERE r.repository_id=$1 AND r.job=$2 AND d.status IN ('waiting','submitted')
+ORDER BY d.created_at,d.id;
+
 -- name: AdmitRepositoryJobEvent :exec
 INSERT INTO repository_job_events
   (repository_id,delivery_key,source,event_type,event_action,issue_number,payload)
@@ -99,6 +105,9 @@ UPDATE repository_job_dispatches d SET status='dispatching',claim_token=gen_rand
   lease_until=now()+interval '2 minutes',attempts=attempts+1,updated_at=now()
 FROM picked WHERE d.id=picked.id RETURNING d.*;
 
+-- name: GetRepositoryJobDispatch :one
+SELECT * FROM repository_job_dispatches WHERE id=$1;
+
 -- name: SaveRepositoryJobPlan :execrows
 UPDATE repository_job_dispatches SET plan=$3,updated_at=now()
 WHERE id=$1 AND claim_token=$2 AND status='dispatching';
@@ -108,16 +117,27 @@ UPDATE repository_job_dispatches SET status=$3,run_id=$4,receipt=$5,error=$6,
   next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
 WHERE id=$1 AND claim_token=$2 AND status='dispatching';
 
+-- name: ProjectRepositoryJobDispatch :execrows
+UPDATE repository_job_dispatches SET status=$2,run_id=$3,plan=$4,receipt=$5,error=$6,
+  next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status<>'dispatching';
+
 -- name: RetryRepositoryJobSignal :execrows
 UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
   run_id=$3,receipt='{"_tag":"NoMatchingWait"}'::jsonb,error='Waiting for the issue flow to accept the reply',
   next_attempt_at=$4,claim_token=NULL,lease_until=NULL,updated_at=now()
 WHERE id=$1 AND claim_token=$2 AND status='dispatching';
 
+-- name: RetryProjectedRepositoryJobSignal :execrows
+UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
+  receipt=$2,error='Waiting for the issue flow to accept the reply',next_attempt_at=$3,
+  claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status<>'dispatching';
+
 -- name: LatestRepositoryJobIssueRun :one
 SELECT * FROM repository_job_dispatches
 WHERE registration_id=$1 AND revision=$2 AND source=$3 AND issue_number=$4
-  AND status='submitted' AND run_id<>'' AND plan IS NOT NULL
+  AND status='submitted' AND run_id<>''
 ORDER BY created_at DESC,id DESC LIMIT 1;
 
 -- name: ListRepositoryJobDispatches :many

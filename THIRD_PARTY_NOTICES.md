@@ -72,3 +72,15 @@ statically linked into `wasm/flows_jj.wasm` — enumerated from `cargo
 metadata`/`cargo tree` against `crates/flows-jj` and grouped by license —
 are reproduced in `packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md`, which ships inside
 that package's published npm tarball.
+
+The Docker and native application distributions also include the `jj` CLI
+built from the same exact fork revision. Its Apache-2.0 license is shipped as
+`licenses/jj-LICENSE`.
+
+## Git
+
+The Docker distribution builds Git 2.50.1 from the checksum-pinned kernel.org
+source archive. The macOS distribution copies Apple Git 2.50.1 from the Xcode
+build toolchain together with its relocatable helper and template tree. Git is
+licensed under GPL-2.0; the license text is shipped as
+`licenses/git-COPYING`.

@@ -16,6 +16,7 @@ import (
 const (
 	OperationLaunch  = "flow.runtime.launch"
 	OperationApprove = "flow.runtime.approve"
+	OperationSignal  = "flow.runtime.signal"
 )
 
 var (
@@ -44,6 +45,21 @@ type LaunchRequest struct {
 	ApprovalPolicy       ApprovalPolicy
 }
 
+// SignalRequest durably delivers one named signal to a run owned by the same
+// authorized target as its launch. The request id is the product idempotency
+// key; callers never address a runtime endpoint or supply an owner generation.
+type SignalRequest struct {
+	Scope                jobs.Scope
+	RequestID            string
+	Target               flowruntime.FlowRuntimeTarget
+	FlowID               string
+	RunID                string
+	Name                 string
+	Payload              json.RawMessage
+	AuthorizationContext json.RawMessage
+	Projection           json.RawMessage
+}
+
 type RuntimeCheckpoint struct {
 	Version             int                             `json:"version"`
 	Target              flowruntime.FlowRuntimeTarget   `json:"target"`
@@ -51,6 +67,9 @@ type RuntimeCheckpoint struct {
 	Projection          json.RawMessage                 `json:"projection"`
 	Identity            flowruntime.FlowRuntimeIdentity `json:"identity"`
 	PlanID              string                          `json:"planId,omitempty"`
+	PlanDigest          string                          `json:"planDigest,omitempty"`
+	ExecutionDigest     string                          `json:"executionDigest,omitempty"`
+	Envelope            json.RawMessage                 `json:"envelope,omitempty"`
 	Approval            json.RawMessage                 `json:"approval,omitempty"`
 	ApprovalOperationID string                          `json:"approvalOperationId,omitempty"`
 	Receipt             *flowruntime.FlowRuntimeReceipt `json:"receipt,omitempty"`
@@ -58,6 +77,7 @@ type RuntimeCheckpoint struct {
 	RunID               string                          `json:"runId,omitempty"`
 	Cursor              string                          `json:"cursor,omitempty"`
 	Run                 *flowruntime.FlowRuntimeRun     `json:"run,omitempty"`
+	FailureCode         string                          `json:"failureCode,omitempty"`
 }
 
 // ProjectionUpdate is an idempotent projection callback. RuntimeCheckpoint is
@@ -102,6 +122,15 @@ type approvalPayload struct {
 	Target            flowruntime.FlowRuntimeTarget   `json:"target"`
 	Identity          flowruntime.FlowRuntimeIdentity `json:"identity"`
 	Approval          json.RawMessage                 `json:"approval"`
+}
+
+type signalPayload struct {
+	Target     flowruntime.FlowRuntimeTarget `json:"target"`
+	FlowID     string                        `json:"flowId"`
+	RunID      string                        `json:"runId"`
+	Name       string                        `json:"name"`
+	Payload    json.RawMessage               `json:"payload"`
+	Projection json.RawMessage               `json:"projection"`
 }
 
 type terminalReceipt struct {

@@ -1,10 +1,40 @@
-import { cpSync, existsSync, mkdirSync, realpathSync, rmSync, statSync } from "node:fs"
-import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path"
+import { createHash } from "node:crypto"
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { bundlePostgres } from "./bundle-postgres"
 
 const appDir = resolve(import.meta.dir, "..")
 const root = resolve(appDir, "..", "..")
 const nativeDir = join(appDir, ".native")
+const jjRevision = "47589ada70c12b3e829b5c98ab32503abad49eac"
+const jjVersion = `jj 0.44.0-${jjRevision}`
+const gitVersion = "git version 2.50.1 (Apple Git-155)"
+const cefSetting = process.env.SMITHERS_NATIVE_E2E_CEF?.trim()
+if (cefSetting !== undefined && cefSetting !== "" && cefSetting !== "0" && cefSetting !== "1") {
+  throw new Error("SMITHERS_NATIVE_E2E_CEF must be 0 or 1.")
+}
+const cefMatrix = cefSetting === "1"
+const cdpSetting = process.env.SMITHERS_NATIVE_E2E_CDP_PORT?.trim()
+if (!cefMatrix && cdpSetting) {
+  throw new Error("SMITHERS_NATIVE_E2E_CDP_PORT is accepted only for the explicit CEF matrix artifact.")
+}
+if (cefMatrix && !cdpSetting) throw new Error("The CEF matrix artifact requires SMITHERS_NATIVE_E2E_CDP_PORT.")
+if (cdpSetting && (!/^\d+$/.test(cdpSetting) || Number(cdpSetting) < 1024 || Number(cdpSetting) > 65535)) {
+  throw new Error("SMITHERS_NATIVE_E2E_CDP_PORT must be an integer from 1024 through 65535.")
+}
 const configuredCargoTarget = process.env.CARGO_TARGET_DIR?.trim()
 const cargoTargetDir = configuredCargoTarget
   ? resolve(root, configuredCargoTarget)
@@ -31,6 +61,67 @@ const nodeEnvironment = {
   PATH: process.env.PATH === undefined || process.env.PATH === ""
     ? dirname(nodeBinary)
     : `${dirname(nodeBinary)}${delimiter}${process.env.PATH}`
+}
+
+const output = (argv: ReadonlyArray<string>, env = process.env): string => {
+  const result = Bun.spawnSync([...argv], { stdout: "pipe", stderr: "pipe", env })
+  if (result.exitCode !== 0) {
+    throw new Error(`${argv.join(" ")} failed: ${new TextDecoder().decode(result.stderr).trim()}`)
+  }
+  return new TextDecoder().decode(result.stdout).trim()
+}
+const withoutGitOverrides = Object.fromEntries(
+  Object.entries(process.env).filter(([name, value]) =>
+    value !== undefined && name !== "GIT_EXEC_PATH" && name !== "GIT_TEMPLATE_DIR")
+) as Record<string, string>
+const configuredGit = process.env.SMITHERS_GIT_BINARY?.trim()
+const discoveredGit = configuredGit
+  ? isAbsolute(configuredGit) ? configuredGit : Bun.which(configuredGit)
+  : output(["/usr/bin/xcrun", "--find", "git"], withoutGitOverrides)
+if (discoveredGit === null || discoveredGit === undefined || discoveredGit === "") {
+  throw new Error("SMITHERS_GIT_BINARY must name the pinned Xcode Git executable.")
+}
+const gitBinary = realpathSync(discoveredGit)
+if (output([gitBinary, "--version"], withoutGitOverrides) !== gitVersion) {
+  throw new Error(`Native releases require ${gitVersion}.`)
+}
+const gitExecSource = realpathSync(output([gitBinary, "--exec-path"], withoutGitOverrides))
+const gitPrefix = resolve(gitExecSource, "..", "..")
+const gitShareSource = join(gitPrefix, "share", "git-core")
+if (!existsSync(gitShareSource)) throw new Error(`Pinned Git resources are unavailable: ${gitShareSource}`)
+
+const checksumFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
+const verifyChecksumSidecar = (path: string): void => {
+  const expected = `${checksumFile(path)}  ${basename(path)}\n`
+  if (readFileSync(`${path}.sha256`, "utf8") !== expected) {
+    throw new Error(`Packaged checksum is invalid: ${path}.sha256`)
+  }
+}
+const walk = (path: string, visit: (entry: string) => void): void => {
+  visit(path)
+  if (!lstatSync(path).isDirectory()) return
+  for (const name of readdirSync(path)) walk(join(path, name), visit)
+}
+const validateGitBundle = (bundleRoot: string, payloadRoots: ReadonlyArray<string>): void => {
+  for (const payloadRoot of payloadRoots) walk(payloadRoot, (entry) => {
+    const info = lstatSync(entry)
+    if (info.isSymbolicLink()) {
+      const target = readlinkSync(entry)
+      if (isAbsolute(target)) throw new Error(`Pinned Git contains an absolute symlink: ${entry}`)
+      const escaped = relative(bundleRoot, resolve(dirname(entry), target))
+      if (escaped === ".." || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) {
+        throw new Error(`Pinned Git symlink escapes its bundle: ${entry}`)
+      }
+      return
+    }
+    if (!info.isFile() || (info.mode & 0o111) === 0) return
+    if (!output(["/usr/bin/file", "-b", entry]).includes("Mach-O")) return
+    for (const line of output(["/usr/bin/otool", "-L", entry]).split("\n").slice(1)) {
+      const dependency = line.trim().split(" (compatibility version", 1)[0]
+      if (dependency.startsWith("/System/Library/") || dependency.startsWith("/usr/lib/")) continue
+      throw new Error(`Pinned Git is not relocatable: ${entry} depends on ${dependency}`)
+    }
+  })
 }
 
 const run = async (
@@ -105,6 +196,21 @@ await run(
   "native FFI (Rust 1.98)",
   ["cargo", "+1.98.0", "build", "--locked", "--release", "--package", "smithers-ffi"]
 )
+const jjInstallRoot = join(nativeDir, ".jj-install")
+await run(
+  "pinned jj CLI",
+  [
+    "cargo", "+1.98.0", "install", "--locked",
+    "--git", "https://github.com/smithersai/jj.git", "--rev", jjRevision,
+    "--root", jjInstallRoot, "jj-cli"
+  ],
+  root,
+  { NIX_JJ_GIT_HASH: jjRevision }
+)
+const installedJj = join(jjInstallRoot, "bin", "jj")
+if (output([installedJj, "--version"]) !== jjVersion) throw new Error(`Native releases require ${jjVersion}.`)
+cpSync(installedJj, join(nativeDir, "bin", "jj"))
+rmSync(jjInstallRoot, { recursive: true, force: true })
 await run(
   "Go backend",
   ["go", "build", "-trimpath", "-o", join(nativeDir, "bin", "smithers-backend"), "./apps/backend"]
@@ -129,6 +235,9 @@ await run(
   root,
   nodeEnvironment
 )
+const modelHost = join(nativeDir, "bin", "smithers-model-host")
+await run("canonical model host", [nodeBinary, "apps/model-host/build.mjs", modelHost], root, nodeEnvironment)
+verifyChecksumSidecar(modelHost)
 await run(
   "Flow host manifest",
   [
@@ -148,8 +257,48 @@ await run(
 const hostRuntime = join(nativeDir, "bin", "node")
 cpSync(nodeBinary, hostRuntime)
 cpSync(nodeLicense, join(nativeDir, "licenses", "node-LICENSE"))
+cpSync(join(root, "distribution", "licenses", "jj-LICENSE"), join(nativeDir, "licenses", "jj-LICENSE"))
+cpSync(join(root, "distribution", "licenses", "git-COPYING"), join(nativeDir, "licenses", "git-COPYING"))
 await run("packaged coding host", [hostRuntime, codingHost, "--help"])
 await run("packaged librarian host", [hostRuntime, librarianHost, "--help"])
+await run("packaged model host", [hostRuntime, modelHost, "--help"])
+
+const packagedGitRoot = nativeDir
+cpSync(gitBinary, join(nativeDir, "bin", "git"))
+cpSync(gitExecSource, join(nativeDir, "libexec", "git-core"), {
+  recursive: true,
+  verbatimSymlinks: true
+})
+cpSync(gitShareSource, join(nativeDir, "share", "git-core"), {
+  recursive: true,
+  verbatimSymlinks: true
+})
+validateGitBundle(nativeDir, [
+  join(nativeDir, "bin", "git"),
+  join(nativeDir, "libexec", "git-core"),
+  join(nativeDir, "share", "git-core")
+])
+const gitEnvironment = {
+  GIT_EXEC_PATH: join(packagedGitRoot, "libexec", "git-core"),
+  GIT_TEMPLATE_DIR: join(packagedGitRoot, "share", "git-core", "templates")
+}
+await run("packaged Git", [join(nativeDir, "bin", "git"), "--version"], root, gitEnvironment)
+await run("packaged jj", [join(nativeDir, "bin", "jj"), "--version"])
+const toolSmoke = mkdtempSync(join(nativeDir, ".git-jj-smoke-"))
+try {
+  const packagedGit = join(nativeDir, "bin", "git")
+  const packagedJj = join(nativeDir, "bin", "jj")
+  await run("packaged Git repository init", [packagedGit, "init", "--quiet"], toolSmoke, gitEnvironment)
+  await run("packaged Git owner", [packagedGit, "config", "user.name", "Smithers Package Test"], toolSmoke, gitEnvironment)
+  await run("packaged Git email", [packagedGit, "config", "user.email", "package-test@smithers.invalid"], toolSmoke, gitEnvironment)
+  writeFileSync(join(toolSmoke, "README"), "packaged git and jj\n")
+  await run("packaged Git add", [packagedGit, "add", "README"], toolSmoke, gitEnvironment)
+  await run("packaged Git commit", [packagedGit, "commit", "--quiet", "-m", "package smoke"], toolSmoke, gitEnvironment)
+  await run("packaged jj colocated init", [packagedJj, "git", "init", "--colocate"], toolSmoke, gitEnvironment)
+  await run("packaged jj workspace read", [packagedJj, "log", "--no-graph", "-r", "@", "-T", "commit_id"], toolSmoke, gitEnvironment)
+} finally {
+  rmSync(toolSmoke, { recursive: true, force: true })
+}
 
 const ffiName = process.platform === "darwin"
   ? "libsmithers_ffi.dylib"
@@ -170,7 +319,7 @@ bundlePostgres(postgresBundle, join(nativeDir, "postgres"))
 
 await run("web bundle", [corepackBinary, "pnpm", "run", "build:web"], appDir, nodeEnvironment)
 await run(
-  "stable Electrobun package",
+  cefMatrix ? "stable Electrobun CEF matrix package" : "stable Electrobun package",
   [corepackBinary, "pnpm", "exec", "electrobun", "build", "--env=stable"],
   appDir,
   nodeEnvironment

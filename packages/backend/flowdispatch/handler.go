@@ -28,6 +28,8 @@ func (service *Service) Handle(ctx context.Context, lease *jobs.Lease) error {
 		return service.handleLaunch(ctx, lease)
 	case OperationApprove:
 		return service.handleApproval(ctx, lease)
+	case OperationSignal:
+		return service.handleSignal(ctx, lease)
 	default:
 		return errors.New("flow dispatch: unsupported product operation")
 	}
@@ -95,6 +97,9 @@ func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) err
 		return service.fail(lease, "runtime_launch_identity_mismatch", checkpoint)
 	}
 	checkpoint.PlanID = result.PlanID
+	checkpoint.PlanDigest = result.PlanDigest
+	checkpoint.ExecutionDigest = result.ExecutionDigest
+	checkpoint.Envelope = result.Envelope
 	checkpoint.Approval = result.Approval
 	checkpoint.Receipt = &result.Receipt
 	checkpoint.RunID = result.Receipt.RunID
@@ -223,6 +228,77 @@ func (service *Service) handleApproval(ctx context.Context, lease *jobs.Lease) e
 		Kind: "runtime-approval", Runtime: identity, Receipt: &result.Receipt, Projection: json.RawMessage(`{}`),
 	}
 	return lease.Complete(ctx, mustJSON(receipt))
+}
+
+func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) error {
+	claim := lease.Claim()
+	var payload signalPayload
+	if err := json.Unmarshal(claim.Payload, &payload); err != nil || payload.RunID == "" || payload.Name == "" {
+		return service.fail(lease, "invalid_signal_request", RuntimeCheckpoint{})
+	}
+	checkpoint, err := decodeCheckpoint(claim.ExternalReceipt)
+	if err != nil {
+		return service.fail(lease, "invalid_checkpoint", RuntimeCheckpoint{Projection: payload.Projection})
+	}
+	if checkpoint.Version == 0 {
+		checkpoint = RuntimeCheckpoint{
+			Version: 1, Target: payload.Target, FlowID: payload.FlowID,
+			RunID: payload.RunID, Projection: payload.Projection,
+		}
+	}
+	if checkpoint.Target != payload.Target || checkpoint.FlowID != payload.FlowID || checkpoint.RunID != payload.RunID {
+		return service.fail(lease, "checkpoint_request_mismatch", checkpoint)
+	}
+	runtime, identity, err := service.resolve(ctx, checkpoint.Target, checkpoint.Identity)
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	checkpoint.Identity = identity
+	if err := lease.StartExternal(ctx, mustJSON(checkpoint)); err != nil {
+		return err
+	}
+
+	// A terminal run cannot consume a signal. Establish that canonical fact
+	// before mutation so product code can start a new run instead of polling a
+	// wait that can never reappear.
+	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+	observation, err := runtime.Observe(callContext, checkpoint.RunID, "", 1)
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if observation.Run.RunID != checkpoint.RunID || observation.Run.FlowID != checkpoint.FlowID ||
+		observation.Terminal != terminalStatus(observation.Run.Status) || !validObservationPage("", observation) {
+		return service.fail(lease, "invalid_runtime_observation", checkpoint)
+	}
+	checkpoint.Run = &observation.Run
+	if observation.Terminal {
+		return service.fail(lease, "runtime_run_terminal", checkpoint)
+	}
+
+	callContext, cancel = context.WithTimeout(ctx, service.runtimeCallTimeout)
+	result, err := runtime.Signal(callContext, flowruntime.FlowRuntimeSignal{
+		ApplicationRequestID: claim.OperationID,
+		OwnerGeneration:      identity.OwnerGeneration,
+		RunID:                checkpoint.RunID,
+		Name:                 payload.Name,
+		Payload:              payload.Payload,
+	})
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if !validMutationResult(result, "signal", claim.OperationID) {
+		return service.fail(lease, "invalid_signal_receipt", checkpoint)
+	}
+	checkpoint.MutationReceipt = &result.Receipt
+	if err := service.project(context.WithoutCancel(ctx), lease, jobs.StateCompleted, checkpoint); err != nil {
+		return err
+	}
+	return lease.Complete(ctx, mustJSON(terminalReceipt{
+		Kind: "runtime-signal", Runtime: identity, Receipt: &result.Receipt,
+		Run: checkpoint.Run, Projection: checkpoint.Projection,
+	}))
 }
 
 func (service *Service) resolve(
@@ -402,6 +478,7 @@ func (service *Service) project(ctx context.Context, lease *jobs.Lease, state jo
 }
 
 func (service *Service) fail(lease *jobs.Lease, code string, checkpoint RuntimeCheckpoint) error {
+	checkpoint.FailureCode = code
 	if len(checkpoint.Projection) > 0 {
 		projectionContext, cancel := context.WithTimeout(context.Background(), service.runtimeCallTimeout)
 		err := service.project(projectionContext, lease, jobs.StateFailed, checkpoint)

@@ -42,7 +42,7 @@ func TestRepositoryJobsIntegrationNativeReply(t *testing.T) {
 	input.Mode, input.TrialSource, input.TrialIssueNumber = "trial", "smithers-cloud", trial.Number
 	_, err = s.Register(ctx, "gateway", "token", "issues", input)
 	require.NoError(t, err)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	dispatches, err := s.Dispatches(ctx, g.target.RepositoryID, g.target.UserID, "issues")
 	require.NoError(t, err)
 	require.Len(t, dispatches, 1)
@@ -83,7 +83,7 @@ func TestRepositoryJobsIntegrationNativeReply(t *testing.T) {
 	require.Equal(t, 1, count)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM repository_job_events WHERE repository_id=$1 AND event_type='issue_comment' AND event_action='created'`, g.target.RepositoryID).Scan(&count))
 	require.Equal(t, 1, count)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1, "the job must never trigger on its own automatic reply")
 	require.Empty(t, g.signalKeys, "its own question is not an author reply")
 

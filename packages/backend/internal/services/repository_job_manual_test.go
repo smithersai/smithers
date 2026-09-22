@@ -53,7 +53,7 @@ func TestRepositoryJobsIntegrationManualDispatch(t *testing.T) {
 	require.Equal(t, "queued", first.Status)
 	require.Empty(t, first.RunID)
 	require.Empty(t, g.calls, "manual acknowledgment cannot wait for a gateway Plan or Run")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	replay, err := s.RunManual(ctx, "gateway", "token", "issues", "manual-one", request)
 	require.NoError(t, err)
 	require.Equal(t, first.DispatchID, replay.DispatchID)

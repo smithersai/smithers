@@ -216,6 +216,22 @@ const flowHostBundle = (manifestPath: string): FlowHostBundle => {
   }
 }
 
+const checksummedExecutable = (path: string, label: string): string => {
+  try {
+    accessSync(path, constants.X_OK)
+  } catch {
+    throw new Error(`${label} is not executable: ${path}`)
+  }
+  const digest = createHash("sha256").update(readFileSync(path)).digest("hex")
+  const expected = `${digest}  ${path.split(sep).at(-1)}\n`
+  try {
+    if (readFileSync(`${path}.sha256`, "utf8") !== expected) throw new Error("checksum mismatch")
+  } catch {
+    throw new Error(`${label} checksum failed.`)
+  }
+  return path
+}
+
 const nativeBootstrapToken = (
   stateDir: string,
   env: Readonly<Record<string, string | undefined>>
@@ -262,12 +278,22 @@ export const startNativeBackend = async (
   const hosts = flowHostBundle(
     setting(env, "SMITHERS_FLOW_HOST_MANIFEST") ?? resolve(binaryRoot, "flow-hosts.json")
   )
+  const modelHost = checksummedExecutable(resolve(binaryRoot, "smithers-model-host"), "Packaged model host")
+  const jj = resolve(binaryRoot, "jj")
+  const git = resolve(binaryRoot, "git")
+  const gitRoot = resolve(binaryRoot, "..")
+  const gitExecPath = resolve(gitRoot, "libexec", "git-core")
+  const gitTemplateDir = resolve(gitRoot, "share", "git-core", "templates")
   const executables = [
     backend,
     hosts.node,
     hosts.coding.path,
     hosts.librarian.path,
+    modelHost,
     resolve(binaryRoot, "smithers-jj-export"),
+    jj,
+    git,
+    resolve(gitExecPath, "git-remote-http"),
     ...["postgres", "initdb", "pg_isready", "psql", "pg_dump", "pg_restore"]
       .map((name) => resolve(postgres, name))
   ]
@@ -277,6 +303,11 @@ export const startNativeBackend = async (
     } catch {
       throw new Error(`Owned backend executable is unavailable: ${path}`)
     }
+  }
+  try {
+    if (!statSync(gitTemplateDir).isDirectory()) throw new Error("not a directory")
+  } catch {
+    throw new Error(`Owned backend Git templates are unavailable: ${gitTemplateDir}`)
   }
   const ffi = resolve(
     binaryRoot,
@@ -315,10 +346,15 @@ export const startNativeBackend = async (
   environment.SMITHERS_WORKSPACE_CODING_HOST_SHA256 = hosts.coding.sha256
   environment.SMITHERS_WORKSPACE_LIBRARIAN_HOST_BINARY = hosts.librarian.path
   environment.SMITHERS_WORKSPACE_LIBRARIAN_HOST_SHA256 = hosts.librarian.sha256
+  environment.SMITHERS_MODEL_HOST_BUNDLE = modelHost
+  environment.SMITHERS_NODE_BINARY = resolve(binaryRoot, "node")
   environment.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY = resolve(
     binaryRoot,
     "smithers-jj-export"
   )
+  environment.SMITHERS_JJ_PATH = jj
+  environment.GIT_EXEC_PATH = gitExecPath
+  environment.GIT_TEMPLATE_DIR = gitTemplateDir
   environment.SMITHERS_FFI_LIBRARY_PATH = ffi
 
   const spawn = options.spawn ?? ((argv, childOptions) => Bun.spawn([...argv], childOptions))

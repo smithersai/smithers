@@ -564,6 +564,40 @@ func (q *Queries) GetRepositoryJobCommentDispatch(ctx context.Context, arg GetRe
 	return i, err
 }
 
+const getRepositoryJobDispatch = `-- name: GetRepositoryJobDispatch :one
+SELECT id, registration_id, revision, digest, delivery_key, source, event_type, event_action, issue_number, payload, status, plan, run_id, signal_attempt, receipt, claim_token, lease_until, attempts, next_attempt_at, error, created_at, updated_at FROM repository_job_dispatches WHERE id=$1
+`
+
+func (q *Queries) GetRepositoryJobDispatch(ctx context.Context, id string) (RepositoryJobDispatch, error) {
+	row := q.db.QueryRow(ctx, getRepositoryJobDispatch, id)
+	var i RepositoryJobDispatch
+	err := row.Scan(
+		&i.ID,
+		&i.RegistrationID,
+		&i.Revision,
+		&i.Digest,
+		&i.DeliveryKey,
+		&i.Source,
+		&i.EventType,
+		&i.EventAction,
+		&i.IssueNumber,
+		&i.Payload,
+		&i.Status,
+		&i.Plan,
+		&i.RunID,
+		&i.SignalAttempt,
+		&i.Receipt,
+		&i.ClaimToken,
+		&i.LeaseUntil,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getRepositoryJobGitHubSubject = `-- name: GetRepositoryJobGitHubSubject :one
 SELECT i.payload FROM github_synced_repos g JOIN github_synced_issues i ON i.synced_repo_id=g.id
 WHERE g.owner_login_lower=LOWER($1::text)
@@ -738,7 +772,7 @@ func (q *Queries) GetRepositoryJobTrial(ctx context.Context, arg GetRepositoryJo
 const latestRepositoryJobIssueRun = `-- name: LatestRepositoryJobIssueRun :one
 SELECT id, registration_id, revision, digest, delivery_key, source, event_type, event_action, issue_number, payload, status, plan, run_id, signal_attempt, receipt, claim_token, lease_until, attempts, next_attempt_at, error, created_at, updated_at FROM repository_job_dispatches
 WHERE registration_id=$1 AND revision=$2 AND source=$3 AND issue_number=$4
-  AND status='submitted' AND run_id<>'' AND plan IS NOT NULL
+  AND status='submitted' AND run_id<>''
 ORDER BY created_at DESC,id DESC LIMIT 1
 `
 
@@ -1047,6 +1081,61 @@ func (q *Queries) ListRepositoryJobDispatches(ctx context.Context, arg ListRepos
 	return items, nil
 }
 
+const listRepositoryJobDispatchesForCancellation = `-- name: ListRepositoryJobDispatchesForCancellation :many
+SELECT d.id, d.registration_id, d.revision, d.digest, d.delivery_key, d.source, d.event_type, d.event_action, d.issue_number, d.payload, d.status, d.plan, d.run_id, d.signal_attempt, d.receipt, d.claim_token, d.lease_until, d.attempts, d.next_attempt_at, d.error, d.created_at, d.updated_at FROM repository_job_dispatches d
+JOIN repository_job_registrations r ON r.id=d.registration_id
+WHERE r.repository_id=$1 AND r.job=$2 AND d.status IN ('waiting','submitted')
+ORDER BY d.created_at,d.id
+`
+
+type ListRepositoryJobDispatchesForCancellationParams struct {
+	RepositoryID int64  `json:"repository_id"`
+	Job          string `json:"job"`
+}
+
+func (q *Queries) ListRepositoryJobDispatchesForCancellation(ctx context.Context, arg ListRepositoryJobDispatchesForCancellationParams) ([]RepositoryJobDispatch, error) {
+	rows, err := q.db.Query(ctx, listRepositoryJobDispatchesForCancellation, arg.RepositoryID, arg.Job)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryJobDispatch{}
+	for rows.Next() {
+		var i RepositoryJobDispatch
+		if err := rows.Scan(
+			&i.ID,
+			&i.RegistrationID,
+			&i.Revision,
+			&i.Digest,
+			&i.DeliveryKey,
+			&i.Source,
+			&i.EventType,
+			&i.EventAction,
+			&i.IssueNumber,
+			&i.Payload,
+			&i.Status,
+			&i.Plan,
+			&i.RunID,
+			&i.SignalAttempt,
+			&i.Receipt,
+			&i.ClaimToken,
+			&i.LeaseUntil,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.Error,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepositoryJobRegistrations = `-- name: ListRepositoryJobRegistrations :many
 SELECT id, repository_id, workspace_id, user_id, job, mode, revision, digest, source_revision, flow_id, configuration, enabled, trial_issue_number, trial_source, schedule, next_fire_at, activated_at, created_at, updated_at FROM repository_job_registrations WHERE repository_id=$1 ORDER BY job,mode
 `
@@ -1199,6 +1288,38 @@ func (q *Queries) PauseRepositoryJob(ctx context.Context, arg PauseRepositoryJob
 	return items, nil
 }
 
+const projectRepositoryJobDispatch = `-- name: ProjectRepositoryJobDispatch :execrows
+UPDATE repository_job_dispatches SET status=$2,run_id=$3,plan=$4,receipt=$5,error=$6,
+  next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status<>'dispatching'
+`
+
+type ProjectRepositoryJobDispatchParams struct {
+	ID            string    `json:"id"`
+	Status        string    `json:"status"`
+	RunID         string    `json:"run_id"`
+	Plan          []byte    `json:"plan"`
+	Receipt       []byte    `json:"receipt"`
+	Error         string    `json:"error"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+}
+
+func (q *Queries) ProjectRepositoryJobDispatch(ctx context.Context, arg ProjectRepositoryJobDispatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, projectRepositoryJobDispatch,
+		arg.ID,
+		arg.Status,
+		arg.RunID,
+		arg.Plan,
+		arg.Receipt,
+		arg.Error,
+		arg.NextAttemptAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const registerRepositoryJob = `-- name: RegisterRepositoryJob :one
 WITH registered AS (
   INSERT INTO repository_job_registrations
@@ -1312,6 +1433,27 @@ func (q *Queries) RegisterRepositoryJob(ctx context.Context, arg RegisterReposit
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const retryProjectedRepositoryJobSignal = `-- name: RetryProjectedRepositoryJobSignal :execrows
+UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
+  receipt=$2,error='Waiting for the issue flow to accept the reply',next_attempt_at=$3,
+  claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status<>'dispatching'
+`
+
+type RetryProjectedRepositoryJobSignalParams struct {
+	ID            string    `json:"id"`
+	Receipt       []byte    `json:"receipt"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+}
+
+func (q *Queries) RetryProjectedRepositoryJobSignal(ctx context.Context, arg RetryProjectedRepositoryJobSignalParams) (int64, error) {
+	result, err := q.db.Exec(ctx, retryProjectedRepositoryJobSignal, arg.ID, arg.Receipt, arg.NextAttemptAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const retryRepositoryJobSignal = `-- name: RetryRepositoryJobSignal :execrows

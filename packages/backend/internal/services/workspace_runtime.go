@@ -598,7 +598,7 @@ func (s *WorkspaceService) deleteRuntimeWorkspaceSnapshot(ctx context.Context, s
 	if err != nil {
 		return err
 	}
-	if err := snapshots.DeleteColdSnapshot(operationCtx, snapshot.SnapshotID); err != nil {
+	if err := snapshots.DeleteColdSnapshot(operationCtx, snapshot.SnapshotID); err != nil && !errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
 		return pkgerrors.Internal("delete workspace snapshot: " + err.Error())
 	}
 	return nil

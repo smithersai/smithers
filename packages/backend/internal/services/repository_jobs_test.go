@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -14,8 +12,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,51 +107,24 @@ func TestRepositoryJobTrialAuthorityComesFromRegistration(t *testing.T) {
 	require.NotContains(t, repositoryJobDispatchEvent(registration, claim), "trial")
 }
 
-func TestRepositoryJobRPCTransport(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "Bearer server-held", r.Header.Get("Authorization"))
-		var frame struct {
-			Tag       string          `json:"_tag"`
-			ID        int             `json:"id"`
-			Procedure string          `json:"tag"`
-			Payload   json.RawMessage `json:"payload"`
-		}
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&frame))
-		require.Equal(t, "Request", frame.Tag)
-		require.Equal(t, 1, frame.ID)
-		if frame.Procedure == "Signal" {
-			fmt.Fprintln(w, `{"_tag":"Exit","requestId":1,"exit":{"_tag":"Failure","cause":[{"_tag":"Fail","error":{"_tag":"/control/NoMatchingWait","message":"private details"}}]}}`)
-			return
-		}
-		require.Equal(t, "Plan", frame.Procedure)
-		require.JSONEq(t, `{"flowId":"repository-jobs/issues"}`, string(frame.Payload))
-		fmt.Fprintln(w, `{"_tag":"Exit","requestId":1,"exit":{"_tag":"Success","value":{"planId":"p"}}}`)
-	}))
-	defer server.Close()
-	body, err := callRepositoryJobRPC(context.Background(), server.Client(), server.URL, "server-held", "Plan", json.RawMessage(`{"flowId":"repository-jobs/issues"}`))
-	require.NoError(t, err)
-	require.JSONEq(t, `{"planId":"p"}`, string(body))
-	_, err = callRepositoryJobRPC(context.Background(), server.Client(), server.URL, "server-held", "Signal", json.RawMessage(`{}`))
-	var rpcErr *RepositoryJobRPCError
-	require.ErrorAs(t, err, &rpcErr)
-	require.Equal(t, "/control/NoMatchingWait", rpcErr.Tag)
-	require.NotContains(t, err.Error(), "private")
-}
-
 type repositoryJobTestGateway struct {
-	t               *testing.T
-	target          RepoGatewayRelayTarget
-	config          RegisterRepositoryJobInput
-	calls           []string
-	inputs          []json.RawMessage
-	runs            map[string]string
-	dropRunOnce     bool
-	dropSignalOnce  bool
-	lostSignalOnce  bool
-	rejectedSignals map[string]bool
-	signalKeys      []string
-	executionDigest string
+	t                  *testing.T
+	target             RepoGatewayRelayTarget
+	config             RegisterRepositoryJobInput
+	service            *RepositoryJobService
+	calls              []string
+	inputs             []json.RawMessage
+	runs               map[string]string
+	launches           map[string]flowdispatch.LaunchRequest
+	pendingLaunches    []flowdispatch.LaunchRequest
+	pendingSignals     []flowdispatch.SignalRequest
+	dropRunOnce        bool
+	dropSignalOnce     bool
+	lostSignalOnce     bool
+	terminalSignalOnce bool
+	signalKeys         []string
+	executionDigest    string
+	cancelled          map[string]bool
 }
 
 func (g *repositoryJobTestGateway) AuthorizeRelay(_ context.Context, id, bearer string) (RepoGatewayRelayTarget, error) {
@@ -159,81 +133,112 @@ func (g *repositoryJobTestGateway) AuthorizeRelay(_ context.Context, id, bearer 
 	}
 	return g.target, nil
 }
-func (g *repositoryJobTestGateway) CallRepositoryJob(_ context.Context, connection RepoGatewayConnectionInput, capability string, procedure string, body json.RawMessage) (json.RawMessage, error) {
-	if capability != repositoryJobsCapability {
-		return nil, fmt.Errorf("repository jobs must ask for %s, not %s", repositoryJobsCapability, capability)
+func (g *repositoryJobTestGateway) Admit(_ context.Context, request flowdispatch.LaunchRequest) (jobs.RequestReceipt, error) {
+	g.calls = append(g.calls, "Admit")
+	if g.launches == nil {
+		g.launches = map[string]flowdispatch.LaunchRequest{}
 	}
-	require.Equal(g.t, g.target.RepositoryID, connection.RepositoryID)
-	require.Equal(g.t, g.target.UserID, connection.UserID)
-	require.Equal(g.t, g.target.WorkspaceID, connection.WorkspaceID)
-	g.calls = append(g.calls, procedure)
-	var input map[string]json.RawMessage
-	require.NoError(g.t, json.Unmarshal(body, &input))
-	var key string
-	_ = json.Unmarshal(input["idempotencyKey"], &key)
-	switch procedure {
-	case "Plan":
-		g.inputs = append(g.inputs, input["input"])
-		digest := g.config.ExecutionDigest
-		if g.executionDigest != "" {
-			digest = g.executionDigest
-		}
-		planID := "plan-" + key
-		target := map[string]any{"_tag": "Plan", "planId": planID, "digest": "plan-digest", "envelope": g.config.Envelope}
-		result, _ := json.Marshal(map[string]any{"planId": planID, "flowId": g.config.FlowID, "digest": "plan-digest", "executionDigest": digest, "envelope": g.config.Envelope, "approval": map[string]any{"target": target, "scope": "once", "idempotencyKey": key + ":approve"}})
-		return result, nil
-	case "Approval.Submit":
-		var target map[string]any
-		require.NoError(g.t, json.Unmarshal(input["target"], &target))
-		require.Equal(g.t, "Plan", target["_tag"])
-		return json.RawMessage(`{"_tag":"Recorded"}`), nil
-	case "Run":
-		if g.runs == nil {
-			g.runs = map[string]string{}
-		}
-		runID, exists := g.runs[key]
-		if !exists {
-			runID = "run-" + uuid.NewString()
-			g.runs[key] = runID
-		}
+	if g.runs == nil {
+		g.runs = map[string]string{}
+	}
+	if _, exists := g.launches[request.RequestID]; !exists {
+		g.launches[request.RequestID] = request
+		g.inputs = append(g.inputs, request.Payload)
+		g.runs[request.RequestID] = "run-" + uuid.NewString()
+	}
+	g.pendingLaunches = append(g.pendingLaunches, request)
+	return jobs.RequestReceipt{OperationID: "operation-" + request.RequestID, RequestID: request.RequestID, Kind: flowdispatch.OperationLaunch, State: jobs.StateAccepted}, nil
+}
+
+func (g *repositoryJobTestGateway) Approve(_ context.Context, _ jobs.Scope, launchOperationID, requestID string, _ json.RawMessage) (jobs.RequestReceipt, error) {
+	g.calls = append(g.calls, "Approve")
+	return jobs.RequestReceipt{OperationID: "approval-" + launchOperationID, RequestID: requestID, Kind: flowdispatch.OperationApprove, State: jobs.StateAccepted}, nil
+}
+
+func (g *repositoryJobTestGateway) Signal(_ context.Context, request flowdispatch.SignalRequest) (jobs.RequestReceipt, error) {
+	g.calls = append(g.calls, "Signal")
+	g.signalKeys = append(g.signalKeys, request.RequestID)
+	g.pendingSignals = append(g.pendingSignals, request)
+	return jobs.RequestReceipt{OperationID: "operation-" + request.RequestID, RequestID: request.RequestID, Kind: flowdispatch.OperationSignal, State: jobs.StateAccepted}, nil
+}
+
+func (g *repositoryJobTestGateway) CancelRequest(_ context.Context, _ jobs.Scope, requestID string) (jobs.Operation, error) {
+	g.calls = append(g.calls, "Cancel")
+	if _, exists := g.launches[requestID]; !exists {
+		return jobs.Operation{}, jobs.ErrNotFound
+	}
+	if g.cancelled == nil {
+		g.cancelled = map[string]bool{}
+	}
+	g.cancelled[requestID] = true
+	return jobs.Operation{RequestID: requestID, State: jobs.StateWaiting, CancellationRequested: true}, nil
+}
+
+func (g *repositoryJobTestGateway) projectPending(ctx context.Context) error {
+	launches, signals := g.pendingLaunches, g.pendingSignals
+	g.pendingLaunches, g.pendingSignals = nil, nil
+	for _, request := range launches {
 		if g.dropRunOnce {
 			g.dropRunOnce = false
-			return nil, fmt.Errorf("connection interrupted after Run accepted")
+			continue
 		}
-		tag := "Accepted"
-		if exists {
-			tag = "AlreadyApplied"
+		target := request.Target
+		target.TenantID, target.PrincipalID = request.Scope.TenantID, request.Scope.PrincipalID
+		planDigest := strings.Repeat("e", 64)
+		if !strings.HasPrefix(g.config.FlowID, "repository-jobs/") && g.config.ApprovedPlanDigest != "" {
+			planDigest = g.config.ApprovedPlanDigest
 		}
-		result, _ := json.Marshal(map[string]any{"_tag": tag, "runId": runID})
-		return result, nil
-	case "List":
-		var filters map[string]string
-		require.NoError(g.t, json.Unmarshal(input["filters"], &filters))
-		result, _ := json.Marshal(map[string]any{"items": []map[string]string{{"runId": filters["runId"], "status": "waiting"}}})
-		return result, nil
-	case "Signal":
-		g.signalKeys = append(g.signalKeys, key)
-		var signal map[string]json.RawMessage
-		require.NoError(g.t, json.Unmarshal(input["signal"], &signal))
-		require.JSONEq(g.t, `"repository-job.author-reply"`, string(signal["name"]))
-		if g.rejectedSignals[key] {
-			return nil, &RepositoryJobRPCError{Tag: "/control/NoMatchingWait"}
+		executionDigest := g.config.ExecutionDigest
+		if g.executionDigest != "" {
+			executionDigest = g.executionDigest
 		}
-		if g.dropSignalOnce {
-			g.dropSignalOnce = false
-			if g.rejectedSignals == nil {
-				g.rejectedSignals = map[string]bool{}
-			}
-			g.rejectedSignals[key] = true
-			return nil, &RepositoryJobRPCError{Tag: "/control/NoMatchingWait"}
+		planID := "plan-" + request.RequestID
+		approval, _ := json.Marshal(map[string]any{"target": map[string]any{
+			"_tag": "Plan", "planId": planID, "digest": planDigest, "envelope": g.config.Envelope,
+		}, "scope": "once", "idempotencyKey": request.RequestID + ":approve"})
+		checkpoint := flowdispatch.RuntimeCheckpoint{Version: 1, Target: target, FlowID: request.FlowID,
+			Projection: request.Projection, PlanID: planID, PlanDigest: planDigest,
+			ExecutionDigest: executionDigest, Envelope: g.config.Envelope, Approval: approval}
+		update := flowdispatch.ProjectionUpdate{OperationID: "operation-" + request.RequestID, Scope: request.Scope, State: jobs.StateWaiting, Checkpoint: checkpoint}
+		if err := g.service.ProjectFlowRuntime(ctx, update); err != nil {
+			return err
 		}
+		if g.cancelled[request.RequestID] {
+			continue
+		}
+		checkpoint.RunID = g.runs[request.RequestID]
+		checkpoint.Receipt = &flowruntime.FlowRuntimeReceipt{Tag: "Accepted", RunID: checkpoint.RunID}
+		update.Checkpoint = checkpoint
+		if err := g.service.ProjectFlowRuntime(ctx, update); err != nil {
+			return err
+		}
+	}
+	for _, request := range signals {
 		if g.lostSignalOnce {
 			g.lostSignalOnce = false
-			return nil, fmt.Errorf("lost Signal acknowledgement")
+			continue
 		}
-		return json.RawMessage(`{"_tag":"Accepted"}`), nil
+		target := request.Target
+		target.TenantID, target.PrincipalID = request.Scope.TenantID, request.Scope.PrincipalID
+		checkpoint := flowdispatch.RuntimeCheckpoint{Version: 1, Target: target, FlowID: request.FlowID,
+			RunID: request.RunID, Projection: request.Projection}
+		state := jobs.StateCompleted
+		if g.terminalSignalOnce {
+			g.terminalSignalOnce = false
+			state, checkpoint.FailureCode = jobs.StateFailed, "runtime_run_terminal"
+		} else if g.dropSignalOnce {
+			g.dropSignalOnce = false
+			state, checkpoint.FailureCode = jobs.StateFailed, "no_matching_wait"
+		} else {
+			checkpoint.MutationReceipt = &flowruntime.FlowRuntimeReceipt{Tag: "Accepted", RunID: request.RunID}
+		}
+		if err := g.service.ProjectFlowRuntime(ctx, flowdispatch.ProjectionUpdate{
+			OperationID: "operation-" + request.RequestID, Scope: request.Scope, State: state, Checkpoint: checkpoint,
+		}); err != nil {
+			return err
+		}
 	}
-	return nil, fmt.Errorf("unexpected procedure %s", procedure)
+	return nil
 }
 
 func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *deploymentdb.Queries, *RepositoryJobService, *repositoryJobTestGateway, RegisterRepositoryJobInput) {
@@ -273,7 +278,17 @@ func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *deploymentdb.Queries, *
 	_, err := pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,status) VALUES($1,$2,$3,'running')`, input.WorkspaceID, rid, uid)
 	require.NoError(t, err)
 	gateway := &repositoryJobTestGateway{t: t, config: input, target: RepoGatewayRelayTarget{RepositoryID: rid, UserID: uid, WorkspaceID: input.WorkspaceID}}
-	return pool, q, NewRepositoryJobService(q, gateway, pool), gateway, input
+	service := NewRepositoryJobService(q, gateway, pool)
+	gateway.service = service
+	service.SetFlowDispatcher(gateway)
+	return pool, q, service, gateway, input
+}
+
+func repositoryJobPoll(t *testing.T, service *RepositoryJobService, dispatcher *repositoryJobTestGateway) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, service.PollOnce(ctx))
+	require.NoError(t, dispatcher.projectPending(ctx))
 }
 
 func repositoryJobAdmit(t *testing.T, s *RepositoryJobService, repo int64, delivery string, number int64, kind, action string) {
@@ -284,6 +299,102 @@ func repositoryJobAdmit(t *testing.T, s *RepositoryJobService, repo int64, deliv
 	}
 	body := json.RawMessage(fmt.Sprintf(`{"action":%q,"issue":{"id":100,"number":%d,"user":{"login":"author"}}%s}`, action, number, comment))
 	require.NoError(t, s.AdmitGitHubEvent(context.Background(), repo, db.GithubWebhookJob{DeliveryID: delivery, Payload: body}, TriggerEvent{Type: kind, Action: action}))
+}
+
+func TestRepositoryJobFlowDispatchProductPostgres(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	q := deploymentdb.New(pool)
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
+	owner, repoName := "owner"+suffix, "repo"+suffix
+	var userID, repositoryID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users(username,lower_username,email,lower_email) VALUES($1,$1,$2,$2) RETURNING id`,
+		owner, suffix+"@example.invalid").Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repositories(user_id,name,lower_name) VALUES($1,$2,$2) RETURNING id`,
+		userID, repoName).Scan(&repositoryID))
+	input := repositoryJobTestInput()
+	input.Repo = owner + "/" + repoName
+	_, err := pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,status) VALUES($1,$2,$3,'running')`, input.WorkspaceID, repositoryID, userID)
+	require.NoError(t, err)
+	dispatcher := &repositoryJobTestGateway{
+		t: t, config: input,
+		target: RepoGatewayRelayTarget{RepositoryID: repositoryID, UserID: userID, WorkspaceID: input.WorkspaceID},
+	}
+	service := NewRepositoryJobService(q, dispatcher, pool)
+	dispatcher.service = service
+	service.SetFlowDispatcher(dispatcher)
+	registration, err := service.Register(ctx, "gateway", "token", "issues", input)
+	require.NoError(t, err)
+
+	// Admission returns before the runtime projection and retains enough scope
+	// for the common resolver to reconstruct only the authorized host binding.
+	repositoryJobAdmit(t, service, repositoryID, "initial", 41, "issues", "opened")
+	require.NoError(t, service.PollOnce(ctx))
+	rows, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: repositoryID, Job: "issues"})
+	require.NoError(t, err)
+	require.Equal(t, "waiting", rows[0].Status)
+	require.Empty(t, rows[0].RunID)
+	require.Len(t, dispatcher.pendingLaunches, 1)
+	request := dispatcher.pendingLaunches[0]
+	require.Equal(t, flowdispatch.ApprovalManual, request.ApprovalPolicy)
+	require.NotContains(t, dispatcher.calls, "Approve")
+	resolver, err := NewRepositoryJobFlowHostTargetResolver(service)
+	require.NoError(t, err)
+	target := request.Target
+	target.TenantID, target.PrincipalID = request.Scope.TenantID, request.Scope.PrincipalID
+	authority, err := resolver.ResolveFlowHostTarget(ctx, target)
+	require.NoError(t, err)
+	require.Equal(t, input.SourceRevision, authority.SourceRevision)
+	foreign := target
+	foreign.PrincipalID = "user:999999"
+	_, err = resolver.ResolveFlowHostTarget(ctx, foreign)
+	require.Error(t, err)
+	require.NoError(t, dispatcher.projectPending(ctx))
+	rows, err = q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: repositoryID, Job: "issues"})
+	require.NoError(t, err)
+	require.Equal(t, "submitted", rows[0].Status)
+	require.NotEmpty(t, rows[0].RunID)
+	require.Contains(t, dispatcher.calls, "Approve")
+
+	// A definitive missing wait advances the durable attempt. A lost response
+	// retries the same key, while a terminal generation starts a fresh Flow run.
+	dispatcher.dropSignalOnce = true
+	repositoryJobAdmit(t, service, repositoryID, "no-wait", 41, "issue_comment", "created")
+	repositoryJobPoll(t, service, dispatcher)
+	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE registration_id=$1 AND delivery_key='github:no-wait'`, registration.ID)
+	require.NoError(t, err)
+	repositoryJobPoll(t, service, dispatcher)
+	require.NotEqual(t, dispatcher.signalKeys[0], dispatcher.signalKeys[1])
+	dispatcher.lostSignalOnce = true
+	repositoryJobAdmit(t, service, repositoryID, "lost-ack", 41, "issue_comment", "created")
+	repositoryJobPoll(t, service, dispatcher)
+	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE registration_id=$1 AND delivery_key='github:lost-ack'`, registration.ID)
+	require.NoError(t, err)
+	repositoryJobPoll(t, service, dispatcher)
+	require.Equal(t, dispatcher.signalKeys[2], dispatcher.signalKeys[3])
+	dispatcher.terminalSignalOnce = true
+	repositoryJobAdmit(t, service, repositoryID, "terminal", 41, "issue_comment", "created")
+	repositoryJobPoll(t, service, dispatcher)
+	require.Len(t, dispatcher.pendingLaunches, 1)
+	require.NoError(t, dispatcher.projectPending(ctx))
+
+	// A changed runtime descriptor is rejected before approval. Pausing then
+	// persists cancellation for every reconnectable launch request.
+	dispatcher.executionDigest = strings.Repeat("d", 64)
+	repositoryJobAdmit(t, service, repositoryID, "changed-runtime", 42, "issues", "opened")
+	repositoryJobPoll(t, service, dispatcher)
+	changed, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: repositoryID, Job: "issues"})
+	require.NoError(t, err)
+	require.Equal(t, "failed", changed[0].Status)
+	require.True(t, dispatcher.cancelled[repositoryJobFlowRequestID(changed[0].ID)])
+	cancelCalls := len(dispatcher.calls)
+	_, err = service.Pause(ctx, repositoryID, userID, "issues")
+	require.NoError(t, err)
+	require.Contains(t, dispatcher.calls[cancelCalls:], "Cancel")
+	_, err = resolver.ResolveFlowHostTarget(ctx, target)
+	require.NoError(t, err, "paused launches must still resolve to deliver durable cancellation")
 }
 
 func TestRepositoryJobsIntegrationTrialIsolationAndPause(t *testing.T) {
@@ -302,7 +413,7 @@ func TestRepositoryJobsIntegrationTrialIsolationAndPause(t *testing.T) {
 	retry, err := s.Register(ctx, "gateway", "token", "issues", input)
 	require.NoError(t, err)
 	require.Equal(t, reg.ID, retry.ID)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	dispatches, err := s.Dispatches(ctx, g.target.RepositoryID, g.target.UserID, "issues")
 	require.NoError(t, err)
 	require.Len(t, dispatches, 1)
@@ -322,14 +433,14 @@ func TestRepositoryJobsIntegrationTrialIsolationAndPause(t *testing.T) {
 	trial, err := q.GetRepositoryJobRegistration(ctx, reg.ID)
 	require.NoError(t, err)
 	require.False(t, trial.Enabled)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1, "old unrelated issue must not backfill")
 	_, err = s.Pause(ctx, g.target.RepositoryID, g.target.UserID, "issues")
 	require.NoError(t, err)
 	_, err = s.Register(ctx, "gateway", "token", "issues", input)
 	require.ErrorContains(t, err, "paused")
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "after-pause", 14, "issues", "opened")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	input.Revision = 2
 	_, err = s.Register(ctx, "gateway", "token", "issues", input)
@@ -351,11 +462,11 @@ func TestRepositoryJobsIntegrationLostRunReplyRetryAndAuthority(t *testing.T) {
 	require.NoError(t, err)
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "signed-event", 7, "issues", "opened")
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "signed-event", 7, "issues", "opened")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE registration_id=$1`, reg.ID)
 	require.NoError(t, err)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.inputs, 1, "persisted plan reused after transport failure")
 	require.Len(t, g.runs, 1)
 	dispatches, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: g.target.RepositoryID, Job: "issues"})
@@ -377,24 +488,24 @@ func TestRepositoryJobsIntegrationLostRunReplyRetryAndAuthority(t *testing.T) {
 	require.Equal(t, input.SourceRevision, runInput.SourceRevision)
 	g.dropSignalOnce = true
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "signed-reply", 7, "issue_comment", "created")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE registration_id=$1`, reg.ID)
 	require.NoError(t, err)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.signalKeys, 2)
 	require.NotEqual(t, g.signalKeys[0], g.signalKeys[1], "definitive rejection requires a new persisted attempt key")
 	require.Len(t, g.runs, 1)
 	g.lostSignalOnce = true
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "reply-lost-ack", 7, "issue_comment", "created")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE registration_id=$1`, reg.ID)
 	require.NoError(t, err)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.signalKeys, 4)
 	require.Equal(t, g.signalKeys[2], g.signalKeys[3], "ambiguous Signal failure must retain its key")
 	g.executionDigest = strings.Repeat("d", 64)
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "modified-source", 8, "issues", "opened")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1, "unreviewed descriptor cannot autoapprove")
 	dispatches, err = q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: g.target.RepositoryID, Job: "issues"})
 	require.NoError(t, err)
@@ -405,7 +516,7 @@ func TestRepositoryJobsIntegrationLostRunReplyRetryAndAuthority(t *testing.T) {
 	require.Error(t, err)
 	priorCalls := len(g.calls)
 	repositoryJobAdmit(t, s, g.target.RepositoryID, "revoked-actor", 9, "issues", "opened")
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.calls, priorCalls, "revoked activator cannot launch")
 }
 
@@ -455,7 +566,7 @@ func TestRepositoryJobsIntegrationNativeOutboxAndLeaseFence(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n, "stale worker cannot persist a plan")
 	require.NoError(t, s.dispatch(ctx, reclaimed[0]))
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	rows, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: g.target.RepositoryID, Job: "issues"})
 	require.NoError(t, err)
@@ -482,7 +593,7 @@ func TestRepositoryJobsIntegrationScheduleCrashDedup(t *testing.T) {
 	key := "schedule:" + due.Format(time.RFC3339Nano)
 	require.NoError(t, q.EnqueueRepositoryJobDispatch(ctx, db.EnqueueRepositoryJobDispatchParams{ID: reg.ID, Revision: 1, DeliveryKey: key, Source: "schedule", EventType: "schedule", Payload: json.RawMessage(`{}`), Status: "queued"}))
 	require.NoError(t, s.enqueueSchedules(ctx))
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	rows, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: g.target.RepositoryID, Job: "chores"})
 	require.NoError(t, err)
@@ -531,7 +642,7 @@ func TestRepositoryJobsIntegrationTrialCreationIsAtomicAndIdempotent(t *testing.
 	require.Equal(t, 1, issues)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM repository_job_events WHERE repository_id=$1`, g.target.RepositoryID).Scan(&events))
 	require.Equal(t, 1, events)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Empty(t, g.calls, "trial issue must not leak into an existing broad active configuration before trial registration")
 	changed := request
 	changed.Body = "unreviewed different request"
@@ -542,7 +653,7 @@ func TestRepositoryJobsIntegrationTrialCreationIsAtomicAndIdempotent(t *testing.
 	input.TrialIssueNumber = first.Number
 	_, err = s.Register(ctx, "gateway", "token", "issues", input)
 	require.NoError(t, err)
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	bad := request
 	bad.WorkspaceID = uuid.NewString()
@@ -566,7 +677,7 @@ func TestRepositoryJobsIntegrationGitHubWorkerAdmitsWithoutLegacyDefinition(t *t
 	worker.SetRepositoryJobs(s)
 	require.NoError(t, worker.PollOnce(ctx))
 	require.NoError(t, worker.PollOnce(ctx))
-	require.NoError(t, s.PollOnce(ctx))
+	repositoryJobPoll(t, s, g)
 	require.Empty(t, legacy.calls)
 	require.Len(t, g.runs, 1)
 	rows, err := s.Dispatches(ctx, g.target.RepositoryID, g.target.UserID, "issues")

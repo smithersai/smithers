@@ -38,6 +38,8 @@ func writeCommand(t *testing.T, response http.ResponseWriter, operation, request
 			"operation": operation, "applicationRequestId": requestID,
 			"ownerGeneration": 7, "runtimeArtifactDigest": strings.Repeat("a", 64),
 			"sourceRevision": strings.Repeat("b", 40), "planId": "plan-1",
+			"planDigest": strings.Repeat("c", 64), "executionDigest": strings.Repeat("d", 64),
+			"envelope": map[string]any{"capabilities": []any{}, "flows": []any{}, "budget": map[string]any{"tokens": 1, "milliseconds": 1}},
 			"approval": map[string]any{"target": map[string]any{"_tag": "Plan"}},
 			"receipt":  map[string]any{"_tag": "Accepted", "receiptId": "receipt-1", "runId": "run-1"},
 		},
@@ -72,7 +74,8 @@ func TestClientLaunchAuthenticatesAndDecodesCanonicalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Receipt.Tag != "Accepted" || result.Receipt.RunID != "run-1" || result.PlanID != "plan-1" || result.OwnerGeneration != 7 {
+	if result.Receipt.Tag != "Accepted" || result.Receipt.RunID != "run-1" || result.PlanID != "plan-1" ||
+		result.PlanDigest != strings.Repeat("c", 64) || result.ExecutionDigest != strings.Repeat("d", 64) || result.OwnerGeneration != 7 {
 		t.Fatalf("unexpected result %#v", result)
 	}
 }

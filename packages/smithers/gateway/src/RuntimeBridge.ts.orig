@@ -288,9 +288,6 @@ export const execute = (
           runtimeArtifactDigest: config.runtimeArtifactDigest,
           sourceRevision: input.sourceRevision,
           planId: plan.planId,
-          planDigest: plan.digest,
-          ...(plan.executionDigest === undefined ? {} : { executionDigest: plan.executionDigest }),
-          envelope: plan.envelope,
           approval: plan.approval,
           receipt
         } as const
@@ -400,9 +397,6 @@ export const CommandResponse = Schema.Struct({
     runtimeArtifactDigest: Schema.optional(Sha256),
     sourceRevision: Schema.optional(SourceRevision),
     planId: Schema.optional(Schema.String),
-    planDigest: Schema.optional(Sha256),
-    executionDigest: Schema.optional(Sha256),
-    envelope: Schema.optional(Schema.Json),
     approval: Schema.optional(ApprovalPayload),
     receipt: Receipt
   })

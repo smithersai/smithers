@@ -12,11 +12,13 @@ afterEach(() => {
 })
 
 const packagedRuntime = (): { backend: string; postgresBin: string; root: string; state: string } => {
-  const root = mkdtempSync(join(tmpdir(), "smithers-owned-"))
-  roots.push(root)
-  const postgresBin = join(root, "postgres", "bin")
+  const packageRoot = mkdtempSync(join(tmpdir(), "smithers-owned-"))
+  roots.push(packageRoot)
+  const root = join(packageRoot, "bin")
+  const postgresBin = join(packageRoot, "postgres", "bin")
   mkdirSync(postgresBin, { recursive: true })
-  writeFileSync(join(root, "postgres", "bundle.json"), '{"version":1,"bin":"bin"}\n')
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(packageRoot, "postgres", "bundle.json"), '{"version":1,"bin":"bin"}\n')
   const backend = join(root, "smithers-backend")
   writeFileSync(backend, "x", { mode: 0o755 })
   const coding = join(root, "smithers-coding-host")
@@ -37,6 +39,16 @@ const packagedRuntime = (): { backend: string; postgresBin: string; root: string
     }
   })}\n`)
   writeFileSync(join(root, "smithers-jj-export"), "x", { mode: 0o755 })
+  writeFileSync(join(root, "jj"), "x", { mode: 0o755 })
+  writeFileSync(join(root, "git"), "x", { mode: 0o755 })
+  const modelHost = join(root, "smithers-model-host")
+  writeFileSync(modelHost, "model-host", { mode: 0o755 })
+  writeFileSync(`${modelHost}.sha256`, `${digest("model-host")}  smithers-model-host\n`)
+  const gitExec = join(packageRoot, "libexec", "git-core")
+  const gitTemplates = join(packageRoot, "share", "git-core", "templates")
+  mkdirSync(gitExec, { recursive: true })
+  mkdirSync(gitTemplates, { recursive: true })
+  writeFileSync(join(gitExec, "git-remote-http"), "x", { mode: 0o755 })
   writeFileSync(
     join(
       root,
@@ -51,7 +63,7 @@ const packagedRuntime = (): { backend: string; postgresBin: string; root: string
   for (const tool of ["postgres", "initdb", "pg_isready", "psql", "pg_dump", "pg_restore"]) {
     writeFileSync(join(postgresBin, tool), tool, { mode: 0o755 })
   }
-  return { backend, postgresBin, root, state: join(root, "state") }
+  return { backend, postgresBin, root, state: join(packageRoot, "state") }
 }
 
 describe("native backend ownership", () => {
@@ -108,9 +120,13 @@ describe("native backend ownership", () => {
     expect(env.SMITHERS_FFI_LIBRARY_PATH).toEndWith("libsmithers_ffi.dylib")
     expect(env.SMITHERS_WORKSPACE_CODING_HOST_BINARY).toEndWith("smithers-coding-host")
     expect(env.SMITHERS_WORKSPACE_LIBRARIAN_HOST_BINARY).toEndWith("smithers-librarian-host")
+    expect(env.SMITHERS_MODEL_HOST_BUNDLE).toEndWith("smithers-model-host")
     expect(env.SMITHERS_FLOW_HOST_MANIFEST).toEndWith("flow-hosts.json")
     expect(env.PATH?.split(delimiter)[0]).toBe(runtime.root)
     expect(env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY).toEndWith("smithers-jj-export")
+    expect(env.SMITHERS_JJ_PATH).toEndWith("jj")
+    expect(env.GIT_EXEC_PATH).toEndWith(join("libexec", "git-core"))
+    expect(env.GIT_TEMPLATE_DIR).toEndWith(join("share", "git-core", "templates"))
     expect(env.SMITHERS_FFI_LIBRARY).toBeUndefined()
     expect(env.SMITHERS_CODING_HOST_PATH).toBeUndefined()
     expect(instance.origin).toBe("http://127.0.0.1:4000")

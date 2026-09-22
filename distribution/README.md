@@ -20,11 +20,11 @@ docker run --name smithers --restart unless-stopped -p 4000:4000 \
 
 On Railway, attach PostgreSQL 18 and a volume mounted at `/var/lib/smithers`, set `SMITHERS_AUTH_BOOTSTRAP_TOKEN` to `openssl rand -hex 32`, and use Railway's existing `DATABASE_URL`, `PORT`, and `RAILWAY_PUBLIC_DOMAIN` variables. The entrypoint maps `DATABASE_URL` before startup and the backend derives its public HTTPS origin from `RAILWAY_PUBLIC_DOMAIN`.
 
-The image contains the web build, `apps/backend`, the canonical coding and librarian TypeScript hosts with an exact SHA-256 manifest, embedded product migrations, the Rust 1.98 glibc FFI library, the canonical Rust 1.89 jj WebAssembly artifact, Node 22, and PostgreSQL 18 client tools. Startup verifies the host artifacts and never downloads an executable. The backend listens on port 4000 and owns the process adapter; PostgreSQL is external.
+The image contains the web build, `apps/backend`, the canonical coding, librarian, and model TypeScript hosts with exact SHA-256 manifests, embedded product migrations, the Rust 1.98 glibc FFI library, the canonical Rust 1.89 jj WebAssembly artifact, the `jj` 0.44 CLI built from revision `47589ada70c12b3e829b5c98ab32503abad49eac`, checksum-pinned Git 2.50.1, Node 22, and PostgreSQL 18 client tools. Startup verifies the host artifacts and never downloads an executable. The backend listens on port 4000 and owns the process adapter; PostgreSQL is external.
 
 ## Native application
 
-The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the FFI library, jj helper, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.
+The macOS package has two modes. `SMITHERS_BACKEND_MODE=own` starts the same Go backend plus the PostgreSQL 18 bundle copied at build time. `SMITHERS_BACKEND_MODE=plue` starts neither and uses `SMITHERS_API_ORIGIN`. Own mode is the default. Both canonical Flow hosts, their digest manifest, the canonical model host and checksum, the FFI library, the pinned `jj` CLI, relocatable Git helpers and templates, PostgreSQL server, and all PostgreSQL maintenance tools are inside the application; launch performs no download.
 
 A release build supplies a PostgreSQL 18 distribution at build time:
 
@@ -33,6 +33,19 @@ export SMITHERS_NODE_BINARY=/path/to/node-v22/bin/node
 SMITHERS_POSTGRES_BUNDLE_DIR=/opt/homebrew/Cellar/postgresql@18/18.6 \
   pnpm --dir apps/app run build:native
 ```
+
+The native release builder requires Apple Git 2.50.1 from Xcode 26.3 (`Apple Git-155`) and builds `jj` from the same pinned source revision used by the Rust library. A different Git toolchain fails the build instead of silently changing the installed runtime.
+
+The ordinary stable package uses WKWebView and opens no debug port. The native real-window matrix has a separate, explicit CEF build:
+
+```sh
+SMITHERS_NATIVE_E2E_CEF=1 \
+SMITHERS_NATIVE_E2E_CDP_PORT=9444 \
+SMITHERS_POSTGRES_BUNDLE_DIR=/opt/homebrew/Cellar/postgresql@18/18.6 \
+  pnpm --dir apps/app run build:native
+```
+
+That artifact binds Chromium debugging to `127.0.0.1:9444`. Issue 16 consumes it through an environment-only envelope such as `{"executable":"/absolute/path/to/launcher","cdpEndpoint":"http://127.0.0.1:9444","environment":{"SMITHERS_BACKEND_MODE":"own"}}`. The build refuses a CDP port unless the explicit CEF flag is enabled.
 
 After installing the generated application, the real lifecycle acceptance is:
 

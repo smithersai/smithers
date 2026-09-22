@@ -20,6 +20,7 @@ const plan = {
   planId: "plan-1",
   flowId: "fixture/small",
   digest: "plan-digest",
+  executionDigest: "c".repeat(64),
   inputSummary: "fixture",
   envelope,
   deployClass: false,
@@ -115,6 +116,11 @@ describe("RuntimeBridge", () => {
       const result = yield* RuntimeBridge.execute(config, control, principal, launch)
       expect(result.operation).toBe("launch")
       expect(result.receipt).toEqual(accepted)
+      expect(result).toMatchObject({
+        planDigest: "plan-digest",
+        executionDigest: "c".repeat(64),
+        envelope
+      })
       expect(calls).toEqual([
         { flowId: "fixture/small", input: { value: 1 }, idempotencyKey: "bridge:v1:request-1:plan" },
         {
@@ -133,7 +139,8 @@ describe("RuntimeBridge", () => {
       const keys: Array<string> = []
       const control = service({
         plan: (input) => {
-          keys.push(input.idempotencyKey)
+          expect(input.idempotencyKey).toBeDefined()
+          keys.push(input.idempotencyKey!)
           return Effect.succeed(plan)
         },
         run: (input) => {

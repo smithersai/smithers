@@ -12,8 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 type RepositoryJobStore interface {
@@ -25,8 +27,10 @@ type RepositoryJobStore interface {
 	GetOrgByID(context.Context, int64) (db.Organization, error)
 	RegisterRepositoryJob(context.Context, db.RegisterRepositoryJobParams) (db.RegisterRepositoryJobRow, error)
 	GetRepositoryJobRegistration(context.Context, string) (db.RepositoryJobRegistration, error)
+	GetRepositoryJobDispatch(context.Context, string) (db.RepositoryJobDispatch, error)
 	ListRepositoryJobRegistrations(context.Context, int64) ([]db.RepositoryJobRegistration, error)
 	PauseRepositoryJob(context.Context, db.PauseRepositoryJobParams) ([]db.RepositoryJobRegistration, error)
+	ListRepositoryJobDispatchesForCancellation(context.Context, db.ListRepositoryJobDispatchesForCancellationParams) ([]db.RepositoryJobDispatch, error)
 	AdmitRepositoryJobEvent(context.Context, db.AdmitRepositoryJobEventParams) error
 	ListRepositoryJobAdmissions(context.Context, int32) ([]db.ListRepositoryJobAdmissionsRow, error)
 	EnqueueRepositoryJobDispatch(context.Context, db.EnqueueRepositoryJobDispatchParams) error
@@ -34,6 +38,8 @@ type RepositoryJobStore interface {
 	ClaimRepositoryJobDispatches(context.Context, int32) ([]db.RepositoryJobDispatch, error)
 	SaveRepositoryJobPlan(context.Context, db.SaveRepositoryJobPlanParams) (int64, error)
 	SettleRepositoryJobDispatch(context.Context, db.SettleRepositoryJobDispatchParams) (int64, error)
+	ProjectRepositoryJobDispatch(context.Context, db.ProjectRepositoryJobDispatchParams) (int64, error)
+	RetryProjectedRepositoryJobSignal(context.Context, db.RetryProjectedRepositoryJobSignalParams) (int64, error)
 	RetryRepositoryJobSignal(context.Context, db.RetryRepositoryJobSignalParams) (int64, error)
 	LatestRepositoryJobIssueRun(context.Context, db.LatestRepositoryJobIssueRunParams) (db.RepositoryJobDispatch, error)
 	ListRepositoryJobDispatches(context.Context, db.ListRepositoryJobDispatchesParams) ([]db.RepositoryJobDispatch, error)
@@ -49,14 +55,33 @@ type RepositoryJobStore interface {
 // Control protocol. It never routes a current Flow.make module into legacy CI.
 type RepositoryJobGateway interface {
 	AuthorizeRelay(context.Context, string, string) (RepoGatewayRelayTarget, error)
-	CallRepositoryJob(ctx context.Context, input RepoGatewayConnectionInput, capability string, procedure string, payload json.RawMessage) (json.RawMessage, error)
+}
+
+// RepositoryJobFlowDispatcher is the common durable Flow boundary. Both
+// trusted-owner and isolated modes inject the same flowdispatch.Service; only
+// the authorized host resolver beneath it differs by workspace adapter.
+type RepositoryJobFlowDispatcher interface {
+	Admit(context.Context, flowdispatch.LaunchRequest) (jobs.RequestReceipt, error)
+	Approve(context.Context, jobs.Scope, string, string, json.RawMessage) (jobs.RequestReceipt, error)
+	Signal(context.Context, flowdispatch.SignalRequest) (jobs.RequestReceipt, error)
+	CancelRequest(context.Context, jobs.Scope, string) (jobs.Operation, error)
 }
 
 type RepositoryJobService struct {
-	q            RepositoryJobStore
-	gateway      RepositoryJobGateway
-	now          func() time.Time
-	transactions RepositoryJobTransactions
+	q              RepositoryJobStore
+	gateway        RepositoryJobGateway
+	flowDispatcher RepositoryJobFlowDispatcher
+	now            func() time.Time
+	transactions   RepositoryJobTransactions
+}
+
+// SetFlowDispatcher completes the construction cycle shared with AgentService:
+// RepositoryJobService projects canonical receipts and admits follow-up
+// approvals/signals, while app composition owns the single dispatcher worker.
+func (s *RepositoryJobService) SetFlowDispatcher(dispatcher RepositoryJobFlowDispatcher) {
+	if s != nil {
+		s.flowDispatcher = dispatcher
+	}
 }
 
 type RepositoryJobTransactions interface {
@@ -443,7 +468,28 @@ func (s *RepositoryJobService) Pause(ctx context.Context, repoID, userID int64, 
 	if _, err := s.authorizedRepo(ctx, repoID, userID, true); err != nil {
 		return nil, err
 	}
-	return s.q.PauseRepositoryJob(ctx, db.PauseRepositoryJobParams{RepositoryID: repoID, Job: job})
+	registrations, err := s.q.PauseRepositoryJob(ctx, db.PauseRepositoryJobParams{RepositoryID: repoID, Job: job})
+	if err != nil {
+		return nil, err
+	}
+	dispatches, err := s.q.ListRepositoryJobDispatchesForCancellation(ctx, db.ListRepositoryJobDispatchesForCancellationParams{
+		RepositoryID: repoID,
+		Job:          job,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(dispatches) > 0 && s.flowDispatcher == nil {
+		return nil, errors.New("repository job Flow dispatcher is unavailable")
+	}
+	scope := repositoryJobFlowScope(repoID, userID)
+	for _, dispatch := range dispatches {
+		_, cancelErr := s.flowDispatcher.CancelRequest(ctx, scope, repositoryJobFlowRequestID(dispatch.ID))
+		if cancelErr != nil && !errors.Is(cancelErr, jobs.ErrNotFound) {
+			return nil, cancelErr
+		}
+	}
+	return registrations, nil
 }
 
 type RepositoryJobDispatchReceipt struct {

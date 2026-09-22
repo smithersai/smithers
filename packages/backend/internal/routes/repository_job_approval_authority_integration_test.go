@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,10 +37,6 @@ func (g repositoryJobApprovalGateway) AuthorizeRelay(_ context.Context, gatewayI
 		return services.RepoGatewayRelayTarget{}, pkgerrors.Unauthorized("invalid gateway token")
 	}
 	return g.target, nil
-}
-
-func (g repositoryJobApprovalGateway) CallRepositoryJob(context.Context, services.RepoGatewayConnectionInput, string, string, json.RawMessage) (json.RawMessage, error) {
-	return nil, fmt.Errorf("the approval routes never reach the workspace")
 }
 
 // repositoryJobApprovalMiddleware names every identity middleware this test can

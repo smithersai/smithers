@@ -66,6 +66,9 @@ type LaunchResult struct {
 	RuntimeArtifactDigest string
 	SourceRevision        string
 	PlanID                string
+	PlanDigest            string
+	ExecutionDigest       string
+	Envelope              json.RawMessage
 	Approval              json.RawMessage
 	Receipt               Receipt
 }

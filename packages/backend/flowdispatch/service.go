@@ -75,6 +75,36 @@ func (service *Service) AdmitInTx(ctx context.Context, tx pgx.Tx, request Launch
 	return service.store.AdmitInTx(ctx, tx, admission)
 }
 
+// Signal commits a runtime mutation and returns before resolving or contacting
+// the host. Runtime delivery, retry, and lost-ack reconciliation are owned by
+// the same jobs worker as launches and approvals.
+func (service *Service) Signal(ctx context.Context, request SignalRequest) (jobs.RequestReceipt, error) {
+	if strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.FlowID) == "" ||
+		strings.TrimSpace(request.RunID) == "" || strings.TrimSpace(request.Name) == "" {
+		return jobs.RequestReceipt{}, errors.New("flow dispatch: signal request, flow, run, and name are required")
+	}
+	request.Target = scopedTarget(request.Scope, request.Target)
+	if err := validateTarget(request.Scope, request.Target); err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	if len(request.Projection) == 0 {
+		request.Projection = json.RawMessage(`{}`)
+	}
+	payload, err := json.Marshal(signalPayload{
+		Target: request.Target, FlowID: request.FlowID, RunID: request.RunID,
+		Name: request.Name, Payload: request.Payload, Projection: request.Projection,
+	})
+	if err != nil {
+		return jobs.RequestReceipt{}, fmt.Errorf("flow dispatch: encode signal: %w", err)
+	}
+	return service.store.Admit(ctx, jobs.Admission{
+		Scope: request.Scope, Operation: OperationSignal, RequestID: request.RequestID,
+		Payload: payload, AuthorizationContext: request.AuthorizationContext,
+		EffectPolicy: jobs.EffectReconcile,
+		EffectKey:    "flow-runtime-signal:" + request.RequestID,
+	})
+}
+
 func launchAdmission(request LaunchRequest) (jobs.Admission, error) {
 	if strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.FlowID) == "" {
 		return jobs.Admission{}, errors.New("flow dispatch: request ID and flow ID are required")
@@ -205,7 +235,7 @@ func (service *Service) projectImmediateCancellation(ctx context.Context, operat
 
 // RunWorker consumes only Flow bridge operations from the shared jobs table.
 func (service *Service) RunWorker(ctx context.Context, config jobs.WorkerConfig) error {
-	config.Operations = []string{OperationLaunch, OperationApprove}
+	config.Operations = []string{OperationLaunch, OperationApprove, OperationSignal}
 	return service.store.RunWorker(ctx, config, service.Handle)
 }
 

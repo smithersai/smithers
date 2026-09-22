@@ -106,6 +106,7 @@ type recordingRuntime struct {
 	observeCount    int
 	failFirstLaunch bool
 	launches        []flowruntime.Launch
+	signals         []flowruntime.Signal
 	launchEntered   chan struct{}
 	launchRelease   chan struct{}
 	launchOnce      sync.Once
@@ -210,8 +211,14 @@ func (runtime *recordingRuntime) Observe(_ context.Context, runID, cursor string
 	}, nil
 }
 
-func (*recordingRuntime) Signal(context.Context, flowruntime.Signal) (flowruntime.MutationResult, error) {
-	return flowruntime.MutationResult{}, nil
+func (runtime *recordingRuntime) Signal(_ context.Context, input flowruntime.Signal) (flowruntime.MutationResult, error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.signals = append(runtime.signals, input)
+	return flowruntime.MutationResult{
+		Operation: "signal", ApplicationRequestID: input.ApplicationRequestID,
+		Receipt: flowruntime.Receipt{Tag: "Accepted", ReceiptID: input.ApplicationRequestID, RunID: input.RunID},
+	}, nil
 }
 func (*recordingRuntime) Steer(context.Context, flowruntime.Steer) (flowruntime.MutationResult, error) {
 	return flowruntime.MutationResult{}, nil
@@ -449,6 +456,46 @@ func TestCancellationRacingFirstExternalCallNeverLaunchesRuntime(t *testing.T) {
 	require.NotEmpty(t, projector.updates)
 	require.Equal(t, jobs.StateCancelled, projector.updates[len(projector.updates)-1].State)
 	projector.mu.Unlock()
+}
+
+func TestSignalAdmissionIsDurableIdempotentAndProjected(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	runtime := newRecordingRuntime()
+	runtime.status = "waiting"
+	projector := &recordingProjector{}
+	service, err := New(Config{
+		Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return runtime, nil
+		}),
+		Projector: projector, ObservationDelay: 2 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	request := SignalRequest{
+		Scope: jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, RequestID: "signal-1",
+		Target: flowruntime.Target{BindingKind: "repository-job-dispatch", BindingID: "dispatch-1"},
+		FlowID: "coding/dispatch", RunID: "run-1", Name: "repository-job.author-reply",
+		Payload: json.RawMessage(`{"comment":"continue"}`), AuthorizationContext: json.RawMessage(`{"role":"owner"}`),
+		Projection: json.RawMessage(`{"kind":"repository-job-dispatch"}`),
+	}
+	receipt, err := service.Signal(context.Background(), request)
+	require.NoError(t, err)
+	duplicate, err := service.Signal(context.Background(), request)
+	require.NoError(t, err)
+	require.True(t, duplicate.Joined)
+	require.Equal(t, receipt.OperationID, duplicate.OperationID)
+	startTestWorker(t, service, "signal-owner")
+	waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
+		return operation.State == jobs.StateCompleted
+	})
+	runtime.mu.Lock()
+	require.Len(t, runtime.signals, 1)
+	require.Equal(t, receipt.OperationID, runtime.signals[0].ApplicationRequestID)
+	runtime.mu.Unlock()
+	projector.mu.Lock()
+	final := projector.updates[len(projector.updates)-1]
+	projector.mu.Unlock()
+	require.Equal(t, jobs.StateCompleted, final.State)
+	require.NotNil(t, final.Checkpoint.MutationReceipt)
 }
 
 func TestParkedLaunchCancellationIsDeliveredToCanonicalRuntime(t *testing.T) {

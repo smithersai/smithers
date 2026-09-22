@@ -20,6 +20,9 @@
       "runtimeArtifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "planId": "plan-1",
+      "planDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "executionDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "envelope": { "capabilities": [], "flows": [], "budget": {} },
       "receipt": { "_tag": "Accepted", "receiptId": "receipt-1", "runId": "run-1" }
     }
   },

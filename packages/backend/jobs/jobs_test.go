@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"net/url"
 	"os"
@@ -24,6 +25,7 @@ var (
 )
 
 func TestMain(main *testing.M) {
+	flag.Parse()
 	dsn := strings.TrimSpace(os.Getenv("SMITHERS_JOBS_TEST_DATABASE_URL"))
 	if dsn == "" {
 		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))

@@ -183,15 +183,6 @@ func (s *RepositoryJobService) enqueueSchedules(ctx context.Context) error {
 	return nil
 }
 
-type repositoryJobPlan struct {
-	PlanID          string          `json:"planId"`
-	FlowID          string          `json:"flowId"`
-	Digest          string          `json:"digest"`
-	ExecutionDigest string          `json:"executionDigest"`
-	Envelope        json.RawMessage `json:"envelope"`
-	Approval        json.RawMessage `json:"approval"`
-}
-
 func repositoryJobDispatchEvent(reg db.RepositoryJobRegistration, claim db.RepositoryJobDispatch) map[string]interface{} {
 	event := map[string]interface{}{"source": claim.Source, "type": claim.EventType, "action": claim.EventAction,
 		"deliveryKey": claim.DeliveryKey, "issueNumber": claim.IssueNumber, "payload": claim.Payload}
@@ -236,6 +227,9 @@ func (s *RepositoryJobService) connectionInput(ctx context.Context, reg db.Repos
 }
 
 func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.RepositoryJobDispatch) error {
+	if s.flowDispatcher == nil {
+		return errors.New("repository job Flow dispatcher is unavailable")
+	}
 	reg, err := s.q.GetRepositoryJobRegistration(ctx, claim.RegistrationID)
 	if err != nil {
 		return err
@@ -244,23 +238,12 @@ func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.Repository
 		_, err := s.settle(ctx, claim, "skipped", "", nil, "Registration was paused or replaced")
 		return err
 	}
-	var config RegisterRepositoryJobInput
-	if err := json.Unmarshal(reg.Configuration, &config); err != nil {
+	// Revalidate repository writer and workspace authority before admitting a
+	// common Flow operation. Admission persists first and returns without
+	// resolving or contacting the canonical host.
+	if _, err := s.connectionInput(ctx, reg); err != nil {
 		return err
 	}
-	connection, err := s.connectionInput(ctx, reg)
-	if err != nil {
-		return err
-	}
-	call := func(procedure string, input interface{}) (json.RawMessage, error) {
-		payload, err := json.Marshal(input)
-		if err != nil {
-			return nil, err
-		}
-		return s.gateway.CallRepositoryJob(ctx, connection, repositoryJobsCapability, procedure, payload)
-	}
-	event := repositoryJobDispatchEvent(reg, claim)
-	key := "repository-job:" + claim.ID
 	if claim.EventType == "issue_comment" && claim.IssueNumber > 0 {
 		previous, err := s.q.LatestRepositoryJobIssueRun(ctx, db.LatestRepositoryJobIssueRunParams{
 			RegistrationID: reg.ID, Revision: reg.Revision, Source: claim.Source, IssueNumber: claim.IssueNumber,
@@ -269,121 +252,27 @@ func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.Repository
 			return err
 		}
 		if err == nil {
-			var runs struct {
-				Items []struct{ RunID, Status string } `json:"items"`
-			}
-			body, err := call("List", map[string]interface{}{"_tag": "runs", "filters": map[string]string{"runId": previous.RunID}, "limit": 1})
+			receipt, err := s.admitRepositoryJobSignal(ctx, reg, claim, previous)
 			if err != nil {
 				return err
 			}
-			if err := json.Unmarshal(body, &runs); err != nil || len(runs.Items) != 1 || runs.Items[0].RunID != previous.RunID {
-				return fmt.Errorf("gateway could not recover the issue's previous run")
-			}
-			status := runs.Items[0].Status
-			if status != "completed" && status != "failed" && status != "cancelled" {
-				result, err := call("Signal", map[string]interface{}{"runId": previous.RunID,
-					"signal": map[string]interface{}{"name": "repository-job.author-reply", "payload": event}, "idempotencyKey": fmt.Sprintf("%s:reply:%d", key, claim.SignalAttempt)})
-				var rpcErr *RepositoryJobRPCError
-				if errors.As(err, &rpcErr) && strings.HasSuffix(rpcErr.Tag, "NoMatchingWait") {
-					// Control permanently records NoMatchingWait as rejected. Only
-					// that definitive refusal may advance the attempt key. An
-					// ambiguous transport failure must retry the existing command.
-					_, saveErr := s.q.RetryRepositoryJobSignal(ctx, db.RetryRepositoryJobSignalParams{ID: claim.ID, ClaimToken: claim.ClaimToken, RunID: previous.RunID, NextAttemptAt: s.now().Add(10 * time.Second)})
-					return saveErr
-				}
-				if err != nil {
-					return err
-				}
-				var receipt struct {
-					Tag string `json:"_tag"`
-				}
-				if json.Unmarshal(result, &receipt) != nil || (receipt.Tag != "Accepted" && receipt.Tag != "AlreadyApplied") {
-					return fmt.Errorf("gateway did not accept the author reply")
-				}
-				_, err = s.settle(ctx, claim, "submitted", previous.RunID, result, "")
+			encoded, err := json.Marshal(receipt)
+			if err != nil {
 				return err
 			}
-		}
-	}
-	var plan repositoryJobPlan
-	if len(claim.Plan) == 0 {
-		// A registered flow receives exactly the input a person approved. Trigger
-		// provenance remains in the durable dispatch row and idempotency key.
-		var planInput interface{}
-		if repositoryFlowJobKey.MatchString(reg.Job) {
-			planInput = json.RawMessage(config.Input)
-		} else {
-			planInput = map[string]interface{}{"repo": connection.RepoOwner + "/" + connection.RepoName, "job": reg.Job,
-				"revision": reg.Revision, "digest": reg.Digest, "sourceRevision": reg.SourceRevision,
-				"configuration": config.Input, "event": event}
-		}
-		body, err := call("Plan", map[string]interface{}{"flowId": reg.FlowID, "input": planInput, "idempotencyKey": key + ":plan"})
-		if err != nil {
+			_, err = s.settle(ctx, claim, "waiting", previous.RunID, encoded, "")
 			return err
 		}
-		claim.Plan = body
-		rows, err := s.q.SaveRepositoryJobPlan(ctx, db.SaveRepositoryJobPlanParams{ID: claim.ID, ClaimToken: claim.ClaimToken, Plan: body})
-		if err != nil {
-			return err
-		}
-		if rows != 1 {
-			return fmt.Errorf("repository job claim expired before its plan was saved")
-		}
 	}
-	if json.Unmarshal(claim.Plan, &plan) != nil || plan.PlanID == "" || plan.Digest == "" || plan.FlowID != reg.FlowID ||
-		plan.ExecutionDigest != config.ExecutionDigest || !sameRepositoryJobJSON(plan.Envelope, config.Envelope) ||
-		(repositoryFlowJobKey.MatchString(reg.Job) && plan.Digest != config.ApprovedPlanDigest) {
-		_, err := s.settle(ctx, claim, "failed", "", nil, "The registered flow or its authority changed; review and apply a new version")
-		return err
-	}
-	var approval map[string]json.RawMessage
-	var target struct {
-		Tag      string          `json:"_tag"`
-		PlanID   string          `json:"planId"`
-		Digest   string          `json:"digest"`
-		Envelope json.RawMessage `json:"envelope"`
-	}
-	if json.Unmarshal(plan.Approval, &approval) != nil || json.Unmarshal(approval["target"], &target) != nil ||
-		target.Tag != "Plan" || target.PlanID != plan.PlanID || target.Digest != plan.Digest || !sameRepositoryJobJSON(target.Envelope, config.Envelope) {
-		return fmt.Errorf("gateway returned an invalid automatic plan approval")
-	}
-	// Recheck the active policy immediately before granting this plan. This
-	// never submits a Node decision: prompts asking a person still wait.
-	current, err := s.q.GetRepositoryJobRegistration(ctx, reg.ID)
+	receipt, err := s.admitRepositoryJobLaunch(ctx, reg, claim)
 	if err != nil {
 		return err
 	}
-	if !current.Enabled || current.Revision != reg.Revision || current.Digest != reg.Digest {
-		_, err := s.settle(ctx, claim, "skipped", "", nil, "Registration was paused or replaced")
-		return err
-	}
-	if _, err := s.authorizedRepo(ctx, reg.RepositoryID, reg.UserID, true); err != nil {
-		return err
-	}
-	approval["decision"] = json.RawMessage(`"approve"`)
-	if _, err := call("Approval.Submit", approval); err != nil {
-		return err
-	}
-	result, err := call("Run", map[string]interface{}{"_tag": "Plan", "planId": plan.PlanID,
-		"digest": plan.Digest, "envelope": plan.Envelope, "idempotencyKey": key + ":run"})
+	encoded, err := json.Marshal(receipt)
 	if err != nil {
 		return err
 	}
-	var receipt struct {
-		Tag   string `json:"_tag"`
-		RunID string `json:"runId"`
-	}
-	if json.Unmarshal(result, &receipt) != nil {
-		return fmt.Errorf("gateway returned an invalid run receipt")
-	}
-	if receipt.Tag == "Parked" {
-		_, err := s.settle(ctx, claim, "waiting", "", result, "Waiting for plan approval")
-		return err
-	}
-	if (receipt.Tag != "Accepted" && receipt.Tag != "AlreadyApplied" && receipt.Tag != "Terminal") || receipt.RunID == "" {
-		return fmt.Errorf("gateway did not return an accepted run identity")
-	}
-	_, err = s.settle(ctx, claim, "submitted", receipt.RunID, result, "")
+	_, err = s.settle(ctx, claim, "waiting", "", encoded, "")
 	return err
 }
 
