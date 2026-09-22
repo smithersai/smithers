@@ -31,6 +31,7 @@
   "scripts": {
     "commit": "node scripts/commit.mjs",
     "deploy": "pnpm --filter smithers-server run deploy",
+    "tui": "bun apps/tui/src/main.tsx",
     "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",
     "release:content": "node --experimental-strip-types flows/release-support/main.ts release-content",
     "release:status": "node --experimental-strip-types flows/release-support/main.ts status",
