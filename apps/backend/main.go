@@ -6,9 +6,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/app"
+	"github.com/smithersai/smithers/packages/backend/localbootstrap"
+	"github.com/smithersai/smithers/packages/backend/native"
+	"github.com/smithersai/smithers/packages/backend/postgres"
+	"github.com/smithersai/smithers/packages/backend/process"
 )
 
 func main() {
@@ -20,20 +27,101 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args []string) error {
-	databaseURL := os.Getenv("SMITHERS_DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = os.Getenv("DATABASE_URL")
-		if databaseURL != "" {
-			if err := os.Setenv("SMITHERS_DATABASE_URL", databaseURL); err != nil {
-				return err
-			}
+func run(ctx context.Context, args []string) (runErr error) {
+	// Schema maintenance is server-free. The native path migrates its owned
+	// PostgreSQL after the supervisor reports readiness.
+	if len(args) > 0 && args[0] == "migrate" {
+		if _, err := externalDatabaseURL(); err != nil {
+			return err
 		}
+		return app.Run(ctx, app.Config{Args: args})
 	}
-	if databaseURL != "" && (len(args) == 0 || args[0] != "migrate") {
-		if err := app.Migrate(ctx, databaseURL); err != nil {
+
+	nativeBin := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_POSTGRES_BIN"))
+	var databaseURL string
+	if nativeBin == "" {
+		var err error
+		databaseURL, err = externalDatabaseURL()
+		if err != nil {
+			return err
+		}
+		if err := requireExternalBootstrapToken(os.Getenv("SMITHERS_DATA_ROOT")); err != nil {
 			return err
 		}
 	}
-	return app.Run(ctx, app.Config{Args: args})
+
+	local, err := localbootstrap.Prepare(os.Getenv("SMITHERS_DATA_ROOT"))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		runErr = errors.Join(runErr, local.Shutdown(shutdownCtx))
+	}()
+
+	dataRoot := os.Getenv("SMITHERS_DATA_ROOT")
+	workspaceRuntime, err := process.New(process.Config{Root: filepath.Join(dataRoot, "workspaces")})
+	if err != nil {
+		return fmt.Errorf("start local workspace runtime: %w", err)
+	}
+	// app.Run normally owns this close. Retain a final close for migration or
+	// startup failures before app.Run gets control of the adapter.
+	defer func() { runErr = errors.Join(runErr, workspaceRuntime.Close()) }()
+
+	appConfig := app.Config{
+		Role:       app.RoleLocal,
+		Args:       args,
+		Repository: local.Client(),
+		Workspace:  workspaceRuntime,
+	}
+	if nativeBin != "" {
+		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))
+		if stateRoot == "" {
+			stateRoot = dataRoot
+		}
+		return native.Run(ctx, native.Config{
+			App: appConfig,
+			Postgres: postgres.Config{
+				BinDir:   nativeBin,
+				StateDir: filepath.Join(stateRoot, "postgres"),
+				Major:    18,
+			},
+		})
+	}
+	if err := app.Migrate(ctx, databaseURL); err != nil {
+		return fmt.Errorf("migrate product database: %w", err)
+	}
+	return app.Run(ctx, appConfig)
+}
+
+func externalDatabaseURL() (string, error) {
+	if databaseURL := strings.TrimSpace(os.Getenv("SMITHERS_DATABASE_URL")); databaseURL != "" {
+		return databaseURL, nil
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return "", errors.New("SMITHERS_DATABASE_URL or DATABASE_URL is required for an external PostgreSQL backend")
+	}
+	if err := os.Setenv("SMITHERS_DATABASE_URL", databaseURL); err != nil {
+		return "", err
+	}
+	return databaseURL, nil
+}
+
+func requireExternalBootstrapToken(dataRoot string) error {
+	if strings.TrimSpace(os.Getenv("SMITHERS_AUTH_BOOTSTRAP_TOKEN")) != "" {
+		return nil
+	}
+	if strings.TrimSpace(dataRoot) == "" {
+		dataRoot = localbootstrap.DefaultDataRoot
+	}
+	secretsPath := filepath.Join(dataRoot, "config", "secrets.json")
+	if _, err := os.Stat(secretsPath); err == nil {
+		// Existing installations reopen their protected, durable setup secret.
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect local secrets: %w", err)
+	}
+	return errors.New("SMITHERS_AUTH_BOOTSTRAP_TOKEN is required for first setup with external PostgreSQL")
 }
