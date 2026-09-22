@@ -2017,6 +2017,8 @@ export const createAppController = (
     runs.resumeApprovalRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
+  const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => repoImportSeam.resume())
+  ctx.onDispose(() => importCloudSubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()

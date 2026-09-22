@@ -38,7 +38,8 @@ export interface FailureController {
     title: string,
     doneTitle: string,
     work: () => Promise<T | string>,
-    quiet?: boolean
+    quiet?: boolean,
+    current?: () => boolean
   ) => Promise<T | string>
   /**
    * Resolve the toast on `key`; an ok outcome dismisses itself after
@@ -129,14 +130,14 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
    * Only a failure, and only with no announcing run holding the key: a
    * running notice and a "done" the user asked for are not this run's to move.
    */
-  const quietly = async <T>(key: string, title: string, work: () => Promise<T | string>): Promise<T | string> => {
+  const quietly = async <T>(key: string, title: string, work: () => Promise<T | string>, current?: () => boolean): Promise<T | string> => {
     let outcome: T | string
     try {
       outcome = await work()
     } catch {
       outcome = unexpectedFailure(title)
     }
-    if (ctx.disposed) return outcome
+    if (ctx.disposed || current?.() === false) return outcome
     const id = `toast-${key}`
     if (typeof outcome !== "string") {
       if (outcome !== TOAST_SUPERSEDED && !ctx.toastRuns.has(key)
@@ -176,15 +177,16 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     title: string,
     doneTitle: string,
     work: () => Promise<T | string>,
-    quiet = false
+    quiet = false,
+    current?: () => boolean
   ): Promise<T | string> => {
-    if (quiet) return quietly(key, title, work)
+    if (quiet) return quietly(key, title, work, current)
     nextRun += 1
     const run = nextRun
     ctx.toastRuns.set(key, run)
     let shown = false
     const debounce = later(() => {
-      if (ctx.toastRuns.get(key) !== run) return
+      if (ctx.toastRuns.get(key) !== run || current?.() === false) return
       shown = true
       ctx.store.dispatch({ type: "toast.shown", actor: "system", key, title })
     }, ctx.toastDebounceMs)
@@ -202,7 +204,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     // Superseded work has no result to state: whatever it read belongs to an
     // account the app no longer has open, so the notice leaves silently
     // rather than resolving into a doneTitle nothing backs.
-    if (outcome === TOAST_SUPERSEDED) {
+    if (outcome === TOAST_SUPERSEDED || current?.() === false) {
       const id = `toast-${key}`
       if (ctx.store.collections.toasts.get(id) !== undefined) {
         ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id })

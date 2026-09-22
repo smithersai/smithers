@@ -12,6 +12,7 @@ import { flowAction, flowProps } from "../flows/FlowAction"
 import { Badge, Button } from "@smthrs/ui"
 import { CloudDownload, RefreshCw } from "lucide-react"
 import type { Card } from "../state/AppState"
+import { REPO_IMPORT_LOST_STREAM_DETAIL } from "../state/seams/RepoImportSeam"
 import { RateLimitLine, useRetryHold } from "./SyncCards"
 import type { CardFamily, RunCommand } from "./CardFamily"
 
@@ -69,7 +70,7 @@ export const RepoImportCardBody = ({
         ) :
         null}
       {rateLimit !== undefined ? <RateLimitLine rateLimit={rateLimit} /> : null}
-      {phase === "failed" ?
+      {phase === "failed" || (phase === "running" && detail === REPO_IMPORT_LOST_STREAM_DETAIL) ?
         (
           <div className="world-card-row">
             <Button

@@ -1796,6 +1796,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** Persisted launch identity: fences stale answers and reconnects the exact operation after reload. */
       requestId: z.string().optional(),
       requestKind: z.enum(["start", "retry"]).optional(),
+      retryMode: z.enum(["reconnect", "restart"]).optional(),
       accountOwner: z.string().nullable().optional()
     })
   }),
