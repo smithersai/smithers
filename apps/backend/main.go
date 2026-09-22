@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/app"
+	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/localbootstrap"
 	"github.com/smithersai/smithers/packages/backend/native"
 	"github.com/smithersai/smithers/packages/backend/postgres"
@@ -74,6 +75,13 @@ func run(ctx context.Context, args []string) (runErr error) {
 		Args:       args,
 		Repository: local.Client(),
 		Workspace:  workspaceRuntime,
+	}
+	if manifestPath := strings.TrimSpace(os.Getenv("SMITHERS_FLOW_HOST_MANIFEST")); manifestPath != "" {
+		registry, err := flowmanifest.Load(manifestPath)
+		if err != nil {
+			return fmt.Errorf("load bundled Flow hosts: %w", err)
+		}
+		appConfig.FlowHostRegistry = &registry
 	}
 	if nativeBin != "" {
 		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))

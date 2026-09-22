@@ -17,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/cleanup"
@@ -41,6 +43,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/webapp"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
@@ -93,14 +96,16 @@ func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writ
 
 // Options are the only deployment seams in the common product assembly.
 type Options struct {
-	Role                Role
-	TraceExporter       trace.SpanExporter
-	Blobs               blob.Store
-	AgentLogs           services.AgentLogStore
-	MetricsDoer         services.GMPDoer
-	Repository          *repohost.Client
-	RepositoryPlacement services.RepoPlacementLookup
-	Workspace           workspace.WorkspaceRuntime
+	Role                  Role
+	TraceExporter         trace.SpanExporter
+	Blobs                 blob.Store
+	AgentLogs             services.AgentLogStore
+	MetricsDoer           services.GMPDoer
+	Repository            *repohost.Client
+	RepositoryPlacement   services.RepoPlacementLookup
+	Workspace             workspace.WorkspaceRuntime
+	FlowHostRegistry      *flowmanifest.Registry
+	FlowHostProductAPIURL string
 }
 
 // Role selects only process responsibilities. Every role assembles the same
@@ -1215,6 +1220,17 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
+	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService)
+	if err != nil {
+		return err
+	}
+	var flowWorker *criticalWorker
+	if flow != nil {
+		agentService.SetFlowDispatcher(flow.dispatcher)
+		if options.Role.workers() {
+			flowWorker = newCriticalWorker()
+		}
+	}
 	workspaceInternalHandler := &routes.WorkspaceInternalHandler{
 		Service: workspaceService,
 	}
@@ -1491,6 +1507,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 	}
 	r = mountBlobTransferHandler(r, transferStore, cfg)
+	r = withCriticalWorkerReadiness(r, flowWorker)
 
 	requestTracker := newInFlightRequestTracker()
 	handler := requestTracker.Wrap(r)
@@ -1499,9 +1516,27 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Start landing worker in a background goroutine.
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
+	var flowWorkerFailure <-chan error
+	if flowWorker != nil {
+		if err := flow.recover(ctx); err != nil {
+			return err
+		}
+		flowWorker.Start(workerCtx, "Flow dispatch", func(ctx context.Context) error {
+			return flow.dispatcher.RunWorker(ctx, jobs.WorkerConfig{
+				WorkerID: "flow-" + uuid.NewString(), Capacity: 4, Lease: 30 * time.Second,
+				PollInterval: 250 * time.Millisecond, RetryDelay: time.Second,
+				RecoveryInterval: 10 * time.Second, RecoveryLimit: 100,
+				OnError: func(err error) { slog.Error("Flow operation failed", "error", err) },
+			})
+		})
+		flowWorkerFailure = flowWorker.Failed()
+	}
 	var joinedWorkers []*joinedBackgroundWorker
 	launchWorker := func(run func()) {
 		joinedWorkers = append(joinedWorkers, startJoinedBackgroundWorker(run))
+	}
+	if flowWorker != nil {
+		launchWorker(func() { flow.maintainRetired(workerCtx) })
 	}
 	var wikiHistoryWorker *joinedBackgroundWorker
 	if options.Role.workers() && cfg.FeatureFlags.Wiki {
@@ -1601,10 +1636,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var shutdownFailure error // synchronized by shutdownDone closing
 	go func() {
 		defer close(shutdownDone)
+		var fatalWorkerErr error
 		select {
 		case <-sigCh:
 		case <-ctx.Done():
 		case <-abortShutdown:
+		case fatalWorkerErr = <-flowWorkerFailure:
 		}
 		if !options.externalHTTP && options.Role.servesHTTP() {
 			signal.Stop(sigCh)
@@ -1613,7 +1650,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.Info("shutting down", "shutdown_timeout", shutdownTimeout.String(), "in_flight_requests_at_sigterm", inFlightAtSIGTERM)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		shutdownErr := srv.Shutdown(shutdownCtx)
+		shutdownErr := errors.Join(fatalWorkerErr, srv.Shutdown(shutdownCtx))
 		if drainErr := requestTracker.WaitForDrain(shutdownCtx); drainErr != nil {
 			shutdownErr = errors.Join(shutdownErr, drainErr)
 		}
@@ -1625,6 +1662,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// requests fail during a rollout.
 		poolStatsCancel()
 		workerCancel()
+		if flowWorker != nil {
+			flowStopCtx, stopFlow := context.WithTimeout(context.Background(), shutdownTimeout)
+			if err := flowWorker.Wait(flowStopCtx); err != nil && !errors.Is(err, fatalWorkerErr) {
+				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("Flow dispatch did not stop: %w", err))
+			}
+			stopFlow()
+		}
 		if wikiHistoryWorker != nil {
 			wikiShutdownCtx, cancelWikiShutdown := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			if err := wikiHistoryWorker.Wait(wikiShutdownCtx); err != nil {

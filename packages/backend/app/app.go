@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/compose"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/repository"
@@ -46,6 +47,13 @@ type Config struct {
 	// requests and workers stop. Local deployments supply a trusted process
 	// runtime; hosted deployments supply an isolated runtime.
 	Workspace ports.WorkspaceRuntime
+	// FlowHostRegistry is the verified set of packaged canonical Flow hosts.
+	// Nil leaves durable Flow admission unavailable for development setups
+	// without a built host bundle.
+	FlowHostRegistry *flowmanifest.Registry
+	// FlowHostProductAPIURL is the backend origin reachable from the managed
+	// host's network, which may differ from the browser's public origin.
+	FlowHostProductAPIURL string
 }
 
 type Role = compose.Role
@@ -98,14 +106,16 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	stdout, stderr := writers(cfg)
 	go func() {
 		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-			Role:                cfg.Role,
-			TraceExporter:       cfg.TraceExporter,
-			Blobs:               cfg.Blobs,
-			AgentLogs:           cfg.AgentLogs,
-			MetricsDoer:         cfg.MetricsDoer,
-			Repository:          cfg.Repository,
-			RepositoryPlacement: cfg.RepositoryPlacement,
-			Workspace:           cfg.Workspace,
+			Role:                  cfg.Role,
+			TraceExporter:         cfg.TraceExporter,
+			Blobs:                 cfg.Blobs,
+			AgentLogs:             cfg.AgentLogs,
+			MetricsDoer:           cfg.MetricsDoer,
+			Repository:            cfg.Repository,
+			RepositoryPlacement:   cfg.RepositoryPlacement,
+			Workspace:             cfg.Workspace,
+			FlowHostRegistry:      cfg.FlowHostRegistry,
+			FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
 		}, func(handler http.Handler) {
 			ready <- handler
 		}))
@@ -134,14 +144,16 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
 	return closeWorkspace(cfg.Workspace, compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-		Role:                cfg.Role,
-		TraceExporter:       cfg.TraceExporter,
-		Blobs:               cfg.Blobs,
-		AgentLogs:           cfg.AgentLogs,
-		MetricsDoer:         cfg.MetricsDoer,
-		Repository:          cfg.Repository,
-		RepositoryPlacement: cfg.RepositoryPlacement,
-		Workspace:           cfg.Workspace,
+		Role:                  cfg.Role,
+		TraceExporter:         cfg.TraceExporter,
+		Blobs:                 cfg.Blobs,
+		AgentLogs:             cfg.AgentLogs,
+		MetricsDoer:           cfg.MetricsDoer,
+		Repository:            cfg.Repository,
+		RepositoryPlacement:   cfg.RepositoryPlacement,
+		Workspace:             cfg.Workspace,
+		FlowHostRegistry:      cfg.FlowHostRegistry,
+		FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
 	}))
 }
 
