@@ -1,7 +1,7 @@
 -- Durable authority for one canonical TypeScript host per authorized
 -- workspace/catalog binding. These rows do not contain graph or run state;
 -- Control's journal remains the only runtime authority.
-CREATE TABLE IF NOT EXISTS flow_runtime_host_bindings (
+CREATE TABLE flow_runtime_host_bindings (
     id UUID PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
@@ -28,14 +28,14 @@ CREATE TABLE IF NOT EXISTS flow_runtime_host_bindings (
     CHECK (credential_ciphertext <> '')
 );
 
-CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_repository
+CREATE INDEX flow_runtime_host_bindings_repository
     ON flow_runtime_host_bindings (repository_id, user_id, workspace_id);
 
 -- These immutable identifiers deliberately survive parent deletion. A live
 -- binding is admitted only while Store holds a share lock on its workspace.
 -- Workspace deletion (also reached through repository/user FK cascades) leaves
 -- a durable cleanup record, never a lost process/bearer or a blocked deletion.
-CREATE OR REPLACE FUNCTION retire_deleted_workspace_flow_hosts() RETURNS trigger
+CREATE FUNCTION retire_deleted_workspace_flow_hosts() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE flow_runtime_host_bindings
@@ -44,12 +44,11 @@ BEGIN
     RETURN OLD;
 END;
 $$;
-DROP TRIGGER IF EXISTS retire_deleted_workspace_flow_hosts ON workspaces;
 CREATE TRIGGER retire_deleted_workspace_flow_hosts
     BEFORE DELETE ON workspaces FOR EACH ROW
     EXECUTE FUNCTION retire_deleted_workspace_flow_hosts();
 
-CREATE OR REPLACE FUNCTION retire_tombstoned_workspace_flow_hosts() RETURNS trigger
+CREATE FUNCTION retire_tombstoned_workspace_flow_hosts() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.deleted_at IS NOT NULL THEN
@@ -60,10 +59,9 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-DROP TRIGGER IF EXISTS retire_tombstoned_workspace_flow_hosts ON workspaces;
 CREATE TRIGGER retire_tombstoned_workspace_flow_hosts
     AFTER UPDATE OF deleted_at ON workspaces FOR EACH ROW
     EXECUTE FUNCTION retire_tombstoned_workspace_flow_hosts();
 
-CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_retired
+CREATE INDEX flow_runtime_host_bindings_retired
     ON flow_runtime_host_bindings (updated_at, id) WHERE state = 'retired';

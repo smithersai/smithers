@@ -23,17 +23,17 @@ var rolloutFlagKeys = []string{
 }
 
 // mvpGatingFlagDefaults are the flag names + expected defaults added by
-// ticket 12 (MVP gating). Core launch families default to true; every other
-// non-MVP family defaults to false. Kept in one place so the presence and
+// ticket 12 (MVP gating). Core repository families default to true. Kept in
+// one place so the presence and
 // default tests stay aligned with the config defaults.
 var mvpGatingFlagDefaults = map[string]bool{
 	"stacked_prs":         true,
 	"workflows":           false,
 	"sandboxes":           true,
 	"auto_push":           true,
-	"issues":              false,
+	"issues":              true,
 	"search":              false,
-	"workspaces":          false,
+	"workspaces":          true,
 	"agents":              false,
 	"web_dashboard":       false,
 	"protected_bookmarks": false,
@@ -286,7 +286,7 @@ func TestFeatureFlagHandler_GetFeatureFlags_MVPGatingFlagsPresent(t *testing.T) 
 
 // TestFeatureFlagHandler_GetFeatureFlags_MVPGatingFlagsConfigDefaults asserts
 // that loading the config without overrides produces the documented defaults
-// (core launch families true, everything else false). This pins the contract that
+// (core repository families true, other families false). This pins the contract that
 // ticket 12's acceptance criteria depend on.
 func TestFeatureFlagHandler_GetFeatureFlags_MVPGatingFlagsConfigDefaults(t *testing.T) {
 	// Cannot run in parallel — config.Load reads process env.

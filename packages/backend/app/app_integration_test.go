@@ -47,6 +47,7 @@ func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
 		"SMITHERS_PUBLIC_URL":                    "http://127.0.0.1:4000",
 		"SMITHERS_FEATURE_FLAGS_WORKFLOWS":       "false",
 		"SMITHERS_FEATURE_FLAGS_SANDBOXES":       "false",
+		"SMITHERS_FEATURE_FLAGS_WORKSPACES":      "false",
 	} {
 		t.Setenv(key, value)
 	}

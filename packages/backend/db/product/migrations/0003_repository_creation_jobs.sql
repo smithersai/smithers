@@ -38,7 +38,7 @@ CREATE UNIQUE INDEX repository_creation_org_name
 -- Use the same namespace lock for reservations and all repository inserts or
 -- owner/name changes. Other writers cannot slip a row between the reservation
 -- check and its commit, and cannot publish over a pending staged repository.
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_namespace_key(
+CREATE FUNCTION public.smithers_product_repository_namespace_key(
     p_user_id bigint, p_org_id bigint, p_lower_name text
 ) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$
     SELECT hashtextextended(
@@ -46,7 +46,7 @@ CREATE OR REPLACE FUNCTION public.smithers_product_repository_namespace_key(
              ELSE 'org:' || p_org_id::text END || ':' || lower(p_lower_name), 0)
 $$;
 
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_creation_fence()
+CREATE FUNCTION public.smithers_product_repository_creation_fence()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE pending public.repository_creation_jobs%ROWTYPE;
 BEGIN

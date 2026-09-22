@@ -1,7 +1,7 @@
 -- Shared product-operation admission and delivery. These rows queue external
 -- effects; they do not describe a Flow graph or replace the canonical
 -- TypeScript Flow/Control journal.
-CREATE TABLE IF NOT EXISTS product_job_streams (
+CREATE TABLE product_job_streams (
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
     head BIGINT NOT NULL DEFAULT 0 CHECK (head >= 0),
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS product_job_streams (
     CHECK (retention_floor <= head + 1)
 );
 
-CREATE TABLE IF NOT EXISTS product_job_requests (
+CREATE TABLE product_job_requests (
     id UUID PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
@@ -38,10 +38,10 @@ CREATE TABLE IF NOT EXISTS product_job_requests (
     CHECK ((state IN ('completed', 'failed', 'cancelled', 'uncertain')) = (terminal_receipt IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS product_job_requests_owner_created
+CREATE INDEX product_job_requests_owner_created
     ON product_job_requests (tenant_id, principal_id, created_at, id);
 
-CREATE TABLE IF NOT EXISTS product_job_dispatches (
+CREATE TABLE product_job_dispatches (
     operation_id UUID PRIMARY KEY REFERENCES product_job_requests(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'claimed', 'done', 'stopped')),
     effect_policy TEXT NOT NULL CHECK (effect_policy IN ('idempotent', 'reconcile', 'unsafe')),
@@ -69,14 +69,14 @@ CREATE TABLE IF NOT EXISTS product_job_dispatches (
     )
 );
 
-CREATE INDEX IF NOT EXISTS product_job_dispatches_ready
+CREATE INDEX product_job_dispatches_ready
     ON product_job_dispatches (next_attempt_at, operation_id)
     WHERE status = 'ready';
-CREATE INDEX IF NOT EXISTS product_job_dispatches_expired
+CREATE INDEX product_job_dispatches_expired
     ON product_job_dispatches (lease_expires_at, operation_id)
     WHERE status = 'claimed';
 
-CREATE TABLE IF NOT EXISTS product_job_events (
+CREATE TABLE product_job_events (
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
     sequence BIGINT NOT NULL CHECK (sequence > 0),
@@ -94,5 +94,5 @@ CREATE TABLE IF NOT EXISTS product_job_events (
     CHECK (tenant_id <> '' AND principal_id <> '' AND event_type <> '' AND state <> '')
 );
 
-CREATE INDEX IF NOT EXISTS product_job_events_operation
+CREATE INDEX product_job_events_operation
     ON product_job_events (operation_id, sequence);

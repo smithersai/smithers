@@ -214,20 +214,23 @@ repository_job_dispatches,product,product baseline; transitional copy also prese
 repository_job_trials,product,product baseline; transitional copy also present
 repository_job_comments,product,product baseline; transitional copy also present
 workspace_capability_bindings,product,product baseline; transitional copy also present
-repository_job_approvals,product,product migration 0004
-repository_ci_check_receipts,product,product migration 0004
-self_host_owners,product,product migration 0005
-local_credentials,product,product migration 0005
-product_job_streams,product,product migration 0006
-product_job_requests,product,product migration 0006
-product_job_dispatches,product,product migration 0006
-product_job_events,product,product migration 0006
-chat_turns,product,product migration 0009
-chat_turn_batches,product,product migration 0009
-flow_runtime_host_bindings,product,product migration 0010
+repository_job_approvals,product,product baseline
+repository_ci_check_receipts,product,product baseline
+self_host_owners,product,product migration 0004
+local_credentials,product,product migration 0004
+product_job_streams,product,product migration 0005
+product_job_requests,product,product migration 0005
+product_job_dispatches,product,product migration 0005
+product_job_events,product,product migration 0005
+chat_turns,product,product migration 0007
+chat_turn_batches,product,product migration 0007
+flow_runtime_host_bindings,product,product migration 0008
 storage_sets,private,Plue placement migration 0001
 storage_nodes,private,Plue placement migration 0001
 repository_placements,private,Plue placement migration 0002
-owner_model_credentials,product,product migration 0011
-owner_model_defaults,product,product migration 0011
-owner_model_credential_receipts,product,product migration 0011
+owner_model_credentials,product,product migration 0009
+owner_model_defaults,product,product migration 0009
+owner_model_credential_receipts,product,product migration 0009
+workflow_invocations,product,product migration 0010
+onboarding_answers,product,product migration 0011
+workspace_setup_jobs,product,product migration 0011

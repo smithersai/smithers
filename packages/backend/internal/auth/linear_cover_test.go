@@ -20,13 +20,14 @@ import (
 // test server while preserving the path, so Linear's hard-coded endpoint URLs
 // can be exercised against httptest.
 type linearCoverRewriteRT struct {
-	base *url.URL
+	base      *url.URL
+	transport *http.Transport
 }
 
 func (rt linearCoverRewriteRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.URL.Scheme = rt.base.Scheme
 	req.URL.Host = rt.base.Host
-	return http.DefaultTransport.RoundTrip(req)
+	return rt.transport.RoundTrip(req)
 }
 
 // linearCoverErrRT always fails the round trip, simulating a transport error.
@@ -46,7 +47,9 @@ func linearCoverClient(t *testing.T, h http.HandlerFunc) *LinearClient {
 	require.NoError(t, err)
 
 	c := NewLinearClient("client-id", "client-secret", "https://app.example/callback")
-	c.httpClient = &http.Client{Transport: linearCoverRewriteRT{base: base}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(transport.CloseIdleConnections)
+	c.httpClient = &http.Client{Transport: linearCoverRewriteRT{base: base, transport: transport}}
 	return c
 }
 

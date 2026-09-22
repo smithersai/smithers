@@ -15,7 +15,7 @@ import (
 const acquireBranchLockInsert = `-- name: AcquireBranchLockInsert :one
 INSERT INTO branch_locks (repository_id, branch, user_id, workspace_id)
 VALUES ($1, $2, $3, $4)
-RETURNING repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at
+RETURNING repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at, generation
 `
 
 type AcquireBranchLockInsertParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) AcquireBranchLockInsert(ctx context.Context, arg AcquireBranch
 		&i.HeartbeatAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Generation,
 	)
 	return i, err
 }
@@ -51,7 +52,7 @@ func (q *Queries) AcquireBranchLockInsert(ctx context.Context, arg AcquireBranch
 const createBranchLockJoinRequest = `-- name: CreateBranchLockJoinRequest :one
 INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id)
 VALUES ($1, $2, $3)
-RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at
+RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation
 `
 
 type CreateBranchLockJoinRequestParams struct {
@@ -72,12 +73,13 @@ func (q *Queries) CreateBranchLockJoinRequest(ctx context.Context, arg CreateBra
 		&i.ResolverID,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.LockGeneration,
 	)
 	return i, err
 }
 
 const getBranchLock = `-- name: GetBranchLock :one
-SELECT repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at FROM branch_locks
+SELECT repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at, generation FROM branch_locks
 WHERE repository_id = $1 AND branch = $2
 `
 
@@ -97,12 +99,13 @@ func (q *Queries) GetBranchLock(ctx context.Context, arg GetBranchLockParams) (B
 		&i.HeartbeatAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Generation,
 	)
 	return i, err
 }
 
 const getBranchLockJoinRequest = `-- name: GetBranchLockJoinRequest :one
-SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at FROM branch_lock_join_requests
+SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation FROM branch_lock_join_requests
 WHERE id = $1
 `
 
@@ -118,12 +121,13 @@ func (q *Queries) GetBranchLockJoinRequest(ctx context.Context, id int64) (Branc
 		&i.ResolverID,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.LockGeneration,
 	)
 	return i, err
 }
 
 const getBranchLockJoinRequestForRequester = `-- name: GetBranchLockJoinRequestForRequester :one
-SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at FROM branch_lock_join_requests
+SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation FROM branch_lock_join_requests
 WHERE repository_id = $1
   AND branch = $2
   AND requester_id = $3
@@ -149,6 +153,7 @@ func (q *Queries) GetBranchLockJoinRequestForRequester(ctx context.Context, arg 
 		&i.ResolverID,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.LockGeneration,
 	)
 	return i, err
 }
@@ -213,7 +218,7 @@ func (q *Queries) HeartbeatBranchLock(ctx context.Context, arg HeartbeatBranchLo
 }
 
 const listPendingBranchLockJoinRequests = `-- name: ListPendingBranchLockJoinRequests :many
-SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at FROM branch_lock_join_requests
+SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation FROM branch_lock_join_requests
 WHERE repository_id = $1
   AND branch = $2
   AND status = 'pending'
@@ -244,6 +249,7 @@ func (q *Queries) ListPendingBranchLockJoinRequests(ctx context.Context, arg Lis
 			&i.ResolverID,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+			&i.LockGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -256,7 +262,7 @@ func (q *Queries) ListPendingBranchLockJoinRequests(ctx context.Context, arg Lis
 }
 
 const listPendingBranchLockJoinRequestsForHolder = `-- name: ListPendingBranchLockJoinRequestsForHolder :many
-SELECT j.id, j.repository_id, j.branch, j.requester_id, j.status, j.resolver_id, j.created_at, j.resolved_at FROM branch_lock_join_requests j
+SELECT j.id, j.repository_id, j.branch, j.requester_id, j.status, j.resolver_id, j.created_at, j.resolved_at, j.lock_generation FROM branch_lock_join_requests j
 JOIN branch_locks l
   ON l.repository_id = j.repository_id AND l.branch = j.branch
 WHERE l.user_id = $1
@@ -283,6 +289,7 @@ func (q *Queries) ListPendingBranchLockJoinRequestsForHolder(ctx context.Context
 			&i.ResolverID,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+			&i.LockGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -322,7 +329,7 @@ SET status = $2,
     resolved_at = NOW()
 WHERE id = $1
   AND status = 'pending'
-RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at
+RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation
 `
 
 type ResolveBranchLockJoinRequestParams struct {
@@ -343,6 +350,7 @@ func (q *Queries) ResolveBranchLockJoinRequest(ctx context.Context, arg ResolveB
 		&i.ResolverID,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.LockGeneration,
 	)
 	return i, err
 }
@@ -356,7 +364,7 @@ SET user_id = $3,
 WHERE repository_id = $1
   AND branch = $2
   AND heartbeat_at < $5
-RETURNING repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at
+RETURNING repository_id, branch, user_id, workspace_id, heartbeat_at, created_at, updated_at, generation
 `
 
 type TakeOverStaleBranchLockParams struct {
@@ -386,6 +394,7 @@ func (q *Queries) TakeOverStaleBranchLock(ctx context.Context, arg TakeOverStale
 		&i.HeartbeatAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Generation,
 	)
 	return i, err
 }

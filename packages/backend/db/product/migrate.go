@@ -19,7 +19,6 @@ const BaselineVersion = 1
 var (
 	ErrChecksumMismatch   = errors.New("product migration checksum mismatch")
 	ErrUnsupportedVersion = errors.New("product database version is newer than this binary")
-	ErrMissingVersion     = errors.New("product migration ledger has a gap")
 )
 
 //go:embed migrations/*.sql
@@ -36,14 +35,14 @@ var migrationRegistry = []migrationSpec{
 	{BaselineVersion, "migrations/0001_product_baseline.sql"},
 	{2, "migrations/0002_import_publication.sql"},
 	{3, "migrations/0003_repository_creation_jobs.sql"},
-	{4, "migrations/0004_repository_job_receipts_and_approvals.sql"},
-	{5, "migrations/0005_single_owner_identity.sql"},
-	{6, "migrations/0006_durable_product_jobs.sql"},
-	{7, "migrations/0007_repository_storage_operations.sql"},
-	{8, "migrations/0008_provider_connection_web_request.sql"},
-	{9, "migrations/0009_chat_turns.sql"},
-	{10, "migrations/0010_flow_runtime_host_bindings.sql"},
-	{11, "migrations/0011_owner_models.sql"},
+	{4, "migrations/0004_single_owner_identity.sql"},
+	{5, "migrations/0005_durable_product_jobs.sql"},
+	{6, "migrations/0006_repository_storage_fences.sql"},
+	{7, "migrations/0007_chat_turns.sql"},
+	{8, "migrations/0008_flow_runtime_host_bindings.sql"},
+	{9, "migrations/0009_owner_models.sql"},
+	{10, "migrations/0010_branch_lock_and_workflow_invocations.sql"},
+	{11, "migrations/0011_onboarding_and_workspace_setup.sql"},
 }
 
 type migration struct {
@@ -105,16 +104,13 @@ func appliedMigrations(ctx context.Context, q migrationQuerier, registered []mig
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read product migration ledger: %w", err)
 	}
-	for version := 1; version <= len(applied); version++ {
-		if !applied[version] {
-			return nil, fmt.Errorf("%w: version %d", ErrMissingVersion, version)
-		}
-	}
 	return applied, nil
 }
 
 // Status reports whether every migration supported by this binary is applied.
-// A newer database, checksum drift, or a ledger gap is an error.
+// A newer database or checksum drift is an error. Adoption can verify and
+// record later historical product objects before pending earlier migrations
+// run; Status reports incomplete until every numbered migration is present.
 func Status(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
 	if pool == nil {
 		return false, errors.New("product migration requires a PostgreSQL pool")

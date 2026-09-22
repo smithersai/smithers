@@ -144,7 +144,6 @@ func (g *repositoryJobTestGateway) Admit(_ context.Context, request flowdispatch
 	if _, exists := g.launches[request.RequestID]; !exists {
 		g.launches[request.RequestID] = request
 		g.inputs = append(g.inputs, request.Payload)
-		g.runs[request.RequestID] = "run-" + uuid.NewString()
 	}
 	g.pendingLaunches = append(g.pendingLaunches, request)
 	return jobs.RequestReceipt{OperationID: "operation-" + request.RequestID, RequestID: request.RequestID, Kind: flowdispatch.OperationLaunch, State: jobs.StateAccepted}, nil
@@ -180,6 +179,7 @@ func (g *repositoryJobTestGateway) projectPending(ctx context.Context) error {
 	for _, request := range launches {
 		if g.dropRunOnce {
 			g.dropRunOnce = false
+			g.runs[request.RequestID] = "run-" + uuid.NewString()
 			continue
 		}
 		target := request.Target
@@ -205,6 +205,9 @@ func (g *repositoryJobTestGateway) projectPending(ctx context.Context) error {
 		}
 		if g.cancelled[request.RequestID] {
 			continue
+		}
+		if g.runs[request.RequestID] == "" {
+			g.runs[request.RequestID] = "run-" + uuid.NewString()
 		}
 		checkpoint.RunID = g.runs[request.RequestID]
 		checkpoint.Receipt = &flowruntime.FlowRuntimeReceipt{Tag: "Accepted", RunID: checkpoint.RunID}
@@ -566,6 +569,7 @@ func TestRepositoryJobsIntegrationNativeOutboxAndLeaseFence(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n, "stale worker cannot persist a plan")
 	require.NoError(t, s.dispatch(ctx, reclaimed[0]))
+	repositoryJobPoll(t, s, g)
 	repositoryJobPoll(t, s, g)
 	require.Len(t, g.runs, 1)
 	rows, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: g.target.RepositoryID, Job: "issues"})

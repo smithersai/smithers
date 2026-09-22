@@ -300,17 +300,19 @@ type BranchLock struct {
 	HeartbeatAt  time.Time   `json:"heartbeat_at"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+	Generation   string      `json:"generation"`
 }
 
 type BranchLockJoinRequest struct {
-	ID           int64              `json:"id"`
-	RepositoryID int64              `json:"repository_id"`
-	Branch       string             `json:"branch"`
-	RequesterID  int64              `json:"requester_id"`
-	Status       string             `json:"status"`
-	ResolverID   pgtype.Int8        `json:"resolver_id"`
-	CreatedAt    time.Time          `json:"created_at"`
-	ResolvedAt   pgtype.Timestamptz `json:"resolved_at"`
+	ID             int64              `json:"id"`
+	RepositoryID   int64              `json:"repository_id"`
+	Branch         string             `json:"branch"`
+	RequesterID    int64              `json:"requester_id"`
+	Status         string             `json:"status"`
+	ResolverID     pgtype.Int8        `json:"resolver_id"`
+	CreatedAt      time.Time          `json:"created_at"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	LockGeneration string             `json:"lock_generation"`
 }
 
 type BuildCacheArtifact struct {
@@ -1268,6 +1270,13 @@ type OauthState struct {
 	UsedAt          pgtype.Timestamptz `json:"used_at"`
 }
 
+type OnboardingAnswer struct {
+	UserID    int64              `json:"user_id"`
+	Answers   json.RawMessage    `json:"answers"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type OrgMember struct {
 	ID             int64     `json:"id"`
 	OrganizationID int64     `json:"organization_id"`
@@ -2163,6 +2172,32 @@ type WorkflowDefinition struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
+type WorkflowInvocation struct {
+	WorkflowRunID        int64              `json:"workflow_run_id"`
+	RepositoryID         int64              `json:"repository_id"`
+	WorkflowDefinitionID int64              `json:"workflow_definition_id"`
+	Runtime              string             `json:"runtime"`
+	RequestKey           string             `json:"request_key"`
+	RequestDigest        string             `json:"request_digest"`
+	FlowPath             string             `json:"flow_path"`
+	FlowTag              string             `json:"flow_tag"`
+	SourceCommit         string             `json:"source_commit"`
+	SourceDigest         string             `json:"source_digest"`
+	DispatchInputs       json.RawMessage    `json:"dispatch_inputs"`
+	TriggerEvent         string             `json:"trigger_event"`
+	TriggerRef           string             `json:"trigger_ref"`
+	SandboxID            string             `json:"sandbox_id"`
+	HostArtifactDigest   string             `json:"host_artifact_digest"`
+	Plan                 []byte             `json:"plan"`
+	RunRequest           []byte             `json:"run_request"`
+	AttemptedAt          pgtype.Timestamptz `json:"attempted_at"`
+	HostRunID            string             `json:"host_run_id"`
+	FinalOutput          []byte             `json:"final_output"`
+	CancelAcknowledgedAt pgtype.Timestamptz `json:"cancel_acknowledged_at"`
+	CleanedAt            pgtype.Timestamptz `json:"cleaned_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+}
+
 type WorkflowLog struct {
 	ID             int64     `json:"id"`
 	WorkflowRunID  int64     `json:"workflow_run_id"`
@@ -2331,6 +2366,17 @@ type WorkspaceSession struct {
 	UpdatedAt         time.Time       `json:"updated_at"`
 	Kind              string          `json:"kind"`
 	Language          string          `json:"language"`
+}
+
+type WorkspaceSetupJob struct {
+	ID             string             `json:"id"`
+	UserID         int64              `json:"user_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Request        json.RawMessage    `json:"request"`
+	Status         string             `json:"status"`
+	WorkflowRunID  pgtype.Int8        `json:"workflow_run_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WorkspaceShare struct {

@@ -79,6 +79,38 @@ class AdoptionTest(unittest.TestCase):
                            "WHERE username='before_adoption') FROM public.smithers_product_migrations")
         self.assertEqual(latest.stdout.strip(), "11|1")
 
+    def test_preexisting_later_migration_is_verified_before_ledger_write(self) -> None:
+        later = ROOT / "migrations" / "0010_branch_lock_and_workflow_invocations.sql"
+        run("psql", "-X", "-1", "-v", "ON_ERROR_STOP=1", "-d", self.target, "-f", str(later))
+        result = self.adopt("--apply")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["preexisting_migrations"], [10])
+        ledger = run("psql", "-X", "-At", "-d", self.target,
+                     "-c", "SELECT string_agg(version::text, ',' ORDER BY version) "
+                           "FROM public.smithers_product_migrations")
+        self.assertEqual(ledger.stdout.strip(), "1,10")
+        migrate_env = os.environ.copy()
+        migrate_env["SMITHERS_DATABASE_URL"] = self.target
+        migrated = subprocess.run(("go", "run", "./apps/backend", "migrate", "apply"),
+                                  cwd=ROOT.parents[3], env=migrate_env,
+                                  text=True, capture_output=True)
+        self.assertEqual(migrated.returncode, 0, migrated.stderr)
+        ledger = run("psql", "-X", "-At", "-d", self.target,
+                     "-c", "SELECT count(*), max(version) FROM public.smithers_product_migrations")
+        self.assertEqual(ledger.stdout.strip(), "11|11")
+
+    def test_partial_later_migration_refuses_ledger_write(self) -> None:
+        run("psql", "-X", "-v", "ON_ERROR_STOP=1", "-d", self.target,
+            "-c", "ALTER TABLE public.branch_locks "
+                  "ADD COLUMN generation uuid NOT NULL DEFAULT gen_random_uuid()")
+        result = self.adopt("--apply")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertTrue(any(item["object"] == "PRODUCT MIGRATION 10" for item in report["drift"]))
+        ledger = run("psql", "-X", "-At", "-d", self.target,
+                     "-c", "SELECT to_regclass('public.smithers_product_migrations') IS NULL")
+        self.assertEqual(ledger.stdout.strip(), "t")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -202,7 +202,7 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 }
 
 func TestDurableProductJobsMigrationRegistered(t *testing.T) {
-	content, err := migrations.ReadFile("migrations/0006_durable_product_jobs.sql")
+	content, err := migrations.ReadFile("migrations/0005_durable_product_jobs.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,16 +211,16 @@ func TestDurableProductJobsMigrationRegistered(t *testing.T) {
 	}
 	found := false
 	for _, spec := range migrationRegistry {
-		if spec.version == 6 && spec.path == "migrations/0006_durable_product_jobs.sql" {
+		if spec.version == 5 && spec.path == "migrations/0005_durable_product_jobs.sql" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("durable jobs migration 0006 is not registered")
+		t.Fatal("durable jobs migration 0005 is not registered")
 	}
 }
 
-func TestDurableProductJobsMigration0006(t *testing.T) {
+func TestDurableProductJobsMigration0005(t *testing.T) {
 	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	if raw == "" {
 		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
@@ -228,7 +228,7 @@ func TestDurableProductJobsMigration0006(t *testing.T) {
 		}
 		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
 	}
-	content, err := migrations.ReadFile("migrations/0006_durable_product_jobs.sql")
+	content, err := migrations.ReadFile("migrations/0005_durable_product_jobs.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,10 +264,11 @@ func TestDurableProductJobsMigration0006(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := pool.Exec(ctx, string(content), pgx.QueryExecModeSimpleProtocol); err != nil {
-			t.Fatalf("apply migration 0006 attempt %d: %v", attempt+1, err)
-		}
+	if _, err := pool.Exec(ctx, string(content), pgx.QueryExecModeSimpleProtocol); err != nil {
+		t.Fatalf("apply migration 0005: %v", err)
+	}
+	if _, err := pool.Exec(ctx, string(content), pgx.QueryExecModeSimpleProtocol); err == nil {
+		t.Fatal("direct replay must reject an existing product table; the ledger owns replay")
 	}
 
 	store, err := jobs.NewStore(pool)
@@ -369,23 +370,12 @@ func TestBaselineHasNoClusterTableNames(t *testing.T) {
 }
 
 func TestBaselineChecksumPinned(t *testing.T) {
-	const expected = "6c21286ad174816e1da6dfa068f7d941e7170f857689061de129596a678157c9"
+	const expected = "1efe40475c382694f73ff2ab3be2968596e2db08564f50ed8a1f3756d9df42b4"
 	registered, err := registeredMigrations()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(registered) == 0 || registered[0].checksum != expected {
 		t.Fatalf("baseline migration changed; add a new numbered migration instead (got %q)", registered[0].checksum)
-	}
-}
-
-func TestRepositoryJobMigrationChecksumPinned(t *testing.T) {
-	const expected = "ab0492c3ce2bba1297048273f557608e2e1fc381c01b3af739c19e9a4b2b9b16"
-	registered, err := registeredMigrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(registered) < 4 || registered[3].checksum != expected {
-		t.Fatal("product migration 0004 changed; add a new numbered migration instead")
 	}
 }

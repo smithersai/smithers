@@ -18,7 +18,7 @@
     },
     {
       "snapshot": "migrations/0004_runner_fair_admission.sql",
-      "upstream": "db/migrations/20260922100000_runner_fair_admission.sql",
+      "upstream": "db/private/migrations/000005_runner_fair_admission.sql",
       "sha256": "b3ba384b976459546f3827f5e4e09a7b01a4a32ef1e776d9829731f02b14c961"
     },
     {

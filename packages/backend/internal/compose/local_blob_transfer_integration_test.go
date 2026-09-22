@@ -70,6 +70,7 @@ func TestLocalBlobTransferComposed(t *testing.T) {
 		"SMITHERS_BLOB_TRANSFER_SIGNING_KEY":     "",
 		"SMITHERS_FEATURE_FLAGS_WORKFLOWS":       "false",
 		"SMITHERS_FEATURE_FLAGS_SANDBOXES":       "false",
+		"SMITHERS_FEATURE_FLAGS_WORKSPACES":      "false",
 		"SMITHERS_OTEL_EXPORTER":                 "none",
 	} {
 		t.Setenv(name, value)

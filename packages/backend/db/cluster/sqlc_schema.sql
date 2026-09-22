@@ -11,7 +11,7 @@ SET check_function_bodies = false;
 -- repositories, issues, reviews, wiki, workflow, and workspace state.
 SET LOCAL check_function_bodies = false;
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+CREATE EXTENSION pgcrypto WITH SCHEMA public;
 
 
 --
@@ -14351,6 +14351,98 @@ ALTER TABLE ONLY public.workspaces
 --
 -- PostgreSQL database dump complete
 --
+
+-- Product objects present in the historical Plue schema before adoption.
+-- Retain the gateway proof behind each reserved repository CI commit status.
+-- A request id is idempotent only within the reviewed CI registration.
+CREATE TABLE repository_ci_check_receipts (
+    id               bigserial PRIMARY KEY,
+    repository_id    bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    registration_id  uuid   NOT NULL REFERENCES repository_job_registrations(id) ON DELETE CASCADE,
+    revision         bigint NOT NULL,
+    digest           text   NOT NULL,
+    execution_digest text   NOT NULL,
+    workspace_id     uuid   NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    run_id           text   NOT NULL,
+    execution_id     text   NOT NULL,
+    commit_sha       text   NOT NULL,
+    change_id        text   NOT NULL,
+    base_commit_sha  text   NOT NULL,
+    checks           jsonb  NOT NULL,
+    context          text   NOT NULL,
+    commit_status_id bigint NOT NULL REFERENCES commit_statuses(id) ON DELETE CASCADE,
+    request_id       text   NOT NULL,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (registration_id, request_id)
+);
+
+CREATE INDEX idx_repository_ci_check_receipts_repo_commit
+    ON repository_ci_check_receipts (repository_id, commit_sha);
+
+-- Human approval provenance for reviewed repository flow plans. The service
+-- supplies approved_by from the authenticated session and approved_at from
+-- PostgreSQL; neither field is accepted from a host, flow, or model.
+CREATE TABLE repository_job_approvals (
+    repository_id bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    job           text   NOT NULL,
+    plan_digest   text   NOT NULL CHECK (plan_digest ~ '^[a-f0-9]{64}$'),
+    plan_id       text   NOT NULL,
+    flow_id       text   NOT NULL,
+    envelope      jsonb  NOT NULL,
+    approved_by   bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    approved_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (repository_id, job, plan_digest)
+);
+
+-- A staged delete or ownership move has one durable receipt across embedded
+-- and hosted repository services. storage_route_key is an opaque trusted route
+-- handle: "static" addresses the embedded service, while a hosted adapter may
+-- resolve it through its private placement catalog. It is never a URL or a
+-- column on the product repository row.
+CREATE TABLE public.repository_storage_operations (
+    repository_id bigint PRIMARY KEY,
+    operation_type varchar(16) NOT NULL CHECK (operation_type IN ('delete', 'move')),
+    token varchar(64) NOT NULL UNIQUE CHECK (token ~ '^[0-9a-f]{64}$'),
+    storage_route_key text NOT NULL CONSTRAINT repository_storage_route_key_nonempty CHECK (btrim(storage_route_key) <> ''),
+    source_owner varchar(255) NOT NULL CHECK (btrim(source_owner) <> ''),
+    source_repo varchar(255) NOT NULL CHECK (btrim(source_repo) <> ''),
+    source_user_id bigint,
+    source_org_id bigint,
+    target_owner varchar(255),
+    target_repo varchar(255),
+    target_user_id bigint,
+    target_org_id bigint,
+    claim_token varchar(64),
+    claimed_at timestamptz,
+    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (num_nonnulls(source_user_id, source_org_id) = 1),
+    CHECK (
+        (operation_type = 'delete' AND target_owner IS NULL AND target_repo IS NULL
+            AND target_user_id IS NULL AND target_org_id IS NULL)
+        OR
+        (operation_type = 'move' AND target_owner IS NOT NULL AND target_repo IS NOT NULL
+            AND btrim(target_owner) <> '' AND btrim(target_repo) <> ''
+            AND num_nonnulls(target_user_id, target_org_id) = 1)
+    ),
+    CHECK ((claim_token IS NULL AND claimed_at IS NULL)
+        OR (claim_token IS NOT NULL AND claimed_at IS NOT NULL))
+);
+CREATE INDEX idx_repository_storage_operations_reconcile
+    ON public.repository_storage_operations(created_at, claimed_at, repository_id);
+
+
+CREATE UNIQUE INDEX idx_provider_connections_web_request
+    ON public.provider_connections (user_id, label) WHERE owner_type = 'user' AND label LIKE 'web-%';
+
+-- Current product flow registrations are part of the baseline on fresh installs.
+ALTER TABLE public.repository_job_registrations DROP CONSTRAINT repository_job_registrations_job_check;
+ALTER TABLE public.repository_job_registrations ADD CONSTRAINT repository_job_registrations_job_check
+    CHECK (job IN ('issues','review','ci','feature','chores') OR job ~ '^flow:[a-z0-9][a-z0-9-]{0,63}$');
+ALTER TABLE public.repository_job_registrations ADD CONSTRAINT repository_job_registrations_flow_mode_check
+    CHECK (job !~ '^flow:' OR mode = 'enabled');
 -- END product/migrations/0001_product_baseline.sql
 
 -- BEGIN product/migrations/0002_import_publication.sql
@@ -14403,7 +14495,7 @@ CREATE UNIQUE INDEX repository_creation_org_name
 -- Use the same namespace lock for reservations and all repository inserts or
 -- owner/name changes. Other writers cannot slip a row between the reservation
 -- check and its commit, and cannot publish over a pending staged repository.
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_namespace_key(
+CREATE FUNCTION public.smithers_product_repository_namespace_key(
     p_user_id bigint, p_org_id bigint, p_lower_name text
 ) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$
     SELECT hashtextextended(
@@ -14411,7 +14503,7 @@ CREATE OR REPLACE FUNCTION public.smithers_product_repository_namespace_key(
              ELSE 'org:' || p_org_id::text END || ':' || lower(p_lower_name), 0)
 $$;
 
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_creation_fence()
+CREATE FUNCTION public.smithers_product_repository_creation_fence()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE pending public.repository_creation_jobs%ROWTYPE;
 BEGIN
@@ -14450,72 +14542,29 @@ BEFORE DELETE ON public.repositories
 FOR EACH ROW EXECUTE FUNCTION public.smithers_product_repository_creation_fence();
 -- END product/migrations/0003_repository_creation_jobs.sql
 
--- BEGIN product/migrations/0004_repository_job_receipts_and_approvals.sql
--- Retain the gateway proof behind each reserved repository CI commit status.
--- A request id is idempotent only within the reviewed CI registration.
-CREATE TABLE repository_ci_check_receipts (
-    id               bigserial PRIMARY KEY,
-    repository_id    bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-    registration_id  uuid   NOT NULL REFERENCES repository_job_registrations(id) ON DELETE CASCADE,
-    revision         bigint NOT NULL,
-    digest           text   NOT NULL,
-    execution_digest text   NOT NULL,
-    workspace_id     uuid   NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    run_id           text   NOT NULL,
-    execution_id     text   NOT NULL,
-    commit_sha       text   NOT NULL,
-    change_id        text   NOT NULL,
-    base_commit_sha  text   NOT NULL,
-    checks           jsonb  NOT NULL,
-    context          text   NOT NULL,
-    commit_status_id bigint NOT NULL REFERENCES commit_statuses(id) ON DELETE CASCADE,
-    request_id       text   NOT NULL,
-    created_at       timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (registration_id, request_id)
-);
-
-CREATE INDEX idx_repository_ci_check_receipts_repo_commit
-    ON repository_ci_check_receipts (repository_id, commit_sha);
-
--- Human approval provenance for reviewed repository flow plans. The service
--- supplies approved_by from the authenticated session and approved_at from
--- PostgreSQL; neither field is accepted from a host, flow, or model.
-CREATE TABLE repository_job_approvals (
-    repository_id bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
-    job           text   NOT NULL,
-    plan_digest   text   NOT NULL CHECK (plan_digest ~ '^[a-f0-9]{64}$'),
-    plan_id       text   NOT NULL,
-    flow_id       text   NOT NULL,
-    envelope      jsonb  NOT NULL,
-    approved_by   bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    approved_at   timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (repository_id, job, plan_digest)
-);
--- END product/migrations/0004_repository_job_receipts_and_approvals.sql
-
--- BEGIN product/migrations/0005_single_owner_identity.sql
+-- BEGIN product/migrations/0004_single_owner_identity.sql
 -- Exactly one trusted owner may claim a self-hosted installation. The
 -- singleton constraint is the concurrency boundary for first-run bootstrap.
-CREATE TABLE IF NOT EXISTS self_host_owners (
+CREATE TABLE self_host_owners (
     singleton       BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
     user_id         BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS local_credentials (
+CREATE TABLE local_credentials (
     user_id              BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     password_hash        TEXT NOT NULL,
     password_changed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- END product/migrations/0005_single_owner_identity.sql
+-- END product/migrations/0004_single_owner_identity.sql
 
--- BEGIN product/migrations/0006_durable_product_jobs.sql
+-- BEGIN product/migrations/0005_durable_product_jobs.sql
 -- Shared product-operation admission and delivery. These rows queue external
 -- effects; they do not describe a Flow graph or replace the canonical
 -- TypeScript Flow/Control journal.
-CREATE TABLE IF NOT EXISTS product_job_streams (
+CREATE TABLE product_job_streams (
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
     head BIGINT NOT NULL DEFAULT 0 CHECK (head >= 0),
@@ -14525,7 +14574,7 @@ CREATE TABLE IF NOT EXISTS product_job_streams (
     CHECK (retention_floor <= head + 1)
 );
 
-CREATE TABLE IF NOT EXISTS product_job_requests (
+CREATE TABLE product_job_requests (
     id UUID PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
@@ -14552,10 +14601,10 @@ CREATE TABLE IF NOT EXISTS product_job_requests (
     CHECK ((state IN ('completed', 'failed', 'cancelled', 'uncertain')) = (terminal_receipt IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS product_job_requests_owner_created
+CREATE INDEX product_job_requests_owner_created
     ON product_job_requests (tenant_id, principal_id, created_at, id);
 
-CREATE TABLE IF NOT EXISTS product_job_dispatches (
+CREATE TABLE product_job_dispatches (
     operation_id UUID PRIMARY KEY REFERENCES product_job_requests(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'claimed', 'done', 'stopped')),
     effect_policy TEXT NOT NULL CHECK (effect_policy IN ('idempotent', 'reconcile', 'unsafe')),
@@ -14583,14 +14632,14 @@ CREATE TABLE IF NOT EXISTS product_job_dispatches (
     )
 );
 
-CREATE INDEX IF NOT EXISTS product_job_dispatches_ready
+CREATE INDEX product_job_dispatches_ready
     ON product_job_dispatches (next_attempt_at, operation_id)
     WHERE status = 'ready';
-CREATE INDEX IF NOT EXISTS product_job_dispatches_expired
+CREATE INDEX product_job_dispatches_expired
     ON product_job_dispatches (lease_expires_at, operation_id)
     WHERE status = 'claimed';
 
-CREATE TABLE IF NOT EXISTS product_job_events (
+CREATE TABLE product_job_events (
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
     sequence BIGINT NOT NULL CHECK (sequence > 0),
@@ -14608,53 +14657,14 @@ CREATE TABLE IF NOT EXISTS product_job_events (
     CHECK (tenant_id <> '' AND principal_id <> '' AND event_type <> '' AND state <> '')
 );
 
-CREATE INDEX IF NOT EXISTS product_job_events_operation
+CREATE INDEX product_job_events_operation
     ON product_job_events (operation_id, sequence);
--- END product/migrations/0006_durable_product_jobs.sql
+-- END product/migrations/0005_durable_product_jobs.sql
 
--- BEGIN product/migrations/0007_repository_storage_operations.sql
--- A staged delete or ownership move has one durable receipt across embedded
--- and hosted repository services. storage_route_key is an opaque trusted route
--- handle: "static" addresses the embedded service, while a hosted adapter may
--- resolve it through its private placement catalog. It is never a URL or a
--- column on the product repository row.
-CREATE TABLE public.repository_storage_operations (
-    repository_id bigint PRIMARY KEY,
-    operation_type varchar(16) NOT NULL CHECK (operation_type IN ('delete', 'move')),
-    token varchar(64) NOT NULL UNIQUE CHECK (token ~ '^[0-9a-f]{64}$'),
-    storage_route_key text NOT NULL CHECK (btrim(storage_route_key) <> ''),
-    source_owner varchar(255) NOT NULL CHECK (btrim(source_owner) <> ''),
-    source_repo varchar(255) NOT NULL CHECK (btrim(source_repo) <> ''),
-    source_user_id bigint,
-    source_org_id bigint,
-    target_owner varchar(255),
-    target_repo varchar(255),
-    target_user_id bigint,
-    target_org_id bigint,
-    claim_token varchar(64),
-    claimed_at timestamptz,
-    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    last_error text,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (num_nonnulls(source_user_id, source_org_id) = 1),
-    CHECK (
-        (operation_type = 'delete' AND target_owner IS NULL AND target_repo IS NULL
-            AND target_user_id IS NULL AND target_org_id IS NULL)
-        OR
-        (operation_type = 'move' AND target_owner IS NOT NULL AND target_repo IS NOT NULL
-            AND btrim(target_owner) <> '' AND btrim(target_repo) <> ''
-            AND num_nonnulls(target_user_id, target_org_id) = 1)
-    ),
-    CHECK ((claim_token IS NULL AND claimed_at IS NULL)
-        OR (claim_token IS NOT NULL AND claimed_at IS NOT NULL))
-);
-CREATE INDEX idx_repository_storage_operations_reconcile
-    ON public.repository_storage_operations(created_at, claimed_at, repository_id);
-
+-- BEGIN product/migrations/0006_repository_storage_fences.sql
 -- Every metadata mutation while a storage journal exists is fenced by its
 -- token. A direct delete or owner transfer cannot bypass staged jj storage.
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_storage_fence()
+CREATE FUNCTION public.smithers_product_repository_storage_fence()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     pending public.repository_storage_operations%ROWTYPE;
@@ -14700,7 +14710,7 @@ FOR EACH ROW EXECUTE FUNCTION public.smithers_product_repository_storage_fence()
 
 -- Owner FK cascades must not erase repository metadata before its jj storage
 -- has been staged and its durable receipt committed.
-CREATE OR REPLACE FUNCTION public.smithers_product_repository_owner_delete_fence()
+CREATE FUNCTION public.smithers_product_repository_owner_delete_fence()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_TABLE_NAME = 'users' AND EXISTS (SELECT 1 FROM public.repositories WHERE user_id = OLD.id) THEN
@@ -14718,15 +14728,10 @@ EXECUTE FUNCTION public.smithers_product_repository_owner_delete_fence();
 CREATE TRIGGER repository_org_delete_fence
 BEFORE DELETE ON public.organizations FOR EACH ROW
 EXECUTE FUNCTION public.smithers_product_repository_owner_delete_fence();
--- END product/migrations/0007_repository_storage_operations.sql
+-- END product/migrations/0006_repository_storage_fences.sql
 
--- BEGIN product/migrations/0008_provider_connection_web_request.sql
-CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_connections_web_request
-    ON public.provider_connections (user_id, label) WHERE owner_type = 'user' AND label LIKE 'web-%';
--- END product/migrations/0008_provider_connection_web_request.sql
-
--- BEGIN product/migrations/0009_chat_turns.sql
-CREATE TABLE IF NOT EXISTS chat_turns (
+-- BEGIN product/migrations/0007_chat_turns.sql
+CREATE TABLE chat_turns (
   id text PRIMARY KEY,
   repository_id bigint NOT NULL DEFAULT 0,
   user_id bigint NOT NULL,
@@ -14758,13 +14763,13 @@ CREATE TABLE IF NOT EXISTS chat_turns (
   UNIQUE (user_id, run_id, leg_id)
 );
 
-CREATE INDEX IF NOT EXISTS chat_turns_recovery_idx
+CREATE INDEX chat_turns_recovery_idx
   ON chat_turns(state, producer_lease_expires_at, created_at)
   WHERE state IN ('accepted','running');
-CREATE INDEX IF NOT EXISTS chat_turns_run_idx
+CREATE INDEX chat_turns_run_idx
   ON chat_turns(user_id, run_id, created_at);
 
-CREATE TABLE IF NOT EXISTS chat_turn_batches (
+CREATE TABLE chat_turn_batches (
   turn_id text NOT NULL REFERENCES chat_turns(id) ON DELETE CASCADE,
   batch_number bigint NOT NULL CHECK (batch_number > 0),
   from_position bigint NOT NULL CHECK (from_position > 0),
@@ -14775,13 +14780,13 @@ CREATE TABLE IF NOT EXISTS chat_turn_batches (
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (turn_id, batch_number)
 );
--- END product/migrations/0009_chat_turns.sql
+-- END product/migrations/0007_chat_turns.sql
 
--- BEGIN product/migrations/0010_flow_runtime_host_bindings.sql
+-- BEGIN product/migrations/0008_flow_runtime_host_bindings.sql
 -- Durable authority for one canonical TypeScript host per authorized
 -- workspace/catalog binding. These rows do not contain graph or run state;
 -- Control's journal remains the only runtime authority.
-CREATE TABLE IF NOT EXISTS flow_runtime_host_bindings (
+CREATE TABLE flow_runtime_host_bindings (
     id UUID PRIMARY KEY,
     tenant_id TEXT NOT NULL,
     principal_id TEXT NOT NULL,
@@ -14808,14 +14813,14 @@ CREATE TABLE IF NOT EXISTS flow_runtime_host_bindings (
     CHECK (credential_ciphertext <> '')
 );
 
-CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_repository
+CREATE INDEX flow_runtime_host_bindings_repository
     ON flow_runtime_host_bindings (repository_id, user_id, workspace_id);
 
 -- These immutable identifiers deliberately survive parent deletion. A live
 -- binding is admitted only while Store holds a share lock on its workspace.
 -- Workspace deletion (also reached through repository/user FK cascades) leaves
 -- a durable cleanup record, never a lost process/bearer or a blocked deletion.
-CREATE OR REPLACE FUNCTION retire_deleted_workspace_flow_hosts() RETURNS trigger
+CREATE FUNCTION retire_deleted_workspace_flow_hosts() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE flow_runtime_host_bindings
@@ -14824,12 +14829,11 @@ BEGIN
     RETURN OLD;
 END;
 $$;
-DROP TRIGGER IF EXISTS retire_deleted_workspace_flow_hosts ON workspaces;
 CREATE TRIGGER retire_deleted_workspace_flow_hosts
     BEFORE DELETE ON workspaces FOR EACH ROW
     EXECUTE FUNCTION retire_deleted_workspace_flow_hosts();
 
-CREATE OR REPLACE FUNCTION retire_tombstoned_workspace_flow_hosts() RETURNS trigger
+CREATE FUNCTION retire_tombstoned_workspace_flow_hosts() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.deleted_at IS NOT NULL THEN
@@ -14840,16 +14844,15 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-DROP TRIGGER IF EXISTS retire_tombstoned_workspace_flow_hosts ON workspaces;
 CREATE TRIGGER retire_tombstoned_workspace_flow_hosts
     AFTER UPDATE OF deleted_at ON workspaces FOR EACH ROW
     EXECUTE FUNCTION retire_tombstoned_workspace_flow_hosts();
 
-CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_retired
+CREATE INDEX flow_runtime_host_bindings_retired
     ON flow_runtime_host_bindings (updated_at, id) WHERE state = 'retired';
--- END product/migrations/0010_flow_runtime_host_bindings.sql
+-- END product/migrations/0008_flow_runtime_host_bindings.sql
 
--- BEGIN product/migrations/0011_owner_models.sql
+-- BEGIN product/migrations/0009_owner_models.sql
 -- Model credentials and the selected chat model belong to the account.
 -- A repository secret may still override a repository-scoped turn.
 CREATE TABLE owner_model_credentials (
@@ -14871,7 +14874,107 @@ CREATE TABLE owner_model_credential_receipts (
     result JSONB NOT NULL,
     PRIMARY KEY (user_id, request_id)
 );
--- END product/migrations/0011_owner_models.sql
+-- END product/migrations/0009_owner_models.sql
+
+-- BEGIN product/migrations/0010_branch_lock_and_workflow_invocations.sql
+-- Product branch-lock generation and durable workflow invocation state.
+-- Approval belongs to one acquisition of a branch, not every future holder.
+ALTER TABLE branch_locks
+    ADD COLUMN generation UUID NOT NULL DEFAULT gen_random_uuid();
+
+-- Historical requests cannot be proven to belong to the current acquisition.
+-- Keep the audit rows while requiring a fresh request for current membership.
+ALTER TABLE branch_lock_join_requests
+    ADD COLUMN lock_generation UUID NOT NULL DEFAULT gen_random_uuid();
+ALTER TABLE branch_lock_join_requests ALTER COLUMN lock_generation DROP DEFAULT;
+
+DROP INDEX uq_branch_lock_join_requests_pending;
+CREATE UNIQUE INDEX uq_branch_lock_join_requests_pending
+    ON branch_lock_join_requests (repository_id, branch, lock_generation, requester_id)
+    WHERE status = 'pending';
+
+-- Public invocation retains its runtime and source independently of mutable definitions.
+CREATE TABLE workflow_invocations (
+    workflow_run_id BIGINT PRIMARY KEY REFERENCES workflow_runs(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    repository_id BIGINT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    workflow_definition_id BIGINT NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+    runtime TEXT NOT NULL CHECK (runtime IN ('native-flow-v1', 'legacy-orchestrator-0.28')),
+    request_key TEXT NOT NULL,
+    request_digest TEXT NOT NULL,
+    flow_path TEXT NOT NULL,
+    flow_tag TEXT NOT NULL,
+    source_commit TEXT NOT NULL,
+    source_digest TEXT NOT NULL,
+    dispatch_inputs JSONB NOT NULL DEFAULT '{}'::jsonb,
+    trigger_event TEXT NOT NULL,
+    trigger_ref TEXT NOT NULL,
+    sandbox_id TEXT NOT NULL DEFAULT '',
+    host_artifact_digest TEXT NOT NULL DEFAULT '',
+    plan JSONB,
+    run_request JSONB,
+    attempted_at TIMESTAMPTZ,
+    host_run_id TEXT NOT NULL DEFAULT '',
+    final_output JSONB,
+    cancel_acknowledged_at TIMESTAMPTZ,
+    cleaned_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (repository_id, request_key),
+    CHECK (runtime <> 'native-flow-v1' OR (flow_path = 'flows/' || flow_tag || '/flow.ts' AND source_commit <> '' AND source_digest ~ '^[a-f0-9]{64}$')),
+    CHECK (run_request IS NULL OR COALESCE(jsonb_typeof(run_request) = 'object' AND run_request->>'_tag' = 'Plan' AND run_request->>'planId' <> '' AND run_request->>'digest' <> '' AND run_request->>'idempotencyKey' = 'workflow-invoke:' || workflow_run_id::text || ':run', FALSE))
+);
+CREATE INDEX workflow_invocations_pending_cleanup ON workflow_invocations (workflow_run_id) WHERE runtime = 'native-flow-v1' AND cleaned_at IS NULL;
+
+-- Existing sandbox rows may gain tasks after admission; their NixCI selection
+-- still takes precedence. No-task rows keep this explicit legacy drain identity.
+INSERT INTO workflow_invocations (workflow_run_id, repository_id, workflow_definition_id, runtime, request_key, request_digest, flow_path, flow_tag, source_commit, source_digest, dispatch_inputs, trigger_event, trigger_ref)
+SELECT wr.id, wr.repository_id, wr.workflow_definition_id, 'legacy-orchestrator-0.28', 'legacy:' || wr.id::text, '', wd.path, wd.name, wr.trigger_commit_sha, '', COALESCE(wr.dispatch_inputs, '{}'::jsonb), wr.trigger_event, wr.trigger_ref
+FROM workflow_runs wr JOIN workflow_definitions wd ON wd.id = wr.workflow_definition_id
+WHERE wr.execution_plane = 'sandbox';
+-- END product/migrations/0010_branch_lock_and_workflow_invocations.sql
+
+-- BEGIN product/migrations/0011_onboarding_and_workspace_setup.sql
+-- Durable product onboarding and workspace setup receipts.
+CREATE TABLE public.onboarding_answers (
+    user_id bigint NOT NULL,
+    answers jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT onboarding_answers_object CHECK ((jsonb_typeof(answers) = 'object'::text))
+);
+
+CREATE TABLE public.workspace_setup_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id bigint NOT NULL,
+    idempotency_key text NOT NULL,
+    request jsonb NOT NULL,
+    status text DEFAULT 'accepted'::text NOT NULL,
+    workflow_run_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_setup_request_object CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT workspace_setup_status CHECK ((status = ANY (ARRAY['accepted'::text, 'queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text])))
+);
+
+ALTER TABLE ONLY public.onboarding_answers
+    ADD CONSTRAINT onboarding_answers_pkey PRIMARY KEY (user_id);
+
+ALTER TABLE ONLY public.workspace_setup_jobs
+    ADD CONSTRAINT workspace_setup_jobs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.workspace_setup_jobs
+    ADD CONSTRAINT workspace_setup_jobs_user_id_idempotency_key_key UNIQUE (user_id, idempotency_key);
+
+CREATE INDEX workspace_setup_jobs_user_created_idx ON public.workspace_setup_jobs USING btree (user_id, created_at DESC);
+
+ALTER TABLE ONLY public.onboarding_answers
+    ADD CONSTRAINT onboarding_answers_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workspace_setup_jobs
+    ADD CONSTRAINT workspace_setup_jobs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workspace_setup_jobs
+    ADD CONSTRAINT workspace_setup_jobs_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
+-- END product/migrations/0011_onboarding_and_workspace_setup.sql
 
 -- BEGIN cluster/private_baseline.sql
 -- Plue hosted infrastructure baseline. Extracted from the previous full schema.

@@ -419,6 +419,8 @@ type OauthAccount = db.OauthAccount
 
 type OauthState = db.OauthState
 
+type OnboardingAnswer = db.OnboardingAnswer
+
 type OrgMember = db.OrgMember
 
 type Organization = db.Organization
@@ -960,6 +962,8 @@ type WorkflowCach = db.WorkflowCach
 
 type WorkflowDefinition = db.WorkflowDefinition
 
+type WorkflowInvocation = db.WorkflowInvocation
+
 type WorkflowLog = db.WorkflowLog
 
 type WorkflowLogBudgetInitialization = db.WorkflowLogBudgetInitialization
@@ -998,6 +1002,8 @@ type Workspace = db.Workspace
 type WorkspaceCapabilityBinding = db.WorkspaceCapabilityBinding
 
 type WorkspaceSession = db.WorkspaceSession
+
+type WorkspaceSetupJob = db.WorkspaceSetupJob
 
 type WorkspaceShare = db.WorkspaceShare
 

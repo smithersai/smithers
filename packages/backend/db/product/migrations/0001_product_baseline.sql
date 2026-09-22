@@ -5,7 +5,7 @@
 -- repositories, issues, reviews, wiki, workflow, and workspace state.
 SET LOCAL check_function_bodies = false;
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+CREATE EXTENSION pgcrypto WITH SCHEMA public;
 
 
 --
@@ -14345,3 +14345,95 @@ ALTER TABLE ONLY public.workspaces
 --
 -- PostgreSQL database dump complete
 --
+
+-- Product objects present in the historical Plue schema before adoption.
+-- Retain the gateway proof behind each reserved repository CI commit status.
+-- A request id is idempotent only within the reviewed CI registration.
+CREATE TABLE repository_ci_check_receipts (
+    id               bigserial PRIMARY KEY,
+    repository_id    bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    registration_id  uuid   NOT NULL REFERENCES repository_job_registrations(id) ON DELETE CASCADE,
+    revision         bigint NOT NULL,
+    digest           text   NOT NULL,
+    execution_digest text   NOT NULL,
+    workspace_id     uuid   NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    run_id           text   NOT NULL,
+    execution_id     text   NOT NULL,
+    commit_sha       text   NOT NULL,
+    change_id        text   NOT NULL,
+    base_commit_sha  text   NOT NULL,
+    checks           jsonb  NOT NULL,
+    context          text   NOT NULL,
+    commit_status_id bigint NOT NULL REFERENCES commit_statuses(id) ON DELETE CASCADE,
+    request_id       text   NOT NULL,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (registration_id, request_id)
+);
+
+CREATE INDEX idx_repository_ci_check_receipts_repo_commit
+    ON repository_ci_check_receipts (repository_id, commit_sha);
+
+-- Human approval provenance for reviewed repository flow plans. The service
+-- supplies approved_by from the authenticated session and approved_at from
+-- PostgreSQL; neither field is accepted from a host, flow, or model.
+CREATE TABLE repository_job_approvals (
+    repository_id bigint NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    job           text   NOT NULL,
+    plan_digest   text   NOT NULL CHECK (plan_digest ~ '^[a-f0-9]{64}$'),
+    plan_id       text   NOT NULL,
+    flow_id       text   NOT NULL,
+    envelope      jsonb  NOT NULL,
+    approved_by   bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    approved_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (repository_id, job, plan_digest)
+);
+
+-- A staged delete or ownership move has one durable receipt across embedded
+-- and hosted repository services. storage_route_key is an opaque trusted route
+-- handle: "static" addresses the embedded service, while a hosted adapter may
+-- resolve it through its private placement catalog. It is never a URL or a
+-- column on the product repository row.
+CREATE TABLE public.repository_storage_operations (
+    repository_id bigint PRIMARY KEY,
+    operation_type varchar(16) NOT NULL CHECK (operation_type IN ('delete', 'move')),
+    token varchar(64) NOT NULL UNIQUE CHECK (token ~ '^[0-9a-f]{64}$'),
+    storage_route_key text NOT NULL CONSTRAINT repository_storage_route_key_nonempty CHECK (btrim(storage_route_key) <> ''),
+    source_owner varchar(255) NOT NULL CHECK (btrim(source_owner) <> ''),
+    source_repo varchar(255) NOT NULL CHECK (btrim(source_repo) <> ''),
+    source_user_id bigint,
+    source_org_id bigint,
+    target_owner varchar(255),
+    target_repo varchar(255),
+    target_user_id bigint,
+    target_org_id bigint,
+    claim_token varchar(64),
+    claimed_at timestamptz,
+    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (num_nonnulls(source_user_id, source_org_id) = 1),
+    CHECK (
+        (operation_type = 'delete' AND target_owner IS NULL AND target_repo IS NULL
+            AND target_user_id IS NULL AND target_org_id IS NULL)
+        OR
+        (operation_type = 'move' AND target_owner IS NOT NULL AND target_repo IS NOT NULL
+            AND btrim(target_owner) <> '' AND btrim(target_repo) <> ''
+            AND num_nonnulls(target_user_id, target_org_id) = 1)
+    ),
+    CHECK ((claim_token IS NULL AND claimed_at IS NULL)
+        OR (claim_token IS NOT NULL AND claimed_at IS NOT NULL))
+);
+CREATE INDEX idx_repository_storage_operations_reconcile
+    ON public.repository_storage_operations(created_at, claimed_at, repository_id);
+
+
+CREATE UNIQUE INDEX idx_provider_connections_web_request
+    ON public.provider_connections (user_id, label) WHERE owner_type = 'user' AND label LIKE 'web-%';
+
+-- Current product flow registrations are part of the baseline on fresh installs.
+ALTER TABLE public.repository_job_registrations DROP CONSTRAINT repository_job_registrations_job_check;
+ALTER TABLE public.repository_job_registrations ADD CONSTRAINT repository_job_registrations_job_check
+    CHECK (job IN ('issues','review','ci','feature','chores') OR job ~ '^flow:[a-z0-9][a-z0-9-]{0,63}$');
+ALTER TABLE public.repository_job_registrations ADD CONSTRAINT repository_job_registrations_flow_mode_check
+    CHECK (job !~ '^flow:' OR mode = 'enabled');

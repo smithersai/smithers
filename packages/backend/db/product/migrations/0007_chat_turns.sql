@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS chat_turns (
+CREATE TABLE chat_turns (
   id text PRIMARY KEY,
   repository_id bigint NOT NULL DEFAULT 0,
   user_id bigint NOT NULL,
@@ -30,13 +30,13 @@ CREATE TABLE IF NOT EXISTS chat_turns (
   UNIQUE (user_id, run_id, leg_id)
 );
 
-CREATE INDEX IF NOT EXISTS chat_turns_recovery_idx
+CREATE INDEX chat_turns_recovery_idx
   ON chat_turns(state, producer_lease_expires_at, created_at)
   WHERE state IN ('accepted','running');
-CREATE INDEX IF NOT EXISTS chat_turns_run_idx
+CREATE INDEX chat_turns_run_idx
   ON chat_turns(user_id, run_id, created_at);
 
-CREATE TABLE IF NOT EXISTS chat_turn_batches (
+CREATE TABLE chat_turn_batches (
   turn_id text NOT NULL REFERENCES chat_turns(id) ON DELETE CASCADE,
   batch_number bigint NOT NULL CHECK (batch_number > 0),
   from_position bigint NOT NULL CHECK (from_position > 0),

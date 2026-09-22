@@ -159,11 +159,11 @@ type FeatureFlagsConfig struct {
 	// AutoPush gates the jj auto-push hook surface. MVP = true.
 	AutoPush bool `mapstructure:"auto_push"`
 
-	// Issues gates /issues, issue comments, issue artifacts. Default false.
+	// Issues gates /issues, issue comments, issue artifacts. Default true.
 	Issues bool `mapstructure:"issues"`
 	// Search gates /api/search/*. Default false.
 	Search bool `mapstructure:"search"`
-	// Workspaces gates the standalone workspaces routes (separate from Sandboxes). Default false.
+	// Workspaces gates the standalone workspaces routes (separate from Sandboxes). Default true.
 	Workspaces bool `mapstructure:"workspaces"`
 	// Agents gates the agent sessions / messages REST surface. Default false.
 	Agents bool `mapstructure:"agents"`
