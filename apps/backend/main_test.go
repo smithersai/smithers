@@ -65,3 +65,16 @@ func TestMigrationWithoutDatabaseDoesNotPrepareLocalState(t *testing.T) {
 		t.Fatalf("migration prepared server secrets: %v", err)
 	}
 }
+
+func TestServeRequiresPackagedFlowHostsBeforePreparingLocalState(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SMITHERS_DATA_ROOT", root)
+	t.Setenv("SMITHERS_NATIVE_POSTGRES_BIN", "/unused/postgres")
+	t.Setenv("SMITHERS_FLOW_HOST_MANIFEST", "")
+	if err := run(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "SMITHERS_FLOW_HOST_MANIFEST") {
+		t.Fatalf("missing Flow bundle = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "config")); !os.IsNotExist(err) {
+		t.Fatalf("missing Flow bundle prepared local secrets: %v", err)
+	}
+}

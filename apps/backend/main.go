@@ -37,6 +37,14 @@ func run(ctx context.Context, args []string) (runErr error) {
 		}
 		return app.Run(ctx, app.Config{Args: args})
 	}
+	manifestPath := strings.TrimSpace(os.Getenv("SMITHERS_FLOW_HOST_MANIFEST"))
+	if manifestPath == "" {
+		return errors.New("SMITHERS_FLOW_HOST_MANIFEST is required to serve the packaged Flow hosts")
+	}
+	registry, err := flowmanifest.Load(manifestPath)
+	if err != nil {
+		return fmt.Errorf("load bundled Flow hosts: %w", err)
+	}
 
 	nativeBin := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_POSTGRES_BIN"))
 	var databaseURL string
@@ -71,17 +79,11 @@ func run(ctx context.Context, args []string) (runErr error) {
 	defer func() { runErr = errors.Join(runErr, workspaceRuntime.Close()) }()
 
 	appConfig := app.Config{
-		Role:       app.RoleLocal,
-		Args:       args,
-		Repository: local.Client(),
-		Workspace:  workspaceRuntime,
-	}
-	if manifestPath := strings.TrimSpace(os.Getenv("SMITHERS_FLOW_HOST_MANIFEST")); manifestPath != "" {
-		registry, err := flowmanifest.Load(manifestPath)
-		if err != nil {
-			return fmt.Errorf("load bundled Flow hosts: %w", err)
-		}
-		appConfig.FlowHostRegistry = &registry
+		Role:             app.RoleLocal,
+		Args:             args,
+		Repository:       local.Client(),
+		Workspace:        workspaceRuntime,
+		FlowHostRegistry: &registry,
 	}
 	if nativeBin != "" {
 		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))
