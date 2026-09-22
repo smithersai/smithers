@@ -4,6 +4,7 @@ use std::path::Path;
 mod file_eligibility;
 mod source_create;
 mod source_publish;
+mod workspace_engine;
 
 const USAGE: &str = "usage: smithers-jj-export <repository-root> <full-commit-id> <output-parent>";
 
@@ -54,6 +55,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let input = serde_json::from_slice(&raw)?;
         let result = file_eligibility::check(Path::new(&args[1]), input)?;
         println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
+    if args.len() == 1 && args[0] == "--engine" {
+        let mut raw = Vec::new();
+        std::io::stdin().take((1 << 20) + 1).read_to_end(&mut raw)?;
+        let result = if raw.len() > 1 << 20 {
+            Err(workspace_engine::Failure::new(
+                "invalid_request",
+                "engine request exceeds 1 MiB",
+            ))
+        } else {
+            workspace_engine::run(&raw)
+        };
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                println!("{}", serde_json::json!({"error":error}));
+                std::process::exit(1);
+            }
+        }
         return Ok(());
     }
     if args.len() != 3 {

@@ -2432,6 +2432,7 @@ dependencies = [
  "futures",
  "gix",
  "jj-lib",
+ "libc",
  "pollster",
  "serde",
  "serde_json",
