@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
@@ -11,9 +11,11 @@ if (!executable.includes(".app/Contents/MacOS/launcher") || !existsSync(executab
   throw new Error("Pass the installed Smithers.app/Contents/MacOS/launcher executable.")
 }
 if ((statSync(executable).mode & 0o111) === 0) throw new Error("The installed launcher is not executable.")
+const bundledRoot = resolve(executable, "..", "..", "Resources", "app")
 
 const root = mkdtempSync(join(tmpdir(), "smithers-native-owned-"))
 const children: Array<ReturnType<typeof Bun.spawn>> = []
+const appPIDs: Array<number> = []
 const cleanEnvironment = Object.fromEntries(
   Object.entries(process.env).flatMap(([name, value]) =>
     name.startsWith("SMITHERS_") || value === undefined ? [] : [[name, value]])
@@ -39,14 +41,18 @@ interface RunningApp {
   readonly logs: () => string
   readonly origin: string
   readonly state: string
+  readonly appPID: Promise<number>
+  bridgeState(): Promise<{ readonly app?: { readonly origin?: string; readonly packaged?: boolean } }>
   stop(): Promise<void>
 }
 
-const launch = async (home: string, mode: "own" | "plue", origin: string): Promise<RunningApp> => {
+const launch = async (home: string, mode: "own" | "plue", origin: string, token?: string): Promise<RunningApp> => {
   mkdirSync(home, { recursive: true })
   const temporary = join(home, "tmp")
   mkdirSync(temporary, { recursive: true })
   let output = ""
+  const bridgePort = await availablePort()
+  const bridgeToken = randomBytes(32).toString("base64url")
   const child = Bun.spawn([executable], {
     cwd: resolve(executable, ".."),
     env: {
@@ -57,10 +63,14 @@ const launch = async (home: string, mode: "own" | "plue", origin: string): Promi
       SMITHERS_LOCAL_HEADLESS: "1",
       SMITHERS_CHAT_STUB: "0",
       SMITHERS_BACKEND_MODE: mode,
+      SMITHERS_E2E_BRIDGE: "1",
+      SMITHERS_E2E_BRIDGE_PORT: String(bridgePort),
+      SMITHERS_E2E_BRIDGE_TOKEN: bridgeToken,
       ...(mode === "own"
         ? { SMITHERS_OWNED_BACKEND_ORIGIN: origin }
         : {
           SMITHERS_API_ORIGIN: origin,
+          SMITHERS_API_TOKEN: token ?? "",
           SMITHERS_BACKEND_BINARY: "/definitely/missing/backend",
           SMITHERS_POSTGRES_BUNDLE_DIR: "/definitely/missing/postgres"
         }),
@@ -88,14 +98,43 @@ const launch = async (home: string, mode: "own" | "plue", origin: string): Promi
   }
   const collectors = Promise.all([collect(child.stdout), collect(child.stderr)])
   const exited = child.exited
+  const appPID = (async (): Promise<number> => {
+    const deadline = Date.now() + 120_000
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${bridgePort}/health`, {
+          headers: { authorization: `Bearer ${bridgeToken}` }
+        })
+        const health = await response.json() as { readonly ok?: boolean; readonly pid?: number }
+        if (response.ok && health.ok === true && Number.isSafeInteger(health.pid) && health.pid! > 1) {
+          appPIDs.push(health.pid!)
+          return health.pid!
+        }
+      } catch { /* The installed app may still be extracting. */ }
+      await Bun.sleep(100)
+    }
+    throw new Error(`Installed app bridge did not become ready.\n${output}`)
+  })()
+  const bridgeState = async (): Promise<{ readonly app?: { readonly origin?: string; readonly packaged?: boolean } }> => {
+    const response = await fetch(`http://127.0.0.1:${bridgePort}/state`, {
+      headers: { authorization: `Bearer ${bridgeToken}` }
+    })
+    if (!response.ok) throw new Error(`Installed app bridge returned ${response.status}.`)
+    return response.json() as Promise<{ readonly app?: { readonly origin?: string; readonly packaged?: boolean } }>
+  }
   const stop = async (): Promise<void> => {
-    const alreadyExited = await Promise.race([exited.then(() => true), Bun.sleep(1).then(() => false)])
-    if (!alreadyExited) child.kill("SIGTERM")
-    const graceful = await Promise.race([exited.then(() => true), Bun.sleep(20_000).then(() => false)])
-    if (!graceful) child.kill("SIGKILL")
+    // Electrobun's launcher can be a self-extractor. Its PID is not the Bun
+    // main process and terminating it bypasses NativeApp's shutdown handler.
+    const pid = await appPID
+    if (processAlive(pid)) process.kill(pid, "SIGTERM")
+    await waitStopped(pid)
+    const launcherExited = await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])
+    if (!launcherExited) child.kill("SIGTERM")
     const code = await exited
     await collectors
-    if (code !== 0) throw new Error(`Installed app exited ${code}.\n${output}`)
+    if (launcherExited && code !== 0) {
+      throw new Error(`Installed launcher exited ${code} after app shutdown.\n${output}`)
+    }
   }
   return {
     child,
@@ -103,6 +142,8 @@ const launch = async (home: string, mode: "own" | "plue", origin: string): Promi
     logs: () => output,
     origin,
     state: join(home, "Library", "Application Support", "Smithers"),
+    appPID,
+    bridgeState,
     stop
   }
 }
@@ -113,7 +154,7 @@ const waitReady = async (app: RunningApp): Promise<void> => {
   const deadline = Date.now() + 120_000
   let lastError: unknown
   while (Date.now() < deadline) {
-    if (exitCode !== undefined) throw new Error(`Installed app exited ${exitCode} before readiness.\n${app.logs()}`)
+    if (exitCode !== undefined && exitCode !== 0) throw new Error(`Installed launcher exited ${exitCode} before readiness.\n${app.logs()}`)
     try {
       const response = await fetch(`${app.origin}/readyz`)
       if (response.ok) return
@@ -124,16 +165,6 @@ const waitReady = async (app: RunningApp): Promise<void> => {
     await Bun.sleep(100)
   }
   throw new Error(`Installed app did not become ready: ${String(lastError)}\n${app.logs()}`)
-}
-
-const waitForLog = async (app: RunningApp, text: string): Promise<void> => {
-  const deadline = Date.now() + 20_000
-  while (Date.now() < deadline) {
-    if (app.logs().includes(text)) return
-    const exited = await Promise.race([app.exited.then(() => true), Bun.sleep(100).then(() => false)])
-    if (exited && !app.logs().includes(text)) break
-  }
-  throw new Error(`Installed app never logged ${JSON.stringify(text)}.\n${app.logs()}`)
 }
 
 const checksum = (path: string): string =>
@@ -229,6 +260,7 @@ try {
   if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error("The installed PostgreSQL owner PID is invalid.")
   await first.stop()
   await waitStopped(pid)
+  if (existsSync(postmasterPID)) throw new Error("Bundled PostgreSQL left postmaster.pid after shutdown.")
 
   const second = await launch(home, "own", origin)
   await waitReady(second)
@@ -241,15 +273,41 @@ try {
     throw new Error("Native restart lost the repository or owner credential.")
   }
   await second.stop()
+  if (existsSync(postmasterPID)) throw new Error("Bundled PostgreSQL left postmaster.pid after restart shutdown.")
 
   const plueHome = join(root, "plue-home")
-  const plue = await launch(plueHome, "plue", "https://plue.invalid")
-  await waitForLog(plue, "Smithers app started!")
+  const secretResult = Bun.spawnSync(["kubectl", "-n", "smithers", "get", "secret", "smithers-secrets", "-o", "json"], {
+    stdout: "pipe", stderr: "pipe"
+  })
+  if (secretResult.exitCode !== 0) throw new Error("Could not read the Plue canary credential from Kubernetes.")
+  const secret = JSON.parse(new TextDecoder().decode(secretResult.stdout)) as { data?: Record<string, string> }
+  const canary = secret.data?.CANARY_API_TOKEN
+  if (!canary) throw new Error("The Plue canary credential is unavailable.")
+  const token = Buffer.from(canary, "base64").toString("utf8").trim()
+  const plueOrigin = "https://api.jjhub.tech"
+  await jsonRequest(plueOrigin, "/api/user", { headers: { authorization: `token ${token}` } })
+  const plue = await launch(plueHome, "plue", plueOrigin, token)
+  await plue.appPID
+  const plueState = await plue.bridgeState()
+  if (plueState.app?.origin !== plueOrigin || plueState.app.packaged !== true) {
+    throw new Error("The installed native app did not select the production Plue backend.")
+  }
   await plue.stop()
   if (existsSync(plue.state)) throw new Error("Native Plue mode created local backend or PostgreSQL state.")
 
+  const pathPattern = (path: string): string => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const leaked = Bun.spawnSync([
+    "pgrep", "-f",
+    `(${pathPattern(root)}|${pathPattern(bundledRoot)})/.*(smithers-backend|postgres)`
+  ], { stdout: "pipe", stderr: "pipe" })
+  if (leaked.exitCode === 0) throw new Error(`Bundled backend or PostgreSQL processes leaked: ${new TextDecoder().decode(leaked.stdout).trim()}`)
+  if (leaked.exitCode !== 1) throw new Error("Could not check bundled process cleanup with pgrep.")
+
   console.log(`NATIVE_ACCEPTANCE_OK executable=${executable} state=${first.state}`)
 } finally {
+  for (const pid of appPIDs) {
+    if (processAlive(pid)) process.kill(pid, "SIGKILL")
+  }
   for (const child of children) {
     const exited = await Promise.race([child.exited.then(() => true), Bun.sleep(1).then(() => false)])
     if (!exited) child.kill("SIGKILL")
