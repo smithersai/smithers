@@ -941,6 +941,13 @@ export const createAppController = (
     return refusal
   }
 
+  // The deployed cloud app has its own identity seam and GitHub OAuth route.
+  // The generic application client describes an owner-backed/self-hosted
+  // backend; selecting it on a cloud bootstrap incorrectly turns the GitHub
+  // door into the inline local-credentials panel.
+  const applicationIdentity = services.bootstrap?.host === "cloud"
+    ? undefined
+    : services.applicationIdentity
   let localAuth: LocalAuthController | undefined
   const {
     handleAuthReturn,
@@ -963,7 +970,7 @@ export const createAppController = (
   } = actors.pair(ctx, (context) => createAuthBillingController(
     context,
     store.nextOrdinal,
-    services.applicationIdentity === undefined && services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud")
+    applicationIdentity === undefined && services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud")
       ? loadCloudSession
       : undefined,
     () => {
@@ -971,15 +978,16 @@ export const createAppController = (
       localAuth.open()
       return true
     },
-    services.applicationIdentity === undefined
+    applicationIdentity === undefined
       ? undefined
       : {
-        current: services.applicationIdentity.current,
+        current: applicationIdentity.current,
         signInPath: APPLICATION_SIGN_IN_PATH,
         settled: reloadRepositoriesWhenSignedIn
       }
   ))
   if (
+    services.bootstrap?.host !== "cloud" &&
     services.localIdentity !== undefined &&
     services.applicationTarget?.ownership === "owner" &&
     services.applicationTarget.auth.kind === "session"

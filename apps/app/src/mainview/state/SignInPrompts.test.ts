@@ -162,6 +162,55 @@ test("an owner backend names its credential door without promising GitHub", asyn
   })
 })
 
+test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud OAuth route", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const assigned: string[] = []
+  let localStatusReads = 0
+  let applicationIdentityReads = 0
+  const globals = globalThis as unknown as { window?: unknown }
+  const hadWindow = "window" in globals
+  const previousWindow = globals.window
+  globals.window = {
+    location: {
+      pathname: "/",
+      search: "",
+      assign: (url: string) => void assigned.push(url)
+    }
+  }
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    bootstrap: WEB,
+    applicationTarget: resolveApplicationTarget({
+      apiVersion: 1,
+      mode: "web-selfhost",
+      apiOrigin: "",
+      auth: { kind: "session" },
+      cors: "same-origin",
+      developerExternal: false
+    }, "https://smithers.sh"),
+    localIdentity: {
+      status: async () => { localStatusReads += 1; return { enabled: true, initialized: true } },
+      login: async ({ username }) => ({ user: { id: 1, username } }),
+      bootstrap: async ({ username }) => ({ user: { id: 1, username } })
+    },
+    applicationIdentity: {
+      current: async () => { applicationIdentityReads += 1; return null }
+    }
+  })
+  try {
+    await controller.adoptSession(signedOut)
+    await controller.commands.run("auth.sign-in")
+    await settle()
+
+    expect(assigned).toEqual(["/api/auth/github/start"])
+    expect(localStatusReads).toBe(0)
+    expect(applicationIdentityReads).toBe(0)
+  } finally {
+    await controller.dispose()
+    if (hadWindow) globals.window = previousWindow
+    else delete globals.window
+  }
+})
+
 test("a refused Cloud seam on web still offers reauthentication when GitHub is already connected", async () => {
   const h = await setup()
   await h.signIn()
