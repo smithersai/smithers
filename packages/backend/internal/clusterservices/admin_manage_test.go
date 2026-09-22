@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -83,7 +85,7 @@ func (f *manageFake) DrainHost(context.Context, string) error {
 	f.action = "drain"
 	return f.err
 }
-func (f *manageFake) AdminPruneStaleSandboxHosts(ctx context.Context, p db.AdminPruneStaleSandboxHostsParams) (int64, error) {
+func (f *manageFake) AdminPruneStaleSandboxHosts(ctx context.Context, p clusterdb.AdminPruneStaleSandboxHostsParams) (int64, error) {
 	if f.err != nil {
 		return 0, f.err
 	}
@@ -101,8 +103,8 @@ func (f *manageFake) AdminListWorkspaces(_ context.Context, p db.AdminListWorksp
 	f.workspaceParams = p
 	return []db.AdminListWorkspacesRow{{Workspace: f.workspace, Owner: "owner", Repository: "org/repo"}}, f.err
 }
-func (f *manageFake) AdminListSandboxHosts(context.Context) ([]db.AdminListSandboxHostsRow, error) {
-	return []db.AdminListSandboxHostsRow{{SandboxHost: db.SandboxHost{ID: "worker", CapacityMemoryBytes: 1 << 54, AllocatedVms: 3, ObservedAllocatedVms: 2}}}, f.err
+func (f *manageFake) AdminListSandboxHosts(context.Context) ([]clusterdb.AdminListSandboxHostsRow, error) {
+	return []clusterdb.AdminListSandboxHostsRow{{SandboxHost: clusterdb.SandboxHost{ID: "worker", CapacityMemoryBytes: 1 << 54, AllocatedVms: 3, ObservedAllocatedVms: 2}}}, f.err
 }
 func (f *manageFake) AdminListTokens(_ context.Context, p db.AdminListTokensParams) ([]db.AdminListTokensRow, error) {
 	f.tokenParams = p

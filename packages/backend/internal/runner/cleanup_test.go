@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestRunnerPool_cleanupStaleRunners_TerminatesEachStaleRunner(t *testing.T) {
@@ -22,18 +22,18 @@ func TestRunnerPool_cleanupStaleRunners_TerminatesEachStaleRunner(t *testing.T) 
 	callOrder := make([]string, 0, 5)
 
 	store := &mockStore{
-		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error) {
+		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "list-stale")
 			require.True(t, cutoffAt.Valid)
 			assert.Equal(t, cutoff, cutoffAt.Time)
-			return []db.RunnerPool{
+			return []clusterdb.RunnerPool{
 				{ID: 100, Status: "idle"},
 				{ID: 101, Status: "busy"},
 			}, nil
 		},
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "terminate")
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			callOrder = append(callOrder, "requeue")
@@ -56,11 +56,11 @@ func TestRunnerPool_cleanupStaleRunners_RecoversTasks(t *testing.T) {
 
 	requeued := 0
 	store := &mockStore{
-		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error) {
-			return []db.RunnerPool{{ID: 71, Status: "busy"}}, nil
+		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
+			return []clusterdb.RunnerPool{{ID: 71, Status: "busy"}}, nil
 		},
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			requeued++
@@ -82,17 +82,17 @@ func TestRunnerPool_cleanupStaleRunners_ContinuesAfterRunnerError(t *testing.T) 
 
 	var requeuedIDs []int64
 	store := &mockStore{
-		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error) {
-			return []db.RunnerPool{
+		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
+			return []clusterdb.RunnerPool{
 				{ID: 70, Status: "busy"},
 				{ID: 71, Status: "busy"},
 			}, nil
 		},
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			if runnerID == 70 {
-				return db.RunnerPool{}, errors.New("db unavailable")
+				return clusterdb.RunnerPool{}, errors.New("db unavailable")
 			}
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			// Issue #129: requeue happens before terminate, so it is attempted

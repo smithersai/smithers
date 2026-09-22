@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,7 +20,7 @@ import (
 )
 
 type alertRemediationWorkerZQuerier struct {
-	jobs            []db.AlertRemediationJob
+	jobs            []clusterdb.AlertRemediationJob
 	claimErr        error
 	terminalFailed  []int64
 	terminalFailErr error
@@ -26,18 +28,18 @@ type alertRemediationWorkerZQuerier struct {
 	failExhErr      error
 	legacyFailed    []int64
 	legacyFailErr   error
-	incident        db.AlertIncident
+	incident        clusterdb.AlertIncident
 	getIncErr       error
 	def             db.WorkflowDefinition
 	getDefErr       error
 	doneErr         error
 	stateErr        error
 	doneIDs         []int64
-	retries         []db.RetryAlertRemediationJobParams
+	retries         []clusterdb.RetryAlertRemediationJobParams
 	retryRows       int64
 	retryRowsSet    bool
 	retryErr        error
-	atomicFails     []db.FailAlertRemediationJobAndIncidentParams
+	atomicFails     []clusterdb.FailAlertRemediationJobAndIncidentParams
 	atomicFailed    bool
 	atomicFailSet   bool
 	atomicFailErr   error
@@ -51,10 +53,10 @@ type alertRemediationWorkerZQuerier struct {
 	legacyRunChecks []db.HasLegacyAlertRemediationWorkflowRunParams
 	bindRows        int64
 	bindErr         error
-	binds           []db.BindAlertRemediationJobWorkflowRunAtAttemptParams
+	binds           []clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams
 }
 
-func (q *alertRemediationWorkerZQuerier) ClaimAlertRemediationJobs(context.Context, db.ClaimAlertRemediationJobsParams) ([]db.AlertRemediationJob, error) {
+func (q *alertRemediationWorkerZQuerier) ClaimAlertRemediationJobs(context.Context, clusterdb.ClaimAlertRemediationJobsParams) ([]clusterdb.AlertRemediationJob, error) {
 	return q.jobs, q.claimErr
 }
 
@@ -62,7 +64,7 @@ func (q *alertRemediationWorkerZQuerier) FailTerminalAlertRemediationIncidents(c
 	return q.terminalFailed, q.terminalFailErr
 }
 
-func (q *alertRemediationWorkerZQuerier) FailExhaustedAlertRemediationJobs(context.Context, db.FailExhaustedAlertRemediationJobsParams) ([]int64, error) {
+func (q *alertRemediationWorkerZQuerier) FailExhaustedAlertRemediationJobs(context.Context, clusterdb.FailExhaustedAlertRemediationJobsParams) ([]int64, error) {
 	return q.failExhausted, q.failExhErr
 }
 
@@ -75,7 +77,7 @@ func (q *alertRemediationWorkerZQuerier) MarkAlertRemediationJobDone(_ context.C
 	return q.doneErr
 }
 
-func (q *alertRemediationWorkerZQuerier) RetryAlertRemediationJob(_ context.Context, arg db.RetryAlertRemediationJobParams) (int64, error) {
+func (q *alertRemediationWorkerZQuerier) RetryAlertRemediationJob(_ context.Context, arg clusterdb.RetryAlertRemediationJobParams) (int64, error) {
 	q.retries = append(q.retries, arg)
 	if q.retryErr != nil {
 		return 0, q.retryErr
@@ -86,7 +88,7 @@ func (q *alertRemediationWorkerZQuerier) RetryAlertRemediationJob(_ context.Cont
 	return 1, nil
 }
 
-func (q *alertRemediationWorkerZQuerier) FailAlertRemediationJobAndIncident(_ context.Context, arg db.FailAlertRemediationJobAndIncidentParams) (bool, error) {
+func (q *alertRemediationWorkerZQuerier) FailAlertRemediationJobAndIncident(_ context.Context, arg clusterdb.FailAlertRemediationJobAndIncidentParams) (bool, error) {
 	q.atomicFails = append(q.atomicFails, arg)
 	if q.atomicFailErr != nil {
 		return false, q.atomicFailErr
@@ -97,9 +99,9 @@ func (q *alertRemediationWorkerZQuerier) FailAlertRemediationJobAndIncident(_ co
 	return true, nil
 }
 
-func (q *alertRemediationWorkerZQuerier) GetAlertIncident(context.Context, int64) (db.AlertIncident, error) {
+func (q *alertRemediationWorkerZQuerier) GetAlertIncident(context.Context, int64) (clusterdb.AlertIncident, error) {
 	if q.getIncErr != nil {
-		return db.AlertIncident{}, q.getIncErr
+		return clusterdb.AlertIncident{}, q.getIncErr
 	}
 	return q.incident, nil
 }
@@ -138,7 +140,7 @@ func (q *alertRemediationWorkerZQuerier) HasLegacyAlertRemediationWorkflowRun(_ 
 	return q.legacyRunExists, q.legacyRunErr
 }
 
-func (q *alertRemediationWorkerZQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(_ context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
+func (q *alertRemediationWorkerZQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(_ context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
 	q.binds = append(q.binds, arg)
 	if q.bindErr != nil {
 		return 0, q.bindErr
@@ -158,7 +160,7 @@ func alertRemediationWorkerZRegistry(t *testing.T) *alertregistry.Registry {
 
 func TestAlertRemediationWorker_LegacyRunFencesOpenIncidentDispatch(t *testing.T) {
 	q := &alertRemediationWorkerZQuerier{
-		incident: db.AlertIncident{
+		incident: clusterdb.AlertIncident{
 			ID: 81, IncidentID: "legacy-open-incident", State: "open",
 			PolicyName: "Policy production", Workflow: "wf.tsx",
 		},
@@ -166,7 +168,7 @@ func TestAlertRemediationWorker_LegacyRunFencesOpenIncidentDispatch(t *testing.T
 	}
 	dispatcher := &alertRemediationWorkerCovDispatcher{}
 	worker := NewAlertRemediationWorker(q, dispatcher, alertRemediationWorkerZRegistry(t), 101)
-	job := db.AlertRemediationJob{
+	job := clusterdb.AlertRemediationJob{
 		ID: 71, IncidentID: 81, Status: "processing", Attempts: 1,
 		DispatchToken: strings.Repeat("7", 64),
 	}
@@ -201,7 +203,7 @@ func TestAlertRemediationWorker_Z_StartAndProcessErrorBranches(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	cancel()
 
-	job := db.AlertRemediationJob{ID: 7, IncidentID: 8}
+	job := clusterdb.AlertRemediationJob{ID: 7, IncidentID: 8}
 	worker = NewAlertRemediationWorker(
 		&alertRemediationWorkerZQuerier{getIncErr: errors.New("missing incident")},
 		&alertRemediationWorkerCovDispatcher{},
@@ -212,7 +214,7 @@ func TestAlertRemediationWorker_Z_StartAndProcessErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "load incident")
 
 	q = &alertRemediationWorkerZQuerier{
-		incident: db.AlertIncident{ID: 8, PolicyName: "Unknown"},
+		incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Unknown"},
 		doneErr:  errors.New("done failed"),
 	}
 	worker = NewAlertRemediationWorker(q, &alertRemediationWorkerCovDispatcher{}, alertRemediationWorkerZRegistry(t), 1)
@@ -220,7 +222,7 @@ func TestAlertRemediationWorker_Z_StartAndProcessErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "mark job done")
 
 	q = &alertRemediationWorkerZQuerier{
-		incident:  db.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
+		incident:  clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
 		getDefErr: errors.New("definition failed"),
 	}
 	worker = NewAlertRemediationWorker(q, &alertRemediationWorkerCovDispatcher{}, alertRemediationWorkerZRegistry(t), 1)
@@ -228,7 +230,7 @@ func TestAlertRemediationWorker_Z_StartAndProcessErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "resolve remediation workflow")
 
 	q = &alertRemediationWorkerZQuerier{
-		incident: db.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
+		incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
 		def:      db.WorkflowDefinition{ID: 9},
 	}
 	worker = NewAlertRemediationWorker(q, &alertRemediationWorkerCovDispatcher{err: errors.New("dispatch failed")}, alertRemediationWorkerZRegistry(t), 1)
@@ -253,11 +255,11 @@ func TestTruncateAlertRemediationError_PreservesUTF8Boundary(t *testing.T) {
 func TestProcessJob_PostDispatchAckFailureDoesNotFailJob(t *testing.T) {
 	t.Parallel()
 
-	job := db.AlertRemediationJob{ID: 7, IncidentID: 8}
+	job := clusterdb.AlertRemediationJob{ID: 7, IncidentID: 8}
 
 	t.Run("incident state ack fails", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			incident: db.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
+			incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
 			def:      db.WorkflowDefinition{ID: 9},
 			stateErr: errors.New("state ack failed"),
 		}
@@ -269,7 +271,7 @@ func TestProcessJob_PostDispatchAckFailureDoesNotFailJob(t *testing.T) {
 
 	t.Run("job done ack fails", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			incident: db.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
+			incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod"},
 			def:      db.WorkflowDefinition{ID: 9},
 			doneErr:  errors.New("done ack failed"),
 		}
@@ -288,7 +290,7 @@ func TestAlertRemediationWorker_ProcessErrorUsesBoundedAttemptFences(t *testing.
 
 	t.Run("retry before budget is exhausted", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			jobs:      []db.AlertRemediationJob{{ID: 7, IncidentID: 8, Attempts: 2}},
+			jobs:      []clusterdb.AlertRemediationJob{{ID: 7, IncidentID: 8, Attempts: 2}},
 			getIncErr: errors.New("temporary incident read failure"),
 		}
 		worker := NewAlertRemediationWorker(q, &alertRemediationWorkerCovDispatcher{}, alertRemediationWorkerZRegistry(t), 1)
@@ -305,7 +307,7 @@ func TestAlertRemediationWorker_ProcessErrorUsesBoundedAttemptFences(t *testing.
 
 	t.Run("terminal failure is atomic at the attempt budget", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			jobs:      []db.AlertRemediationJob{{ID: 9, IncidentID: 10, Attempts: 3}},
+			jobs:      []clusterdb.AlertRemediationJob{{ID: 9, IncidentID: 10, Attempts: 3}},
 			getIncErr: errors.New("permanent incident read failure"),
 		}
 		worker := NewAlertRemediationWorker(q, &alertRemediationWorkerCovDispatcher{}, alertRemediationWorkerZRegistry(t), 1)
@@ -321,7 +323,7 @@ func TestAlertRemediationWorker_ProcessErrorUsesBoundedAttemptFences(t *testing.
 
 	t.Run("stale claim generation cannot mutate a newer attempt", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			jobs:         []db.AlertRemediationJob{{ID: 11, IncidentID: 12, Attempts: 1}},
+			jobs:         []clusterdb.AlertRemediationJob{{ID: 11, IncidentID: 12, Attempts: 1}},
 			getIncErr:    errors.New("read failure"),
 			retryRowsSet: true,
 			retryRows:    0,
@@ -336,7 +338,7 @@ func TestAlertRemediationWorker_ProcessErrorUsesBoundedAttemptFences(t *testing.
 
 	t.Run("database error retains processing state for visibility recovery", func(t *testing.T) {
 		q := &alertRemediationWorkerZQuerier{
-			jobs:          []db.AlertRemediationJob{{ID: 13, IncidentID: 14, Attempts: 3}},
+			jobs:          []clusterdb.AlertRemediationJob{{ID: 13, IncidentID: 14, Attempts: 3}},
 			getIncErr:     errors.New("read failure"),
 			atomicFailErr: errors.New("database unavailable"),
 		}
@@ -366,9 +368,9 @@ func TestProcessJob_SkipsTerminalIncident(t *testing.T) {
 
 	for _, state := range []string{"resolved", "failed"} {
 		t.Run(state, func(t *testing.T) {
-			job := db.AlertRemediationJob{ID: 7, IncidentID: 8}
+			job := clusterdb.AlertRemediationJob{ID: 7, IncidentID: 8}
 			q := &alertRemediationWorkerZQuerier{
-				incident: db.AlertIncident{ID: 8, PolicyName: "Policy - prod", State: state},
+				incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod", State: state},
 			}
 			dispatcher := &alertRemediationWorkerCovDispatcher{}
 			worker := NewAlertRemediationWorker(q, dispatcher, alertRemediationWorkerZRegistry(t), 1)
@@ -391,9 +393,9 @@ func TestProcessJob_SkipsAlreadyRemediatingIncident(t *testing.T) {
 
 	for _, state := range []string{"remediating", "pr_opened"} {
 		t.Run(state, func(t *testing.T) {
-			job := db.AlertRemediationJob{ID: 7, IncidentID: 8}
+			job := clusterdb.AlertRemediationJob{ID: 7, IncidentID: 8}
 			q := &alertRemediationWorkerZQuerier{
-				incident: db.AlertIncident{ID: 8, PolicyName: "Policy - prod", State: state},
+				incident: clusterdb.AlertIncident{ID: 8, PolicyName: "Policy - prod", State: state},
 			}
 			dispatcher := &alertRemediationWorkerCovDispatcher{}
 			worker := NewAlertRemediationWorker(q, dispatcher, alertRemediationWorkerZRegistry(t), 1)
@@ -458,13 +460,13 @@ func TestPollOnce_FailExhaustedErrorPropagates(t *testing.T) {
 func TestProcessJob_RecoversCommittedRunWithoutRedispatch(t *testing.T) {
 	t.Parallel()
 
-	job := db.AlertRemediationJob{
+	job := clusterdb.AlertRemediationJob{
 		ID:            7,
 		IncidentID:    8,
 		DispatchToken: strings.Repeat("a", 64),
 	}
 	q := &alertRemediationWorkerZQuerier{
-		incident:    db.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
+		incident:    clusterdb.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
 		def:         db.WorkflowDefinition{ID: 9},
 		existingRun: db.WorkflowRun{ID: 77, WorkflowDefinitionID: 9},
 	}
@@ -483,13 +485,13 @@ func TestProcessJob_RecoversCommittedRunWithoutRedispatch(t *testing.T) {
 func TestProcessJob_BindFailureIsRecoveredWithoutDuplicateDispatch(t *testing.T) {
 	t.Parallel()
 
-	job := db.AlertRemediationJob{
+	job := clusterdb.AlertRemediationJob{
 		ID:            7,
 		IncidentID:    8,
 		DispatchToken: strings.Repeat("b", 64),
 	}
 	q := &alertRemediationWorkerZQuerier{
-		incident: db.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
+		incident: clusterdb.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
 		def:      db.WorkflowDefinition{ID: 9},
 		bindErr:  errors.New("bind unavailable"),
 	}
@@ -517,9 +519,9 @@ func TestProcessJob_BindFailureIsRecoveredWithoutDuplicateDispatch(t *testing.T)
 func TestProcessJob_AdoptsConcurrentDispatchWinnerAfterInsertConflict(t *testing.T) {
 	t.Parallel()
 
-	job := db.AlertRemediationJob{ID: 7, IncidentID: 8, DispatchToken: strings.Repeat("c", 64)}
+	job := clusterdb.AlertRemediationJob{ID: 7, IncidentID: 8, DispatchToken: strings.Repeat("c", 64)}
 	q := &alertRemediationWorkerZQuerier{
-		incident:     db.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
+		incident:     clusterdb.AlertIncident{ID: 8, IncidentID: "inc-8", PolicyName: "Policy - prod"},
 		def:          db.WorkflowDefinition{ID: 9},
 		recoveredRun: db.WorkflowRun{ID: 101, WorkflowDefinitionID: 9},
 	}

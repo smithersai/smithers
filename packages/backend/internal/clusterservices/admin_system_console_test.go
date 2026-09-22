@@ -6,34 +6,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 // fakeAdminSystemConsoleQuerier records the parameters the adapter forwards and
 // returns canned generated rows.
 type fakeAdminSystemConsoleQuerier struct {
-	incidentParams db.ListAlertIncidentsParams
-	incidents      []db.AlertIncident
+	incidentParams clusterdb.ListAlertIncidentsParams
+	incidents      []clusterdb.AlertIncident
 	incidentsErr   error
 
 	jobIDs  []int64
-	jobs    []db.ListAlertRemediationJobsForIncidentsRow
+	jobs    []clusterdb.ListAlertRemediationJobsForIncidentsRow
 	jobsErr error
 
 	landingDepth int64
 	landingErr   error
 }
 
-func (f *fakeAdminSystemConsoleQuerier) ListAlertIncidents(_ context.Context, arg db.ListAlertIncidentsParams) ([]db.AlertIncident, error) {
+func (f *fakeAdminSystemConsoleQuerier) ListAlertIncidents(_ context.Context, arg clusterdb.ListAlertIncidentsParams) ([]clusterdb.AlertIncident, error) {
 	f.incidentParams = arg
 	return f.incidents, f.incidentsErr
 }
 
-func (f *fakeAdminSystemConsoleQuerier) ListAlertRemediationJobsForIncidents(_ context.Context, incidentIDs []int64) ([]db.ListAlertRemediationJobsForIncidentsRow, error) {
+func (f *fakeAdminSystemConsoleQuerier) ListAlertRemediationJobsForIncidents(_ context.Context, incidentIDs []int64) ([]clusterdb.ListAlertRemediationJobsForIncidentsRow, error) {
 	f.jobIDs = incidentIDs
 	return f.jobs, f.jobsErr
 }
@@ -67,7 +67,7 @@ func TestAdminSystemConsoleStoreListAlertIncidents(t *testing.T) {
 			t.Parallel()
 
 			querier := &fakeAdminSystemConsoleQuerier{
-				incidents: []db.AlertIncident{{ID: 7, PolicyName: "HighErrorRate", State: "open"}},
+				incidents: []clusterdb.AlertIncident{{ID: 7, PolicyName: "HighErrorRate", State: "open"}},
 			}
 			store := NewAdminSystemConsoleStore(querier)
 
@@ -98,7 +98,7 @@ func TestAdminSystemConsoleStoreListAlertRemediationJobsForIncidents(t *testing.
 	created := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	updated := created.Add(time.Minute)
 	querier := &fakeAdminSystemConsoleQuerier{
-		jobs: []db.ListAlertRemediationJobsForIncidentsRow{
+		jobs: []clusterdb.ListAlertRemediationJobsForIncidentsRow{
 			{
 				ID:            11,
 				IncidentID:    7,

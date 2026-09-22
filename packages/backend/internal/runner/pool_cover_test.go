@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,14 +19,14 @@ func TestPool_Cov_PublicWrappersDelegate(t *testing.T) {
 	t.Parallel()
 
 	store := &mockStore{
-		upsertRunnerFn: func(_ context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error) {
+		upsertRunnerFn: func(_ context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
 			assert.Equal(t, "runner-public", arg.Name)
 			assert.JSONEq(t, `{"arch":"arm64"}`, string(arg.Metadata))
-			return db.RunnerPool{ID: 101, Name: arg.Name, Status: "idle", Metadata: arg.Metadata}, nil
+			return clusterdb.RunnerPool{ID: 101, Name: arg.Name, Status: "idle", Metadata: arg.Metadata}, nil
 		},
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			assert.Positive(t, runnerID)
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			assert.True(t, runnerID.Valid)
@@ -45,17 +47,17 @@ func TestPool_Cov_PublicWrappersDelegate(t *testing.T) {
 			assert.Equal(t, int64(101), runnerID)
 			return 1, nil
 		},
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			assert.Contains(t, []int64{101, 303}, runnerID)
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			assert.True(t, runnerID.Valid)
 			assert.Contains(t, []int64{101, 303}, runnerID.Int64)
 			return 2, nil
 		},
-		listStaleRunnersFn: func(context.Context, pgtype.Timestamptz) ([]db.RunnerPool, error) {
-			return []db.RunnerPool{{ID: 303, Status: "busy"}}, nil
+		listStaleRunnersFn: func(context.Context, pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
+			return []clusterdb.RunnerPool{{ID: 303, Status: "busy"}}, nil
 		},
 	}
 
@@ -93,8 +95,8 @@ func TestPool_Cov_ClaimTaskReturnsNilOnClaimError(t *testing.T) {
 
 	claimErr := errors.New("runner busy")
 	store := &mockStore{
-		claimIdleRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, claimErr
+		claimIdleRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, claimErr
 		},
 	}
 

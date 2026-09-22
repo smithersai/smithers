@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,9 +92,9 @@ func TestRunnerService_Terminate_RequeueDoesNotFinalizeWorkflowStep(t *testing.T
 			assert.Equal(t, pgtype.Int8{Int64: 17, Valid: true}, runnerID)
 			return 1, nil
 		},
-		terminateRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			assert.Equal(t, int64(17), id)
-			return db.RunnerPool{ID: id, Status: "terminated"}, nil
+			return clusterdb.RunnerPool{ID: id, Status: "terminated"}, nil
 		},
 		getWorkflowTaskStepIDFn: func(_ context.Context, taskID int64) (int64, error) {
 			t.Fatalf("requeue must not look up a step id (task %d)", taskID)

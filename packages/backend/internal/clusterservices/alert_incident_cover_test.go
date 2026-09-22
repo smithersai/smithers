@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 func TestAlertIncident_Cov_NewNilAndNormalizeBranches(t *testing.T) {
@@ -50,7 +50,7 @@ func TestAlertIncident_Cov_ErrorBranches(t *testing.T) {
 	})
 
 	t.Run("outcome missing incident wraps", func(t *testing.T) {
-		svc := newTestAlertIncidentService(&fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{}}, testAlertRegistry(t))
+		svc := newTestAlertIncidentService(&fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{}}, testAlertRegistry(t))
 		err := svc.RecordRemediationOutcome(context.Background(), AlertRemediationOutcome{IncidentID: "missing", State: "failed"})
 		if err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Fatalf("err = %v", err)

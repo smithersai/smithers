@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -30,8 +33,8 @@ func (f *fakeAnalyticsQuerier) AnalyticsAgentsByStatus(ctx context.Context, arg 
 	var zero []db.AnalyticsAgentsByStatusRow
 	return zero, f.call(ctx, "AnalyticsAgentsByStatus", arg)
 }
-func (f *fakeAnalyticsQuerier) AnalyticsGoldenSnapshots(ctx context.Context, arg db.AnalyticsGoldenSnapshotsParams) ([]db.AnalyticsGoldenSnapshotsRow, error) {
-	var zero []db.AnalyticsGoldenSnapshotsRow
+func (f *fakeAnalyticsQuerier) AnalyticsGoldenSnapshots(ctx context.Context, arg clusterdb.AnalyticsGoldenSnapshotsParams) ([]clusterdb.AnalyticsGoldenSnapshotsRow, error) {
+	var zero []clusterdb.AnalyticsGoldenSnapshotsRow
 	return zero, f.call(ctx, "AnalyticsGoldenSnapshots", arg)
 }
 func (f *fakeAnalyticsQuerier) AnalyticsImportFailures(ctx context.Context, arg db.AnalyticsImportFailuresParams) ([]db.AnalyticsImportFailuresRow, error) {
@@ -237,7 +240,7 @@ func TestAdminAnalyticsPoolSnapshot(t *testing.T) {
 	tx, err := svc.begin(context.Background())
 	require.NoError(t, err)
 	defer tx.Rollback(context.Background())
-	require.NoError(t, db.New(tx).AnalyticsStatementTimeout(context.Background()))
+	require.NoError(t, deploymentdb.New(tx).AnalyticsStatementTimeout(context.Background()))
 	var timeout, readOnly, isolation string
 	require.NoError(t, tx.QueryRow(context.Background(), "SELECT current_setting('statement_timeout'),current_setting('transaction_read_only'),current_setting('transaction_isolation')").Scan(&timeout, &readOnly, &isolation))
 	require.Equal(t, "20s", timeout)

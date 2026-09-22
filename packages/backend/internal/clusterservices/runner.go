@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -78,14 +81,14 @@ type RunnerWorkflowDispatcher interface {
 }
 
 type RunnerQuerier interface {
-	UpsertRunner(ctx context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error)
-	TouchRunnerHeartbeat(ctx context.Context, id int64) (db.RunnerPool, error)
-	ClaimIdleRunner(ctx context.Context, id int64) (db.RunnerPool, error)
+	UpsertRunner(ctx context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error)
+	TouchRunnerHeartbeat(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
+	ClaimIdleRunner(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
 	ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error)
 	MarkWorkflowTaskRunning(ctx context.Context, arg db.MarkWorkflowTaskRunningParams) (int64, error)
 	MarkWorkflowTaskDone(ctx context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error)
 	ReleaseRunner(ctx context.Context, id int64) (int64, error)
-	TerminateRunner(ctx context.Context, id int64) (db.RunnerPool, error)
+	TerminateRunner(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
 	RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error)
 	UpdateWorkflowRunStatusBasedOnTasks(ctx context.Context, workflowRunID int64) (string, error)
 	GetWorkflowRunByRunID(ctx context.Context, runID int64) (db.WorkflowRun, error)
@@ -132,7 +135,7 @@ type workflowRunLogNotifier interface {
 
 type terminalRunnerTaskSettler interface {
 	GetTerminalWorkflowTaskForRunner(ctx context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error)
-	ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
+	ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
 }
 
 // atomicRunnerWorkflowTaskClaimer is implemented by the sqlc production
@@ -140,7 +143,7 @@ type terminalRunnerTaskSettler interface {
 // while ensuring real runner claims cannot commit only part of the
 // runner/task/step state transition.
 type atomicRunnerWorkflowTaskClaimer interface {
-	ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error)
+	ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error)
 	GetRunnerStatus(ctx context.Context, runnerID int64) (string, error)
 }
 
@@ -236,7 +239,7 @@ func (s *runnerService) Register(ctx context.Context, input RunnerRegisterInput)
 		return RunnerRegisterResult{}, pkgerrors.Internal("runner store unavailable")
 	}
 
-	runnerRow, err := s.queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runnerRow, err := s.queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     name,
 		Metadata: input.Metadata,
 	})
@@ -315,7 +318,7 @@ func runnerAssignedTask(task db.WorkflowTask) *RunnerAssignedTask {
 	}
 }
 
-func runnerAssignedAtomicTask(task db.ClaimRunnerWorkflowTaskRow) *RunnerAssignedTask {
+func runnerAssignedAtomicTask(task clusterdb.ClaimRunnerWorkflowTaskRow) *RunnerAssignedTask {
 	return &RunnerAssignedTask{
 		ID:             task.ID,
 		WorkflowRunID:  task.WorkflowRunID,
@@ -358,7 +361,7 @@ func (s *runnerService) Terminate(ctx context.Context, runnerID int64) error {
 		return pkgerrors.Internal("runner store unavailable")
 	}
 
-	if tx, txQueries, transactional, txErr := services.BeginWorkflowQueryTx(ctx, s.queries); transactional {
+	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
 			return pkgerrors.Internal("failed to begin runner termination transaction")
 		}
@@ -692,7 +695,7 @@ func (s *runnerService) streamLogEventsWithTx(
 		return pkgerrors.Internal("failed to lock workflow log stream")
 	}
 
-	txQueries := db.New(tx)
+	txQueries := deploymentdb.New(tx)
 	payloads := make([]string, 0, len(logEvents))
 	for _, logEvent := range logEvents {
 		inserted, insertErr := insertWorkflowLog(ctx, txQueries, task.WorkflowRunID, task.WorkflowStepID, logEvent)
@@ -849,7 +852,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 		}
 	}
 
-	if tx, txQueries, transactional, txErr := services.BeginWorkflowQueryTx(ctx, s.queries); transactional {
+	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
 			return pkgerrors.Internal("failed to begin task completion transaction")
 		}
@@ -966,7 +969,7 @@ func clearTerminalRunnerOwnershipAndRelease(ctx context.Context, queries RunnerQ
 	if !ok {
 		return pkgerrors.Internal("runner task settlement unavailable")
 	}
-	cleared, err := settler.ClearTerminalWorkflowTaskRunnerOwnership(ctx, db.ClearTerminalWorkflowTaskRunnerOwnershipParams{
+	cleared, err := settler.ClearTerminalWorkflowTaskRunnerOwnership(ctx, clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams{
 		TaskID:   input.TaskID,
 		RunnerID: pgtype.Int8{Int64: input.RunnerID, Valid: true},
 	})
@@ -998,7 +1001,7 @@ func acknowledgeTerminalRunnerTask(ctx context.Context, queries RunnerQuerier, i
 func (s *runnerService) completeTaskWithTransaction(
 	ctx context.Context,
 	tx pgx.Tx,
-	queries *db.Queries,
+	queries *deploymentdb.Queries,
 	input RunnerCompleteTaskInput,
 	status string,
 	releaseRunnerLease bool,
@@ -1104,7 +1107,7 @@ func (s *runnerService) completeTaskWithTransaction(
 func acknowledgeTerminalRunnerTaskWithTransaction(
 	ctx context.Context,
 	tx pgx.Tx,
-	queries *db.Queries,
+	queries *deploymentdb.Queries,
 	input RunnerCompleteTaskInput,
 	releaseRunnerLease bool,
 ) error {

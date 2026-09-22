@@ -3,9 +3,10 @@ package clusterservices
 import (
 	"context"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -27,13 +28,13 @@ type RunnerAdminListInput struct {
 
 // RunnerAdminQuerier is the database interface needed by RunnerAdminService.
 type RunnerAdminQuerier interface {
-	ListRunners(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error)
+	ListRunners(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error)
 	CountRunners(ctx context.Context, statusFilter string) (int64, error)
 }
 
 // RunnerAdminService exposes admin-level runner observability operations.
 type RunnerAdminService interface {
-	ListRunners(ctx context.Context, input RunnerAdminListInput) ([]db.RunnerPool, int64, error)
+	ListRunners(ctx context.Context, input RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error)
 }
 
 type runnerAdminService struct {
@@ -46,7 +47,7 @@ func NewRunnerAdminService(queries RunnerAdminQuerier) RunnerAdminService {
 }
 
 // ListRunners returns a paginated list of runners and the total count.
-func (s *runnerAdminService) ListRunners(ctx context.Context, input RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+func (s *runnerAdminService) ListRunners(ctx context.Context, input RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 	if !validRunnerStatuses[input.StatusFilter] {
 		return nil, 0, pkgerrors.BadRequest("invalid status filter: must be one of idle, busy, offline, draining, or empty for all")
 	}
@@ -67,7 +68,7 @@ func (s *runnerAdminService) ListRunners(ctx context.Context, input RunnerAdminL
 		return nil, 0, pkgerrors.Internal("failed to count runners")
 	}
 
-	rows, err := s.queries.ListRunners(ctx, db.ListRunnersParams{
+	rows, err := s.queries.ListRunners(ctx, clusterdb.ListRunnersParams{
 		StatusFilter: input.StatusFilter,
 		PageOffset:   offset,
 		PageSize:     int32(perPage),

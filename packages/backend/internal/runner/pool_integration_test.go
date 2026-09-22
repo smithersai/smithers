@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -404,13 +406,13 @@ func truncateRunnerTables(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err)
 }
 
-func newRunnerQueries(t *testing.T) (*db.Queries, *pgxpool.Pool) {
+func newRunnerQueries(t *testing.T) (*deploymentdb.Queries, *pgxpool.Pool) {
 	t.Helper()
 	if runnerSharedPool == nil {
 		t.Skip("postgres unavailable for runner integration tests")
 	}
 	truncateRunnerTables(t, runnerSharedPool)
-	return db.New(runnerSharedPool), runnerSharedPool
+	return deploymentdb.New(runnerSharedPool), runnerSharedPool
 }
 
 type workflowTaskFixture struct {
@@ -419,7 +421,7 @@ type workflowTaskFixture struct {
 	stepID int64
 }
 
-func mustCreateWorkflowTaskFixture(t *testing.T, q *db.Queries, pool *pgxpool.Pool, prefix string) workflowTaskFixture {
+func mustCreateWorkflowTaskFixture(t *testing.T, q *deploymentdb.Queries, pool *pgxpool.Pool, prefix string) workflowTaskFixture {
 	t.Helper()
 
 	userID := mustCreateUser(t, pool, prefix+"-user")
@@ -459,7 +461,7 @@ func mustCreateWorkflowTaskFixture(t *testing.T, q *db.Queries, pool *pgxpool.Po
 	}
 }
 
-func mustCreateWorkflowTask(t *testing.T, q *db.Queries, fixture workflowTaskFixture, status string) db.WorkflowTask {
+func mustCreateWorkflowTask(t *testing.T, q *deploymentdb.Queries, fixture workflowTaskFixture, status string) db.WorkflowTask {
 	t.Helper()
 
 	task, err := q.CreateWorkflowTask(context.Background(), db.CreateWorkflowTaskParams{

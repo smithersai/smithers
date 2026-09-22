@@ -5,17 +5,18 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // Client-caused bad input to the remediation-outcome webhook must produce typed
 // 4xx errors (so the route returns 400/404), not a generic 500.
 func TestRecordRemediationOutcome_ClientErrorsAreTyped(t *testing.T) {
-	svc := newTestAlertIncidentService(&fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{}}, testAlertRegistry(t))
+	svc := newTestAlertIncidentService(&fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{}}, testAlertRegistry(t))
 
 	var apiErr *pkgerrors.APIError
 

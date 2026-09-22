@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -21,27 +23,27 @@ import (
 type fakeAlertIncidentQuerier struct {
 	dedupeErr              error
 	dedupeHits             int64
-	dedupeArgs             []db.IncrementActiveAlertIncidentParams
+	dedupeArgs             []clusterdb.IncrementActiveAlertIncidentParams
 	createErr              error
 	activeForPolicy        int64
 	attemptsSince          int64
 	resolved               []string
-	createdIncidents       []db.CreateAlertIncidentParams
+	createdIncidents       []clusterdb.CreateAlertIncidentParams
 	enqueuedJobs           []int64
 	outcomes               []db.RecordAlertIncidentRemediationOutcomeGuardedParams
-	incidentByID           map[string]db.AlertIncident
+	incidentByID           map[string]clusterdb.AlertIncident
 	outcomeAlreadyResolved bool // when true, RecordAlertIncidentRemediationOutcomeGuarded reports 0 rows affected (idempotent no-op)
 	authorizedOutcomeRows  int64
 	authorizedOutcomeErr   error
-	authorizedOutcome      []db.AuthorizeAlertRemediationOutcomeRunParams
+	authorizedOutcome      []clusterdb.AuthorizeAlertRemediationOutcomeRunParams
 }
 
-func (f *fakeAlertIncidentQuerier) CreateAlertIncident(_ context.Context, arg db.CreateAlertIncidentParams) (db.CreateAlertIncidentRow, error) {
+func (f *fakeAlertIncidentQuerier) CreateAlertIncident(_ context.Context, arg clusterdb.CreateAlertIncidentParams) (clusterdb.CreateAlertIncidentRow, error) {
 	if f.createErr != nil {
-		return db.CreateAlertIncidentRow{}, f.createErr
+		return clusterdb.CreateAlertIncidentRow{}, f.createErr
 	}
 	f.createdIncidents = append(f.createdIncidents, arg)
-	return db.CreateAlertIncidentRow{ID: int64(len(f.createdIncidents)), IncidentID: arg.IncidentID, PolicyName: arg.PolicyName}, nil
+	return clusterdb.CreateAlertIncidentRow{ID: int64(len(f.createdIncidents)), IncidentID: arg.IncidentID, PolicyName: arg.PolicyName}, nil
 }
 
 func (f *fakeAlertIncidentQuerier) ResolveAlertIncidentByIncidentID(_ context.Context, incidentID string) error {
@@ -49,37 +51,37 @@ func (f *fakeAlertIncidentQuerier) ResolveAlertIncidentByIncidentID(_ context.Co
 	return nil
 }
 
-func (f *fakeAlertIncidentQuerier) CountActiveAlertIncidentsForPolicy(_ context.Context, _ db.CountActiveAlertIncidentsForPolicyParams) (int64, error) {
+func (f *fakeAlertIncidentQuerier) CountActiveAlertIncidentsForPolicy(_ context.Context, _ clusterdb.CountActiveAlertIncidentsForPolicyParams) (int64, error) {
 	return f.activeForPolicy, nil
 }
 
-func (f *fakeAlertIncidentQuerier) CountAlertRemediationJobsForPolicySince(_ context.Context, _ db.CountAlertRemediationJobsForPolicySinceParams) (int64, error) {
+func (f *fakeAlertIncidentQuerier) CountAlertRemediationJobsForPolicySince(_ context.Context, _ clusterdb.CountAlertRemediationJobsForPolicySinceParams) (int64, error) {
 	return f.attemptsSince, nil
 }
 
-func (f *fakeAlertIncidentQuerier) CreateAlertRemediationJob(_ context.Context, incidentID int64) (db.AlertRemediationJob, error) {
+func (f *fakeAlertIncidentQuerier) CreateAlertRemediationJob(_ context.Context, incidentID int64) (clusterdb.AlertRemediationJob, error) {
 	f.enqueuedJobs = append(f.enqueuedJobs, incidentID)
-	return db.AlertRemediationJob{ID: int64(len(f.enqueuedJobs)), IncidentID: incidentID}, nil
+	return clusterdb.AlertRemediationJob{ID: int64(len(f.enqueuedJobs)), IncidentID: incidentID}, nil
 }
 
-func (f *fakeAlertIncidentQuerier) GetAlertIncidentByIncidentID(_ context.Context, incidentID string) (db.AlertIncident, error) {
+func (f *fakeAlertIncidentQuerier) GetAlertIncidentByIncidentID(_ context.Context, incidentID string) (clusterdb.AlertIncident, error) {
 	row, ok := f.incidentByID[incidentID]
 	if !ok {
-		return db.AlertIncident{}, pgx.ErrNoRows
+		return clusterdb.AlertIncident{}, pgx.ErrNoRows
 	}
 	return row, nil
 }
 
-func (f *fakeAlertIncidentQuerier) GetAlertIncident(_ context.Context, id int64) (db.AlertIncident, error) {
+func (f *fakeAlertIncidentQuerier) GetAlertIncident(_ context.Context, id int64) (clusterdb.AlertIncident, error) {
 	for _, row := range f.incidentByID {
 		if row.ID == id {
 			return row, nil
 		}
 	}
-	return db.AlertIncident{}, pgx.ErrNoRows
+	return clusterdb.AlertIncident{}, pgx.ErrNoRows
 }
 
-func (f *fakeAlertIncidentQuerier) AuthorizeAlertRemediationOutcomeRun(_ context.Context, arg db.AuthorizeAlertRemediationOutcomeRunParams) (int64, error) {
+func (f *fakeAlertIncidentQuerier) AuthorizeAlertRemediationOutcomeRun(_ context.Context, arg clusterdb.AuthorizeAlertRemediationOutcomeRunParams) (int64, error) {
 	f.authorizedOutcome = append(f.authorizedOutcome, arg)
 	return f.authorizedOutcomeRows, f.authorizedOutcomeErr
 }
@@ -234,7 +236,7 @@ func TestHandleAlertIncident_DailyAttemptCapSkipsEnqueue(t *testing.T) {
 func TestRecordRemediationOutcome_PersistsReportURL(t *testing.T) {
 	t.Parallel()
 
-	q := &fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{
+	q := &fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{
 		"0.abc": {ID: 42, IncidentID: "0.abc"},
 	}}
 	svc := newTestAlertIncidentService(q, testAlertRegistry(t))
@@ -254,7 +256,7 @@ func TestRecordRemediationOutcome_PersistsReportURL(t *testing.T) {
 func TestRecordRemediationOutcome_AcceptsLegacyPrURLField(t *testing.T) {
 	t.Parallel()
 
-	q := &fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{
+	q := &fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{
 		"0.abc": {ID: 42, IncidentID: "0.abc"},
 	}}
 	svc := newTestAlertIncidentService(q, testAlertRegistry(t))
@@ -272,7 +274,7 @@ func TestRecordRemediationOutcome_AlreadyResolvedIsIdempotentNoop(t *testing.T) 
 	t.Parallel()
 
 	q := &fakeAlertIncidentQuerier{
-		incidentByID: map[string]db.AlertIncident{
+		incidentByID: map[string]clusterdb.AlertIncident{
 			"0.abc": {ID: 42, IncidentID: "0.abc", State: "resolved"},
 		},
 		outcomeAlreadyResolved: true,
@@ -303,7 +305,7 @@ func TestRecordWorkflowRemediationOutcome_RequiresExactPersistedBinding(t *testi
 	t.Parallel()
 
 	q := &fakeAlertIncidentQuerier{
-		incidentByID: map[string]db.AlertIncident{
+		incidentByID: map[string]clusterdb.AlertIncident{
 			"0.bound": {ID: 42, IncidentID: "0.bound"},
 		},
 		authorizedOutcomeRows: 1,
@@ -332,7 +334,7 @@ func TestRecordWorkflowRemediationOutcome_RequiresExactPersistedBinding(t *testi
 	})
 	require.NoError(t, err)
 	require.Len(t, q.authorizedOutcome, 1)
-	assert.Equal(t, db.AuthorizeAlertRemediationOutcomeRunParams{
+	assert.Equal(t, clusterdb.AuthorizeAlertRemediationOutcomeRunParams{
 		JobID:                73,
 		IncidentRowID:        42,
 		DispatchToken:        strings.Repeat("a", 64),
@@ -385,7 +387,7 @@ func TestRecordWorkflowRemediationOutcome_RejectsForgedOrUnboundRuns(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			q := &fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}}, authorizedOutcomeRows: 1}
+			q := &fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}}, authorizedOutcomeRows: 1}
 			svc := newTestAlertIncidentService(q, testAlertRegistry(t))
 			run := validRun
 			tc.mutateRun(&run)
@@ -417,7 +419,7 @@ func TestRecordWorkflowRemediationOutcome_DatabaseAuthorizationIsFailClosed(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			q := &fakeAlertIncidentQuerier{
-				incidentByID:          map[string]db.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
+				incidentByID:          map[string]clusterdb.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
 				authorizedOutcomeRows: tc.rows,
 				authorizedOutcomeErr:  tc.err,
 			}
@@ -451,7 +453,7 @@ func TestRecordWorkflowRemediationOutcome_RejectsNonCanonicalPullRequestURLs(t *
 		t.Run(rawURL, func(t *testing.T) {
 			t.Parallel()
 			q := &fakeAlertIncidentQuerier{
-				incidentByID:          map[string]db.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
+				incidentByID:          map[string]clusterdb.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
 				authorizedOutcomeRows: 1,
 			}
 			err := newTestAlertIncidentService(q, testAlertRegistry(t)).RecordWorkflowRemediationOutcome(
@@ -470,7 +472,7 @@ func TestRecordWorkflowRemediationOutcome_FailureCannotPersistAttackerURL(t *tes
 	t.Parallel()
 
 	q := &fakeAlertIncidentQuerier{
-		incidentByID:          map[string]db.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
+		incidentByID:          map[string]clusterdb.AlertIncident{"0.bound": {ID: 42, IncidentID: "0.bound"}},
 		authorizedOutcomeRows: 1,
 	}
 	run := db.WorkflowRun{
@@ -554,7 +556,7 @@ func TestNewAlertIncidentService_RemediationDefaultsOn(t *testing.T) {
 	assert.Equal(t, []int64{1}, q.enqueuedJobs)
 }
 
-func (f *fakeAlertIncidentQuerier) IncrementActiveAlertIncident(_ context.Context, p db.IncrementActiveAlertIncidentParams) (int64, error) {
+func (f *fakeAlertIncidentQuerier) IncrementActiveAlertIncident(_ context.Context, p clusterdb.IncrementActiveAlertIncidentParams) (int64, error) {
 	f.dedupeArgs = append(f.dedupeArgs, p)
 	return f.dedupeHits, f.dedupeErr
 }
@@ -565,5 +567,5 @@ func TestHandleAlertIncident_DedupeRefreshesWithoutEnqueue(t *testing.T) {
 	require.NoError(t, svc.HandleAlertIncident(context.Background(), MonitoringAlertIncident{IncidentID: "canary-repeat", PolicyName: "Smithers High Error Rate - prod", ConditionName: "condition", Summary: "latest", State: "open"}))
 	require.Empty(t, q.createdIncidents)
 	require.Empty(t, q.enqueuedJobs)
-	require.Equal(t, []db.IncrementActiveAlertIncidentParams{{IncidentID: "canary-repeat", PolicyName: "Smithers High Error Rate - prod", ConditionName: "condition", Summary: "latest"}}, q.dedupeArgs)
+	require.Equal(t, []clusterdb.IncrementActiveAlertIncidentParams{{IncidentID: "canary-repeat", PolicyName: "Smithers High Error Rate - prod", ConditionName: "condition", Summary: "latest"}}, q.dedupeArgs)
 }

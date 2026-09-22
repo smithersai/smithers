@@ -3,17 +3,17 @@ package clusterservices
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // AdminSystemConsoleQuerier is the generated query surface the admin system
-// console reads. *db.Queries satisfies it directly; the interface exists so the
+// console reads. *deploymentdb.Queries satisfies it directly; the interface exists so the
 // adapter can be exercised without a database.
 type AdminSystemConsoleQuerier interface {
-	ListAlertIncidents(ctx context.Context, arg db.ListAlertIncidentsParams) ([]db.AlertIncident, error)
-	ListAlertRemediationJobsForIncidents(ctx context.Context, incidentIDs []int64) ([]db.ListAlertRemediationJobsForIncidentsRow, error)
+	ListAlertIncidents(ctx context.Context, arg clusterdb.ListAlertIncidentsParams) ([]clusterdb.AlertIncident, error)
+	ListAlertRemediationJobsForIncidents(ctx context.Context, incidentIDs []int64) ([]clusterdb.ListAlertRemediationJobsForIncidentsRow, error)
 	GetLandingQueueDepth(ctx context.Context) (int64, error)
 }
 
@@ -41,8 +41,8 @@ func NewAdminSystemConsoleStore(queries AdminSystemConsoleQuerier) *AdminSystemC
 
 // ListAlertIncidents lists incidents newest first, optionally restricted to the
 // non-terminal states in AdminSystemIncidentActiveStates.
-func (s *AdminSystemConsoleStore) ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
-	return s.queries.ListAlertIncidents(ctx, db.ListAlertIncidentsParams{
+func (s *AdminSystemConsoleStore) ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
+	return s.queries.ListAlertIncidents(ctx, clusterdb.ListAlertIncidentsParams{
 		StateFilter: arg.State,
 		Policy:      pgtype.Text{String: arg.Policy, Valid: arg.Policy != ""},
 		PageLimit:   arg.PageLimit,

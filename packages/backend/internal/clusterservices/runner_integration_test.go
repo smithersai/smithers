@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -85,7 +88,7 @@ func createRunnerIntegrationRepo(t *testing.T, pool *pgxpool.Pool) int64 {
 // Returns the run ID, step IDs (in order: stepA, stepB, stepC), and task IDs (in order: taskA, taskB, taskC).
 func createWorkflowRunWithDependentSteps(
 	t *testing.T,
-	queries *db.Queries,
+	queries *deploymentdb.Queries,
 	pool *pgxpool.Pool,
 	repoID int64,
 ) (runID int64, stepIDs []int64, taskIDs []int64) {
@@ -191,12 +194,12 @@ func createWorkflowRunWithDependentSteps(
 // This tests the service layer's progressDependencies function with a real database.
 func TestRunnerServiceIntegration_CompleteTask_FailedSkipsDownstream(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 
 	// Create runner
 	ctx := context.Background()
-	runner, err := queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runner, err := queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     "test-runner-1",
 		Metadata: []byte(`{}`),
 	})
@@ -247,12 +250,12 @@ func TestRunnerServiceIntegration_CompleteTask_FailedSkipsDownstream(t *testing.
 // a task succeeds, downstream tasks are unblocked (not skipped).
 func TestRunnerServiceIntegration_CompleteTask_SuccessUnblocksDownstream(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 
 	// Create runner
 	ctx := context.Background()
-	runner, err := queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runner, err := queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     "test-runner-2",
 		Metadata: []byte(`{}`),
 	})
@@ -307,12 +310,12 @@ func TestRunnerServiceIntegration_CompleteTask_SuccessUnblocksDownstream(t *test
 // a task is cancelled, all downstream dependent tasks are skipped.
 func TestRunnerServiceIntegration_CompleteTask_CancelledSkipsDownstream(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 
 	// Create runner
 	ctx := context.Background()
-	runner, err := queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runner, err := queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     "test-runner-3",
 		Metadata: []byte(`{}`),
 	})
@@ -365,12 +368,12 @@ func TestRunnerServiceIntegration_CompleteTask_CancelledSkipsDownstream(t *testi
 // - RunnerService manages dependency resolution
 func TestRunnerServiceIntegration_PoolCompleteTask_DoesNotResolveDependencies(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 
 	// Create runner (needed for MarkWorkflowTaskRunning + MarkWorkflowTaskDone)
 	ctx := context.Background()
-	runner, err := queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runner, err := queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     "test-runner-pool",
 		Metadata: []byte(`{}`),
 	})
@@ -414,7 +417,7 @@ func TestRunnerServiceIntegration_PoolCompleteTask_DoesNotResolveDependencies(t 
 // directly without going through RunnerService. This documents the behavior when the
 // service layer is bypassed.
 type runnerPoolDirect struct {
-	queries *db.Queries
+	queries *deploymentdb.Queries
 }
 
 func (p *runnerPoolDirect) CompleteTask(ctx context.Context, taskID int64, runnerID int64, status, errorMessage string) error {
@@ -438,7 +441,7 @@ func (p *runnerPoolDirect) CompleteTask(ctx context.Context, taskID int64, runne
 
 func TestRunnerServiceIntegration_StreamEvents_ConcurrentRequestsAssignContiguousSequences(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 	ctx := context.Background()
 
@@ -535,7 +538,7 @@ func TestRunnerServiceIntegration_StreamEvents_ConcurrentRequestsAssignContiguou
 
 func TestRunnerServiceIntegration_CompleteTask_UpdatesLinkedCommitStatus(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createRunnerIntegrationRepo(t, pool)
 	ctx := context.Background()
 
@@ -561,7 +564,7 @@ func TestRunnerServiceIntegration_CompleteTask_UpdatesLinkedCommitStatus(t *test
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	runner, err := queries.UpsertRunner(ctx, db.UpsertRunnerParams{
+	runner, err := queries.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     "status-runner",
 		Metadata: []byte(`{}`),
 	})

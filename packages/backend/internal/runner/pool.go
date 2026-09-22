@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -12,18 +14,18 @@ import (
 
 type terminalTaskSettlementStore interface {
 	GetTerminalWorkflowTaskForRunner(ctx context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error)
-	ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
+	ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
 }
 
 // atomicRunnerWorkflowTaskClaimer is the production sqlc fast path. Store
 // remains intentionally narrow so existing local test doubles can keep using
 // the legacy, individually observable claim transitions.
 type atomicRunnerWorkflowTaskClaimer interface {
-	ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error)
+	ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error)
 }
 
 // RegisterRunner upserts a runner entry in the pool and returns the row.
-func (p *RunnerPool) RegisterRunner(ctx context.Context, in RegisterRunnerInput) (db.RunnerPool, error) {
+func (p *RunnerPool) RegisterRunner(ctx context.Context, in RegisterRunnerInput) (clusterdb.RunnerPool, error) {
 	return p.registerRunner(ctx, in)
 }
 
@@ -83,7 +85,7 @@ func (p *RunnerPool) ClaimTask(ctx context.Context, runnerID int64) (*db.Workflo
 	return &task, nil
 }
 
-func workflowTaskFromAtomicClaim(task db.ClaimRunnerWorkflowTaskRow) db.WorkflowTask {
+func workflowTaskFromAtomicClaim(task clusterdb.ClaimRunnerWorkflowTaskRow) db.WorkflowTask {
 	return db.WorkflowTask(task)
 }
 
@@ -107,7 +109,7 @@ func (p *RunnerPool) CompleteTask(ctx context.Context, taskID int64, runnerID in
 			return terminalErr
 		}
 	}
-	cleared, err := settler.ClearTerminalWorkflowTaskRunnerOwnership(ctx, db.ClearTerminalWorkflowTaskRunnerOwnershipParams{
+	cleared, err := settler.ClearTerminalWorkflowTaskRunnerOwnership(ctx, clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams{
 		TaskID:   taskID,
 		RunnerID: runnerIDParam(runnerID),
 	})
@@ -126,8 +128,8 @@ func (p *RunnerPool) CleanupStaleRunners(ctx context.Context) (int, error) {
 	return p.cleanupStaleRunners(ctx)
 }
 
-func (p *RunnerPool) registerRunner(ctx context.Context, in RegisterRunnerInput) (db.RunnerPool, error) {
-	return p.store.UpsertRunner(ctx, db.UpsertRunnerParams{
+func (p *RunnerPool) registerRunner(ctx context.Context, in RegisterRunnerInput) (clusterdb.RunnerPool, error) {
+	return p.store.UpsertRunner(ctx, clusterdb.UpsertRunnerParams{
 		Name:     in.Name,
 		Metadata: in.Metadata,
 	})

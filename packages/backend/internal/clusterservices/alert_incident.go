@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -55,19 +58,19 @@ type AlertRemediationTaskClaim struct {
 
 // AlertIncidentQuerier contains the DB methods used by AlertIncidentService.
 type AlertIncidentQuerier interface {
-	IncrementActiveAlertIncident(ctx context.Context, arg db.IncrementActiveAlertIncidentParams) (int64, error)
-	CreateAlertIncident(ctx context.Context, arg db.CreateAlertIncidentParams) (db.CreateAlertIncidentRow, error)
+	IncrementActiveAlertIncident(ctx context.Context, arg clusterdb.IncrementActiveAlertIncidentParams) (int64, error)
+	CreateAlertIncident(ctx context.Context, arg clusterdb.CreateAlertIncidentParams) (clusterdb.CreateAlertIncidentRow, error)
 	ResolveAlertIncidentByIncidentID(ctx context.Context, incidentID string) error
-	CountActiveAlertIncidentsForPolicy(ctx context.Context, arg db.CountActiveAlertIncidentsForPolicyParams) (int64, error)
-	CountAlertRemediationJobsForPolicySince(ctx context.Context, arg db.CountAlertRemediationJobsForPolicySinceParams) (int64, error)
-	CreateAlertRemediationJob(ctx context.Context, incidentID int64) (db.AlertRemediationJob, error)
-	GetAlertIncidentByIncidentID(ctx context.Context, incidentID string) (db.AlertIncident, error)
-	GetAlertIncident(ctx context.Context, id int64) (db.AlertIncident, error)
-	AuthorizeAlertRemediationOutcomeRun(ctx context.Context, arg db.AuthorizeAlertRemediationOutcomeRunParams) (int64, error)
+	CountActiveAlertIncidentsForPolicy(ctx context.Context, arg clusterdb.CountActiveAlertIncidentsForPolicyParams) (int64, error)
+	CountAlertRemediationJobsForPolicySince(ctx context.Context, arg clusterdb.CountAlertRemediationJobsForPolicySinceParams) (int64, error)
+	CreateAlertRemediationJob(ctx context.Context, incidentID int64) (clusterdb.AlertRemediationJob, error)
+	GetAlertIncidentByIncidentID(ctx context.Context, incidentID string) (clusterdb.AlertIncident, error)
+	GetAlertIncident(ctx context.Context, id int64) (clusterdb.AlertIncident, error)
+	AuthorizeAlertRemediationOutcomeRun(ctx context.Context, arg clusterdb.AuthorizeAlertRemediationOutcomeRunParams) (int64, error)
 	RecordAlertIncidentRemediationOutcomeGuarded(ctx context.Context, arg db.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error)
 }
 
-// alertIncidentTxQuerier is satisfied by *db.Queries. It lets admission
+// alertIncidentTxQuerier is satisfied by *deploymentdb.Queries. It lets admission
 // (insert incident -> count active -> check cap -> enqueue job) run inside a
 // single transaction serialized by a per-policy advisory lock, so two
 // concurrent deliveries for the same policy cannot both observe "no active
@@ -75,7 +78,7 @@ type AlertIncidentQuerier interface {
 type alertIncidentTxQuerier interface {
 	AlertIncidentQuerier
 	BeginTx(ctx context.Context) (pgx.Tx, error)
-	WithTx(tx pgx.Tx) *db.Queries
+	WithTx(tx pgx.Tx) *deploymentdb.Queries
 }
 
 // AlertIncidentService turns GCP Cloud Monitoring webhook notifications into
@@ -192,7 +195,7 @@ func (s *AlertIncidentService) admitAndEnqueue(ctx context.Context, q AlertIncid
 		return nil
 	}
 
-	hits, err := q.IncrementActiveAlertIncident(ctx, db.IncrementActiveAlertIncidentParams{
+	hits, err := q.IncrementActiveAlertIncident(ctx, clusterdb.IncrementActiveAlertIncidentParams{
 		PolicyName: incident.PolicyName, ConditionName: incident.ConditionName,
 		IncidentID: incident.IncidentID, Summary: incident.Summary,
 	})
@@ -203,7 +206,7 @@ func (s *AlertIncidentService) admitAndEnqueue(ctx context.Context, q AlertIncid
 		return nil
 	}
 
-	row, err := q.CreateAlertIncident(ctx, db.CreateAlertIncidentParams{
+	row, err := q.CreateAlertIncident(ctx, clusterdb.CreateAlertIncidentParams{
 		IncidentID:    incident.IncidentID,
 		PolicyName:    incident.PolicyName,
 		ConditionName: incident.ConditionName,
@@ -235,7 +238,7 @@ func (s *AlertIncidentService) admitAndEnqueue(ctx context.Context, q AlertIncid
 		return nil
 	}
 
-	active, err := q.CountActiveAlertIncidentsForPolicy(ctx, db.CountActiveAlertIncidentsForPolicyParams{
+	active, err := q.CountActiveAlertIncidentsForPolicy(ctx, clusterdb.CountActiveAlertIncidentsForPolicyParams{
 		PolicyName: incident.PolicyName,
 		ID:         row.ID,
 	})
@@ -248,7 +251,7 @@ func (s *AlertIncidentService) admitAndEnqueue(ctx context.Context, q AlertIncid
 		return nil
 	}
 
-	attempts, err := q.CountAlertRemediationJobsForPolicySince(ctx, db.CountAlertRemediationJobsForPolicySinceParams{
+	attempts, err := q.CountAlertRemediationJobsForPolicySince(ctx, clusterdb.CountAlertRemediationJobsForPolicySinceParams{
 		PolicyName: incident.PolicyName,
 		CreatedAt:  s.now().Add(-24 * time.Hour),
 	})
@@ -361,7 +364,7 @@ func (s *AlertIncidentService) RecordWorkflowRemediationOutcome(ctx context.Cont
 		}
 	}
 
-	rowsAffected, err := s.queries.AuthorizeAlertRemediationOutcomeRun(ctx, db.AuthorizeAlertRemediationOutcomeRunParams{
+	rowsAffected, err := s.queries.AuthorizeAlertRemediationOutcomeRun(ctx, clusterdb.AuthorizeAlertRemediationOutcomeRunParams{
 		JobID:                identity.RemediationJobID,
 		IncidentRowID:        identity.IncidentRowID,
 		DispatchToken:        identity.RemediationDispatchToken,
@@ -446,7 +449,7 @@ func canonicalGitHubPullRequestURL(raw, repository string) (string, bool) {
 
 func (s *AlertIncidentService) recordRemediationOutcome(
 	ctx context.Context,
-	row db.AlertIncident,
+	row clusterdb.AlertIncident,
 	outcome AlertRemediationOutcome,
 	state string,
 	artifactURL string,

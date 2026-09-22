@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/singleflight"
@@ -19,7 +22,7 @@ type AdminAnalyticsQuerier interface {
 	AnalyticsActivation(ctx context.Context, includeSynthetic bool) (db.AnalyticsActivationRow, error)
 	AnalyticsAgents(ctx context.Context, arg db.AnalyticsAgentsParams) (db.AnalyticsAgentsRow, error)
 	AnalyticsAgentsByStatus(ctx context.Context, arg db.AnalyticsAgentsByStatusParams) ([]db.AnalyticsAgentsByStatusRow, error)
-	AnalyticsGoldenSnapshots(ctx context.Context, arg db.AnalyticsGoldenSnapshotsParams) ([]db.AnalyticsGoldenSnapshotsRow, error)
+	AnalyticsGoldenSnapshots(ctx context.Context, arg clusterdb.AnalyticsGoldenSnapshotsParams) ([]clusterdb.AnalyticsGoldenSnapshotsRow, error)
 	AnalyticsImportFailures(ctx context.Context, arg db.AnalyticsImportFailuresParams) ([]db.AnalyticsImportFailuresRow, error)
 	AnalyticsImportsByStatus(ctx context.Context, arg db.AnalyticsImportsByStatusParams) ([]db.AnalyticsImportsByStatusRow, error)
 	AnalyticsImportsFailedByStage(ctx context.Context, arg db.AnalyticsImportsFailedByStageParams) ([]db.AnalyticsImportsFailedByStageRow, error)
@@ -39,17 +42,17 @@ type AdminAnalyticsQuerier interface {
 }
 
 type AnalyticsSummary struct {
-	Range             string                           `json:"range"`
-	GeneratedAt       time.Time                        `json:"generated_at"`
-	SyntheticExcluded bool                             `json:"synthetic_excluded"`
-	Users             AnalyticsUsers                   `json:"users"`
-	Activation        AnalyticsActivation              `json:"activation"`
-	Workspaces        AnalyticsWorkspaces              `json:"workspaces"`
-	Agents            AnalyticsAgents                  `json:"agents"`
-	Landing           AnalyticsLanding                 `json:"landing"`
-	Imports           AnalyticsImports                 `json:"imports"`
-	GoldenSnapshots   []db.AnalyticsGoldenSnapshotsRow `json:"golden_snapshots"`
-	Repos             AnalyticsRepos                   `json:"repos"`
+	Range             string                                  `json:"range"`
+	GeneratedAt       time.Time                               `json:"generated_at"`
+	SyntheticExcluded bool                                    `json:"synthetic_excluded"`
+	Users             AnalyticsUsers                          `json:"users"`
+	Activation        AnalyticsActivation                     `json:"activation"`
+	Workspaces        AnalyticsWorkspaces                     `json:"workspaces"`
+	Agents            AnalyticsAgents                         `json:"agents"`
+	Landing           AnalyticsLanding                        `json:"landing"`
+	Imports           AnalyticsImports                        `json:"imports"`
+	GoldenSnapshots   []clusterdb.AnalyticsGoldenSnapshotsRow `json:"golden_snapshots"`
+	Repos             AnalyticsRepos                          `json:"repos"`
 }
 type AnalyticsUsers struct {
 	db.AnalyticsUsersRow
@@ -122,7 +125,7 @@ func NewAdminAnalyticsService(q AdminAnalyticsQuerier) *AdminAnalyticsService {
 // independently computed aggregates agree while writes continue. SET LOCAL
 // bounds statements on the server as well as the service's overall deadline.
 func NewAdminAnalyticsServiceWithPool(pool *pgxpool.Pool) *AdminAnalyticsService {
-	s := NewAdminAnalyticsService(db.New(pool))
+	s := NewAdminAnalyticsService(deploymentdb.New(pool))
 	s.begin = func(ctx context.Context) (pgx.Tx, error) {
 		return pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	}
@@ -226,7 +229,7 @@ func (s *AdminAnalyticsService) load(ctx context.Context, rangeName string, days
 			defer cancel()
 			_ = tx.Rollback(cleanup)
 		}()
-		snapshot := db.New(tx)
+		snapshot := deploymentdb.New(tx)
 		if err := snapshot.AnalyticsStatementTimeout(ctx); err != nil {
 			return AnalyticsSummary{}, err
 		}
@@ -252,7 +255,7 @@ func (s *AdminAnalyticsService) load(ctx context.Context, rangeName string, days
 		return AnalyticsSummary{}, err
 	}
 	out.Agents.ByStatus = analyticsNonNil(analyticsAgentsByStatus)
-	analyticsGoldenSnapshots, err := queries.AnalyticsGoldenSnapshots(ctx, db.AnalyticsGoldenSnapshotsParams{RangeStart: start, RangeEnd: end})
+	analyticsGoldenSnapshots, err := queries.AnalyticsGoldenSnapshots(ctx, clusterdb.AnalyticsGoldenSnapshotsParams{RangeStart: start, RangeEnd: end})
 	if err != nil {
 		return AnalyticsSummary{}, err
 	}

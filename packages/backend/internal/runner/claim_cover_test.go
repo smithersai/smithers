@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -50,9 +52,9 @@ func TestClaim_Cov_ClaimRunnerClaimIdleError(t *testing.T) {
 
 	claimErr := errors.New("runner not idle")
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			assert.Equal(t, int64(12), runnerID)
-			return db.RunnerPool{}, claimErr
+			return clusterdb.RunnerPool{}, claimErr
 		},
 		claimPendingTaskFn: func(context.Context, pgtype.Int8) (db.WorkflowTask, error) {
 			require.Fail(t, "claim pending task should not run when claiming the runner fails")
@@ -71,8 +73,8 @@ func TestClaim_Cov_ClaimRunnerReturnsReleaseErrorForNoRows(t *testing.T) {
 
 	releaseErr := errors.New("release failed")
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(context.Context, pgtype.Int8) (db.WorkflowTask, error) {
 			return db.WorkflowTask{}, pgx.ErrNoRows

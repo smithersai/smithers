@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -24,21 +27,21 @@ import (
 )
 
 type mockRunnerQuerier struct {
-	upsertRunnerFn                        func(ctx context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error)
-	touchRunnerHeartbeatFn                func(ctx context.Context, id int64) (db.RunnerPool, error)
-	claimIdleRunnerFn                     func(ctx context.Context, id int64) (db.RunnerPool, error)
+	upsertRunnerFn                        func(ctx context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error)
+	touchRunnerHeartbeatFn                func(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
+	claimIdleRunnerFn                     func(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
 	claimPendingTaskFn                    func(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error)
 	markWorkflowTaskRunningFn             func(ctx context.Context, arg db.MarkWorkflowTaskRunningParams) (int64, error)
 	markWorkflowTaskDoneFn                func(ctx context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error)
 	releaseRunnerFn                       func(ctx context.Context, id int64) (int64, error)
-	terminateRunnerFn                     func(ctx context.Context, id int64) (db.RunnerPool, error)
+	terminateRunnerFn                     func(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
 	requeueTasksForRunnerFn               func(ctx context.Context, runnerID pgtype.Int8) (int64, error)
 	updateWorkflowRunStatusBasedOnTasksFn func(ctx context.Context, workflowRunID int64) (string, error)
 	getWorkflowRunByRunIDFn               func(ctx context.Context, runID int64) (db.WorkflowRun, error)
 	getWorkflowTaskByRunIDFn              func(ctx context.Context, workflowRunID int64) (db.WorkflowTask, error)
 	getWorkflowTaskFn                     func(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
 	getTerminalWorkflowTaskFn             func(ctx context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error)
-	clearTerminalTaskOwnershipFn          func(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
+	clearTerminalTaskOwnershipFn          func(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
 	getWorkflowTaskRuntimeContextFn       func(ctx context.Context, arg db.GetWorkflowTaskRuntimeContextParams) (db.GetWorkflowTaskRuntimeContextRow, error)
 	insertWorkflowLogFn                   func(ctx context.Context, arg db.InsertWorkflowLogParams) (db.WorkflowLog, error)
 	insertWorkflowLogNextSequenceFn       func(ctx context.Context, arg db.InsertWorkflowLogNextSequenceParams) (db.InsertWorkflowLogNextSequenceRow, error)
@@ -71,25 +74,25 @@ type mockRunnerQuerier struct {
 	deleteAccessTokenCalls            []db.DeleteAccessTokenParams
 }
 
-func (m *mockRunnerQuerier) UpsertRunner(ctx context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error) {
+func (m *mockRunnerQuerier) UpsertRunner(ctx context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
 	if m.upsertRunnerFn != nil {
 		return m.upsertRunnerFn(ctx, arg)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
-func (m *mockRunnerQuerier) TouchRunnerHeartbeat(ctx context.Context, id int64) (db.RunnerPool, error) {
+func (m *mockRunnerQuerier) TouchRunnerHeartbeat(ctx context.Context, id int64) (clusterdb.RunnerPool, error) {
 	if m.touchRunnerHeartbeatFn != nil {
 		return m.touchRunnerHeartbeatFn(ctx, id)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
-func (m *mockRunnerQuerier) ClaimIdleRunner(ctx context.Context, id int64) (db.RunnerPool, error) {
+func (m *mockRunnerQuerier) ClaimIdleRunner(ctx context.Context, id int64) (clusterdb.RunnerPool, error) {
 	if m.claimIdleRunnerFn != nil {
 		return m.claimIdleRunnerFn(ctx, id)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
 func (m *mockRunnerQuerier) ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
@@ -120,11 +123,11 @@ func (m *mockRunnerQuerier) ReleaseRunner(ctx context.Context, id int64) (int64,
 	return 0, nil
 }
 
-func (m *mockRunnerQuerier) TerminateRunner(ctx context.Context, id int64) (db.RunnerPool, error) {
+func (m *mockRunnerQuerier) TerminateRunner(ctx context.Context, id int64) (clusterdb.RunnerPool, error) {
 	if m.terminateRunnerFn != nil {
 		return m.terminateRunnerFn(ctx, id)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
 func (m *mockRunnerQuerier) RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error) {
@@ -169,7 +172,7 @@ func (m *mockRunnerQuerier) GetTerminalWorkflowTaskForRunner(ctx context.Context
 	return 0, pgx.ErrNoRows
 }
 
-func (m *mockRunnerQuerier) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+func (m *mockRunnerQuerier) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 	if m.clearTerminalTaskOwnershipFn != nil {
 		return m.clearTerminalTaskOwnershipFn(ctx, arg)
 	}
@@ -491,11 +494,11 @@ func TestRunnerService_Register_ValidatesName(t *testing.T) {
 func TestRunnerService_Register_UpsertsRunner(t *testing.T) {
 	t.Parallel()
 
-	var captured db.UpsertRunnerParams
+	var captured clusterdb.UpsertRunnerParams
 	svc := NewRunnerService(&mockRunnerQuerier{
-		upsertRunnerFn: func(_ context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error) {
+		upsertRunnerFn: func(_ context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
 			captured = arg
-			return db.RunnerPool{ID: 42, Name: arg.Name, Metadata: arg.Metadata}, nil
+			return clusterdb.RunnerPool{ID: 42, Name: arg.Name, Metadata: arg.Metadata}, nil
 		},
 	})
 
@@ -514,8 +517,8 @@ func TestRunnerService_Register_UpsertError(t *testing.T) {
 	t.Parallel()
 
 	svc := NewRunnerService(&mockRunnerQuerier{
-		upsertRunnerFn: func(_ context.Context, _ db.UpsertRunnerParams) (db.RunnerPool, error) {
-			return db.RunnerPool{}, errors.New("db unavailable")
+		upsertRunnerFn: func(_ context.Context, _ clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, errors.New("db unavailable")
 		},
 	})
 
@@ -543,9 +546,9 @@ func TestRunnerService_ClaimTask_ClaimsAndMarksRunning(t *testing.T) {
 	t.Parallel()
 
 	svc := NewRunnerService(&mockRunnerQuerier{
-		claimIdleRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			assert.Equal(t, int64(7), id)
-			return db.RunnerPool{ID: id}, nil
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			assert.Equal(t, pgtype.Int8{Int64: 7, Valid: true}, runnerID)
@@ -587,8 +590,8 @@ func TestRunnerService_ClaimTask_ReleasesRunnerWhenNoTaskExists(t *testing.T) {
 
 	released := false
 	svc := NewRunnerService(&mockRunnerQuerier{
-		claimIdleRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: id}, nil
+		claimIdleRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			return db.WorkflowTask{}, pgx.ErrNoRows
@@ -611,10 +614,10 @@ func TestRunnerService_Heartbeat_TouchesRunner(t *testing.T) {
 
 	called := false
 	svc := NewRunnerService(&mockRunnerQuerier{
-		touchRunnerHeartbeatFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		touchRunnerHeartbeatFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			called = true
 			assert.Equal(t, int64(9), id)
-			return db.RunnerPool{ID: id}, nil
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 	})
 
@@ -626,8 +629,8 @@ func TestRunnerService_Heartbeat_NotFound(t *testing.T) {
 	t.Parallel()
 
 	svc := NewRunnerService(&mockRunnerQuerier{
-		touchRunnerHeartbeatFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, pgx.ErrNoRows
+		touchRunnerHeartbeatFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, pgx.ErrNoRows
 		},
 	})
 
@@ -641,10 +644,10 @@ func TestRunnerService_Terminate_RequeuesAssignedTasks(t *testing.T) {
 	terminated := false
 	requeued := false
 	svc := NewRunnerService(&mockRunnerQuerier{
-		terminateRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			terminated = true
 			assert.Equal(t, int64(5), id)
-			return db.RunnerPool{ID: id}, nil
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 		requeueTasksForRunnerFn: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			requeued = true
@@ -665,9 +668,9 @@ func TestRunnerService_Terminate_RequeueBeforeTerminate(t *testing.T) {
 
 	var callOrder []string
 	svc := NewRunnerService(&mockRunnerQuerier{
-		terminateRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "terminate")
-			return db.RunnerPool{ID: id}, nil
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 		requeueTasksForRunnerFn: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			callOrder = append(callOrder, "requeue")
@@ -684,9 +687,9 @@ func TestRunnerService_Terminate_RequeueFailure_DoesNotTerminate(t *testing.T) {
 
 	terminated := false
 	svc := NewRunnerService(&mockRunnerQuerier{
-		terminateRunnerFn: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			terminated = true
-			return db.RunnerPool{ID: id}, nil
+			return clusterdb.RunnerPool{ID: id}, nil
 		},
 		requeueTasksForRunnerFn: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			return 0, errors.New("db unavailable")
@@ -1374,7 +1377,7 @@ func TestRunnerService_CompleteTask_RejectsMatchingTaskScopedCredentialWithoutMu
 			completed = true
 			return 77, nil
 		},
-		clearTerminalTaskOwnershipFn: func(_ context.Context, _ db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+		clearTerminalTaskOwnershipFn: func(_ context.Context, _ clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 			cleared = true
 			return 1, nil
 		},
@@ -1411,7 +1414,7 @@ func TestRunnerService_CompleteTask_TrustedTerminalAcknowledgementReleasesRunner
 			assert.Equal(t, pgtype.Int8{Int64: 5, Valid: true}, arg.RunnerID)
 			return 77, nil
 		},
-		clearTerminalTaskOwnershipFn: func(_ context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+		clearTerminalTaskOwnershipFn: func(_ context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 			assert.Equal(t, int64(12), arg.TaskID)
 			assert.Equal(t, pgtype.Int8{Int64: 5, Valid: true}, arg.RunnerID)
 			cleared = true
@@ -1444,7 +1447,7 @@ func TestRunnerService_CompleteTask_StaleTerminalAcknowledgementCannotReleaseReu
 		getTerminalWorkflowTaskFn: func(_ context.Context, _ db.GetTerminalWorkflowTaskForRunnerParams) (int64, error) {
 			return 77, nil
 		},
-		clearTerminalTaskOwnershipFn: func(_ context.Context, _ db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+		clearTerminalTaskOwnershipFn: func(_ context.Context, _ clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 			return 0, nil
 		},
 		releaseRunnerFn: func(_ context.Context, _ int64) (int64, error) {
@@ -2794,7 +2797,7 @@ func TestRunnerService_CompleteTask_RejectsLegacyWorkflowCredentialBeforeMutatio
 // ─── Transactional CompleteTask wiring ───────────────────────────────────────
 
 // txBeginErrRunnerQuerier makes CompleteTask take the transactional branch (it
-// implements BeginTx + WithTx like *db.Queries) and fails at BeginTx. This
+// implements BeginTx + WithTx like *deploymentdb.Queries) and fails at BeginTx. This
 // pins the wiring for issues #139/#294: when the store supports transactions,
 // task completion must run inside one — never fall back to the multi-statement
 // path that can strand progress or double-fire terminal side effects.
@@ -2808,7 +2811,7 @@ func (q *txBeginErrRunnerQuerier) BeginTx(context.Context) (pgx.Tx, error) {
 	return nil, errors.New("begin tx unavailable")
 }
 
-func (q *txBeginErrRunnerQuerier) WithTx(pgx.Tx) *db.Queries {
+func (q *txBeginErrRunnerQuerier) WithTx(pgx.Tx) *deploymentdb.Queries {
 	panic("WithTx must not be called when BeginTx fails")
 }
 

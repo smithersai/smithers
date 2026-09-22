@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,8 +22,8 @@ func TestRunnerPool_ClaimTask_TransitionsTaskToRunning(t *testing.T) {
 
 	var runningTaskID int64
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			return db.WorkflowTask{ID: 42, Status: "assigned", RunnerID: runnerID}, nil

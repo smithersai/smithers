@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // AdminSystemStatusPinger verifies database reachability.
@@ -21,14 +21,14 @@ type AdminSystemStatusPinger interface {
 // canary. canary_results holds one row per (suite, test_name), so the listing
 // is already a latest-state snapshot.
 //
-// *db.Queries satisfies it directly.
+// *deploymentdb.Queries satisfies it directly.
 type AdminSystemStatusCanaryLister interface {
-	ListCanaryResults(ctx context.Context) ([]db.CanaryResult, error)
+	ListCanaryResults(ctx context.Context) ([]clusterdb.CanaryResult, error)
 }
 
 // AdminSystemStatusSandboxCounter counts live sandbox micro-VMs fleet-wide.
 //
-// *db.Queries satisfies it directly. CountActiveSandboxVMs counts every
+// *deploymentdb.Queries satisfies it directly. CountActiveSandboxVMs counts every
 // sandbox_instances row that still holds a compute reservation, so the total
 // covers all six resource kinds sandboxProvisionContext attributes (workspace,
 // repo_gateway, workflow_run, agent_session, anon-sandbox and
@@ -48,9 +48,9 @@ type AdminSystemStatusLandingQueueCounter interface {
 // state in one uncapped server-side count, so an alert storm can never
 // overflow a listing page and under-report the backlog.
 //
-// *db.Queries satisfies it directly.
+// *deploymentdb.Queries satisfies it directly.
 type AdminSystemStatusIncidentCounter interface {
-	GetAlertIncidentStateCounts(ctx context.Context) (db.GetAlertIncidentStateCountsRow, error)
+	GetAlertIncidentStateCounts(ctx context.Context) (clusterdb.GetAlertIncidentStateCountsRow, error)
 }
 
 // AdminSystemStatusSSECounter reports live server-sent-event connections.

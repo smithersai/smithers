@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/google/uuid"
@@ -22,9 +24,9 @@ import (
 type AdminManageQuerier interface {
 	AdminListAgentSessions(context.Context, db.AdminListAgentSessionsParams) ([]db.AdminListAgentSessionsRow, error)
 	AdminListWorkspaces(context.Context, db.AdminListWorkspacesParams) ([]db.AdminListWorkspacesRow, error)
-	AdminListSandboxHosts(context.Context) ([]db.AdminListSandboxHostsRow, error)
+	AdminListSandboxHosts(context.Context) ([]clusterdb.AdminListSandboxHostsRow, error)
 	AdminListTokens(context.Context, db.AdminListTokensParams) ([]db.AdminListTokensRow, error)
-	AdminPruneStaleSandboxHosts(context.Context, db.AdminPruneStaleSandboxHostsParams) (int64, error)
+	AdminPruneStaleSandboxHosts(context.Context, clusterdb.AdminPruneStaleSandboxHostsParams) (int64, error)
 	GetAgentSession(context.Context, string) (db.AgentSession, error)
 	GetWorkspace(context.Context, string) (db.Workspace, error)
 	InsertAuditLog(context.Context, db.InsertAuditLogParams) error
@@ -391,7 +393,7 @@ func (s *AdminManageService) PruneStaleSandboxHosts(ctx context.Context, hours i
 		return AdminPruneResult{}, pkgerrors.BadRequest("older_than_hours out of range")
 	}
 	actor, _ := services.AdminAuditActorFromContext(ctx)
-	n, err := s.q.AdminPruneStaleSandboxHosts(ctx, db.AdminPruneStaleSandboxHostsParams{
+	n, err := s.q.AdminPruneStaleSandboxHosts(ctx, clusterdb.AdminPruneStaleSandboxHostsParams{
 		OlderThanHours: hours, ActorID: pgtype.Int8{Int64: actor.UserID, Valid: true}, ActorName: actor.Username, IpAddress: actor.IPAddress,
 	})
 	if err != nil {

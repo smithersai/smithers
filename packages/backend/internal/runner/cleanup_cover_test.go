@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestCleanup_Cov_ListStaleRunnersError(t *testing.T) {
@@ -19,14 +19,14 @@ func TestCleanup_Cov_ListStaleRunnersError(t *testing.T) {
 	listErr := errors.New("list stale failed")
 	baseNow := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	store := &mockStore{
-		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error) {
+		listStaleRunnersFn: func(_ context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
 			assert.True(t, cutoffAt.Valid)
 			assert.Equal(t, baseNow.Add(-30*time.Second), cutoffAt.Time)
 			return nil, listErr
 		},
-		terminateRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
 			require.Fail(t, "terminate runner should not run when listing stale runners fails")
-			return db.RunnerPool{}, nil
+			return clusterdb.RunnerPool{}, nil
 		},
 	}
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,11 +16,11 @@ import (
 
 type atomicRunnerQuerier struct {
 	RunnerQuerier
-	claimFn  func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error)
+	claimFn  func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error)
 	statusFn func(context.Context, int64) (string, error)
 }
 
-func (q *atomicRunnerQuerier) ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error) {
+func (q *atomicRunnerQuerier) ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
 	return q.claimFn(ctx, runnerID)
 }
 
@@ -30,9 +32,9 @@ func TestRunnerService_ClaimTask_UsesAtomicProductionPath(t *testing.T) {
 	t.Parallel()
 
 	legacy := &mockRunnerQuerier{
-		claimIdleRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
 			t.Fatal("atomic claim must not reserve the runner separately")
-			return db.RunnerPool{}, nil
+			return clusterdb.RunnerPool{}, nil
 		},
 		markWorkflowTaskRunningFn: func(context.Context, db.MarkWorkflowTaskRunningParams) (int64, error) {
 			t.Fatal("atomic claim must not mark the task separately")
@@ -45,9 +47,9 @@ func TestRunnerService_ClaimTask_UsesAtomicProductionPath(t *testing.T) {
 	}
 	querier := &atomicRunnerQuerier{
 		RunnerQuerier: legacy,
-		claimFn: func(_ context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error) {
+		claimFn: func(_ context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
 			assert.Equal(t, int64(7), runnerID)
-			return db.ClaimRunnerWorkflowTaskRow{
+			return clusterdb.ClaimRunnerWorkflowTaskRow{
 				ID:             42,
 				WorkflowRunID:  99,
 				WorkflowStepID: 321,
@@ -75,8 +77,8 @@ func TestRunnerService_ClaimTask_AtomicPathHandlesEmptyQueueAndErrors(t *testing
 	t.Run("empty queue", func(t *testing.T) {
 		querier := &atomicRunnerQuerier{
 			RunnerQuerier: &mockRunnerQuerier{},
-			claimFn: func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-				return db.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
+			claimFn: func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+				return clusterdb.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
 			},
 			statusFn: func(_ context.Context, runnerID int64) (string, error) {
 				assert.Equal(t, int64(7), runnerID)
@@ -94,8 +96,8 @@ func TestRunnerService_ClaimTask_AtomicPathHandlesEmptyQueueAndErrors(t *testing
 			t.Run(status, func(t *testing.T) {
 				querier := &atomicRunnerQuerier{
 					RunnerQuerier: &mockRunnerQuerier{},
-					claimFn: func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-						return db.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
+					claimFn: func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+						return clusterdb.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
 					},
 					statusFn: func(context.Context, int64) (string, error) {
 						return status, nil
@@ -111,8 +113,8 @@ func TestRunnerService_ClaimTask_AtomicPathHandlesEmptyQueueAndErrors(t *testing
 	t.Run("runner missing", func(t *testing.T) {
 		querier := &atomicRunnerQuerier{
 			RunnerQuerier: &mockRunnerQuerier{},
-			claimFn: func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-				return db.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
+			claimFn: func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+				return clusterdb.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
 			},
 			statusFn: func(context.Context, int64) (string, error) {
 				return "", pgx.ErrNoRows
@@ -132,8 +134,8 @@ func TestRunnerService_ClaimTask_AtomicPathHandlesEmptyQueueAndErrors(t *testing
 					return 0, nil
 				},
 			},
-			claimFn: func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-				return db.ClaimRunnerWorkflowTaskRow{}, sentinel
+			claimFn: func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+				return clusterdb.ClaimRunnerWorkflowTaskRow{}, sentinel
 			},
 		}
 

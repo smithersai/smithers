@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestRunnerPool_heartbeatRunner_Success(t *testing.T) {
@@ -16,9 +16,9 @@ func TestRunnerPool_heartbeatRunner_Success(t *testing.T) {
 
 	var touchedRunnerID int64
 	store := &mockStore{
-		touchRunnerHeartbeat: func(_ context.Context, id int64) (db.RunnerPool, error) {
+		touchRunnerHeartbeat: func(_ context.Context, id int64) (clusterdb.RunnerPool, error) {
 			touchedRunnerID = id
-			return db.RunnerPool{ID: id, Status: "busy"}, nil
+			return clusterdb.RunnerPool{ID: id, Status: "busy"}, nil
 		},
 	}
 
@@ -32,8 +32,8 @@ func TestRunnerPool_heartbeatRunner_RunnerNotFound(t *testing.T) {
 	t.Parallel()
 
 	store := &mockStore{
-		touchRunnerHeartbeat: func(_ context.Context, _ int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, pgx.ErrNoRows
+		touchRunnerHeartbeat: func(_ context.Context, _ int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, pgx.ErrNoRows
 		},
 	}
 

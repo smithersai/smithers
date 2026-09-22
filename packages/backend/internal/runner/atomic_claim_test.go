@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,10 +16,10 @@ import (
 
 type atomicClaimStore struct {
 	Store
-	claimFn func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error)
+	claimFn func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error)
 }
 
-func (s *atomicClaimStore) ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error) {
+func (s *atomicClaimStore) ClaimRunnerWorkflowTask(ctx context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
 	return s.claimFn(ctx, runnerID)
 }
 
@@ -25,9 +27,9 @@ func TestRunnerPool_ClaimTask_UsesAtomicProductionPath(t *testing.T) {
 	t.Parallel()
 
 	legacy := &mockStore{
-		claimIdleRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
 			t.Fatal("atomic claim must not reserve the runner separately")
-			return db.RunnerPool{}, nil
+			return clusterdb.RunnerPool{}, nil
 		},
 		markTaskRunningFn: func(context.Context, db.MarkWorkflowTaskRunningParams) (int64, error) {
 			t.Fatal("atomic claim must not mark the task separately")
@@ -40,9 +42,9 @@ func TestRunnerPool_ClaimTask_UsesAtomicProductionPath(t *testing.T) {
 	}
 	store := &atomicClaimStore{
 		Store: legacy,
-		claimFn: func(_ context.Context, runnerID int64) (db.ClaimRunnerWorkflowTaskRow, error) {
+		claimFn: func(_ context.Context, runnerID int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
 			assert.Equal(t, int64(7), runnerID)
-			return db.ClaimRunnerWorkflowTaskRow{ID: 42, Status: "running"}, nil
+			return clusterdb.ClaimRunnerWorkflowTaskRow{ID: 42, Status: "running"}, nil
 		},
 	}
 
@@ -61,8 +63,8 @@ func TestRunnerPool_ClaimTask_AtomicFailureDoesNotAttemptPartialCleanup(t *testi
 	legacy := &mockStore{}
 	store := &atomicClaimStore{
 		Store: legacy,
-		claimFn: func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-			return db.ClaimRunnerWorkflowTaskRow{}, sentinel
+		claimFn: func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+			return clusterdb.ClaimRunnerWorkflowTaskRow{}, sentinel
 		},
 	}
 
@@ -71,8 +73,8 @@ func TestRunnerPool_ClaimTask_AtomicFailureDoesNotAttemptPartialCleanup(t *testi
 	assert.ErrorIs(t, err, sentinel)
 	assert.Equal(t, 0, legacy.ReleaseCallCount())
 
-	store.claimFn = func(context.Context, int64) (db.ClaimRunnerWorkflowTaskRow, error) {
-		return db.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
+	store.claimFn = func(context.Context, int64) (clusterdb.ClaimRunnerWorkflowTaskRow, error) {
+		return clusterdb.ClaimRunnerWorkflowTaskRow{}, pgx.ErrNoRows
 	}
 	task, err = NewRunnerPool(store, Config{}).ClaimTask(context.Background(), 7)
 	assert.Nil(t, task)

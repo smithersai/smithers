@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,7 +77,7 @@ func TestAlertIncident_Z_ErrorBranchesAndConstructorClock(t *testing.T) {
 		{
 			name: "record error",
 			q: alertIncidentZQuerier{
-				fakeAlertIncidentQuerier: &fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{
+				fakeAlertIncidentQuerier: &fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{
 					"incident-z": {ID: 9, IncidentID: "incident-z"},
 				}},
 				recordOutcomeErr: errors.New("record failed"),
@@ -104,30 +106,30 @@ type alertIncidentZQuerier struct {
 	recordOutcomeErr error
 }
 
-func (q alertIncidentZQuerier) CountActiveAlertIncidentsForPolicy(context.Context, db.CountActiveAlertIncidentsForPolicyParams) (int64, error) {
+func (q alertIncidentZQuerier) CountActiveAlertIncidentsForPolicy(context.Context, clusterdb.CountActiveAlertIncidentsForPolicyParams) (int64, error) {
 	if q.countActiveErr != nil {
 		return 0, q.countActiveErr
 	}
-	return q.fakeAlertIncidentQuerier.CountActiveAlertIncidentsForPolicy(context.Background(), db.CountActiveAlertIncidentsForPolicyParams{})
+	return q.fakeAlertIncidentQuerier.CountActiveAlertIncidentsForPolicy(context.Background(), clusterdb.CountActiveAlertIncidentsForPolicyParams{})
 }
 
-func (q alertIncidentZQuerier) CountAlertRemediationJobsForPolicySince(context.Context, db.CountAlertRemediationJobsForPolicySinceParams) (int64, error) {
+func (q alertIncidentZQuerier) CountAlertRemediationJobsForPolicySince(context.Context, clusterdb.CountAlertRemediationJobsForPolicySinceParams) (int64, error) {
 	if q.countAttemptsErr != nil {
 		return 0, q.countAttemptsErr
 	}
-	return q.fakeAlertIncidentQuerier.CountAlertRemediationJobsForPolicySince(context.Background(), db.CountAlertRemediationJobsForPolicySinceParams{})
+	return q.fakeAlertIncidentQuerier.CountAlertRemediationJobsForPolicySince(context.Background(), clusterdb.CountAlertRemediationJobsForPolicySinceParams{})
 }
 
-func (q alertIncidentZQuerier) CreateAlertRemediationJob(context.Context, int64) (db.AlertRemediationJob, error) {
+func (q alertIncidentZQuerier) CreateAlertRemediationJob(context.Context, int64) (clusterdb.AlertRemediationJob, error) {
 	if q.createJobErr != nil {
-		return db.AlertRemediationJob{}, q.createJobErr
+		return clusterdb.AlertRemediationJob{}, q.createJobErr
 	}
 	return q.fakeAlertIncidentQuerier.CreateAlertRemediationJob(context.Background(), 1)
 }
 
-func (q alertIncidentZQuerier) GetAlertIncidentByIncidentID(ctx context.Context, incidentID string) (db.AlertIncident, error) {
+func (q alertIncidentZQuerier) GetAlertIncidentByIncidentID(ctx context.Context, incidentID string) (clusterdb.AlertIncident, error) {
 	if q.getIncidentErr != nil {
-		return db.AlertIncident{}, q.getIncidentErr
+		return clusterdb.AlertIncident{}, q.getIncidentErr
 	}
 	return q.fakeAlertIncidentQuerier.GetAlertIncidentByIncidentID(ctx, incidentID)
 }
@@ -167,7 +169,7 @@ func TestAlertIncident_Z_RecordRemediationNotFound(t *testing.T) {
 	t.Parallel()
 
 	svc := NewAlertIncidentService(alertIncidentZQuerier{
-		fakeAlertIncidentQuerier: &fakeAlertIncidentQuerier{incidentByID: map[string]db.AlertIncident{}},
+		fakeAlertIncidentQuerier: &fakeAlertIncidentQuerier{incidentByID: map[string]clusterdb.AlertIncident{}},
 	}, testAlertRegistry(t))
 	err := svc.RecordRemediationOutcome(context.Background(), AlertRemediationOutcome{IncidentID: "missing", State: "failed"})
 	assert.Equal(t, 404, apiStatus(t, err))

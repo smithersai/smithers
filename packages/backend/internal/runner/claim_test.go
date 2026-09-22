@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -20,10 +22,10 @@ func TestRunnerPool_claimRunner_AssignsPendingTask(t *testing.T) {
 
 	callOrder := make([]string, 0, 2)
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "claim-runner")
 			assert.Equal(t, int64(13), runnerID)
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			callOrder = append(callOrder, "claim-task")
@@ -45,9 +47,9 @@ func TestRunnerPool_claimRunner_NoTaskReleasesRunner(t *testing.T) {
 
 	callOrder := make([]string, 0, 3)
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "claim-runner")
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, _ pgtype.Int8) (db.WorkflowTask, error) {
 			callOrder = append(callOrder, "claim-task")
@@ -73,8 +75,8 @@ func TestRunnerPool_claimRunner_ClaimErrorReleasesRunner(t *testing.T) {
 	claimErr := errors.New("query timeout")
 	released := false
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, _ pgtype.Int8) (db.WorkflowTask, error) {
 			return db.WorkflowTask{}, claimErr
@@ -99,8 +101,8 @@ func TestRunnerPool_claimRunner_ConcurrencyContention(t *testing.T) {
 	var claimCount atomic.Int32
 
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			if claimCount.Add(1) == 1 {

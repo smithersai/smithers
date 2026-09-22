@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -31,11 +33,11 @@ func TestNewRunnerPool_ConfiguresHeartbeatTimeout(t *testing.T) {
 func TestRunnerPool_registerRunner_DelegatesToStore(t *testing.T) {
 	t.Parallel()
 
-	var captured db.UpsertRunnerParams
+	var captured clusterdb.UpsertRunnerParams
 	store := &mockStore{
-		upsertRunnerFn: func(_ context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error) {
+		upsertRunnerFn: func(_ context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
 			captured = arg
-			return db.RunnerPool{ID: 9, Name: arg.Name, Metadata: arg.Metadata}, nil
+			return clusterdb.RunnerPool{ID: 9, Name: arg.Name, Metadata: arg.Metadata}, nil
 		},
 	}
 
@@ -76,10 +78,10 @@ func TestRunnerPool_terminateRunner_RequeuesTasksBeforeMarkingOffline(t *testing
 	// stale-runner cleanup/retry) rather than stranding its tasks.
 	callOrder := make([]string, 0, 2)
 	store := &mockStore{
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			callOrder = append(callOrder, "terminate-runner")
 			assert.Equal(t, int64(31), runnerID)
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			callOrder = append(callOrder, "requeue-tasks")
@@ -100,9 +102,9 @@ func TestRunnerPool_terminateRunner_RequeueFailure_LeavesRunnerUnterminated(t *t
 
 	terminateCalled := false
 	store := &mockStore{
-		terminateRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		terminateRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			terminateCalled = true
-			return db.RunnerPool{ID: runnerID, Status: "offline"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "offline"}, nil
 		},
 		requeueTasksForRunner: func(_ context.Context, runnerID pgtype.Int8) (int64, error) {
 			return 0, assert.AnError
@@ -175,7 +177,7 @@ func TestRunnerPool_CompleteTask_AcknowledgesChildTerminalStatus(t *testing.T) {
 			assert.Equal(t, runnerIDParam(42), arg.RunnerID)
 			return 17, nil
 		},
-		clearTerminalTaskFn: func(_ context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+		clearTerminalTaskFn: func(_ context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 			callOrder = append(callOrder, "clear-terminal-owner")
 			assert.Equal(t, int64(91), arg.TaskID)
 			assert.Equal(t, runnerIDParam(42), arg.RunnerID)
@@ -206,7 +208,7 @@ func TestRunnerPool_CompleteTask_StaleAcknowledgementDoesNotReleaseRunner(t *tes
 		getTerminalTaskFn: func(context.Context, db.GetTerminalWorkflowTaskForRunnerParams) (int64, error) {
 			return 17, nil
 		},
-		clearTerminalTaskFn: func(context.Context, db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+		clearTerminalTaskFn: func(context.Context, clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 			return 0, nil
 		},
 		releaseRunnerFn: func(context.Context, int64) (int64, error) {

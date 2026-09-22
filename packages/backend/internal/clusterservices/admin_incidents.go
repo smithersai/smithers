@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -18,14 +21,14 @@ import (
 // AdminIncidentsQuerier deliberately has no remediation enqueue capability.
 type AdminIncidentsQuerier interface {
 	services.AuditQueries
-	GetAlertIncidentForUpdate(context.Context, int64) (db.AlertIncident, error)
-	AdminMutateAlertIncidents(context.Context, db.AdminMutateAlertIncidentsParams) ([]db.AlertIncident, error)
-	ListAlertRemediationJobsForIncidents(context.Context, []int64) ([]db.ListAlertRemediationJobsForIncidentsRow, error)
+	GetAlertIncidentForUpdate(context.Context, int64) (clusterdb.AlertIncident, error)
+	AdminMutateAlertIncidents(context.Context, clusterdb.AdminMutateAlertIncidentsParams) ([]clusterdb.AlertIncident, error)
+	ListAlertRemediationJobsForIncidents(context.Context, []int64) ([]clusterdb.ListAlertRemediationJobsForIncidentsRow, error)
 }
 
 type incidentTransactionalQuerier interface {
 	BeginTx(context.Context) (pgx.Tx, error)
-	WithTx(pgx.Tx) *db.Queries
+	WithTx(pgx.Tx) *deploymentdb.Queries
 }
 
 type AdminIncidentBulkInput struct {
@@ -181,8 +184,8 @@ func (s *AdminIncidentsService) Bulk(ctx context.Context, input AdminIncidentBul
 	return affected, nil
 }
 
-func incidentMutationParams(input AdminIncidentBulkInput, actor services.AdminAuditActor) db.AdminMutateAlertIncidentsParams {
-	p := db.AdminMutateAlertIncidentsParams{Action: input.Action, Actor: actor.Username, Ids: input.IDs}
+func incidentMutationParams(input AdminIncidentBulkInput, actor services.AdminAuditActor) clusterdb.AdminMutateAlertIncidentsParams {
+	p := clusterdb.AdminMutateAlertIncidentsParams{Action: input.Action, Actor: actor.Username, Ids: input.IDs}
 	if input.Policy != nil {
 		p.Policy = pgtype.Text{String: *input.Policy, Valid: true}
 	}

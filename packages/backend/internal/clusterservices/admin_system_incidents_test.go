@@ -7,20 +7,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockAdminSystemIncidentsQuerier struct {
-	listIncidentsFn func(ctx context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error)
+	listIncidentsFn func(ctx context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error)
 	listJobsFn      func(ctx context.Context, incidentIDs []int64) ([]AdminSystemRemediationJobRow, error)
 }
 
-func (m *mockAdminSystemIncidentsQuerier) ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+func (m *mockAdminSystemIncidentsQuerier) ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 	if m.listIncidentsFn != nil {
 		return m.listIncidentsFn(ctx, arg)
 	}
@@ -34,8 +35,8 @@ func (m *mockAdminSystemIncidentsQuerier) ListAlertRemediationJobsForIncidents(c
 	return nil, nil
 }
 
-func makeAdminSystemIncidentRow(id int64, policy, state string, createdAt time.Time, resolvedAt *time.Time) db.AlertIncident {
-	row := db.AlertIncident{
+func makeAdminSystemIncidentRow(id int64, policy, state string, createdAt time.Time, resolvedAt *time.Time) clusterdb.AlertIncident {
+	row := clusterdb.AlertIncident{
 		ID:         id,
 		IncidentID: "gcp-" + policy,
 		PolicyName: policy,
@@ -76,10 +77,10 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		runID := int64(4242)
 		var gotIDs []int64
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 				assert.Equal(t, "active", arg.State)
 				assert.Equal(t, int32(50), arg.PageLimit)
-				return []db.AlertIncident{
+				return []clusterdb.AlertIncident{
 					makeAdminSystemIncidentRow(1, "api-5xx", "open", base, nil),
 					makeAdminSystemIncidentRow(2, "queue-depth", "remediating", base.Add(time.Hour), nil),
 				}, nil
@@ -123,8 +124,8 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 
 		resolved := base.Add(2 * time.Hour)
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
-				return []db.AlertIncident{
+			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
+				return []clusterdb.AlertIncident{
 					makeAdminSystemIncidentRow(7, "disk-full", "resolved", base, &resolved),
 				}, nil
 			},
@@ -141,7 +142,7 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		t.Parallel()
 
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 				assert.Equal(t, "all", arg.State)
 				return nil, nil
 			},
@@ -158,8 +159,8 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 
 		jobsCalled := false
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
-				return []db.AlertIncident{}, nil
+			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
+				return []clusterdb.AlertIncident{}, nil
 			},
 			listJobsFn: func(_ context.Context, _ []int64) ([]AdminSystemRemediationJobRow, error) {
 				jobsCalled = true
@@ -177,8 +178,8 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		t.Parallel()
 
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
-				return []db.AlertIncident{makeAdminSystemIncidentRow(1, "api-5xx", "open", base, nil)}, nil
+			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
+				return []clusterdb.AlertIncident{makeAdminSystemIncidentRow(1, "api-5xx", "open", base, nil)}, nil
 			},
 			listJobsFn: func(_ context.Context, _ []int64) ([]AdminSystemRemediationJobRow, error) {
 				return []AdminSystemRemediationJobRow{
@@ -197,7 +198,7 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		t.Parallel()
 
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+			listIncidentsFn: func(_ context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 				assert.Equal(t, int32(200), arg.PageLimit)
 				return nil, nil
 			},
@@ -236,7 +237,7 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		t.Parallel()
 
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 				return nil, stderrors.New("boom")
 			},
 		}
@@ -253,8 +254,8 @@ func TestAdminSystemIncidentsService_ListIncidents(t *testing.T) {
 		t.Parallel()
 
 		q := &mockAdminSystemIncidentsQuerier{
-			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
-				return []db.AlertIncident{makeAdminSystemIncidentRow(1, "api-5xx", "open", base, nil)}, nil
+			listIncidentsFn: func(_ context.Context, _ AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
+				return []clusterdb.AlertIncident{makeAdminSystemIncidentRow(1, "api-5xx", "open", base, nil)}, nil
 			},
 			listJobsFn: func(_ context.Context, _ []int64) ([]AdminSystemRemediationJobRow, error) {
 				return nil, stderrors.New("boom")

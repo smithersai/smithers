@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 type fakeStorageDeletionCoordinator struct {
-	rows         []db.StorageDeletionQueue
+	rows         []clusterdb.StorageDeletionQueue
 	active       map[int64]bool
 	claimErr     error
 	claimedLease time.Duration
@@ -23,7 +23,7 @@ type fakeStorageDeletionCoordinator struct {
 	retryCounts  map[int64]int
 }
 
-func (f *fakeStorageDeletionCoordinator) Claim(_ context.Context, token string, lease time.Duration, limit int32) ([]db.StorageDeletionQueue, error) {
+func (f *fakeStorageDeletionCoordinator) Claim(_ context.Context, token string, lease time.Duration, limit int32) ([]clusterdb.StorageDeletionQueue, error) {
 	if f.claimErr != nil {
 		return nil, f.claimErr
 	}
@@ -34,10 +34,10 @@ func (f *fakeStorageDeletionCoordinator) Claim(_ context.Context, token string, 
 	for i := range f.rows {
 		f.rows[i].ClaimToken = pgtype.Text{String: token, Valid: true}
 	}
-	return append([]db.StorageDeletionQueue(nil), f.rows...), nil
+	return append([]clusterdb.StorageDeletionQueue(nil), f.rows...), nil
 }
 
-func (f *fakeStorageDeletionCoordinator) Process(ctx context.Context, row db.StorageDeletionQueue, purge func(context.Context, string) error) (bool, error) {
+func (f *fakeStorageDeletionCoordinator) Process(ctx context.Context, row clusterdb.StorageDeletionQueue, purge func(context.Context, string) error) (bool, error) {
 	if f.active[row.ID] {
 		f.processed = append(f.processed, row.ID)
 		return true, nil
@@ -74,7 +74,7 @@ func (s *recordingGenerationPurger) PurgeAllGenerations(_ context.Context, key s
 func TestStorageDeletionCleanerFailureRetainsRetryAndContinues(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("gcs unavailable")
-	coordinator := &fakeStorageDeletionCoordinator{rows: []db.StorageDeletionQueue{
+	coordinator := &fakeStorageDeletionCoordinator{rows: []clusterdb.StorageDeletionQueue{
 		{ID: 1, ObjectKey: "failed"},
 		{ID: 2, ObjectKey: "succeeds"},
 	}}
@@ -93,7 +93,7 @@ func TestStorageDeletionCleanerFailureRetainsRetryAndContinues(t *testing.T) {
 func TestStorageDeletionCleanerPreservesActiveLFSKey(t *testing.T) {
 	t.Parallel()
 	coordinator := &fakeStorageDeletionCoordinator{
-		rows:   []db.StorageDeletionQueue{{ID: 7, ObjectKey: "repos/42/lfs/abc"}},
+		rows:   []clusterdb.StorageDeletionQueue{{ID: 7, ObjectKey: "repos/42/lfs/abc"}},
 		active: map[int64]bool{7: true},
 	}
 	store := &recordingGenerationPurger{}
@@ -124,7 +124,7 @@ func TestStorageDeletionCleanerClaimFailure(t *testing.T) {
 
 func TestStorageDeletionCleanerBoundsPerObjectPurge(t *testing.T) {
 	t.Parallel()
-	coordinator := &fakeStorageDeletionCoordinator{rows: []db.StorageDeletionQueue{{ID: 9, ObjectKey: "slow/key"}}}
+	coordinator := &fakeStorageDeletionCoordinator{rows: []clusterdb.StorageDeletionQueue{{ID: 9, ObjectKey: "slow/key"}}}
 	cleaner := newStorageDeletionCleaner(coordinator, blockingGenerationPurger{}, time.Minute, 1)
 	cleaner.purgeTimeout = 10 * time.Millisecond
 

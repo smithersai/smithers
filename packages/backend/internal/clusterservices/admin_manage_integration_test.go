@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/google/uuid"
@@ -20,7 +22,7 @@ func TestAdminManagementSQLFilters(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	// Explicit fixture IDs and rollback leave shared integration fixtures and
 	// their identity sequences untouched.
 	human := time.Now().UnixNano()
@@ -123,7 +125,7 @@ func TestAdminStopWorkspaceRetainsRowAndEndsSessions(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	user, repo := time.Now().UnixNano(), time.Now().UnixNano()+1
 	owner := fmt.Sprintf("stop-owner-%d", user)
 	_, err = tx.Exec(ctx, `INSERT INTO users(id,username,lower_username) VALUES ($1,$2,$2)`, user, owner)

@@ -6,15 +6,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type CanaryResultStore interface {
-	UpsertCanaryResult(context.Context, db.UpsertCanaryResultParams) (db.CanaryResult, error)
-	ResolveCanaryAlertIncidents(context.Context, db.ResolveCanaryAlertIncidentsParams) (int64, error)
+	UpsertCanaryResult(context.Context, clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error)
+	ResolveCanaryAlertIncidents(context.Context, clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error)
 }
 
 type CanaryReportInput struct {
@@ -56,7 +57,7 @@ func (s *CanaryReportService) ReportResults(ctx context.Context, input CanaryRep
 	if len(input.Results) == 0 {
 		return pkgerrors.BadRequest("results must not be empty")
 	}
-	rows := make([]db.UpsertCanaryResultParams, len(input.Results))
+	rows := make([]clusterdb.UpsertCanaryResultParams, len(input.Results))
 	failures := 0
 	for i, result := range input.Results {
 		name, status := strings.TrimSpace(result.Test), strings.ToLower(strings.TrimSpace(result.Status))
@@ -72,7 +73,7 @@ func (s *CanaryReportService) ReportResults(ctx context.Context, input CanaryRep
 		if status == "failure" {
 			failures++
 		}
-		rows[i] = db.UpsertCanaryResultParams{Suite: suite, TestName: name, Status: status, DurationSeconds: result.DurationSeconds, ErrorMessage: strings.TrimSpace(result.Error), RunID: runID, ReportedAt: reportedAt.UTC()}
+		rows[i] = clusterdb.UpsertCanaryResultParams{Suite: suite, TestName: name, Status: status, DurationSeconds: result.DurationSeconds, ErrorMessage: strings.TrimSpace(result.Error), RunID: runID, ReportedAt: reportedAt.UTC()}
 	}
 	record := func(q CanaryResultStore) error {
 		for _, row := range rows {
@@ -81,7 +82,7 @@ func (s *CanaryReportService) ReportResults(ctx context.Context, input CanaryRep
 			}
 		}
 		if condition := CanaryIncidentCondition(suite); failures == 0 && condition != "" {
-			if _, err := q.ResolveCanaryAlertIncidents(ctx, db.ResolveCanaryAlertIncidentsParams{ConditionName: condition, ResolvedBy: pgtype.Text{String: "canary:" + runID, Valid: true}}); err != nil {
+			if _, err := q.ResolveCanaryAlertIncidents(ctx, clusterdb.ResolveCanaryAlertIncidentsParams{ConditionName: condition, ResolvedBy: pgtype.Text{String: "canary:" + runID, Valid: true}}); err != nil {
 				return pkgerrors.Internal("failed to resolve canary incidents")
 			}
 		}

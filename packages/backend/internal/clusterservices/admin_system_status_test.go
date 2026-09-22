@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type fakeStatusPinger struct {
@@ -59,11 +59,11 @@ func (f *fakeStatusRuntimeStore) GetWorkflowTaskQueueMetrics(context.Context) (s
 }
 
 type fakeStatusCanaryLister struct {
-	results []db.CanaryResult
+	results []clusterdb.CanaryResult
 	err     error
 }
 
-func (f *fakeStatusCanaryLister) ListCanaryResults(context.Context) ([]db.CanaryResult, error) {
+func (f *fakeStatusCanaryLister) ListCanaryResults(context.Context) ([]clusterdb.CanaryResult, error) {
 	return f.results, f.err
 }
 
@@ -86,12 +86,12 @@ func (f *fakeStatusLandingQueueCounter) CountQueuedLandingTasks(context.Context)
 }
 
 type fakeStatusIncidentCounter struct {
-	counts db.GetAlertIncidentStateCountsRow
+	counts clusterdb.GetAlertIncidentStateCountsRow
 	err    error
 	calls  int
 }
 
-func (f *fakeStatusIncidentCounter) GetAlertIncidentStateCounts(context.Context) (db.GetAlertIncidentStateCountsRow, error) {
+func (f *fakeStatusIncidentCounter) GetAlertIncidentStateCounts(context.Context) (clusterdb.GetAlertIncidentStateCountsRow, error) {
 	f.calls++
 	return f.counts, f.err
 }
@@ -117,7 +117,7 @@ func healthyStatusConfig() AdminSystemStatusServiceConfig {
 			queue:          services.WorkflowTaskQueueMetrics{Depth: 7, OldestAgeSeconds: 31.25},
 		},
 		Canaries: &fakeStatusCanaryLister{
-			results: []db.CanaryResult{
+			results: []clusterdb.CanaryResult{
 				{Suite: "workflow", TestName: "auth", Status: "success", ReportedAt: statusTestNow.Add(-time.Minute)},
 				{Suite: "workflow", TestName: "repo", Status: "success", ReportedAt: statusTestNow.Add(-2 * time.Minute)},
 			},
@@ -127,7 +127,7 @@ func healthyStatusConfig() AdminSystemStatusServiceConfig {
 		// remediating_count folds 'pr_opened' in server-side, mirroring the
 		// GetAlertIncidentStateCounts query.
 		Incidents: &fakeStatusIncidentCounter{
-			counts: db.GetAlertIncidentStateCountsRow{OpenCount: 1, RemediatingCount: 2, AcknowledgedCount: 3, SnoozedCount: 4},
+			counts: clusterdb.GetAlertIncidentStateCountsRow{OpenCount: 1, RemediatingCount: 2, AcknowledgedCount: 3, SnoozedCount: 4},
 		},
 		SSE:   &fakeStatusSSECounter{count: 42},
 		Clock: statusTestClock,
@@ -253,7 +253,7 @@ func TestAdminSystemStatusService_SystemStatus(t *testing.T) {
 			config: func() AdminSystemStatusServiceConfig {
 				cfg := healthyStatusConfig()
 				cfg.Canaries = &fakeStatusCanaryLister{
-					results: []db.CanaryResult{
+					results: []clusterdb.CanaryResult{
 						{TestName: "auth", Status: "success", ReportedAt: statusTestNow.Add(-time.Minute)},
 						{TestName: "repo", Status: "failure", ReportedAt: statusTestNow.Add(-2 * time.Minute)},
 					},
@@ -271,7 +271,7 @@ func TestAdminSystemStatusService_SystemStatus(t *testing.T) {
 			config: func() AdminSystemStatusServiceConfig {
 				cfg := healthyStatusConfig()
 				cfg.Canaries = &fakeStatusCanaryLister{
-					results: []db.CanaryResult{
+					results: []clusterdb.CanaryResult{
 						{TestName: "fresh", Status: "success", ReportedAt: statusTestNow.Add(-14 * time.Minute)},
 						{TestName: "stale-pass", Status: "success", ReportedAt: statusTestNow.Add(-16 * time.Minute)},
 					},
@@ -354,7 +354,7 @@ func TestAdminSystemStatusService_Defaults(t *testing.T) {
 		svc := NewAdminSystemStatusService(AdminSystemStatusServiceConfig{
 			DB:               &fakeStatusPinger{},
 			Incidents:        &fakeStatusIncidentCounter{},
-			Canaries:         &fakeStatusCanaryLister{results: []db.CanaryResult{{TestName: "a", Status: "success", ReportedAt: statusTestNow.Add(-time.Minute)}}},
+			Canaries:         &fakeStatusCanaryLister{results: []clusterdb.CanaryResult{{TestName: "a", Status: "success", ReportedAt: statusTestNow.Add(-time.Minute)}}},
 			Clock:            statusTestClock,
 			CanaryStaleAfter: 30 * time.Second,
 		})

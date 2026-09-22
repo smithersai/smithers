@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -14,15 +15,15 @@ type runnerAdminCovQuerier struct {
 	countErr error
 	listErr  error
 	countArg string
-	listArg  db.ListRunnersParams
+	listArg  clusterdb.ListRunnersParams
 }
 
-func (q *runnerAdminCovQuerier) ListRunners(_ context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
+func (q *runnerAdminCovQuerier) ListRunners(_ context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
 	q.listArg = arg
 	if q.listErr != nil {
 		return nil, q.listErr
 	}
-	return []db.RunnerPool{{ID: 1, Name: "runner-1", Status: arg.StatusFilter}}, nil
+	return []clusterdb.RunnerPool{{ID: 1, Name: "runner-1", Status: arg.StatusFilter}}, nil
 }
 
 func (q *runnerAdminCovQuerier) CountRunners(_ context.Context, statusFilter string) (int64, error) {

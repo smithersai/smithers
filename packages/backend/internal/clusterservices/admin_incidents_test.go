@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -17,25 +19,25 @@ import (
 )
 
 type fakeAdminIncidents struct {
-	row                                  db.AlertIncident
+	row                                  clusterdb.AlertIncident
 	getErr, mutateErr, jobsErr, auditErr error
-	mutations                            []db.AdminMutateAlertIncidentsParams
+	mutations                            []clusterdb.AdminMutateAlertIncidentsParams
 	audits                               []db.InsertAuditLogParams
-	rows                                 []db.AlertIncident
+	rows                                 []clusterdb.AlertIncident
 }
 
-func (q *fakeAdminIncidents) GetAlertIncidentForUpdate(context.Context, int64) (db.AlertIncident, error) {
+func (q *fakeAdminIncidents) GetAlertIncidentForUpdate(context.Context, int64) (clusterdb.AlertIncident, error) {
 	return q.row, q.getErr
 }
-func (q *fakeAdminIncidents) AdminMutateAlertIncidents(_ context.Context, p db.AdminMutateAlertIncidentsParams) ([]db.AlertIncident, error) {
+func (q *fakeAdminIncidents) AdminMutateAlertIncidents(_ context.Context, p clusterdb.AdminMutateAlertIncidentsParams) ([]clusterdb.AlertIncident, error) {
 	q.mutations = append(q.mutations, p)
 	if q.rows != nil {
 		return q.rows, q.mutateErr
 	}
-	return []db.AlertIncident{q.row}, q.mutateErr
+	return []clusterdb.AlertIncident{q.row}, q.mutateErr
 }
-func (q *fakeAdminIncidents) ListAlertRemediationJobsForIncidents(context.Context, []int64) ([]db.ListAlertRemediationJobsForIncidentsRow, error) {
-	return []db.ListAlertRemediationJobsForIncidentsRow{{ID: 4, IncidentID: 1, Status: "done", WorkflowRunID: pgtype.Int8{Int64: 9007199254740993, Valid: true}}}, q.jobsErr
+func (q *fakeAdminIncidents) ListAlertRemediationJobsForIncidents(context.Context, []int64) ([]clusterdb.ListAlertRemediationJobsForIncidentsRow, error) {
+	return []clusterdb.ListAlertRemediationJobsForIncidentsRow{{ID: 4, IncidentID: 1, Status: "done", WorkflowRunID: pgtype.Int8{Int64: 9007199254740993, Valid: true}}}, q.jobsErr
 }
 func (q *fakeAdminIncidents) InsertAuditLog(_ context.Context, p db.InsertAuditLogParams) error {
 	q.audits = append(q.audits, p)
@@ -51,7 +53,7 @@ func TestAdminIncidentsActions(t *testing.T) {
 	note := "investigated"
 	for _, action := range []string{"acknowledge", "unacknowledge", "resolve", "snooze"} {
 		t.Run(action, func(t *testing.T) {
-			q := &fakeAdminIncidents{row: db.AlertIncident{ID: 1, State: "open", Source: "canary", Occurrences: 3}}
+			q := &fakeAdminIncidents{row: clusterdb.AlertIncident{ID: 1, State: "open", Source: "canary", Occurrences: 3}}
 			s := NewAdminIncidentsService(q)
 			s.now = func() time.Time { return now }
 			var result AdminSystemIncident
@@ -91,7 +93,7 @@ func TestAdminIncidentsActions(t *testing.T) {
 
 func TestAdminIncidentsResolveIdempotent(t *testing.T) {
 	now := time.Now().UTC()
-	q := &fakeAdminIncidents{row: db.AlertIncident{ID: 1, State: "resolved", ResolvedAt: pgtype.Timestamptz{Time: now, Valid: true}, ResolvedBy: pgtype.Text{String: "first", Valid: true}, ResolutionNote: pgtype.Text{String: "original", Valid: true}}}
+	q := &fakeAdminIncidents{row: clusterdb.AlertIncident{ID: 1, State: "resolved", ResolvedAt: pgtype.Timestamptz{Time: now, Valid: true}, ResolvedBy: pgtype.Text{String: "first", Valid: true}, ResolutionNote: pgtype.Text{String: "original", Valid: true}}}
 	s := NewAdminIncidentsService(q)
 	note := "replacement"
 	for i := 0; i < 2; i++ {
@@ -116,9 +118,9 @@ func TestAdminIncidentsFailures(t *testing.T) {
 		{"mutation", fakeAdminIncidents{mutateErr: requireError()}, 500},
 		{"jobs", fakeAdminIncidents{jobsErr: requireError()}, 500},
 		{"audit", fakeAdminIncidents{auditErr: requireError()}, 500},
-		{"terminal", fakeAdminIncidents{row: db.AlertIncident{State: "resolved"}}, 409},
-		{"failed", fakeAdminIncidents{row: db.AlertIncident{State: "failed"}}, 409},
-		{"changed", fakeAdminIncidents{rows: []db.AlertIncident{}}, 409},
+		{"terminal", fakeAdminIncidents{row: clusterdb.AlertIncident{State: "resolved"}}, 409},
+		{"failed", fakeAdminIncidents{row: clusterdb.AlertIncident{State: "failed"}}, 409},
+		{"changed", fakeAdminIncidents{rows: []clusterdb.AlertIncident{}}, 409},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NewAdminIncidentsService(&tc.q).Acknowledge(incidentAdminContext(), 1, nil)
@@ -165,7 +167,7 @@ func TestAdminIncidentsBulkValidation(t *testing.T) {
 		{"too far", AdminIncidentBulkInput{Action: "snooze", IDs: []int64{1}, Until: &tooFar}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			q := &fakeAdminIncidents{rows: []db.AlertIncident{{ID: 1}, {ID: 2}}}
+			q := &fakeAdminIncidents{rows: []clusterdb.AlertIncident{{ID: 1}, {ID: 2}}}
 			s := NewAdminIncidentsService(q)
 			s.now = func() time.Time { return now }
 			n, err := s.Bulk(incidentAdminContext(), tc.in)
@@ -193,7 +195,7 @@ func TestAdminIncidentsBulkValidation(t *testing.T) {
 func TestAdminIncidentListLifecycleViews(t *testing.T) {
 	for _, state := range []string{"active", "open", "acknowledged", "snoozed", "resolved", "all"} {
 		t.Run(state, func(t *testing.T) {
-			q := &mockAdminSystemIncidentsQuerier{listIncidentsFn: func(_ context.Context, p AdminSystemIncidentListParams) ([]db.AlertIncident, error) {
+			q := &mockAdminSystemIncidentsQuerier{listIncidentsFn: func(_ context.Context, p AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error) {
 				require.Equal(t, state, p.State)
 				require.Equal(t, " exact policy ", p.Policy)
 				return nil, nil

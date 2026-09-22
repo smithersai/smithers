@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestHeartbeat_Cov_PublicWrapperPropagatesError(t *testing.T) {
@@ -16,9 +16,9 @@ func TestHeartbeat_Cov_PublicWrapperPropagatesError(t *testing.T) {
 
 	heartbeatErr := errors.New("heartbeat failed")
 	store := &mockStore{
-		touchRunnerHeartbeat: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		touchRunnerHeartbeat: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			assert.Equal(t, int64(55), runnerID)
-			return db.RunnerPool{}, heartbeatErr
+			return clusterdb.RunnerPool{}, heartbeatErr
 		},
 	}
 

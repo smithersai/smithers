@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -13,41 +15,41 @@ import (
 type mockStore struct {
 	mu sync.Mutex
 
-	upsertRunnerFn        func(ctx context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error)
-	touchRunnerHeartbeat  func(ctx context.Context, id int64) (db.RunnerPool, error)
-	claimIdleRunnerFn     func(ctx context.Context, runnerID int64) (db.RunnerPool, error)
+	upsertRunnerFn        func(ctx context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error)
+	touchRunnerHeartbeat  func(ctx context.Context, id int64) (clusterdb.RunnerPool, error)
+	claimIdleRunnerFn     func(ctx context.Context, runnerID int64) (clusterdb.RunnerPool, error)
 	claimPendingTaskFn    func(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error)
 	releaseRunnerFn       func(ctx context.Context, runnerID int64) (int64, error)
-	terminateRunnerFn     func(ctx context.Context, runnerID int64) (db.RunnerPool, error)
+	terminateRunnerFn     func(ctx context.Context, runnerID int64) (clusterdb.RunnerPool, error)
 	requeueTasksForRunner func(ctx context.Context, runnerID pgtype.Int8) (int64, error)
 	markTaskRunningFn     func(ctx context.Context, arg db.MarkWorkflowTaskRunningParams) (int64, error)
 	markTaskDoneFn        func(ctx context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error)
 	getTerminalTaskFn     func(ctx context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error)
-	clearTerminalTaskFn   func(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
-	listStaleRunnersFn    func(ctx context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error)
+	clearTerminalTaskFn   func(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error)
+	listStaleRunnersFn    func(ctx context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error)
 
 	releaseCalls int
 }
 
-func (m *mockStore) UpsertRunner(ctx context.Context, arg db.UpsertRunnerParams) (db.RunnerPool, error) {
+func (m *mockStore) UpsertRunner(ctx context.Context, arg clusterdb.UpsertRunnerParams) (clusterdb.RunnerPool, error) {
 	if m.upsertRunnerFn != nil {
 		return m.upsertRunnerFn(ctx, arg)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
-func (m *mockStore) TouchRunnerHeartbeat(ctx context.Context, id int64) (db.RunnerPool, error) {
+func (m *mockStore) TouchRunnerHeartbeat(ctx context.Context, id int64) (clusterdb.RunnerPool, error) {
 	if m.touchRunnerHeartbeat != nil {
 		return m.touchRunnerHeartbeat(ctx, id)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
-func (m *mockStore) ClaimIdleRunner(ctx context.Context, runnerID int64) (db.RunnerPool, error) {
+func (m *mockStore) ClaimIdleRunner(ctx context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 	if m.claimIdleRunnerFn != nil {
 		return m.claimIdleRunnerFn(ctx, runnerID)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
 func (m *mockStore) ClaimPendingTask(ctx context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
@@ -68,11 +70,11 @@ func (m *mockStore) ReleaseRunner(ctx context.Context, runnerID int64) (int64, e
 	return 0, nil
 }
 
-func (m *mockStore) TerminateRunner(ctx context.Context, runnerID int64) (db.RunnerPool, error) {
+func (m *mockStore) TerminateRunner(ctx context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 	if m.terminateRunnerFn != nil {
 		return m.terminateRunnerFn(ctx, runnerID)
 	}
-	return db.RunnerPool{}, nil
+	return clusterdb.RunnerPool{}, nil
 }
 
 func (m *mockStore) RequeueTasksForRunner(ctx context.Context, runnerID pgtype.Int8) (int64, error) {
@@ -103,14 +105,14 @@ func (m *mockStore) GetTerminalWorkflowTaskForRunner(ctx context.Context, arg db
 	return 0, pgx.ErrNoRows
 }
 
-func (m *mockStore) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg db.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
+func (m *mockStore) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg clusterdb.ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 	if m.clearTerminalTaskFn != nil {
 		return m.clearTerminalTaskFn(ctx, arg)
 	}
 	return 1, nil
 }
 
-func (m *mockStore) ListStaleRunners(ctx context.Context, cutoffAt pgtype.Timestamptz) ([]db.RunnerPool, error) {
+func (m *mockStore) ListStaleRunners(ctx context.Context, cutoffAt pgtype.Timestamptz) ([]clusterdb.RunnerPool, error) {
 	if m.listStaleRunnersFn != nil {
 		return m.listStaleRunnersFn(ctx, cutoffAt)
 	}

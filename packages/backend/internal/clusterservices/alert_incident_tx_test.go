@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 // alertIncidentTxFakeRow is a minimal pgx.Row fake that scans a fixed set of
@@ -98,7 +98,7 @@ func (tx *alertIncidentTxFakeTx) Rollback(context.Context) error {
 // plus the plain AlertIncidentQuerier methods via the embedded fake) so
 // HandleAlertIncident's advisory-lock path can be exercised without a real
 // Postgres connection: WithTx hands the fake tx straight to db.New, exactly
-// what *db.Queries.WithTx does in production since pgx.Tx satisfies db.DBTX.
+// what *deploymentdb.Queries.WithTx does in production since pgx.Tx satisfies db.DBTX.
 type alertIncidentTxFakeQuerier struct {
 	*fakeAlertIncidentQuerier
 	beginErr error
@@ -112,8 +112,8 @@ func (q *alertIncidentTxFakeQuerier) BeginTx(context.Context) (pgx.Tx, error) {
 	return q.tx, nil
 }
 
-func (q *alertIncidentTxFakeQuerier) WithTx(tx pgx.Tx) *db.Queries {
-	return db.New(tx)
+func (q *alertIncidentTxFakeQuerier) WithTx(tx pgx.Tx) *deploymentdb.Queries {
+	return deploymentdb.New(tx)
 }
 
 var _ alertIncidentTxQuerier = (*alertIncidentTxFakeQuerier)(nil)

@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,8 +27,8 @@ const (
 )
 
 type storageDeletionCoordinator interface {
-	Claim(ctx context.Context, token string, lease time.Duration, limit int32) ([]db.StorageDeletionQueue, error)
-	Process(ctx context.Context, row db.StorageDeletionQueue, purge func(context.Context, string) error) (bool, error)
+	Claim(ctx context.Context, token string, lease time.Duration, limit int32) ([]clusterdb.StorageDeletionQueue, error)
+	Process(ctx context.Context, row clusterdb.StorageDeletionQueue, purge func(context.Context, string) error) (bool, error)
 }
 
 // postgresStorageDeletionCoordinator keeps the queue row locked across the
@@ -36,12 +39,12 @@ type postgresStorageDeletionCoordinator struct {
 	pool *pgxpool.Pool
 }
 
-func (c *postgresStorageDeletionCoordinator) Claim(ctx context.Context, token string, lease time.Duration, limit int32) ([]db.StorageDeletionQueue, error) {
+func (c *postgresStorageDeletionCoordinator) Claim(ctx context.Context, token string, lease time.Duration, limit int32) ([]clusterdb.StorageDeletionQueue, error) {
 	leaseSeconds := int32(lease / time.Second)
 	if leaseSeconds < 1 {
 		leaseSeconds = 1
 	}
-	return db.New(c.pool).ClaimStorageDeletions(ctx, db.ClaimStorageDeletionsParams{
+	return deploymentdb.New(c.pool).ClaimStorageDeletions(ctx, clusterdb.ClaimStorageDeletionsParams{
 		LeaseSeconds: leaseSeconds,
 		LimitRows:    limit,
 		ClaimToken:   pgtype.Text{String: token, Valid: true},
@@ -50,7 +53,7 @@ func (c *postgresStorageDeletionCoordinator) Claim(ctx context.Context, token st
 
 func (c *postgresStorageDeletionCoordinator) Process(
 	ctx context.Context,
-	row db.StorageDeletionQueue,
+	row clusterdb.StorageDeletionQueue,
 	purge func(context.Context, string) error,
 ) (processed bool, retErr error) {
 	tx, err := c.pool.Begin(ctx)
@@ -64,8 +67,8 @@ func (c *postgresStorageDeletionCoordinator) Process(
 		}
 	}()
 
-	queries := db.New(tx)
-	locked, err := queries.LockClaimedStorageDeletion(ctx, db.LockClaimedStorageDeletionParams{
+	queries := deploymentdb.New(tx)
+	locked, err := queries.LockClaimedStorageDeletion(ctx, clusterdb.LockClaimedStorageDeletionParams{
 		ID:         row.ID,
 		ClaimToken: row.ClaimToken,
 	})
@@ -96,7 +99,7 @@ func (c *postgresStorageDeletionCoordinator) Process(
 
 	if err := purge(ctx, locked.ObjectKey); err != nil {
 		purgeErr := fmt.Errorf("purge storage key %q: %w", locked.ObjectKey, err)
-		released, releaseErr := queries.ReleaseClaimedStorageDeletion(ctx, db.ReleaseClaimedStorageDeletionParams{
+		released, releaseErr := queries.ReleaseClaimedStorageDeletion(ctx, clusterdb.ReleaseClaimedStorageDeletionParams{
 			ID:         locked.ID,
 			ClaimToken: locked.ClaimToken,
 			LastError:  purgeErr.Error(),
@@ -123,11 +126,11 @@ func (c *postgresStorageDeletionCoordinator) Process(
 }
 
 type storageDeletionTxQueries interface {
-	DeleteClaimedStorageDeletion(context.Context, db.DeleteClaimedStorageDeletionParams) (int64, error)
+	DeleteClaimedStorageDeletion(context.Context, clusterdb.DeleteClaimedStorageDeletionParams) (int64, error)
 }
 
-func deleteClaimedStorageDeletion(ctx context.Context, queries storageDeletionTxQueries, row db.StorageDeletionQueue) error {
-	deleted, err := queries.DeleteClaimedStorageDeletion(ctx, db.DeleteClaimedStorageDeletionParams{
+func deleteClaimedStorageDeletion(ctx context.Context, queries storageDeletionTxQueries, row clusterdb.StorageDeletionQueue) error {
+	deleted, err := queries.DeleteClaimedStorageDeletion(ctx, clusterdb.DeleteClaimedStorageDeletionParams{
 		ID:         row.ID,
 		ClaimToken: row.ClaimToken,
 	})

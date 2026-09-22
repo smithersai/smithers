@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -39,19 +41,19 @@ const (
 
 // AlertRemediationWorkerQuerier contains the DB methods needed by the worker.
 type AlertRemediationWorkerQuerier interface {
-	ClaimAlertRemediationJobs(ctx context.Context, arg db.ClaimAlertRemediationJobsParams) ([]db.AlertRemediationJob, error)
+	ClaimAlertRemediationJobs(ctx context.Context, arg clusterdb.ClaimAlertRemediationJobsParams) ([]clusterdb.AlertRemediationJob, error)
 	FailTerminalAlertRemediationIncidents(ctx context.Context) ([]int64, error)
-	FailExhaustedAlertRemediationJobs(ctx context.Context, arg db.FailExhaustedAlertRemediationJobsParams) ([]int64, error)
+	FailExhaustedAlertRemediationJobs(ctx context.Context, arg clusterdb.FailExhaustedAlertRemediationJobsParams) ([]int64, error)
 	FailCompletedLegacyAlertRemediationIncidents(ctx context.Context) ([]int64, error)
 	MarkAlertRemediationJobDone(ctx context.Context, id int64) error
-	RetryAlertRemediationJob(ctx context.Context, arg db.RetryAlertRemediationJobParams) (int64, error)
-	FailAlertRemediationJobAndIncident(ctx context.Context, arg db.FailAlertRemediationJobAndIncidentParams) (bool, error)
-	GetAlertIncident(ctx context.Context, id int64) (db.AlertIncident, error)
+	RetryAlertRemediationJob(ctx context.Context, arg clusterdb.RetryAlertRemediationJobParams) (int64, error)
+	FailAlertRemediationJobAndIncident(ctx context.Context, arg clusterdb.FailAlertRemediationJobAndIncidentParams) (bool, error)
+	GetAlertIncident(ctx context.Context, id int64) (clusterdb.AlertIncident, error)
 	UpdateAlertIncidentStateGuarded(ctx context.Context, arg db.UpdateAlertIncidentStateGuardedParams) (int64, error)
 	GetWorkflowDefinitionByPath(ctx context.Context, arg db.GetWorkflowDefinitionByPathParams) (db.WorkflowDefinition, error)
 	FindAlertRemediationWorkflowRun(ctx context.Context, arg db.FindAlertRemediationWorkflowRunParams) (db.WorkflowRun, error)
 	HasLegacyAlertRemediationWorkflowRun(ctx context.Context, arg db.HasLegacyAlertRemediationWorkflowRunParams) (bool, error)
-	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
 }
 
 // AlertRemediationRunDispatcher creates workflow runs for remediation jobs.
@@ -147,7 +149,7 @@ func (w *AlertRemediationWorker) PollOnce(ctx context.Context) error {
 
 	// Terminalize jobs that have been reclaimed past their attempt budget
 	// instead of leaving them to be reclaimed forever (#21).
-	exhaustedIncidentIDs, err := w.queries.FailExhaustedAlertRemediationJobs(ctx, db.FailExhaustedAlertRemediationJobsParams{
+	exhaustedIncidentIDs, err := w.queries.FailExhaustedAlertRemediationJobs(ctx, clusterdb.FailExhaustedAlertRemediationJobsParams{
 		VisibilityTimeout: w.visibilityTimeout.Seconds(),
 		MaxAttempts:       w.maxAttempts,
 	})
@@ -158,7 +160,7 @@ func (w *AlertRemediationWorker) PollOnce(ctx context.Context) error {
 		w.logger.Error("alert remediation attempts exhausted; job and incident failed atomically", "incident_id", incidentID)
 	}
 
-	jobs, err := w.queries.ClaimAlertRemediationJobs(ctx, db.ClaimAlertRemediationJobsParams{
+	jobs, err := w.queries.ClaimAlertRemediationJobs(ctx, clusterdb.ClaimAlertRemediationJobsParams{
 		Limit:             w.claimLimit,
 		VisibilityTimeout: w.visibilityTimeout.Seconds(),
 		MaxAttempts:       w.maxAttempts,
@@ -176,12 +178,12 @@ func (w *AlertRemediationWorker) PollOnce(ctx context.Context) error {
 	return nil
 }
 
-func (w *AlertRemediationWorker) handleProcessError(ctx context.Context, job db.AlertRemediationJob, processErr error) {
+func (w *AlertRemediationWorker) handleProcessError(ctx context.Context, job clusterdb.AlertRemediationJob, processErr error) {
 	errorMessage := strings.TrimSpace(processErr.Error())
 	errorMessage = truncateAlertRemediationError(errorMessage, 4096)
 	if job.Attempts < w.maxAttempts {
 		retryDelay := alertRemediationRetryDelay(job.Attempts)
-		rowsAffected, err := w.queries.RetryAlertRemediationJob(ctx, db.RetryAlertRemediationJobParams{
+		rowsAffected, err := w.queries.RetryAlertRemediationJob(ctx, clusterdb.RetryAlertRemediationJobParams{
 			ID:                job.ID,
 			ExpectedAttempts:  job.Attempts,
 			Error:             errorMessage,
@@ -201,7 +203,7 @@ func (w *AlertRemediationWorker) handleProcessError(ctx context.Context, job db.
 		return
 	}
 
-	failed, err := w.queries.FailAlertRemediationJobAndIncident(ctx, db.FailAlertRemediationJobAndIncidentParams{
+	failed, err := w.queries.FailAlertRemediationJobAndIncident(ctx, clusterdb.FailAlertRemediationJobAndIncidentParams{
 		ID:               job.ID,
 		ExpectedAttempts: job.Attempts,
 		Error:            errorMessage,
@@ -245,7 +247,7 @@ func alertRemediationRetryDelay(attempt int32) time.Duration {
 	return delay
 }
 
-func (w *AlertRemediationWorker) processJob(ctx context.Context, job db.AlertRemediationJob) error {
+func (w *AlertRemediationWorker) processJob(ctx context.Context, job clusterdb.AlertRemediationJob) error {
 	incident, err := w.queries.GetAlertIncident(ctx, job.IncidentID)
 	if err != nil {
 		return fmt.Errorf("load incident %d: %w", job.IncidentID, err)
@@ -400,12 +402,12 @@ func (w *AlertRemediationWorker) processJob(ctx context.Context, job db.AlertRem
 // bind without dispatching another workflow.
 func (w *AlertRemediationWorker) ackDispatchedJob(
 	ctx context.Context,
-	job db.AlertRemediationJob,
-	incident db.AlertIncident,
+	job clusterdb.AlertRemediationJob,
+	incident clusterdb.AlertIncident,
 	workflowRunID int64,
 	dispatchKind string,
 ) {
-	rowsAffected, err := w.queries.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, db.BindAlertRemediationJobWorkflowRunAtAttemptParams{
+	rowsAffected, err := w.queries.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams{
 		WorkflowRunID:    pgtype.Int8{Int64: workflowRunID, Valid: true},
 		JobID:            job.ID,
 		IncidentRowID:    job.IncidentID,

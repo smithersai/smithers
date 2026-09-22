@@ -5,11 +5,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -108,10 +109,10 @@ type AdminSystemRemediation struct {
 }
 
 // AdminSystemIncidentsQuerier is the database interface needed by
-// AdminSystemIncidentsService. It is satisfied by *db.Queries once the
+// AdminSystemIncidentsService. It is satisfied by *deploymentdb.Queries once the
 // admin_system.sql queries are generated.
 type AdminSystemIncidentsQuerier interface {
-	ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]db.AlertIncident, error)
+	ListAlertIncidents(ctx context.Context, arg AdminSystemIncidentListParams) ([]clusterdb.AlertIncident, error)
 	ListAlertRemediationJobsForIncidents(ctx context.Context, incidentIDs []int64) ([]AdminSystemRemediationJobRow, error)
 }
 
@@ -245,7 +246,7 @@ func incidentText(value pgtype.Text) *string {
 	}
 	return &value.String
 }
-func adminSystemIncident(inc db.AlertIncident, jobs []AdminSystemRemediation) AdminSystemIncident {
+func adminSystemIncident(inc clusterdb.AlertIncident, jobs []AdminSystemRemediation) AdminSystemIncident {
 	if jobs == nil {
 		jobs = []AdminSystemRemediation{}
 	}

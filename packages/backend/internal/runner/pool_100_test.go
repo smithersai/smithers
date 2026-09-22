@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,10 +20,10 @@ func TestPool_H_ClaimTaskReleasesRunnerWhenMarkRunningFails(t *testing.T) {
 	markErr := errors.New("mark running failed")
 	calls := make([]string, 0, 4)
 	store := &mockStore{
-		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (db.RunnerPool, error) {
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
 			calls = append(calls, "claim-idle")
 			assert.Equal(t, int64(77), runnerID)
-			return db.RunnerPool{ID: runnerID, Status: "busy"}, nil
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
 		},
 		claimPendingTaskFn: func(_ context.Context, runnerID pgtype.Int8) (db.WorkflowTask, error) {
 			calls = append(calls, "claim-task")

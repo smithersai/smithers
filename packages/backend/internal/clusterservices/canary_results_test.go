@@ -7,22 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/stretchr/testify/require"
 )
 
 type fakeCanaryReports struct {
-	upserts               []db.UpsertCanaryResultParams
-	resolves              []db.ResolveCanaryAlertIncidentsParams
+	upserts               []clusterdb.UpsertCanaryResultParams
+	resolves              []clusterdb.ResolveCanaryAlertIncidentsParams
 	upsertErr, resolveErr error
 }
 
-func (q *fakeCanaryReports) UpsertCanaryResult(_ context.Context, p db.UpsertCanaryResultParams) (db.CanaryResult, error) {
+func (q *fakeCanaryReports) UpsertCanaryResult(_ context.Context, p clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error) {
 	q.upserts = append(q.upserts, p)
-	return db.CanaryResult{}, q.upsertErr
+	return clusterdb.CanaryResult{}, q.upsertErr
 }
-func (q *fakeCanaryReports) ResolveCanaryAlertIncidents(_ context.Context, p db.ResolveCanaryAlertIncidentsParams) (int64, error) {
+func (q *fakeCanaryReports) ResolveCanaryAlertIncidents(_ context.Context, p clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error) {
 	q.resolves = append(q.resolves, p)
 	return 1, q.resolveErr
 }

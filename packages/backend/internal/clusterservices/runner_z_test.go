@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 
 	"github.com/jackc/pgx/v5"
@@ -130,15 +132,15 @@ func TestRunner_Z_ClaimHeartbeatTerminateBranches(t *testing.T) {
 	boom := errors.New("boom")
 
 	_, err := NewRunnerService(&mockRunnerQuerier{
-		claimIdleRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, pgx.ErrNoRows
+		claimIdleRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, pgx.ErrNoRows
 		},
 	}).ClaimTask(context.Background(), 7)
 	require.Equal(t, 409, runnerAPIStatus(t, err))
 
 	_, err = NewRunnerService(&mockRunnerQuerier{
-		claimIdleRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, boom
+		claimIdleRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, boom
 		},
 	}).ClaimTask(context.Background(), 7)
 	require.Equal(t, 500, runnerAPIStatus(t, err))
@@ -181,22 +183,22 @@ func TestRunner_Z_ClaimHeartbeatTerminateBranches(t *testing.T) {
 	require.Equal(t, 409, runnerAPIStatus(t, err))
 
 	err = NewRunnerService(&mockRunnerQuerier{
-		touchRunnerHeartbeatFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, boom
+		touchRunnerHeartbeatFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, boom
 		},
 	}).Heartbeat(context.Background(), 7)
 	require.Equal(t, 500, runnerAPIStatus(t, err))
 
 	err = NewRunnerService(&mockRunnerQuerier{
-		terminateRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, pgx.ErrNoRows
+		terminateRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, pgx.ErrNoRows
 		},
 	}).Terminate(context.Background(), 7)
 	require.Equal(t, 404, runnerAPIStatus(t, err))
 
 	err = NewRunnerService(&mockRunnerQuerier{
-		terminateRunnerFn: func(context.Context, int64) (db.RunnerPool, error) {
-			return db.RunnerPool{}, boom
+		terminateRunnerFn: func(context.Context, int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{}, boom
 		},
 	}).Terminate(context.Background(), 7)
 	require.Equal(t, 500, runnerAPIStatus(t, err))

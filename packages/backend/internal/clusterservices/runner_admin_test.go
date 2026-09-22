@@ -5,20 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockRunnerAdminQuerier struct {
-	listRunnersFn  func(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error)
+	listRunnersFn  func(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error)
 	countRunnersFn func(ctx context.Context, statusFilter string) (int64, error)
 }
 
-func (m *mockRunnerAdminQuerier) ListRunners(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
+func (m *mockRunnerAdminQuerier) ListRunners(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
 	if m.listRunnersFn != nil {
 		return m.listRunnersFn(ctx, arg)
 	}
@@ -32,10 +33,10 @@ func (m *mockRunnerAdminQuerier) CountRunners(ctx context.Context, statusFilter 
 	return 0, nil
 }
 
-func makeRunner(id int64, name, status string) db.RunnerPool {
+func makeRunner(id int64, name, status string) clusterdb.RunnerPool {
 	now := time.Now()
 	ts := pgtype.Timestamptz{Time: now, Valid: true}
-	return db.RunnerPool{
+	return clusterdb.RunnerPool{
 		ID:              id,
 		Name:            name,
 		Status:          status,
@@ -52,11 +53,11 @@ func TestRunnerAdminService_ListRunners(t *testing.T) {
 		t.Parallel()
 
 		q := &mockRunnerAdminQuerier{
-			listRunnersFn: func(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
+			listRunnersFn: func(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
 				assert.Equal(t, "", arg.StatusFilter)
 				assert.Equal(t, int32(0), arg.PageOffset)
 				assert.Equal(t, int32(30), arg.PageSize)
-				return []db.RunnerPool{
+				return []clusterdb.RunnerPool{
 					makeRunner(1, "runner-a", "idle"),
 					makeRunner(2, "runner-b", "busy"),
 				}, nil
@@ -85,9 +86,9 @@ func TestRunnerAdminService_ListRunners(t *testing.T) {
 		t.Parallel()
 
 		q := &mockRunnerAdminQuerier{
-			listRunnersFn: func(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
+			listRunnersFn: func(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
 				assert.Equal(t, "idle", arg.StatusFilter)
-				return []db.RunnerPool{makeRunner(1, "runner-a", "idle")}, nil
+				return []clusterdb.RunnerPool{makeRunner(1, "runner-a", "idle")}, nil
 			},
 			countRunnersFn: func(ctx context.Context, statusFilter string) (int64, error) {
 				assert.Equal(t, "idle", statusFilter)
@@ -128,10 +129,10 @@ func TestRunnerAdminService_ListRunners(t *testing.T) {
 		t.Parallel()
 
 		q := &mockRunnerAdminQuerier{
-			listRunnersFn: func(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
+			listRunnersFn: func(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
 				assert.Equal(t, int32(10), arg.PageOffset) // page 2, perPage 10
 				assert.Equal(t, int32(10), arg.PageSize)
-				return []db.RunnerPool{}, nil
+				return []clusterdb.RunnerPool{}, nil
 			},
 			countRunnersFn: func(ctx context.Context, statusFilter string) (int64, error) {
 				return 25, nil
@@ -152,8 +153,8 @@ func TestRunnerAdminService_ListRunners(t *testing.T) {
 		t.Parallel()
 
 		q := &mockRunnerAdminQuerier{
-			listRunnersFn: func(ctx context.Context, arg db.ListRunnersParams) ([]db.RunnerPool, error) {
-				return []db.RunnerPool{}, nil
+			listRunnersFn: func(ctx context.Context, arg clusterdb.ListRunnersParams) ([]clusterdb.RunnerPool, error) {
+				return []clusterdb.RunnerPool{}, nil
 			},
 			countRunnersFn: func(ctx context.Context, statusFilter string) (int64, error) {
 				return 0, nil
