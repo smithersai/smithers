@@ -1262,9 +1262,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	var chatWorker, chatCallbackWorker *criticalWorker
 	if chatService != nil {
-		if options.Role.workers() {
-			chatWorker = newCriticalWorker()
-		}
+		// Every instance with a ChatHost can recover accepted turns. Hosted API
+		// replicas serve chat without requiring a separate worker deployment;
+		// the PostgreSQL producer claim fences concurrent recovery candidates.
+		chatWorker = newCriticalWorker()
 		if chatService.server != nil {
 			chatCallbackWorker = newCriticalWorker()
 		}
