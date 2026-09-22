@@ -77,10 +77,19 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const registry = Registry.layerFromDescriptors(entries.map(entry => entry.descriptor)).pipe(Layer.provide(platform.host))
     // Both product flows are their own delegate: each module default-exports
     // the `@smthrs/flow` flow it declares, so nothing is registered by name.
-    const modules = Executable.layer({ delegates: [], load: path => {
+    const executableOptions: Executable.RefreshOptions = { delegates: [], refreshable: () => false, load: path => {
       const entry = entries.find(entry => entry.descriptor.path === path)
       return entry ? Effect.succeed({ default: entry.declaration }) : Effect.fail(new Error("Unknown product flow"))
-    } }).pipe(
+    } }
+    // Only reading the immutable packaged catalog uses the host filesystem.
+    // Flow registrations still receive the native action filesystem guards.
+    const modules = Layer.unwrap(Executable.catalog(executableOptions).pipe(
+      Effect.provide(platform.host),
+      Effect.map(built => Layer.mergeAll(
+        Executable.layerRefreshable(built, executableOptions),
+        ...built.executables.map(executable => executable.layer)
+      ))
+    )).pipe(
       Layer.provideMerge(wikiRegistration(options.root, options.persistWiki, options.repo)),
       Layer.provideMerge(historyRegistration(options.root, options.repo)),
       agentRuntime, Layer.provide(registry), Layer.orDie

@@ -1270,9 +1270,18 @@ export const make = (
         const journalService = yield* Journal.Journal
         return Serve.GatewayHost.of({
           launch: (health, options, root) =>
-            Effect.suspend(() => options.runtimeBridge !== undefined && hostRevision !== options.runtimeBridge.sourceRevision
-              ? Effect.die(new Error("Flow host source revision is unavailable or does not match the registered catalog"))
-              : Layer.launch(layerGateway(health, options, root, engine, Layer.succeed(Journal.Journal, journalService))))
+            Effect.suspend(() => {
+              if (options.runtimeBridge !== undefined && hostRevision !== options.runtimeBridge.sourceRevision) {
+                return Effect.die(new Error("Flow host source revision is unavailable or does not match the registered catalog"))
+              }
+              // Some admitted Flow bodies cannot be statically graphed. Their
+              // source authority is still the catalog snapshot verified during
+              // registration, never the environment's unverified revision.
+              const verifiedOptions = options.runtimeBridge === undefined ? options : {
+                ...options, runtimeBridge: { ...options.runtimeBridge, verifiedCatalogSourceRevision: hostRevision }
+              }
+              return Layer.launch(layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService)))
+            })
               .pipe(
                 Effect.provideService(Control.Control, controlService),
                 Effect.provide(native.host),

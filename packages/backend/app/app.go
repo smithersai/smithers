@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 
@@ -54,6 +55,16 @@ type Config struct {
 	// FlowHostProductAPIURL is the backend origin reachable from the managed
 	// host's network, which may differ from the browser's public origin.
 	FlowHostProductAPIURL string
+	// ChatHost selects a model host for each authenticated turn. Hosted
+	// deployments must resolve the grant's owner to an isolated host; a
+	// process-global host containing other owners' credentials is unsafe.
+	ChatHost ports.ChatHost
+	// ChatCallbackListener serves producer callbacks on a private network.
+	// Local combined mode creates a loopback listener when this is nil.
+	ChatCallbackListener net.Listener
+	// ChatProducerBaseURL is the URL of ChatCallbackListener reachable from
+	// the selected model host. It is required for hosted workers.
+	ChatProducerBaseURL string
 }
 
 type Role = compose.Role
@@ -116,6 +127,9 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 			Workspace:             cfg.Workspace,
 			FlowHostRegistry:      cfg.FlowHostRegistry,
 			FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
+			ChatHost:              cfg.ChatHost,
+			ChatCallbackListener:  cfg.ChatCallbackListener,
+			ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
 		}, func(handler http.Handler) {
 			ready <- handler
 		}))
@@ -154,6 +168,9 @@ func Run(ctx context.Context, cfg Config) error {
 		Workspace:             cfg.Workspace,
 		FlowHostRegistry:      cfg.FlowHostRegistry,
 		FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
+		ChatHost:              cfg.ChatHost,
+		ChatCallbackListener:  cfg.ChatCallbackListener,
+		ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
 	}))
 }
 

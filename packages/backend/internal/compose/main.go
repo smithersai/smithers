@@ -8,6 +8,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,6 +45,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/webapp"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
@@ -106,6 +108,9 @@ type Options struct {
 	Workspace             workspace.WorkspaceRuntime
 	FlowHostRegistry      *flowmanifest.Registry
 	FlowHostProductAPIURL string
+	ChatHost              ports.ChatHost
+	ChatCallbackListener  net.Listener
+	ChatProducerBaseURL   string
 }
 
 // Role selects only process responsibilities. Every role assembles the same
@@ -1234,6 +1239,22 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			flowWorker = newCriticalWorker()
 		}
 	}
+	chatService, err := newChatComposition(options, pool)
+	if err != nil {
+		return fmt.Errorf("initialize chat runtime: %w", err)
+	}
+	if chatService != nil {
+		defer chatService.close()
+	}
+	var chatWorker, chatCallbackWorker *criticalWorker
+	if chatService != nil {
+		if options.Role.workers() {
+			chatWorker = newCriticalWorker()
+		}
+		if chatService.server != nil {
+			chatCallbackWorker = newCriticalWorker()
+		}
+	}
 	workspaceInternalHandler := &routes.WorkspaceInternalHandler{
 		Service: workspaceService,
 	}
@@ -1483,6 +1504,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		smithersMetrics,
 		alertRemediationWorker != nil,
 	)
+	if chatService != nil && options.Role.servesHTTP() {
+		mountChatPublic(router, chatService.runtime, queries, cfg)
+	}
 	if root := strings.TrimSpace(os.Getenv("SMITHERS_WEB_ROOT")); root != "" {
 		mode := webapp.SelfHosted
 		if options.Role.hosted() {
@@ -1498,8 +1522,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
 		role: options.Role, identity: authHandler != nil,
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
-		// The renderer's agent capability targets /api/agent/turn. Repository
-		// agent sessions alone do not implement that transport.
+		// The renderer's agent capability targets the durable chat journal.
+		agent:            chatService != nil && options.Role.servesHTTP(),
 		billingCheckout:  billingComposition.Service != nil,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
@@ -1511,6 +1535,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	r = mountBlobTransferHandler(r, transferStore, cfg)
 	r = withCriticalWorkerReadiness(r, flowWorker)
+	r = withCriticalWorkerReadiness(r, chatWorker)
+	r = withCriticalWorkerReadiness(r, chatCallbackWorker)
 
 	requestTracker := newInFlightRequestTracker()
 	handler := requestTracker.Wrap(r)
@@ -1533,6 +1559,17 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			})
 		})
 		flowWorkerFailure = flowWorker.Failed()
+	}
+	var chatWorkerFailure, chatCallbackFailure <-chan error
+	if chatWorker != nil {
+		chatWorker.Start(workerCtx, "chat dispatch", chatService.runtime.Run)
+		chatWorkerFailure = chatWorker.Failed()
+	}
+	if chatCallbackWorker != nil {
+		chatCallbackWorker.Start(workerCtx, "chat producer callbacks", func(context.Context) error {
+			return chatService.server.Serve(chatService.listener)
+		})
+		chatCallbackFailure = chatCallbackWorker.Failed()
 	}
 	var joinedWorkers []*joinedBackgroundWorker
 	launchWorker := func(run func()) {
@@ -1645,6 +1682,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		case <-ctx.Done():
 		case <-abortShutdown:
 		case fatalWorkerErr = <-flowWorkerFailure:
+		case fatalWorkerErr = <-chatWorkerFailure:
+		case fatalWorkerErr = <-chatCallbackFailure:
 		}
 		if !options.externalHTTP && options.Role.servesHTTP() {
 			signal.Stop(sigCh)
@@ -1665,12 +1704,28 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// requests fail during a rollout.
 		poolStatsCancel()
 		workerCancel()
+		if chatService != nil && chatService.server != nil {
+			if err := chatService.server.Shutdown(shutdownCtx); err != nil {
+				_ = chatService.server.Close()
+				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("chat callback listener did not drain: %w", err))
+			}
+		}
 		if flowWorker != nil {
 			flowStopCtx, stopFlow := context.WithTimeout(context.Background(), shutdownTimeout)
 			if err := flowWorker.Wait(flowStopCtx); err != nil && !errors.Is(err, fatalWorkerErr) {
 				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("Flow dispatch did not stop: %w", err))
 			}
 			stopFlow()
+		}
+		for name, worker := range map[string]*criticalWorker{"chat dispatch": chatWorker, "chat producer callbacks": chatCallbackWorker} {
+			if worker == nil {
+				continue
+			}
+			workerStopCtx, stopWorker := context.WithTimeout(context.Background(), shutdownTimeout)
+			if err := worker.Wait(workerStopCtx); err != nil && !errors.Is(err, fatalWorkerErr) {
+				shutdownErr = errors.Join(shutdownErr, fmt.Errorf("%s did not stop: %w", name, err))
+			}
+			stopWorker()
 		}
 		if wikiHistoryWorker != nil {
 			wikiShutdownCtx, cancelWikiShutdown := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)

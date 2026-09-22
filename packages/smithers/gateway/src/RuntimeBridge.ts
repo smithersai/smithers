@@ -174,6 +174,8 @@ export type ObserveRequest = typeof ObserveRequest.Type
 export interface Config {
   readonly runtimeArtifactDigest: string
   readonly sourceRevision: string
+  /** Captured and verified by native catalog registration, never decoded from a request or environment. */
+  readonly verifiedCatalogSourceRevision?: string | undefined
   readonly ownerGeneration: number
   readonly authenticate: (
     headers: Readonly<Record<string, string>>
@@ -258,7 +260,11 @@ export const execute = (
           input: input.payload,
           idempotencyKey: idempotencyKey(input, "plan")
         })
-        if (plan.graph?.sourceRevision !== input.sourceRevision) {
+        // Graphs are optional for valid Flow declarations. Only a verified
+        // native catalog snapshot can supply the missing provenance; the
+        // configured/wire identity by itself cannot stand in for that proof.
+        const plannedSource = plan.graph?.sourceRevision ?? config.verifiedCatalogSourceRevision
+        if (plannedSource !== input.sourceRevision) {
           return yield* Effect.fail(
             new BridgeError({
               code: "source_mismatch",

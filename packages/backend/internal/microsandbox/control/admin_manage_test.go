@@ -63,9 +63,6 @@ func TestAdminPruneStaleHostsRequiresOldLeaseAndNoLiveInstances(t *testing.T) {
 			require.EqualValues(t, 1, r.InstanceCount)
 		}
 	}
-	// The controller test schema intentionally omits product tables.
-	_, err = pool.Exec(ctx, `CREATE TABLE audit_log (id bigserial PRIMARY KEY, event_type text, actor_id bigint, actor_name text, target_type text, target_name text, action text, metadata jsonb, ip_address varchar(45))`)
-	require.NoError(t, err)
 	// A failed audit insert must roll back the deletion, preserving targets for retry.
 	_, err = q.AdminPruneStaleSandboxHosts(ctx, clusterdb.AdminPruneStaleSandboxHostsParams{OlderThanHours: 24, IpAddress: strings.Repeat("x", 46)})
 	require.Error(t, err)
@@ -100,13 +97,9 @@ func TestAdminPruneStaleHostsRequiresOldLeaseAndNoLiveInstances(t *testing.T) {
 func TestAdminNeverStartedQueryGuardsAndPreservesMetadata(t *testing.T) {
 	pool := openMicrosandboxTestDatabase(t)
 	ctx := context.Background()
-	// This fixture isolates the product session query from the controller schema.
-	_, err := pool.Exec(ctx, `CREATE TABLE agent_sessions (
- id uuid PRIMARY KEY, repository_id bigint NOT NULL, user_id bigint NOT NULL,
- workflow_run_id bigint, title text NOT NULL DEFAULT '', status text NOT NULL,
- metadata jsonb NOT NULL DEFAULT '{}', workspace_id uuid, started_at timestamptz,
- finished_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
- updated_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz)`)
+	_, err := pool.Exec(ctx, `INSERT INTO users(id, username, lower_username) VALUES (1, 'sandbox-test', 'sandbox-test')`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO repositories(id, user_id, name, lower_name) VALUES (1, 1, 'sandbox-test', 'sandbox-test')`)
 	require.NoError(t, err)
 	ids := []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"}
 	for _, id := range ids {

@@ -30,7 +30,7 @@ export interface NativeBackendOptions {
       readonly stderr: "inherit"
     }
   ) => Child
-  readonly fetch?: typeof globalThis.fetch
+  readonly fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
   readonly sleep?: (milliseconds: number) => Promise<void>
   readonly startupTimeoutMs?: number
 }
@@ -74,7 +74,7 @@ const localOrigin = (value: string): string => {
 }
 
 const readinessProbe = async (
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
   sleep: (milliseconds: number) => Promise<void>,
   origin: string,
   timeoutMs: number

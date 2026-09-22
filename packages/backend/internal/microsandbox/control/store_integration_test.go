@@ -1200,28 +1200,6 @@ func heartbeatForTest(id, baseURL string) msb.WorkerHeartbeat {
 	}
 }
 
-func createMicrosandboxTestDatabase(t *testing.T, ctx context.Context, dsn string) *pgxpool.Pool {
-	t.Helper()
-	config, err := pgxpool.ParseConfig(dsn)
-	require.NoError(t, err)
-	target := config.ConnConfig.Database
-	require.NotEmpty(t, target)
-	bootstrapConfig := config.Copy()
-	bootstrapConfig.ConnConfig.Database = "postgres"
-	bootstrap, err := pgxpool.NewWithConfig(ctx, bootstrapConfig)
-	require.NoError(t, err)
-	defer bootstrap.Close()
-	require.NoError(t, bootstrap.Ping(ctx))
-	_, err = bootstrap.Exec(ctx, `CREATE DATABASE `+pgx.Identifier{target}.Sanitize())
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
-		require.NoError(t, err)
-	}
-	admin, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err)
-	require.NoError(t, admin.Ping(ctx))
-	return admin
-}
-
 func openMicrosandboxTestDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if testing.Short() {
@@ -1231,48 +1209,39 @@ func openMicrosandboxTestDatabase(t *testing.T) *pgxpool.Pool {
 	if dsn == "" {
 		t.Skip("SMITHERS_TEST_DATABASE_URL is required for Microsandbox store integration tests")
 	}
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "schema.sql"))
+	require.NoError(t, err)
 	ctx := context.Background()
-	admin, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err)
-	if pingErr := admin.Ping(ctx); pingErr != nil {
-		// The gate points at a per-run compose Postgres; create the target
-		// database on first use instead of requiring manual bootstrap.
-		admin.Close()
-		admin = createMicrosandboxTestDatabase(t, ctx, dsn)
-	}
-	schema := "microsandbox_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	_, err = admin.Exec(ctx, `CREATE SCHEMA `+schema)
-	require.NoError(t, err)
-
 	config, err := pgxpool.ParseConfig(dsn)
 	require.NoError(t, err)
-	if config.ConnConfig.RuntimeParams == nil {
-		config.ConnConfig.RuntimeParams = map[string]string{}
-	}
-	config.ConnConfig.RuntimeParams["search_path"] = schema
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	adminConfig := config.Copy()
+	adminConfig.ConnConfig.Database = "postgres"
+	admin, err := pgxpool.NewWithConfig(ctx, adminConfig)
+	require.NoError(t, err)
+	require.NoError(t, admin.Ping(ctx))
+
+	// The generated hosted schema names public explicitly. Use a fresh database
+	// for each test so applying it cannot touch the configured PostgreSQL DB.
+	database := "smithers_microsandbox_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	_, err = admin.Exec(ctx, `CREATE DATABASE `+pgx.Identifier{database}.Sanitize())
+	require.NoError(t, err)
+	var pool *pgxpool.Pool
+	t.Cleanup(func() {
+		if pool != nil {
+			pool.Close()
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_, dropErr := admin.Exec(cleanupCtx, `DROP DATABASE `+pgx.Identifier{database}.Sanitize()+` WITH (FORCE)`)
+		admin.Close()
+		require.NoError(t, dropErr)
+	})
+
+	config.ConnConfig.Database = database
+	pool, err = pgxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 	require.NoError(t, pool.Ping(ctx))
-
-	// Every migration that touches the control-plane tables, in revision order.
-	// Adding one here is mandatory: the harness builds the schema from these
-	// files alone, so a store change against a column added later would compile
-	// and then fail at runtime in production only.
-	for _, name := range []string{
-		"20260718001100_microsandbox_control_plane.sql",
-		"20260808120000_sandbox_reservation_release.sql",
-		"20260808130000_sandbox_observed_accounting.sql",
-	} {
-		migration, readErr := os.ReadFile(filepath.Join("..", "..", "..", "db", "migrations", name))
-		require.NoError(t, readErr)
-		_, err = pool.Exec(ctx, string(migration))
-		require.NoError(t, err, name)
-	}
-
-	t.Cleanup(func() {
-		pool.Close()
-		_, _ = admin.Exec(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
-		admin.Close()
-	})
+	_, err = pool.Exec(ctx, string(schema))
+	require.NoError(t, err)
 	return pool
 }

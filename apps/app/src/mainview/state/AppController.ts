@@ -532,6 +532,9 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly markNotificationsRead: NotificationsSeam["markNotificationsRead"]
   readonly viewEnvironment: EnvironmentSeam["viewEnvironment"]
   readonly setEnvironmentVar: EnvironmentSeam["setEnvironmentVar"]
+  readonly connectCodingProvider: SecretsSeam["connectCodingProvider"]
+  readonly listCodingProviders: SecretsSeam["listCodingProviders"]
+  readonly revokeCodingProvider: SecretsSeam["revokeCodingProvider"]
   readonly listSecrets: SecretsSeam["listSecrets"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
@@ -874,7 +877,7 @@ export const createAppController = (
   const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
-  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context))
+  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context, withToast))
   const historySeam = actors.pair(seamCtx, (context, select) => createHistorySeam(context, async repo => {
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
@@ -1839,6 +1842,9 @@ export const createAppController = (
     markNotificationsRead: notificationsSeam.markNotificationsRead,
     viewEnvironment: environmentSeam.viewEnvironment,
     setEnvironmentVar: environmentSeam.setEnvironmentVar,
+    connectCodingProvider: secretsSeam.connectCodingProvider,
+    listCodingProviders: secretsSeam.listCodingProviders,
+    revokeCodingProvider: secretsSeam.revokeCodingProvider,
     listSecrets: secretsSeam.listSecrets,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,

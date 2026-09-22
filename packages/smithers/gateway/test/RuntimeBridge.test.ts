@@ -190,6 +190,27 @@ describe("RuntimeBridge", () => {
       }
     }))
 
+  it.effect("uses verified catalog provenance when an admitted flow has no static graph", () =>
+    Effect.gen(function*() {
+      let runs = 0
+      const control = service({
+        plan: () => Effect.succeed({ ...plan, graph: undefined }),
+        run: () => { runs++; return Effect.succeed(accepted) }
+      })
+      const result = yield* RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: revision }, control, principal, launch)
+      expect(result).toMatchObject({ operation: "launch", receipt: accepted })
+      expect(runs).toBe(1)
+      const missing = yield* Effect.flip(RuntimeBridge.execute(config, control, principal, launch))
+      expect(missing).toMatchObject({ code: "source_mismatch" })
+      const changed = yield* Effect.flip(RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: "c".repeat(40) }, control, principal, launch))
+      expect(changed).toMatchObject({ code: "source_mismatch" })
+      const contradicted = yield* Effect.flip(RuntimeBridge.execute({ ...config, verifiedCatalogSourceRevision: revision }, service({
+        plan: () => Effect.succeed({ ...plan, graph: { edges: [], sourceRevision: "c".repeat(40) } })
+      }), principal, launch))
+      expect(contradicted).toMatchObject({ code: "source_mismatch" })
+      expect(runs).toBe(1)
+    }))
+
   it.effect("adapts every mutation without owning its semantics", () =>
     Effect.gen(function*() {
       const calls: Array<{ readonly operation: string; readonly input: unknown }> = []

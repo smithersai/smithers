@@ -74,7 +74,16 @@ const launch = async (home: string, mode: "own" | "plue", origin: string): Promi
   children.push(child)
   const collect = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
     const decoder = new TextDecoder()
-    for await (const chunk of stream) output += decoder.decode(chunk, { stream: true })
+    const reader = stream.getReader()
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        output += decoder.decode(value, { stream: true })
+      }
+    } finally {
+      reader.releaseLock()
+    }
     output += decoder.decode()
   }
   const collectors = Promise.all([collect(child.stdout), collect(child.stderr)])
