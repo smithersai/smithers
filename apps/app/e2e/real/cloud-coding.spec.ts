@@ -63,6 +63,17 @@ configuredGatewayTest("a UI coding request validates a change and Vibe lands its
  // test process or an intercepted response.
  const github=await page.context().newPage()
  try {
+  // Resolve the branch itself: merely finding the commit cannot prove the
+  // GitHub mirror advanced main to it. This is the tree page's observed ref.
+  await expect.poll(async () => {
+   const mainPage=await github.goto(`https://github.com/${repo}/tree/main`,{waitUntil:"domcontentloaded"})
+   if(mainPage?.status()!==200) return null
+   const raw=await github.locator('script[type="application/json"][data-target="react-app.embeddedData"]').first().textContent()
+   const data=JSON.parse(raw ?? "{}") as {payload?:{codeViewTreeRoute?:{refInfo?:{name?:string;refType?:string;currentOid?:string}}}}
+   const ref=data.payload?.codeViewTreeRoute?.refInfo
+   return ref ? {name:ref.name,refType:ref.refType,currentOid:ref.currentOid} : null
+  },{timeout:60_000,message:"GitHub main must independently reach the exact landed commit"})
+   .toEqual({name:"main",refType:"branch",currentOid:result.mainCommitId})
   const commitPage=await github.goto(`https://github.com/${repo}/commit/${result.mainCommitId}`,{waitUntil:"domcontentloaded"})
   expect(commitPage?.status(),"GitHub must resolve the exact landed commit").toBe(200)
   await expect(github).toHaveURL(new RegExp(`/commit/${result.mainCommitId}$`))

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { suggestedSetupDraft } from "../repository/setup.ts"
+import { selectedSteps } from "../repository/execution.ts"
 import type { Draft } from "../repository/schema.ts"
 
 const draft: Draft = {
@@ -87,6 +88,48 @@ test("the held-out source of a suggested case is the commit the inspection captu
   const authored: Draft = { ...draft, cases: [{ id: "mine", name: "Mine", input: JSON.stringify(suggestedCase.input),
     expected: "Answers.", required: true, edited: true }] }
   assert.deepEqual(suggestedSetupDraft(authored, suggestion(), captured).cases, authored.cases, "the host never rewrites a case the user already has")
+})
+
+test("fresh feature inspection runs a suggested request through its manual step", () => {
+  const request = { title: "Add a README purpose", body: "Document the purpose and run the README check.",
+    base: { sha: captured }, head: { sha: captured } }
+  const proposed = suggestion({ cases: [{ ...suggestedCase, input: { ...suggestedCase.input,
+    event: { source: "github", type: "pull_request", action: "opened", deliveryKey: "feature-case",
+      payload: { pull_request: request } } } }] })
+  const featureDraft = { ...draft, steps: [{ id: "feature", name: "Build a feature", mode: "manual" as const,
+    prompt: "Implement the requested feature." }] }
+  const saved = suggestedSetupDraft(featureDraft, proposed, captured, "feature").cases[0]!
+  const input = JSON.parse(saved.input)
+  assert.deepEqual(input.event, { source: "smithers-cloud", type: "manual", action: "manual:feature",
+    manualStep: "feature", deliveryKey: "feature-case",
+    payload: { prompt: "Add a README purpose\n\nDocument the purpose and run the README check." } })
+  assert.equal(input.sourceRevision, captured)
+  assert.deepEqual(input.assertions, suggestedCase.input.assertions)
+  assert.equal(saved.expected, suggestedCase.expected)
+  assert.deepEqual(selectedSteps({ job: "feature", configuration: { ...featureDraft, cases: [saved] },
+    event: input.event }).map(step => step.id), ["feature"], "the production executor reaches the feature step")
+  assert.deepEqual(featureDraft.checks, draft.checks, "the configured required check remains in the executing draft")
+  const reinspected = suggestedSetupDraft({ ...featureDraft, cases: [{ ...proposed.cases[0]!,
+    input: JSON.stringify(proposed.cases[0]!.input) }] }, proposed, "d".repeat(40), "feature").cases[0]!
+  const rerun = JSON.parse(reinspected.input)
+  assert.equal(rerun.event.action, "manual:feature", "an unedited old generated case becomes executable on reinspection")
+  assert.equal(rerun.sourceRevision, "d".repeat(40))
+  const automatic = { ...featureDraft, steps: featureDraft.steps.map(step => ({ ...step, mode: "automatic" as const })) }
+  assert.equal(JSON.parse(suggestedSetupDraft(automatic, proposed, captured, "feature").cases[0]!.input).event.type,
+    "pull_request", "automatic setup does not gain a manual case")
+  assert.equal(JSON.parse(suggestedSetupDraft(featureDraft, proposed, captured, "issues").cases[0]!.input).event.type,
+    "pull_request", "other jobs retain their suggested event")
+  const overridden = suggestedSetupDraft(automatic, { ...proposed, steps: [{ id: "feature", mode: "manual" }] }, captured, "feature")
+  const overriddenEvent = JSON.parse(overridden.cases[0]!.input).event
+  assert.deepEqual(selectedSteps({ job: "feature", configuration: overridden, event: overriddenEvent }).map(step => step.id),
+    ["feature"], "the case must select the final suggested mode, not the previous draft mode")
+  const malformed = suggestion({ cases: [{ ...suggestedCase, input: { ...suggestedCase.input,
+    event: { ...proposed.cases[0]!.input.event, payload: { pull_request: { title: request.title, body: request.body, base: { sha: "" }, head: { sha: "" } } } } } }] })
+  assert.equal(JSON.parse(suggestedSetupDraft(featureDraft, malformed, captured, "feature").cases[0]!.input).event.type,
+    "pull_request", "empty base and head are not a captured placeholder")
+  const edited = { ...featureDraft, cases: [{ ...reinspected, edited: true }] }
+  assert.deepEqual(suggestedSetupDraft(edited, proposed, captured, "feature").cases, edited.cases,
+    "the host never rewrites an edited case")
 })
 
 /** A workspace is replaced; the next inspection captures another commit. Every

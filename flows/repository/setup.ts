@@ -66,25 +66,47 @@ export const suggestedChecks = (existing: Draft["checks"], suggested: Draft["che
  * event it authored, which is the only source a review or CI step accepts. The
  * assertions and the expected answer stay exactly as they were written, and a
  * case the maintainer has touched is theirs, pin included. */
-const repinnedCase = (test: typeof EvalCase.Type, sourceRevision: string): typeof EvalCase.Type => {
+const repinnedCase = (test: typeof EvalCase.Type, sourceRevision: string, job: SetupInput["job"], steps: Draft["steps"]): typeof EvalCase.Type => {
   const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)
   if (Option.isNone(decoded)) return test
   const stored = JSON.parse(test.input) as { readonly event: Record<string, unknown> } & Record<string, unknown>
-  const event = repinnedEvent(decoded.value.event, decoded.value.sourceRevision, sourceRevision)
+  const normalized = executableSuggestedEvent(job, steps, decoded.value.event)
+  const executable = repinnedEvent(normalized, decoded.value.sourceRevision, sourceRevision)
   return { ...test, input: JSON.stringify({ ...stored, sourceRevision,
-    ...(event === decoded.value.event ? {} : { event: { ...stored.event, payload: event.payload } }) }) }
+    ...(executable === decoded.value.event ? {} : { event: executable }) }) }
+}
+/** A feature's default step is manual. A suggested PR cannot select it, even
+ * when the PR text is a useful feature request. Keep the request, but execute
+ * it through the same manual entrypoint as a real feature trial. */
+const executableSuggestedEvent = (job: SetupInput["job"], steps: Draft["steps"], event: typeof Event.Type): typeof Event.Type => {
+  if (job !== "feature" || steps.find(step => step.id === "feature")?.mode !== "manual" || event.type !== "pull_request") return event
+  const payload = event.payload as { pull_request?: { title?: unknown; body?: unknown; base?: { sha?: unknown }; head?: { sha?: unknown } } }
+  const pr = payload.pull_request
+  // Equal base/head is an inspection-authored placeholder, not a published PR.
+  if (!pr || typeof pr.title !== "string" || typeof pr.body !== "string" || typeof pr.base?.sha !== "string"
+    || !/^[0-9a-f]{40}$/.test(pr.base.sha) || pr.base.sha !== pr.head?.sha) return event
+  const request = [pr.title, pr.body].filter(Boolean).join("\n\n")
+  return { ...event, source: "smithers-cloud" as const,
+    type: "manual", action: "manual:feature", manualStep: "feature", payload: { prompt: request } }
+}
+const executableSuggestedCase = (job: SetupInput["job"], steps: Draft["steps"], test: typeof SuggestedDraft.Type["cases"][number]) => {
+  return { ...test.input, event: executableSuggestedEvent(job, steps, test.input.event) }
 }
 /** The host keeps every user decision; a suggestion only proposes steps, checks, cases and trial text.
  * The held-out source is the commit this inspection actually captured, never a revision the model named. */
-export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type, sourceRevision: string): Draft => ({
-  ...suggested, steps: suggestedSteps(existing.steps, suggested.steps), checks: suggestedChecks(existing.checks, suggested.checks),
-  cases: existing.cases.length
-    ? existing.cases.map(test => test.edited === true ? test : repinnedCase(test, sourceRevision))
-    : suggested.cases.map(test => ({ ...test, input: JSON.stringify({ ...test.input, sourceRevision }) })),
-  replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
-  schedule: existing.schedule, choreEvent: existing.choreEvent, connectIssues: existing.connectIssues,
-  budgetMinutes: existing.budgetMinutes
-})
+export const suggestedSetupDraft = (existing: Draft, suggested: typeof SuggestedDraft.Type, sourceRevision: string,
+  job: SetupInput["job"] = "issues"): Draft => {
+  const steps = suggestedSteps(existing.steps, suggested.steps)
+  return {
+    ...suggested, steps, checks: suggestedChecks(existing.checks, suggested.checks),
+    cases: existing.cases.length
+      ? existing.cases.map(test => test.edited === true ? test : repinnedCase(test, sourceRevision, job, steps))
+      : suggested.cases.map(test => ({ ...test, input: JSON.stringify({ ...executableSuggestedCase(job, steps, test), sourceRevision }) })),
+    replies: existing.replies, landing: existing.landing, scope: existing.scope, label: existing.label,
+    schedule: existing.schedule, choreEvent: existing.choreEvent, connectIssues: existing.connectIssues,
+    budgetMinutes: existing.budgetMinutes
+  }
+}
 export const SuggestSetup = AgentAction.make("repository/suggest-setup", {
   payload: { input: SetupInput, evidence: RepositoryEvidence, deadlineAt: Schema.Number }, output: SuggestedDraft,
   seat: "repository/research", prompt: value => JSON.stringify({ ...value, outputSchemas: {
@@ -214,7 +236,7 @@ export const setupLayers = (options: InspectionOptions) => Layer.mergeAll(
       const evidence = yield* runtime.execute(Capture, { executionId: key("capture"), payload: { repo: input.repo, prompt: input.draft.steps.map(step => step.prompt).join("\n") } })
       if (input.operation === "inspect") {
         const suggested = yield* runtime.execute(Suggest, { executionId: key("suggest"), payload: { input, evidence, deadlineAt } })
-        const suggestedDraft = suggestedSetupDraft(input.draft, suggested, evidence.source.commitId)
+        const suggestedDraft = suggestedSetupDraft(input.draft, suggested, evidence.source.commitId, input.job)
         return yield* respond({ ...identity, inspection: { sources: evidence.sources, suggestedDraft, inspectedAt: Date.now() },
           receipt: receipt({ sourceRevision: evidence.source.commitId, evidence: evidence.sources.filter(source => source.status === "read").map(source => source.path) }) })
       }
