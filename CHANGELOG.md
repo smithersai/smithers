@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2819 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2820 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -2355,6 +2355,7 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(gateway):** cover plans without execution digest ([8cb825bbf9](https://github.com/smithersai/smithers/commit/8cb825bbf9379b5e7c92b728599589b4f2ce59e1))
 - **test(coding):** retire Plue Python adapter fixtures ([1ca8e42b8e](https://github.com/smithersai/smithers/commit/1ca8e42b8e704f6bcb912cc9ea29148420a013d4))
 - **test(native):** exercise installed process shutdown and Plue lifecycle ([28b1a76bee](https://github.com/smithersai/smithers/commit/28b1a76beee650d4ec0b0b39f71177c77b6c2639))
 - **test(backend):** isolate database fixtures and keep infrastructure tests private ([be10062958](https://github.com/smithersai/smithers/commit/be100629584a3dd7a3b6eb5425ece4886aa3561d))
