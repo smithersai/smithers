@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
@@ -27,4 +28,8 @@ func (r PrivateRollout) ConfigureLegacyMutationFences(ctx context.Context, enabl
 		RepositoryStorageEnforced: state.RepositoryStorageEnforced,
 		ReleaseDeletionEnabled:    state.ReleaseDeletionEnabled,
 	}, nil
+}
+
+func (r PrivateRollout) IsLegacyFinalKeyPurgeAllowed(ctx context.Context) (bool, error) {
+	return deploymentdb.New(r.Pool).IsLegacyFinalKeyPurgeAllowed(ctx)
 }

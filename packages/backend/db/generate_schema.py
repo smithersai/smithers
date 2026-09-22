@@ -2,7 +2,7 @@
 """Build the hosted SQLC/test schema from the two authored schema sources.
 
 Product DDL is authored only in product/migrations. The private baseline and
-cluster migrations contain deployment-owned objects. schema.sql is generated;
+cluster migrations contain deployment-owned objects. cluster/sqlc_schema.sql is generated;
 never edit it directly.
 """
 
@@ -16,7 +16,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent
-OUTPUT = ROOT / "schema.sql"
+OUTPUT = ROOT / "cluster" / "sqlc_schema.sql"
 PLUE_MANIFEST = ROOT / "cluster" / "plue_sources.json"
 
 
@@ -117,7 +117,7 @@ def generated_schema() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if schema.sql differs")
+    parser.add_argument("--check", action="store_true", help="fail if cluster/sqlc_schema.sql differs")
     parser.add_argument("--plue-root", type=Path, help="verify the exact private source in a Plue checkout")
     parser.add_argument("--sync-plue", action="store_true", help="copy and checksum Plue's private migrations")
     args = parser.parse_args()

@@ -87,8 +87,8 @@ func resolveCmdServerTestDatabaseURL() string {
 
 func findCmdServerSchemaPath() string {
 	candidates := []string{
-		filepath.Join("..", "..", "db", "schema.sql"),
-		filepath.Join("db", "schema.sql"),
+		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
+		filepath.Join("db", "cluster", "sqlc_schema.sql"),
 	}
 	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {
@@ -99,7 +99,7 @@ func findCmdServerSchemaPath() string {
 }
 
 // testDatabaseURL resolves the cmd/server test database URL, creates the
-// database if missing and applies db/schema.sql once. If Postgres is
+// database if missing and applies db/cluster/sqlc_schema.sql once. If Postgres is
 // unreachable the calling test is skipped (coverage is only measured with
 // `zig build docker-up`).
 func testDatabaseURL(t *testing.T) string {

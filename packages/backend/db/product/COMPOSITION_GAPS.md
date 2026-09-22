@@ -1,6 +1,6 @@
 # Product database composition gaps
 
-`migrate` installs the fresh product schema, but the copied Plue API composition still assumes its transitional cluster tables. Do not start that composition against the product baseline until these callsites use local adapters or cluster-only registration. The baseline deliberately excludes the tables in `../ownership.csv` marked `infrastructure-seam` or `retire-candidate`.
+`migrate` installs the fresh product schema, but the copied Plue API composition still assumes its transitional cluster tables. Do not start that composition against the product baseline until these callsites use local adapters or cluster-only registration. The baseline deliberately excludes the tables in `../ownership.csv` marked `private` or `retired`.
 
 | Current `internal/compose/main.go` callsite | Excluded state or dependency | Required local composition |
 | --- | --- | --- |
@@ -14,7 +14,7 @@
 The canonical product queries and models now generate into `internal/db` and
 exclude `repositories.storage_set_id`. Private cluster queries generate into
 `internal/clusterdb`; shared model types alias `internal/db`. The copied
-`db/schema.sql` and Atlas migrations remain transitional Plue sources until
+`db/cluster/sqlc_schema.sql` and Atlas migrations remain transitional Plue sources until
 Plue's own placement migration lands. `CountPrivateReposByOwner` and the
 storage byte queries count product allocations only; Plue must add pending
 private provisioning/deletion allocations through its billing adapter before

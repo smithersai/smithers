@@ -21,7 +21,7 @@ import (
 )
 
 // maxIssueTitleLen is the maximum allowed issue title length, in Unicode code
-// points. It matches the issues.title VARCHAR(255) column in db/schema.sql so an
+// points. It matches the issues.title VARCHAR(255) column in db/cluster/sqlc_schema.sql so an
 // oversized title is rejected with a 4xx instead of surfacing as a DB-driver 500.
 const maxIssueTitleLen = 255
 

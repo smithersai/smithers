@@ -16,7 +16,7 @@ var secretVariableNamePattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 const (
 	// maxSecretVariableNameLen is the maximum allowed length for a secret or variable name.
-	// Matches the VARCHAR(255) column constraint in db/schema.sql.
+	// Matches the VARCHAR(255) column constraint in db/cluster/sqlc_schema.sql.
 	maxSecretVariableNameLen = 255
 
 	// maxSecretVariableValueSize is the maximum allowed size for a secret or variable value (64 KiB).

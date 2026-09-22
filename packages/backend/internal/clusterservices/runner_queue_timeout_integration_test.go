@@ -27,7 +27,7 @@ func runnerQueueTimeoutPool(t *testing.T) *pgxpool.Pool {
 		}
 		t.Skip("set SMITHERS_CLUSTER_TEST_DATABASE_URL for cluster database integration")
 	}
-	schema, err := os.ReadFile(filepath.Join("..", "..", "db", "schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"))
 	require.NoError(t, err)
 	ctx := context.Background()
 	config, err := pgxpool.ParseConfig(raw)

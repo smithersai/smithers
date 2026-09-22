@@ -1212,7 +1212,7 @@ func openMicrosandboxTestDatabase(t *testing.T) *pgxpool.Pool {
 		}
 		t.Skip("SMITHERS_TEST_DATABASE_URL is required for Microsandbox store integration tests")
 	}
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "cluster", "sqlc_schema.sql"))
 	require.NoError(t, err)
 	ctx := context.Background()
 	config, err := pgxpool.ParseConfig(dsn)

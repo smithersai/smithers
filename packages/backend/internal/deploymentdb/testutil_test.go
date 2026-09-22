@@ -127,8 +127,8 @@ func TestMain(m *testing.M) {
 
 func findSchemaPath() string {
 	candidates := []string{
-		filepath.Join("..", "..", "db", "schema.sql"),
-		filepath.Join("db", "schema.sql"),
+		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
+		filepath.Join("db", "cluster", "sqlc_schema.sql"),
 	}
 	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {

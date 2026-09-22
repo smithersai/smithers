@@ -683,13 +683,13 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 	repoRoot, err := findRepoRoot()
 	require.NoError(t, err, "must be able to locate repo root")
 
-	schemaPath := filepath.Join(repoRoot, "packages", "backend", "db", "schema.sql")
+	schemaPath := filepath.Join(repoRoot, "packages", "backend", "db", "cluster", "sqlc_schema.sql")
 	productModelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "db", "models.go")
 	clusterModelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "clusterdb", "models.go")
 	ownersPath := filepath.Join(repoRoot, "packages", "backend", "db", "ownership.csv")
 
 	schemaBytes, err := os.ReadFile(schemaPath)
-	require.NoError(t, err, "db/schema.sql must exist")
+	require.NoError(t, err, "db/cluster/sqlc_schema.sql must exist")
 	productModelsBytes, err := os.ReadFile(productModelsPath)
 	require.NoError(t, err, "internal/db/models.go must exist")
 	clusterModelsBytes, err := os.ReadFile(clusterModelsPath)
@@ -757,7 +757,7 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 			if !matches(productModels) || !matches(clusterAliases) {
 				missing = append(missing, fmt.Sprintf("%s → missing product model or cluster alias (%s)", table, singularName))
 			}
-		case "infrastructure-seam", "retire-candidate":
+		case "private", "retired":
 			if !matches(clusterModels) {
 				missing = append(missing, fmt.Sprintf("%s → missing private cluster model (%s)", table, singularName))
 			}

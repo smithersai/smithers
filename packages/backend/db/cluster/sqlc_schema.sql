@@ -14849,6 +14849,30 @@ CREATE INDEX IF NOT EXISTS flow_runtime_host_bindings_retired
     ON flow_runtime_host_bindings (updated_at, id) WHERE state = 'retired';
 -- END product/migrations/0010_flow_runtime_host_bindings.sql
 
+-- BEGIN product/migrations/0011_owner_models.sql
+-- Model credentials and the selected chat model belong to the account.
+-- A repository secret may still override a repository-scoped turn.
+CREATE TABLE owner_model_credentials (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    value_encrypted TEXT,
+    PRIMARY KEY (user_id, name)
+);
+
+CREATE TABLE owner_model_defaults (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    model JSONB NOT NULL
+);
+
+CREATE TABLE owner_model_credential_receipts (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    result JSONB NOT NULL,
+    PRIMARY KEY (user_id, request_id)
+);
+-- END product/migrations/0011_owner_models.sql
+
 -- BEGIN cluster/private_baseline.sql
 -- Plue hosted infrastructure baseline. Extracted from the previous full schema.
 -- Product tables and durable repository storage operations are authored only by

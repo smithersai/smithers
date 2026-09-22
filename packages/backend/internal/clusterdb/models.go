@@ -427,6 +427,12 @@ type OrganizationSecret = db.OrganizationSecret
 
 type OrganizationVariable = db.OrganizationVariable
 
+type OwnerModelCredential = db.OwnerModelCredential
+
+type OwnerModelCredentialReceipt = db.OwnerModelCredentialReceipt
+
+type OwnerModelDefault = db.OwnerModelDefault
+
 type OwnerNamespace = db.OwnerNamespace
 
 type PairPromptQueue = db.PairPromptQueue

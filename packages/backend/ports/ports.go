@@ -41,6 +41,7 @@ type HostedMutationFences struct {
 type HostedRollout interface {
 	ConfigureRepositoryProvisioningEnforcement(context.Context, bool) (bool, error)
 	ConfigureLegacyMutationFences(context.Context, bool) (HostedMutationFences, error)
+	IsLegacyFinalKeyPurgeAllowed(context.Context) (bool, error)
 }
 
 // BlobStore is the actual product blob contract consumed by the extracted

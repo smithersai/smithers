@@ -166,8 +166,8 @@ func resetRoutesIntegrationDatabase(databaseURL string) (*pgxpool.Pool, error) {
 
 func routesIntegrationSchemaPath() string {
 	candidates := []string{
-		filepath.Join("..", "..", "db", "schema.sql"),
-		filepath.Join("db", "schema.sql"),
+		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
+		filepath.Join("db", "cluster", "sqlc_schema.sql"),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {

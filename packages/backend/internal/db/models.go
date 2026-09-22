@@ -1307,6 +1307,24 @@ type OrganizationVariable struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type OwnerModelCredential struct {
+	UserID         int64       `json:"user_id"`
+	Name           string      `json:"name"`
+	Origin         string      `json:"origin"`
+	ValueEncrypted pgtype.Text `json:"value_encrypted"`
+}
+
+type OwnerModelCredentialReceipt struct {
+	UserID    int64           `json:"user_id"`
+	RequestID string          `json:"request_id"`
+	Result    json.RawMessage `json:"result"`
+}
+
+type OwnerModelDefault struct {
+	UserID int64           `json:"user_id"`
+	Model  json.RawMessage `json:"model"`
+}
+
 type OwnerNamespace struct {
 	LowerSlug string      `json:"lower_slug"`
 	OwnerType string      `json:"owner_type"`

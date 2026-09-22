@@ -71,7 +71,7 @@ func TestProductColumnsMatchHostedOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	hosted := openTestDB("hosted")
-	schema, err := os.ReadFile("../schema.sql")
+	schema, err := os.ReadFile("../cluster/sqlc_schema.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

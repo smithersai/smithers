@@ -9,7 +9,7 @@ migrations here are snapshots of Plue's authored
 `internal/clusterstorage/migrations`; `plue_sources.json` pins their exact
 SHA-256 hashes. Edit the Plue sources, then sync with
 `python3 packages/backend/db/generate_schema.py --plue-root /path/to/plue --sync-plue`.
-The combined `../schema.sql` is generated, not authored. Run
+The combined `sqlc_schema.sql` is generated, not authored. Run
 `python3 packages/backend/db/generate_schema.py --check` in Smithers CI and
 add `--plue-root /path/to/plue` in Plue CI to detect drift against the private
 authority.

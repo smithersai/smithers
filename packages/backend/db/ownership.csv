@@ -16,17 +16,17 @@ access_tokens,product,product baseline; transitional copy also present
 user_ai_keys,product,product baseline; transitional copy also present
 repositories,product,product baseline; transitional copy also present
 repository_storage_operations,product,product migration 0007; neutral repository recovery journal
-legacy_mutation_fence_control,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_storage_sets,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_storage_nodes,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_replicas,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_write_locks,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_replication_jobs,infrastructure-seam,excluded from product baseline; Plue split pending
+legacy_mutation_fence_control,private,Plue-owned table; adapter extraction pending L9
+repo_storage_sets,private,Plue-owned table; adapter extraction pending L9
+repo_storage_nodes,private,Plue-owned table; adapter extraction pending L9
+repo_replicas,private,Plue-owned table; adapter extraction pending L9
+repo_write_locks,private,Plue-owned table; adapter extraction pending L9
+repo_replication_jobs,private,Plue-owned table; adapter extraction pending L9
 deploy_keys,product,product baseline; transitional copy also present
 lfs_objects,product,product baseline; transitional copy also present
 lfs_upload_reservations,product,product baseline; transitional copy also present
-storage_legacy_capability_horizons,infrastructure-seam,excluded from product baseline; Plue split pending
-storage_deletion_queue,infrastructure-seam,excluded from product baseline; Plue split pending
+storage_legacy_capability_horizons,private,Plue-owned table; adapter extraction pending L9
+storage_deletion_queue,private,Plue-owned table; adapter extraction pending L9
 lfs_locks,product,product baseline; transitional copy also present
 lfs_meta_objects,product,product baseline; transitional copy also present
 code_search_documents,product,product baseline; transitional copy also present
@@ -73,14 +73,14 @@ workflow_triggers,product,product baseline; transitional copy also present
 workflow_schedule_specs,product,product baseline; transitional copy also present
 workflow_runs,product,product baseline; transitional copy also present
 workflow_log_budget_initializations,product,product baseline; transitional copy also present
-workflow_sandbox_claims,infrastructure-seam,excluded from product baseline; Plue split pending
+workflow_sandbox_claims,private,Plue-owned table; adapter extraction pending L9
 workflow_steps,product,product baseline; transitional copy also present
 workflow_tasks,product,product baseline; transitional copy also present
 workflow_logs,product,product baseline; transitional copy also present
 workflow_run_logs,product,product baseline; transitional copy also present
-github_proxy_audit_log,infrastructure-seam,excluded from product baseline; Plue split pending
+github_proxy_audit_log,private,Plue-owned table; adapter extraction pending L9
 commit_statuses,product,product baseline; transitional copy also present
-runner_pool,infrastructure-seam,excluded from product baseline; Plue split pending
+runner_pool,private,Plue-owned table; adapter extraction pending L9
 agent_sessions,product,product baseline; transitional copy also present
 agent_messages,product,product baseline; transitional copy also present
 agent_parts,product,product baseline; transitional copy also present
@@ -100,7 +100,7 @@ repo_connections,product,product baseline; transitional copy also present
 import_jobs,product,product baseline; transitional copy also present
 wiki_pages,product,product baseline; transitional copy also present
 workspaces,product,product baseline; transitional copy also present
-workflow_run_coding_hosts,infrastructure-seam,excluded from product baseline; Plue split pending
+workflow_run_coding_hosts,private,Plue-owned table; adapter extraction pending L9
 workspace_snapshots,product,product baseline; transitional copy also present
 workspace_sessions,product,product baseline; transitional copy also present
 workspace_shares,product,product baseline; transitional copy also present
@@ -133,20 +133,20 @@ linear_issue_map,product,product baseline; transitional copy also present
 linear_comment_map,product,product baseline; transitional copy also present
 linear_sync_runs,product,product baseline; transitional copy also present
 linear_sync_ops,product,product baseline; transitional copy also present
-canary_results,infrastructure-seam,excluded from product baseline; Plue split pending
+canary_results,private,Plue-owned table; adapter extraction pending L9
 sse_tickets,product,product baseline; transitional copy also present
 issue_artifacts,product,product baseline; transitional copy also present
-sandbox_access_tokens,infrastructure-seam,excluded from product baseline; Plue split pending
-_sync_queue,retire-candidate,excluded from product baseline; retirement pending
-_id_remap,retire-candidate,excluded from product baseline; retirement pending
+sandbox_access_tokens,private,Plue-owned table; adapter extraction pending L9
+_sync_queue,retired,excluded from product baseline; historical Plue data retained
+_id_remap,retired,excluded from product baseline; historical Plue data retained
 devtools_snapshots,product,product baseline; transitional copy also present
 approvals,product,product baseline; transitional copy also present
 pair_state,product,product baseline; transitional copy also present
 pair_share_links,product,product baseline; transitional copy also present
-alert_incidents,infrastructure-seam,excluded from product baseline; Plue split pending
-alert_incident_deliveries,infrastructure-seam,excluded from product baseline; Plue split pending
-alert_remediation_jobs,infrastructure-seam,excluded from product baseline; Plue split pending
-repo_gateways,infrastructure-seam,excluded from product baseline; Plue split pending
+alert_incidents,private,Plue-owned table; adapter extraction pending L9
+alert_incident_deliveries,private,Plue-owned table; adapter extraction pending L9
+alert_remediation_jobs,private,Plue-owned table; adapter extraction pending L9
+repo_gateways,private,Plue-owned table; adapter extraction pending L9
 github_repo_listings,product,product baseline; transitional copy also present
 pair_sessions,product,product baseline; transitional copy also present
 pair_session_members,product,product baseline; transitional copy also present
@@ -154,8 +154,8 @@ pair_prompt_queue,product,product baseline; transitional copy also present
 pair_session_invites,product,product baseline; transitional copy also present
 pair_session_draft,product,product baseline; transitional copy also present
 pair_session_links,product,product baseline; transitional copy also present
-sandbox_golden_snapshots,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_environment_images,infrastructure-seam,excluded from product baseline; Plue split pending
+sandbox_golden_snapshots,private,Plue-owned table; adapter extraction pending L9
+sandbox_environment_images,private,Plue-owned table; adapter extraction pending L9
 file_drafts,product,product baseline; transitional copy also present
 app_timelines,product,product baseline; transitional copy also present
 app_timeline_members,product,product baseline; transitional copy also present
@@ -163,30 +163,30 @@ app_timeline_events,product,product baseline; transitional copy also present
 app_timeline_branches,product,product baseline; transitional copy also present
 app_timeline_snapshots,product,product baseline; transitional copy also present
 anon_sandboxes,product,product baseline; transitional copy also present
-repository_provisioning_control,infrastructure-seam,excluded from product baseline; Plue split pending
-repository_provisioning_operations,infrastructure-seam,excluded from product baseline; Plue split pending
+repository_provisioning_control,private,Plue-owned table; adapter extraction pending L9
+repository_provisioning_operations,private,Plue-owned table; adapter extraction pending L9
 repository_creation_jobs,product,additive product migration 0003
-sandbox_hosts,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_instances,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_egress_audit,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_operations,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_snapshots,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_volumes,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_access_identities,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_access_permissions,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_access_grants,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_domain_mappings,infrastructure-seam,excluded from product baseline; Plue split pending
-sandbox_orphans,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_provisioning_tasks,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_promotion_tasks,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_promotion_items,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_ingest_cursors,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_maintenance_cursors,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_ingest_batches,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_cleanup_tasks,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_cleanup_items,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_write_freezes,infrastructure-seam,excluded from product baseline; Plue split pending
-memory_restore_manifests,infrastructure-seam,excluded from product baseline; Plue split pending
+sandbox_hosts,private,Plue-owned table; adapter extraction pending L9
+sandbox_instances,private,Plue-owned table; adapter extraction pending L9
+sandbox_egress_audit,private,Plue-owned table; adapter extraction pending L9
+sandbox_operations,private,Plue-owned table; adapter extraction pending L9
+sandbox_snapshots,private,Plue-owned table; adapter extraction pending L9
+sandbox_volumes,private,Plue-owned table; adapter extraction pending L9
+sandbox_access_identities,private,Plue-owned table; adapter extraction pending L9
+sandbox_access_permissions,private,Plue-owned table; adapter extraction pending L9
+sandbox_access_grants,private,Plue-owned table; adapter extraction pending L9
+sandbox_domain_mappings,private,Plue-owned table; adapter extraction pending L9
+sandbox_orphans,private,Plue-owned table; adapter extraction pending L9
+memory_provisioning_tasks,private,Plue-owned table; adapter extraction pending L9
+memory_promotion_tasks,private,Plue-owned table; adapter extraction pending L9
+memory_promotion_items,private,Plue-owned table; adapter extraction pending L9
+memory_ingest_cursors,private,Plue-owned table; adapter extraction pending L9
+memory_maintenance_cursors,private,Plue-owned table; adapter extraction pending L9
+memory_ingest_batches,private,Plue-owned table; adapter extraction pending L9
+memory_cleanup_tasks,private,Plue-owned table; adapter extraction pending L9
+memory_cleanup_items,private,Plue-owned table; adapter extraction pending L9
+memory_write_freezes,private,Plue-owned table; adapter extraction pending L9
+memory_restore_manifests,private,Plue-owned table; adapter extraction pending L9
 branch_locks,product,product baseline; transitional copy also present
 branch_lock_join_requests,product,product baseline; transitional copy also present
 github_synced_repos,product,product baseline; transitional copy also present
@@ -225,6 +225,9 @@ product_job_events,product,product migration 0006
 chat_turns,product,product migration 0009
 chat_turn_batches,product,product migration 0009
 flow_runtime_host_bindings,product,product migration 0010
-storage_sets,infrastructure-seam,Plue placement migration 0001
-storage_nodes,infrastructure-seam,Plue placement migration 0001
-repository_placements,infrastructure-seam,Plue placement migration 0002
+storage_sets,private,Plue placement migration 0001
+storage_nodes,private,Plue placement migration 0001
+repository_placements,private,Plue placement migration 0002
+owner_model_credentials,product,product migration 0011
+owner_model_defaults,product,product migration 0011
+owner_model_credential_receipts,product,product migration 0011

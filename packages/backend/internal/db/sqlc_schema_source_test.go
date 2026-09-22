@@ -17,9 +17,9 @@ func TestSQLCConfigSchemaSource_RemainsDeterministic(t *testing.T) {
 	require.NoError(t, err)
 	configText := string(configBytes)
 
-	assert.Contains(t, configText, `schema: "schema.sql"`)
+	assert.Contains(t, configText, `schema: "cluster/sqlc_schema.sql"`)
 
-	schemaPath := filepath.Join(filepath.Dir(configPath), "schema.sql")
+	schemaPath := filepath.Join(filepath.Dir(configPath), "cluster", "sqlc_schema.sql")
 	_, err = os.Stat(schemaPath)
 	require.NoError(t, err)
 

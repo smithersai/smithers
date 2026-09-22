@@ -1,9 +1,9 @@
 version: "2"
-# schema.sql is generated from product migrations and private cluster sources.
-# Run generate_schema.py before sqlc generate; never edit schema.sql directly.
+# cluster/sqlc_schema.sql is generated from product migrations and private cluster sources.
+# Run generate_schema.py before sqlc generate; never edit cluster/sqlc_schema.sql directly.
 sql:
   - engine: "postgresql"
-    schema: "schema.sql"
+    schema: "cluster/sqlc_schema.sql"
     queries: "cluster/queries/"
     strict_function_checks: true
     gen:

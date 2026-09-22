@@ -89,7 +89,7 @@ const maxCommitStatusURLLength = 2048
 const maxCommitStatusDescriptionLength = 2048
 
 // maxCommitStatusRefLength matches the VARCHAR(255) storage width of the
-// commit_status.commit_sha and commit_status.change_id columns (db/schema.sql).
+// commit_status.commit_sha and commit_status.change_id columns (db/cluster/sqlc_schema.sql).
 // Anything longer would fail the INSERT with an opaque SQLSTATE 22001 (string
 // data right truncation), so we reject it up front with a clean 422 instead.
 const maxCommitStatusRefLength = 255

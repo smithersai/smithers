@@ -188,15 +188,15 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if cfg.Auth.Mode != expectedAuthMode {
 		return fmt.Errorf("backend role %q requires auth.mode=%q, got %q", options.Role, expectedAuthMode, cfg.Auth.Mode)
 	}
+	if !options.Role.hosted() && cfg.FeatureFlags.Workflows {
+		return errors.New("legacy workflow triggers are unavailable in single-owner mode; use canonical Flow hosts")
+	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: !options.Role.hosted() && options.Repository != nil,
 		WorkspaceRuntime:    options.Workspace != nil,
 	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
-	}
-	if !options.Role.hosted() && cfg.FeatureFlags.Workflows {
-		return errors.New("legacy workflow triggers are unavailable in single-owner mode; use canonical Flow hosts")
 	}
 	if options.Blobs == nil {
 		if err := validateProductionBlobStore(os.Getenv("SMITHERS_ENV"), cfg.Blob); err != nil {
@@ -620,14 +620,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	transferStore := blobStore
 	if _, canPurge := blobStore.(blob.GenerationPurger); options.Role.hosted() && canPurge {
-		legacyFinalKeyPurgeAllowed, gateErr := hostedQueries.IsLegacyFinalKeyPurgeAllowed(ctx)
+		legacyFinalKeyPurgeAllowed, gateErr := options.HostedRollout.IsLegacyFinalKeyPurgeAllowed(ctx)
 		if gateErr != nil {
 			return fmt.Errorf("load legacy final-key capability horizon: %w", gateErr)
 		}
 		fencedStore, fenceErr := blob.NewLegacyFinalKeyPurgeFencedStore(
 			blobStore,
 			func(gateCtx context.Context) (bool, error) {
-				return hostedQueries.IsLegacyFinalKeyPurgeAllowed(gateCtx)
+				return options.HostedRollout.IsLegacyFinalKeyPurgeAllowed(gateCtx)
 			},
 		)
 		if fenceErr != nil {
