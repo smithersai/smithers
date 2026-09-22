@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestAdminDrainHostUsesStickyControllerState(t *testing.T) {
@@ -120,7 +121,7 @@ func TestAdminNeverStartedQueryGuardsAndPreservesMetadata(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `UPDATE agent_sessions SET status='completed' WHERE id=$1`, ids[4])
 	require.NoError(t, err)
-	q := clusterdb.New(pool)
+	q := db.New(pool)
 	cutoff := time.Now().UTC().Add(-time.Hour)
 	rows, err := q.ListNeverStartedAgentSessions(ctx, cutoff)
 	require.NoError(t, err)
