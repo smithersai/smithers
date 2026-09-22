@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -29,12 +30,16 @@ func (q *fakeCanaryReports) ResolveCanaryAlertIncidents(_ context.Context, p clu
 
 func TestCanaryIncidentConditionMatchesReporters(t *testing.T) {
 	for _, tc := range []struct{ suite, condition, path string }{
-		{"workflow", "Backend canary probe failing", "../../.smithers/workflows/canary-runner.ts"},
-		{"playwright", "Playwright canary test failing", "../../e2e/scripts/run-canary.ts"},
+		{"workflow", "Backend canary probe failing", ".smithers/workflows/canary-runner.ts"},
+		{"playwright", "Playwright canary test failing", "e2e/scripts/run-canary.ts"},
 	} {
 		t.Run(tc.suite, func(t *testing.T) {
 			require.Equal(t, tc.condition, CanaryIncidentCondition(tc.suite))
-			source, err := os.ReadFile(tc.path)
+			root := os.Getenv("SMITHERS_CLUSTER_SOURCE_ROOT")
+			if root == "" {
+				t.Skip("set SMITHERS_CLUSTER_SOURCE_ROOT to verify private deployment reporters")
+			}
+			source, err := os.ReadFile(filepath.Join(root, tc.path))
 			require.NoError(t, err)
 			require.Contains(t, string(source), `"`+tc.condition+`"`)
 		})

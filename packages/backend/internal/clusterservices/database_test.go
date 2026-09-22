@@ -9,7 +9,9 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +22,10 @@ func setupTestPool(t *testing.T) *pgxpool.Pool {
 	if raw == "" {
 		t.Skip("set SMITHERS_CLUSTER_TEST_DATABASE_URL for cluster database integration")
 	}
-	pool, err := pgxpool.New(context.Background(), raw)
+	cfg, err := pgxpool.ParseConfig(raw)
+	require.NoError(t, err)
+	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error { database.ConfigureSQLCTypes(conn.TypeMap()); return nil }
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	require.NoError(t, pool.Ping(context.Background()))
