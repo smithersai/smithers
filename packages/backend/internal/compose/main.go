@@ -643,9 +643,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var pairSandbox services.PairSandbox
 	var goldenSnapshotSandbox services.GoldenSnapshotVMClient
 	var orphanSandbox services.SandboxOrphanVMClient
-	provider, err := buildSandboxProvider(cfg.Sandbox, smithersMetrics)
-	if err != nil {
-		return err
+	var provider sandbox.Provider
+	if options.Role.hosted() {
+		provider, err = buildSandboxProvider(cfg.Sandbox, smithersMetrics)
+		if err != nil {
+			return err
+		}
 	}
 	if provider != nil {
 		sandboxClient = provider
@@ -1446,8 +1449,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
 		role: options.Role, identity: authHandler != nil,
-		redirectAuth:    strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
-		agent:           cfg.FeatureFlags.Agents && sandboxClient != nil && len(agentProviderEnv) != 0,
+		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
+		// The renderer's agent capability targets /api/agent/turn. Repository
+		// agent sessions alone do not implement that transport.
 		billingCheckout: billingComposition.Service != nil,
 		isolatedSandbox: provider != nil,
 	}), apiCORSOptions(cfg))

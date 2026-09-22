@@ -82,6 +82,7 @@ func TestValidateServerStartupWithInjectedLocalDependencies(t *testing.T) {
 	cfg := validStartupConfig()
 	cfg.RepoHost.URL = ""
 	cfg.Sandbox.MicrosandboxControlURL = ""
+	cfg.FeatureFlags.Sandboxes = true
 	require.ErrorContains(t, ValidateServerStartup(cfg), "repo_host.url is required")
 	require.ErrorContains(t, ValidateServerStartup(cfg), "sandbox.microsandbox_control_url is required")
 	require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
