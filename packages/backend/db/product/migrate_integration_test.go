@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"crypto/rand"
+	"encoding/csv"
 	"encoding/hex"
 	"errors"
 	"net/url"
@@ -189,9 +190,35 @@ func TestBaselineHasNoClusterTableNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"repo_storage_sets", "repo_storage_nodes", "sandbox_hosts", "sandbox_instances", "runner_pool", "_sync_queue"} {
-		if strings.Contains(string(baseline), name) {
-			t.Errorf("product baseline still references %s", name)
+	manifest, err := os.Open("../ownership.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manifest.Close()
+	rows, err := csv.NewReader(manifest).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) < 2 || len(rows[0]) < 2 || rows[0][0] != "table" || rows[0][1] != "target_owner" {
+		t.Fatal("invalid schema ownership manifest")
+	}
+	for _, row := range rows[1:] {
+		if len(row) < 2 || row[1] == "product" {
+			continue
 		}
+		if strings.Contains(string(baseline), row[0]) {
+			t.Errorf("product baseline still references excluded table %s", row[0])
+		}
+	}
+}
+
+func TestBaselineChecksumPinned(t *testing.T) {
+	const expected = "6c21286ad174816e1da6dfa068f7d941e7170f857689061de129596a678157c9"
+	registered, err := registeredMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registered) == 0 || registered[0].checksum != expected {
+		t.Fatalf("baseline migration changed; add a new numbered migration instead (got %q)", registered[0].checksum)
 	}
 }
