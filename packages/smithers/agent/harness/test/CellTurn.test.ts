@@ -891,6 +891,83 @@ describe("CellTurn invalid probes", () => {
 })
 
 describe("CellTurn read-only cap", () => {
+  /** A command routed into a container, which the host's workspace walk never sees. */
+  const containerCells = (count: number): ReadonlyArray<ScriptedModel.Step> =>
+    Array.from(
+      { length: count },
+      () =>
+        emits(
+          `await ctx.call("bash", { mode: "unhermetic", container: "task-1", cwd: "/app", command: "python3 fix.py" })
+           console.log("ran in the container")`
+        )
+    )
+
+  /** What `bash` answers for a containerised command whose tree it fingerprinted, or could not. */
+  const measured = (mutated: boolean | undefined, count: number): ReadonlyArray<ScriptedEngine.CallStep> =>
+    Array.from(
+      { length: count },
+      () => ({
+        _tag: "Success",
+        value: { exitCode: 0, stdout: "", ...(mutated === undefined ? {} : { mutated }) }
+      } as const)
+    )
+
+  it("counts a write bash measured inside a container, which the host walk cannot see", async () => {
+    // Measured 2026-09-22 on Terminal-Bench 4.0: the agent wrote every file
+    // through `docker exec`, the host tree held still at both ends of every
+    // frame, and `read_only_cap` ended the run at frame 24 with the work done.
+    // `bash` now fingerprints the container's directory either side of the
+    // command and reports the move on its result; the frame reads that as a
+    // standing write, and neither the cap nor the unmoved-tree demand fires.
+    const { events, failure } = await run({
+      state: capped(1, 6),
+      flows: [check, editor],
+      script: [...containerCells(4), emits(`ctx.done("fixed fix.py in the container")`)],
+      calls: measured(true, 4),
+      tree: "host=unchanged"
+    })
+
+    expect(failure).toBeUndefined()
+    expect(of(events, "resolved")).toHaveLength(1)
+    expect(of(events, "read-only-demand-issued")).toEqual([])
+    expect(of(events, "unmoved-demanded")).toEqual([])
+    expect(of(events, "mutation-observed").map((event) => event.mutated)).toEqual([true, true, true, true, false])
+    expect(of(events, "mutation-observed")[0]).toMatchObject({ basis: "observed", declaredWrites: 1 })
+  })
+
+  it("still stops a container run whose commands measured no change", async () => {
+    // The control: the same run, the same calls, and the fingerprint says the
+    // tree held still. The cap fires exactly as it does for a host run, so the
+    // measurement cannot be read as a licence for container calls.
+    const { events, failure } = await run({
+      state: capped(1, 6),
+      flows: [check, editor],
+      script: [...containerCells(4), emits(`ctx.done("never reached")`)],
+      calls: measured(false, 4),
+      tree: "host=unchanged"
+    })
+
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+    expect(of(events, "resolved")).toHaveLength(0)
+    expect(of(events, "read-only-demand-issued")).toHaveLength(1)
+    expect(of(events, "mutation-observed").map((event) => event.mutated)).toEqual([false, false])
+  })
+
+  it("reads an unmeasured container tree as a read, never as a write", async () => {
+    // A container without `find` reports no `mutated` at all. Absent is not
+    // "unchanged" for the fingerprint and not "changed" for the frame: the
+    // call stands on its declaration, which for `bash` is none.
+    const { failure } = await run({
+      state: capped(1, 6),
+      flows: [check, editor],
+      script: [...containerCells(4), emits(`ctx.done("never reached")`)],
+      calls: measured(undefined, 4),
+      tree: "host=unchanged"
+    })
+
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+  })
+
   it("demands a write or a justification once the cap is reached", async () => {
     const { events, model } = await run({
       state: capped(2, 5),
@@ -3647,6 +3724,67 @@ describe("CellTurn unsupported claim", () => {
         output: "{\"exitCode\":0,\"stdout\":\"4 passed\"}"
       }
     })
+  })
+
+  it("shows the judge a moved tree when the run's writes were measured inside a container", async () => {
+    // The second half of the same blindness: the host's two digests agreed,
+    // so the brake told Jev the tree never moved and Jev refused a completion
+    // that described work done entirely in the container.
+    const asked: Array<Evaluator.Request> = []
+    const containerised = (mutated: boolean) =>
+      run({
+        state: CellTurn.make({
+          session: "session-1",
+          seat: "anthropic:test-model",
+          modelParams: ModelRequest.GenerationParams.make(),
+          layers: ["layer-a"],
+          capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
+          placement: Option.none(),
+          contextWindow: tasked,
+          maxFrames: 3,
+          repeatCap: 0
+        }),
+        flows: [shell, editor],
+        script: [
+          `await ctx.call("bash", { mode: "unhermetic", container: "task-1", cwd: "/app", command: "python3 fix.py" })
+           console.log("edited in the container")`,
+          finishing("check src/a.py", "fixed fix.py in the container; check src/a.py is green"),
+          finishing("check src/a.py", "no change is needed: fix.py was already correct")
+        ].map(emits),
+        calls: [{ _tag: "Success", value: { exitCode: 0, stdout: "", mutated } }, green, green],
+        tree: "a.py=base",
+        evaluator: Evaluator.layerScripted((request) => {
+          asked.push(request)
+          return { complete: { probability: 0.95 }, overclaims: { probability: 0.02 }, invented: { probability: 0.02 } }
+        })
+      })
+
+    const written = await containerised(true)
+    expect(written.failure).toBeUndefined()
+    expect(of(written.events, "unmoved-demanded")).toEqual([])
+    expect(asked).toHaveLength(1)
+    expect(asked[0]?.state).toMatchObject({
+      treeMoved: true,
+      callsRun: [
+        expect.objectContaining({
+          flow: "bash",
+          input: "fix.py",
+          ok: true,
+          resultSummary: "exitCode=0 mutated=true stdout=0b"
+        }),
+        expect.objectContaining({ flow: "bash", input: "src/a.py", ok: true })
+      ]
+    })
+    expect(of(written.events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: "fixed fix.py in the container; check src/a.py is green" })
+    ])
+
+    // The control: the same run whose fingerprint said the tree held still is
+    // bounced as unmoved first, and the judge is then told the truth.
+    asked.length = 0
+    const unwritten = await containerised(false)
+    expect(of(unwritten.events, "unmoved-demanded")).toHaveLength(1)
+    expect(asked[0]?.state).toMatchObject({ treeMoved: false })
   })
 
   const overclaimed = "rewrote the redirect handler and every caller of it"

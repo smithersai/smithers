@@ -66,6 +66,7 @@ const call = (changes: Partial<Frame.ObservedCall> = {}): Frame.ObservedCall => 
   summary: "",
   ordinal: 1,
   mutates: false,
+  remote: false,
   signature: "pytest tests",
   subject: "pytest tests",
   at: undefined,

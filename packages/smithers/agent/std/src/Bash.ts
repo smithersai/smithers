@@ -29,6 +29,7 @@ import * as Exec from "./internal/Exec.ts"
 import { MAX_SHELL_OUTPUT_BYTES, truncateBytes } from "./internal/Text.ts"
 import * as Probe from "./Probe.ts"
 import * as StdError from "./StdError.ts"
+import * as TreeFingerprint from "./TreeFingerprint.ts"
 
 /**
  * Registry name for the bash flow.
@@ -184,6 +185,12 @@ export const Output = Schema.Struct({
     Probe.InvalidProbe.annotate({
       description:
         "Present when the shell refused to start the command at all, so the non-zero exit is about the command and not about the code under test"
+    })
+  ),
+  mutated: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Present for a containerised command whose working directory was measured before and after it: true when the tree changed, false when it held still. Absent when the tree was not measured, which is never read as unchanged."
     })
   )
 })
@@ -407,6 +414,44 @@ const request = (plan: Plan, input: Input): Container.Request => ({
   stdin: plan.stdin !== undefined
 })
 
+/** How long one fingerprint of the container's working directory may take. */
+const FINGERPRINT_TIMEOUT_MS = 60_000
+
+/**
+ * Measures the tree a containerised command is about to run in, or just ran in.
+ *
+ * The host's workspace walk cannot see a container's filesystem, so the
+ * measurement is taken where the tree is: `TreeFingerprint.script` runs
+ * through the same transport as the command, in the same working directory,
+ * and answers with one checksum. Every way this can fail — no transport, a
+ * container without `find` or `stat`, a timeout, a bounded listing — is read
+ * as "unmeasured" and reported as an absent `mutated`, never as a tree that
+ * held still. The time it costs is bounded by the command's own timeout so a
+ * stalled container cannot spend more waiting to be measured than it may
+ * spend running.
+ */
+const fingerprint = (
+  input: Input,
+  transport: Option.Option<Container.Container>
+): Effect.Effect<TreeFingerprint.Measurement | undefined, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.gen(function*() {
+    if (input.container === undefined || Option.isNone(transport)) return undefined
+    const routing = yield* transport.value.exec({
+      container: input.container,
+      file: "sh",
+      args: ["-c", TreeFingerprint.script()],
+      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+      stdin: false
+    })
+    const result = yield* Exec.exec(routing.file, {
+      ...(routing.env === undefined ? {} : { env: routing.env }),
+      timeoutMs: Math.min(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, FINGERPRINT_TIMEOUT_MS),
+      maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES,
+      args: routing.args
+    })
+    return result.exitCode === 0 ? TreeFingerprint.parse(result.stdout) : undefined
+  }).pipe(Effect.orElseSucceed(() => undefined))
+
 /**
  * Executes a shell command through the permission-aware kernel service.
  *
@@ -429,8 +474,12 @@ export const run = Effect.fn("Bash.run")(function*(
   // The working directory belongs to the container. The transport supplies
   // any environment overrides its host process needs to forward into it.
   const contained = input.container !== undefined
-  const spawned = yield* routed(intent, input, yield* Effect.serviceOption(Container.Container))
+  const transport = yield* Effect.serviceOption(Container.Container)
+  const spawned = yield* routed(intent, input, transport)
 
+  // The tree the command runs in, before it runs. Measured in the container
+  // because nothing on this host can see it; see `TreeFingerprint`.
+  const before = yield* fingerprint(input, transport)
   const result = yield* Exec.exec(spawned.file, {
     ...(input.cwd === undefined || contained ? {} : { cwd: input.cwd }),
     ...(spawned.env === undefined ? {} : { env: spawned.env }),
@@ -439,6 +488,7 @@ export const run = Effect.fn("Bash.run")(function*(
     ...(spawned.args === undefined ? {} : { args: spawned.args }),
     ...(spawned.stdin === undefined ? {} : { stdin: spawned.stdin })
   }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
+  const mutated = TreeFingerprint.moved(before, yield* fingerprint(input, transport))
   const stdout = truncateBytes(result.stdout, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
   const stderr = truncateBytes(result.stderr, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
   // The shell's own verdict on the command it was handed, which is a fact its
@@ -453,6 +503,7 @@ export const run = Effect.fn("Bash.run")(function*(
     stderrTruncated: result.stderrDroppedBytes > 0 || stderr.truncated,
     stdoutDroppedBytes: result.stdoutDroppedBytes + stdout.droppedBytes,
     stderrDroppedBytes: result.stderrDroppedBytes + stderr.droppedBytes,
-    ...(probe === undefined ? {} : { invalidProbe: probe })
+    ...(probe === undefined ? {} : { invalidProbe: probe }),
+    ...(mutated === undefined ? {} : { mutated })
   }
 })

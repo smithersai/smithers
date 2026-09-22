@@ -74,8 +74,19 @@ export const find = (options: {
   readonly opened: string
   /** The digest the completing frame closed on; empty when unmeasured. */
   readonly digest: string
+  /**
+   * Writes this run recorded on trees the two digests do not cover.
+   *
+   * A `bash` call routed into a container measures that container's working
+   * directory itself and reports a move under the reserved `mutated` key; the
+   * host walk behind `opened` and `digest` never saw that tree. One such write
+   * is the tree moving, and the two digests agreeing says nothing against it.
+   * Absent or zero leaves the comparison exactly as it was.
+   */
+  readonly elsewhere?: number | undefined
 }): Unmoved | undefined =>
-  options.opened === "" || options.digest === "" || options.opened !== options.digest
+  options.opened === "" || options.digest === "" || options.opened !== options.digest ||
+    (options.elsewhere ?? 0) > 0
     ? undefined
     : { opened: options.opened, closed: options.digest }
 

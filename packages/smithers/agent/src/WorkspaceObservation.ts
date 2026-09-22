@@ -76,6 +76,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as TreeFingerprint from "@smthrs/std/TreeFingerprint"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -86,59 +87,26 @@ import type * as PlatformError from "effect/PlatformError"
 /**
  * Directory names never descended into.
  *
- * Every entry is a place a tool writes derived state while the run is working:
- * version-control internals, dependency trees, and the caches Python, Node,
- * Rust and their test runners keep beside the sources. A run that changes only
- * these has changed nothing it will be judged on.
+ * `@smthrs/std/TreeFingerprint` owns the list, because the same measurement
+ * is taken inside a container by the `bash` flow and the two must skip the
+ * same derived artifacts. Re-exported here so a host that names its own
+ * prune list still finds the default beside the walk that uses it.
  *
  * @category constants
  * @since 0.1.0
  */
-export const defaultPrune: ReadonlyArray<string> = [
-  ".git",
-  ".jj",
-  ".hg",
-  ".svn",
-  ".flows",
-  "node_modules",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  ".tox",
-  ".nox",
-  ".venv",
-  "venv",
-  ".eggs",
-  ".gradle",
-  ".turbo",
-  ".next",
-  "target"
-]
+export const defaultPrune: ReadonlyArray<string> = TreeFingerprint.defaultPrune
 
 /**
  * File and directory name suffixes left out of a measurement.
  *
- * Compiled output is the case that matters: several SWE-bench projects build
- * extensions in place (`setup.py build_ext --inplace`), which drops `.so`
- * files next to the `.py` files they came from. Those move whenever the run
- * executes its test suite, and counting them would report every probe as an
- * edit.
+ * Owned by `@smthrs/std/TreeFingerprint`, for the reason {@link defaultPrune}
+ * is.
  *
  * @category constants
  * @since 0.1.0
  */
-export const defaultIgnoreSuffixes: ReadonlyArray<string> = [
-  ".pyc",
-  ".pyo",
-  ".pyd",
-  ".so",
-  ".o",
-  ".a",
-  ".dylib",
-  ".class",
-  ".egg-info"
-]
+export const defaultIgnoreSuffixes: ReadonlyArray<string> = TreeFingerprint.defaultIgnoreSuffixes
 
 /**
  * What a measurement covers.
@@ -194,7 +162,7 @@ export const Observer: Context.Service<Observer, Observer> = Context.Service<Obs
   "@smthrs/agent/WorkspaceObservation/Observer"
 )
 
-const defaultMaxPaths = 50_000
+const defaultMaxPaths = TreeFingerprint.maxPaths
 
 /** Whether one entry name is skipped outright. */
 const ignored = (name: string, suffixes: ReadonlyArray<string>): boolean =>

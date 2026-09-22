@@ -32,6 +32,17 @@ describe("UnmovedTree.find", () => {
     expect(UnmovedTree.find({ opened: "tree-1", digest: "" })).toBeUndefined()
   })
 
+  it("says nothing when the run wrote to a tree the two digests do not cover", () => {
+    // A container edit leaves the host's opening and closing digests equal.
+    // The digests agreeing is not the tree holding still; one recorded remote
+    // write is the tree moving, and the demand must not fire on it.
+    expect(UnmovedTree.find({ opened: "tree-1", digest: "tree-1", elsewhere: 1 })).toBeUndefined()
+    expect(UnmovedTree.find({ opened: "tree-1", digest: "tree-1", elsewhere: 0 })).toEqual({
+      opened: "tree-1",
+      closed: "tree-1"
+    })
+  })
+
   it("says nothing when neither end was measured, rather than reading two blanks as equal", () => {
     // The one case the comparison would get exactly backwards if it only tested
     // equality: two absent measurements are equal strings and say nothing at

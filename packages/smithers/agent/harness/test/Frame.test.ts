@@ -38,6 +38,7 @@ const call = (changes: Partial<Frame.ObservedCall> = {}): Frame.ObservedCall => 
   summary: "",
   ordinal: 1,
   mutates: false,
+  remote: false,
   signature: "pytest tests",
   subject: "pytest tests",
   at: undefined,
@@ -92,6 +93,34 @@ describe("account", () => {
     expect(partial.facts).toMatchObject({ readOnlyFrames: 0, readOnlyGrace: 0, mutations: 1 })
     expect("pendingReadOnlyDemand" in partial.facts && partial.facts.pendingReadOnlyDemand === undefined).toBe(true)
     expect(account({ calls: [call({ ok: false, mutates: true })] }).observed.basis).toBe("declared")
+  })
+
+  it("counts a write a call measured on a tree the host walk does not cover", () => {
+    // The container case, measured 2026-09-22 on Terminal-Bench 4.0: every
+    // edit went through `docker exec`, the host tree held still at both ends
+    // of every frame, and the run failed `read_only_cap` with the work done.
+    // `bash` now fingerprints the container's directory itself and reports
+    // the move on the result; the frame counts it as a standing write.
+    const written = account({
+      state: state({ readOnlyFrames: 3, remoteMutations: 1 }),
+      calls: [call({ mutates: true, remote: true, value: { exitCode: 0, mutated: true } })],
+      opened: tree("t0"),
+      closed: tree("t0")
+    })
+    expect(written.mutated).toBe(true)
+    expect(written.facts.readOnlyFrames).toBe(0)
+    expect(written.facts.mutations).toBe(1)
+    expect(written.facts.remoteMutations).toBe(2)
+    expect(written.observed).toMatchObject({ basis: "observed", mutated: true, declaredWrites: 1 })
+    // The host measurement holding still does not contradict a remote write
+    // the way it contradicts a failed host write: it never covered that tree.
+    const failed = account({
+      calls: [call({ ok: false, mutates: true, remote: true })],
+      opened: tree("t0"),
+      closed: tree("t0")
+    })
+    expect(failed.mutated).toBe(false)
+    expect(failed.facts.remoteMutations).toBe(0)
   })
 
   it("counts a change nothing declared", () => {

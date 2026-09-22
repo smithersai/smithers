@@ -76,6 +76,15 @@ export interface ObservedCall {
    */
   readonly mutates: boolean
   /**
+   * Whether the write behind `mutates` was measured on a tree the host's
+   * workspace walk does not cover: the result carried the reserved `mutated`
+   * key, which `bash` sets by fingerprinting a container's working directory
+   * either side of the command. The read-only cap counts such a write like
+   * any other; the unmoved-tree demand and the claim judge need to know that
+   * the host digests holding still says nothing about it.
+   */
+  readonly remote: boolean
+  /**
    * What this invocation asked for, as `CellTurn`'s `signatureOf` names it,
    * with the tree it asked about folded in.
    *
@@ -222,7 +231,9 @@ export interface Accounting {
    */
   readonly facts:
     & StateChanges
-    & Required<Pick<StateChanges, "readOnlyFrames" | "repeatFrames" | "checks" | "failures" | "mutations">>
+    & Required<
+      Pick<StateChanges, "readOnlyFrames" | "repeatFrames" | "checks" | "failures" | "mutations" | "remoteMutations">
+    >
     & Required<Pick<StateChanges, "openingDigest" | "callLedger">>
 }
 
@@ -278,6 +289,9 @@ export const account = (options: {
   const covered = measured && opened.value.complete && closed.value.complete
   const standingWrites = calls.filter((call) => call.mutates && (call.ok || !covered)).length
   const mutated = standingWrites > 0 || (covered && opened.value.digest !== closed.value.digest)
+  // Writes the host measurement could not have seen. A failed call measured
+  // nothing, so only a settled one counts; see `ObservedCall.remote`.
+  const remoteWrites = calls.filter((call) => call.ok && call.mutates && call.remote).length
   const closingDigest = Option.match(closed, { onNone: () => "", onSome: (value) => value.digest })
 
   // The frame's own repetition, measured the same way and carried the same
@@ -395,6 +409,7 @@ export const account = (options: {
         epoch: state.mutations
       }),
       mutations: state.mutations + (mutated ? 1 : 0),
+      remoteMutations: state.remoteMutations + remoteWrites,
       // The tree the run was handed, fixed the first time a frame measured one
       // and never restamped. See `State.openingDigest`.
       openingDigest: state.openingDigest !== ""
@@ -641,7 +656,11 @@ const measuredDemand = (
 ): Omit<CompletionDemand, "keeps"> | undefined => {
   const { facts, frameChecks, workspaceDigest } = accounting
   if (state.unmovedDemands < state.unmovedCap) {
-    const unmoved = UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest })
+    const unmoved = UnmovedTree.find({
+      opened: facts.openingDigest,
+      digest: workspaceDigest,
+      elsewhere: facts.remoteMutations
+    })
     if (unmoved !== undefined) {
       return {
         event: new AgentEvent.UnmovedDemanded({
@@ -849,7 +868,11 @@ export const judgeCompletion = (
       // The `UnmovedTree` fact, read the other way round. An unmeasured tree
       // reads as moved, which is the reading that asks for nothing: the
       // brake above owns the unmoved case and has already passed on it.
-      treeMoved: UnmovedTree.find({ opened: facts.openingDigest, digest: workspaceDigest }) === undefined,
+      treeMoved: UnmovedTree.find({
+        opened: facts.openingDigest,
+        digest: workspaceDigest,
+        elsewhere: facts.remoteMutations
+      }) === undefined,
       checksRun: checksRun(facts.checks),
       callsRun: facts.callLedger.map((entry) => ({
         flow: entry.flow,

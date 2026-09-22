@@ -4,6 +4,17 @@
 
 ### Changed
 
+- A settled call whose result carries the reserved `mutated: true` key (the
+  measurement `@smthrs/std`'s `bash` takes of a container's working directory)
+  is a standing write. The read-only cap counts it like any declared write,
+  and `State.remoteMutations` counts it apart from `State.mutations` so the
+  unmoved-tree demand and the completion claim's `treeMoved` know the host's
+  two digests agreeing says nothing about it: `UnmovedTree.find` takes
+  `elsewhere`, and one such write reads as the tree moving. Before this a run
+  that did its whole task in a container was bounced as unmoved and then
+  refused as `claim_unproven`, measured on Terminal-Bench 4.0 on 2026-09-22.
+  `mutated: false` and an absent key leave a call's declaration as it was.
+
 - The completion claim brake refuses one thing, and it is not "the task is not
   done". `CompletionClaim.classifier` now asks a third question, `invented`,
   whether the claim reports having run a command or having obtained a result

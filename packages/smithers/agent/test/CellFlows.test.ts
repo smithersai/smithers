@@ -653,7 +653,11 @@ ctx.done(probe.stdout.trim())`
     // re-parsed as shell text. The `--` before the container name is the
     // option terminator `@smthrs/std` `Container.makeCommand` emits, so a
     // container whose name begins with a dash cannot be read as a docker flag.
-    expect(spawned[0]).toBe(`docker exec -i -w /testbed -- testbed bash -lc 'exec "$@"' bash python3 -`)
+    // `bash` brackets a containerised command with two tree fingerprints
+    // through the same transport; the command itself is the spawn asserted on.
+    expect(spawned.find((argv) => argv.includes("bash -lc"))).toBe(
+      `docker exec -i -w /testbed -- testbed bash -lc 'exec "$@"' bash python3 -`
+    )
   })
 
   it("runs the declared test runner as a flow and answers with a reading of its report", async () => {

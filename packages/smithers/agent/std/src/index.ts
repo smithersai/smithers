@@ -65,6 +65,12 @@ export * as Bash from "./Bash.ts"
 /** @category services @since 1.0.0 */
 export * as Container from "./Container.ts"
 
+/**
+ * @category measurement
+ * @since 1.0.0
+ */
+export * as TreeFingerprint from "./TreeFingerprint.ts"
+
 /** @category services @since 1.0.0 */
 export * as Checkpoints from "./Checkpoints.ts"
 

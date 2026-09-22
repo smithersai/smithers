@@ -61,6 +61,7 @@
     "./StdError": "./src/StdError.ts",
     "./TestRun": "./src/TestRun.ts",
     "./TestRunner": "./src/TestRunner.ts",
+    "./TreeFingerprint": "./src/TreeFingerprint.ts",
     "./UpdatePlan": "./src/UpdatePlan.ts",
     "./WebFetch": "./src/WebFetch.ts",
     "./WebSearch": "./src/WebSearch.ts",
@@ -374,6 +375,16 @@
         "require": {
           "types": "./dist/cjs/TestRunner.d.ts",
           "default": "./dist/cjs/TestRunner.js"
+        }
+      },
+      "./TreeFingerprint": {
+        "import": {
+          "types": "./dist/esm/TreeFingerprint.d.ts",
+          "default": "./dist/esm/TreeFingerprint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TreeFingerprint.d.ts",
+          "default": "./dist/cjs/TreeFingerprint.js"
         }
       },
       "./UpdatePlan": {

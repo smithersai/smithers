@@ -4,6 +4,29 @@
 
 ### Changed
 
+- `bash` measures the tree a containerised command runs in. For an
+  `unhermetic` call that names a `container`, the flow runs
+  `TreeFingerprint.script` through the container transport in the command's
+  working directory before and after the command and reports whether the two
+  answers differ as `mutated` on its output: `true` for a tree that changed,
+  `false` for one that held still, absent when it could not be measured (no
+  transport, no `find` or `stat -c`, a timeout, or a listing past `maxPaths`).
+  The host's workspace walk never sees a container's filesystem, so every
+  edit an agent made through `docker exec` read as an idle frame: on
+  Terminal-Bench 4.0 (2026-09-22) the harness's own read-only cap ended one
+  run after twenty-four frames of container writes and its claim judge
+  refused another's finished work as never recorded. Two extra `docker exec`
+  calls per containerised command, each bounded by the command's own timeout
+  and by 60 s.
+
+### Added
+
+- Added `TreeFingerprint`: the in-container tree measurement `bash` uses, and
+  the owner of the prune and suffix lists `@smthrs/agent/WorkspaceObservation`
+  now re-exports, so the host walk and the container measurement skip the
+  same derived artifacts. `key` (`"mutated"`) is the reserved output key,
+  documented beside `Probe.key`.
+
 - A batched `classify` call reports how long it took. `Classify.askAll` times
   itself and the batch output carries `latencyMs` beside `results`, the way a
   single verdict already carried the transport's. Without it the only timing a

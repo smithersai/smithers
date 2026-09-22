@@ -644,6 +644,22 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
+   * Settled writes this run recorded on trees the workspace walk never sees.
+   *
+   * A `bash` call routed into a container fingerprints that container's
+   * working directory either side of the command and reports a move under
+   * the reserved `mutated` key (`@smthrs/std/TreeFingerprint`). Counted apart
+   * from {@link State.mutations} because the unmoved-tree demand and the
+   * claim judge compare the host's two digests, and a container edit leaves
+   * those equal: without this count a run that did its whole task in a
+   * container was bounced as unmoved and then refused as "work this run never
+   * recorded". Measured on Terminal-Bench 4.0, 2026-09-22.
+   */
+  remoteMutations: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
    * Whether the sufficiency observation has already been written this run.
    *
    * Once, and only once: it is a statement about the record, the record only
@@ -894,6 +910,7 @@ export const make = (options: {
     callLedger: [],
     failures: [],
     mutations: 0,
+    remoteMutations: 0,
     sufficiencyStated: false,
     revalidations: options.revalidations ?? defaultRevalidations,
     approvalChannel: options.approvalChannel ?? false,
@@ -1685,6 +1702,22 @@ const invalidProbeOf = (
 }
 
 /**
+ * The reserved output key a flow reports a measured write under.
+ *
+ * `@smthrs/std/TreeFingerprint` is the producing half: `bash` fingerprints a
+ * container's working directory before and after a containerised command and
+ * sets this to whether the two differ. The controller reads a `true` here as
+ * a standing write the host's own walk could not see, and nothing else off
+ * it: `false` and absent both leave the call's declaration as it stands.
+ */
+const mutatedKey = "mutated"
+
+/** Whether a settled call measured, itself, that its tree moved. */
+const mutatedOf = (value: Schema.Json): boolean =>
+  value !== null && typeof value === "object" && !Array.isArray(value) &&
+  (value as Record<string, unknown>)[mutatedKey] === true
+
+/**
  * What a run says when its frame budget, rather than the run, ended it.
  *
  * A run that never completed has only the budget to report. A run whose
@@ -2160,6 +2193,10 @@ const evaluate = (
             const ordinal = CallLedger.settled(state.callLedger) + calls.length + 1
             const descriptor = descriptors.get(invocation.flow)
             const probe = result.outcome === "success" ? invalidProbeOf(result.value) : undefined
+            // A write the call measured itself, on a tree the host walk does
+            // not cover. It stands beside the declaration, never instead of it.
+            const measured = performed.has(invocation.ordinal) && result.outcome === "success" &&
+              mutatedOf(result.value)
             // The tree this call actually ran against. A call the boundary
             // refused ran against nothing, and one whose `at` did not decode
             // named nothing, so neither keys anything: `performed` is the set
@@ -2172,8 +2209,9 @@ const evaluate = (
               ok: result.outcome === "success",
               summary: elide.head(rendered, salvageSummary, salvageRecall),
               ordinal,
-              mutates: performed.has(invocation.ordinal) && descriptor !== undefined &&
-                mutating(descriptor, invocation.input),
+              mutates: (performed.has(invocation.ordinal) && descriptor !== undefined &&
+                mutating(descriptor, invocation.input)) || measured,
+              remote: measured,
               // Every invocation the cell issued, refused ones included: a
               // refusal is still a question the run has already asked, and
               // asking it again learns nothing either.

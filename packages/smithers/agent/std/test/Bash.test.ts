@@ -8,6 +8,7 @@ import * as Bash from "../src/Bash.ts"
 import * as Container from "../src/Container.ts"
 import * as Exec from "../src/internal/Exec.ts"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
+import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 import { layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
@@ -27,6 +28,14 @@ interface Spawned {
  * script-carrying call is observed here at the spawner boundary, which is
  * exactly where the payload stops being text and becomes data.
  */
+/** Whether one spawn is the container's tree fingerprint rather than the command it brackets. */
+const isFingerprint = (spawn: Spawned | ReadonlyArray<string>): boolean =>
+  (Array.isArray(spawn) ? spawn : (spawn as Spawned).args).includes(TreeFingerprint.script())
+
+/** The spawns that ran the caller's command, with the fingerprints either side of it left out. */
+const commands = (spawns: ReadonlyArray<Spawned>): ReadonlyArray<Spawned> =>
+  spawns.filter((spawn) => !isFingerprint(spawn))
+
 const recorder = (spawns: Array<Spawned>) =>
   Layer.mergeAll(
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
@@ -716,7 +725,7 @@ describe("Bash", () => {
     // without the repository's dependencies on 30 of 45 graded instances.
     // `exec "$@"` replaces the shell with the interpreter, so the script still
     // arrives on the inherited standard input and no argument is re-parsed.
-    expect(spawns[0]).toEqual({
+    expect(commands(spawns)[0]).toEqual({
       file: "docker",
       args: [
         "exec",
@@ -739,7 +748,7 @@ describe("Bash", () => {
       // The container owns the working directory, so the host spawn does not.
       cwd: undefined
     })
-    expect(spawns[1]).toMatchObject({
+    expect(commands(spawns)[1]).toMatchObject({
       file: "docker",
       args: ["exec", "-w", "/testbed", "--", "swebench-1", "bash", "-lc", "pytest -q tests/test_x.py"],
       stdin: undefined
@@ -784,11 +793,11 @@ describe("Bash", () => {
       expect(failure?.message).toBe("Command timed out: pytest")
       expect(Cause.pretty(exit.cause)).not.toContain("s3cret-value")
     }
-    expect(spawns[0]).toContain("DATABASE_PASSWORD")
-    expect(spawns[0]?.join(" ")).not.toContain("s3cret-value")
+    expect(spawns.find((spawn) => !isFingerprint(spawn))).toContain("DATABASE_PASSWORD")
+    expect(spawns.find((spawn) => !isFingerprint(spawn))?.join(" ")).not.toContain("s3cret-value")
     // The value still has to reach the container, so it rides on the
     // environment of the transport process the host spawns.
-    expect(environments[0]?.["DATABASE_PASSWORD"]).toBe("s3cret-value")
+    expect(environments[spawns.findIndex((spawn) => !isFingerprint(spawn))]?.["DATABASE_PASSWORD"]).toBe("s3cret-value")
   })
 
   it("asks a containerised shell script for no login flag of its own", async () => {
@@ -800,11 +809,112 @@ describe("Bash", () => {
       Bash.run({ mode: "unhermetic", container: "swebench-1", script: "echo hello" }),
       Layer.merge(recorder(spawns), Layer.succeed(Container.Container)(Container.makeCommand()))
     ))
-    expect(spawns[0]).toMatchObject({
+    expect(commands(spawns)[0]).toMatchObject({
       file: "docker",
       args: ["exec", "-i", "--", "swebench-1", "bash", "-lc", `exec "$@"`, "bash", "bash", "-s"],
       stdin: "echo hello"
     })
+  })
+
+  /**
+   * A spawner that answers every fingerprint from a queue and every command
+   * with exit 0, so a case states what the container's tree looked like
+   * before and after the command and nothing else.
+   */
+  const fingerprinting = (
+    answers: Array<{ readonly exitCode?: number; readonly stdout: string }>,
+    spawns: Array<Spawned>
+  ) =>
+    Layer.mergeAll(
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
+        spawn: (command) =>
+          Effect.sync(() => {
+            const standard = command as ChildProcess.StandardCommand
+            const spawn: Spawned = {
+              file: standard.command,
+              args: [...standard.args],
+              stdin: undefined,
+              shell: standard.options.shell === true,
+              cwd: standard.options.cwd
+            }
+            spawns.push(spawn)
+            const answer = isFingerprint(spawn) ? answers.shift() ?? { exitCode: 1, stdout: "" } : { stdout: "" }
+            return makeHandle({
+              pid: ProcessId(1),
+              exitCode: Effect.succeed(ExitCode(answer.exitCode ?? 0)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              stdin: Sink.drain,
+              stdout: Stream.make(new TextEncoder().encode(answer.stdout)),
+              stderr: Stream.empty,
+              all: Stream.empty,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+              unref: Effect.succeed(Effect.void)
+            })
+          })
+      })),
+      Layer.succeed(Container.Container)(Container.makeCommand()),
+      Path.layer
+    )
+
+  const contained = { mode: "unhermetic", container: "task-1", cwd: "/app", command: "python3 fix.py" } as const
+
+  it("measures the container's working directory either side of the command and reports a move", async () => {
+    // The blindness this closes, measured 2026-09-22 on Terminal-Bench 4.0:
+    // every write an agent made through `docker exec` read as an idle frame,
+    // because the host's workspace walk cannot see a container's filesystem.
+    const spawns: Array<Spawned> = []
+    const output = await execute(Effect.provide(
+      Bash.run(contained),
+      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "99 24\n3\n" }], spawns)
+    ))
+    expect(output.mutated).toBe(true)
+    // Both fingerprints run where the command runs: same container, same
+    // working directory, through the same transport, as a plain `sh` script.
+    const fingerprints = spawns.filter(isFingerprint)
+    expect(fingerprints).toHaveLength(2)
+    expect(fingerprints[0]?.args.slice(0, 5)).toEqual(["exec", "-w", "/app", "--", "task-1"])
+    expect(fingerprints[0]?.args.slice(5, 7)).toEqual(["sh", "-c"])
+    expect(spawns.map(isFingerprint)).toEqual([true, false, true])
+  })
+
+  it("reports a tree that held still as unmoved, so a read-only container call still counts as one", async () => {
+    const spawns: Array<Spawned> = []
+    const output = await execute(Effect.provide(
+      Bash.run(contained),
+      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "11 20\n2\n" }], spawns)
+    ))
+    expect(output.mutated).toBe(false)
+  })
+
+  it("reports nothing when the tree could not be measured, never an unchanged tree", async () => {
+    const unmeasured = async (answers: Array<{ readonly exitCode?: number; readonly stdout: string }>) => {
+      const spawns: Array<Spawned> = []
+      const output = await execute(Effect.provide(Bash.run(contained), fingerprinting(answers, spawns)))
+      expect(output.exitCode).toBe(0)
+      return output.mutated
+    }
+    // A container without `find` or `stat -c`, or a shell that fails.
+    expect(await unmeasured([{ exitCode: 127, stdout: "" }, { stdout: "11 20\n2\n" }])).toBeUndefined()
+    expect(await unmeasured([{ stdout: "11 20\n2\n" }, { exitCode: 1, stdout: "" }])).toBeUndefined()
+    // A listing that reached the bound covers a prefix, and a prefix cannot
+    // say that the tree held still.
+    expect(await unmeasured([{ stdout: `11 20\n${TreeFingerprint.maxPaths + 1}\n` }, { stdout: "11 20\n3\n" }]))
+      .toBeUndefined()
+    expect(await unmeasured([{ stdout: "garbage" }, { stdout: "11 20\n2\n" }])).toBeUndefined()
+  })
+
+  it("measures nothing for a command that runs on the host", async () => {
+    // The host's own workspace walk covers a host command; a second
+    // measurement here would count the host tree twice.
+    const spawns: Array<Spawned> = []
+    const output = await execute(Effect.provide(
+      Bash.run({ mode: "unhermetic", command: "true" }),
+      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "99 24\n3\n" }], spawns)
+    ))
+    expect(output.mutated).toBeUndefined()
+    expect(spawns.filter(isFingerprint)).toHaveLength(0)
   })
 
   it("refuses a container when the host binds no transport", async () => {
