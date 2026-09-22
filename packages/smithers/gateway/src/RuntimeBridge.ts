@@ -207,8 +207,11 @@ const conflictCodes = new Set(["stale_owner", "artifact_mismatch", "source_misma
 const defaultEventLimit = 250
 const maximumEventLimit = 1_000
 
-const idempotencyKey = (input: Pick<Command, "applicationRequestId" | "ownerGeneration">, suffix: string) =>
-  `bridge:v1:${input.ownerGeneration}:${input.applicationRequestId}:${suffix}`
+// Host generation fences who may execute a delivery, but it is not part of
+// the durable product request identity. A replacement owner must reconcile a
+// lost acknowledgement against the same Control command keys.
+const idempotencyKey = (input: Pick<Command, "applicationRequestId">, suffix: string) =>
+  `bridge:v1:${input.applicationRequestId}:${suffix}`
 
 const validateOwner = (config: Config, input: Pick<Command, "ownerGeneration">) =>
   input.ownerGeneration === config.ownerGeneration

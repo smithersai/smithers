@@ -79,8 +79,9 @@ type agentDispatch struct {
 	// RFD-004: the workspace this run executes in ("" on the ephemeral
 	// path) and whether its agent unit was started (decides fail vs suspend
 	// in cleanup).
-	workspaceID    string
-	serviceStarted bool
+	workspaceID     string
+	serviceStarted  bool
+	flowOperationID string
 
 	// infraFailedMarked is set to true when markAgentDispatchInfrastructureFailed
 	// has already been called for this dispatch, to prevent double-calling during
@@ -121,6 +122,7 @@ func (d *agentDispatch) execute() (DispatchAgentRunResult, error) {
 		d.loadMessageHistory,
 		d.createWorkflowTask,
 		d.linkSessionToWorkflowRun,
+		d.admitCodingTurn,
 		d.refuseRetiredAgentLoop,
 		d.prepareRepoClone,
 		d.mintJJHubToken,
@@ -137,7 +139,7 @@ func (d *agentDispatch) execute() (DispatchAgentRunResult, error) {
 	// is never handed to the box. On every other path the loop is still
 	// retired, which refuseRetiredAgentLoop already refused above.
 	if d.codingDispatchEnabled() {
-		steps = append(steps, d.dispatchCodingTurn, d.markTaskRunning, d.watchCodingTurn)
+		steps = append(steps, d.markTaskRunning)
 	} else {
 		steps = append(steps, d.startService, d.markTaskRunning)
 	}
@@ -153,6 +155,7 @@ func (d *agentDispatch) execute() (DispatchAgentRunResult, error) {
 	return DispatchAgentRunResult{
 		WorkflowRunID:  d.run.ID,
 		WorkflowTaskID: d.task.ID,
+		OperationID:    d.flowOperationID,
 		AgentToken:     d.plaintext,
 	}, nil
 }
@@ -204,6 +207,9 @@ func (d *agentDispatch) cleanup() {
 	// in a stale "queued" or "pending" state.
 	if d.run.ID != 0 && !d.infraFailedMarked {
 		d.svc.markAgentDispatchInfrastructureFailed(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, "dispatch failed")
+	}
+	if d.flowOperationID != "" {
+		d.cancelCodingTurn(ctx)
 	}
 }
 

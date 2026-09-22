@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 )
 
 func runtimeClient(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
@@ -32,7 +32,7 @@ func writeCommand(t *testing.T, response http.ResponseWriter, operation, request
 	t.Helper()
 	response.Header().Set("content-type", "application/json")
 	if err := json.NewEncoder(response).Encode(map[string]any{
-		"protocol": ports.FlowRuntimeProtocol,
+		"protocol": flowruntime.FlowRuntimeProtocol,
 		"ok":       true,
 		"value": map[string]any{
 			"operation": operation, "applicationRequestId": requestID,
@@ -58,13 +58,13 @@ func TestClientLaunchAuthenticatesAndDecodesCanonicalReceipt(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&command); err != nil {
 			t.Fatal(err)
 		}
-		if command["protocol"] != ports.FlowRuntimeProtocol || command["operation"] != "launch" || command["attempt"] != float64(2) {
+		if command["protocol"] != flowruntime.FlowRuntimeProtocol || command["operation"] != "launch" || command["attempt"] != float64(2) {
 			t.Fatalf("unexpected launch %#v", command)
 		}
 		writeCommand(t, response, "launch", "request-1")
 	}))
 
-	result, err := client.Launch(context.Background(), ports.FlowRuntimeLaunch{
+	result, err := client.Launch(context.Background(), flowruntime.FlowRuntimeLaunch{
 		ApplicationRequestID: "request-1", Attempt: 2, OwnerGeneration: 7,
 		RuntimeArtifactDigest: strings.Repeat("a", 64), SourceRevision: strings.Repeat("b", 40),
 		FlowID: "fixture/small", Payload: json.RawMessage(`{"value":1}`),
@@ -79,11 +79,11 @@ func TestClientLaunchAuthenticatesAndDecodesCanonicalReceipt(t *testing.T) {
 
 func TestClientReadsNonSecretStartupIdentity(t *testing.T) {
 	client, _ := runtimeClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/health" || request.Header.Get("Authorization") != "" {
+		if request.URL.Path != "/health" || request.Header.Get("Authorization") != "Bearer secret" {
 			t.Fatalf("unexpected health request %#v", request)
 		}
 		_ = json.NewEncoder(response).Encode(map[string]any{"runtimeBridge": map[string]any{
-			"protocol": ports.FlowRuntimeProtocol, "runtimeArtifactDigest": strings.Repeat("a", 64),
+			"protocol": flowruntime.FlowRuntimeProtocol, "runtimeArtifactDigest": strings.Repeat("a", 64),
 			"sourceRevision": strings.Repeat("b", 40), "ownerGeneration": 7,
 		}})
 	}))
@@ -91,13 +91,13 @@ func TestClientReadsNonSecretStartupIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.Protocol != ports.FlowRuntimeProtocol || identity.OwnerGeneration != 7 {
+	if identity.Protocol != flowruntime.FlowRuntimeProtocol || identity.OwnerGeneration != 7 {
 		t.Fatalf("identity = %#v", identity)
 	}
 }
 
 func TestSharedTypeScriptWireFixtureDecodesInGo(t *testing.T) {
-	bytes, err := os.ReadFile(filepath.Join("..", "..", "..", "smithers", "gateway", "testdata", "runtime-bridge-v1.json"))
+	bytes, err := os.ReadFile(filepath.Join("..", "..", "smithers", "gateway", "testdata", "runtime-bridge-v1.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestSharedTypeScriptWireFixtureDecodesInGo(t *testing.T) {
 	if err := json.Unmarshal(bytes, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Launch.Protocol != ports.FlowRuntimeProtocol || fixture.Launch.Operation != "launch" {
+	if fixture.Launch.Protocol != flowruntime.FlowRuntimeProtocol || fixture.Launch.Operation != "launch" {
 		t.Fatalf("launch fixture = %#v", fixture.Launch)
 	}
 	if err := checkEnvelope(fixture.CommandResponse.Protocol, fixture.CommandResponse.OK, fixture.CommandResponse.Error); err != nil {
@@ -139,16 +139,16 @@ func TestClientMutationsUseOneVersionedContract(t *testing.T) {
 	}))
 	ctx := context.Background()
 	approval := json.RawMessage(`{"target":{"_tag":"Plan","planId":"p","digest":"d","envelope":{"capabilities":[],"flows":[],"budget":{}}},"scope":"run","idempotencyKey":"ignored"}`)
-	if _, err := client.Approve(ctx, ports.FlowRuntimeDecision{ApplicationRequestID: "approve-1", OwnerGeneration: 7, Approval: approval}); err != nil {
+	if _, err := client.Approve(ctx, flowruntime.FlowRuntimeDecision{ApplicationRequestID: "approve-1", OwnerGeneration: 7, Approval: approval}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Deny(ctx, ports.FlowRuntimeDecision{ApplicationRequestID: "deny-1", OwnerGeneration: 7, Approval: approval}); err != nil {
+	if _, err := client.Deny(ctx, flowruntime.FlowRuntimeDecision{ApplicationRequestID: "deny-1", OwnerGeneration: 7, Approval: approval}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Signal(ctx, ports.FlowRuntimeSignal{ApplicationRequestID: "signal-1", OwnerGeneration: 7, RunID: "run-1", Name: "answer", Payload: json.RawMessage(`true`)}); err != nil {
+	if _, err := client.Signal(ctx, flowruntime.FlowRuntimeSignal{ApplicationRequestID: "signal-1", OwnerGeneration: 7, RunID: "run-1", Name: "answer", Payload: json.RawMessage(`true`)}); err != nil {
 		t.Fatal(err)
 	}
-	for _, steer := range []ports.FlowRuntimeSteer{
+	for _, steer := range []flowruntime.FlowRuntimeSteer{
 		{ApplicationRequestID: "steer-message", OwnerGeneration: 7, RunID: "run-1", MessageID: "m1", Kind: "Message", Body: "continue"},
 		{ApplicationRequestID: "steer-seat", OwnerGeneration: 7, RunID: "run-1", MessageID: "m2", Kind: "Seat", Seat: "openai:test"},
 		{ApplicationRequestID: "steer-thinking", OwnerGeneration: 7, RunID: "run-1", MessageID: "m3", Kind: "Thinking", Thinking: "high"},
@@ -158,13 +158,13 @@ func TestClientMutationsUseOneVersionedContract(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := client.Cancel(ctx, ports.FlowRuntimeLifecycle{ApplicationRequestID: "cancel-1", OwnerGeneration: 7, RunID: "run-1", Reason: "operator"}); err != nil {
+	if _, err := client.Cancel(ctx, flowruntime.FlowRuntimeLifecycle{ApplicationRequestID: "cancel-1", OwnerGeneration: 7, RunID: "run-1", Reason: "operator"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Resume(ctx, ports.FlowRuntimeLifecycle{ApplicationRequestID: "resume-1", OwnerGeneration: 7, RunID: "run-1"}); err != nil {
+	if _, err := client.Resume(ctx, flowruntime.FlowRuntimeLifecycle{ApplicationRequestID: "resume-1", OwnerGeneration: 7, RunID: "run-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Steer(ctx, ports.FlowRuntimeSteer{Kind: "unknown"}); ErrorCode(err) != "invalid_request" {
+	if _, err := client.Steer(ctx, flowruntime.FlowRuntimeSteer{Kind: "unknown"}); ErrorCode(err) != "invalid_request" {
 		t.Fatalf("unsupported steer error = %v", err)
 	}
 	mu.Lock()
@@ -188,7 +188,7 @@ func TestClientObserveReconnectsFromOpaqueCursor(t *testing.T) {
 			t.Fatalf("observe input %#v", input)
 		}
 		_ = json.NewEncoder(response).Encode(map[string]any{
-			"protocol": ports.FlowRuntimeProtocol, "ok": true,
+			"protocol": flowruntime.FlowRuntimeProtocol, "ok": true,
 			"value": map[string]any{
 				"run":        map[string]any{"runId": "run-1", "flowId": "fixture/small", "status": "completed"},
 				"events":     []any{map[string]any{"cursor": map[string]any{"sequence": 42}, "sequence": 42, "kind": "control.run.completed", "occurredAt": 1, "payload": nil}},
@@ -242,7 +242,7 @@ func TestClientClassifiesRefusalsAndProtocolMismatch(t *testing.T) {
 				response.WriteHeader(test.status)
 				_, _ = io.WriteString(response, test.body)
 			}))
-			_, err := client.Resume(context.Background(), ports.FlowRuntimeLifecycle{ApplicationRequestID: "r", OwnerGeneration: 1, RunID: "run"})
+			_, err := client.Resume(context.Background(), flowruntime.FlowRuntimeLifecycle{ApplicationRequestID: "r", OwnerGeneration: 1, RunID: "run"})
 			if ErrorCode(err) != test.code || IsRetryable(err) != test.retryable {
 				t.Fatalf("error = %#v", err)
 			}

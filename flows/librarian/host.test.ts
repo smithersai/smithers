@@ -20,7 +20,7 @@ const exec = promisify(execFile)
 test("catalog keeps write-once artifact identity and honest configured model metadata", async t => {
   const root = await mkdtemp(join(tmpdir(), "librarian-identity-"))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const options = { root, repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "a".repeat(64), sourceRevision: "b".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
+  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "a".repeat(64), sourceRevision: "b".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
   const first = await catalog(options), again = await catalog(options)
   for (const [index, entry] of first.entries()) {
     assert.deepEqual(entry.descriptor, again[index]!.descriptor)
@@ -36,7 +36,7 @@ test("catalog keeps write-once artifact identity and honest configured model met
 test("both product flows are their own delegate and carry the declaration's authority", async t => {
   const root = await mkdtemp(join(tmpdir(), "librarian-collapse-"))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const options = { root, repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "b".repeat(64), sourceRevision: "c".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
+  const options = { root, stateRoot: join(root, "state"), repo: "test/repo", gatewayId: "test", credential: "test", artifactDigest: "b".repeat(64), sourceRevision: "c".repeat(40), ownerGeneration: 1, model: "openai:test", persistWiki: async () => {} }
   const entries = await catalog(options)
 
   assert.deepEqual(entries.map(entry => entry.descriptor.name), ["librarian/wiki", "librarian/history"])

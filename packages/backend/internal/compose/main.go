@@ -879,9 +879,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithPreviewRelayToken(cfg.Sandbox.PreviewRelayToken),
 	)
 	services.WithWorkspaceCapabilityProbe(repoGatewayService.ProbeWorkspaceCapability)(workspaceService)
-	if os.Getenv("SMITHERS_AGENT_CODING_DISPATCH") == "1" {
-		services.WithAgentCodingGateway(repoGatewayService)(agentService)
-	}
 	gitHubImportService := services.NewGitHubImportService(
 		pool,
 		queries,

@@ -20,6 +20,7 @@ export { roleResolver } from "./seats.ts"
 
 export interface Options extends SeatOptions {
   readonly root: string
+  readonly stateRoot: string
   readonly repo: string
   readonly gatewayId: string
   readonly credential: string
@@ -82,7 +83,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       Layer.provideMerge(historyRegistration(options.root, options.repo)),
       agentRuntime, Layer.provide(registry), Layer.orDie
     )
-    const host = native.layerHost({ root: options.root, credential: options.credential,
+    const host = native.layerHost({ root: options.root, stateRoot: options.stateRoot, credential: options.credential,
       approvalAuthority: native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,

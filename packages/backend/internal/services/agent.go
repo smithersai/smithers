@@ -25,6 +25,7 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 // AgentSessionResponse is the API representation of an agent session.
@@ -135,6 +136,7 @@ type AgentChangesetMaterializer interface {
 type DispatchAgentRunResult struct {
 	WorkflowRunID  int64
 	WorkflowTaskID int64
+	OperationID    string
 	AgentToken     string
 }
 
@@ -395,11 +397,10 @@ type AgentService struct {
 	// workspaces turns agent runs into workspaces (RFD-004). nil keeps the
 	// ephemeral-VM path for direct/test construction.
 	workspaces AgentWorkspaceBackend
-	// codingGateway drives one dispatched turn on the workspace's own
-	// long-lived `smithers-coding-host serve`. nil keeps refuseRetiredAgentLoop
-	// in force, which is what every deployment has until the pinned host
-	// bundle carries the coding/dispatch flow.
-	codingGateway AgentCodingGateway
+	// flowDispatcher admits turns durably and projects receipts from the one
+	// canonical TypeScript host. Deployment composition supplies either the
+	// trusted owner or isolated Plue runtime resolver behind it.
+	flowDispatcher AgentFlowDispatcher
 	// concurrencyCounter + concurrencyMax cap how many agent sandbox provider VMs may be
 	// allocated fleet-wide; enforced ONLY on the dispatch (VM-provision) path.
 	// A nil counter or max <= 0 disables the cap.
@@ -1515,6 +1516,21 @@ func (s *AgentService) CancelSession(ctx context.Context, sessionID string, user
 	}
 	if session.Status != "active" {
 		return pkgerrors.Conflict("agent session is not active")
+	}
+	if s.flowDispatcher != nil && session.WorkflowRunID.Valid {
+		_, err := s.flowDispatcher.CancelRequest(
+			ctx,
+			agentFlowScope(session.RepositoryID, session.UserID),
+			agentFlowRequestID(session.WorkflowRunID.Int64),
+		)
+		if err == nil {
+			// Product state stays active until the canonical runtime receipt
+			// projector observes actual cancellation.
+			return nil
+		}
+		if !stdErrors.Is(err, jobs.ErrNotFound) {
+			return pkgerrors.Internal("cancel canonical agent Flow run")
+		}
 	}
 	terminal, updated, err := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "cancelled")
 	if err != nil {

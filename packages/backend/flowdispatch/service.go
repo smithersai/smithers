@@ -1,0 +1,257 @@
+package flowdispatch
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+type Service struct {
+	store              *jobs.Store
+	resolver           flowruntime.FlowRuntimeResolver
+	projector          Projector
+	observationDelay   time.Duration
+	observationLimit   int
+	observationPages   int
+	runtimeCallTimeout time.Duration
+}
+
+func New(config Config) (*Service, error) {
+	if config.Store == nil {
+		return nil, errors.New("flow dispatch: jobs store is required")
+	}
+	if config.Resolver == nil {
+		return nil, errors.New("flow dispatch: runtime resolver is required")
+	}
+	if config.ObservationDelay <= 0 {
+		config.ObservationDelay = time.Second
+	}
+	if config.ObservationLimit <= 0 || config.ObservationLimit > 1000 {
+		config.ObservationLimit = 250
+	}
+	if config.ObservationPages <= 0 {
+		config.ObservationPages = 4
+	}
+	if config.RuntimeCallTimeout <= 0 {
+		config.RuntimeCallTimeout = 30 * time.Second
+	}
+	return &Service{
+		store: config.Store, resolver: config.Resolver, projector: config.Projector,
+		observationDelay: config.ObservationDelay, observationLimit: config.ObservationLimit,
+		observationPages: config.ObservationPages, runtimeCallTimeout: config.RuntimeCallTimeout,
+	}, nil
+}
+
+// Admit commits a product launch and returns without resolving or contacting a
+// runtime host.
+func (service *Service) Admit(ctx context.Context, request LaunchRequest) (jobs.RequestReceipt, error) {
+	admission, err := launchAdmission(request)
+	if err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	return service.store.Admit(ctx, admission)
+}
+
+// AdmitInTx commits the Flow request in the same product transaction as the
+// domain row that points at it. No runtime resolution or network I/O occurs in
+// that transaction.
+func (service *Service) AdmitInTx(ctx context.Context, tx pgx.Tx, request LaunchRequest) (jobs.RequestReceipt, error) {
+	if tx == nil {
+		return jobs.RequestReceipt{}, errors.New("flow dispatch: transaction is required")
+	}
+	admission, err := launchAdmission(request)
+	if err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	return service.store.AdmitInTx(ctx, tx, admission)
+}
+
+func launchAdmission(request LaunchRequest) (jobs.Admission, error) {
+	if strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.FlowID) == "" {
+		return jobs.Admission{}, errors.New("flow dispatch: request ID and flow ID are required")
+	}
+	request.Target = scopedTarget(request.Scope, request.Target)
+	if err := validateTarget(request.Scope, request.Target); err != nil {
+		return jobs.Admission{}, err
+	}
+	if request.ApprovalPolicy == "" {
+		request.ApprovalPolicy = ApprovalManual
+	}
+	if request.ApprovalPolicy != ApprovalManual && request.ApprovalPolicy != ApprovalAuto {
+		return jobs.Admission{}, errors.New("flow dispatch: invalid approval policy")
+	}
+	if len(request.Projection) == 0 {
+		request.Projection = json.RawMessage(`{}`)
+	}
+	payload, err := json.Marshal(launchPayload{
+		Target: request.Target, FlowID: request.FlowID, Payload: request.Payload,
+		Projection: request.Projection, ApprovalPolicy: request.ApprovalPolicy,
+	})
+	if err != nil {
+		return jobs.Admission{}, fmt.Errorf("flow dispatch: encode launch: %w", err)
+	}
+	return jobs.Admission{
+		Scope: request.Scope, Operation: OperationLaunch, RequestID: request.RequestID,
+		Payload: payload, AuthorizationContext: request.AuthorizationContext,
+		EffectPolicy: jobs.EffectReconcile,
+		EffectKey:    "flow-runtime:" + request.RequestID,
+	}, nil
+}
+
+// Approve durably admits an operator decision against the opaque approval
+// payload issued by Control. It never invents or translates an approval.
+func (service *Service) Approve(
+	ctx context.Context,
+	scope jobs.Scope,
+	launchOperationID string,
+	requestID string,
+	authorization json.RawMessage,
+) (jobs.RequestReceipt, error) {
+	operation, err := service.store.Get(ctx, scope, launchOperationID)
+	if err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	if operation.Operation != OperationLaunch {
+		return jobs.RequestReceipt{}, ErrNotLaunchOperation
+	}
+	if operation.State.Terminal() || operation.CancellationRequested {
+		return jobs.RequestReceipt{}, ErrApprovalUnavailable
+	}
+	checkpoint, err := decodeCheckpoint(operation.ExternalReceipt)
+	if err != nil || len(checkpoint.Approval) == 0 || checkpoint.PlanID == "" {
+		return jobs.RequestReceipt{}, ErrApprovalUnavailable
+	}
+	return service.admitApproval(ctx, scope, launchOperationID, requestID, authorization, checkpoint)
+}
+
+func (service *Service) admitApproval(
+	ctx context.Context,
+	scope jobs.Scope,
+	launchOperationID string,
+	requestID string,
+	authorization json.RawMessage,
+	checkpoint RuntimeCheckpoint,
+) (jobs.RequestReceipt, error) {
+	payload, err := json.Marshal(approvalPayload{
+		LaunchOperationID: launchOperationID, Target: checkpoint.Target,
+		Identity: checkpoint.Identity, Approval: checkpoint.Approval,
+	})
+	if err != nil {
+		return jobs.RequestReceipt{}, fmt.Errorf("flow dispatch: encode approval: %w", err)
+	}
+	return service.store.Admit(ctx, jobs.Admission{
+		Scope: scope, Operation: OperationApprove, RequestID: requestID,
+		Payload: payload, AuthorizationContext: authorization,
+		EffectPolicy: jobs.EffectReconcile,
+		EffectKey:    "flow-runtime-approval:" + launchOperationID + ":" + requestID,
+	})
+}
+
+// Cancel persists product intent first. A deferred runtime launch remains
+// claimable until its worker has delivered cancellation and observed Control's
+// terminal truth.
+func (service *Service) Cancel(ctx context.Context, scope jobs.Scope, operationID string) (jobs.Operation, error) {
+	operation, err := service.store.RequestCancellation(ctx, scope, operationID)
+	if err != nil {
+		return jobs.Operation{}, err
+	}
+	if operation.State == jobs.StateCancelled {
+		if err := service.projectImmediateCancellation(ctx, operation); err != nil {
+			return operation, err
+		}
+	}
+	return operation, nil
+}
+
+// CancelRequest reconnects to a launch through its public durable request id.
+func (service *Service) CancelRequest(ctx context.Context, scope jobs.Scope, requestID string) (jobs.Operation, error) {
+	operation, err := service.store.GetByRequest(ctx, scope, OperationLaunch, requestID)
+	if err != nil {
+		return jobs.Operation{}, err
+	}
+	return service.Cancel(ctx, scope, operation.ID)
+}
+
+func (service *Service) Get(ctx context.Context, scope jobs.Scope, operationID string) (jobs.Operation, error) {
+	return service.store.Get(ctx, scope, operationID)
+}
+
+func (service *Service) projectImmediateCancellation(ctx context.Context, operation jobs.Operation) error {
+	if service.projector == nil {
+		return nil
+	}
+	var payload launchPayload
+	if json.Unmarshal(operation.Payload, &payload) != nil {
+		return errors.New("flow dispatch: invalid launch projection")
+	}
+	return service.projector.ProjectFlowRuntime(context.WithoutCancel(ctx), ProjectionUpdate{
+		OperationID: operation.ID,
+		Scope:       operation.Scope,
+		State:       jobs.StateCancelled,
+		Checkpoint: RuntimeCheckpoint{
+			Version: 1, Target: payload.Target, FlowID: payload.FlowID, Projection: payload.Projection,
+		},
+	})
+}
+
+// RunWorker consumes only Flow bridge operations from the shared jobs table.
+func (service *Service) RunWorker(ctx context.Context, config jobs.WorkerConfig) error {
+	config.Operations = []string{OperationLaunch, OperationApprove}
+	return service.store.RunWorker(ctx, config, service.Handle)
+}
+
+func scopedTarget(scope jobs.Scope, target flowruntime.FlowRuntimeTarget) flowruntime.FlowRuntimeTarget {
+	if target.TenantID == "" {
+		target.TenantID = scope.TenantID
+	}
+	if target.PrincipalID == "" {
+		target.PrincipalID = scope.PrincipalID
+	}
+	return target
+}
+
+func validateTarget(scope jobs.Scope, target flowruntime.FlowRuntimeTarget) error {
+	if target.TenantID != scope.TenantID || target.PrincipalID != scope.PrincipalID {
+		return errors.New("flow dispatch: runtime target is outside the admitted scope")
+	}
+	if strings.TrimSpace(target.BindingKind) == "" || strings.TrimSpace(target.BindingID) == "" {
+		return errors.New("flow dispatch: runtime target binding is required")
+	}
+	return nil
+}
+
+func validIdentity(identity flowruntime.FlowRuntimeIdentity) bool {
+	return identity.Protocol == flowruntime.FlowRuntimeProtocol && identity.OwnerGeneration > 0 &&
+		lowerHex(identity.RuntimeArtifactDigest, 64) && lowerHex(identity.SourceRevision, 40)
+}
+
+func lowerHex(value string, length int) bool {
+	if len(value) != length || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func decodeCheckpoint(value json.RawMessage) (RuntimeCheckpoint, error) {
+	if len(value) == 0 {
+		return RuntimeCheckpoint{}, nil
+	}
+	var checkpoint RuntimeCheckpoint
+	if err := json.Unmarshal(value, &checkpoint); err != nil {
+		return RuntimeCheckpoint{}, errors.New("flow dispatch: invalid durable runtime checkpoint")
+	}
+	if checkpoint.Version != 1 {
+		return RuntimeCheckpoint{}, errors.New("flow dispatch: unsupported durable runtime checkpoint")
+	}
+	return checkpoint, nil
+}

@@ -116,15 +116,43 @@ describe("RuntimeBridge", () => {
       expect(result.operation).toBe("launch")
       expect(result.receipt).toEqual(accepted)
       expect(calls).toEqual([
-        { flowId: "fixture/small", input: { value: 1 }, idempotencyKey: "bridge:v1:7:request-1:plan" },
+        { flowId: "fixture/small", input: { value: 1 }, idempotencyKey: "bridge:v1:request-1:plan" },
         {
           _tag: "Plan",
           planId: "plan-1",
           digest: "plan-digest",
           envelope,
-          idempotencyKey: "bridge:v1:7:request-1:run:2",
+          idempotencyKey: "bridge:v1:request-1:run:2",
           principal
         }
+      ])
+    }))
+
+  it.effect("keeps admitted command identity stable across owner replacement", () =>
+    Effect.gen(function*() {
+      const keys: Array<string> = []
+      const control = service({
+        plan: (input) => {
+          keys.push(input.idempotencyKey)
+          return Effect.succeed(plan)
+        },
+        run: (input) => {
+          keys.push(input.idempotencyKey)
+          return Effect.succeed(accepted)
+        }
+      })
+      yield* RuntimeBridge.execute(config, control, principal, launch)
+      yield* RuntimeBridge.execute(
+        { ...config, ownerGeneration: 8 },
+        control,
+        principal,
+        { ...launch, ownerGeneration: 8 }
+      )
+      expect(keys).toEqual([
+        "bridge:v1:request-1:plan",
+        "bridge:v1:request-1:run:2",
+        "bridge:v1:request-1:plan",
+        "bridge:v1:request-1:run:2"
       ])
     }))
 
@@ -206,7 +234,7 @@ describe("RuntimeBridge", () => {
       })
       yield* RuntimeBridge.execute(config, control, principal, { ...common, operation: "resume", runId: "run-1" })
       expect(calls.map((call) => call.operation)).toEqual(["approve", "deny", "signal", "steer", "cancel", "resume"])
-      expect(calls[0]!.input).toMatchObject({ idempotencyKey: "bridge:v1:7:mutation-1:approve", principal })
+      expect(calls[0]!.input).toMatchObject({ idempotencyKey: "bridge:v1:mutation-1:approve", principal })
       expect(calls[3]!.input).toMatchObject({ runId: "run-1", message: { messageId: "message-1", principal } })
       expect(calls[4]!.input).toMatchObject({ reason: "operator" })
       expect(calls[5]!.input).not.toHaveProperty("reason")

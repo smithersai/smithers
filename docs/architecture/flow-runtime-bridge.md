@@ -1,8 +1,8 @@
 # Flow runtime bridge
 
-The product backend admits work; the TypeScript Flow host executes it. The
-boundary is `smithers.flow-runtime/v1` on `/runtime/v1/command` and
-`/runtime/v1/observe`.
+The product backend admits work through `packages/backend/flowdispatch`; the
+TypeScript Flow host executes it. The boundary is `smithers.flow-runtime/v1`
+on `/runtime/v1/command` and `/runtime/v1/observe`.
 
 ## Authority
 
@@ -22,20 +22,32 @@ only a canonical runtime projection with `completed`, `failed`, or
 
 Product admission is committed before launch. Runtime launch then returns a
 canonical Control receipt and, when accepted, a runtime execution ID. The
-product stores the application request ID, execution ID, delivery attempt,
-owner generation, source revision, artifact digest, and last event cursor.
+product stores the application request ID, execution ID, immutable source and
+artifact identity, last observed owner generation, and last event cursor in
+the shared jobs external receipt.
 
 Reconnect calls `observe` strictly after the stored cursor. Runtime sequences
 are monotonic; repeated pages and repeated command delivery are safe. Planning
-is idempotent by application request. Launch delivery is idempotent by
-application request plus attempt. Control owns action replay and Flow retries.
+is idempotent by application request. Product reconciliation reuses the stable
+external delivery attempt committed before the first network call; PostgreSQL
+claim attempts and generations only fence product writes. Runtime owner
+generation fences which host may execute the command but is not part of its
+idempotency key. A replacement owner therefore reconciles a lost acknowledgment
+against the same Control command. Control owns action replay and Flow retries.
+
+A waiting Control run releases its PostgreSQL worker lease. The jobs row keeps
+the opaque approval, runtime receipt, run ID, and cursor, then becomes ready for
+a later bounded observation pass. Approval is another durable jobs operation;
+cancellation is written to the launch row before any Control mutation.
 
 ## Failure and uncertainty
 
 - A lost launch acknowledgment remains pending. Reconciliation probes host
-  identity, repeats the same attempt, then observes any returned execution.
+  identity, repeats the persisted external attempt, then observes any returned
+  execution.
 - A version, artifact, source, or owner-generation mismatch refuses before
-  execution. A new owner generation is a new fenced delivery attempt.
+  execution. A new owner generation may take ownership only when artifact and
+  source identity still match the admitted checkpoint.
 - Authentication is bearer-token based and required for every bridge request,
   including loopback. The token is never placed in request identity, receipts,
   health, logs, or errors.
@@ -43,8 +55,8 @@ application request plus attempt. Control owns action replay and Flow retries.
   mutations. Interrupted callers repeat the same application request ID.
 - An unreachable runtime is uncertainty, not failure. Product state remains
   pending/running until replay observes a canonical terminal status.
-- Runtime event duplicates are discarded by `(runtime execution ID, sequence)`.
-  A cursor gap is retried from the last committed cursor; it is never filled by
+- Runtime replay advances only through validated monotonic cursors. A cursor
+  gap is retried from the last committed cursor; it is never filled by
   inference.
 
 ## Ownership and deployment
@@ -59,3 +71,21 @@ bundle is fetched from GCS.
 The trusted product host registers bundled declarations only. Repository code
 is loaded only by the workspace execution host behind the deployment adapter;
 the trusted product process never dynamically imports it.
+
+## Product integration
+
+Agent workflow dispatch admits `coding/dispatch` before clone credentials,
+workspace provisioning, or a host call. Its stable request ID is
+`agent-run:<workflow-run-id>` and its target is the durable agent-session
+binding. One `flowhost.Resolver` maps that server-validated target through a
+durable host binding in both deployment modes; only its trusted-process or
+isolated WorkspaceRuntime launcher differs. Existing agent/workflow rows are
+updated only by the idempotent receipt projector; assistant/model frames belong
+to the separate durable turn journal.
+
+Composition constructs one `jobs.Store`, then `flowdispatch.New` with the
+deployment's `flowruntime.Resolver` and `AgentService` as projector, calls
+`AgentService.SetFlowDispatcher`, and attaches
+`flowdispatch.Service.RunWorker` to the shared lifecycle. The operation-filtered
+worker performs its own expired-lease recovery. Admission handlers never wait
+on that worker.
