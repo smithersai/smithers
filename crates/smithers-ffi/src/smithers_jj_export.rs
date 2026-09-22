@@ -5,6 +5,8 @@ mod file_eligibility;
 mod source_create;
 mod source_publish;
 mod workspace_engine;
+mod workspace_files;
+mod workspace_local;
 
 const USAGE: &str = "usage: smithers-jj-export <repository-root> <full-commit-id> <output-parent>";
 
@@ -67,6 +69,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         } else {
             workspace_engine::run(&raw)
+        };
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                println!("{}", serde_json::json!({"error":error}));
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+    if args.len() == 1 && args[0] == "--local" {
+        let mut raw = Vec::new();
+        std::io::stdin().take((2 << 20) + 1).read_to_end(&mut raw)?;
+        let result = if raw.len() > 2 << 20 {
+            Err(workspace_engine::Failure::new(
+                "invalid_request",
+                "coding request exceeds 2 MiB",
+            ))
+        } else {
+            workspace_local::run(&raw)
         };
         match result {
             Ok(value) => println!("{value}"),

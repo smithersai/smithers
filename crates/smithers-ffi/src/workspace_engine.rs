@@ -10,8 +10,10 @@ use serde_json::{json, Value};
 
 #[derive(Debug, Serialize)]
 pub struct Failure {
-    code: &'static str,
+    pub(super) code: &'static str,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<Value>,
 }
 
 impl Failure {
@@ -19,17 +21,23 @@ impl Failure {
         Self {
             code,
             message: message.into(),
+            recovery: None,
         }
+    }
+
+    pub fn with_recovery(mut self, recovery: Value) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 }
 
 type Result<T> = std::result::Result<T, Failure>;
 
-fn invalid(message: &str) -> Failure {
+pub(super) fn invalid(message: &str) -> Failure {
     Failure::new("invalid_request", message)
 }
 
-fn jj(repo: &Path, args: &[&str], mutable: bool) -> Result<String> {
+pub(super) fn jj(repo: &Path, args: &[&str], mutable: bool) -> Result<String> {
     let mut command = Command::new("jj");
     command
         .arg("-R")
@@ -40,6 +48,7 @@ fn jj(repo: &Path, args: &[&str], mutable: bool) -> Result<String> {
     }
     let output = command
         .args(args)
+        .current_dir(repo)
         .env("JJ_EDITOR", "false")
         .env("PAGER", "cat")
         .output()
@@ -58,7 +67,7 @@ fn jj(repo: &Path, args: &[&str], mutable: bool) -> Result<String> {
         .map_err(|_| Failure::new("unsupported_jj", "JJ returned non-UTF8 output"))
 }
 
-fn commit(repo: &Path, selector: &str) -> Result<Value> {
+pub(super) fn commit(repo: &Path, selector: &str) -> Result<Value> {
     let output = jj(
         repo,
         &["log", "-r", selector, "--no-graph", "-T", "json(self)"],
@@ -72,7 +81,7 @@ fn commit(repo: &Path, selector: &str) -> Result<Value> {
     })
 }
 
-fn field<'a>(input: &'a Value, name: &str) -> Result<&'a str> {
+pub(super) fn field<'a>(input: &'a Value, name: &str) -> Result<&'a str> {
     input
         .get(name)
         .and_then(Value::as_str)
@@ -94,7 +103,7 @@ fn exact_commit(value: &str) -> Result<&str> {
     }
 }
 
-fn id(value: &Value) -> Result<&str> {
+pub(super) fn id(value: &Value) -> Result<&str> {
     value
         .get("commit_id")
         .and_then(Value::as_str)
@@ -142,10 +151,10 @@ fn checked_input(raw: &[u8]) -> Result<Value> {
     Ok(input)
 }
 
-struct CodingLock(std::fs::File);
+pub(super) struct CodingLock(std::fs::File);
 
 impl CodingLock {
-    fn acquire(repo: &Path) -> Result<Self> {
+    pub(super) fn acquire(repo: &Path) -> Result<Self> {
         let jj_dir = repo.join(".jj");
         let mut repo_dir = jj_dir.join("repo");
         if repo_dir.is_file() {

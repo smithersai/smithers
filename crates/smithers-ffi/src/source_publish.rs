@@ -392,21 +392,25 @@ fn publish_authenticated(
     serde_json::to_value(ack).map_err(|_| unavailable())
 }
 
-pub fn run(path: &Path) -> Result<serde_json::Value> {
+pub(crate) fn run_bytes(path: &Path, raw: &[u8]) -> Result<serde_json::Value> {
     let config: Config = crate::source_create::read_provisioned_config().map_err(|_| invalid())?;
     if config.actor_id <= 0 {
         return Err(invalid());
     }
+    if raw.len() > 65_536 {
+        return Err(invalid());
+    }
+    let request = serde_json::from_slice(raw).map_err(|_| invalid())?;
+    publish(path, config, request)
+}
+
+pub fn run(path: &Path) -> Result<serde_json::Value> {
     let mut raw = Vec::new();
     std::io::stdin()
         .take(65_537)
         .read_to_end(&mut raw)
         .map_err(|_| invalid())?;
-    if raw.len() > 65_536 {
-        return Err(invalid());
-    }
-    let request = serde_json::from_slice(&raw).map_err(|_| invalid())?;
-    publish(path, config, request)
+    run_bytes(path, &raw)
 }
 
 #[cfg(test)]
