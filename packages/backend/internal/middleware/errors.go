@@ -291,7 +291,9 @@ func (tw *timeoutWriter) hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (tw *timeoutWriter) writeHeaderLocked(code int) {
 	maps.Copy(tw.w.Header(), tw.hdr)
 	tw.w.WriteHeader(code)
-	tw.committed = true
+	// Informational headers leave the final response open, including a timeout
+	// refusal. A protocol upgrade is final even though its status is 1xx.
+	tw.committed = code >= 200 || code == http.StatusSwitchingProtocols
 }
 
 type timeoutWriterFlusher struct {

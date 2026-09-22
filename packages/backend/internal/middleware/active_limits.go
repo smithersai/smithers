@@ -102,10 +102,9 @@ func (a *ActiveCounter) Acquire(userID int64) bool {
 	return true
 }
 
-// Release decrements the active count for userID. Safe to call even if the
-// matching Acquire returned false (no-op in that case, because we never
-// incremented). Callers SHOULD defer Release immediately after a successful
-// Acquire so it runs exactly once per acquisition.
+// Release decrements the active count for userID. Callers must defer Release
+// only after a successful Acquire and release exactly once per acquisition;
+// releasing a failed acquisition would consume another connection's slot.
 func (a *ActiveCounter) Release(userID int64) {
 	if a == nil || a.max <= 0 || userID == 0 {
 		return

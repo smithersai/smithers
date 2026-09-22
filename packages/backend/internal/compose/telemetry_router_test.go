@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 )
 
@@ -32,50 +33,7 @@ func TestServerRouter_TelemetryGatedByFeatureFlag(t *testing.T) {
 		cfg := testConfigAllFlagsOn()
 		cfg.FeatureFlags.ClientErrorReporting = false
 
-		router := buildRouterCompat(
-			cfg,
-			nil, // queries
-			nil, // pool
-			&routes.RepoHandler{},
-			&routes.AuthHandler{},
-			&routes.UserHandler{},
-			&routes.SSHKeyHandler{},
-			&routes.LabelHandler{},
-
-			&routes.OrgHandler{},
-			&routes.LandingHandler{},
-			&routes.SearchHandler{Service: &mockRouterSearchService{}},
-			&routes.IssueHandler{},
-			nil, // wikiService
-			&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-			nil, // notificationHandler
-			&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-			nil, // adminRunnerHandler
-			nil, // adminUserHandler
-			nil, // adminOrgHandler
-			nil, // adminRepoHandler
-			nil, // adminSystemHealthHandler
-			nil, // adminGitHubAppHandler
-			nil, // adminAuditHandler
-			nil, // webhookHandler
-			nil, // secretHandler
-			nil, // variableHandler
-			nil, // commitStatusHandler
-			nil, // lfsHandler
-			nil, // jjVCSHandler
-			nil, // agentInternalHandler
-			nil, // agentSessionHandler
-			nil, // agentSessionStreamHandler
-			nil, // pushHookHandler
-			nil, // workflowHandler
-			nil, // workspaceHandler
-			nil, // workspaceInternalHandler
-			nil, // workspaceTerminalHandler
-			&routes.TelemetryHandler{Metrics: metrics},
-			nil, // featureFlagHandler
-			nil, // oauth2Handler
-			metrics,
-		)
+		router := telemetryRouterForTest(cfg, metrics)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/telemetry/errors", strings.NewReader(telemetryTestBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -95,50 +53,7 @@ func TestServerRouter_TelemetryGatedByFeatureFlag(t *testing.T) {
 		cfg := testConfigAllFlagsOn()
 		cfg.FeatureFlags.ClientErrorReporting = true
 
-		router := buildRouterCompat(
-			cfg,
-			nil, // queries
-			nil, // pool
-			&routes.RepoHandler{},
-			&routes.AuthHandler{},
-			&routes.UserHandler{},
-			&routes.SSHKeyHandler{},
-			&routes.LabelHandler{},
-
-			&routes.OrgHandler{},
-			&routes.LandingHandler{},
-			&routes.SearchHandler{Service: &mockRouterSearchService{}},
-			&routes.IssueHandler{},
-			nil, // wikiService
-			&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-			nil, // notificationHandler
-			&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-			nil, // adminRunnerHandler
-			nil, // adminUserHandler
-			nil, // adminOrgHandler
-			nil, // adminRepoHandler
-			nil, // adminSystemHealthHandler
-			nil, // adminGitHubAppHandler
-			nil, // adminAuditHandler
-			nil, // webhookHandler
-			nil, // secretHandler
-			nil, // variableHandler
-			nil, // commitStatusHandler
-			nil, // lfsHandler
-			nil, // jjVCSHandler
-			nil, // agentInternalHandler
-			nil, // agentSessionHandler
-			nil, // agentSessionStreamHandler
-			nil, // pushHookHandler
-			nil, // workflowHandler
-			nil, // workspaceHandler
-			nil, // workspaceInternalHandler
-			nil, // workspaceTerminalHandler
-			&routes.TelemetryHandler{Metrics: metrics},
-			nil, // featureFlagHandler
-			nil, // oauth2Handler
-			metrics,
-		)
+		router := telemetryRouterForTest(cfg, metrics)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/telemetry/errors", strings.NewReader(telemetryTestBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -149,4 +64,81 @@ func TestServerRouter_TelemetryGatedByFeatureFlag(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		assert.Equal(t, float64(1), testutil.ToFloat64(metrics.ClientErrorsTotal.WithLabelValues("web", "TypeError")))
 	})
+}
+
+func telemetryRouterForTest(cfg *config.Config, metrics *routes.SmithersMetrics) http.Handler {
+	return buildRouterCompat(
+		cfg,
+		nil, // queries
+		nil, // pool
+		&routes.RepoHandler{},
+		&routes.AuthHandler{},
+		&routes.UserHandler{},
+		&routes.SSHKeyHandler{},
+		&routes.LabelHandler{},
+
+		&routes.OrgHandler{},
+		&routes.LandingHandler{},
+		&routes.SearchHandler{Service: &mockRouterSearchService{}},
+		&routes.IssueHandler{},
+		nil, // wikiService
+		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
+		nil, // notificationHandler
+		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
+		nil, // adminRunnerHandler
+		nil, // adminUserHandler
+		nil, // adminOrgHandler
+		nil, // adminRepoHandler
+		nil, // adminSystemHealthHandler
+		nil, // adminGitHubAppHandler
+		nil, // adminAuditHandler
+		nil, // webhookHandler
+		nil, // secretHandler
+		nil, // variableHandler
+		nil, // commitStatusHandler
+		nil, // lfsHandler
+		nil, // jjVCSHandler
+		nil, // agentInternalHandler
+		nil, // agentSessionHandler
+		nil, // agentSessionStreamHandler
+		nil, // pushHookHandler
+		nil, // workflowHandler
+		nil, // workspaceHandler
+		nil, // workspaceInternalHandler
+		nil, // workspaceTerminalHandler
+		&routes.TelemetryHandler{Metrics: metrics},
+		nil, // featureFlagHandler
+		nil, // oauth2Handler
+		metrics,
+	)
+}
+
+func TestServerRouter_TelemetrySelectsWorkerQuotaAndIngests(t *testing.T) {
+	t.Parallel()
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.WorkerExchangeToken = "telemetry-worker-fixture"
+	metrics := routes.NewSmithersMetrics()
+	router := telemetryRouterForTest(cfg, metrics)
+	post := func(bearer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/telemetry/errors", strings.NewReader(telemetryTestBody))
+		req.RemoteAddr = "203.0.113.119:9000"
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", bearer)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// The router fixture has no DB store: headers establish selected policy;
+	// middleware tests exercise token consumption/isolation with a real bucket stub.
+	require.Equal(t, "10", post("").Header().Get("X-RateLimit-Limit"))
+	for i := 0; i < 40; i++ {
+		rec := post("Bearer " + cfg.Auth.WorkerExchangeToken)
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		require.Equal(t, "120", rec.Header().Get("X-RateLimit-Limit"))
+	}
+	require.Equal(t, "10", post("Bearer wrong-secret").Header().Get("X-RateLimit-Limit"))
+	require.Equal(t, float64(42), testutil.ToFloat64(metrics.ClientErrorsTotal.WithLabelValues("web", "TypeError")))
 }

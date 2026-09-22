@@ -76,7 +76,7 @@ func RepositoryRestrictionScope(repositoryID int64) string {
 // ParseTokenRepositoryRestriction extracts the repository binding from a raw
 // scopes string. It returns 0 when the token is not repository-bound.
 func ParseTokenRepositoryRestriction(raw string) int64 {
-	for _, part := range strings.Split(raw, ",") {
+	for _, part := range tokenScopeEntries(raw) {
 		part = strings.ToLower(strings.TrimSpace(part))
 		if !strings.HasPrefix(part, repositoryRestrictionScopePrefix) {
 			continue
@@ -98,7 +98,7 @@ func AgentSessionRestrictionScope(sessionID string) string {
 // ParseTokenAgentSessionRestriction returns the session bound to a per-run
 // agent token, or an empty string for ordinary user/workflow tokens.
 func ParseTokenAgentSessionRestriction(raw string) string {
-	for _, part := range strings.Split(raw, ",") {
+	for _, part := range tokenScopeEntries(raw) {
 		part = strings.TrimSpace(part)
 		if strings.HasPrefix(strings.ToLower(part), agentSessionRestrictionScopePrefix) {
 			return strings.TrimSpace(part[len(agentSessionRestrictionScopePrefix):])
@@ -121,7 +121,7 @@ func WorkspaceRestrictionScope(workspaceID string) string {
 // ParseTokenWorkspaceRestriction returns the workspace id a token is bound
 // to, or "" when it carries no workspace binding.
 func ParseTokenWorkspaceRestriction(raw string) string {
-	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
+	for _, part := range tokenScopeEntries(raw) {
 		part = strings.TrimSpace(part)
 		if strings.HasPrefix(strings.ToLower(part), workspaceRestrictionScopePrefix) {
 			return strings.ToLower(strings.TrimSpace(part[len(workspaceRestrictionScopePrefix):]))
@@ -151,7 +151,7 @@ func PathRestrictionScopes(paths []string) []string {
 // ParseTokenPathRestrictions decodes the allowlist carried by a per-run token.
 func ParseTokenPathRestrictions(raw string) []string {
 	var out []string
-	for _, part := range strings.Split(raw, ",") {
+	for _, part := range tokenScopeEntries(raw) {
 		part = strings.TrimSpace(part)
 		if !strings.HasPrefix(strings.ToLower(part), pathRestrictionScopePrefix) {
 			continue
@@ -205,6 +205,12 @@ func AuthInfoFromContext(ctx context.Context) *AuthInfo {
 	return info
 }
 
+// Permission scopes and resource restrictions must use the same separators:
+// recognizing a grant while dropping its binding widens the credential.
+func tokenScopeEntries(raw string) []string {
+	return strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+}
+
 func ParseTokenScopes(raw string) ScopeSet {
 	parsed := make(ScopeSet)
 
@@ -213,7 +219,7 @@ func ParseTokenScopes(raw string) ScopeSet {
 	// PAT) are space-joined. Splitting on only one silently zeroes the
 	// other cohort's scope set — every route then 403s "insufficient
 	// token scope" on a token whose scopes are intact (prod 2026-08-04).
-	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+	for _, part := range tokenScopeEntries(raw) {
 		scope := NormalizeTokenScope(part)
 		if scope == "" {
 			continue

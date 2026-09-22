@@ -141,7 +141,7 @@ func TestRateLimit_Cov_MaybeCleanupCompareAndSwapLoser(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
-				limiter.maybeCleanup(now)
+				limiter.maybeCleanup(context.Background(), now)
 			}
 		}()
 	}

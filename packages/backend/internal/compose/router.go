@@ -968,13 +968,13 @@ func buildRouter(
 			}
 		}
 
-		// Telemetry endpoint: no auth required, rate-limited to 10/min per IP.
+		// Public telemetry: 10/min per IP; trusted Worker exports: separate 120/min.
 		// Gated on feature_flags.client_error_reporting so operators can disable
 		// ingestion entirely; the gate runs before the rate limiter so a
 		// disabled flag short-circuits before any rate-limit store writes,
 		// logging, or metrics.
 		if telemetryHandler != nil {
-			r.With(gateTelemetry, middleware.TelemetryRateLimit(queries)).Post("/telemetry/errors", telemetryHandler.PostClientError)
+			r.With(gateTelemetry, middleware.SharedBearerAwareTelemetryRateLimit(queries, cfg.Auth.WorkerExchangeToken)).Post("/telemetry/errors", telemetryHandler.PostClientError)
 		}
 
 		// Feature flags endpoint: no auth required, public.

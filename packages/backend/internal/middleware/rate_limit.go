@@ -34,6 +34,7 @@ const (
 	authInteractiveRateLimitScope   = "auth_interactive"
 	searchRateLimitRetentionPeriod  = 24 * time.Hour
 	searchRateLimitCleanupFrequency = 5 * time.Minute
+	searchRateLimitCleanupTimeout   = 5 * time.Second
 )
 
 type SearchRateLimitStore interface {
@@ -217,7 +218,7 @@ func (l *rateLimiter) middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		l.maybeCleanup(now)
+		l.maybeCleanup(r.Context(), now)
 		principalKey := searchRateLimitKey(r)
 		if l.keyFn != nil {
 			principalKey = l.keyFn(r)
@@ -286,11 +287,12 @@ func (l *rateLimiter) middleware(next http.Handler) http.Handler {
 			limit := l.limit
 			zero := 0
 			errors.WriteError(w, &errors.APIError{
-				Status:    http.StatusTooManyRequests,
-				Code:      errors.CodeRateLimitExceeded,
-				Message:   "rate limit exceeded",
-				Limit:     &limit,
-				Remaining: &zero,
+				Status:     http.StatusTooManyRequests,
+				Code:       errors.CodeRateLimitExceeded,
+				Message:    "rate limit exceeded",
+				Limit:      &limit,
+				Remaining:  &zero,
+				RetryAfter: retryAfter,
 			})
 			return
 		}
@@ -299,7 +301,7 @@ func (l *rateLimiter) middleware(next http.Handler) http.Handler {
 	})
 }
 
-func (l *rateLimiter) maybeCleanup(now time.Time) {
+func (l *rateLimiter) maybeCleanup(ctx context.Context, now time.Time) {
 	currentNext := l.nextCleanupUnix.Load()
 	if currentNext != 0 && now.Unix() < currentNext {
 		return
@@ -310,7 +312,11 @@ func (l *rateLimiter) maybeCleanup(now time.Time) {
 		return
 	}
 
-	_ = l.store.DeleteExpiredSearchRateLimits(context.Background(), now.Add(-searchRateLimitRetentionPeriod))
+	// Cleanup is best effort on the request path. It must not retain a canceled
+	// request or wait indefinitely for a database lock.
+	cleanupCtx, cancel := context.WithTimeout(ctx, searchRateLimitCleanupTimeout)
+	defer cancel()
+	_ = l.store.DeleteExpiredSearchRateLimits(cleanupCtx, now.Add(-searchRateLimitRetentionPeriod))
 }
 
 func (l *rateLimiter) writeHeaders(w http.ResponseWriter, limit, remaining int, resetAt time.Time) {
@@ -544,6 +550,25 @@ func canaryAPIRateLimitFromEnv() ([]int64, int) {
 // TelemetryRateLimit enforces telemetry endpoint limit: 10 requests/minute per IP.
 func TelemetryRateLimit(store SearchRateLimitStore) func(http.Handler) http.Handler {
 	return newRateLimit(store, telemetryRateLimitScope, 10, time.Minute, 10, time.Minute)
+}
+
+// SharedBearerAwareTelemetryRateLimit gives first-party Worker exports their
+// own 120/minute bucket. Aggregated Worker egress must be able to cross the
+// 30/minute frontend alert threshold without sharing login capacity. Missing,
+// malformed, wrong, and unconfigured tokens retain the public 10/minute limit.
+func SharedBearerAwareTelemetryRateLimit(store SearchRateLimitStore, expectedToken string) func(http.Handler) http.Handler {
+	workerLimiter := newRateLimit(store, "telemetry_worker", 120, time.Minute, 120, time.Minute)
+	publicLimiter := TelemetryRateLimit(store)
+	return func(next http.Handler) http.Handler {
+		workerNext, publicNext := workerLimiter(next), publicLimiter(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if requestBearsSharedToken(r, expectedToken) {
+				workerNext.ServeHTTP(w, r)
+				return
+			}
+			publicNext.ServeHTTP(w, r)
+		})
+	}
 }
 
 // --- Ticket 0132 scopes: dedicated limiters for remote-client surfaces. ---

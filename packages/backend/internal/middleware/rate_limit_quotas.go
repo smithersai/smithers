@@ -65,15 +65,19 @@ func (c *FakeClock) Advance(d time.Duration) {
 // Bucket capacity and refill rate are supplied per-Take call so a single store
 // can back many independent quotas.
 type TokenBucketStore struct {
-	mu      sync.Mutex
-	buckets map[string]*bucketEntry
-	clock   Clock
+	mu          sync.Mutex
+	buckets     map[string]*bucketEntry
+	clock       Clock
+	nextCleanup time.Time
 }
 
 type bucketEntry struct {
 	tokens     float64
 	lastRefill time.Time
+	expiresAt  time.Time
 }
+
+const quotaBucketCleanupFrequency = time.Minute
 
 // NewTokenBucketStore returns a store using time.Now() for time.
 func NewTokenBucketStore() *TokenBucketStore {
@@ -113,11 +117,20 @@ func (s *TokenBucketStore) TakeN(_ context.Context, key string, n float64, capac
 		n = 1
 	}
 
-	now := s.clock.Now()
 	refillPerSecond := float64(capacity) / refillPer.Seconds()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.clock.Now()
+
+	if !now.Before(s.nextCleanup) {
+		for key, entry := range s.buckets {
+			if !now.Before(entry.expiresAt) {
+				delete(s.buckets, key)
+			}
+		}
+		s.nextCleanup = now.Add(quotaBucketCleanupFrequency)
+	}
 
 	entry, ok := s.buckets[key]
 	if !ok {
@@ -133,6 +146,10 @@ func (s *TokenBucketStore) TakeN(_ context.Context, key string, n float64, capac
 			entry.lastRefill = now
 		}
 	}
+	// After an entire idle refill window the bucket is full, so forgetting it
+	// cannot restore spent capacity. Keep longer-window debts until then.
+	// Lazy cleanup avoids retaining every missing repo/workspace route forever.
+	entry.expiresAt = now.Add(refillPer)
 
 	if entry.tokens >= n {
 		entry.tokens -= n
@@ -256,7 +273,11 @@ func PerWorkspaceDesktopControl(store *TokenBucketStore) func(http.Handler) http
 				next.ServeHTTP(w, r)
 				return
 			}
-			key := scope + "|workspace:" + strings.TrimSpace(chi.URLParam(r, "id"))
+			// workspaces.id is UUID-typed. PostgreSQL accepts case differences,
+			// optional braces and omitted/additional hyphens for the same UUID.
+			// Account against that identity before the handler resolves the row.
+			id := strings.Trim(strings.ToLower(strings.TrimSpace(chi.URLParam(r, "id"))), "{}")
+			key := scope + "|workspace:" + strings.ReplaceAll(id, "-", "")
 			allowed, retryAfter := store.Take(r.Context(), key, capacity, window)
 			if !allowed {
 				rateLimitExceededResponse(w, retryAfter)
@@ -388,11 +409,12 @@ func userCountCapMiddleware(count func(ctx context.Context, userID int64) (int, 
 				remaining := 0
 				w.Header().Set("Retry-After", "60")
 				errors.WriteError(w, &errors.APIError{
-					Status:    http.StatusTooManyRequests,
-					Code:      errors.CodeQuotaExceeded,
-					Message:   message,
-					Limit:     &limit,
-					Remaining: &remaining,
+					Status:     http.StatusTooManyRequests,
+					Code:       errors.CodeQuotaExceeded,
+					Message:    message,
+					Limit:      &limit,
+					Remaining:  &remaining,
+					RetryAfter: 60,
 				})
 				return
 			}

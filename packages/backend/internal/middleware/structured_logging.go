@@ -157,6 +157,7 @@ type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode   int
 	bytesWritten int
+	wroteHeader  bool
 }
 
 type loggingHijacker struct {
@@ -180,14 +181,22 @@ func newLoggingResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *logg
 	return lrw, lrw
 }
 
-// WriteHeader captures the status code before delegating to the wrapped writer.
+// WriteHeader records the first final status that net/http commits. Early
+// informational responses and ignored later headers are not the wire status.
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
-	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
+	if !lrw.wroteHeader && (code >= 200 || code == http.StatusSwitchingProtocols) {
+		lrw.statusCode = code
+		lrw.wroteHeader = true
+	}
 }
 
-// Write captures the number of bytes written before delegating to the wrapped writer.
+// Write records the implicit 200 and the number of bytes actually written.
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if !lrw.wroteHeader {
+		lrw.statusCode = http.StatusOK
+		lrw.wroteHeader = true
+	}
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.bytesWritten += n
 	return n, err
@@ -202,6 +211,9 @@ func (lrw *loggingResponseWriter) Unwrap() http.ResponseWriter {
 // Flush implements http.Flusher to support streaming responses (e.g., SSE).
 func (lrw *loggingResponseWriter) Flush() {
 	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		if !lrw.wroteHeader {
+			lrw.WriteHeader(http.StatusOK)
+		}
 		f.Flush()
 	}
 }
