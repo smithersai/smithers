@@ -392,7 +392,7 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 12, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 13, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "chainEvents", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "harnesses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
@@ -401,6 +401,45 @@ describe("the live store's authoritative event path", () => {
       "runtimeRuns", "seats", "sessions", "starredTargets", "tabs", "toasts", "toolCalls", "transitions", "workingCopies",
       "workspaces", "worldDocuments"
     ] })
+  })
+
+  test("version 12 upgrade preserves a signed-in stream recorded before identity advanced signup", async () => {
+    /*
+     * Version 12 originally projected identity without changing signup. The
+     * later signup projection reused version 12, so replaying a saved identity
+     * event produced a different state hash and refused the whole profile.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "kept" }).isPersisted.promise
+    await store.compactEvents()
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    const old = await store.eventHistory()
+    const current = replayAppEvents(old.checkpoint, old.events, old.head).snapshot
+    const legacy = structuredClone(current)
+    delete (legacy.sessions[0] as Record<string, unknown>).signup
+    const legacyStateHash = appProjectionHash(legacy)
+    const sourceEvent = old.events.at(-1)!
+    const { hash: _eventHash, ...eventBody } = { ...sourceEvent, projectorVersion: 12, stateHash: legacyStateHash }
+    const event = { ...eventBody, hash: digest("smithers-app/event/v1:" + canonicalEventValue(eventBody)) }
+    const head = { ...old.head, projectorVersion: 12, stateHash: legacyStateHash, eventHash: event.hash }
+    const { hash: _checkpointHash, ...checkpointBody } = { ...old.checkpoint, projectorVersion: 12 }
+    const checkpoint = { ...checkpointBody, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(checkpointBody)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+      entries["smithers-mvp.app-events"] = JSON.stringify({ [`s:${event.id}`]: { versionKey: "fixture", data: event } })
+      const sessions = JSON.parse(entries["smithers-mvp.app-sessions"]!)
+      delete sessions["s:main"].data.signup
+      entries["smithers-mvp.app-sessions"] = JSON.stringify(sessions)
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session().draft).toBe("kept")
   })
 
   test("version 11 upgrade rotates a checkpoint written before flow durations existed", async () => {
