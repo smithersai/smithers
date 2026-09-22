@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2822 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2823 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -291,6 +291,7 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **app:** retain packaged native target across navigation ([c88e909f94](https://github.com/smithersai/smithers/commit/c88e909f94cbad39524e79e38a79dada10c21f9c))
 - **coding:** replace Python atomic filesystem with packaged Rust helper ([de653087ee](https://github.com/smithersai/smithers/commit/de653087ee5516851757f487c15c0462b7ba8868))
 - **release:** install native browser and derive local image revision ([0ff9781a00](https://github.com/smithersai/smithers/commit/0ff9781a001dc6ba75bd7e56afd1d0416040971b))
 - **release:** clear rc.1 package gates ([de42b7e1fa](https://github.com/smithersai/smithers/commit/de42b7e1fa64ec98f2ff12066968bd32691ffb17))
