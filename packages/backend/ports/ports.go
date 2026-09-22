@@ -19,6 +19,10 @@ import (
 // configuration, never a user-controlled or mutable operation record.
 type RepositoryEndpointResolver = repository.StorageSetResolver
 
+// RepositoryPlacement maps a stable product repository ID to a deployment
+// storage set. Plue owns its placement table; product repository rows do not.
+type RepositoryPlacement = services.RepoPlacementLookup
+
 // BlobStore is the actual product blob contract consumed by the extracted
 // services. The alias prevents a second storage model from drifting away from
 // the routes and artifact/LFS semantics. The local adapter implements signed

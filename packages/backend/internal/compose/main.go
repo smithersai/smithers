@@ -92,12 +92,13 @@ func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writ
 
 // Options are the only deployment seams in the common product assembly.
 type Options struct {
-	Role          Role
-	TraceExporter trace.SpanExporter
-	Blobs         blob.Store
-	AgentLogs     services.AgentLogStore
-	MetricsDoer   services.GMPDoer
-	Repository    *repohost.Client
+	Role                Role
+	TraceExporter       trace.SpanExporter
+	Blobs               blob.Store
+	AgentLogs           services.AgentLogStore
+	MetricsDoer         services.GMPDoer
+	Repository          *repohost.Client
+	RepositoryPlacement services.RepoPlacementLookup
 }
 
 // Role selects only process responsibilities. Every role assembles the same
@@ -318,7 +319,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	storageSetResolverTemplate := services.BuildStorageSetResolverTemplate(cfg.RepoHost.URL, activeStorageSetID)
 
-	storageSetResolver := services.NewDBStorageSetResolver(queries, storageSetResolverTemplate)
+	storageSetResolver := services.NewDBStorageSetResolver(queries, storageSetResolverTemplate, options.RepositoryPlacement)
 	repoHostClient := options.Repository
 	if repoHostClient == nil {
 		repoHostClient = repohost.NewClient(storageSetResolver, cfg.RepoHost.AuthToken, smithersMetrics)
@@ -438,6 +439,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	var repoService *services.RepoService
 	if options.Role.hosted() {
+		repoOptions = append(repoOptions, services.WithRepoPlacementResolver(options.RepositoryPlacement))
 		repoService = services.NewRepoServiceWithPool(queries, repoHostClient, activeStorageSetID, pool, repoOptions...)
 	} else {
 		repoService = services.NewProductRepoServiceWithPool(queries, repoHostClient, pool, repoOptions...)

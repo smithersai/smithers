@@ -67,6 +67,12 @@ func Prepare(root string) (*Runtime, error) {
 }
 
 func configure(root string) (string, error) {
+	if mode := strings.TrimSpace(os.Getenv("SMITHERS_AUTH_MODE")); mode != "" && mode != "selfhost" {
+		return "", fmt.Errorf("local backend requires SMITHERS_AUTH_MODE=selfhost, got %q", mode)
+	}
+	if err := os.Setenv("SMITHERS_AUTH_MODE", "selfhost"); err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(root) == "" {
 		root = strings.TrimSpace(os.Getenv("SMITHERS_DATA_ROOT"))
 	}

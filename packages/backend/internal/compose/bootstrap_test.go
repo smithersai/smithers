@@ -14,7 +14,7 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, workspaceRuntime: true})
 	require.Equal(t, "local", local.Host)
 	require.Equal(t, []string{"identity"}, local.Capabilities)
-	require.Equal(t, "native-handoff", local.AuthFlow)
+	require.Equal(t, "credentials", local.AuthFlow)
 	require.Equal(t, "trusted-only", local.Sandbox.Mode)
 	require.NotEmpty(t, local.Sandbox.Platform)
 

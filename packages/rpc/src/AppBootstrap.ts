@@ -59,7 +59,7 @@ export const AppBootstrapSchema = z.object({
   version: z.string(),
   buildSha: z.string(),
   capabilities: z.array(RuntimeCapabilitySchema),
-  authFlow: z.enum(["redirect", "native-handoff", "both", "none"]),
+  authFlow: z.enum(["redirect", "credentials", "native-handoff", "both", "none"]),
   sandbox: z.object({
     platform: z.string(),
     mode: z.enum(["enforced", "trusted-only", "unavailable"]),

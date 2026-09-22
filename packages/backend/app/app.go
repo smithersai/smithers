@@ -39,6 +39,9 @@ type Config struct {
 	// A local host supplies repository.OpenLocal(...).Client(); Plue supplies
 	// repository.NewRemoteClient(...).
 	Repository *repository.Client
+	// RepositoryPlacement is supplied by a hosted deployment and keyed by the
+	// canonical repository ID. Single-owner installations leave it nil.
+	RepositoryPlacement ports.RepositoryPlacement
 }
 
 type Role = compose.Role
@@ -91,12 +94,13 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	stdout, stderr := writers(cfg)
 	go func() {
 		instance.err = compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-			Role:          cfg.Role,
-			TraceExporter: cfg.TraceExporter,
-			Blobs:         cfg.Blobs,
-			AgentLogs:     cfg.AgentLogs,
-			MetricsDoer:   cfg.MetricsDoer,
-			Repository:    cfg.Repository,
+			Role:                cfg.Role,
+			TraceExporter:       cfg.TraceExporter,
+			Blobs:               cfg.Blobs,
+			AgentLogs:           cfg.AgentLogs,
+			MetricsDoer:         cfg.MetricsDoer,
+			Repository:          cfg.Repository,
+			RepositoryPlacement: cfg.RepositoryPlacement,
 		}, func(handler http.Handler) {
 			ready <- handler
 		})
@@ -125,12 +129,13 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
 	return compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-		Role:          cfg.Role,
-		TraceExporter: cfg.TraceExporter,
-		Blobs:         cfg.Blobs,
-		AgentLogs:     cfg.AgentLogs,
-		MetricsDoer:   cfg.MetricsDoer,
-		Repository:    cfg.Repository,
+		Role:                cfg.Role,
+		TraceExporter:       cfg.TraceExporter,
+		Blobs:               cfg.Blobs,
+		AgentLogs:           cfg.AgentLogs,
+		MetricsDoer:         cfg.MetricsDoer,
+		Repository:          cfg.Repository,
+		RepositoryPlacement: cfg.RepositoryPlacement,
 	})
 }
 

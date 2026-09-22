@@ -46,7 +46,7 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 		if features.redirectAuth {
 			result.AuthFlow = "redirect"
 		} else if !features.role.hosted() {
-			result.AuthFlow = "native-handoff"
+			result.AuthFlow = "credentials"
 		}
 	}
 	if features.agent {

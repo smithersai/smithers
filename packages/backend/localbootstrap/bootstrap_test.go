@@ -13,7 +13,7 @@ import (
 func clearBootstrapEnvironment(t *testing.T) {
 	t.Helper()
 	names := append([]string{}, secretNames...)
-	names = append(names, "SMITHERS_DATA_ROOT", "SMITHERS_BLOB_DATA_DIR", "SMITHERS_REPO_STORAGE_PATH", "SMITHERS_PUSH_HOOK_CALLBACK_URL", "SMITHERS_SERVER_ADDR", "SMITHERS_PUBLIC_URL", "PORT", "RAILWAY_PUBLIC_DOMAIN")
+	names = append(names, "SMITHERS_AUTH_MODE", "SMITHERS_DATA_ROOT", "SMITHERS_BLOB_DATA_DIR", "SMITHERS_REPO_STORAGE_PATH", "SMITHERS_PUSH_HOOK_CALLBACK_URL", "SMITHERS_SERVER_ADDR", "SMITHERS_PUBLIC_URL", "PORT", "RAILWAY_PUBLIC_DOMAIN")
 	for _, name := range names {
 		value, exists := os.LookupEnv(name)
 		name := name
@@ -37,6 +37,9 @@ func TestConfigurePersistsSecretsAndStoragePaths(t *testing.T) {
 	}
 	if first != root {
 		t.Fatalf("root = %q, want %q", first, root)
+	}
+	if got := os.Getenv("SMITHERS_AUTH_MODE"); got != "selfhost" {
+		t.Fatalf("auth mode: %q", got)
 	}
 	initial := map[string]string{}
 	for _, name := range secretNames {
@@ -72,6 +75,14 @@ func TestConfigurePersistsSecretsAndStoragePaths(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("secrets permissions: %o", info.Mode().Perm())
+	}
+}
+
+func TestConfigureRejectsMultitenantLocalMode(t *testing.T) {
+	clearBootstrapEnvironment(t)
+	_ = os.Setenv("SMITHERS_AUTH_MODE", "multitenant")
+	if _, err := configure(t.TempDir()); err == nil || !strings.Contains(err.Error(), "requires SMITHERS_AUTH_MODE=selfhost") {
+		t.Fatalf("expected local auth mode rejection, got %v", err)
 	}
 }
 
