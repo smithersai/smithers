@@ -33,7 +33,7 @@
  * read afterwards, so `scripts/canary/build-probe.ts` can hold the deployment
  * to the claim.
  */
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -84,11 +84,11 @@ const run = async (
  * artifact is that commit, which is not true when uncommitted work went into
  * the build.
  */
-const gitHead = await run(["git", "rev-parse", "HEAD"], { cwd: serverDir, capture: true })
-// Native jj workspaces have no .git directory. Stamp their parent revision
-// and record any working changes, just as a Git checkout does.
-const head = gitHead.exitCode === 0 ? gitHead : await run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"], { cwd: serverDir, capture: true })
-const status = await run(gitHead.exitCode === 0 ? ["git", "status", "--porcelain"] : ["jj", "diff", "--summary"], { cwd: serverDir, capture: true })
+// Select the checkout's own VCS before probing. A native jj workspace has no
+// .git directory, and a colocated checkout's Git HEAD may lag its jj state.
+const jjWorkspace = existsSync(join(serverDir, "../..", ".jj"))
+const head = await run(jjWorkspace ? ["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"] : ["git", "rev-parse", "HEAD"], { cwd: serverDir, capture: true })
+const status = await run(jjWorkspace ? ["jj", "diff", "--summary"] : ["git", "status", "--porcelain"], { cwd: serverDir, capture: true })
 const gitSha = head.output.trim()
 if (head.exitCode !== 0 || status.exitCode !== 0 || !/^[0-9a-f]{40}$/.test(gitSha)) throw new Error("Cannot determine the deployment revision and working-tree state")
 const gitDirty = status.output.trim() !== ""
