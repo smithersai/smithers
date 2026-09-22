@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import { extractRequestedGrep } from "../e2e/real/coverage/selection"
 import { admitSourceRevision } from "../e2e/real/coverage/revision"
 import { MODEL_CREDENTIAL_ENV_PREFIX, MODEL_CREDENTIAL_ORIGIN_SUFFIX, MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
+import { sourceRevision } from "./mode-matrix/source-revision"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -118,20 +119,8 @@ if (args[0] === "serve") {
   const selection = extractRequestedGrep(args)
   if (selection.grep !== undefined) process.env.SMITHERS_REAL_TEST_GREP = selection.grep
   if (process.env.SMITHERS_CHAT_STUB === "1") throw new Error("The real E2E runner refuses SMITHERS_CHAT_STUB=1.")
-  let detectedRevision: string | undefined
-  // A jj checkout must snapshot before source identity is read. Git-only CI
-  // falls back to HEAD, whose checkout is created clean by the release job.
-  for (const invocation of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
-    try {
-      const revision = Bun.spawn(invocation, { cwd: appDir, stdout: "pipe", stderr: "pipe" })
-      const value = (await new Response(revision.stdout).text()).trim()
-      if (await revision.exited === 0 && /^[0-9a-f]{40,64}$/.test(value)) { detectedRevision = value; break }
-    } catch (error) {
-      // Git-only CI checkouts need not install JJ just to identify their source.
-      if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) throw error
-    }
-  }
-  process.env.SMITHERS_REAL_E2E_REVISION = admitSourceRevision(detectedRevision, process.env.SMITHERS_REAL_E2E_REVISION)
+  process.env.SMITHERS_REAL_E2E_REVISION = admitSourceRevision(
+    await sourceRevision(join(appDir, "../..")), process.env.SMITHERS_REAL_E2E_REVISION)
   const external = process.env.SMITHERS_REAL_BASE_URL
   process.env.SMITHERS_REAL_E2E_HOST ??= external ? "production" : "local"
   if (external && process.env.SMITHERS_REAL_E2E_HOST === "production") {

@@ -32,7 +32,8 @@ export const resolveBuildSha = (): string => {
   if (fromEnv !== undefined && fromEnv.trim() !== "") return fromEnv.trim()
   try {
     if (existsSync(resolve(packageRoot, "../..", ".jj"))) {
-      return execFileSync("jj", ["--ignore-working-copy", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { cwd: packageRoot, encoding: "utf8" }).trim()
+      const diff = execFileSync("jj", ["diff", "--summary"], { cwd: packageRoot, encoding: "utf8" }).trim()
+      return execFileSync("jj", ["--ignore-working-copy", "log", "-r", diff === "" ? "@-" : "@", "--no-graph", "-T", "commit_id"], { cwd: packageRoot, encoding: "utf8" }).trim()
     }
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: packageRoot, encoding: "utf8" }).trim()
   } catch {

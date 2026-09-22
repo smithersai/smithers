@@ -16,6 +16,7 @@ import {
 import { DEPLOYMENT_MODES } from "../e2e/real/coverage/types"
 import type { MatrixConfig, MatrixScenarioReceipt, ModeReadiness } from "../e2e/real/coverage/matrix"
 import type { DeploymentMode, RealE2EEvidenceFile, RealScenarioRunEvidence } from "../e2e/real/coverage/types"
+import { sourceRevision } from "./mode-matrix/source-revision"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -40,20 +41,7 @@ if (selectedModes.length === 0 || new Set(selectedModes).size !== selectedModes.
   throw new Error("matrix modes must be a nonempty set")
 }
 
-const detectRevision = async (): Promise<string> => {
-  // jj snapshots local workspaces; the release checkout is Git-only.
-  for (const command of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
-    try {
-      const child = Bun.spawn(command, { cwd: appDir, stdout: "pipe", stderr: "pipe" })
-      const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
-      const revision = stdout.trim()
-      if (code === 0 && /^[0-9a-f]{40,64}$/.test(revision)) return revision
-    } catch { /* Git-only release checkouts have no jj. */ }
-  }
-  throw new Error("cannot identify the exact source revision")
-}
-
-const detectedRevision = await detectRevision()
+const detectedRevision = await sourceRevision(resolve(appDir, "../.."))
 const configPath = option("--config") ?? process.env.SMITHERS_MODE_MATRIX_CONFIG
 let config: MatrixConfig = { revision: detectedRevision, modes: [] }
 let configFailure: string | undefined
