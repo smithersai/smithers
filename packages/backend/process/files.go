@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
@@ -152,7 +153,9 @@ func (r *Runtime) ReadFile(ctx context.Context, workspaceID, path string) ([]byt
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace file: %w", err)
 	}
-	file, err := os.Open(resolved)
+	// Do not wait for a writer if a repository path names a FIFO. Validate
+	// the opened object before reading so other special files are rejected too.
+	file, err := os.OpenFile(resolved, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open workspace file: %w", err)
 	}
@@ -163,6 +166,9 @@ func (r *Runtime) ReadFile(ctx context.Context, workspaceID, path string) ([]byt
 	}
 	if info.IsDir() {
 		return nil, errors.New("workspace file is a directory")
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("workspace file is not a regular file")
 	}
 	if info.Size() > r.fileReadLimit {
 		return nil, fmt.Errorf("workspace file exceeds read limit of %d bytes", r.fileReadLimit)

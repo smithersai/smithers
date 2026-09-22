@@ -67,6 +67,9 @@ func reap(cmd *exec.Cmd) *managedProcess {
 	process := &managedProcess{cmd: cmd, done: make(chan struct{})}
 	go func() {
 		process.waitErr = cmd.Wait()
+		// Descendants can outlive the leader, even when they have closed its
+		// output pipes. Retire the owned group before callers observe exit.
+		_ = killProcessGroup(cmd)
 		close(process.done)
 	}()
 	return process
@@ -93,6 +96,9 @@ func (p *managedProcess) stop(grace time.Duration) {
 }
 
 func (r *Runtime) acquire(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case r.semaphore <- struct{}{}:
 		return nil
@@ -109,6 +115,10 @@ func (r *Runtime) ExecuteCommand(ctx context.Context, workspaceID string, comman
 	stdout := &limitedBuffer{limit: r.outputLimit}
 	stderr := &limitedBuffer{limit: r.outputLimit}
 	r.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		r.mu.Unlock()
+		return workspaceapi.CommandResult{}, err
+	}
 	ws, err := r.runningWorkspaceLocked(workspaceID)
 	if err != nil {
 		r.mu.Unlock()
@@ -156,6 +166,9 @@ func serviceFingerprint(spec workspaceapi.ServiceSpec) string {
 }
 
 func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec workspaceapi.ServiceSpec) (workspaceapi.Service, error) {
+	if err := ctx.Err(); err != nil {
+		return workspaceapi.Service{}, err
+	}
 	name := strings.TrimSpace(spec.Name)
 	if name == "" {
 		return workspaceapi.Service{}, errors.New("service name is required")
@@ -170,6 +183,10 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 	spec.ReadyAddress = readyAddress
 	fingerprint := serviceFingerprint(spec)
 	r.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		r.mu.Unlock()
+		return workspaceapi.Service{}, err
+	}
 	ws, err := r.runningWorkspaceLocked(workspaceID)
 	if err != nil {
 		r.mu.Unlock()
@@ -187,6 +204,9 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 			}
 			service := workspaceapi.Service{Name: name, PID: existing.process.cmd.Process.Pid, Address: existing.spec.ReadyAddress}
 			r.mu.Unlock()
+			if err := waitForServiceReady(ctx, existing.spec, existing.process); err != nil {
+				return workspaceapi.Service{}, err
+			}
 			return service, nil
 		}
 	}
@@ -213,22 +233,34 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 		r.unregister(workspaceID, process)
 	}()
 
-	if readyAddress != "" {
-		readyCtx, cancel := context.WithTimeout(ctx, spec.ReadyTimeout)
-		err = waitForTCP(readyCtx, readyAddress, process.done)
-		cancel()
-		if err != nil {
-			process.stop(r.grace)
-			return workspaceapi.Service{}, fmt.Errorf("workspace service %q readiness: %w", name, err)
-		}
-	} else {
-		select {
-		case <-process.done:
-			return workspaceapi.Service{}, fmt.Errorf("workspace service %q exited during startup: %w", name, process.waitErr)
-		default:
-		}
+	if err := waitForServiceReady(ctx, spec, process); err != nil {
+		process.stop(r.grace)
+		return workspaceapi.Service{}, err
 	}
 	return workspaceapi.Service{Name: name, PID: process.cmd.Process.Pid, Address: readyAddress}, nil
+}
+
+func waitForServiceReady(ctx context.Context, spec workspaceapi.ServiceSpec, process *managedProcess) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if spec.ReadyAddress != "" {
+		readyCtx, cancel := context.WithTimeout(ctx, spec.ReadyTimeout)
+		defer cancel()
+		if err := waitForTCP(readyCtx, spec.ReadyAddress, process.done); err != nil {
+			return fmt.Errorf("workspace service %q readiness: %w", spec.Name, err)
+		}
+		return nil
+	}
+	select {
+	case <-process.done:
+		if process.waitErr != nil {
+			return fmt.Errorf("workspace service %q exited during startup: %w", spec.Name, process.waitErr)
+		}
+		return fmt.Errorf("workspace service %q exited during startup", spec.Name)
+	default:
+		return nil
+	}
 }
 
 func normalizeReadyAddress(address string) (string, error) {
@@ -427,10 +459,17 @@ func (t *terminal) Close() error {
 }
 
 func (r *Runtime) OpenWorkspaceTerminal(ctx context.Context, workspaceID string, command workspaceapi.Command) (workspaceapi.Terminal, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(command.Args) == 0 {
 		command.Args = []string{"/bin/sh"}
 	}
 	r.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
 	ws, err := r.runningWorkspaceLocked(workspaceID)
 	if err != nil {
 		r.mu.Unlock()

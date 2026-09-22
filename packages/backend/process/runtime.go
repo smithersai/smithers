@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -146,7 +147,7 @@ func (r *Runtime) WorkspaceIsolation(ctx context.Context, workspaceID string) (w
 
 func (r *Runtime) Capabilities() workspaceapi.WorkspaceCapabilities {
 	return workspaceapi.WorkspaceCapabilities{
-		PersistentFiles: true, Execution: true, ManagedServices: true, ManagedHTTPHosts: true, SourceRevision: true, Terminal: true,
+		PersistentFiles: true, Execution: true, ManagedServices: true, ManagedHTTPHosts: true, SourceRevision: true, Terminal: goruntime.GOOS != "windows",
 		LoopbackPreview: true, FileOperations: true, ColdSnapshots: false,
 	}
 }
@@ -327,12 +328,24 @@ func (r *Runtime) StopWorkspace(ctx context.Context, id string) error {
 	for process := range ws.processes {
 		processes = append(processes, process)
 	}
+	for _, service := range ws.services {
+		select {
+		case <-service.process.done:
+		default:
+			service.stopped = true
+		}
+	}
 	r.mu.Unlock()
 	for _, process := range processes {
 		process.stop(r.grace)
 	}
 	r.mu.Lock()
 	if current := r.workspaces[strings.TrimSpace(id)]; current == ws && ws.State == string(workspaceapi.WorkspaceStopping) {
+		// Reaping joins the child, not the command/service goroutine that
+		// unregisters it. Retire the joined children before publishing stopped.
+		for _, process := range processes {
+			delete(ws.processes, process)
+		}
 		ws.State = string(workspaceapi.WorkspaceStopped)
 		if err := writeMetadata(ws); err != nil {
 			persistErr = errors.Join(persistErr, err)
@@ -427,6 +440,9 @@ func (r *Runtime) commandLocked(ws *workspace, command workspaceapi.Command) (*e
 	cmd.Args[0] = command.Args[0]
 	cmd.Dir = directory
 	cmd.Env = flattenEnvironment(environment)
+	// A descendant may retain the output pipes after the command exits.
+	// Bound that drain so the reaper can retire the remaining process group.
+	cmd.WaitDelay = r.grace
 	return cmd, nil
 }
 
@@ -488,7 +504,7 @@ func (r *Runtime) registerLocked(ws *workspace, process *managedProcess) {
 func (r *Runtime) unregister(id string, process *managedProcess) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if ws := r.workspaces[id]; ws != nil {
+	if ws := r.workspaces[strings.TrimSpace(id)]; ws != nil {
 		delete(ws.processes, process)
 	}
 }

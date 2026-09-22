@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ func TestRuntimeWorkspaceConformance(t *testing.T) {
 			ManagedServices:  true,
 			ManagedHTTPHosts: true,
 			SourceRevision:   true,
-			Terminal:         true,
+			Terminal:         goruntime.GOOS != "windows",
 			LoopbackPreview:  true,
 			FileOperations:   true,
 			ColdSnapshots:    false,
