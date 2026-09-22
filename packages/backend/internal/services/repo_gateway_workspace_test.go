@@ -362,7 +362,18 @@ func TestWorkspaceGateway_PostgresReaperFencesReadiness(t *testing.T) {
 	gateway, err = q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "owned-vm", BaseUrl: "https://" + repoGatewayDomain(gateway.ID), AuthTokenHash: hash, AuthTokenCiphertext: ciphertext, Status: "starting"})
 	require.NoError(t, err)
 	vm := &fakeRepoGatewayVMClient{}
-	ws := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{}))
+	vm.execAwaitFn = func(_ context.Context, _ string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
+		zero := int32(0)
+		if req.TimeoutMS != nil && *req.TimeoutMS == 15000 {
+			return sandbox.ExecResult{StatusCode: &zero, Stdout: runtimeTestReceipt(t, workspace, "unchanged")}, nil
+		}
+		return sandbox.ExecResult{StatusCode: &zero}, nil
+	}
+	workspaceVM := &mockWorkspaceSandboxVMClient{execAwaitFn: func(_ context.Context, _ string, _ sandbox.ExecRequest) (sandbox.ExecResult, error) {
+		zero := int32(0)
+		return sandbox.ExecResult{StatusCode: &zero, Stdout: runtimeTestReceipt(t, workspace, "unchanged")}, nil
+	}}
+	ws := NewWorkspaceService(q, WithWorkspaceSandboxClient(workspaceVM))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		root := sha256.Sum256([]byte(defaultWorkspaceClonePath))
 		_ = json.NewEncoder(w).Encode(map[string]any{"gatewayId": gateway.ID, "workspaceHash": hex.EncodeToString(root[:])[:16], "protocolVersion": "1", "version": "1.0.0-rc.0", "capabilities": []string{"coding-plan/v1"}})

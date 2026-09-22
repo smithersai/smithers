@@ -151,7 +151,7 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 			canonicalUser: db.User{ID: 22, Username: "alice", LowerUsername: "alice"},
 		}
 		host := &rolloutProvisioningHost{mockRepoHostClient: &mockRepoHostClient{}}
-		svc := NewRepoServiceWithPool(q, host, "s1", pool)
+		svc := NewRepoServiceWithPool(q, host, "s1", pool, WithRepoPlacementResolver(&fixedRepoPlacement{storageSetID: "s1"}))
 
 		_, err := svc.ForkRepo(context.Background(), actor, "alice", "source", "copy", "")
 		requireRepositoryRolloutUnavailable(t, err)
