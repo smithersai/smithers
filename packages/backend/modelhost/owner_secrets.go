@@ -29,7 +29,7 @@ func NewOwnerSecretResolver(databaseURL, secretKey func() string) (*OwnerSecretR
 	return &OwnerSecretResolver{databaseURL: databaseURL, secretKey: secretKey}, nil
 }
 
-func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, ownerID, _ int64, request json.RawMessage) (Binding, error) {
+func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, ownerID, repositoryID int64, request json.RawMessage) (Binding, error) {
 	var input struct {
 		RepositoryID int64           `json:"repositoryId"`
 		Model        json.RawMessage `json:"model"`
@@ -39,12 +39,14 @@ func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, owner
 		ModelID    string `json:"modelId"`
 		Credential string `json:"credential"`
 	}
-	if err := json.Unmarshal(request, &input); err != nil || json.Unmarshal(input.Model, &model) != nil || input.RepositoryID <= 0 ||
-		model.Protocol == "" || model.ModelID == "" || !credentialNamePattern.MatchString(model.Credential) {
-		return Binding{}, errors.New("model turn requires a repository and configured model")
+	if err := json.Unmarshal(request, &input); err != nil {
+		return Binding{}, errors.New("model turn request is invalid")
+	}
+	if input.RepositoryID == 0 {
+		input.RepositoryID = repositoryID
 	}
 	if ownerID <= 0 || strings.TrimSpace(resolver.databaseURL()) == "" {
-		return Binding{}, errors.New("owner model secret store is unavailable")
+		return Binding{}, errors.New("owner model store is unavailable")
 	}
 	codec, err := webhook.NewSecretCodec(resolver.secretKey())
 	if err != nil {
@@ -55,11 +57,32 @@ func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, owner
 		return Binding{}, fmt.Errorf("connect owner model secrets: %w", err)
 	}
 	defer pool.Close()
+	if len(input.Model) == 0 || string(input.Model) == "null" {
+		err = pool.QueryRow(ctx, `SELECT model FROM owner_model_defaults WHERE user_id=$1`, ownerID).Scan(&input.Model)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Binding{}, ports.ErrModelCredentialMissing
+		}
+		if err != nil {
+			return Binding{}, fmt.Errorf("read owner default model: %w", err)
+		}
+	}
+	if json.Unmarshal(input.Model, &model) != nil || model.Protocol == "" || model.ModelID == "" || !validCredentialName(model.Credential) {
+		return Binding{}, errors.New("model turn requires a configured model")
+	}
 	read := func(name string) (string, error) {
 		var encrypted []byte
-		err := pool.QueryRow(ctx, `SELECT s.value_encrypted FROM repository_secrets s
-			JOIN repositories r ON r.id=s.repository_id
-			WHERE r.id=$1 AND r.user_id=$2 AND s.name=$3`, input.RepositoryID, ownerID, name).Scan(&encrypted)
+		if input.RepositoryID > 0 {
+			err := pool.QueryRow(ctx, `SELECT s.value_encrypted FROM repository_secrets s
+				JOIN repositories r ON r.id=s.repository_id
+				WHERE r.id=$1 AND r.user_id=$2 AND s.name=$3`, input.RepositoryID, ownerID, name).Scan(&encrypted)
+			if err == nil {
+				return codec.DecryptString(string(encrypted))
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return "", err
+			}
+		}
+		err := pool.QueryRow(ctx, `SELECT value_encrypted FROM owner_model_credentials WHERE user_id=$1 AND name=$2`, ownerID, name).Scan(&encrypted)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ports.ErrModelCredentialMissing
 		}
@@ -77,9 +100,15 @@ func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, owner
 	}
 	binding := Binding{Model: input.Model, CredentialName: model.Credential, CredentialValue: value}
 	if !builtinCredential(model.Credential) {
-		origin, err := read(model.Credential + "_ORIGIN")
-		if err != nil {
-			return Binding{}, fmt.Errorf("read owner model origin: %w", err)
+		var origin string
+		if input.RepositoryID > 0 {
+			origin, err = read(model.Credential + "_ORIGIN")
+		}
+		if origin == "" || err != nil {
+			err = pool.QueryRow(ctx, `SELECT origin FROM owner_model_credentials WHERE user_id=$1 AND name=$2`, ownerID, model.Credential).Scan(&origin)
+			if err != nil {
+				return Binding{}, fmt.Errorf("read owner model origin: %w", err)
+			}
 		}
 		parsed, err := url.Parse(origin)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {

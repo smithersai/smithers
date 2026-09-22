@@ -64,6 +64,7 @@ export interface TurnControllerDependencies {
   /** The next transcript ordinal, so a refusal card lands at the end of the conversation. */
   readonly nextOrdinal: () => number
   readonly surfaceCommandFailure: FailureController["surfaceCommandFailure"]
+  readonly credentialMissing?: () => void
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
     decision: "approved" | "denied",
@@ -93,7 +94,7 @@ export const createTurnController = (
   dependencies: TurnControllerDependencies
 ): TurnController => {
   const { store, repositories, agent } = ctx
-  const { settleTurnBilling, nextOrdinal, surfaceCommandFailure, forwardApprovalDecision, forwardInboxApprovalDecision } =
+  const { settleTurnBilling, nextOrdinal, surfaceCommandFailure, forwardApprovalDecision, forwardInboxApprovalDecision, credentialMissing } =
     dependencies
 
   // The cloud host authenticates ordinary turns; its public catalog is the
@@ -1016,6 +1017,7 @@ export const createTurnController = (
       ctx.activeTurn = undefined
       settleRunClaims(turn)
       if (frame.error !== undefined) {
+        if (frame.code === "credential_missing") credentialMissing?.()
         store.dispatch({
           type: "message.response.failed",
           actor: "system",

@@ -71,7 +71,10 @@ export const MATRIX_OBLIGATIONS: readonly MatrixObligation[] = [
   { id: "signed-in", scenarios: [{ id: "auth.mode-session-cookie-persistence", capabilities: ["identity"] }], tier: "local-infrastructure" },
   { id: "repository-create", scenarios: [{ id: "repositories.product-create-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
   { id: "github-import", scenarios: [{ id: "repositories.github-import-direct-readback", capabilities: ["identity", "cloud"] }], tier: "live-provider" },
-  { id: "chat", scenarios: [{ id: "chat.stream-grounded", capabilities: ["agent"] }], tier: "local-infrastructure" },
+  { id: "chat", scenarios: [
+    { id: "chat.stream-grounded", capabilities: ["agent"] },
+    { id: "chat.owner-credential-ui", capabilities: ["identity", "model.turn"] }
+  ], tier: "local-infrastructure" },
   { id: "tool", scenarios: [{ id: "chat.tool-browser-open", capabilities: ["agent", "browser.read"] }], tier: "local-infrastructure" },
   { id: "workspace", scenarios: [{ id: "workspaces.cloud-lifecycle-suspend-resume-delete", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
   { id: "terminal", scenarios: [{ id: "workspaces.cloud-terminal-keyboard-output", capabilities: ["identity", "cloud", "cloud.terminal"] }], tier: "local-infrastructure" },

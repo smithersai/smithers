@@ -165,15 +165,21 @@ const establishOwnerSession = async (context: BrowserContext, page: Page, baseUR
     throw new Error(`The initialized owner ${String(status.username)} does not match the configured matrix owner.`)
   }
   const path = status.initialized ? "/api/auth/local/login" : "/api/auth/local/bootstrap"
-  const response = await context.request.post(new URL(path, origin).toString(), {
-    data: { username: credentials.username, password: credentials.password },
-    headers: {
-      Origin: origin,
+  // Authenticate in the renderer's cookie jar. APIRequestContext can race the
+  // browser's jar when the app is simultaneously booting and reading identity.
+  const loginStatus = await page.evaluate(async ({ path, credentials, status }) => {
+    const response = await fetch(path, { method: "POST", credentials: "include", headers: {
+      "Content-Type": "application/json",
       ...(status.initialized ? {} : { "X-Smithers-Bootstrap-Token": credentials.bootstrapToken })
-    }
+    }, body: JSON.stringify({ username: credentials.username, password: credentials.password }) })
+    return response.status
+  }, { path, credentials, status })
+  if (loginStatus !== 200) throw new Error(`Owner authentication failed at ${path}: HTTP ${loginStatus}.`)
+  const observed = await page.evaluate(async () => {
+    const response = await fetch("/api/user", { credentials: "include" })
+    return { status: response.status, body: await response.json().catch(() => undefined) }
   })
-  if (response.status() !== 200) throw new Error(`Owner authentication failed at ${path}: HTTP ${response.status()}.`)
-  const session = await readSessionAtOrigin(context, origin)
+  const session = parseAuthenticatedUser(observed.status, observed.body)
   if (session === undefined || session.login !== credentials.username) {
     throw new Error("Owner authentication returned without the configured authenticated session.")
   }

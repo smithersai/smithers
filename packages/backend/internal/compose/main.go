@@ -45,6 +45,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/webapp"
 	"github.com/smithersai/smithers/packages/backend/workspace"
@@ -1518,6 +1519,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	if chatService != nil && options.Role.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
+		mountModelPublic(router, modelhost.OwnerModels{Pool: pool, Codec: webhookSecretCodec}, queries, cfg)
 	}
 	if root := strings.TrimSpace(os.Getenv("SMITHERS_WEB_ROOT")); root != "" {
 		mode := webapp.SelfHosted

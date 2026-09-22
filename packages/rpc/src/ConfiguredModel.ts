@@ -512,7 +512,7 @@ export type DecisionModelId = z.infer<typeof DecisionModelIdSchema>
  * @since 1.0.0
  * @category constants
  */
-export const MODEL_SEAT_IDS = ["explainer", "front-door", "recommend"] as const
+export const MODEL_SEAT_IDS = ["chat", "explainer", "front-door", "recommend"] as const
 /**
  * Validates a seat id at the RPC boundary.
  *
@@ -548,6 +548,7 @@ export interface ModelSeat {
  * @category constants
  */
 export const MODEL_SEATS = [
+  { id: "chat", label: "Chat", kind: "generation", hosts: ["local", "cloud"] },
   { id: "explainer", label: "Explainer", kind: "generation", hosts: ["local", "cloud"] },
   { id: "front-door", label: "Front door", kind: "decision", hosts: ["cloud"] },
   { id: "recommend", label: "Recommendations", kind: "decision", hosts: ["cloud"] }

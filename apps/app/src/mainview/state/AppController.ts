@@ -1066,6 +1066,7 @@ export const createAppController = (
     removeModel,
     testModel,
     assignSeat,
+    credentialMissing,
     resumeModels,
     observeModels
   } = actors.pair(ctx, (context, select) => createModelsController(context, { nextOrdinal: store.nextOrdinal, renderFlowForm: select(renderFlowForm), minimizeCard }))
@@ -1244,7 +1245,8 @@ export const createAppController = (
     nextOrdinal: store.nextOrdinal,
     surfaceCommandFailure,
     forwardApprovalDecision,
-    forwardInboxApprovalDecision
+    forwardInboxApprovalDecision,
+    credentialMissing
   })
   const cloudWiki = actors.pair(ctx, (context) => createCloudWikiController(context, store.nextOrdinal))
   const { listCloudWiki, openCloudWiki, retryCloudWiki, attachWorldEditor } = cloudWiki

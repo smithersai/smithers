@@ -136,18 +136,23 @@ const attentionOf = (card: ModelsCard, onRunCommand: RunCommand) => {
   const { attention, models, seats } = card.payload
   if (attention === undefined) return undefined
   if (attention.kind === "seat-unresolved") {
+    const assigned = seats.find((seat) => seat.id === attention.seat)?.recordId
+    const record = models.find((model) => model.id === assigned)
+    const missing = record !== undefined && card.payload.credentials.find((row) => row.name === record.credential)?.present !== true
     return (
       <div className="models-attention" data-testid="models-attention" data-kind={attention.kind}>
         <ul className="workflow-list">
           <li className="workflow-list-row">
             <span className="workflow-list-text">
               <strong>{modelSeat(attention.seat).label}</strong>
-              <span>{seats.find((seat) => seat.id === attention.seat)?.recordId ?? ""}</span>
+              <span>{missing ? `credential_missing · ${record.credential}` : assigned ?? ""}</span>
             </span>
           </li>
         </ul>
         <div className="flow-run-actions">
-          <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.assign", attention.seat)}>Assign</Button>
+          {missing ?
+            <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.credential.new")}>Add credential</Button> :
+            <Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.assign", attention.seat)}>Assign</Button>}
         </div>
       </div>
     )
@@ -155,6 +160,12 @@ const attentionOf = (card: ModelsCard, onRunCommand: RunCommand) => {
   const model = models.find((row) => row.id === attention.recordId)
   if (model === undefined) return undefined
   const result = card.payload.tests.find((test) => test.id === model.id)?.result
+  if (result?.ok === false && result.failure.code === "credential_missing") return (
+    <div className="models-attention" data-testid="models-attention" data-kind={attention.kind}>
+      <ul className="workflow-list"><ModelRow model={model} card={card} onRunCommand={onRunCommand} selected={false} selectable={false} acts={false} /></ul>
+      <div className="flow-run-actions"><Button size="sm" data-testid="models-attention-fix" {...flowAction(onRunCommand, "model.credential.new")}>Add credential</Button></div>
+    </div>
+  )
   // The record's own mistake is edited; a fault that is not the record's is tried again.
   const fix = result?.ok === false && signInRefused(result.failure) ? "sign-in" : modelTestFixOf(model.builtin === true, result)
   return (

@@ -100,7 +100,7 @@ export const localModelCatalog = (env: ModelCredentialEnv, options: ModelPlanOpt
   return {
     models: [...servableModels(LOCAL_BUILTIN_MODELS, credentials, options)],
     credentials,
-    seats: [...modelSeatsOf("local")],
+    seats: modelSeatsOf("local").filter((seat) => seat !== "chat"),
     ...(stored ? { enrollment: stored.enrollment() } : {})
   }
 }

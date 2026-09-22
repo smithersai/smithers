@@ -128,6 +128,10 @@ func TestLocalChatComposedModelTurn(t *testing.T) {
 		})
 	})
 	composition.runtime.MountPublic(router)
+	ownerModels := modelhost.OwnerModels{Pool: pool, Codec: codec}
+	router.Get("/api/model/catalog", ownerModels.Catalog)
+	router.Post("/api/model/credential", ownerModels.Credential)
+	router.Put("/api/model/default", ownerModels.SetDefault)
 	public := httptest.NewServer(router)
 	defer public.Close()
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -170,8 +174,49 @@ func TestLocalChatComposedModelTurn(t *testing.T) {
 	_, missingStream, missingReplay := turn("MISSING_PROVIDER")
 	require.Contains(t, missingStream, `"code":"credential_missing"`)
 	require.Contains(t, string(missingReplay), `"code":"credential_missing"`)
-	require.Contains(t, missingStream, "credential is missing")
-	require.Contains(t, string(missingReplay), "credential is missing")
+	require.Contains(t, missingStream, "Model credential missing")
+	require.Contains(t, string(missingReplay), "Model credential missing")
+	// The ordinary composer has no repository or model fields. Its owner
+	// selection and credential must be enough to answer the turn.
+	ownerTurn := func() string {
+		runID := "owner-" + uuid.NewString()
+		journal := map[string]any{"version": 1, "legId": uuid.NewString(), "token": strings.Repeat("b", 48)}
+		body, marshalErr := json.Marshal(map[string]any{"runId": runID, "journal": journal,
+			"instructions": "Answer briefly.", "messages": []any{map[string]string{"role": "user", "content": "Say hello"}}})
+		require.NoError(t, marshalErr)
+		response, postErr := client.Post(public.URL+chat.TurnPath, "application/json", bytes.NewReader(body))
+		require.NoError(t, postErr)
+		defer response.Body.Close()
+		stream, readErr := io.ReadAll(response.Body)
+		require.NoError(t, readErr)
+		return string(stream)
+	}
+	require.Contains(t, ownerTurn(), `"code":"credential_missing"`)
+	credentialBody, err := json.Marshal(map[string]string{"action": "enroll", "requestId": "owner-key-request", "name": "OWNER_PROVIDER", "origin": provider.URL, "value": providerKey})
+	require.NoError(t, err)
+	credentialResponse, err := client.Post(public.URL+"/api/model/credential", "application/json", bytes.NewReader(credentialBody))
+	require.NoError(t, err)
+	defer credentialResponse.Body.Close()
+	credentialResult, err := io.ReadAll(credentialResponse.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(credentialResult), `"ok":true`)
+	require.NotContains(t, string(credentialResult), providerKey)
+	defaultBody, err := json.Marshal(map[string]any{"model": map[string]string{"protocol": "openai-chat", "modelId": "test-model", "credential": "OWNER_PROVIDER", "baseUrl": provider.URL}})
+	require.NoError(t, err)
+	defaultRequest, err := http.NewRequest(http.MethodPut, public.URL+"/api/model/default", bytes.NewReader(defaultBody))
+	require.NoError(t, err)
+	defaultRequest.Header.Set("Content-Type", "application/json")
+	defaultResponse, err := client.Do(defaultRequest)
+	require.NoError(t, err)
+	defer defaultResponse.Body.Close()
+	require.Equal(t, http.StatusOK, defaultResponse.StatusCode)
+	require.Contains(t, ownerTurn(), "hello from provider")
+	select {
+	case got := <-receivedKey:
+		require.Equal(t, "Bearer "+providerKey, got)
+	case <-time.After(time.Second):
+		t.Fatal("provider did not receive owner credential")
+	}
 	stopDispatch()
 	require.NoError(t, <-dispatchDone)
 	require.NoError(t, host.Close(context.Background()))

@@ -299,6 +299,14 @@ describe("the Models card, surfaced unasked", () => {
     expect(acts(host)).toEqual([["Assign", "model.assign", "explainer"]])
   })
 
+  test("a Chat seat with an unenrolled credential offers Add credential", () => {
+    const model = { ...user, credential: "OWNER_E2E" }
+    const { host } = attentionActs({ models: [model], seats: [{ id: "chat", recordId: model.id, resolvable: false }],
+      attention: { kind: "seat-unresolved", seat: "chat" } })
+    expect(host.querySelector('[data-testid="models-attention"]')?.textContent).toBe("Chatcredential_missing · OWNER_E2EAdd credential")
+    expect(acts(host)).toEqual([["Add credential", "model.credential.new", null]])
+  })
+
   test("attention on a model that is gone falls back to the list", () => {
     const { host } = attentionActs({ attention: { kind: "test-failed", recordId: "removed" } })
     expect(host.querySelector('[data-testid="models-attention"]')).toBeNull()

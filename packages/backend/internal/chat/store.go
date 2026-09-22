@@ -1128,7 +1128,7 @@ func (s *Store) FailProducer(ctx context.Context, grant ProducerGrant, code stri
 	state := StateFailed
 	frame := errorFrame(turn.RunID, "The model host stopped before completing the turn.")
 	if code == "credential_missing" {
-		frame, _ = json.Marshal(map[string]any{"runId": turn.RunID, "type": "done", "code": "credential_missing", "error": "The model credential is missing. Add it in repository secrets."})
+		frame, _ = json.Marshal(map[string]any{"runId": turn.RunID, "type": "done", "code": "credential_missing", "error": "Model credential missing."})
 	}
 	if turn.CancelRequestedAt != nil || code == "cancelled" {
 		state = StateCancelled

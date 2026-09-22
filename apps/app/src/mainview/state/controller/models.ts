@@ -1,4 +1,4 @@
-import { MODEL_CATALOG_PATH,MODEL_TEST_PATH,MODEL_CREDENTIAL_PATH,MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { MODEL_CATALOG_PATH,MODEL_DEFAULT_PATH,MODEL_TEST_PATH,MODEL_CREDENTIAL_PATH,MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { ConfiguredModel,ModelBinding,ModelCallInput,ModelCatalog,ModelProtocol,ModelTestFailure,ModelTestResult,SeatId } from "@smthrs/rpc/ConfiguredModel"
 import {
@@ -52,6 +52,7 @@ export interface ModelsController {
   readonly testModel: (id: string) => Promise<CommandResult>
   /** `model.assign <seat> <name|default>`. */
   readonly assignSeat: (seat: string, recordId: string) => Promise<CommandResult>
+  readonly credentialMissing: () => void
   /** After identity loads: reconnect every requested test and catalog refresh. Idempotent. */
   readonly resumeModels: () => void
   /** Boot: reads the catalog only when a seat is assigned and the host can serve it. */
@@ -390,15 +391,31 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     const { label, kind } = modelSeat(seat.data)
     if (shared.catalog !== undefined && !shared.catalog.seats.includes(seat.data)) return `This host has no ${label} seat.`
     const recordId = recordText.trim()
+    const record = recordId === MODEL_SEAT_DEFAULT ? undefined : collections.models.get(recordId)
+    if (recordId !== MODEL_SEAT_DEFAULT && record === undefined) return missing(recordId)
+    if (record !== undefined && !seatAccepts(seat.data, record.protocol)) return `${label} takes a ${kind} model.`
+    if (seat.data === "chat") {
+      try {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}${MODEL_DEFAULT_PATH}`, { method: "PUT", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: record === undefined ? null : bindingOf(record) }) })
+        if (!response.ok) return "Chat model could not be saved."
+      } catch { return "Chat model could not be saved." }
+    }
     if (recordId === MODEL_SEAT_DEFAULT) {
       await store.dispatch({ type: "seat.assigned", actor: ctx.commandActor, seat: seat.data, recordId: null }).isPersisted.promise
     } else {
-      const record = collections.models.get(recordId)
-      if (record === undefined) return missing(recordId)
-      if (!seatAccepts(seat.data, record.protocol)) return `${label} takes a ${kind} model.`
       await store.dispatch({ type: "seat.assigned", actor: ctx.commandActor, seat: seat.data, recordId }).isPersisted.promise
     }
     render(ctx.commandActor, card() === undefined, unresolved())
+  }
+
+  const credentialMissing: ModelsController["credentialMissing"] = () => {
+    const assigned = collections.seats.get("chat")?.recordId
+    const record = assigned === undefined || assigned === null ? undefined : collections.models.get(assigned)
+    if (record === undefined) { void refreshCatalog(true); return }
+    void store.dispatch({ type: "model.tested", actor: "system", test: { id: record.id, testedAt: Date.now(),
+      result: { ok: false, latencyMs: 0, failure: { code: "credential_missing", credential: record.credential }, fault: "user" } } }).isPersisted.promise
+      .then(() => raise({ kind: "test-failed", recordId: record.id }))
   }
 
   /** The background half. Never awaited by the command that asked for it. */
@@ -553,5 +570,5 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     await refreshCatalog(false)
   }
 
-  return { newModelCredential, mutateModelCredential, listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, resumeModels, observeModels }
+  return { newModelCredential, mutateModelCredential, listModels, showModel, newModel, editModel, saveModel, removeModel, testModel, assignSeat, credentialMissing, resumeModels, observeModels }
 }
