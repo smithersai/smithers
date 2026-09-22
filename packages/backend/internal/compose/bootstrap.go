@@ -29,6 +29,7 @@ type bootstrapFeatures struct {
 	identity         bool
 	redirectAuth     bool
 	agent            bool
+	modelTurn        bool
 	billingCheckout  bool
 	workspaceRuntime bool
 	isolatedSandbox  bool
@@ -51,6 +52,9 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.agent {
 		result.Capabilities = append(result.Capabilities, "agent")
+	}
+	if features.modelTurn {
+		result.Capabilities = append(result.Capabilities, "model.turn")
 	}
 	if features.billingCheckout {
 		result.Capabilities = append(result.Capabilities, "billing.checkout")

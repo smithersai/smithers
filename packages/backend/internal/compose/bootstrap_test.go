@@ -19,9 +19,9 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 	require.NotEmpty(t, local.Sandbox.Platform)
 
 	hosted := newAppBootstrap(bootstrapFeatures{role: RoleHostedAPI, identity: true, redirectAuth: true,
-		agent: true, billingCheckout: true, isolatedSandbox: true})
+		agent: true, modelTurn: true, billingCheckout: true, isolatedSandbox: true})
 	require.Equal(t, "cloud", hosted.Host)
-	require.Equal(t, []string{"identity", "agent", "billing.checkout"}, hosted.Capabilities)
+	require.Equal(t, []string{"identity", "agent", "model.turn", "billing.checkout"}, hosted.Capabilities)
 	require.Equal(t, "redirect", hosted.AuthFlow)
 	require.Equal(t, "enforced", hosted.Sandbox.Mode)
 

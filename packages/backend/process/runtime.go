@@ -347,16 +347,24 @@ func (r *Runtime) DeleteWorkspace(ctx context.Context, id string) error {
 		return err
 	}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	ws, err := r.workspaceLocked(id)
+	if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
+		return nil
+	}
 	if err != nil {
-		r.mu.Unlock()
 		return err
 	}
-	delete(r.workspaces, id)
-	r.mu.Unlock()
+	// StopWorkspace joins children outside the lock. Refuse a concurrent
+	// restart rather than deleting a directory under a newly running process.
+	if ws.State != string(workspaceapi.WorkspaceStopped) || len(ws.processes) != 0 {
+		return errors.New("workspace restarted during deletion; retry required")
+	}
+	// Keep the handle until removal succeeds so failed cleanup is retryable.
 	if err := os.RemoveAll(ws.directory); err != nil {
 		return fmt.Errorf("delete process workspace: %w", err)
 	}
+	delete(r.workspaces, ws.ID)
 	return nil
 }
 

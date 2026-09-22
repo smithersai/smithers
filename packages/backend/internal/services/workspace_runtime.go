@@ -231,6 +231,12 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if observed.State != workspaceapi.WorkspaceRunning {
 		return row, pkgerrors.Conflict("workspace runtime is " + string(observed.State))
 	}
+	// Repository materialization is part of the common product transition to
+	// running. Both trusted process and isolated runtimes execute the same
+	// authorized, receipt-backed checkout before the durable row is activated.
+	if err := s.ensureRuntimeWorkspaceRepository(ctx, row, requesterID); err != nil {
+		return row, err
+	}
 
 	if row.Status != "running" {
 		updated, updateErr := s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "running"})
@@ -329,6 +335,9 @@ func (s *WorkspaceService) restoreRuntimeWorkspaceSnapshot(ctx context.Context, 
 	}
 	if observed.State != workspaceapi.WorkspaceRunning {
 		return row, pkgerrors.Conflict("restored workspace runtime is " + string(observed.State))
+	}
+	if err := s.adoptRuntimeWorkspaceRepository(ctx, row, requesterID); err != nil {
+		return row, err
 	}
 	updated, err := s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "running"})
 	if err != nil {
@@ -468,6 +477,10 @@ func (s *WorkspaceService) forkRuntimeWorkspace(ctx context.Context, input ForkW
 	}
 	if observed.State != workspaceapi.WorkspaceRunning {
 		err = pkgerrors.Conflict("forked workspace runtime is " + string(observed.State))
+		s.markWorkspaceProvisionFailed(ctx, created, err)
+		return WorkspaceResponse{}, err
+	}
+	if err := s.adoptRuntimeWorkspaceRepository(ctx, created, input.UserID); err != nil {
 		s.markWorkspaceProvisionFailed(ctx, created, err)
 		return WorkspaceResponse{}, err
 	}

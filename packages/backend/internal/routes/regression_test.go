@@ -16,14 +16,15 @@
 //     buffering the full body in memory (covered in repohostserver package;
 //     this test confirms the route-layer handler sets correct Content-Type
 //     without waiting for EOF)
-//  8. Migration parity     — every table in db/schema.sql has a corresponding
-//     model type in internal/db/models.go
+//  8. Migration parity     — product and private tables have models in their
+//     respective generated packages
 
 package routes
 
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -41,8 +42,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // ---------------------------------------------------------------------------
@@ -667,18 +668,13 @@ func TestRegression_GitStreaming_UploadPackHandlerSetsContentType(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// 8. Migration parity — generated internal/db/ covers product migration tables
+// 8. Migration parity — each schema owner has its generated model
 // ---------------------------------------------------------------------------
 
 // TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels verifies
-// that every table defined in the canonical product migrations has a corresponding model type
-// in internal/db/models.go. This ensures sqlc has been re-run after schema
-// changes and the generated code is not stale.
-//
-// The test parses the schema file for CREATE TABLE statements and checks that
-// a matching Go type name (converted from snake_case to CamelCase) appears in
-// models.go. It is intentionally lenient about internal helper tables like
-// _sync_queue that use non-standard naming conventions.
+// that every product table has one canonical internal/db model and a shared
+// alias in internal/clusterdb, while every private table has a clusterdb
+// model. The ownership catalog must cover the entire generated hosted schema.
 func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testing.T) {
 	t.Parallel()
 
@@ -687,59 +683,96 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 	repoRoot, err := findRepoRoot()
 	require.NoError(t, err, "must be able to locate repo root")
 
-	migrationPaths, err := filepath.Glob(filepath.Join(repoRoot, "packages", "backend", "db", "product", "migrations", "*.sql"))
-	require.NoError(t, err)
-	require.NotEmpty(t, migrationPaths, "product migrations must exist")
-	modelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "db", "models.go")
+	schemaPath := filepath.Join(repoRoot, "packages", "backend", "db", "schema.sql")
+	productModelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "db", "models.go")
+	clusterModelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "clusterdb", "models.go")
+	ownersPath := filepath.Join(repoRoot, "packages", "backend", "db", "ownership.csv")
 
-	var schema strings.Builder
-	for _, migrationPath := range migrationPaths {
-		migrationBytes, readErr := os.ReadFile(migrationPath)
-		require.NoError(t, readErr, "%s must exist", migrationPath)
-		schema.Write(migrationBytes)
-		schema.WriteByte('\n')
-	}
-
-	modelsBytes, err := os.ReadFile(modelsPath)
+	schemaBytes, err := os.ReadFile(schemaPath)
+	require.NoError(t, err, "db/schema.sql must exist")
+	productModelsBytes, err := os.ReadFile(productModelsPath)
 	require.NoError(t, err, "internal/db/models.go must exist")
-
-	modelsContent := string(modelsBytes)
+	clusterModelsBytes, err := os.ReadFile(clusterModelsPath)
+	require.NoError(t, err, "internal/clusterdb/models.go must exist")
+	ownersFile, err := os.Open(ownersPath)
+	require.NoError(t, err, "db/ownership.csv must exist")
+	defer ownersFile.Close()
+	ownerRows, err := csv.NewReader(ownersFile).ReadAll()
+	require.NoError(t, err)
+	require.NotEmpty(t, ownerRows)
+	require.Equal(t, []string{"table", "target_owner", "status"}, ownerRows[0])
+	owners := make(map[string]string, len(ownerRows)-1)
+	for _, row := range ownerRows[1:] {
+		require.Len(t, row, 3)
+		require.NotContains(t, owners, row[0], "duplicate schema owner entry")
+		owners[row[0]] = row[1]
+	}
 
 	// Extract table names from schema.
-	tables := extractTableNames(schema.String())
+	tables := extractTableNames(string(schemaBytes))
 	require.NotEmpty(t, tables, "schema must define at least one table")
-
-	// Tables that intentionally use non-standard naming or are internal
-	// migration-only tables without a model type.
-	skippedTables := map[string]bool{
-		"_sync_queue": true, // internal replication queue, no model needed
-		"_id_remap":   true, // internal migration helper, no model needed
-	}
-
-	// Extract all model type names from models.go for O(1) lookup.
-	// Models use the singular PascalCase form of the table name (sqlc auto-singularizes).
-	modelTypes := extractModelTypes(modelsContent)
+	productModels := extractModelTypes(string(productModelsBytes))
+	clusterModels := extractModelTypes(string(clusterModelsBytes))
+	clusterAliases := extractModelAliases(string(clusterModelsBytes))
 
 	var missing []string
+	seen := make(map[string]bool, len(tables))
 	for _, table := range tables {
-		if skippedTables[table] {
+		name := table
+		if dot := strings.LastIndexByte(name, '.'); dot >= 0 {
+			name = name[dot+1:]
+		}
+		if seen[name] {
+			missing = append(missing, fmt.Sprintf("%s → table defined more than once", table))
+			continue
+		}
+		seen[name] = true
+		owner, owned := owners[name]
+		if !owned {
+			missing = append(missing, fmt.Sprintf("%s → absent from db/ownership.csv", table))
 			continue
 		}
 		// sqlc singularizes table names. Generate candidate names:
 		//   webhook_deliveries → WebhookDeliveries (plural camel) and WebhookDelivery (singular)
 		//   users → Users (plural camel) and User (singular)
-		// We check the singular form explicitly since sqlc always singularizes.
-		pluralName := snakeToCamel(table)
+		pluralName := snakeToCamel(name)
 		singularName := sqlcSingularize(pluralName)
-
-		if !modelTypes[pluralName] && !modelTypes[singularName] {
-			missing = append(missing, fmt.Sprintf("%s → expected %s or %s", table, singularName, pluralName))
+		candidates := []string{singularName, pluralName}
+		if strings.HasPrefix(table, "plue_storage.") {
+			candidates = append(candidates, "PlueStorage"+singularName, "PlueStorage"+pluralName)
+		}
+		if name == "_id_remap" {
+			candidates = append(candidates, "IDRemap")
+		}
+		matches := func(models map[string]bool) bool {
+			for _, candidate := range candidates {
+				if models[candidate] {
+					return true
+				}
+			}
+			return false
+		}
+		switch owner {
+		case "product":
+			if !matches(productModels) || !matches(clusterAliases) {
+				missing = append(missing, fmt.Sprintf("%s → missing product model or cluster alias (%s)", table, singularName))
+			}
+		case "infrastructure-seam", "retire-candidate":
+			if !matches(clusterModels) {
+				missing = append(missing, fmt.Sprintf("%s → missing private cluster model (%s)", table, singularName))
+			}
+		default:
+			missing = append(missing, fmt.Sprintf("%s → unknown owner %q", table, owner))
+		}
+	}
+	for table := range owners {
+		if !seen[table] {
+			missing = append(missing, fmt.Sprintf("%s → cataloged but absent from generated schema", table))
 		}
 	}
 
 	if len(missing) > 0 {
-		t.Errorf("the following schema tables have no generated model type in internal/db/models.go "+
-			"(run `zig build sqlc` to regenerate):\n  %s", strings.Join(missing, "\n  "))
+		t.Errorf("schema ownership/model parity failed (run packages/backend/db/cluster/generate.py):\n  %s", strings.Join(missing, "\n  "))
 	}
 }
 
@@ -765,19 +798,17 @@ func findRepoRoot() (string, error) {
 func extractTableNames(schema string) []string {
 	var tables []string
 	for _, line := range strings.Split(schema, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(strings.ToUpper(line), "CREATE TABLE") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || !strings.EqualFold(fields[0], "CREATE") || !strings.EqualFold(fields[1], "TABLE") {
 			continue
 		}
-		// Strip "CREATE TABLE IF NOT EXISTS " prefix.
-		line = strings.TrimPrefix(line, "CREATE TABLE IF NOT EXISTS ")
-		line = strings.TrimPrefix(line, "CREATE TABLE ")
-		// The table name ends at the first space or '('.
-		for i, ch := range line {
-			if ch == ' ' || ch == '(' {
-				tables = append(tables, strings.TrimPrefix(line[:i], "public."))
-				break
-			}
+		index := 2
+		if strings.EqualFold(fields[index], "IF") {
+			index = 5 // CREATE TABLE IF NOT EXISTS name
+		}
+		if len(fields) > index {
+			name := strings.TrimSuffix(fields[index], "(")
+			tables = append(tables, strings.TrimPrefix(name, "public."))
 		}
 	}
 	return tables
@@ -812,6 +843,18 @@ func extractModelTypes(src string) map[string]bool {
 		name = strings.TrimSpace(name)
 		if name != "" {
 			types[name] = true
+		}
+	}
+	return types
+}
+
+// extractModelAliases finds the cluster package's shared product DTO aliases.
+func extractModelAliases(src string) map[string]bool {
+	types := make(map[string]bool)
+	for _, line := range strings.Split(src, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 4 && fields[0] == "type" && fields[2] == "=" && fields[3] == "db."+fields[1] {
+			types[fields[1]] = true
 		}
 	}
 	return types

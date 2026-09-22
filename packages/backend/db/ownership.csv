@@ -225,3 +225,6 @@ product_job_events,product,product migration 0006
 chat_turns,product,product migration 0009
 chat_turn_batches,product,product migration 0009
 flow_runtime_host_bindings,product,product migration 0010
+storage_sets,infrastructure-seam,Plue placement migration 0001
+storage_nodes,infrastructure-seam,Plue placement migration 0001
+repository_placements,infrastructure-seam,Plue placement migration 0002

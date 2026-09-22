@@ -8,10 +8,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cgi"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,11 +69,15 @@ func TestWorkspaceRuntimeProcessRequestPath(t *testing.T) {
 	queries := db.New(pool)
 	user := processWorkspaceCreateUser(t, pool, "process_workspace_user")
 	repo := processWorkspaceCreateRepo(t, pool, user, "process_workspace_repo", false)
+	gitServer := processWorkspaceGitServer(t, repo)
 
 	runtime, err := processruntime.New(processruntime.Config{Root: t.TempDir(), MaxConcurrent: 4})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, runtime.Close()) })
-	service := services.NewWorkspaceService(queries, services.WithWorkspaceRuntime(runtime))
+	service := services.NewWorkspaceService(queries,
+		services.WithWorkspaceRuntime(runtime),
+		services.WithWorkspaceGitBaseURL(gitServer.URL+"/api"),
+	)
 	workspaceHandler := &WorkspaceHandler{Service: service}
 	terminalHandler := &WorkspaceTerminalHandler{Service: service, AllowedOrigins: []string{"https://smithers.test"}}
 	t.Cleanup(func() {
@@ -124,6 +131,14 @@ func TestWorkspaceRuntimeProcessRequestPath(t *testing.T) {
 	require.Empty(t, created.VMID, "trusted process execution must not be presented as a VM")
 	require.Equal(t, "trusted_process", string(created.Isolation))
 	waitForRuntimeWorkspaceStatus(t, queries, created.ID, "running")
+	seedResponse := processWorkspaceDoRequest(t, client, server.URL, http.MethodGet, basePath+"/workspaces/"+created.ID+"/files/content?path=README.md", nil)
+	require.Equal(t, http.StatusOK, seedResponse.StatusCode)
+	var seedFile services.WorkspaceFileContent
+	processWorkspaceDecodeJSON(t, seedResponse, &seedFile)
+	require.Equal(t, "process workspace repository fixture\n", seedFile.Content)
+	sourceRevision, err := runtime.ResolveWorkspaceSourceRevision(context.Background(), created.ID)
+	require.NoError(t, err)
+	require.Len(t, sourceRevision, 40)
 
 	commandResponse := processWorkspaceDoRequest(t, client, server.URL, http.MethodPost, basePath+"/workspaces/"+created.ID+"/commands", []byte(`{"operation_id":"command-1","args":["/bin/sh","-c","printf command-ok"]}`))
 	require.Equal(t, http.StatusOK, commandResponse.StatusCode)
@@ -207,6 +222,51 @@ func TestWorkspaceRuntimeProcessRequestPath(t *testing.T) {
 		require.NoError(t, readErr)
 		terminalOutput.Write(frame)
 	}
+}
+
+func processWorkspaceGitServer(t *testing.T, repo processWorkspaceRepo) *httptest.Server {
+	t.Helper()
+	gitExecutable, err := exec.LookPath("git")
+	require.NoError(t, err)
+	root := t.TempDir()
+	repositoryPath := filepath.Join(root, "api", repo.Owner, repo.Name+".git")
+	require.NoError(t, os.MkdirAll(filepath.Dir(repositoryPath), 0o700))
+	processWorkspaceRunGit(t, "", nil, "init", "--bare", "--initial-branch=main", repositoryPath)
+	blob := strings.TrimSpace(processWorkspaceRunGit(t, repositoryPath, strings.NewReader("process workspace repository fixture\n"), "hash-object", "-w", "--stdin"))
+	tree := strings.TrimSpace(processWorkspaceRunGit(t, repositoryPath, strings.NewReader("100644 blob "+blob+"\tREADME.md\n"), "mktree"))
+	commit := strings.TrimSpace(processWorkspaceRunGit(t, repositoryPath, strings.NewReader("fixture\n"), "commit-tree", tree))
+	processWorkspaceRunGit(t, repositoryPath, nil, "update-ref", "refs/heads/main", commit)
+	processWorkspaceRunGit(t, repositoryPath, nil, "symbolic-ref", "HEAD", "refs/heads/main")
+
+	backend := &cgi.Handler{
+		Path: gitExecutable, Args: []string{"http-backend"}, Dir: root,
+		Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if !strings.HasPrefix(request.Header.Get("Authorization"), "Bearer ") {
+			http.Error(response, "missing repository bearer", http.StatusUnauthorized)
+			return
+		}
+		backend.ServeHTTP(response, request)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func processWorkspaceRunGit(t *testing.T, gitDirectory string, stdin io.Reader, args ...string) string {
+	t.Helper()
+	if gitDirectory != "" {
+		args = append([]string{"--git-dir=" + gitDirectory}, args...)
+	}
+	command := exec.Command("git", args...)
+	command.Stdin = stdin
+	command.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Smithers Test", "GIT_AUTHOR_EMAIL=test@smithers.invalid", "GIT_AUTHOR_DATE=2020-01-01T00:00:00Z",
+		"GIT_COMMITTER_NAME=Smithers Test", "GIT_COMMITTER_EMAIL=test@smithers.invalid", "GIT_COMMITTER_DATE=2020-01-01T00:00:00Z",
+	)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	return string(output)
 }
 
 func waitForRuntimeWorkspaceStatus(t *testing.T, queries *db.Queries, workspaceID, want string) db.Workspace {

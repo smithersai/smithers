@@ -104,7 +104,7 @@ func mergeEgressSecrets(base, run []sandbox.EgressProxySecret) []sandbox.EgressP
 // the error is returned; the caller marks the run infrastructure-failed.
 func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input CreateAgentWorkspaceInput) (out AgentWorkspaceResult, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("create", retErr) }()
-	if s.q == nil || s.sandbox == nil {
+	if s.q == nil || (s.runtime == nil && s.sandbox == nil) {
 		return AgentWorkspaceResult{}, pkgerrors.Internal("workspace service unavailable")
 	}
 	if input.RepositoryID <= 0 || input.UserID <= 0 || strings.TrimSpace(input.SessionID) == "" {
@@ -144,6 +144,17 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
 			return AgentWorkspaceResult{}, pkgerrors.Internal("link agent session to workspace: " + err.Error())
 		}
+	}
+	if s.runtime != nil {
+		workspace, err = s.ensureWorkspaceRunning(ctx, workspace, CreateWorkspaceSessionInput{
+			RepositoryID: input.RepositoryID, UserID: input.UserID, RepoOwner: input.RepoOwner,
+			RepoName: input.RepoName, SourceBookmark: bookmark,
+		})
+		if err != nil {
+			s.markWorkspaceProvisionFailed(ctx, workspace, err)
+			return AgentWorkspaceResult{}, err
+		}
+		return AgentWorkspaceResult{WorkspaceID: workspace.ID}, nil
 	}
 	result, err := s.provisionAgentWorkspace(ctx, workspace, input, bookmark)
 	if err != nil {

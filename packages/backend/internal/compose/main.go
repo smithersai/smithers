@@ -140,7 +140,7 @@ type runOptions struct {
 	ready        func(http.Handler)
 }
 
-func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) error {
+func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) (runErr error) {
 	if !options.Role.valid() {
 		return fmt.Errorf("unknown backend role %q", options.Role)
 	}
@@ -1249,6 +1249,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if chatService != nil {
 		defer chatService.close()
+		if closer, ok := options.ChatHost.(interface{ Close(context.Context) error }); ok {
+			defer func() {
+				closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				defer cancel()
+				runErr = errors.Join(runErr, closer.Close(closeCtx))
+			}()
+		}
 	}
 	var chatWorker, chatCallbackWorker *criticalWorker
 	if chatService != nil {
@@ -1526,8 +1533,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
 		role: options.Role, identity: authHandler != nil,
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
-		// The renderer's agent capability targets the durable chat journal.
-		agent:            chatService != nil && options.Role.servesHTTP(),
+		// A configured model turn is available only when the durable journal
+		// routes are mounted; it does not imply a separate agent executor.
+		modelTurn:        chatService != nil && options.Role.servesHTTP(),
 		billingCheckout:  billingComposition.Service != nil,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),

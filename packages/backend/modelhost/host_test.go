@@ -1,0 +1,59 @@
+package modelhost
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/stretchr/testify/require"
+)
+
+type testLauncher struct {
+	lease Lease
+}
+
+func (launcher testLauncher) LaunchChatHost(_ context.Context, _ ports.ChatTurnGrant, _ Binding) (Lease, error) {
+	return launcher.lease, nil
+}
+
+type testLease struct {
+	origin string
+	closed bool
+}
+
+func (lease *testLease) Endpoint() (string, *http.Client, string) {
+	return lease.origin, nil, "private-token"
+}
+
+func (lease *testLease) Close(context.Context) error {
+	lease.closed = true
+	return nil
+}
+
+func TestHostScopesResolutionAndCleansFailedTurn(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "/v1/chat/turn", request.URL.Path)
+		require.Equal(t, "Bearer private-token", request.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	lease := &testLease{origin: server.URL}
+	resolved := false
+	host, err := New(ResolverFunc(func(_ context.Context, ownerID, repositoryID int64, request json.RawMessage) (Binding, error) {
+		require.EqualValues(t, 7, ownerID)
+		require.EqualValues(t, 11, repositoryID)
+		require.JSONEq(t, `{"runId":"run-1"}`, string(request))
+		resolved = true
+		return Binding{}, nil
+	}), testLauncher{lease: lease})
+	require.NoError(t, err)
+	err = host.RunChatTurn(context.Background(), ports.ChatTurnGrant{
+		OwnerID: 7, RepositoryID: 11, Request: json.RawMessage(`{"runId":"run-1"}`),
+	})
+	require.ErrorContains(t, err, "status 503")
+	require.True(t, resolved)
+	require.True(t, lease.closed)
+}

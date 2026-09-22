@@ -500,3 +500,23 @@ func flagArguments(args []string) []string {
 	}
 	return nil
 }
+
+func TestDeleteWorkspaceRetainsFailedRemovalForRetry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission refusal requires an unprivileged user")
+	}
+	root := t.TempDir()
+	runtime := newTestRuntime(t, root)
+	ws, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "cleanup-retry"})
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(filepath.Join(root, "workspaces"), 0500))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(filepath.Join(root, "workspaces"), 0700)) })
+	require.ErrorContains(t, runtime.DeleteWorkspace(context.Background(), ws.ID), "delete process workspace")
+	_, err = runtime.InspectWorkspace(context.Background(), ws.ID)
+	require.NoError(t, err, "failed removal must retain its retry handle")
+	require.NoError(t, os.Chmod(filepath.Join(root, "workspaces"), 0700))
+	require.NoError(t, runtime.DeleteWorkspace(context.Background(), ws.ID))
+	require.NoError(t, runtime.DeleteWorkspace(context.Background(), ws.ID), "successful cleanup is idempotent")
+	_, err = runtime.InspectWorkspace(context.Background(), ws.ID)
+	require.ErrorIs(t, err, workspaceapi.ErrWorkspaceNotFound)
+}

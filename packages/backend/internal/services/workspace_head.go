@@ -145,6 +145,10 @@ type workspaceHeadStore interface {
 	GetRepoOwnerSlugAndNameByID(ctx context.Context, repositoryID int64) (db.GetRepoOwnerSlugAndNameByIDRow, error)
 }
 
+type workspaceRepositoryIdentityStore interface {
+	GetRepoOwnerSlugAndNameByID(ctx context.Context, repositoryID int64) (db.GetRepoOwnerSlugAndNameByIDRow, error)
+}
+
 // sandboxExecClient is the exec surface the reporter install uses.
 type sandboxExecClient interface {
 	Execute(context.Context, string, sandbox.ExecRequest) (sandbox.ExecResult, error)
@@ -159,7 +163,7 @@ func workspaceHeadTokenScopes(repositoryID int64, workspaceID string) string {
 
 // workspaceRepoSlug resolves "<owner>/<repo>" for a workspace's repository.
 func (s *WorkspaceService) workspaceRepoSlug(ctx context.Context, repositoryID int64) (string, error) {
-	store, ok := s.q.(workspaceHeadStore)
+	store, ok := s.q.(workspaceRepositoryIdentityStore)
 	if !ok {
 		return "", pkgerrors.Internal("workspace store cannot resolve repositories")
 	}
