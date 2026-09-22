@@ -238,6 +238,15 @@ func restoreGitRefs(ctx context.Context, gitDir string, before, after map[string
 	return nil
 }
 
+func rollBackPublishedPush(ctx context.Context, gitDir string, before, after map[string]string, cause error) error {
+	restoreCtx, cancelRestore := detachedPushContext(ctx)
+	defer cancelRestore()
+	if err := restoreGitRefs(restoreCtx, gitDir, before, after); err != nil {
+		return internalError("failed to roll back rejected push", errors.Join(cause, err))
+	}
+	return cause
+}
+
 // rollBackUnlistablePush handles a path-restricted push whose post-receive
 // ref listing failed: nothing can be authorized, so every ref the client's
 // command list named is put back to its pre-push value (or deleted when it

@@ -52,7 +52,7 @@ func TestRouter_H_NewWithFFIReportsMetricsError(t *testing.T) {
 	}
 	t.Cleanup(func() { newMetricsForServer = original })
 
-	_, err := NewWithFFI(Config{}, &mockFFI{})
+	_, err := NewWithFFI(Config{AuthToken: "test-token"}, &mockFFI{})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("NewWithFFI error = %v, want %v", err, wantErr)
 	}

@@ -2,9 +2,12 @@ package repohost
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sync"
+	"time"
 )
 
 // NewLocalClient uses the same repository client and server protocol in the
@@ -13,6 +16,14 @@ import (
 func NewLocalClient(handler http.Handler, authToken string, metrics ...RepoHostOperationDurationObserver) *Client {
 	client := NewClient(&StaticStorageSetResolver{URL: "http://repository.local"}, authToken, metrics...)
 	client.httpClient = &http.Client{Transport: &handlerTransport{handler: handler}}
+	return client
+}
+
+// NewLocalClientWithStagingEndpoint keeps control requests in process while
+// giving Git subprocesses a reachable, token-scoped staging URL.
+func NewLocalClientWithStagingEndpoint(handler http.Handler, authToken, stagingBaseURL string) *Client {
+	client := NewLocalClient(handler, authToken)
+	client.localStagingBaseURL = stagingBaseURL
 	return client
 }
 
@@ -25,52 +36,187 @@ func (t *handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, errors.New("local repository request escaped its handler")
 	}
 	reader, writer := io.Pipe()
-	ready := make(chan *http.Response, 1)
-	w := &handlerResponseWriter{header: make(http.Header), writer: writer, reader: reader, ready: ready, request: req}
+	ready := make(chan localResponse, 1)
+	done := make(chan struct{})
+	if req.Body == nil {
+		req.Body = http.NoBody
+	}
+	body := &deadlineRequestBody{ReadCloser: req.Body, contextDone: req.Context().Done(), contextErr: req.Context().Err}
+	req.Body = body
+	w := &handlerResponseWriter{header: make(http.Header), writer: writer, reader: reader, ready: ready, request: req, body: body}
 	go func() {
-		defer writer.Close()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err := fmt.Errorf("local repository handler aborted: %v", recovered)
+				_ = writer.CloseWithError(err)
+				select {
+				case ready <- localResponse{err: err}:
+				default:
+				}
+			} else {
+				if err := req.Context().Err(); err != nil {
+					_ = writer.CloseWithError(err)
+				} else {
+					_ = writer.Close()
+				}
+			}
+			_ = w.SetWriteDeadline(time.Time{})
+			close(done)
+		}()
 		t.handler.ServeHTTP(w, req)
 		w.WriteHeader(http.StatusOK)
 	}()
+	go func() {
+		select {
+		case <-req.Context().Done():
+			_ = reader.CloseWithError(req.Context().Err())
+			_ = body.Close()
+		case <-done:
+		}
+	}()
 	select {
-	case response := <-ready:
-		return response, nil
+	case result := <-ready:
+		return result.response, result.err
 	case <-req.Context().Done():
 		_ = reader.CloseWithError(req.Context().Err())
+		_ = body.Close()
 		return nil, req.Context().Err()
 	}
 }
 
+type localResponse struct {
+	response *http.Response
+	err      error
+}
+
 type handlerResponseWriter struct {
-	header  http.Header
-	writer  *io.PipeWriter
-	reader  *io.PipeReader
-	ready   chan *http.Response
-	request *http.Request
-	once    sync.Once
+	header           http.Header
+	writer           *io.PipeWriter
+	reader           *io.PipeReader
+	ready            chan localResponse
+	request          *http.Request
+	body             *deadlineRequestBody
+	once             sync.Once
+	mu               sync.Mutex
+	writeTimer       *time.Timer
+	writeDeadlineErr error
 }
 
 func (w *handlerResponseWriter) Header() http.Header { return w.header }
 
 func (w *handlerResponseWriter) WriteHeader(status int) {
 	w.once.Do(func() {
-		w.ready <- &http.Response{
+		w.ready <- localResponse{response: &http.Response{
 			StatusCode:    status,
 			Header:        w.header.Clone(),
-			Body:          w.reader,
+			Body:          &contextResponseBody{ReadCloser: w.reader, contextErr: w.request.Context().Err},
 			Request:       w.request,
 			ContentLength: -1,
-		}
+		}}
 	})
+}
+
+type contextResponseBody struct {
+	io.ReadCloser
+	contextErr func() error
+}
+
+func (b *contextResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && b.contextErr() != nil {
+		return n, b.contextErr()
+	}
+	return n, err
 }
 
 func (w *handlerResponseWriter) Write(b []byte) (int, error) {
 	w.WriteHeader(http.StatusOK)
-	return w.writer.Write(b)
+	n, err := w.writer.Write(b)
+	if err != nil {
+		w.mu.Lock()
+		deadlineErr := w.writeDeadlineErr
+		w.mu.Unlock()
+		if deadlineErr != nil {
+			return n, deadlineErr
+		}
+	}
+	return n, err
 }
 
 func (w *handlerResponseWriter) Flush() { w.WriteHeader(http.StatusOK) }
 
+func (w *handlerResponseWriter) SetReadDeadline(deadline time.Time) error {
+	w.body.setDeadline(deadline)
+	return nil
+}
+
+func (w *handlerResponseWriter) SetWriteDeadline(deadline time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.writeTimer != nil {
+		w.writeTimer.Stop()
+	}
+	w.writeDeadlineErr = nil
+	if !deadline.IsZero() {
+		w.writeTimer = time.AfterFunc(time.Until(deadline), func() {
+			w.mu.Lock()
+			w.writeDeadlineErr = os.ErrDeadlineExceeded
+			w.mu.Unlock()
+			_ = w.reader.CloseWithError(os.ErrDeadlineExceeded)
+		})
+	}
+	return nil
+}
+
+type deadlineRequestBody struct {
+	io.ReadCloser
+	contextDone <-chan struct{}
+	contextErr  func() error
+	mu          sync.Mutex
+	deadline    time.Time
+}
+
+func (b *deadlineRequestBody) setDeadline(deadline time.Time) {
+	b.mu.Lock()
+	b.deadline = deadline
+	b.mu.Unlock()
+}
+
+func (b *deadlineRequestBody) Read(p []byte) (int, error) {
+	b.mu.Lock()
+	deadline := b.deadline
+	b.mu.Unlock()
+	if len(p) == 0 {
+		return 0, nil
+	}
+	type readResult struct {
+		n   int
+		err error
+	}
+	result := make(chan readResult, 1)
+	scratch := make([]byte, len(p))
+	go func() { n, err := b.ReadCloser.Read(scratch); result <- readResult{n, err} }()
+	var timeout <-chan time.Time
+	if !deadline.IsZero() {
+		timer := time.NewTimer(time.Until(deadline))
+		defer timer.Stop()
+		timeout = timer.C
+	}
+	select {
+	case read := <-result:
+		copy(p, scratch[:read.n])
+		return read.n, read.err
+	case <-timeout:
+		_ = b.ReadCloser.Close()
+		return 0, os.ErrDeadlineExceeded
+	case <-b.contextDone:
+		_ = b.ReadCloser.Close()
+		return 0, b.contextErr()
+	}
+}
+
 var _ http.RoundTripper = (*handlerTransport)(nil)
 var _ http.ResponseWriter = (*handlerResponseWriter)(nil)
 var _ http.Flusher = (*handlerResponseWriter)(nil)
+var _ interface{ SetReadDeadline(time.Time) error } = (*handlerResponseWriter)(nil)
+var _ interface{ SetWriteDeadline(time.Time) error } = (*handlerResponseWriter)(nil)

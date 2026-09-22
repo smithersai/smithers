@@ -2819,18 +2819,18 @@ fn export_git_refs(repo_path: &Path) -> Result<(), JjError> {
         .chain(stats.failed_tags.iter())
         .map(|(symbol, reason)| format!("{symbol}: {reason}"))
         .collect();
-    if !failed.is_empty() {
-        return Err(JjError::Internal(format!(
-            "failed to export git refs: {}",
-            failed.join("; ")
-        )));
-    }
-
     if let Some(bookmark) = default_bookmark {
         persist_default_git_bookmark(repo_path, &bookmark)?;
         let git_head = repo_path.join(".jj/repo/store/git/HEAD");
         std::fs::write(&git_head, format!("ref: refs/heads/{bookmark}\n"))
             .map_err(|err| JjError::Internal(format!("failed to restore git HEAD: {err}")))?;
+    }
+
+    if !failed.is_empty() {
+        return Err(JjError::Internal(format!(
+            "failed to export git refs: {}",
+            failed.join("; ")
+        )));
     }
 
     Ok(())
@@ -2844,7 +2844,24 @@ fn default_git_bookmark(repo_path: &Path) -> Result<Option<String>, JjError> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             let head = std::fs::read_to_string(git_dir.join("HEAD"))
                 .map_err(|err| JjError::Internal(format!("failed to read git HEAD: {err}")))?;
-            head.strip_prefix("ref: refs/heads/").map(str::to_owned)
+            head.strip_prefix("ref: refs/heads/")
+                .map(str::to_owned)
+                .or_else(|| {
+                    // Older repositories have no marker and jj may already have
+                    // detached HEAD. Git enumerates both loose and packed refs.
+                    let output = std::process::Command::new("git")
+                        .arg("--git-dir")
+                        .arg(&git_dir)
+                        .args(["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"])
+                        .output()
+                        .ok()?;
+                    if !output.status.success() {
+                        return None;
+                    }
+                    let names = String::from_utf8(output.stdout).ok()?;
+                    let branches: Vec<&str> = names.lines().collect();
+                    (branches.len() == 1).then(|| branches[0].to_owned())
+                })
         }
         Err(err) => {
             return Err(JjError::Internal(format!(
@@ -3234,24 +3251,22 @@ fn is_jj_store_path(path: &Path) -> bool {
             == Some(".jj")
 }
 
-fn load_workspace_root_for_delete(repo_path: &Path) -> Result<PathBuf, FfiError> {
-    let settings = create_settings(&UserConfig::default());
-    let (workspace, _) = load_repo_at_head(repo_path, &settings)
-        .map_err(|_| FfiError::NotFound("not a jj repository".to_string()))?;
-    Ok(workspace.workspace_root().to_path_buf())
-}
-
 fn resolve_repo_path_for_delete(path: &Path) -> Result<PathBuf, FfiError> {
     if !path.exists() {
         return Err(FfiError::NotFound("repository not found".to_string()));
     }
 
     let repo_path = normalize_repo_path(&path.display().to_string());
-    if !repo_path.join(".jj").join("repo").join("store").is_dir() {
+    let metadata = [".jj", ".jj/repo", ".jj/repo/store", ".jj/repo/store/git"];
+    if metadata.iter().any(|part| {
+        !std::fs::symlink_metadata(repo_path.join(part))
+            .is_ok_and(|item| item.is_dir() && !item.file_type().is_symlink())
+    }) || !repo_path.join(".jj/repo/store/git/HEAD").is_file()
+    {
         return Err(FfiError::NotFound("not a jj repository".to_string()));
     }
 
-    load_workspace_root_for_delete(&repo_path)
+    Ok(repo_path)
 }
 
 fn open_repo(store_path: *const c_char) -> Result<RepoHandle, FfiError> {
@@ -4520,6 +4535,12 @@ mod tests {
         tx.commit("create git-invalid bookmark")
             .block_on()
             .expect("commit bookmark");
+        persist_default_git_bookmark(&repo_path, "main").expect("save default bookmark");
+        std::fs::write(
+            repo_path.join(".jj/repo/store/git/HEAD"),
+            "0000000000000000000000000000000000000000\n",
+        )
+        .expect("simulate detached HEAD");
 
         let err = export_git_refs(&repo_path).expect_err("export must surface the failed ref");
         match err {
@@ -4529,6 +4550,30 @@ mod tests {
             ),
             other => panic!("unexpected error variant: {other:?}"),
         }
+        assert_eq!(
+            std::fs::read_to_string(repo_path.join(".jj/repo/store/git/HEAD"))
+                .expect("read restored HEAD"),
+            "ref: refs/heads/main\n"
+        );
+    }
+
+    #[test]
+    fn legacy_detached_git_head_uses_sole_branch() {
+        let tmp = TempDir::new().expect("tempdir");
+        let path = repo_path(&tmp);
+        auto_init_repo(&path, "main", "demo").expect("initialize repository");
+        let git_dir = path.join(".jj/repo/store/git");
+        std::fs::remove_file(git_dir.join("smithers-default-bookmark"))
+            .expect("remove legacy marker");
+        std::fs::write(
+            git_dir.join("HEAD"),
+            "0000000000000000000000000000000000000000\n",
+        )
+        .expect("detach HEAD");
+        assert_eq!(
+            default_git_bookmark(&path).expect("read default"),
+            Some("main".to_owned())
+        );
     }
 
     #[test]
@@ -5018,6 +5063,19 @@ mod tests {
         assert_eq!(response["error"], "not a jj repository");
         assert!(dir.is_dir());
         assert!(marker.is_file());
+    }
+
+    #[test]
+    fn ffi_delete_repo_removes_unloadable_jj_repository() {
+        let tmp = TempDir::new().expect("tempdir");
+        let path = repo_path(&tmp);
+        init_repo(&path).expect("initialize real repository");
+        std::fs::remove_dir_all(path.join(".jj/repo/op_heads")).expect("corrupt operation heads");
+        let settings = create_settings(&UserConfig::default());
+        assert!(load_repo_at_head(&path, &settings).is_err());
+        let response = unsafe { take_json(smithers_delete_repo(c_path(&path).as_ptr())) };
+        assert_eq!(response["status"], "ok");
+        assert!(!path.exists());
     }
 
     #[test]

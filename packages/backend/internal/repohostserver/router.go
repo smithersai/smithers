@@ -120,6 +120,9 @@ func New(cfg Config) (*Server, error) {
 // NewWithFFI creates a Server with the given FFI client implementation.
 // This is useful for testing where a mock FFIClient can be substituted.
 func NewWithFFI(cfg Config, ffi FFIClient) (*Server, error) {
+	if strings.TrimSpace(cfg.AuthToken) == "" {
+		return nil, fmt.Errorf("repository auth token is required")
+	}
 	metrics, err := newMetricsForServer()
 	if err != nil {
 		return nil, err
@@ -359,10 +362,20 @@ func (s *Server) initRepo(w http.ResponseWriter, r *http.Request) error {
 		}
 		result, err = s.ffi.AutoInitRepo(repoPath, defaultBookmark, repoName)
 	} else {
+		if req.DefaultBookmark != "" {
+			if err := repohost.ValidateBookmarkName(req.DefaultBookmark); err != nil {
+				return badRequest("invalid default bookmark name: " + err.Error())
+			}
+		}
 		result, err = s.ffi.InitRepo(repoPath)
 	}
 	if err != nil {
 		return err
+	}
+	if !req.AutoInit && req.DefaultBookmark != "" {
+		if err := setGitDefaultBookmark(r.Context(), s.config.GitBackendPath(req.Owner, req.Repo), req.DefaultBookmark); err != nil {
+			return internalError("failed to set default bookmark", err)
+		}
 	}
 
 	return writeJSON(w, http.StatusCreated, initRepoResponse{
@@ -793,19 +806,11 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 		err                     error
 		shouldDispatchPushHooks bool
 	)
-	if s.config.PushHookCallbackURL != "" || pathRestricted {
-		beforeRefs, err = listGitRefs(r.Context(), gitDir)
-		if err != nil {
-			if pathRestricted {
-				return internalError("failed to snapshot refs for path-scoped push", err)
-			}
-			if s.logger != nil {
-				s.logger.Warn("failed to snapshot git refs before receive-pack", "owner", owner, "repo", repo, "error", err)
-			}
-		} else {
-			shouldDispatchPushHooks = s.config.PushHookCallbackURL != ""
-		}
+	beforeRefs, err = listGitRefs(r.Context(), gitDir)
+	if err != nil {
+		return internalError("failed to snapshot refs before receive-pack", err)
 	}
+	shouldDispatchPushHooks = s.config.PushHookCallbackURL != ""
 
 	requestBody, err := gitRequestBody(r)
 	if err != nil {
@@ -837,23 +842,23 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	// jj ref import and push hooks so we can still return an HTTP error if the
 	// git subprocess itself fails before any bytes are written to the client.
 	body, err := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", &idleDeadlineBody{rc: rc, r: requestBody})
-	if err != nil {
-		return err
-	}
+	gitErr := err
 
 	// git has applied the ref updates. A path-restricted push is authorized
 	// here, before jj imports anything, so jj never sees a ref it must later
 	// forget. The listing, inspection and any rollback run on a context that
 	// outlives the request: a client that disconnects after git published its
 	// refs cannot leave them standing unverified.
-	var afterRefs map[string]string
+	enforceCtx, cancelEnforce := detachedPushContext(r.Context())
+	defer cancelEnforce()
+	afterRefs, err := listGitRefs(enforceCtx, gitDir)
+	if err != nil {
+		return rollBackUnlistablePush(enforceCtx, gitDir, err, commands, beforeRefs)
+	}
+	if gitErr != nil {
+		return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, gitErr)
+	}
 	if pathRestricted {
-		enforceCtx, cancelEnforce := detachedPushContext(r.Context())
-		defer cancelEnforce()
-		afterRefs, err = listGitRefs(enforceCtx, gitDir)
-		if err != nil {
-			return rollBackUnlistablePush(enforceCtx, gitDir, err, commands, beforeRefs)
-		}
 		if err := enforcePushPathAllowlist(enforceCtx, gitDir, beforeRefs, afterRefs, allowedPaths); err != nil {
 			return err
 		}
@@ -863,7 +868,7 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 		if s.logger != nil {
 			s.logger.Warn("git receive-pack succeeded but jj ref import failed", "owner", owner, "repo", repo, "error", err)
 		}
-		return fmt.Errorf("import git refs after receive-pack: %w", err)
+		return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, fmt.Errorf("import git refs after receive-pack: %w", err))
 	}
 
 	// Pay the export here, while the write lock is already held, rather than
@@ -1809,7 +1814,7 @@ func (s *Server) getWorkingTreeStatus(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	unlock := s.locks.RLock(repoPath)
+	unlock := s.locks.Lock(repoPath)
 	defer unlock()
 
 	result, err := s.ffi.GetWorkingTreeStatus(repoPath)

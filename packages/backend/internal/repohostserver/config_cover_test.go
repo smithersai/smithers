@@ -104,6 +104,7 @@ func TestConfig_Cov_LoadConfigRejectsMissingPushCallbackToken(t *testing.T) {
 	t.Setenv("SMITHERS_REPO_STORAGE_PATH", filepath.Join(t.TempDir(), "repos"))
 	t.Setenv("SMITHERS_REPO_HOST_AUTH_TOKEN", "control-token")
 	t.Setenv("SMITHERS_FFI_LIBRARY_PATH", "/tmp/no-real-load-required")
+	t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_URL", "http://localhost:3000/internal/repo-host/push-events")
 
 	_, err := LoadConfig()
 	if err == nil || !strings.Contains(err.Error(), "SMITHERS_PUSH_HOOK_CALLBACK_TOKEN must be set") {

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 // TestStreamGitRPCLargePackfile verifies that streamGitRPC pipes output directly
@@ -42,6 +44,18 @@ dd if=/dev/zero bs=1024 count=%d 2>/dev/null | tr '\0' 'x'
 		if b != 'x' {
 			t.Fatalf("byte %d corrupted: got 0x%02x, want 0x%02x", i, b, 'x')
 		}
+	}
+}
+
+func TestReceivePackEnforcesGitInputCap(t *testing.T) {
+	installGitStub(t, "#!/bin/sh\nprintf '%s:%s' \"$GIT_CONFIG_KEY_0\" \"$GIT_CONFIG_VALUE_0\"\n")
+	var response bytes.Buffer
+	if err := streamGitRPC(context.Background(), t.TempDir(), "receive-pack", strings.NewReader(""), &response); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("receive.maxInputSize:%d", maxDecompressedGitRequestSize)
+	if response.String() != want {
+		t.Fatalf("git receive cap = %q, want %q", response.String(), want)
 	}
 }
 
@@ -350,6 +364,31 @@ exit 1
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("stalled receive-pack body was not terminated by the idle deadline")
+	}
+}
+
+func TestLocalReceivePackStalledBodyIdleTimeout(t *testing.T) {
+	installGitStub(t, "#!/bin/sh\ncase \"$1\" in receive-pack) cat >/dev/null; exit 0;; --git-dir) exit 0;; esac\nexit 1\n")
+	oldTimeout := gitRPCIdleTimeout
+	gitRPCIdleTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { gitRPCIdleTimeout = oldTimeout })
+	srv := newTestServer(t)
+	if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	client := repohost.NewLocalClient(srv.Handler(), testAuthToken)
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	go func() { _, _ = pw.Write([]byte("partial-push-data")) }()
+	done := make(chan error, 1)
+	go func() { done <- client.ProxyReceivePack(context.Background(), "alice", "demo", pr, io.Discard) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("stalled local push unexpectedly succeeded")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("local receive-pack ignored idle read deadline")
 	}
 }
 

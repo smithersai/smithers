@@ -35,7 +35,7 @@ func LoadConfig() (Config, error) {
 		StoragePath:           envOrDefault("SMITHERS_REPO_STORAGE_PATH", defaultStoragePath),
 		ListenAddr:            envOrDefault("SMITHERS_REPO_HOST_ADDR", defaultListenAddr),
 		AuthToken:             authTokenFromEnv(),
-		PushHookCallbackURL:   envOrDefault("SMITHERS_PUSH_HOOK_CALLBACK_URL", defaultPushHookURL),
+		PushHookCallbackURL:   strings.TrimSpace(os.Getenv("SMITHERS_PUSH_HOOK_CALLBACK_URL")),
 		PushHookCallbackToken: strings.TrimSpace(os.Getenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN")),
 		FFILibraryPath:        strings.TrimSpace(os.Getenv("SMITHERS_FFI_LIBRARY_PATH")),
 	}
@@ -49,8 +49,11 @@ func LoadConfig() (Config, error) {
 	if cfg.AuthToken == "" {
 		return Config{}, errors.New("SMITHERS_REPO_HOST_AUTH_TOKEN must be set")
 	}
-	if cfg.PushHookCallbackToken == "" {
-		return Config{}, errors.New("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN must be set")
+	if cfg.PushHookCallbackURL == "" && cfg.PushHookCallbackToken != "" {
+		cfg.PushHookCallbackURL = defaultPushHookURL
+	}
+	if cfg.PushHookCallbackURL != "" && cfg.PushHookCallbackToken == "" {
+		return Config{}, errors.New("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN must be set when push hooks are enabled")
 	}
 	if cfg.FFILibraryPath == "" {
 		detected, err := detectFFILibraryPath()
@@ -92,7 +95,7 @@ func (c Config) GitBackendPath(owner, repo string) string {
 }
 
 func validatePathComponent(value string) bool {
-	if value == "" || value == "." || value == ".." {
+	if value == "" || strings.HasPrefix(value, ".") {
 		return false
 	}
 	if strings.ContainsAny(value, "/\\") {

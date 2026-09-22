@@ -4,8 +4,11 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/repohostserver"
@@ -26,21 +29,52 @@ func OpenLocal(cfg Config) (*Local, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Local{server: server, client: repohost.NewLocalClient(server.Handler(), cfg.AuthToken)}, nil
+	// Git runs as a subprocess during staged imports. Give only its staging
+	// smart-HTTP route a loopback listener; control operations stay in process.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("listen for staged Git import: %w", err)
+	}
+	handler := server.Handler()
+	staging := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/repos/provision-stages/") ||
+			!(strings.HasSuffix(r.URL.Path, "/git/info/refs") || strings.HasSuffix(r.URL.Path, "/git/git-receive-pack")) {
+			http.NotFound(w, r)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = staging.Serve(listener) }()
+	baseURL := "http://" + listener.Addr().String()
+	return &Local{server: server, staging: staging, client: repohost.NewLocalClientWithStagingEndpoint(handler, cfg.AuthToken, baseURL)}, nil
 }
 
 type Local struct {
-	server *repohostserver.Server
-	client *repohost.Client
+	server  *repohostserver.Server
+	client  *repohost.Client
+	staging *http.Server
 }
 
 func (l *Local) Client() *Client { return l.client }
 
-// Handler provides the same authenticated Git and repository API as the
-// independently hosted service. The app may mount it under its own routing.
-func (l *Local) Handler() http.Handler { return SmartHTTPHandler(l.server.Handler()) }
+// Handler exposes only Git transport. Repository control stays inside Client.
+func (l *Local) Handler() http.Handler {
+	git := SmartHTTPHandler(l.server.Handler())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/git/") {
+			http.NotFound(w, r)
+			return
+		}
+		git.ServeHTTP(w, r)
+	})
+}
 
-func (l *Local) Shutdown(ctx context.Context) error { return l.server.Shutdown(ctx) }
+func (l *Local) Shutdown(ctx context.Context) error {
+	if err := l.staging.Shutdown(ctx); err != nil {
+		return err
+	}
+	return l.server.Shutdown(ctx)
+}
 
 // NewRemoteClient is Plue's adapter to that same engine behind its cluster
 // routing. Placement remains a Plue concern, outside this package.

@@ -13,10 +13,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/repohostffi"
 )
 
-func provisionMock(t *testing.T, withGit bool) *mockFFI {
+func provisionMock(t *testing.T, _ bool) *mockFFI {
 	t.Helper()
 	return &mockFFI{initRepoFn: func(storePath string) (repohostffi.InitRepoResult, error) {
-		if withGit {
+		{
 			gitDir := filepath.Join(storePath, ".jj", "repo", "store", "git")
 			if err := os.MkdirAll(filepath.Dir(gitDir), 0o755); err != nil {
 				return repohostffi.InitRepoResult{}, err
@@ -24,8 +24,6 @@ func provisionMock(t *testing.T, withGit bool) *mockFFI {
 			if output, err := exec.Command("git", "init", "--bare", gitDir).CombinedOutput(); err != nil {
 				return repohostffi.InitRepoResult{}, &testCommandError{err: err, output: string(output)}
 			}
-		} else if err := os.MkdirAll(storePath, 0o755); err != nil {
-			return repohostffi.InitRepoResult{}, err
 		}
 		if err := os.WriteFile(filepath.Join(storePath, "identity"), []byte("token-owned"), 0o600); err != nil {
 			return repohostffi.InitRepoResult{}, err

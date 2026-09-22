@@ -52,11 +52,12 @@ func (s *StaticStorageSetResolver) ResolveStorageSetURL(context.Context, string)
 
 // Client communicates with the repo-host service.
 type Client struct {
-	resolver    StorageSetResolver
-	authToken   string
-	httpClient  *http.Client
-	readTimeout time.Duration
-	metrics     RepoHostOperationDurationObserver
+	resolver            StorageSetResolver
+	authToken           string
+	httpClient          *http.Client
+	readTimeout         time.Duration
+	metrics             RepoHostOperationDurationObserver
+	localStagingBaseURL string
 }
 
 const defaultReadTimeout = 30 * time.Second
@@ -570,6 +571,9 @@ func (c *Client) StagedProvisionGitEndpoint(ctx context.Context, staged StagedPr
 	baseURL, err := c.trustedStagedProvisionURL(ctx, staged)
 	if err != nil {
 		return "", "", err
+	}
+	if c.localStagingBaseURL != "" {
+		baseURL = c.localStagingBaseURL
 	}
 	return baseURL + "/repos/provision-stages/" + url.PathEscape(staged.Token) + "/git",
 		StagedProvisionBearer(c.authToken, staged.Token), nil

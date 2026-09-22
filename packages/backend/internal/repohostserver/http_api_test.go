@@ -57,6 +57,14 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestNewWithFFIRejectsEmptyAuthToken(t *testing.T) {
+	for _, token := range []string{"", "  "} {
+		if _, err := NewWithFFI(Config{AuthToken: token}, &mockFFI{}); err == nil {
+			t.Fatalf("accepted empty auth token %q", token)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Unauthorized requests
 // ---------------------------------------------------------------------------

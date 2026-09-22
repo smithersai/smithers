@@ -40,6 +40,13 @@ func TestRepositoryLifecycle(t *testing.T) {
 				}
 				defer local.Shutdown(context.Background())
 				handler, client = local.Handler(), local.Client()
+				for _, path := range []string{"/health", "/metrics", "/repos/init", "/repos/provision-stages/token/publish"} {
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+					if response.Code != http.StatusNotFound {
+						t.Fatalf("local handler exposed %s: %d", path, response.Code)
+					}
+				}
 			} else {
 				service, err := NewService(cfg)
 				if err != nil {
@@ -173,10 +180,65 @@ func TestRepositoryLifecycle(t *testing.T) {
 			}
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusRequestEntityTooLarge {
+			if mode == "local" && resp.StatusCode != http.StatusNotFound ||
+				mode == "service" && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusRequestEntityTooLarge {
 				t.Fatalf("oversized JSON: %d", resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestLocalStagedGitImportUsesReachableLoopback(t *testing.T) {
+	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Skip("set SMITHERS_FFI_LIBRARY_PATH to run the repository integration suite")
+	}
+	local, err := OpenLocal(Config{StoragePath: t.TempDir(), AuthToken: "test-repo-token", FFILibraryPath: ffi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer local.Shutdown(context.Background())
+	ctx := context.Background()
+	staged, err := local.Client().PrepareStagedImport(ctx, "local", "alice", "imported", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := local.Client().ExecuteStagedProvision(ctx, staged); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, bearer, err := local.Client().StagedProvisionGitEndpoint(ctx, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(endpoint, "http://127.0.0.1:") {
+		t.Fatalf("staging endpoint = %q", endpoint)
+	}
+	work := t.TempDir()
+	git(t, work, "", "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("imported\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, work, "", "add", ".")
+	git(t, work, "", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "Import")
+	git(t, work, bearer, "push", endpoint, "main")
+	if err := local.Client().PublishStagedProvision(ctx, staged); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.Client().FinalizeStagedProvision(ctx, staged); err != nil {
+		t.Fatal(err)
+	}
+	bookmarks, _, err := local.Client().ListBookmarks(ctx, "alice", "imported", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, bookmark := range bookmarks {
+		if bookmark.Name == "main" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("main bookmark missing after import: %+v", bookmarks)
 	}
 }
 

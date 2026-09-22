@@ -202,6 +202,9 @@ func (s *Server) stageProvisionRepo(w http.ResponseWriter, r *http.Request) erro
 			_, err = s.ffi.AutoInitRepo(stagedPath, metadata.DefaultBookmark, metadata.Repo)
 		} else {
 			_, err = s.ffi.InitRepo(stagedPath)
+			if err == nil {
+				err = setGitDefaultBookmark(r.Context(), filepath.Join(stagedPath, ".jj", "repo", "store", "git"), metadata.DefaultBookmark)
+			}
 		}
 	case provisionTypeFork:
 		sourcePath := s.config.RepoPath(metadata.SrcOwner, metadata.SrcRepo)
@@ -516,18 +519,31 @@ func (s *Server) stagedProvisionReceivePack(w http.ResponseWriter, r *http.Reque
 		return err
 	}
 	defer release()
+	beforeRefs, err := listGitRefs(r.Context(), gitDir)
+	if err != nil {
+		return internalError("failed to snapshot staged refs before receive-pack", err)
+	}
 	requestBody, err := gitRequestBody(r)
 	if err != nil {
 		return err
 	}
+	commands, peeked, _ := repohost.PeekReceivePackCommands(requestBody)
+	requestBody = readCloserWithBody(peeked, requestBody)
 	rc := http.NewResponseController(w)
 	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
-	body, err := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", &idleDeadlineBody{rc: rc, r: requestBody})
+	body, gitErr := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", &idleDeadlineBody{rc: rc, r: requestBody})
+	reconcileCtx, cancelReconcile := detachedPushContext(r.Context())
+	defer cancelReconcile()
+	afterRefs, err := listGitRefs(reconcileCtx, gitDir)
 	if err != nil {
-		return err
+		return rollBackUnlistablePush(reconcileCtx, gitDir, err, commands, beforeRefs)
+	}
+	if gitErr != nil {
+		return rollBackPublishedPush(reconcileCtx, gitDir, beforeRefs, afterRefs, gitErr)
 	}
 	if err := s.ffi.ImportGitRefs(repoPath); err != nil {
-		return fmt.Errorf("import staged git refs after receive-pack: %w", err)
+		return rollBackPublishedPush(reconcileCtx, gitDir, beforeRefs, afterRefs,
+			fmt.Errorf("import staged git refs after receive-pack: %w", err))
 	}
 	if err := syncProvisionTree(repoPath); err != nil {
 		return internalError("failed to persist staged git push", err)
@@ -592,10 +608,8 @@ func validateStageProvisionRequest(req stageProvisionRequest) (stagedProvisionMe
 		if metadata.DefaultBookmark == "" {
 			metadata.DefaultBookmark = "main"
 		}
-		if metadata.AutoInit {
-			if err := repohost.ValidateBookmarkName(metadata.DefaultBookmark); err != nil {
-				return stagedProvisionMetadata{}, badRequest("invalid default bookmark name: " + err.Error())
-			}
+		if err := repohost.ValidateBookmarkName(metadata.DefaultBookmark); err != nil {
+			return stagedProvisionMetadata{}, badRequest("invalid default bookmark name: " + err.Error())
 		}
 	case provisionTypeFork:
 		if err := validateOwnerRepo(metadata.SrcOwner, metadata.SrcRepo); err != nil {

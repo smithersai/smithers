@@ -54,7 +54,15 @@ func (d *idleDeadlineWriter) Write(p []byte) (int, error) {
 // using io.Copy with a 32 KB buffer so large packfiles are never accumulated in
 // memory. The function returns once the git subprocess has exited.
 func streamGitRPC(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer) error {
-	cmd := streamGitCommandContext(ctx, "git", command, "--stateless-rpc", gitDir)
+	args := []string{command, "--stateless-rpc", gitDir}
+	cmd := streamGitCommandContext(ctx, "git", args...)
+	if command == "receive-pack" {
+		// Git enforces this before publishing refs, including identity-encoded
+		// streams that bypass the gzip decoder's cap. Environment configuration
+		// keeps the subprocess arguments free of protocol-specific overrides.
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=receive.maxInputSize",
+			fmt.Sprintf("GIT_CONFIG_VALUE_0=%d", maxDecompressedGitRequestSize))
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

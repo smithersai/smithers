@@ -182,7 +182,7 @@ func TestReceivePackPathLaneCancelledAfterGitPublishesRestoresRefs(t *testing.T)
 	assert.Empty(t, f.importedRefs(), "jj must never see the unauthorized ref")
 }
 
-func TestReceivePackPathLaneImportFailureKeepsAuthorizedRefs(t *testing.T) {
+func TestReceivePackPathLaneImportFailureRestoresRefs(t *testing.T) {
 	f := newLaneHTTPFixture(t, assertError("import failed"))
 	tip := f.commit("in lane", func(dir string) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "a.go"), []byte("package a // edited\n"), 0o644))
@@ -190,6 +190,6 @@ func TestReceivePackPathLaneImportFailureKeepsAuthorizedRefs(t *testing.T) {
 
 	rec := f.push(context.Background(), f.pushBody(f.base, tip, "refs/heads/main"), laneSrcOnly)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
-	assert.Equal(t, tip, f.repo.refs()["refs/heads/main"], "an authorized push stays published when only the jj import fails")
+	assert.Equal(t, f.base, f.repo.refs()["refs/heads/main"], "Git refs roll back when jj cannot import")
 	require.Len(t, f.importedRefs(), 1)
 }
