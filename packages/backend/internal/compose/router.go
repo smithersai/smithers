@@ -337,6 +337,7 @@ func buildRouter(
 			}
 			if runnerHandler != nil {
 				r.Get("/tasks/{task-id}/env", runnerHandler.GetTaskEnvironment)
+				r.Get("/tasks/{task-id}/status", runnerHandler.GetTaskStatus)
 				r.Post("/tasks/{task-id}/stream", runnerHandler.StreamEvents)
 				r.Post("/tasks/{task-id}/complete", runnerHandler.CompleteTask)
 			}

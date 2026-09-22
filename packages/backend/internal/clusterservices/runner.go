@@ -72,6 +72,32 @@ type RunnerService interface {
 	CompleteTask(ctx context.Context, input RunnerCompleteTaskInput) error
 }
 
+// GetTaskStatus lets the runner stop a command promptly after cancellation.
+func (s *runnerService) GetTaskStatus(ctx context.Context, taskID, runnerID int64) (string, error) {
+	if taskID <= 0 || runnerID <= 0 {
+		return "", pkgerrors.BadRequest("task and runner ids must be positive")
+	}
+	if err := requireRunnerTaskCredential(ctx, taskID, runnerID); err != nil {
+		return "", err
+	}
+	reader, ok := s.queries.(interface {
+		GetRunnerWorkflowTaskStatus(context.Context, clusterdb.GetRunnerWorkflowTaskStatusParams) (string, error)
+	})
+	if !ok {
+		return "", pkgerrors.Internal("runner task status store unavailable")
+	}
+	status, err := reader.GetRunnerWorkflowTaskStatus(ctx, clusterdb.GetRunnerWorkflowTaskStatusParams{
+		TaskID: taskID, RunnerID: pgtype.Int8{Int64: runnerID, Valid: true},
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return "", pkgerrors.NotFound("task not found")
+		}
+		return "", pkgerrors.Internal("failed to fetch runner task status")
+	}
+	return status, nil
+}
+
 type RunnerCommitStatusWriter interface {
 	UpdateCommitStatusForWorkflowRun(ctx context.Context, workflowRunID int64, status string, description string, targetURL string) (db.CommitStatus, error)
 }

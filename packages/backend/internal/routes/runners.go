@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"net/http"
 	"strconv"
 
@@ -23,6 +23,34 @@ type RunnerRouteService interface {
 
 type RunnerHandler struct {
 	Service RunnerRouteService
+}
+
+type runnerTaskStatusReader interface {
+	GetTaskStatus(context.Context, int64, int64) (string, error)
+}
+
+func (h *RunnerHandler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
+	reader, ok := h.Service.(runnerTaskStatusReader)
+	if !ok {
+		pkgerrors.WriteError(w, pkgerrors.Internal("runner task status unavailable"))
+		return
+	}
+	taskID, err := parseTaskID(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	runnerID, err := strconv.ParseInt(r.URL.Query().Get("runner_id"), 10, 64)
+	if err != nil || runnerID <= 0 {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("runner_id must be positive"))
+		return
+	}
+	status, err := reader.GetTaskStatus(r.Context(), taskID, runnerID)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 type streamEventsRequest struct {

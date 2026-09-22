@@ -48,3 +48,16 @@ func (p *APIPool) CompleteTask(ctx context.Context, taskID int64, runnerID int64
 
 	return p.client.CompleteTask(ctx, taskID, runnerID, status, errorMessage)
 }
+
+func (p *APIPool) GetTaskStatus(ctx context.Context, taskID, runnerID int64) (string, error) {
+	if p == nil || p.client == nil {
+		return "", fmt.Errorf("runner API client unavailable")
+	}
+	reader, ok := p.client.(interface {
+		GetTaskStatus(context.Context, int64, int64) (string, error)
+	})
+	if !ok {
+		return "", fmt.Errorf("runner task status client unavailable")
+	}
+	return reader.GetTaskStatus(ctx, taskID, runnerID)
+}

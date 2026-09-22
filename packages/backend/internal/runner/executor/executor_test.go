@@ -485,8 +485,36 @@ func TestExecutorPollAndExecute_ClaimError(t *testing.T) {
 		},
 	}
 	e := NewExecutor(pool, 1, Config{PollInterval: 10 * time.Millisecond, TaskTimeout: 1 * time.Second})
-	e.pollAndExecute(context.Background())
+	err := e.pollAndExecute(context.Background())
+	assert.ErrorIs(t, err, errClaimTask)
 	assert.Equal(t, 0, pool.getCompleteCount())
+}
+
+func TestExecutor_ClaimFailureBudgetResetsAfterSuccessfulPoll(t *testing.T) {
+	var attempts atomic.Int32
+	pool := &mockPool{claimTaskFn: func(context.Context, int64) (*db.WorkflowTask, error) {
+		n := attempts.Add(1)
+		if n == 3 {
+			return nil, nil
+		}
+		return nil, errors.New("claim API unavailable")
+	}}
+	fatal := make(chan error, 1)
+	e := NewExecutor(pool, 1, Config{
+		PollInterval: time.Millisecond,
+		OnFatalError: func(err error) { fatal <- err },
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	e.Start(ctx)
+	select {
+	case err := <-fatal:
+		assert.ErrorIs(t, err, errClaimTask)
+		assert.EqualValues(t, 6, attempts.Load(), "successful claim resets the failure budget")
+	case <-ctx.Done():
+		t.Fatal("runner kept polling after repeated claim failures")
+	}
+	e.Wait()
 }
 
 func TestExecutorPollAndExecute_ExecutesClaimedTask(t *testing.T) {

@@ -100,6 +100,21 @@ func TestClient_ClaimTask(t *testing.T) {
 	})
 }
 
+func TestClient_GetTaskStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/internal/tasks/9/status", r.URL.Path)
+		assert.Equal(t, "7", r.URL.Query().Get("runner_id"))
+		assert.Equal(t, "Bearer token", r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"status":"cancelled"}`))
+	}))
+	defer server.Close()
+	client, err := New(Config{BaseURL: server.URL, Token: "token"})
+	require.NoError(t, err)
+	status, err := client.GetTaskStatus(context.Background(), 9, 7)
+	require.NoError(t, err)
+	assert.Equal(t, "cancelled", status)
+}
+
 func TestClient_Heartbeat(t *testing.T) {
 	t.Parallel()
 

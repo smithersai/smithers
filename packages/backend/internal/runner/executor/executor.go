@@ -16,6 +16,11 @@ import (
 
 const maxTaskExecutionAttempts int32 = 3
 
+// A runner that can heartbeat but cannot claim work must not keep reporting
+// healthy indefinitely. Give transient API/database failures room to recover.
+const maxConsecutiveClaimFailures = 3
+const defaultTaskStatusPollInterval = 2 * time.Second
+
 // defaultTaskCleanupTimeout is the fallback ceiling on post-task isolation.
 // It is a safety net, not the expected duration: quarantine renames state
 // aside in milliseconds and unlinks it in the background. The old 30s ceiling
@@ -32,11 +37,12 @@ type TaskPool interface {
 
 // Config configures the executor behavior
 type Config struct {
-	PollInterval        time.Duration
-	TaskTimeout         time.Duration
-	CompleteTaskTimeout time.Duration
-	TaskCleanupTimeout  time.Duration
-	CommandFn           func(ctx context.Context, task db.WorkflowTask) *exec.Cmd
+	PollInterval           time.Duration
+	TaskTimeout            time.Duration
+	TaskStatusPollInterval time.Duration
+	CompleteTaskTimeout    time.Duration
+	TaskCleanupTimeout     time.Duration
+	CommandFn              func(ctx context.Context, task db.WorkflowTask) *exec.Cmd
 	// CleanupTask establishes the isolation boundary between sequential tasks.
 	// It is invoked after the command exits but before the trusted runner settles
 	// the task and releases its busy lease. The executor will not poll again
@@ -98,6 +104,7 @@ func (e *Executor) loop(ctx context.Context) {
 
 	ticker := time.NewTicker(e.config.PollInterval)
 	defer ticker.Stop()
+	claimFailures := 0
 
 	for {
 		select {
@@ -110,14 +117,24 @@ func (e *Executor) loop(ctx context.Context) {
 				e.config.OnPoll()
 			}
 			if err := e.pollAndExecute(ctx); err != nil {
+				if errors.Is(err, errClaimTask) && ctx.Err() == nil {
+					claimFailures++
+					if claimFailures < maxConsecutiveClaimFailures {
+						slog.Warn("runner task claim failed", "runner_id", e.runnerID, "consecutive_failures", claimFailures, "error", err)
+						continue
+					}
+				}
 				if e.config.OnFatalError != nil {
 					e.config.OnFatalError(err)
 				}
 				return
 			}
+			claimFailures = 0
 		}
 	}
 }
+
+var errClaimTask = errors.New("claim runner task")
 
 // pollAndExecute claims and executes a single task
 func (e *Executor) pollAndExecute(ctx context.Context) error {
@@ -133,7 +150,10 @@ func (e *Executor) pollAndExecute(ctx context.Context) error {
 
 	task, err := e.pool.ClaimTask(ctx, e.runnerID)
 	if err != nil {
-		return nil
+		if ctx.Err() != nil {
+			return nil
+		}
+		return fmt.Errorf("%w: %w", errClaimTask, err)
 	}
 	if task == nil {
 		return nil
@@ -160,6 +180,7 @@ func (e *Executor) executeTask(ctx context.Context, task db.WorkflowTask) error 
 	}
 
 	var err error
+	var taskStatusErr error
 	var cmd *exec.Cmd
 	if task.Attempt > maxTaskExecutionAttempts {
 		err = fmt.Errorf("task retry limit exceeded after %d execution attempts", maxTaskExecutionAttempts)
@@ -176,7 +197,17 @@ func (e *Executor) executeTask(ctx context.Context, task db.WorkflowTask) error 
 			cmd.Stderr = e.config.Stderr
 			err = cmd.Start()
 			if err == nil {
+				watchDone := make(chan error, 1)
+				if reader, ok := e.pool.(interface {
+					GetTaskStatus(context.Context, int64, int64) (string, error)
+				}); ok {
+					go e.watchTaskStatus(taskCtx, task.ID, reader, cancel, watchDone)
+				} else {
+					watchDone <- nil
+				}
 				err = cmd.Wait()
+				cancel()
+				taskStatusErr = <-watchDone
 			}
 		}
 	}
@@ -217,6 +248,10 @@ func (e *Executor) executeTask(ctx context.Context, task db.WorkflowTask) error 
 			return finishErr
 		}
 	}
+	if taskStatusErr != nil {
+		finishErr = taskStatusErr
+		return taskStatusErr // leave task running for TerminateRunner to requeue
+	}
 
 	// Issue #60: if the parent context was cancelled (runner internal shutdown /
 	// ctx.Done in cmd/runner/main.go calls execCancel()), do NOT mark the task
@@ -255,6 +290,54 @@ func (e *Executor) executeTask(ctx context.Context, task db.WorkflowTask) error 
 	}
 
 	return nil
+}
+
+func (e *Executor) watchTaskStatus(
+	ctx context.Context,
+	taskID int64,
+	reader interface {
+		GetTaskStatus(context.Context, int64, int64) (string, error)
+	},
+	cancel context.CancelFunc,
+	done chan<- error,
+) {
+	interval := e.config.TaskStatusPollInterval
+	if interval <= 0 {
+		interval = defaultTaskStatusPollInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	failures := 0
+	for {
+		select {
+		case <-ctx.Done():
+			done <- nil
+			return
+		case <-ticker.C:
+			status, err := reader.GetTaskStatus(ctx, taskID, e.runnerID)
+			if ctx.Err() != nil {
+				done <- nil
+				return
+			}
+			if err != nil {
+				failures++
+				if failures >= maxConsecutiveClaimFailures {
+					cancel()
+					done <- fmt.Errorf("runner task status polling failed %d times: %w", failures, err)
+					return
+				}
+				slog.Warn("runner task status poll failed", "task_id", taskID, "runner_id", e.runnerID, "failures", failures, "error", err)
+				continue
+			}
+			failures = 0
+			if status != "running" {
+				slog.Info("runner task stopped after terminal status", "task_id", taskID, "runner_id", e.runnerID, "status", status)
+				cancel()
+				done <- nil
+				return
+			}
+		}
+	}
 }
 
 func truncateTaskDiagnostic(message string, maxBytes int) string {

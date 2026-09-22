@@ -14,9 +14,8 @@ import (
 )
 
 const claimRunnerWorkflowTask = `-- name: ClaimRunnerWorkflowTask :one
-
 WITH runner_candidate AS MATERIALIZED (
-    SELECT rp.id
+    SELECT rp.id, pg_try_advisory_xact_lock(534, 1) AS admission_lock
     FROM runner_pool rp
     WHERE rp.id = $1::bigint
       AND rp.status = 'idle'
@@ -27,14 +26,23 @@ task_candidate AS MATERIALIZED (
     FROM workflow_tasks wt
     JOIN workflow_runs wr ON wr.id = wt.workflow_run_id
     JOIN workflow_steps ws ON ws.id = wt.workflow_step_id
+    JOIN repositories repo ON repo.id = wt.repository_id
     CROSS JOIN runner_candidate rc
     WHERE wt.status = 'pending'
       AND wt.available_at <= NOW()
       AND wr.status IN ('queued', 'running')
       AND wr.execution_plane = 'runner'
+      AND wr.cancel_reason <> 'runner_queue_timeout'
       AND ws.status IN ('queued', 'running')
+      -- The VOLATILE function takes fresh snapshots after the advisory gate is
+      -- acquired; inline COUNTs would see a stale statement-start snapshot.
+      AND runner_claim_admissible(wt.repository_id,
+          wr.trigger_event IN ('manual_dispatch', 'workflow_dispatch'),
+          rc.admission_lock)
     ORDER BY wt.priority DESC, wt.created_at ASC, wt.id ASC
-    FOR UPDATE OF wt, wr, ws SKIP LOCKED
+    -- Serializes claims from separate runs of the same repository, so the
+    -- active-task cap cannot be exceeded by simultaneous runner polls.
+    FOR UPDATE OF wt, wr, ws, repo SKIP LOCKED
     LIMIT 1
 ),
 claimed_task AS (
@@ -97,7 +105,6 @@ type ClaimRunnerWorkflowTaskRow struct {
 	UpdatedAt      time.Time          `json:"updated_at"`
 }
 
-// Private cluster queries kept separate from the product graph.
 // Production runner claim is deliberately one PostgreSQL statement. The
 // legacy ClaimIdleRunner -> ClaimPendingTask -> MarkWorkflowTaskRunning flow
 // can leave a busy runner and a running task behind when the later step update
@@ -149,6 +156,98 @@ type ClearTerminalWorkflowTaskRunnerOwnershipParams struct {
 // that runner has moved on to another task.
 func (q *Queries) ClearTerminalWorkflowTaskRunnerOwnership(ctx context.Context, arg ClearTerminalWorkflowTaskRunnerOwnershipParams) (int64, error) {
 	result, err := q.db.Exec(ctx, clearTerminalWorkflowTaskRunnerOwnership, arg.TaskID, arg.RunnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getRunnerWorkflowTaskStatus = `-- name: GetRunnerWorkflowTaskStatus :one
+SELECT status
+FROM workflow_tasks
+WHERE id = $1
+  AND runner_id = $2
+`
+
+type GetRunnerWorkflowTaskStatusParams struct {
+	TaskID   int64       `json:"task_id"`
+	RunnerID pgtype.Int8 `json:"runner_id"`
+}
+
+func (q *Queries) GetRunnerWorkflowTaskStatus(ctx context.Context, arg GetRunnerWorkflowTaskStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRunnerWorkflowTaskStatus, arg.TaskID, arg.RunnerID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const listExpiredQueuedRunnerWorkflowRuns = `-- name: ListExpiredQueuedRunnerWorkflowRuns :many
+
+SELECT wr.id, wr.repository_id
+FROM workflow_runs wr
+WHERE wr.execution_plane = 'runner'
+  AND wr.status IN ('queued', 'running')
+  AND EXISTS (
+      SELECT 1 FROM workflow_tasks wt
+      WHERE wt.workflow_run_id = wr.id
+        AND wt.status = 'pending'
+        AND wt.available_at <= NOW() - INTERVAL '120 seconds'
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM workflow_tasks wt
+      WHERE wt.workflow_run_id = wr.id
+        AND wt.status IN ('assigned', 'running')
+  )
+ORDER BY wr.created_at, wr.id
+LIMIT $1
+`
+
+type ListExpiredQueuedRunnerWorkflowRunsRow struct {
+	ID           int64 `json:"id"`
+	RepositoryID int64 `json:"repository_id"`
+}
+
+// Private cluster queries kept separate from the product graph.
+// A run with no task currently executing must not wait indefinitely for a
+// runner. A separate worker calls the normal cancellation path so credentials,
+// commit status, and check run are settled together. Limit each sweep.
+func (q *Queries) ListExpiredQueuedRunnerWorkflowRuns(ctx context.Context, limitCount int32) ([]ListExpiredQueuedRunnerWorkflowRunsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredQueuedRunnerWorkflowRuns, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredQueuedRunnerWorkflowRunsRow{}
+	for rows.Next() {
+		var i ListExpiredQueuedRunnerWorkflowRunsRow
+		if err := rows.Scan(&i.ID, &i.RepositoryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markQueuedRunnerWorkflowRunTimeout = `-- name: MarkQueuedRunnerWorkflowRunTimeout :execrows
+UPDATE workflow_runs wr
+SET cancel_reason = 'runner_queue_timeout', updated_at = NOW()
+WHERE wr.id = $1
+  AND wr.repository_id = $2
+  AND runner_queue_timeout_admissible(wr.id, wr.repository_id)
+`
+
+type MarkQueuedRunnerWorkflowRunTimeoutParams struct {
+	RunID        int64 `json:"run_id"`
+	RepositoryID int64 `json:"repository_id"`
+}
+
+// Lock and recheck with a fresh task snapshot after any competing claim.
+// The reason fences later claims until the normal cancellation path finishes.
+func (q *Queries) MarkQueuedRunnerWorkflowRunTimeout(ctx context.Context, arg MarkQueuedRunnerWorkflowRunTimeoutParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markQueuedRunnerWorkflowRunTimeout, arg.RunID, arg.RepositoryID)
 	if err != nil {
 		return 0, err
 	}

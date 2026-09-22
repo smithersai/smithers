@@ -886,6 +886,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithLandingWorkerAutoLandProcessor(landingService),
 	)
 	cronSchedulerWorker := services.NewCronSchedulerWorker(queries, workflowRunService)
+	runnerQueueTimeoutWorker := clusterservices.NewRunnerQueueTimeoutWorker(hostedQueries, workflowRunService)
 	workflowLogBudgetBackfiller := services.NewWorkflowLogBudgetBackfiller(queries)
 	workflowSandboxSchedulerWorker := services.NewWorkflowSandboxSchedulerWorker(
 		hostedQueries,
@@ -1495,6 +1496,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if options.Role.workers() && cfg.FeatureFlags.Workflows {
 		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })
+		launchWorker(func() { runnerQueueTimeoutWorker.Start(workerCtx) })
 		launchWorker(func() { gitHubWebhookEventWorker.Start(workerCtx) })
 		launchWorker(func() { repositoryJobService.Start(workerCtx) })
 		if options.Role.clusterWorkers() {

@@ -135,6 +135,22 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, runnerID int64, statu
 	return c.expectNoContent(ctx, http.MethodPost, fmt.Sprintf("/internal/tasks/%d/complete", taskID), body)
 }
 
+func (c *Client) GetTaskStatus(ctx context.Context, taskID, runnerID int64) (string, error) {
+	var response struct {
+		Status string `json:"status"`
+	}
+	err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/internal/tasks/%d/status?runner_id=%d", taskID, runnerID), nil, http.StatusOK, &response)
+	if err != nil {
+		return "", err
+	}
+	switch response.Status {
+	case "pending", "assigned", "running", "done", "failed", "cancelled":
+		return response.Status, nil
+	default:
+		return "", fmt.Errorf("invalid runner task status %q", response.Status)
+	}
+}
+
 func (c *Client) expectNoContent(ctx context.Context, method, path string, body any) error {
 	resp, statusCode, err := c.do(ctx, method, path, body)
 	if err != nil {
