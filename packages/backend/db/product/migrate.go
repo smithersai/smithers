@@ -35,6 +35,7 @@ type migrationSpec struct {
 var migrationRegistry = []migrationSpec{
 	{BaselineVersion, "migrations/0001_product_baseline.sql"},
 	{2, "migrations/0002_import_publication.sql"},
+	{3, "migrations/0003_repository_creation_jobs.sql"},
 }
 
 type migration struct {

@@ -168,6 +168,8 @@ type RepoService struct {
 	provisioning        *postgresRepositoryProvisioningStore
 	provisioner         repoHostProvisioningClient
 	provisioningEnabled bool
+	productOnly         bool
+	productProvisioning *productRepositoryProvisioner
 }
 
 // EnableDurableProvisioning contracts request-side creates after every legacy
@@ -419,7 +421,7 @@ func NewRepoService(q RepoQuerier, rh RepoHostClient, activeStorageSet string, o
 // product schema. Placement and cluster operation journals are supplied only
 // by private deployment adapters, never inferred from a product row.
 func NewProductRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, pool *pgxpool.Pool, opts ...RepoServiceOption) *RepoService {
-	s := &RepoService{queries: q, repoHost: rh}
+	s := &RepoService{queries: q, repoHost: rh, productOnly: true}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(s)
@@ -427,6 +429,9 @@ func NewProductRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, pool *pgxpo
 	}
 	if pool != nil {
 		s.ownershipTx = &pgxRepoOwnershipTxManager{pool: pool}
+		if provisioner, ok := rh.(repoHostProvisioningClient); ok {
+			s.productProvisioning = &productRepositoryProvisioner{pool: pool, host: provisioner}
+		}
 	}
 	return s
 }
@@ -807,6 +812,19 @@ func (s *RepoService) CreateRepo(
 		IsPublic:        isPublic,
 		DefaultBookmark: defaultBookmark,
 	}
+	if s.productOnly {
+		repository, err := s.createProductRepository(ctx, productCreationSpec{
+			OperationType: repositoryProvisionInit, ActorID: user.ID,
+			UserID: pgtype.Int8{Int64: user.ID, Valid: true}, OwnerName: user.Username,
+			Name: name, LowerName: createParams.LowerName, Description: description,
+			IsPublic: isPublic, DefaultBookmark: defaultBookmark, AutoInit: autoInit,
+		}, BillingOwnerTypeUser, user.ID)
+		if err != nil {
+			return db.Repository{}, err
+		}
+		_ = s.dispatchRepositoryEvent(ctx, repository, user, webhooks.EventTypeCreate, "created")
+		return repository, nil
+	}
 	if s.provisioning != nil && s.provisioner != nil {
 		if !s.provisioningEnabled {
 			return db.Repository{}, repositoryProvisioningRolloutError()
@@ -953,6 +971,19 @@ func (s *RepoService) CreateOrgRepo(
 		Description:     description,
 		IsPublic:        isPublic,
 		DefaultBookmark: defaultBookmark,
+	}
+	if s.productOnly {
+		repository, err := s.createProductRepository(ctx, productCreationSpec{
+			OperationType: repositoryProvisionInit, ActorID: actor.ID,
+			OrgID: pgtype.Int8{Int64: org.ID, Valid: true}, OwnerName: org.Name,
+			Name: name, LowerName: createParams.LowerName, Description: description,
+			IsPublic: isPublic, DefaultBookmark: defaultBookmark, AutoInit: autoInit,
+		}, BillingOwnerTypeOrg, org.ID)
+		if err != nil {
+			return db.Repository{}, err
+		}
+		_ = s.dispatchRepositoryEvent(ctx, repository, actor, webhooks.EventTypeCreate, "created")
+		return repository, nil
 	}
 	if s.provisioning != nil && s.provisioner != nil {
 		if !s.provisioningEnabled {
@@ -1122,6 +1153,21 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 		IsPublic:        sourceRepo.IsPublic,
 		DefaultBookmark: sourceRepo.DefaultBookmark,
 		ForkID:          pgtype.Int8{Int64: sourceRepo.ID, Valid: true},
+	}
+	if s.productOnly {
+		repository, err := s.createProductRepository(ctx, productCreationSpec{
+			OperationType: repositoryProvisionFork, ActorID: actor.ID,
+			UserID: pgtype.Int8{Int64: actor.ID, Valid: true}, OwnerName: actor.Username,
+			Name: forkName, LowerName: createParams.LowerName, Description: forkDescription,
+			IsPublic: sourceRepo.IsPublic, DefaultBookmark: sourceRepo.DefaultBookmark,
+			SourceRepositoryID: pgtype.Int8{Int64: sourceRepo.ID, Valid: true},
+			SourceOwner:        sourceOwner, SourceRepo: sourceRepo.Name,
+		}, BillingOwnerTypeUser, actor.ID)
+		if err != nil {
+			return ForkOutcome{}, err
+		}
+		_ = s.dispatchRepositoryEvent(ctx, repository, actor, webhooks.EventTypeCreate, "created")
+		return ForkOutcome{Repository: repository, Created: true}, nil
 	}
 	if s.provisioning != nil && s.provisioner != nil {
 		if !s.provisioningEnabled {
