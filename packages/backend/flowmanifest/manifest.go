@@ -48,17 +48,26 @@ type rawHost struct {
 }
 
 // Load rejects missing, altered, or incomplete host bundles before a worker
-// can accept Flow launches. Launch adapters verify the digest again at use.
+// can accept Flow launches. The packaged hosts verify their digest at launch.
 func Load(path string) (Registry, error) {
 	if !filepath.IsAbs(path) {
 		return Registry{}, errors.New("Flow host manifest path must be absolute")
+	}
+	// Reject special files before opening: opening a FIFO can block forever
+	// before the descriptor-level validation below gets a chance to run.
+	info, err := os.Stat(path)
+	if err != nil {
+		return Registry{}, fmt.Errorf("stat Flow host manifest: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxManifestBytes {
+		return Registry{}, errors.New("Flow host manifest must be a regular file under 1 MiB")
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return Registry{}, fmt.Errorf("open Flow host manifest: %w", err)
 	}
 	defer file.Close()
-	info, err := file.Stat()
+	info, err = file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxManifestBytes {
 		return Registry{}, errors.New("Flow host manifest must be a regular file under 1 MiB")
 	}

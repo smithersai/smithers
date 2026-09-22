@@ -89,3 +89,78 @@ func TestLoadRejectsMissingFlow(t *testing.T) {
 		t.Fatalf("incomplete flow host accepted: %v", err)
 	}
 }
+
+func TestLoadManifestValidation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func([]byte) []byte
+	}{
+		{"empty", func([]byte) []byte { return nil }},
+		{"null", func([]byte) []byte { return []byte("null") }},
+		{"unsupported_version", func(data []byte) []byte {
+			return []byte(strings.Replace(string(data), `"version":1`, `"version":2`, 1))
+		}},
+		{"unknown_field", func(data []byte) []byte {
+			return append([]byte(`{"unexpected":true,`), data[1:]...)
+		}},
+		{"unknown_host_field", func(data []byte) []byte {
+			return []byte(strings.Replace(string(data), `"coding":{`, `"coding":{"unexpected":true,`, 1))
+		}},
+		{"unexpected_family", func(data []byte) []byte {
+			return []byte(strings.Replace(string(data), `"coding":`, `"unknown":`, 1))
+		}},
+		{"trailing_json", func(data []byte) []byte { return append(data, []byte(` {}`)...) }},
+		{"trailing_garbage", func(data []byte) []byte { return append(data, '!') }},
+		{"oversized", func(data []byte) []byte {
+			return append(data, []byte(strings.Repeat(" ", maxManifestBytes+1-len(data)))...)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path, hosts := bundledManifest(t)
+			data, err := json.Marshal(rawManifest{Version: 1, Hosts: hosts})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, test.change(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Fatal("invalid manifest accepted")
+			}
+		})
+	}
+}
+
+func TestLoadManifestAtSizeLimit(t *testing.T) {
+	path, hosts := bundledManifest(t)
+	librarian := hosts["librarian"]
+	librarian.Flows = []string{"librarian/wiki", "librarian/history"}
+	hosts["librarian"] = librarian
+	data, err := json.Marshal(rawManifest{Version: 1, Hosts: hosts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, []byte(strings.Repeat(" ", maxManifestBytes-len(data)))...)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(registry.Librarian.Flows, ",") != "librarian/history,librarian/wiki" {
+		t.Fatalf("flows were not canonicalized: %v", registry.Librarian.Flows)
+	}
+}
+
+func TestLoadRegularManifestSymlink(t *testing.T) {
+	path, hosts := bundledManifest(t)
+	writeManifest(t, path, hosts)
+	link := filepath.Join(filepath.Dir(path), "manifest-link.json")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(link); err != nil {
+		t.Fatalf("regular manifest symlink rejected: %v", err)
+	}
+}
