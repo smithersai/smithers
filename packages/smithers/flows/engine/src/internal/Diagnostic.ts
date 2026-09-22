@@ -72,11 +72,10 @@ const projectDiagnostic = (
   seen: WeakSet<object>,
   field?: string
 ): unknown => {
+  if (field !== undefined && /token|secret|password|api[-_]?key/i.test(field)) return "[REDACTED]"
   const primitive = primitiveDiagnostic(value)
   if (primitive !== undefined || value === undefined) {
-    return field !== undefined && /token|secret|password|api[-_]?key/i.test(field)
-      ? "[REDACTED]"
-      : primitive
+    return primitive
   }
   if (depth === 0) return "[object]"
   const object = value as object

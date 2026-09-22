@@ -60,8 +60,7 @@ it answers.
 
 ## What a store buys by implementing an optional member
 
-Four members are optional. Each one is a place where in-process state is not
-good enough, and a durable store trades an implementation for a guarantee:
+Seven members are optional. A store implements the guarantees it supports:
 
 | Optional member         | What implementing it buys                                                                                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,6 +68,9 @@ good enough, and a durable store trades an implementation for a guarantee:
 | `actionLatestAttempt`   | An attempt counter that resumes from the persisted sequence, so a replayed failed attempt keeps its number, the backoff ladder is not re-slept from attempt 1, and a persisted non-retryable failure is decided against the original attempt. |
 | `resumeSignal`          | An in-process wake the engine races against its suspension backoff sleep, so a completed deferred resumes the waiting caller at once instead of at the next poll.                                                                             |
 | `deferredDoneIfWaiting` | Conditional completion: a deferred completes only when the run is parked on the matching reason and token. Absent, the engine answers `NotWaiting` for every such request.                                                                    |
+| `actionSnapshot`        | Recovers the earliest pre-attempt snapshot and opts into persisting `ActionExecuteOptions.snapshot` before execution. Replay skips snapshot work.                                                                                             |
+| `recordNode`            | Records interpreter topology and settlements using their stable `sourceId` values.                                                                                                                                                            |
+| `nodeRecordBytes`       | Measures the full encoded journal envelope for deterministic topology pagination.                                                                                                                                                             |
 
 Nothing else changes when a member is absent. The engine falls back, logs where
 the fallback is observable, and keeps running.
@@ -91,8 +93,10 @@ opaque. Same-key in-flight actions share one settlement, so a concurrent
 duplicate dispatch waits rather than executing twice.
 
 [`@smthrs/engine-store`](/api/engine-store) implements the same seam over a
-durable journal, and implements all four optional members. Swapping the layer
-is the only change a composition makes.
+durable journal. Its current adapter supplies the retry, wake, conditional
+completion, and node-record hooks; `actionSnapshot` remains absent, so snapshot
+restoration uses the process-local fallback. Swapping the layer supplies
+persistence without changing the authored flow.
 
 ## Related
 

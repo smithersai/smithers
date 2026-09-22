@@ -213,8 +213,9 @@ the proxy logs it, and an RPC server answers the caller with `Schema.Defect` of
 it, which encodes a plain object as full JSON. An implementation error is the
 kind that carries the credential the call was made with, so the proxy logs the
 same bounded, redacted rendering the engine writes and re-dies with
-`FlowHandlerDefect`, whose `diagnostic` field carries that rendering. Read the
-engine's own annotated log line for the unredacted context.
+`FlowHandlerDefect`, whose `diagnostic` field carries that rendering. The
+engine's annotated log is also redacted; the raw defect remains available only
+to in-process error handling.
 
 ## Warnings a durable store can raise
 

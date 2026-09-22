@@ -9,6 +9,7 @@
 import { Action, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -18,6 +19,16 @@ import { toJsonExit } from "../internal/JsonExit.ts"
 import { actionKey, ordinalScope, uncanonicalKey } from "./ActionKey.ts"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.ts"
+
+// An action can open an independent child flow. Only invocations in this same
+// execution inherit its allocation scope; a child must replay the same keys
+// when a different process resumes it without its original caller's context.
+const CurrentActionParent = Context.Reference<
+  {
+    readonly executionId: string
+    readonly key: string
+  } | undefined
+>("@smthrs/engine/CurrentActionParent", { defaultValue: () => undefined })
 
 /**
  * Builds the typed `actionExecute` an engine answers with: it allocates the
@@ -212,11 +223,13 @@ export const makeActionExecute = (options: Encoded) => {
               : Effect.void
           )),
           Effect.provideService(Action.CurrentAttempt, currentAttempt),
+          Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }),
           Effect.provideService(Action.CurrentInvocationKey, key)
         )
       } else {
         result = yield* options.actionExecute(input).pipe(
           Effect.provideService(Action.CurrentAttempt, currentAttempt),
+          Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }),
           // DECIDED: the dispatch's own key is
           // handed to the implementation rather than left engine-private. An
           // implementation that names durable state of its own — `Sleep`
@@ -238,12 +251,32 @@ export const makeActionExecute = (options: Encoded) => {
       if (result._tag !== "Complete") {
         return result
       }
+      const exit = yield* Effect.orDie(
+        Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(result.exit)).pipe(
+          // An action whose recorded outcome does not match its declared
+          // schemas is a defect either way, but `orDie` alone reports only
+          // the schema mismatch — "Expected /harness/HarnessError at
+          // [cause][failures][0][error][_tag]" — and never the error that
+          // actually occurred, which can leave a real failure (a refused
+          // step boundary, say) undiagnosable. Naming the action and its
+          // recorded exit turns that into one legible log line.
+          Effect.tapError(() =>
+            Effect.annotateLogs(
+              Effect.logError("A recorded action outcome does not match the action's declared schemas"),
+              { action: action.name, exit: renderDiagnostic(toJsonExit(result.exit)) }
+            )
+          )
+        )
+      )
       // The engine's single retry decision point. The delay is derived from
       // the attempt count — persisted by durable engines and passed back in
       // on resume — so a backoff sequence survives process death.
       // nonRetryable classification is evaluated here and nowhere else.
-      if (policy !== undefined && result.exit._tag === "Failure") {
-        const failure = result.exit.cause.reasons.find(Cause.isFailReason)
+      if (
+        policy !== undefined && exit._tag === "Failure" &&
+        !Cause.hasDies(exit.cause) && !Cause.hasInterrupts(exit.cause)
+      ) {
+        const failure = exit.cause.reasons.find(Cause.isFailReason)
         if (failure !== undefined) {
           const decision = yield* RetryPolicy.decideEffect(policy, {
             attempt: currentAttempt,
@@ -273,23 +306,6 @@ export const makeActionExecute = (options: Encoded) => {
           // nonRetryable: fall through and propagate the original failure.
         }
       }
-      const exit = yield* Effect.orDie(
-        Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(result.exit)).pipe(
-          // An action whose recorded outcome does not match its declared
-          // schemas is a defect either way, but `orDie` alone reports only
-          // the schema mismatch — "Expected /harness/HarnessError at
-          // [cause][failures][0][error][_tag]" — and never the error that
-          // actually occurred, which can leave a real failure (a refused
-          // step boundary, say) undiagnosable. Naming the action and its
-          // recorded exit turns that into one legible log line.
-          Effect.tapError(() =>
-            Effect.annotateLogs(
-              Effect.logError("A recorded action outcome does not match the action's declared schemas"),
-              { action: action.name, exit: renderDiagnostic(toJsonExit(result.exit)) }
-            )
-          )
-        )
-      )
       return new Flow.Complete({ exit })
     }
   })
@@ -324,10 +340,17 @@ export const makeActionExecute = (options: Encoded) => {
     if (Result.isFailure(scopeResult)) {
       return uncanonicalKey(action.name, scopeResult.failure)
     }
-    const scope = scopeResult.success
+    // Each action implementation runs with a fresh instance and fresh ordinal
+    // counters. Its enclosing invocation therefore refines the allocation
+    // scope, or two parents' first nested dispatches would share one key.
+    // Top-level keys and explicitly keyed sealed cache identities stay intact.
+    const instance = yield* FlowRuntime.FlowInstance
+    const parent = yield* CurrentActionParent
+    const scope = parent !== undefined && parent.executionId === instance.executionId
+      ? `${scopeResult.success}/p:${parent.key.length}:${parent.key}`
+      : scopeResult.success
     const body = dispatch(action, attempt, scope)
     if (action.tier === "sealed" && action.idempotencyKey !== undefined) return yield* body
-    const instance = yield* FlowRuntime.FlowInstance
     const inFlight = instance.actionState.keylessInFlight
     // The acquire and its release live in one uninterruptible region
     // (issue #139): a bare `add` followed by `Effect.ensuring` left a

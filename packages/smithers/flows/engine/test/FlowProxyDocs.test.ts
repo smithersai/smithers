@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import { normalize } from "node:path"
+import { fileURLToPath } from "node:url"
 import ts from "typescript"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
@@ -39,8 +39,7 @@ describe("FlowProxy documentation", () => {
         ? ts.createSourceFile(name, source, languageVersion, true)
         : getSourceFile(name, languageVersion, onError, shouldCreateNewSourceFile)
     const fileExists = host.fileExists.bind(host)
-    host.fileExists = (name) =>
-      normalize(name).toLowerCase() === normalize(file).toLowerCase() || fileExists(name)
+    host.fileExists = (name) => normalize(name).toLowerCase() === normalize(file).toLowerCase() || fileExists(name)
     const program = ts.createProgram([file], options, host)
     const diagnostics = ts.getPreEmitDiagnostics(program)
     expect(ts.formatDiagnostics(diagnostics, {

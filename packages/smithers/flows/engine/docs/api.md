@@ -93,22 +93,26 @@ The members, in full:
 | `actionExecute`         | `(options: ActionExecuteOptions) => Effect<Result, never, FlowInstance \| Crypto>`                                | Dispatches one action attempt and answers with its encoded settlement.                                                                                                                                                       |
 | `actionRetryOrigin`     | optional `({ key }) => Effect<Option<number>, never, FlowInstance \| Crypto>`                                     | The persisted start time of the earliest surviving attempt for `key`. `Option.none()` means no attempt row survives.                                                                                                         |
 | `actionLatestAttempt`   | optional `({ key }) => Effect<Option<number>, never, FlowInstance \| Crypto>`                                     | The highest persisted attempt number for `key`.                                                                                                                                                                              |
+| `actionSnapshot`        | optional `({ key }) => Effect<Option<unknown>, never, FlowInstance \| Crypto>`                                    | The earliest persisted pre-attempt handle for a compensable key.                                                                                                                                                             |
 | `deferredResult`        | `(deferred) => Effect<Option<Exit>, never, FlowInstance>`                                                         | The recorded result of a durable deferred, when it has one.                                                                                                                                                                  |
 | `deferredDone`          | `({ flowName, executionId, deferredName, exit }) => Effect<void>`                                                 | Completes a durable deferred and re-drives the parked execution.                                                                                                                                                             |
 | `deferredDoneIfWaiting` | optional `({ flowName, executionId, deferredName, reason, token, exit }) => Effect<DeferredDoneIfWaitingOutcome>` | Completes a deferred only when the run is parked on the matching reason and token. Answers `Completed`, `Existing`, or `NotWaiting`.                                                                                         |
 | `scheduleClock`         | `(flow, { executionId, clock }) => Effect<void>`                                                                  | Arms a durable clock for one execution.                                                                                                                                                                                      |
+| `recordNode`            | optional `(record: NodeRecord) => Effect<void, never, FlowInstance>`                                              | Records topology and node settlements under the supplied `sourceId`.                                                                                                                                                         |
+| `nodeRecordBytes`       | optional `(record: NodeRecord) => Effect<number, never, FlowInstance>`                                            | Measures the complete encoded journal envelope before pagination.                                                                                                                                                            |
 
 `ActionExecuteOptions` is what an encoded implementation receives for one
 dispatch:
 
-| Field              | Type                | Meaning                                                                         |
-| ------------------ | ------------------- | ------------------------------------------------------------------------------- |
-| `action`           | `Action.Any`        | The declaration being dispatched.                                               |
-| `attempt`          | `number`            | The attempt number, starting at 1. Above 1 marks a retry.                       |
-| `key`              | `string`            | The persisted step identity the attempt is recorded under.                      |
-| `tier`             | `Action.Tier`       | `"sealed"`, `"compensable"`, or `"irreversible"`.                               |
-| `nondeterministic` | `true \| undefined` | Present when a cache put race may retain the first row without failing the run. |
-| `metadata`         | `unknown`           | The declaration's metadata, passed through unread.                              |
+| Field              | Type                                                      | Meaning                                                                                                                                           |
+| ------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`           | `Action.Any`                                              | The declaration being dispatched.                                                                                                                 |
+| `attempt`          | `number`                                                  | The attempt number, starting at 1. Above 1 marks a retry.                                                                                         |
+| `key`              | `string`                                                  | The persisted step identity the attempt is recorded under.                                                                                        |
+| `tier`             | `Action.Tier`                                             | `"sealed"`, `"compensable"`, or `"irreversible"`.                                                                                                 |
+| `nondeterministic` | `true \| undefined`                                       | Present when a cache put race may retain the first row without failing the run.                                                                   |
+| `metadata`         | `unknown`                                                 | The declaration's metadata, passed through unread.                                                                                                |
+| `snapshot`         | optional `Effect<unknown, never, FlowInstance \| Crypto>` | Evaluate and persist before actual compensable execution, after ruling out a journal hit or joined dispatch. Supplied only with `actionSnapshot`. |
 
 [The port and the seam](./concepts/port-and-seam.md) explains the design, and
 [Implement the Encoded seam](./guides/implement-the-encoded-seam.md) is the
@@ -126,8 +130,9 @@ package declares the service and ships no implementation.
 | `diff`     | `(snapshot: unknown, options: SnapshotBoundaryOptions) => Effect<unknown>` |
 
 `SnapshotBoundaryOptions` carries `flow`, `executionId`, `key`, `attempt`, and
-the action's `metadata`. The engine snapshots before each attempt, diffs after
-each one, and restores the previous snapshot before a retry. See
+the action's `metadata`. The engine snapshots before execution, diffs after it,
+and restores the earliest handle before a retry. Durable snapshot hooks skip
+boundary work on journal hits; without them handles are process-local. See
 [Run a compensable action](./guides/compensable-actions.md).
 
 ### Journal lineage
@@ -198,12 +203,13 @@ disagree about percent-decoding.
 
 Binds the derived definitions to a running engine.
 
-| Export             | Signature                                                                                                                                                                                       | Meaning                                                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layerRpcHandlers` | `(flows, options?: { prefix?: string; executionId?: ExecutionIdScope }) => Layer<RpcHandlers<...>, never, FlowRuntime \| Flow.Requirements<Flows> \| Flow.RequirementsHandler<Flows>>`          | Implements the derived RPCs. Pass the same `prefix` used to build the group.                                                                    |
-| `layerHttpApi`     | `(api, identifier, flows, options?: { executionId?: ExecutionIdScope }) => Layer<HttpApiGroup.Service<...>, never, FlowRuntime \| Flow.Requirements<Flows> \| Flow.RequirementsHandler<Flows>>` | Implements the derived HTTP group.                                                                                                              |
-| `ExecutionIdScope` | `(input: { flow, operation, clientValue, payload }) => string \| undefined`                                                                                                                     | Rewrites the caller-supplied execution id before it reaches the engine. Pure, called once per handler, applied to execute, discard, and resume. |
-| `RpcHandlers`      | `type RpcHandlers<Flows, Prefix>`                                                                                                                                                               | The union of handler services required to serve the derived RPCs.                                                                               |
+| Export              | Signature                                                                                                                                                                                       | Meaning                                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layerRpcHandlers`  | `(flows, options?: { prefix?: string; executionId?: ExecutionIdScope }) => Layer<RpcHandlers<...>, never, FlowRuntime \| Flow.Requirements<Flows> \| Flow.RequirementsHandler<Flows>>`          | Implements the derived RPCs. Pass the same `prefix` used to build the group.                                                                    |
+| `layerHttpApi`      | `(api, identifier, flows, options?: { executionId?: ExecutionIdScope }) => Layer<HttpApiGroup.Service<...>, never, FlowRuntime \| Flow.Requirements<Flows> \| Flow.RequirementsHandler<Flows>>` | Implements the derived HTTP group.                                                                                                              |
+| `ExecutionIdScope`  | `(input: { flow, operation, clientValue, payload }) => string \| undefined`                                                                                                                     | Rewrites the caller-supplied execution id before it reaches the engine. Pure, called once per handler, applied to execute, discard, and resume. |
+| `RpcHandlers`       | `type RpcHandlers<Flows, Prefix>`                                                                                                                                                               | The union of handler services required to serve the derived RPCs.                                                                               |
+| `FlowHandlerDefect` | `class FlowHandlerDefect`                                                                                                                                                                       | A proxy defect containing `code`, `flowName`, bounded redacted `diagnostic`, and `message`.                                                     |
 
 Both layers drive the served bodies, so both require what those bodies require:
 `Flow.Requirements` of every flow, on top of the schema services
@@ -215,8 +221,7 @@ Both layers log a defect from a served body through `Effect.logError`,
 annotated with the module and the wire operation name.
 
 Returning `undefined` from `ExecutionIdScope` means different things per
-operation: for execute and discard it lets the engine derive the id from the
-flow's idempotency key; for resume it refuses the request with a
+operation: for execute and discard it selects the flow's idempotency key or ambient execution-id source; for resume it refuses the request with a
 `Flow.ExecutionIdRequired` defect, because passing the client value through would
 let a client resume outside the namespace the scope confines it to. See
 [Namespace execution ids per tenant](./guides/namespace-execution-ids.md).

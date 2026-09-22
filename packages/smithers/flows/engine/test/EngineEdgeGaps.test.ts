@@ -54,13 +54,17 @@ describe("Action.retry outside a flow", () => {
       }).pipe(Effect.orDie)
     )
     const body = Effect.gen(function*() {
+      const parentKey = yield* Action.CurrentInvocationKey
+      const nestedScope = `${scope}/p:${parentKey!.length}:${parentKey}`
       const result = yield* action
-      ordinals.push(...(yield* Action.CurrentOrdinal)?.values.get(scope) ?? [undefined])
+      ordinals.push(...(yield* Action.CurrentOrdinal)?.values.get(nestedScope) ?? [undefined])
       return result
     }).pipe(
       Effect.tapError(() =>
         Effect.gen(function*() {
-          ordinals.push(...(yield* Action.CurrentOrdinal)?.values.get(scope) ?? [undefined])
+          const parentKey = yield* Action.CurrentInvocationKey
+          const nestedScope = `${scope}/p:${parentKey!.length}:${parentKey}`
+          ordinals.push(...(yield* Action.CurrentOrdinal)?.values.get(nestedScope) ?? [undefined])
         })
       )
     )

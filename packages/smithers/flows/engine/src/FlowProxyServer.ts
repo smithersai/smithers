@@ -38,7 +38,7 @@ import { renderDiagnostic } from "./internal/Diagnostic.ts"
  * handler. Execute and discard inputs include the decoded flow payload, while
  * resume inputs use `undefined` because a resume request carries only an
  * execution id. Returning `undefined` for execute or discard lets the engine
- * derive the id from the flow's idempotency key. Returning `undefined` for
+ * select the flow's idempotency key or ambient execution-id source. Returning `undefined` for
  * resume refuses the request with a `Flow.ExecutionIdRequired` defect:
  * falling back to the client value there would let a client resume outside
  * the namespace this option confines it to. Without this option, every
@@ -169,15 +169,17 @@ const handleExecute = (
   method: string
 ) =>
 (request: ExecuteRequest) =>
-  flow.execute(request.payload, {
-    discard: operation === "discard",
-    executionId: scopeExecutionId(scope, {
-      flow,
-      operation,
-      clientValue: request.executionId,
-      payload: request.payload
+  Effect.suspend(() =>
+    flow.execute(request.payload, {
+      discard: operation === "discard",
+      executionId: scopeExecutionId(scope, {
+        flow,
+        operation,
+        clientValue: request.executionId,
+        payload: request.payload
+      })
     })
-  }).pipe(
+  ).pipe(
     guardDefects(flow._tag),
     Effect.annotateLogs({ module: "FlowProxyServer", method })
   )
@@ -193,7 +195,7 @@ const handleResume = (
   method: string
 ) =>
 (request: ResumeRequest) =>
-  resumeExecutionId(scope, flow, request.executionId).pipe(
+  Effect.suspend(() => resumeExecutionId(scope, flow, request.executionId)).pipe(
     Effect.flatMap((executionId) => flow.resume(executionId)),
     guardDefects(flow._tag),
     Effect.annotateLogs({ module: "FlowProxyServer", method })

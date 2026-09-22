@@ -35,13 +35,14 @@ into it.
 The form itself is key material, so an object that happens to spell the string
 form's encoding is still a different key.
 
-Three more things fold into both forms when present:
+These also fold into both forms when present:
 
 - The hermetic file boundary descriptor from the action's metadata, when the
   metadata is shaped like one. A changed read-set digest, write set, or
   boundary mode must miss rather than replay a stale cross-run entry.
 - The declared `nondeterministic` marker, so a tolerant declaration cannot
   consume a strict row.
+- The declared `implementationVersion`.
 - The cache environment when the dispatch has one, and the run id when it does
   not. That is the difference between a row shared across runs and a row
   pinned to this one.
@@ -78,7 +79,16 @@ So counters are per scope, and the scope is derived from:
 - its declared `idempotencyKey`, in either the string or the object form, so
   two concurrent invocations with distinguishable inputs each own a counter,
 - the structural interpreter site, when the dispatch comes from a graph node,
-  so two distinct nodes calling one declaration each own a counter.
+  so two distinct nodes calling one declaration each own a counter,
+- the declared implementation version, when present,
+- the enclosing action's invocation key, when dispatching from an action
+  implementation, so two parents' first nested dispatches cannot share a row.
+
+Nested invocation scopes append `/p:<key length>:<parent key>`. This corrects
+previously colliding nested keys and changes their persisted identities. Resume
+existing runs with the engine version they started with; do not upgrade an
+unfinished run whose nested actions may already have performed effects. Top-level
+invocation keys and explicitly keyed sealed cache identities are unchanged.
 
 Distinct scopes are stable under any interleaving and may overlap freely.
 

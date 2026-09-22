@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import { makeInstance } from "./FlowInstance.ts"
 import { makeUnsafe } from "./make.ts"
 import type * as Round from "./Round.ts"
@@ -86,6 +87,28 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       bodyFiber: Fiber.Fiber<unknown, unknown> | undefined
     }
     const executions = new Map<string, ExecutionState>()
+    // Payload constructors and identity codecs may suspend. Serialize only
+    // admission and drive installation for one id, never the body or another id.
+    const executionLocks = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
+    const withExecutionLock = <A, E, R>(executionId: string, effect: Effect.Effect<A, E, R>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          let lock = executionLocks.get(executionId)
+          if (lock === undefined) {
+            lock = { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+            executionLocks.set(executionId, lock)
+          }
+          lock.users++
+          return lock
+        }),
+        (lock) => lock.semaphore.withPermit(effect),
+        (lock) =>
+          Effect.sync(() => {
+            // Count waiters as well as holders: cancelling one waiter must not
+            // replace the semaphore underneath another. Rejected ids retain none.
+            if (--lock.users === 0) executionLocks.delete(executionId)
+          })
+      )
     // A round fiber that settled `Suspended` is the only state a re-drive or
     // a conditional completion continues from. A live round is still
     // running, and every other settlement — an answer, a hand-off to the
@@ -291,9 +314,10 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       )
 
     // Untraced because resume recursively drives suspended executions.
-    const resume = Effect.fnUntraced(function*(executionId: string): Effect.fn.Return<void> {
-      const state = executions.get(executionId)
-      if (!state) return
+    const resumeUnlocked = Effect.fnUntraced(function*(
+      executionId: string,
+      state: ExecutionState
+    ): Effect.fn.Return<void> {
       wake(executionId)
       // Only the first drive and a suspended round are driven: a live round
       // keeps running, and every other settlement is terminal.
@@ -310,8 +334,8 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       const instance = makeInstance(state.instance.flow, state.instance.executionId)
       instance.interrupted = state.instance.interrupted
       state.instance = instance
-      const payload = yield* snapshot(state.instance.flow, state.payload) as Effect.Effect<object>
-      state.fiber = yield* entry.execute(payload, state.instance.executionId).pipe(
+      state.fiber = yield* snapshot(instance.flow, state.payload).pipe(
+        Effect.flatMap((payload) => entry.execute(payload as object, instance.executionId)),
         // Runs as the forked body fiber's first instruction: it hands
         // `interrupt` the fiber the body runs in, and it answers a
         // cancellation that landed BEFORE the body started — the flag is
@@ -345,6 +369,17 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       )
     })
 
+    const resume = (executionId: string): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        const state = executions.get(executionId)
+        if (state === undefined) return Effect.void
+        const previous = state.fiber
+        return withExecutionLock(
+          executionId,
+          Effect.suspend(() => state.fiber === previous ? resumeUnlocked(executionId, state) : Effect.void)
+        )
+      })
+
     const deferredResults = new Map<string, Exit.Exit<any, any>>()
 
     const clocks = yield* FiberMap.make<string>()
@@ -370,89 +405,102 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       }),
       // Untraced because execution recursively invokes child flows.
       execute: Effect.fnUntraced(function*(flow, options) {
-        const entry = flows.get(flow._tag)?.at(-1)
-        if (!entry) {
-          return yield* Effect.die(
-            new FlowNotRegistered({
-              flowName: flow._tag,
-              message: `Flow ${flow._tag} is not registered`
-            })
-          )
-        }
+        let cancelJoined = false
+        const admitted = yield* withExecutionLock(
+          options.executionId,
+          Effect.gen(function*() {
+            const entry = flows.get(flow._tag)?.at(-1)
+            if (!entry) {
+              return yield* Effect.die(
+                new FlowNotRegistered({
+                  flowName: flow._tag,
+                  message: `Flow ${flow._tag} is not registered`
+                })
+              )
+            }
 
-        let state = executions.get(options.executionId)
-        // An execution id names one run of one flow declaration and one
-        // rebuilt payload snapshot. A reused id may join only when both
-        // identities match, exactly as the durable driver's `ensureCreatedRun`
-        // does. The id is caller-supplied identity, so a multi-tenant server
-        // must namespace it before requests share an engine.
-        if (state !== undefined && state.instance.flow._tag !== flow._tag) {
-          return yield* Effect.die(
-            new ExecutionIdentityConflict({
-              executionId: options.executionId,
-              field: "flow",
-              expected: state.instance.flow._tag,
-              actual: flow._tag,
-              message: `execution ${options.executionId} already belongs to flow ${state.instance.flow._tag}; ` +
-                `it cannot be reused for flow ${flow._tag}`
-            })
-          )
-        }
-        if (state !== undefined) {
-          const requestedPayload = yield* snapshot(flow, options.payload)
-          if (!(yield* samePayload(flow, state.payload, requestedPayload))) {
-            return yield* Effect.die(
-              new ExecutionIdentityConflict({
-                executionId: options.executionId,
-                field: "payload",
-                expected: "the payload the execution was admitted with",
-                actual: "a different payload",
-                message: `execution ${options.executionId} already belongs to the payload it was admitted with; ` +
-                  "it cannot be reused for a different payload"
-              })
-            )
-          }
-        }
-        if (options.parent !== undefined) {
-          yield* recordParent(options.executionId, options.parent.executionId)
-          if (
-            state !== undefined && (options.parent.interrupted ||
-              executions.get(options.parent.executionId)?.instance.interrupted === true)
-          ) {
-            // Joining is also child admission. An existing independent run
-            // must not escape an already-cancelled parent's ownership edge.
-            // The memory implementation below has no persistence failure.
-            yield* engine.interrupt(flow, options.executionId).pipe(Effect.orDie)
-          }
-        }
-        if (!state) {
-          const storedPayload = yield* snapshot(flow, options.payload)
-          const rootExecutionId = options.round.rootExecutionId
-          const instance = makeInstance(flow, options.executionId)
-          const parent = options.parent
-          instance.interrupted = cancelledLineages.has(rootExecutionId) ||
-            (parent !== undefined && (parent.interrupted ||
-              executions.get(parent.executionId)?.instance.interrupted === true))
-          if (instance.interrupted) cancelledLineages.add(rootExecutionId)
-          state = {
-            // The stored value never crosses into user code. Every drive
-            // rebuilds its own copy, so caller and handler mutation cannot
-            // alter a replay.
-            payload: storedPayload,
-            instance,
-            rootExecutionId,
-            fiber: undefined,
-            bodyFiber: undefined,
-            parent: options.parent?.executionId
-          }
-          executions.set(options.executionId, state)
-          const members = rounds.get(rootExecutionId) ?? new Set<string>()
-          members.add(options.executionId)
-          rounds.set(rootExecutionId, members)
-          yield* resume(options.executionId)
-        }
+            let state = executions.get(options.executionId)
+            // An execution id names one run of one flow declaration and one
+            // rebuilt payload snapshot. A reused id may join only when both
+            // identities match, exactly as the durable driver's `ensureCreatedRun`
+            // does. The id is caller-supplied identity, so a multi-tenant server
+            // must namespace it before requests share an engine.
+            if (state !== undefined && state.instance.flow._tag !== flow._tag) {
+              return yield* Effect.die(
+                new ExecutionIdentityConflict({
+                  executionId: options.executionId,
+                  field: "flow",
+                  expected: state.instance.flow._tag,
+                  actual: flow._tag,
+                  message: `execution ${options.executionId} already belongs to flow ${state.instance.flow._tag}; ` +
+                    `it cannot be reused for flow ${flow._tag}`
+                })
+              )
+            }
+            if (state !== undefined) {
+              const requestedPayload = yield* snapshot(flow, options.payload)
+              if (!(yield* samePayload(flow, state.payload, requestedPayload))) {
+                return yield* Effect.die(
+                  new ExecutionIdentityConflict({
+                    executionId: options.executionId,
+                    field: "payload",
+                    expected: "the payload the execution was admitted with",
+                    actual: "a different payload",
+                    message: `execution ${options.executionId} already belongs to the payload it was admitted with; ` +
+                      "it cannot be reused for a different payload"
+                  })
+                )
+              }
+            }
+            if (options.parent !== undefined) {
+              yield* recordParent(options.executionId, options.parent.executionId)
+              if (
+                state !== undefined && (options.parent.interrupted ||
+                  executions.get(options.parent.executionId)?.instance.interrupted === true)
+              ) {
+                // Joining is also child admission. An existing independent run
+                // must not escape an already-cancelled parent's ownership edge.
+                // Deliver after releasing this id's admission lock: cancellation
+                // can re-drive a parked child and acquires the same lock.
+                cancelJoined = true
+              }
+            }
+            if (!state) {
+              const storedPayload = yield* snapshot(flow, options.payload)
+              const rootExecutionId = options.round.rootExecutionId
+              const instance = makeInstance(flow, options.executionId)
+              const parent = options.parent
+              instance.interrupted = cancelledLineages.has(rootExecutionId) ||
+                (parent !== undefined && (parent.interrupted ||
+                  executions.get(parent.executionId)?.instance.interrupted === true))
+              if (instance.interrupted) cancelledLineages.add(rootExecutionId)
+              state = {
+                // The stored value never crosses into user code. Every drive
+                // rebuilds its own copy, so caller and handler mutation cannot
+                // alter a replay.
+                payload: storedPayload,
+                instance,
+                rootExecutionId,
+                fiber: undefined,
+                bodyFiber: undefined,
+                parent: options.parent?.executionId
+              }
+              // Publish the state and install its driver together. All asynchronous
+              // payload rebuilding now belongs to that driver, inside intoResult.
+              yield* Effect.uninterruptible(Effect.gen(function*() {
+                executions.set(options.executionId, state!)
+                const members = rounds.get(rootExecutionId) ?? new Set<string>()
+                members.add(options.executionId)
+                rounds.set(rootExecutionId, members)
+                yield* resumeUnlocked(options.executionId, state!)
+              }))
+            }
+            return state
+          })
+        )
+        if (cancelJoined) yield* engine.interrupt(flow, options.executionId).pipe(Effect.orDie)
         if (options.discard) return
-        return (yield* settlement(flow, options.executionId, yield* Fiber.join(state.fiber!))) as any
+        return (yield* settlement(flow, options.executionId, yield* Fiber.join(admitted.fiber!))) as any
       }),
       // Untraced because interruption is coordinated from recursive execution.
       interrupt: Effect.fnUntraced(function*(_flow, executionId) {
@@ -511,53 +559,61 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       actionExecute: Effect.fnUntraced(function*(options) {
         const action = options.action
         const instance = yield* FlowRuntime.FlowInstance
-        const actionId = JSON.stringify([options.key, options.attempt])
-        const state = actions.get(actionId)
-        if (state) {
-          const exit = state.exit
-          if (exit && exit._tag === "Success" && exit.value._tag === "Suspended") {
-            actions.delete(actionId)
-          } else if (exit) {
-            return yield* exit
-          } else {
-            return yield* Deferred.await(state.settlement)
-          }
-        }
-        const owner: ActionState = {
-          exit: undefined,
-          settlement: yield* Deferred.make<Flow.Result<unknown, unknown>>()
-        }
-        actions.set(actionId, owner)
-        const actionInstance = makeInstance(instance.flow, instance.executionId)
-        actionInstance.interrupted = instance.interrupted
-        // DECIDED: the waiting classification is
-        // threaded through the dispatch's instance and back, because a driver
-        // gives an action its own instance while `annotateWaiting` is
-        // documented to reach the parked run. An implementation that declares
-        // one — `Sleep` under `timer`, `WaitFor` under `event` with its wake
-        // token — writes it here, so without the thread-back the driver would
-        // park on the derived default and the declaration would be inert for
-        // every action. It is seeded as well as copied back so a body that
-        // annotated before dispatching keeps its own declaration, and so the
-        // consumption `deferredResult` performs on a settled wait travels out
-        // the same way (issue #42).
-        const waitingBefore = instance.waiting
-        actionInstance.waiting = waitingBefore
-        return yield* action.executeEncoded.pipe(
-          Flow.intoResult,
-          Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
-          Effect.onExit((exit) => {
-            if (Exit.isSuccess(exit)) {
-              owner.exit = exit
-            } else {
-              // An interrupted dispatch has no settlement to replay.
-              actions.delete(actionId)
+        // Publish ownership and install its settlement finalizer without an
+        // interruptible gap. Even a scheduler yield during Deferred allocation
+        // must not let a second caller claim the same key and attempt.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.suspend(() => {
+            const actionId = JSON.stringify([options.key, options.attempt])
+            const state = actions.get(actionId)
+            if (state) {
+              const exit = state.exit
+              if (exit && exit._tag === "Success" && exit.value._tag === "Suspended") {
+                actions.delete(actionId)
+              } else if (exit) {
+                return exit
+              } else {
+                return restore(Deferred.await(state.settlement))
+              }
             }
-            return Deferred.done(owner.settlement, exit)
-          }),
-          Effect.ensuring(Effect.sync(() => {
-            if (instance.waiting === waitingBefore) instance.waiting = actionInstance.waiting
-          }))
+            const owner: ActionState = {
+              exit: undefined,
+              settlement: Deferred.makeUnsafe<Flow.Result<unknown, unknown>>()
+            }
+            actions.set(actionId, owner)
+            const actionInstance = makeInstance(instance.flow, instance.executionId)
+            actionInstance.interrupted = instance.interrupted
+            // DECIDED: the waiting classification is
+            // threaded through the dispatch's instance and back, because a driver
+            // gives an action its own instance while `annotateWaiting` is
+            // documented to reach the parked run. An implementation that declares
+            // one — `Sleep` under `timer`, `WaitFor` under `event` with its wake
+            // token — writes it here, so without the thread-back the driver would
+            // park on the derived default and the declaration would be inert for
+            // every action. It is seeded as well as copied back so a body that
+            // annotated before dispatching keeps its own declaration, and so the
+            // consumption `deferredResult` performs on a settled wait travels out
+            // the same way (issue #42).
+            const waitingBefore = instance.waiting
+            actionInstance.waiting = waitingBefore
+            return restore(action.executeEncoded.pipe(
+              Flow.intoResult,
+              Effect.provideService(FlowRuntime.FlowInstance, actionInstance)
+            )).pipe(
+              Effect.onExit((exit) => {
+                if (Exit.isSuccess(exit)) {
+                  owner.exit = exit
+                } else {
+                  // An interrupted dispatch has no settlement to replay.
+                  actions.delete(actionId)
+                }
+                return Deferred.done(owner.settlement, exit)
+              }),
+              Effect.ensuring(Effect.sync(() => {
+                if (instance.waiting === waitingBefore) instance.waiting = actionInstance.waiting
+              }))
+            )
+          })
         )
       }),
       poll: (flow, executionId) =>
