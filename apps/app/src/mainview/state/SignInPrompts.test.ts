@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { resolveApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
@@ -132,6 +133,33 @@ test("an OAuth reload answers legacy persisted prompts; the answer survives the 
   await restored.store.settled?.()
   const again = await setup(true, h.storage, true)
   expect(again.store.collections.messages.get(prompt.id)).toEqual(answered)
+})
+
+test("an owner backend names its credential door without promising GitHub", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    applicationTarget: resolveApplicationTarget({
+      apiVersion: 1,
+      mode: "web-selfhost",
+      apiOrigin: "",
+      auth: { kind: "session" },
+      cors: "same-origin",
+      developerExternal: false
+    }, "https://owner.test"),
+    localIdentity: {
+      status: async () => ({ enabled: true, initialized: true }),
+      login: async ({ username }) => ({ user: { id: 1, username } }),
+      bootstrap: async ({ username }) => ({ user: { id: 1, username } })
+    }
+  })
+  await controller.adoptSession(signedOut)
+
+  controller.promptSignIn()
+
+  expect([...store.collections.messages.values()].at(-1)).toMatchObject({
+    text: "Sign in to continue.",
+    action: { flow: "auth.sign-in", label: "Sign in" }
+  })
 })
 
 test("a refused Cloud seam on web still offers reauthentication when GitHub is already connected", async () => {

@@ -63,7 +63,7 @@ func TestWorkspaceHTTPMaterializesPublicRepository(t *testing.T) {
 	runtime, err := processruntime.New(processruntime.Config{Root: t.TempDir(), MaxConcurrent: 4})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, runtime.Close()) })
-	var workspaceHandler *WorkspaceHandler
+	workspaceHandler := &WorkspaceHandler{}
 	gitHandler := &GitSmartHandler{
 		Service: services.NewGitHTTPProxyService(queries, services.NewSSHAuthorizationService(queries), local.Client()),
 		Metrics: NewSmithersMetrics(),
@@ -93,8 +93,8 @@ func TestWorkspaceHTTPMaterializesPublicRepository(t *testing.T) {
 	})
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	workspaceHandler = &WorkspaceHandler{Service: services.NewWorkspaceService(queries,
-		services.WithWorkspaceRuntime(runtime), services.WithWorkspaceGitBaseURL(server.URL))}
+	workspaceHandler.Service = services.NewWorkspaceService(queries,
+		services.WithWorkspaceRuntime(runtime), services.WithWorkspaceGitBaseURL(server.URL))
 	publicRemote := server.URL + "/" + repo.Owner + "/" + repo.Name + ".git"
 	require.Contains(t, checkoutGit(t, "", "", "ls-remote", publicRemote, "refs/heads/main"), seedCommit)
 

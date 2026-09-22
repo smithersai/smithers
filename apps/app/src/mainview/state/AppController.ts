@@ -1421,11 +1421,12 @@ export const createAppController = (
         : flow ? `run ${flow}${repo ? ` on ${repo}` : ""}` : commands.find(asked.name)?.metadata.summary
     } else if (!summary && asked?.name) summary = commands.find(asked.name)?.metadata.summary
     const purpose = summary?.trim().replace(/[.!?]$/, "")
+    const label = localAuth === undefined ? "Sign in with GitHub" : "Sign in"
     store.dispatch({
       type: "message.appended",
       actor: "system",
-      text: purpose ? `Sign in with GitHub to ${purpose[0]!.toLowerCase()}${purpose.slice(1)}.` : "Sign in with GitHub to continue.",
-      action: { flow: "auth.sign-in", label: "Sign in with GitHub",
+      text: purpose ? `${label} to ${purpose[0]!.toLowerCase()}${purpose.slice(1)}.` : `${label} to continue.`,
+      action: { flow: "auth.sign-in", label,
         ...(request?.signInRequirement === undefined ? {} : { signInRequirement: request.signInRequirement }) }
     })
   }
