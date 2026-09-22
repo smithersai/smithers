@@ -4,6 +4,25 @@ import (
 	"testing"
 )
 
+func TestCodingHostEnvironmentKeepsOwnerProviderInsideLocalRuntime(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "owner-key")
+	t.Setenv("AI_GATEWAY_API_KEY", "judge-key")
+	t.Setenv("SMITHERS_OPENAI_COMPATIBLE_BASE_URL", "http://provider:8080")
+	t.Setenv("SMITHERS_EVALUATOR_BASE_URL", "http://provider:8080/evaluate")
+	t.Setenv("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", "/opt/smithers/bin/smithers-jj-export")
+	local := codingHostEnvironment(RoleLocal)
+	if local["OPENAI_API_KEY"] != "owner-key" || local["SMITHERS_OPENAI_COMPATIBLE_BASE_URL"] != "http://provider:8080" || local["SMITHERS_CODING_LOCAL_OWNER"] != "1" {
+		t.Fatalf("local coding host lost owner model configuration: %#v", local)
+	}
+	hosted := codingHostEnvironment(RoleHostedWorker)
+	if _, ok := hosted["OPENAI_API_KEY"]; ok {
+		t.Fatal("hosted catalog forwarded the owner's model key")
+	}
+	if hosted["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] != "/opt/smithers/bin/smithers-jj-export" {
+		t.Fatal("coding host lost the packaged Rust helper path")
+	}
+}
+
 func TestFlowHostProductAPIURLUsesRuntimeReachableOrigin(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -122,7 +122,7 @@ const confidentEvaluator = ScriptedJudge.layer
 const runTurn = async (
   t: TestContext,
   input: typeof DispatchInput.Type,
-  options: { readonly answer?: ReadonlyArray<string>; readonly repositoryPath?: string } = {}
+  options: { readonly answer?: ReadonlyArray<string> } = {}
 ) => {
   const root = await mkdtemp(join(tmpdir(), "coding-dispatch-"))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -130,7 +130,7 @@ const runTurn = async (
   const prompts: Array<string> = []
   const reads: Array<number> = []
   const registration = Layer.mergeAll(
-    dispatchRegistration({ repositoryPath: options.repositoryPath ?? input.workspaceRoot }),
+    dispatchRegistration(),
     dispatchModels
   ).pipe(
     Layer.provideMerge(nativeStub(reads)),
@@ -158,8 +158,7 @@ const baseInput = {
     { role: "user" as const, content: "Where does the greeting live?" },
     { role: "assistant" as const, content: "In greeting.mjs." }
   ],
-  role: "coding/dispatch",
-  workspaceRoot: "/srv/workspace"
+  role: "coding/dispatch"
 }
 
 test("a dispatched turn declares one seat per request and carries the caller's window into the prompt", () => {
@@ -187,7 +186,7 @@ test("the dispatched turn is one model call: no plan, no checks, no second loop"
   const calls = [...Graph.nodes(Graph.build(Dispatch, baseInput as typeof DispatchInput.Type))]
     .filter((node) => node.kind === "ActionCall")
     .map((node) => (node.ast as { action: string }).action)
-  assert.deepEqual(calls, ["coding/admit-dispatch", "coding/dispatch-turn", "coding/observe-dispatch"])
+  assert.deepEqual(calls, ["coding/dispatch-turn", "coding/observe-dispatch"])
 })
 
 test("a real cell loop answers one turn on the request's own model and reports the workspace it leaves", { timeout: 60_000 }, async (t) => {
@@ -218,12 +217,4 @@ test("a turn that names only a role resolves through the host's role table", { t
   assert.ok(seats.includes("coding/dispatch"), seats.join(","))
   // roleResolver maps the role onto the host's configured implementation model.
   assert.ok(seats.includes("test:implementation-model"), seats.join(","))
-})
-
-test("a turn addressed to another workspace is refused before any model call", { timeout: 60_000 }, async (t) => {
-  const { exit, prompts } = await runTurn(t, baseInput as typeof DispatchInput.Type, { repositoryPath: "/srv/somewhere-else" })
-  assert.equal(exit._tag, "Failure")
-  assert.match(JSON.stringify(exit), /invalid_request/)
-  assert.match(JSON.stringify(exit), /different workspace/)
-  assert.equal(prompts.length, 0)
 })

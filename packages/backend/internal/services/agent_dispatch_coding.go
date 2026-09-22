@@ -50,12 +50,11 @@ type codingTurnMessage struct {
 }
 
 type codingTurnInput struct {
-	TurnID        string              `json:"turnId"`
-	Prompt        string              `json:"prompt"`
-	History       []codingTurnMessage `json:"history"`
-	Role          string              `json:"role"`
-	Model         string              `json:"model,omitempty"`
-	WorkspaceRoot string              `json:"workspaceRoot"`
+	TurnID  string              `json:"turnId"`
+	Prompt  string              `json:"prompt"`
+	History []codingTurnMessage `json:"history"`
+	Role    string              `json:"role"`
+	Model   string              `json:"model,omitempty"`
 }
 
 type agentFlowProjection struct {
@@ -86,11 +85,10 @@ func (dispatch *agentDispatch) codingTurnRequest() (codingTurnInput, error) {
 		return codingTurnInput{}, errors.New("a dispatched turn needs a user message to answer")
 	}
 	return codingTurnInput{
-		TurnID:        fmt.Sprintf("run-%d", dispatch.run.ID),
-		Prompt:        prompt,
-		History:       history,
-		Role:          codingDispatchRole,
-		WorkspaceRoot: defaultWorkspaceClonePath,
+		TurnID:  fmt.Sprintf("run-%d", dispatch.run.ID),
+		Prompt:  prompt,
+		History: history,
+		Role:    codingDispatchRole,
 	}, nil
 }
 

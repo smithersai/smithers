@@ -45,6 +45,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			Key: flowhost.CatalogCoding, Family: flowhost.CatalogCoding,
 			Executable: registry.Coding.Executable, ArtifactDigest: registry.Coding.SHA256,
 			ServiceName: "smithers-coding-host", ImplementationModel: strings.TrimSpace(cfg.Sandbox.WorkspaceCodingDefaultModel),
+			Environment: codingHostEnvironment(options.Role),
 		},
 		{
 			Key: flowhost.CatalogLibrarian, Family: flowhost.CatalogLibrarian,
@@ -87,6 +88,24 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		return nil, fmt.Errorf("Flow dispatcher: %w", err)
 	}
 	return &flowComposition{jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper}, nil
+}
+
+func codingHostEnvironment(role Role) map[string]string {
+	environment := make(map[string]string)
+	for _, name := range []string{"SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", "SMITHERS_JJ_PATH"} {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			environment[name] = value
+		}
+	}
+	if role == RoleLocal {
+		environment["SMITHERS_CODING_LOCAL_OWNER"] = "1"
+		for _, name := range []string{"OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "SMITHERS_OPENAI_COMPATIBLE_BASE_URL", "SMITHERS_EVALUATOR_BASE_URL"} {
+			if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+				environment[name] = value
+			}
+		}
+	}
+	return environment
 }
 
 func (flow *flowComposition) recover(ctx context.Context) error {

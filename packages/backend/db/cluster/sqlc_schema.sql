@@ -14976,6 +14976,32 @@ ALTER TABLE ONLY public.workspace_setup_jobs
     ADD CONSTRAINT workspace_setup_jobs_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
 -- END product/migrations/0011_onboarding_and_workspace_setup.sql
 
+-- BEGIN product/migrations/0012_workflow_run_coding_hosts.sql
+-- Link the product workflow projection to its canonical coding Flow receipt.
+-- Keep the existing Plue object definitions so adoption can recognize them.
+CREATE TABLE public.workflow_run_coding_hosts (
+    workflow_run_id bigint NOT NULL,
+    workspace_id uuid NOT NULL,
+    host_run_id text NOT NULL,
+    flow_id text NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    CONSTRAINT workflow_run_coding_hosts_flow_id_present CHECK ((flow_id <> ''::text)),
+    CONSTRAINT workflow_run_coding_hosts_host_run_id_present CHECK ((host_run_id <> ''::text))
+);
+
+ALTER TABLE ONLY public.workflow_run_coding_hosts
+    ADD CONSTRAINT workflow_run_coding_hosts_pkey PRIMARY KEY (workflow_run_id);
+
+CREATE INDEX idx_workflow_run_coding_hosts_workspace ON public.workflow_run_coding_hosts USING btree (workspace_id, workflow_run_id);
+
+ALTER TABLE ONLY public.workflow_run_coding_hosts
+    ADD CONSTRAINT workflow_run_coding_hosts_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.workflow_run_coding_hosts
+    ADD CONSTRAINT workflow_run_coding_hosts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+-- END product/migrations/0012_workflow_run_coding_hosts.sql
+
 -- BEGIN cluster/private_baseline.sql
 -- Plue hosted infrastructure baseline. Extracted from the previous full schema.
 -- Product tables and durable repository storage operations are authored only by
@@ -17111,23 +17137,6 @@ CREATE TABLE public.storage_legacy_capability_horizons (
 
 --
 
--- Name: workflow_run_coding_hosts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.workflow_run_coding_hosts (
-    workflow_run_id bigint NOT NULL,
-    workspace_id uuid NOT NULL,
-    host_run_id text NOT NULL,
-    flow_id text NOT NULL,
-    created_at timestamptz DEFAULT now() NOT NULL,
-    updated_at timestamptz DEFAULT now() NOT NULL,
-    CONSTRAINT workflow_run_coding_hosts_flow_id_present CHECK ((flow_id <> ''::text)),
-    CONSTRAINT workflow_run_coding_hosts_host_run_id_present CHECK ((host_run_id <> ''::text))
-);
-
-
---
-
 -- Name: workflow_sandbox_claims; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -17806,15 +17815,6 @@ ALTER TABLE ONLY public.storage_legacy_capability_horizons
 
 --
 
--- Name: workflow_run_coding_hosts workflow_run_coding_hosts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_run_coding_hosts
-    ADD CONSTRAINT workflow_run_coding_hosts_pkey PRIMARY KEY (workflow_run_id);
-
-
---
-
 -- Name: workflow_sandbox_claims workflow_sandbox_claims_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18119,12 +18119,6 @@ CREATE INDEX idx_sync_queue_status ON public._sync_queue USING btree (status, cr
 
 
 --
-
--- Name: idx_workflow_run_coding_hosts_workspace; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workflow_run_coding_hosts_workspace ON public.workflow_run_coding_hosts USING btree (workspace_id, workflow_run_id);
-
 
 --
 
@@ -18826,22 +18820,6 @@ ALTER TABLE ONLY public.sandbox_volumes
 
 
 --
-
--- Name: workflow_run_coding_hosts workflow_run_coding_hosts_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_run_coding_hosts
-    ADD CONSTRAINT workflow_run_coding_hosts_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE CASCADE;
-
-
---
-
--- Name: workflow_run_coding_hosts workflow_run_coding_hosts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workflow_run_coding_hosts
-    ADD CONSTRAINT workflow_run_coding_hosts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
-
 
 --
 

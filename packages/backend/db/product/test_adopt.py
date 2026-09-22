@@ -77,7 +77,7 @@ class AdoptionTest(unittest.TestCase):
         latest = run("psql", "-X", "-At", "-d", self.target,
                      "-c", "SELECT max(version), (SELECT count(*) FROM public.users "
                            "WHERE username='before_adoption') FROM public.smithers_product_migrations")
-        self.assertEqual(latest.stdout.strip(), "11|1")
+        self.assertEqual(latest.stdout.strip(), "12|1")
 
     def test_preexisting_later_migration_is_verified_before_ledger_write(self) -> None:
         later = ROOT / "migrations" / "0010_branch_lock_and_workflow_invocations.sql"
@@ -97,7 +97,18 @@ class AdoptionTest(unittest.TestCase):
         self.assertEqual(migrated.returncode, 0, migrated.stderr)
         ledger = run("psql", "-X", "-At", "-d", self.target,
                      "-c", "SELECT count(*), max(version) FROM public.smithers_product_migrations")
-        self.assertEqual(ledger.stdout.strip(), "11|11")
+        self.assertEqual(ledger.stdout.strip(), "12|12")
+
+    def test_preexisting_coding_receipt_is_adopted(self) -> None:
+        later = ROOT / "migrations" / "0012_workflow_run_coding_hosts.sql"
+        run("psql", "-X", "-1", "-v", "ON_ERROR_STOP=1", "-d", self.target, "-f", str(later))
+        result = self.adopt("--apply")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["preexisting_migrations"], [12])
+        ledger = run("psql", "-X", "-At", "-d", self.target,
+                     "-c", "SELECT string_agg(version::text, ',' ORDER BY version) "
+                           "FROM public.smithers_product_migrations")
+        self.assertEqual(ledger.stdout.strip(), "1,12")
 
     def test_partial_later_migration_refuses_ledger_write(self) -> None:
         run("psql", "-X", "-v", "ON_ERROR_STOP=1", "-d", self.target,

@@ -73,3 +73,15 @@ func TestRequireProviderCredential_AcceptsARepositorySecret(t *testing.T) {
 
 	require.NoError(t, dispatch.requireProviderCredential())
 }
+
+func TestRequireProviderCredential_UsesCodingHostSeatForFlowDispatch(t *testing.T) {
+	t.Parallel()
+	dispatch := &agentDispatch{
+		svc: &AgentService{
+			flowDispatcher: &recordingAgentFlowDispatcher{},
+			workspaces:     stubAgentWorkspaceBackend{},
+		},
+		input: DispatchAgentRunInput{RepoOwner: "owner", RepoName: "repo"},
+	}
+	require.NoError(t, dispatch.requireProviderCredential())
+}

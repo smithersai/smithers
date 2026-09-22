@@ -161,6 +161,12 @@ export const seatResolver = (
             seat,
             modelId
           )
+          : environment.SMITHERS_OPENAI_COMPATIBLE_BASE_URL
+          ? seatOf(Route.openaiChatCompatible({
+            id: "openai",
+            baseUrl: environment.SMITHERS_OPENAI_COMPATIBLE_BASE_URL,
+            apiKey: Redacted.make(key)
+          }), executor, seat, modelId)
           : seatOf(Route.openai({ apiKey: Redacted.make(key) }), executor, seat, modelId)
       })
   })

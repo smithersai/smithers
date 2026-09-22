@@ -725,7 +725,10 @@ export const layerFromEnvironment = (
         `${host} needs AI_GATEWAY_API_KEY, because the harness asks Jev to judge every completion and fails a run it cannot judge. Export AI_GATEWAY_API_KEY (Vercel AI Gateway) and start again, or deliberately bind Evaluator.layerScripted with an evidence-based judge.`
     })
   }
-  return layerVercelGateway({ apiKey: Redacted.make(apiKey) })
+  return layerVercelGateway({
+    apiKey: Redacted.make(apiKey),
+    ...(environment.SMITHERS_EVALUATOR_BASE_URL === undefined ? {} : { baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL })
+  })
 }
 
 /**

@@ -200,7 +200,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,
       // A dispatched turn keeps the host's registry and capability envelope:
       // it is expected to edit the workspace, so it is not evidence-only.
-      dispatchRegistration({ repositoryPath: options.repositoryPath }), dispatchModels,
+      dispatchRegistration(), dispatchModels,
       checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }))
       .pipe(Layer.provideMerge(nativeLayer(options)),
@@ -240,7 +240,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       const binding = yield* Context.get(context, NativeCoding).read()
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
       if (!binding.capabilities?.includes("apply-files/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; apply-files/v1 is required"))
-      if (!binding.capabilities.includes("import-source/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; import-source/v1 is required"))
+      if (options.sourcePublication !== "local-only" && !binding.capabilities.includes("import-source/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; import-source/v1 is required"))
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, stateRoot, credential: options.credential,
       expectedSourceRevision: options.runtimeSourceRevision,

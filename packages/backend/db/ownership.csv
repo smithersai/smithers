@@ -100,7 +100,7 @@ repo_connections,product,product baseline; transitional copy also present
 import_jobs,product,product baseline; transitional copy also present
 wiki_pages,product,product baseline; transitional copy also present
 workspaces,product,product baseline; transitional copy also present
-workflow_run_coding_hosts,private,Plue-owned table; adapter extraction pending L9
+workflow_run_coding_hosts,product,Canonical coding Flow receipt for both self-host and Plue
 workspace_snapshots,product,product baseline; transitional copy also present
 workspace_sessions,product,product baseline; transitional copy also present
 workspace_shares,product,product baseline; transitional copy also present

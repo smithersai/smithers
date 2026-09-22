@@ -159,6 +159,14 @@ describe("NodeControl.seatResolver credentials", () => {
     expect(resolved.id).toBe("openai:gpt-5.6-sol")
   })
 
+  it("routes an explicitly configured OpenAI-compatible owner provider", async () => {
+    const resolved = await Effect.runPromise(resolve({
+      OPENAI_API_KEY: "owner-key",
+      SMITHERS_OPENAI_COMPATIBLE_BASE_URL: "http://provider.internal:8080"
+    }, "openai:scripted"))
+    expect((await prepared(resolved, resolved.modelId)).url).toBe("http://provider.internal:8080/v1/chat/completions")
+  })
+
   it("refuses a keyed provider when the environment record is empty", async () => {
     const error = await Effect.runPromise(Effect.flip(resolve({}, "openrouter:openai/gpt-5.6-sol")))
 

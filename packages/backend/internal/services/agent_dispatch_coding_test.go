@@ -50,7 +50,6 @@ func TestCodingTurnRequestSplitsTheWindowFromThePrompt(t *testing.T) {
 	assert.Equal(t, "run-77", turn.TurnID)
 	assert.Equal(t, codingDispatchRole, turn.Role)
 	assert.Empty(t, turn.Model)
-	assert.Equal(t, defaultWorkspaceClonePath, turn.WorkspaceRoot)
 	assert.Equal(t, []codingTurnMessage{
 		{Role: "user", Content: "Where does the greeting live?"},
 		{Role: "assistant", Content: "In greeting.mjs."},
@@ -66,6 +65,21 @@ func TestCodingTurnRequestRefusesAWindowWithNothingToAnswer(t *testing.T) {
 	_, err = dispatch.codingTurnRequest()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "user message")
+}
+
+func TestCodingFlowDispatchAuthorizesWithoutSandboxProvider(t *testing.T) {
+	dispatch := &agentDispatch{
+		ctx: context.Background(),
+		svc: &AgentService{
+			dispatchQ:      &mockAgentDispatchQuerier{},
+			flowDispatcher: &recordingAgentFlowDispatcher{},
+			workspaces:     stubAgentWorkspaceBackend{},
+		},
+		input: DispatchAgentRunInput{RepoOwner: "owner", RepoName: "repo"},
+	}
+	require.NoError(t, dispatch.authorize())
+	dispatch.svc.flowDispatcher = nil
+	require.ErrorContains(t, dispatch.authorize(), "sandbox provider unavailable")
 }
 
 func TestAdmitCodingTurnPersistsCanonicalFlowRequestWithoutRuntimeCall(t *testing.T) {

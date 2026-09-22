@@ -66,16 +66,7 @@ export const DispatchInput = Schema.Struct({
    * `provider:model` id. Absent, the role resolves through the host's role
    * table, which is what an unconfigured caller wants.
    */
-  model: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+:[^\s:]+$/))),
-  /**
-   * The workspace this turn may touch.
-   *
-   * It is checked against the root this host was started on and never used to
-   * reach one: a gateway request cannot move a host onto another tree. It
-   * exists so a caller that addressed the wrong gateway is told so, instead of
-   * having its turn silently run somewhere else.
-   */
-  workspaceRoot: Schema.NonEmptyString.check(Schema.isMaxLength(4096))
+  model: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-z0-9-]+:[^\s:]+$/)))
 })
 export type DispatchInput = typeof DispatchInput.Type
 
@@ -155,13 +146,6 @@ export const DispatchTurn = AgentAction.make("coding/dispatch-turn", {
   ]
 })
 
-/** Refuses a turn addressed to a workspace this host does not serve. */
-export const AdmitDispatch = Action.make("coding/admit-dispatch", {
-  payload: DispatchInput,
-  success: Schema.Void,
-  error: CodingError
-})
-
 /** Reads the workspace the turn leaves behind and assembles the caller's rows. */
 export const ObserveDispatch = Action.make("coding/observe-dispatch", {
   payload: { input: DispatchInput, answer: TurnAnswer },
@@ -172,11 +156,6 @@ export const ObserveDispatch = Action.make("coding/observe-dispatch", {
 
 export const DispatchError = Schema.Union([CodingError, AgentAction.AgentFailure])
 
-export interface DispatchOptions {
-  /** The root this host serves. A request naming another one is refused. */
-  readonly repositoryPath: string
-}
-
 /**
  * The non-model half of the door.
  *
@@ -184,16 +163,8 @@ export interface DispatchOptions {
  * actions where the agent runtime is, and this half needs only the native
  * adapter and the running execution's identity.
  */
-export const dispatchLayers = (options: DispatchOptions) =>
+export const dispatchLayers = () =>
   Layer.mergeAll(
-    AdmitDispatch.toLayer((input) =>
-      input.workspaceRoot === options.repositoryPath ? Effect.void : Effect.fail(
-        new CodingError({
-          code: "invalid_request",
-          message: "This gateway serves a different workspace; dispatch the turn to the workspace's own gateway"
-        })
-      )
-    ),
     ObserveDispatch.toLayer(({ answer, input }) =>
       Effect.gen(function*() {
         const instance = yield* FlowRuntime.FlowInstance

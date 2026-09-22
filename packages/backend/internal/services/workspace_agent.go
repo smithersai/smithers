@@ -136,14 +136,17 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 	if err != nil {
 		return AgentWorkspaceResult{}, mapWorkspaceCreateError(err, "create agent workspace")
 	}
-	if store, ok := s.q.(agentWorkspaceStore); ok {
-		if err := store.SetAgentSessionWorkspace(ctx, db.SetAgentSessionWorkspaceParams{
-			WorkspaceID: pgUUIDFromString(workspace.ID),
-			ID:          input.SessionID,
-		}); err != nil {
-			s.markWorkspaceProvisionFailed(ctx, workspace, err)
-			return AgentWorkspaceResult{}, pkgerrors.Internal("link agent session to workspace: " + err.Error())
+	linkSession := func() error {
+		if store, ok := s.q.(agentWorkspaceStore); ok {
+			if err := store.SetAgentSessionWorkspace(ctx, db.SetAgentSessionWorkspaceParams{
+				WorkspaceID: pgUUIDFromString(workspace.ID),
+				ID:          input.SessionID,
+			}); err != nil {
+				s.markWorkspaceProvisionFailed(ctx, workspace, err)
+				return pkgerrors.Internal("link agent session to workspace: " + err.Error())
+			}
 		}
+		return nil
 	}
 	if s.runtime != nil {
 		workspace, err = s.ensureWorkspaceRunning(ctx, workspace, CreateWorkspaceSessionInput{
@@ -154,10 +157,16 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
 			return AgentWorkspaceResult{}, err
 		}
+		if err := linkSession(); err != nil {
+			return AgentWorkspaceResult{}, err
+		}
 		return AgentWorkspaceResult{WorkspaceID: workspace.ID}, nil
 	}
 	result, err := s.provisionAgentWorkspace(ctx, workspace, input, bookmark)
 	if err != nil {
+		return AgentWorkspaceResult{}, err
+	}
+	if err := linkSession(); err != nil {
 		return AgentWorkspaceResult{}, err
 	}
 	return result, nil

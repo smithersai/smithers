@@ -43,6 +43,7 @@ var migrationRegistry = []migrationSpec{
 	{9, "migrations/0009_owner_models.sql"},
 	{10, "migrations/0010_branch_lock_and_workflow_invocations.sql"},
 	{11, "migrations/0011_onboarding_and_workspace_setup.sql"},
+	{12, "migrations/0012_workflow_run_coding_hosts.sql"},
 }
 
 type migration struct {

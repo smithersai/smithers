@@ -7,6 +7,7 @@ suffix="$$-$(date +%s)"
 prefix="smithers-issue12-${suffix}"
 network="${prefix}-net"
 postgres="${prefix}-postgres"
+provider="${prefix}-provider"
 restored_postgres="${prefix}-postgres-restored"
 app="${prefix}-app"
 restored_app="${prefix}-app-restored"
@@ -30,14 +31,14 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM
   if [ "$status" -ne 0 ]; then
-    for container in "$app" "$restored_app" "$refusal_app" "$postgres" "$restored_postgres"; do
+    for container in "$app" "$restored_app" "$refusal_app" "$provider" "$postgres" "$restored_postgres"; do
       if container_exists "$container"; then
         printf '\n--- %s logs ---\n' "$container" >&2
         docker logs "$container" >&2 || true
       fi
     done
   fi
-  docker rm -f "$app" "$restored_app" "$refusal_app" "$postgres" "$restored_postgres" >/dev/null 2>&1 || true
+  docker rm -f "$app" "$restored_app" "$refusal_app" "$provider" "$postgres" "$restored_postgres" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   docker volume rm "$data_volume" "$restored_data_volume" "$postgres_volume" "$restored_postgres_volume" "$backup_volume" >/dev/null 2>&1 || true
   exit "$status"
@@ -102,6 +103,11 @@ start_app() {
     -p 127.0.0.1::4000 \
     -e DATABASE_URL="$(database_url "$database_host")" \
     -e SMITHERS_AUTH_BOOTSTRAP_TOKEN="$bootstrap_token" \
+    -e SMITHERS_WORKSPACE_CODING_DEFAULT_MODEL=openai:scripted \
+    -e OPENAI_API_KEY=scripted-provider-key \
+    -e AI_GATEWAY_API_KEY=scripted-evaluator-key \
+    -e "SMITHERS_OPENAI_COMPATIBLE_BASE_URL=http://$provider:8080" \
+    -e "SMITHERS_EVALUATOR_BASE_URL=http://$provider:8080/evaluate" \
     -v "$volume:/var/lib/smithers" \
     "$image" >/dev/null
 }
@@ -120,6 +126,9 @@ docker network create "$network" >/dev/null
 for volume in "$data_volume" "$restored_data_volume" "$postgres_volume" "$restored_postgres_volume" "$backup_volume"; do
   docker volume create "$volume" >/dev/null
 done
+docker run -d --name "$provider" --network "$network" --no-healthcheck \
+  -v "$root/distribution/fake-coding-provider.mjs:/provider.mjs:ro" \
+  --entrypoint /opt/smithers/bin/node "$image" /provider.mjs >/dev/null
 docker run --rm --user 0 -v "$backup_volume:/backups" \
   --entrypoint /bin/sh "$image" -eu -c 'chown smithers:smithers /backups; chmod 0700 /backups'
 
@@ -189,6 +198,30 @@ printf '%s' "$created_repository" | grep -q "\"full_name\":\"$owner_username/$re
 curl -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name" \
   | grep -q "\"full_name\":\"$owner_username/$repository_name\""
+session_response=$(curl -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions" \
+  -H 'Content-Type: application/json' -H "Authorization: token $api_token" \
+  --data '{"title":"Container coding proof"}')
+session_id=$(printf '%s' "$session_response" | sed -n 's/^{"id":"\([^"]*\)".*/\1/p')
+test -n "$session_id"
+curl -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions/$session_id/messages" \
+  -H 'Content-Type: application/json' -H "Authorization: token $api_token" \
+  --data '{"role":"user","parts":[{"type":"text","content":"Write flow-proof.txt with the requested proof text, then read it back."}],"agent_provider":"smithers","agent_transport":"workflow"}' >/dev/null
+flow_completed=0
+for _ in $(seq 1 120); do
+  session_response=$(curl -fsS -H "Authorization: token $api_token" \
+    "$origin/api/repos/$owner_username/$repository_name/agent/sessions/$session_id")
+  case "$session_response" in
+    *'"status":"completed"'*) flow_completed=1; break ;;
+    *'"status":"failed"'*) printf 'coding Flow failed: %s\n' "$session_response" >&2; exit 1 ;;
+  esac
+  sleep 1
+done
+test "$flow_completed" = 1 || { printf 'coding Flow did not complete: %s\n' "$session_response" >&2; exit 1; }
+workspace_id=$(printf '%s' "$session_response" | sed -n 's/.*"workspace_id":"\([^"]*\)".*/\1/p')
+test -n "$workspace_id"
+curl -fsS -H "Authorization: token $api_token" \
+  "$origin/api/repos/$owner_username/$repository_name/workspaces/$workspace_id/files/content?path=flow-proof.txt" \
+  | grep -q '"content":"The coding Flow wrote this file through the packaged host.\\n"'
 docker exec "$app" test -s /var/lib/smithers/config/secrets.json
 secret_checksum=$(docker exec "$app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')
 table_count=$(docker exec "$postgres" psql -U "$database_user" -d "$database_name" -Atqc "select count(*) from pg_catalog.pg_tables where schemaname not in ('pg_catalog','information_schema')")

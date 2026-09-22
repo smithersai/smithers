@@ -291,7 +291,7 @@ func (d *agentDispatch) authorize() error {
 	if d.svc.dispatchQ == nil {
 		return pkgerrors.Internal("agent dispatch querier unavailable")
 	}
-	if d.svc.sandbox == nil {
+	if d.svc.sandbox == nil && !d.codingDispatchEnabled() {
 		return pkgerrors.Internal("sandbox provider unavailable")
 	}
 	if len(d.input.AllowedPaths) > 1024 {
@@ -1032,6 +1032,9 @@ func (d *agentDispatch) recordSecretDelivery(path string, count int) {
 // ANTHROPIC_API_KEY=placeholder-pending-h1-credential-seed injected into every
 // agent VM. A refusal the user can read beats a VM that silently cannot think.
 func (d *agentDispatch) requireProviderCredential() error {
+	if d.codingDispatchEnabled() {
+		return nil
+	}
 	if HasUsableProviderCredentialWithPlaceholders(d.agentServiceSpec.Env, d.egressNames) {
 		return nil
 	}

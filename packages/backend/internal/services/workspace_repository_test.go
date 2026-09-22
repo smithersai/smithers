@@ -22,12 +22,21 @@ import (
 
 type runtimeRepositoryQuerier struct {
 	*mockWorkspaceQuerier
-	owner string
-	repo  string
+	owner                string
+	repo                 string
+	linkAgentWorkspaceFn func(context.Context, db.SetAgentSessionWorkspaceParams) error
 }
 
 func (q *runtimeRepositoryQuerier) GetRepoOwnerSlugAndNameByID(context.Context, int64) (db.GetRepoOwnerSlugAndNameByIDRow, error) {
 	return db.GetRepoOwnerSlugAndNameByIDRow{OwnerSlug: q.owner, RepoName: q.repo}, nil
+}
+
+func (q *runtimeRepositoryQuerier) SetAgentSessionWorkspace(ctx context.Context, input db.SetAgentSessionWorkspaceParams) error {
+	return q.linkAgentWorkspaceFn(ctx, input)
+}
+
+func (q *runtimeRepositoryQuerier) ListRunningWorkspacesForUserRepoBookmark(context.Context, db.ListRunningWorkspacesForUserRepoBookmarkParams) ([]db.Workspace, error) {
+	return nil, nil
 }
 
 func TestRuntimeWorkspaceInitializesRepositoryBeforeRunningAndReusesReceipt(t *testing.T) {
@@ -131,6 +140,16 @@ func TestRuntimeWorkspaceInitializesRepositoryBeforeRunningAndReusesReceipt(t *t
 		current.VmID = ""
 		return current, nil
 	}
+	linked := 0
+	queries.linkAgentWorkspaceFn = func(ctx context.Context, input db.SetAgentSessionWorkspaceParams) error {
+		require.Equal(t, "running", current.Status, "the Flow target must not see a workspace during repository setup")
+		revision, err := runtime.ResolveWorkspaceSourceRevision(ctx, current.ID)
+		require.NoError(t, err)
+		require.True(t, isLowerHexRevision(revision))
+		require.Equal(t, "12345678-1234-1234-1234-123456789abc", input.ID)
+		linked++
+		return nil
+	}
 	agent, err := service.CreateAgentWorkspace(context.Background(), CreateAgentWorkspaceInput{
 		RepositoryID:   row.RepositoryID,
 		UserID:         row.UserID,
@@ -142,6 +161,7 @@ func TestRuntimeWorkspaceInitializesRepositoryBeforeRunningAndReusesReceipt(t *t
 	require.NoError(t, err)
 	require.Equal(t, "runtime-agent-repository", agent.WorkspaceID)
 	require.Empty(t, agent.VMID)
+	require.Equal(t, 1, linked)
 	require.Equal(t, 2, issued)
 	require.Equal(t, 2, revoked)
 	agentReadme, err := runtime.ReadFile(context.Background(), agent.WorkspaceID, "README.md")

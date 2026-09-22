@@ -14,7 +14,7 @@ import { Layer } from "effect"
 // back through this self-import, which resolves after this module evaluates.
 import Dispatch from "./flow.ts"
 import {
-  AdmitDispatch, DispatchError, DispatchInput, dispatchLayers, type DispatchOptions, DispatchResult,
+  DispatchError, DispatchInput, dispatchLayers, DispatchResult,
   DispatchTurn, ObserveDispatch
 } from "../dispatch.ts"
 
@@ -26,12 +26,11 @@ export default Flow.make("coding/Dispatch", {
   success: DispatchResult,
   error: DispatchError,
   body: (input) =>
-    AdmitDispatch.call(input).pipe(
-      Node.andThen(DispatchTurn.call(input)),
+    DispatchTurn.call(input).pipe(
       Node.bindPlanned((answer) => ObserveDispatch.call({ input, answer }))
     )
 })
 
 /** The non-model half of the door, plus the flow it drives. */
-export const dispatchRegistration = (options: DispatchOptions) =>
-  Layer.mergeAll(Interpreter.layer(Dispatch), dispatchLayers(options))
+export const dispatchRegistration = () =>
+  Layer.mergeAll(Interpreter.layer(Dispatch), dispatchLayers())
