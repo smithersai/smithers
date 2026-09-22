@@ -2,14 +2,11 @@ package config
 
 import "strings"
 
-// ResolvePublicAPIOrigin returns the externally reachable HTTP origin used for
-// links that must come back to the API service. APIBaseURL takes precedence
-// over fallback (historically email.base_url), and a conventional trailing
-// /api is removed because callers append their own API route paths.
-func ResolvePublicAPIOrigin(apiBaseURL, fallback string) string {
-	base := strings.TrimRight(strings.TrimSpace(apiBaseURL), "/")
-	if base == "" {
-		return strings.TrimRight(strings.TrimSpace(fallback), "/")
+// PublicOrigin is the one externally reachable HTTP origin for links issued by
+// the API. Listen and loopback callback addresses are separate concerns.
+func PublicOrigin(cfg *Config) string {
+	if cfg == nil {
+		return ""
 	}
-	return strings.TrimSuffix(base, "/api")
+	return strings.TrimRight(strings.TrimSpace(cfg.Server.PublicURL), "/")
 }

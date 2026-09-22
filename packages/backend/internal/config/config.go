@@ -236,7 +236,10 @@ type ObservabilityConfig struct {
 }
 
 type ServerConfig struct {
-	Addr             string `mapstructure:"addr"`
+	Addr string `mapstructure:"addr"`
+	// PublicURL is the externally reachable origin for browser, email, Git,
+	// and blob transfer links. Env: SMITHERS_PUBLIC_URL.
+	PublicURL        string `mapstructure:"public_url"`
 	ReadTimeoutSecs  int    `mapstructure:"read_timeout_secs"`
 	WriteTimeoutSecs int    `mapstructure:"write_timeout_secs"`
 	ShutdownTimeout  string `mapstructure:"shutdown_timeout"`
@@ -531,6 +534,7 @@ func Load(configFile string) (*Config, error) {
 
 	// Defaults
 	v.SetDefault("server.addr", ":4000")
+	v.SetDefault("server.public_url", "http://localhost:4000")
 	v.SetDefault("server.read_timeout_secs", 30)
 	v.SetDefault("server.write_timeout_secs", 0)
 	v.SetDefault("server.shutdown_timeout", "30s")
@@ -741,6 +745,7 @@ func Load(configFile string) (*Config, error) {
 	// Bind specific env vars (BindEnv never returns an error for static bindings)
 	for _, b := range [][2]string{
 		{"server.addr", "SMITHERS_SERVER_ADDR"},
+		{"server.public_url", "SMITHERS_PUBLIC_URL"},
 		{"server.read_timeout_secs", "SMITHERS_SERVER_READ_TIMEOUT_SECS"},
 		{"server.write_timeout_secs", "SMITHERS_SERVER_WRITE_TIMEOUT_SECS"},
 		{"server.shutdown_timeout", "SMITHERS_SERVER_SHUTDOWN_TIMEOUT"},

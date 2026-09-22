@@ -11,6 +11,7 @@ import (
 func validStartupConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
+			PublicURL:        "https://smithers.test",
 			ReadTimeoutSecs:  30,
 			WriteTimeoutSecs: 30,
 			ShutdownTimeout:  "30s",
@@ -33,7 +34,7 @@ func validStartupConfig() *Config {
 			LFSSigningSecret: "lfs-signing-secret",
 		},
 		Billing: BillingConfig{Mode: "unlimited"},
-		Email:   EmailConfig{BaseURL: "https://smithers.test"},
+		Email:   EmailConfig{},
 		Webhook: WebhookConfig{SecretEncryptionKey: "webhook-secret-key"},
 	}
 }
@@ -273,20 +274,20 @@ func TestValidateSSHStartup_RequiresTrustedPublicBaseURL(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validStartupConfig()
-			cfg.Email.BaseURL = tc.baseURL
+			cfg.Server.PublicURL = tc.baseURL
 			err := ValidateSSHStartup(cfg)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "email.base_url")
+			assert.Contains(t, err.Error(), "server.public_url")
 		})
 	}
 }
 
-func TestValidateSSHStartup_PublicAPIBaseOverridesEmailOrigin(t *testing.T) {
+func TestValidateSSHStartup_LegacyAPIBaseDoesNotOverridePublicURL(t *testing.T) {
 	t.Setenv("SMITHERS_API_BASE_URL", "https://api.smithers.test/api")
 	cfg := validStartupConfig()
-	cfg.Email.BaseURL = ""
+	cfg.Server.PublicURL = ""
 
-	require.NoError(t, ValidateSSHStartup(cfg))
+	require.ErrorContains(t, ValidateSSHStartup(cfg), "server.public_url is required")
 }
 
 // The SSH server must enforce the same empty-database-URL rejection as the API

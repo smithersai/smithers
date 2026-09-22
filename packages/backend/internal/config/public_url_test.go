@@ -6,25 +6,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolvePublicAPIOrigin(t *testing.T) {
-	t.Parallel()
+func TestPublicOriginUsesServerURL(t *testing.T) {
+	cfg := &Config{Server: ServerConfig{PublicURL: "https://owner.example.test/"}, Email: EmailConfig{BaseURL: "https://unrelated.example.test"}}
+	assert.Equal(t, "https://owner.example.test", PublicOrigin(cfg))
+	cfg.Server.PublicURL = ""
+	assert.Empty(t, PublicOrigin(cfg))
+}
 
-	tests := []struct {
-		name     string
-		apiBase  string
-		fallback string
-		want     string
-	}{
-		{name: "api base wins and strips route prefix", apiBase: " https://api.jjhub.test/api/ ", fallback: "https://jjhub.test", want: "https://api.jjhub.test"},
-		{name: "api origin without prefix", apiBase: "https://api.jjhub.test/", fallback: "https://jjhub.test", want: "https://api.jjhub.test"},
-		{name: "fallback", fallback: " https://jjhub.test/ ", want: "https://jjhub.test"},
-		{name: "empty", want: ""},
+func TestPublicURLLoadsFromCanonicalEnvironment(t *testing.T) {
+	t.Setenv("SMITHERS_PUBLIC_URL", "https://smithers.example.test")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tc.want, ResolvePublicAPIOrigin(tc.apiBase, tc.fallback))
-		})
-	}
+	assert.Equal(t, "https://smithers.example.test", cfg.Server.PublicURL)
 }

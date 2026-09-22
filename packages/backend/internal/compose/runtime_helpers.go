@@ -436,14 +436,14 @@ func apiAllowedOrigins(cfg *config.Config) []string {
 		return origins
 	}
 
-	baseURL := strings.TrimSpace(cfg.Email.BaseURL)
+	baseURL := config.PublicOrigin(cfg)
 	if baseURL == "" {
 		return nil
 	}
 
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		slog.Warn("invalid email.base_url for API CORS origin allowlist", "base_url", cfg.Email.BaseURL, "error", err)
+		slog.Warn("invalid public URL for API CORS origin allowlist", "base_url", baseURL, "error", err)
 		return nil
 	}
 

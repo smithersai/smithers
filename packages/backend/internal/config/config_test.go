@@ -21,6 +21,7 @@ var allEnvKeys = []string{
 	"SMITHERS_AGENT_NEVER_STARTED_TIMEOUT",
 	// Server
 	"SMITHERS_SERVER_ADDR",
+	"SMITHERS_PUBLIC_URL",
 	"SMITHERS_SERVER_READ_TIMEOUT_SECS",
 	"SMITHERS_SERVER_WRITE_TIMEOUT_SECS",
 	"SMITHERS_SERVER_SHUTDOWN_TIMEOUT",
@@ -800,6 +801,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 		Agents: AgentsConfig{NeverStartedTimeout: "1h"},
 		Server: ServerConfig{
 			Addr:             ":4000",
+			PublicURL:        "http://localhost:4000",
 			ReadTimeoutSecs:  30,
 			WriteTimeoutSecs: 0,
 			ShutdownTimeout:  "30s",
@@ -1786,7 +1788,7 @@ func TestLoad_SpecCompliance_RunnerConfig(t *testing.T) {
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 195,
+	assert.Len(t, allEnvKeys, 196,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1896,7 +1898,7 @@ func TestLoad_EnvOverrideMidFlight(t *testing.T) {
 func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 	expectedFieldCounts := map[string]int{
 		"Config":              17, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Runner, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit
-		"ServerConfig":        7,  // Addr, ReadTimeoutSecs, WriteTimeoutSecs, ShutdownTimeout, SSHHost, AllowedOrigins, TrustedProxyHops
+		"ServerConfig":        8,  // Addr, PublicURL, ReadTimeoutSecs, WriteTimeoutSecs, ShutdownTimeout, SSHHost, AllowedOrigins, TrustedProxyHops
 		"DatabaseConfig":      5,  // URL, MaxConns, MinConns, MaxConnLifetime, MaxConnIdleTime
 		"RepoHostConfig":      3,  // URL, AuthToken, PushHookCallbackToken
 		"SandboxConfig":       37, // provider assertion, Microsandbox transport/accelerator, provider-neutral resource sizing/access, anonymous-sandbox bounds (enabled/allowlist/TTL/global+per-IP caps), repo-gateway provider credentials, agent seat, desktop guest sizing and observe-text switch, health probe, and preview relay token
@@ -1948,7 +1950,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 191, totalSubFields,
+	assert.Equal(t, 192, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 )
@@ -131,14 +130,10 @@ func ValidateSSHStartup(cfg *Config) error {
 	if strings.TrimSpace(cfg.Auth.LFSSigningSecret) == "" {
 		errs = append(errs, "auth.lfs_signing_secret must not be empty")
 	}
-	apiBaseURL := strings.TrimSpace(os.Getenv("SMITHERS_API_BASE_URL"))
-	baseURL := ResolvePublicAPIOrigin(apiBaseURL, cfg.Email.BaseURL)
-	baseURLSetting := "email.base_url"
-	if apiBaseURL != "" {
-		baseURLSetting = "SMITHERS_API_BASE_URL"
-	}
+	baseURL := PublicOrigin(cfg)
+	baseURLSetting := "SMITHERS_PUBLIC_URL"
 	if baseURL == "" {
-		errs = append(errs, "SMITHERS_API_BASE_URL or email.base_url is required for Git LFS SSH authentication")
+		errs = append(errs, "SMITHERS_PUBLIC_URL is required for Git LFS SSH authentication")
 	} else if err := validateURL(baseURL, true); err != nil {
 		errs = append(errs, fmt.Sprintf("%s is invalid: %v", baseURLSetting, err))
 	} else if parsed, err := url.Parse(baseURL); err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -152,6 +147,15 @@ func ValidateSSHStartup(cfg *Config) error {
 }
 
 func validateCommonStartup(cfg *Config, errs *[]string) {
+	if publicURL := strings.TrimSpace(cfg.Server.PublicURL); publicURL == "" {
+		*errs = append(*errs, "server.public_url is required")
+	} else {
+		if err := validateURL(publicURL, true); err != nil {
+			*errs = append(*errs, fmt.Sprintf("server.public_url is invalid: %v", err))
+		} else if parsed, err := url.Parse(publicURL); err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+			*errs = append(*errs, "server.public_url must be an origin without path, credentials, query, or fragment")
+		}
+	}
 	if strings.TrimSpace(cfg.Database.URL) == "" {
 		*errs = append(*errs, "database.url is required")
 	}

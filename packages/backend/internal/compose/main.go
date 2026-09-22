@@ -388,22 +388,21 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if emailFrom == "" {
 		emailFrom = cfg.Email.SESFrom
 	}
+	// One public origin serves browser redirects, email, Git and blob transfers.
+	publicBaseURL := config.PublicOrigin(cfg)
+	agentAPIBaseURL := publicBaseURL + "/api"
 	emailService := services.NewEmailService(queries, emailTransport, services.EmailServiceConfig{
-		BaseURL: cfg.Email.BaseURL,
+		BaseURL: publicBaseURL,
 		From:    emailFrom,
 	})
-	// Public base URL used by browser redirects, Microsandbox VMs, and API callbacks.
-	publicBaseURL := strings.TrimRight(cfg.Email.BaseURL, "/")
-	if publicBaseURL == "" {
-		publicBaseURL = fmt.Sprintf("http://localhost%s", cfg.Server.Addr)
-	}
-	agentAPIBaseURL := publicBaseURL + "/api"
-	if apiBaseURL := strings.TrimSpace(os.Getenv("SMITHERS_API_BASE_URL")); apiBaseURL != "" {
-		agentAPIBaseURL = strings.TrimRight(apiBaseURL, "/")
-		publicBaseURL = config.ResolvePublicAPIOrigin(agentAPIBaseURL, publicBaseURL)
-	}
 
-	billingComposition, err := services.NewBillingComposition(queries, services.BillingCompositionConfig{
+	billingQueries := services.BillingBaseQuerier(queries)
+	if options.Role.hosted() {
+		// Hosted admission includes deployment storage reservations and retained
+		// deletion bytes; local mode uses only the product schema.
+		billingQueries = hostedQueries
+	}
+	billingComposition, err := services.NewBillingComposition(billingQueries, services.BillingCompositionConfig{
 		Mode:            services.BillingMode(cfg.Billing.Mode),
 		StripeSecretKey: cfg.Billing.StripeSecretKey,
 		Service: services.BillingServiceConfig{
