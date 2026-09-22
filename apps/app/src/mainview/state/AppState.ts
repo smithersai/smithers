@@ -732,6 +732,7 @@ export const ApprovalsInboxRequestSchema = z.object({
 export type ApprovalsInboxRequest = z.infer<typeof ApprovalsInboxRequestSchema>
 
 export const SessionSchema = z.object({
+  codingProviderRequests: z.array(z.object({ id: z.string(), owner: z.string(), action: z.enum(["connect", "revoke"]).optional(), connectionId: z.string().optional(), state: z.enum(["requested", "completed", "failed"]) })).optional(),
   librarianLaunches: z.array(z.object({
     kind: z.enum(["wiki", "history"]),
     repo: z.string(),
@@ -1256,6 +1257,7 @@ export type AppTransition =
   /** One merge onto the signup row; a missing row starts from initialSignup(). */
   | { type: "signup.changed"; actor: Actor; patch: Partial<Signup> }
   | { type: "librarian.launches.changed"; actor: Actor; launches: NonNullable<Session["librarianLaunches"]> }
+  | { type: "coding.provider.requests.changed"; actor: Actor; requests: NonNullable<Session["codingProviderRequests"]> }
   | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
   /* The color theme (/theme) — the axis orthogonal to light/dark. */
   | { type: "palette.changed"; actor: "user"; palette: Palette }

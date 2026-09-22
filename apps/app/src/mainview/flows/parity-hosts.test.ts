@@ -470,7 +470,7 @@ describe("host parity — the web and native catalogs against the servers' own c
     expect(unreached).toEqual([])
     // The two rows the W0 hunk opened for lanes that had not landed are gone.
     expect(proxied("/api/user/tokens")).toBe(false)
-    expect(proxied("/api/user/provider-connections")).toBe(false)
+    expect(proxied("/api/user/provider-connections")).toBe(true)
   })
 
   test("(c) workspace.terminal is present exactly when cloud.terminal is", async () => {

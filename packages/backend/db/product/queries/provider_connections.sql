@@ -40,7 +40,7 @@ SET access_token_encrypted = sqlc.arg(access_token_encrypted),
     last_error = '',
     state = 'active',
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1 AND state <> 'revoked';
 
 -- name: MarkProviderConnectionRefreshFailure :exec
 UPDATE provider_connections
@@ -49,7 +49,7 @@ SET refresh_failures = sqlc.arg(refresh_failures),
     last_error = sqlc.arg(last_error),
     state = sqlc.arg(state),
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1 AND state <> 'revoked';
 
 -- name: ClaimProviderConnectionForRefresh :one
 -- Leases one refreshable connection whose access token expires within the

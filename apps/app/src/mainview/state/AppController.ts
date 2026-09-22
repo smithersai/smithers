@@ -527,6 +527,9 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly viewEnvironment: EnvironmentSeam["viewEnvironment"]
   readonly setEnvironmentVar: EnvironmentSeam["setEnvironmentVar"]
   readonly listSecrets: SecretsSeam["listSecrets"]
+  readonly connectCodingProvider: SecretsSeam["connectCodingProvider"]
+  readonly listCodingProviders: SecretsSeam["listCodingProviders"]
+  readonly revokeCodingProvider: SecretsSeam["revokeCodingProvider"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
   readonly importRepository: RepoImportSeam["importRepository"]
@@ -862,7 +865,7 @@ export const createAppController = (
   const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
-  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context))
+  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context, withToast))
   const historySeam = actors.pair(seamCtx, (context, select) => createHistorySeam(context, async repo => {
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
@@ -1797,6 +1800,9 @@ export const createAppController = (
     viewEnvironment: environmentSeam.viewEnvironment,
     setEnvironmentVar: environmentSeam.setEnvironmentVar,
     listSecrets: secretsSeam.listSecrets,
+    connectCodingProvider: secretsSeam.connectCodingProvider,
+    listCodingProviders: secretsSeam.listCodingProviders,
+    revokeCodingProvider: secretsSeam.revokeCodingProvider,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,
     registerTrigger,
@@ -2010,15 +2016,18 @@ export const createAppController = (
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
-    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
+    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls(); secretsSeam.resumeCodingProviders() } })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     repoImportSeam.resume()
     runs.resumeApprovalRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
-  const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => repoImportSeam.resume())
-  ctx.onDispose(() => importCloudSubscription.unsubscribe())
+  const cloudRecoverySubscription = store.collections.cloudSessions.subscribeChanges(() => {
+    repoImportSeam.resume()
+    queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
+  })
+  ctx.onDispose(() => cloudRecoverySubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()

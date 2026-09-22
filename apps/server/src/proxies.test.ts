@@ -15,3 +15,13 @@ test("only billing overview and catalog GETs join the platform proxy", () => {
   }
   expect(platformProxyMatch("/api/billing/balance", "GET")).toBe(false)
 })
+
+test("coding connection proxy exposes only the account enrollment, list and revoke methods", () => {
+  expect(platformProxyMatch("/api/user/provider-connections", "GET")).toBe(true)
+  expect(platformProxyMatch("/api/user/provider-connections", "POST")).toBe(true)
+  expect(platformProxyMatch("/api/user/provider-connections/conn-1/grants", "POST")).toBe(false)
+  expect(platformProxyMatch("/api/user/provider-connections/conn-1", "DELETE")).toBe(true)
+  expect(platformProxyMatch("/api/user/provider-connections/conn-1", "GET")).toBe(false)
+  expect(platformProxyMatch("/api/user/provider-connections/conn-1/refresh", "POST")).toBe(false)
+  expect(platformProxyMatch("/api/user/provider-connections/conn-1/grants/2", "DELETE")).toBe(false)
+})

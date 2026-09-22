@@ -6893,6 +6893,8 @@ CREATE TABLE IF NOT EXISTS provider_connections (
 );
 CREATE INDEX IF NOT EXISTS idx_provider_connections_user_provider
     ON provider_connections (user_id, provider, updated_at DESC) WHERE state = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_connections_web_request
+    ON provider_connections (user_id, label) WHERE owner_type = 'user' AND label LIKE 'web-%';
 CREATE INDEX IF NOT EXISTS idx_provider_connections_org_provider
     ON provider_connections (org_id, provider, updated_at DESC) WHERE state = 'active';
 CREATE INDEX IF NOT EXISTS idx_provider_connections_refresh_due

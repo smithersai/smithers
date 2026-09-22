@@ -2767,6 +2767,9 @@ describe("the browser tool route (§2d)", () => {
       ["GET", "/api/user/repos"],
       ["GET", "/api/user/workspaces?limit=100"],
       ["GET", "/api/user/orgs"],
+      ["GET", "/api/user/provider-connections"],
+      ["POST", "/api/user/provider-connections"],
+      ["DELETE", "/api/user/provider-connections/conn-1"],
       ["GET", "/api/orgs/smithersai/provider-connections"],
       ["POST", "/api/orgs/smithersai/changesets/7/land"],
       ["GET", "/api/notifications/list"],
@@ -2800,15 +2803,14 @@ describe("the browser tool route (§2d)", () => {
       ["DELETE", "/api/user/byok-keys/anthropic"],
       ["PATCH", "/api/user/workspaces"],
       ["PUT", "/api/orgs/smithersai/provider-connections"],
+      ["POST", "/api/user/provider-connections/conn-1/grants"],
       /*
        * Doors no product seam calls (apps/app/src/mainview/state/seams): a PAT
-       * mint, a provider-connection write, an org delete, an integration
+       * mint, an org delete, an integration
        * create or patch, a Linear delete. The bridge hands the page whatever
        * the platform answers, so a row here is a capability, and every row
        * lands in the same commit as the seam that needs it (parity-hosts (b)).
        */
-      ["GET", "/api/user/provider-connections"],
-      ["POST", "/api/user/provider-connections"],
       ["GET", "/api/user/tokens"],
       ["POST", "/api/user/tokens"],
       ["DELETE", "/api/user/tokens/7"],

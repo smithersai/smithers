@@ -229,6 +229,7 @@ export const APP_TRANSITION_TYPES = {
   "first-run.dismissed": true,
   "signup.changed": true,
   "librarian.launches.changed": true,
+  "coding.provider.requests.changed": true,
   "theme.changed": true,
   "palette.changed": true,
   "composer.control.changed": true,
@@ -2028,6 +2029,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
         case "librarian.launches.changed": {
           collections.sessions.update(SESSION_ID, draft => { draft.librarianLaunches = transition.launches })
+          break
+        }
+        case "coding.provider.requests.changed": {
+          collections.sessions.update(SESSION_ID, draft => { draft.codingProviderRequests = transition.requests })
           break
         }
         case "theme.changed":

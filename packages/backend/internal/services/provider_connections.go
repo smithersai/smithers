@@ -455,7 +455,41 @@ func (s *ProviderConnectionService) ConnectForUser(ctx context.Context, actor *d
 	if actor == nil {
 		return ProviderConnectionResponse{}, pkgerrors.Unauthorized("authentication required")
 	}
-	return s.createConnection(ctx, actor, "user", actor.ID, 0, in)
+	if err := s.validateConnectInput(&in); err != nil {
+		return ProviderConnectionResponse{}, err
+	}
+	// The browser persists only this public request label. A replay after a
+	// lost response returns the same metadata and never replaces the token.
+	find := func() (*ProviderConnectionResponse, error) {
+		rows, err := s.q.ListUserProviderConnections(ctx, pgtype.Int8{Int64: actor.ID, Valid: true})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.Label == in.Label {
+				if row.Provider != in.Provider {
+					return nil, pkgerrors.BadRequest("request label belongs to another provider")
+				}
+				answer := s.toResponse(ctx, row)
+				return &answer, nil
+			}
+		}
+		return nil, nil
+	}
+	if strings.HasPrefix(in.Label, "web-") {
+		if found, err := find(); err != nil {
+			return ProviderConnectionResponse{}, pkgerrors.Internal("failed to check connection request")
+		} else if found != nil {
+			return *found, nil
+		}
+	}
+	answer, err := s.createConnection(ctx, actor, "user", actor.ID, 0, in)
+	if err != nil && strings.HasPrefix(in.Label, "web-") {
+		if found, lookupErr := find(); lookupErr == nil && found != nil {
+			return *found, nil
+		}
+	}
+	return answer, err
 }
 
 // ConnectForOrg connects an account owned by an organization; only owners may.
@@ -710,6 +744,21 @@ func (s *ProviderConnectionService) ResolveForRun(ctx context.Context, userID, r
 		if err != nil {
 			s.logger.Warn("provider connection unusable for run", "connection_id", row.ID, "provider", provider, "error", err)
 			continue
+		}
+		// Refresh and decrypt may wait on a provider while the owner revokes this
+		// connection or its repository grant. Recheck the scoped active selection
+		// before handing a token to a new run.
+		var current db.ProviderConnection
+		if source == "org" {
+			current, err = s.q.ResolveActiveOrgProviderConnection(ctx, db.ResolveActiveOrgProviderConnectionParams{OrgID: repo.OrgID, Provider: provider})
+		} else {
+			current, err = s.q.ResolveActiveUserProviderConnectionForRepository(ctx, db.ResolveActiveUserProviderConnectionForRepositoryParams{UserID: pgtype.Int8{Int64: userID, Valid: true}, Provider: provider, RepositoryID: repositoryID})
+		}
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && current.ID != row.ID) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("recheck provider connection: %w", err)
 		}
 		return resolved, nil
 	}

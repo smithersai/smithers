@@ -30,6 +30,18 @@ func (plainCodec) DecryptString(c string) (string, error) {
 	return strings.TrimPrefix(c, "enc:"), nil
 }
 
+type revokingCodec struct {
+	plainCodec
+	revoke func()
+}
+
+func (c revokingCodec) DecryptString(ciphertext string) (string, error) {
+	if c.revoke != nil {
+		c.revoke()
+	}
+	return c.plainCodec.DecryptString(ciphertext)
+}
+
 type fakeProviderConnectionQuerier struct {
 	rows       map[string]db.ProviderConnection
 	grants     []db.ProviderConnectionGrant
@@ -85,6 +97,9 @@ func (f *fakeProviderConnectionQuerier) RevokeProviderConnection(_ context.Conte
 }
 func (f *fakeProviderConnectionQuerier) UpdateProviderConnectionTokens(_ context.Context, a db.UpdateProviderConnectionTokensParams) error {
 	r := f.rows[a.ID]
+	if r.State == "revoked" {
+		return nil
+	}
 	r.AccessTokenEncrypted, r.RefreshTokenEncrypted, r.AccessExpiresAt, r.NextRefreshAt = a.AccessTokenEncrypted, a.RefreshTokenEncrypted, a.AccessExpiresAt, a.NextRefreshAt
 	r.State, r.RefreshFailures, r.LastError = "active", 0, ""
 	r.LastRefreshAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
@@ -94,6 +109,9 @@ func (f *fakeProviderConnectionQuerier) UpdateProviderConnectionTokens(_ context
 func (f *fakeProviderConnectionQuerier) MarkProviderConnectionRefreshFailure(_ context.Context, a db.MarkProviderConnectionRefreshFailureParams) error {
 	f.failures = append(f.failures, a)
 	r := f.rows[a.ID]
+	if r.State == "revoked" {
+		return nil
+	}
 	r.RefreshFailures, r.NextRefreshAt, r.LastError, r.State = a.RefreshFailures, a.NextRefreshAt, a.LastError, a.State
 	f.rows[a.ID] = r
 	return nil
@@ -241,6 +259,27 @@ func TestProviderConnection_ConnectValidatesKindsAndTokens(t *testing.T) {
 	assert.Equal(t, "enc:ref", string(row.RefreshTokenEncrypted))
 }
 
+func TestProviderConnection_WebRequestIsIdempotentAndAccountScoped(t *testing.T) {
+	q := newFakePCQ()
+	q.repos[2] = db.Repository{ID: 2, UserID: pgtype.Int8{Int64: 7, Valid: true}}
+	svc := newPCService(q, nil)
+	alice, bob := &db.User{ID: 7}, &db.User{ID: 8}
+	first, err := svc.ConnectForUser(context.Background(), alice, ConnectProviderInput{Provider: "claude", Label: "web-request-1", AccessToken: "sk-ant-oat01-first"})
+	require.NoError(t, err)
+	replayed, err := svc.ConnectForUser(context.Background(), alice, ConnectProviderInput{Provider: "claude", Label: "web-request-1", AccessToken: "sk-ant-oat01-second"})
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, replayed.ID)
+	assert.Equal(t, 1, len(q.rows))
+	assert.Equal(t, "enc:sk-ant-oat01-first", string(q.rows[first.ID].AccessTokenEncrypted))
+	foreign, err := svc.ResolveForRun(context.Background(), 8, 2, "claude")
+	require.NoError(t, err)
+	assert.Nil(t, foreign, "a collaborator cannot resolve the owner's connection")
+	other, err := svc.ConnectForUser(context.Background(), bob, ConnectProviderInput{Provider: "claude", Label: "web-request-1", AccessToken: "sk-ant-oat01-bob"})
+	require.NoError(t, err)
+	assert.NotEqual(t, first.ID, other.ID)
+	assert.Equal(t, 2, len(q.rows))
+}
+
 func TestProviderConnection_OrgConnectRequiresOwner(t *testing.T) {
 	q := newFakePCQ()
 	q.orgs["acme"] = db.Organization{ID: 3, Name: "acme", LowerName: "acme"}
@@ -312,6 +351,30 @@ func TestProviderConnection_ResolvePrecedence(t *testing.T) {
 	resolved, err = svc.ResolveForRun(context.Background(), 7, 2, "smithers")
 	require.NoError(t, err)
 	assert.Nil(t, resolved)
+}
+
+func TestProviderConnection_RevocationDuringResolutionFailsClosed(t *testing.T) {
+	q := newFakePCQ()
+	q.repos[2] = db.Repository{ID: 2, UserID: pgtype.Int8{Int64: 7, Valid: true}}
+	owner := &db.User{ID: 7}
+	svc := newPCService(q, nil)
+	connection, err := svc.ConnectForUser(context.Background(), owner, ConnectProviderInput{Provider: "claude", AccessToken: "sk-ant-oat01-fixture"})
+	require.NoError(t, err)
+	decrypted := false
+	svc.codec = revokingCodec{revoke: func() {
+		if decrypted {
+			return
+		}
+		decrypted = true
+		require.NoError(t, svc.Revoke(context.Background(), owner, connection.ID))
+	}}
+	resolved, err := svc.ResolveForRun(context.Background(), 7, 2, "claude")
+	require.NoError(t, err)
+	assert.Nil(t, resolved)
+	assert.True(t, decrypted)
+	assert.Equal(t, "revoked", q.rows[connection.ID].State)
+	require.NoError(t, q.UpdateProviderConnectionTokens(context.Background(), db.UpdateProviderConnectionTokensParams{ID: connection.ID, AccessTokenEncrypted: []byte("enc:new-token")}))
+	assert.Equal(t, "revoked", q.rows[connection.ID].State, "a late refresh must not reactivate a revoked connection")
 }
 
 func TestProviderConnection_RefreshLoopStates(t *testing.T) {
@@ -457,4 +520,21 @@ func base64URL(b []byte) string {
 		}
 	}
 	return out.String()
+}
+
+func TestProviderConnection_ManualRefreshRecoversFailedConnection(t *testing.T) {
+	q := newFakePCQ()
+	refresher := &stubRefresher{tokens: RefreshedTokens{AccessToken: "fresh", RefreshToken: "rotated", ExpiresAt: time.Now().Add(time.Hour)}}
+	svc := newPCService(q, refresher)
+	actor := &db.User{ID: 7}
+	connection, err := svc.ConnectForUser(context.Background(), actor, ConnectProviderInput{Provider: "codex", AccessToken: "old", RefreshToken: "refresh", AccountID: "acct"})
+	require.NoError(t, err)
+	row := q.rows[connection.ID]
+	row.State, row.RefreshFailures, row.LastError = ProviderConnectionStateRefreshFailed, 5, "temporary provider failure"
+	q.rows[connection.ID] = row
+	updated, err := svc.RefreshNow(context.Background(), actor, connection.ID)
+	require.NoError(t, err)
+	assert.Equal(t, ProviderConnectionStateActive, updated.State)
+	assert.Equal(t, "enc:fresh", string(q.rows[connection.ID].AccessTokenEncrypted))
+	assert.Zero(t, q.rows[connection.ID].RefreshFailures)
 }

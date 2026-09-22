@@ -56,6 +56,9 @@ export const PLATFORM_PROXY_RULES: ReadonlyArray<{
    */
   { prefix: "/api/user/workspaces", methods: ["GET"] },
   { prefix: "/api/user/orgs", methods: ["GET"] },
+  /* Account-owned coding subscription: only Claude setup-token enrollment and metadata/revocation. */
+  { exact: "/api/user/provider-connections", methods: ["GET", "POST"] },
+  { prefix: "/api/user/provider-connections/", methods: ["DELETE"] },
   /* ChangeSeam: the changeset DTO, and landing one (ADR 0003). */
   { prefix: "/api/orgs/", methods: ["GET", "POST"] },
   { prefix: "/api/notifications/", methods: ["GET", "PUT"] },
@@ -104,7 +107,9 @@ const platformFailureMessage = (status: number, body: string): string => {
 }
 
 export const platformProxyMatch = (pathname: string, method: string): boolean =>
-  !/\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname) && PLATFORM_PROXY_RULES.some(
+  !/\/issues\/[^/]+\/linear-link(?:\/|$)/.test(pathname) &&
+  (!pathname.startsWith("/api/user/provider-connections/") ||
+    (method === "DELETE" && /^\/api\/user\/provider-connections\/[A-Za-z0-9-]{1,100}$/.test(pathname))) && PLATFORM_PROXY_RULES.some(
     (rule) =>
       rule.methods.includes(method) &&
       (rule.exact !== undefined
@@ -203,6 +208,11 @@ export const handlePlatformProxy = (
      */
     if (upstream.status >= 400) {
       const detail = yield* readText(upstream).pipe(Effect.catch(() => Effect.succeed("")))
+      // A provider setup token crossed this proxy only in the request body.
+      // Never reflect upstream prose or fields for its write endpoints.
+      if (url.pathname.startsWith("/api/user/provider-connections") && request.method !== "GET") {
+        return json(upstream.status, { status: "error", code: "provider_connection_refused" })
+      }
       const failure = json(upstream.status, {
         status: "error",
         message: platformFailureMessage(upstream.status, detail),

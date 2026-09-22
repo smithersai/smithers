@@ -1,4 +1,4 @@
-h1:K3fUWgW79SyaLyRvJAdMVD76XJdZu1081V9j5Wl+vw8=
+h1:NS78ilFrrJ5BAhIZ9/JX+kudvs+zW4Fazp3KUg3m9DE=
 000001_baseline.sql h1:OBVG0SEjYmJWgpDPd8Xw4LcFf8qUXZXlKN1vwDiQsMk=
 000002_fix_landing_requests_schema_drift.sql h1:9RK18L/M2yWLxFHtYjRC509LzSy1ewxUFyMGj96WLlg=
 000003_add_landing_tasks.sql h1:wXPfgl/UXn24qfRPqt+i9YkING0iXCyKUrrNxCvlRCE=
@@ -196,3 +196,4 @@ h1:K3fUWgW79SyaLyRvJAdMVD76XJdZu1081V9j5Wl+vw8=
 20260916233000_workspace_capability_bindings.sql h1:un7lvYv9bCPseRL/DtI8eJJ7tAnC5C+UWV0JG1kvFbw=
 20260917003000_counter_reaction_cap_triggers.sql h1:FpMlZxaflYlKOF8zH182X4JvdZZ+IEy44gWlRuz9LYA=
 20260918120000_workflow_run_coding_hosts.sql h1:xRnF9fJbv0bL12SCHgB0Sr9KLJIFLpvGm2RboJv1N24=
+20260921130000_provider_connection_web_request.sql h1:0/9XRsbntFYvaZ4f3fQBoAqUHmPcuxpo/grN7y2vXQY=

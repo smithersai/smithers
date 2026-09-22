@@ -370,7 +370,7 @@ SET refresh_failures = $2,
     last_error = $4,
     state = $5,
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND state <> 'revoked'
 `
 
 type MarkProviderConnectionRefreshFailureParams struct {
@@ -519,7 +519,7 @@ SET access_token_encrypted = $2,
     last_error = '',
     state = 'active',
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND state <> 'revoked'
 `
 
 type UpdateProviderConnectionTokensParams struct {
