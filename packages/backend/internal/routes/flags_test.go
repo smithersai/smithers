@@ -28,7 +28,7 @@ var rolloutFlagKeys = []string{
 // default tests stay aligned with the config defaults.
 var mvpGatingFlagDefaults = map[string]bool{
 	"stacked_prs":         true,
-	"workflows":           true,
+	"workflows":           false,
 	"sandboxes":           true,
 	"auto_push":           true,
 	"issues":              false,

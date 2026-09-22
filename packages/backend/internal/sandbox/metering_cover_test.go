@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -207,43 +208,35 @@ func meteringCovOpenPool(t *testing.T) *pgxpool.Pool {
 	if testing.Short() {
 		t.Skip("requires PostgreSQL; covered by DB Integration")
 	}
-
 	dsn := strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 	if dsn == "" {
-		dsn = "postgres://smithers:smithers@localhost:5432/cx_sandbox?sslmode=disable"
+		t.Skip("SMITHERS_TEST_DATABASE_URL is required for PostgreSQL metering tests")
 	}
-	meteringCovEnsureDatabase(t, dsn)
-
-	cfg, err := pgxpool.ParseConfig(dsn)
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+	adminURL := *parsed
+	adminURL.Path = "/postgres"
+	admin, err := pgx.Connect(context.Background(), adminURL.String())
+	require.NoError(t, err)
+	database := "smithers_metering_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	_, err = admin.Exec(context.Background(), "CREATE DATABASE "+pgx.Identifier{database}.Sanitize())
+	if err != nil {
+		_ = admin.Close(context.Background())
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() {
+		_, cleanupErr := admin.Exec(context.Background(), "DROP DATABASE "+pgx.Identifier{database}.Sanitize()+" WITH (FORCE)")
+		require.NoError(t, cleanupErr)
+		require.NoError(t, admin.Close(context.Background()))
+	})
+	parsed.Path = "/" + database
+	cfg, err := pgxpool.ParseConfig(parsed.String())
 	require.NoError(t, err)
 	cfg.MaxConns = 4
 	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return pool
-}
-
-func meteringCovEnsureDatabase(t *testing.T, dsn string) {
-	t.Helper()
-
-	parsed, err := url.Parse(dsn)
-	require.NoError(t, err)
-	dbName := strings.TrimPrefix(parsed.Path, "/")
-	require.NotEmpty(t, dbName)
-
-	adminURL := *parsed
-	adminURL.Path = "/postgres"
-	conn, err := pgx.Connect(context.Background(), adminURL.String())
-	require.NoError(t, err)
-	defer func() { _ = conn.Close(context.Background()) }()
-
-	var exists bool
-	require.NoError(t, conn.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, dbName).Scan(&exists))
-	if !exists {
-		quoted := `"` + strings.ReplaceAll(dbName, `"`, `""`) + `"`
-		_, err = conn.Exec(context.Background(), `CREATE DATABASE `+quoted)
-		require.NoError(t, err)
-	}
 }
 
 func meteringCovResetTables(t *testing.T, pool *pgxpool.Pool) {

@@ -18,8 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const defaultJobsTestDatabaseURL = "postgres://smithers_test:smithers_architecture_test@127.0.0.1:32768/postgres?sslmode=disable"
-
 var (
 	jobsTestDatabase    *pgxpool.Pool
 	jobsTestDatabaseURL string
@@ -30,8 +28,8 @@ func TestMain(main *testing.M) {
 	if dsn == "" {
 		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 	}
-	if dsn == "" {
-		dsn = defaultJobsTestDatabaseURL
+	if dsn == "" || testing.Short() {
+		os.Exit(main.Run())
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	targetConfig, err := pgxpool.ParseConfig(dsn)
@@ -92,6 +90,9 @@ func TestMain(main *testing.M) {
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
+	if jobsTestDatabase == nil {
+		t.Skip("requires SMITHERS_JOBS_TEST_DATABASE_URL or SMITHERS_TEST_DATABASE_URL")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	schemaName := "case_" + strings.ReplaceAll(uuid.NewString(), "-", "")

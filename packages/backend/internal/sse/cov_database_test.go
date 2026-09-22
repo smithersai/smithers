@@ -61,19 +61,15 @@ var (
 )
 
 func covDatabaseURL() string {
-	dsn := os.Getenv("SMITHERS_TEST_DATABASE_URL")
-	if dsn == "" {
-		return "postgres://smithers:smithers@localhost:5432/cx_sse?sslmode=disable"
-	}
-	return dsn
+	return strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 }
 
 // covPrepareDatabase skips under -short and otherwise guarantees, once per
 // package, that the test database exists and accepts connections.
 func covPrepareDatabase(t *testing.T) {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("requires PostgreSQL; covered by DB Integration")
+	if testing.Short() || covDatabaseURL() == "" {
+		t.Skip("requires SMITHERS_TEST_DATABASE_URL; covered by DB Integration")
 	}
 	covDatabaseOnce.Do(func() {
 		covDatabaseErr = covEnsureDatabase(covDatabaseURL())
