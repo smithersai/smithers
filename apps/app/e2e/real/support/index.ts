@@ -3,6 +3,7 @@ import { cp, mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, join, resolve, sep } from "node:path"
 import { spawn } from "node:child_process"
+import { nativeTarget } from "../native-target"
 
 export { expect }
 
@@ -56,20 +57,17 @@ const selectedBase = nativeCDPEndpoint === undefined || nativeCDPEndpoint === ""
     // Electrobun owns the browser process. Its launcher performs teardown.
   }, { scope: "worker" }],
   context: async ({ browser }, use) => {
-    const context = browser.contexts()[0]
-    if (context === undefined) throw new Error("The packaged Electrobun CDP target exposed no default context.")
-    await use(context)
+    if (!nativeWindowUrl || !nativeTargetNonce) {
+      throw new Error("Native CDP attachment requires the packaged window URL and bridge correlation nonce.")
+    }
+    const target = await nativeTarget(browser.contexts(), nativeWindowUrl, nativeTargetNonce)
+    await use(target.context)
   },
   page: async ({ context }, use) => {
     if (!nativeWindowUrl || !nativeTargetNonce) {
       throw new Error("Native CDP attachment requires the packaged window URL and bridge correlation nonce.")
     }
-    const page = context.pages().find((candidate) => candidate.url() === nativeWindowUrl)
-    if (page === undefined) throw new Error(`The packaged Electrobun CDP target did not expose ${nativeWindowUrl}.`)
-    const nonce = await page.evaluate(() =>
-      (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget)
-    if (nonce !== nativeTargetNonce) throw new Error("The Playwright page is not the bridge-correlated packaged window.")
-    await use(page)
+    await use((await nativeTarget([context], nativeWindowUrl, nativeTargetNonce)).page)
   }
 })
 

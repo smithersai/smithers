@@ -4,6 +4,7 @@ import { access, link, readFile, realpath, unlink, writeFile } from "node:fs/pro
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { BrowserContext, BrowserType, Page } from "@playwright/test"
+import { nativeTarget } from "../native-target"
 import { expect, test as realTest } from "../support/test"
 import { appEntryPath, awaitBoot } from "../support"
 
@@ -311,9 +312,11 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     const baseURL = testInfo.project.use.baseURL
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
     if (process.env.SMITHERS_REAL_NATIVE_CDP_ENDPOINT) {
-      const context = browser.contexts()[0]
-      if (context === undefined) throw new Error("The packaged Electrobun target exposed no browser context.")
-      await use(context)
+      const windowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL
+      const nonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE
+      if (!windowUrl || !nonce) throw new Error("The packaged Electrobun target requires its window URL and nonce.")
+      const target = await nativeTarget(browser.contexts(), windowUrl, nonce)
+      await use(target.context)
       return
     }
     if (realAuthKind() === "application-token") {
@@ -373,15 +376,11 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     const nativeWindowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL
     const page = nativeWindowUrl === undefined
       ? context.pages()[0] ?? await context.newPage()
-      : context.pages().find((candidate) => candidate.url() === nativeWindowUrl) ?? (() => {
-        throw new Error(`The packaged Electrobun context did not expose ${nativeWindowUrl}.`)
-      })()
-    if (nativeWindowUrl !== undefined) {
-      const expectedNonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE
-      const nonce = await page.evaluate(() =>
-        (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget)
-      if (!expectedNonce || nonce !== expectedNonce) throw new Error("The authenticated page is not the bridge-correlated packaged window.")
-    }
+      : (await nativeTarget(
+        [context],
+        nativeWindowUrl,
+        process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE ?? ""
+      )).page
     await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
     const requiredEnvironment = profileEnvironment
     const profileAvailable = requiredEnvironment === undefined || Boolean(process.env[requiredEnvironment]?.trim())
