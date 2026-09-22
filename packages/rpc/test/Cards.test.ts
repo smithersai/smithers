@@ -1201,6 +1201,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       prBody: "one bounded route",
       reviews: [{ author: "ada", type: "APPROVED", reviewBody: "ship it" }],
       checks: [{ context: "typecheck", state: "success" }],
+      readErrors: { commits: "Reading commits failed (500)", files: "Reading files failed (500)" },
       branch: "serve-files",
       baseBranch: "main",
       draft: false,
@@ -1421,7 +1422,10 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       error: "the import failed (500)",
       repository: { owner: "smithersai", name: "smithers" },
       workspaceId: "ws-1",
-      rateLimit
+      rateLimit,
+      requestId: "import-request-1",
+      requestKind: "retry",
+      accountOwner: "smithersai"
     }
   },
   "connector-setup": {
@@ -2530,6 +2534,13 @@ describe("every persisted card kind", () => {
 
   test("an unknown kind is refused, so a card from a newer build is quarantined rather than half-read", () => {
     expect(CardSchema.safeParse({ ...base, kind: "moons", payload: {} }).success).toBe(false)
+  })
+
+  test("PR read failures and repository import launch identity refuse invalid persisted values", () => {
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readErrors: { commits: 500 } })).success).toBe(false)
+    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestId: 1 })).success).toBe(false)
+    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, requestKind: "resume" })).success).toBe(false)
+    expect(CardSchema.safeParse(card("repo-import", { ...FIXTURES["repo-import"].full, accountOwner: 1 })).success).toBe(false)
   })
 })
 
