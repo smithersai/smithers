@@ -431,6 +431,52 @@ describe("a discovered flow runs on the durable engine", () => {
       expect(shouts).toBe(1)
     }))
 
+  for (const cache of [false, true]) {
+    it.effect(`keeps a canonical same-tag declaration's input codec separate from its admission adapter (cache: ${cache})`, () =>
+      Effect.gen(function*() {
+        const filename = join(workspace(`canonical-${cache}`), "engine.db")
+        const descriptor = yield* descriptorNamed("standalone").pipe(Effect.provide(platform))
+        const declaration = Flow.make("standalone", {
+          payload: { name: Schema.String },
+          success: Schema.String,
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+          body: ({ name }) => Node.succeed(name.toUpperCase())
+        })
+        const executable = yield* Executable.fromDescriptor(descriptor, {
+          delegates: [],
+          load: () =>
+            Effect.succeed({
+              default: cache
+                ? declaration.annotate(CacheEnvironment.CachePolicyAnnotation, { ttlMs: 60_000, scope: "shared" })
+                : declaration
+            })
+        }).pipe(Effect.provide(platform))
+        expect(declaration._tag).toBe("standalone")
+        expect(executable.descriptor.name).toBe("standalone")
+        expect(executable.declaredTag).toBe("standalone")
+        expect(executable.flow._tag).not.toBe(declaration._tag)
+        const run = (id: string) =>
+          executable.flow.execute({ input: { name: "ada" } }, { executionId: id }).pipe(
+            Effect.provide(
+              durable(
+                filename,
+                id,
+                executable.layer.pipe(Layer.provideMerge(Action.layerImplementations)) as Layer.Layer<
+                  unknown,
+                  never,
+                  never
+                >
+              )
+            ),
+            Effect.scoped,
+            Effect.orDie
+          )
+        expect(yield* run(`canonical-${cache}-first`)).toBe("ADA")
+        expect(yield* run(`canonical-${cache}-restarted`)).toBe("ADA")
+      }))
+  }
+
   it.effect("refuses a discovered flow whose delegate no host registered", () =>
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("orphan").pipe(Effect.provide(platform))

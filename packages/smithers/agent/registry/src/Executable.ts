@@ -324,6 +324,8 @@ export type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
 export interface Executable {
   /** The descriptor this was built from. */
   readonly descriptor: Descriptor.FlowDescriptor
+  /** The module's own Flow.make tag, before the private admission adapter. */
+  readonly declaredTag?: string | undefined
   /**
    * The registered flow this descriptor delegates to, or `undefined` when the
    * module IS the flow and delegates to nothing.
@@ -345,7 +347,8 @@ export interface Executable {
   /** The envelope the delegate receives for a given caller input. */
   readonly invocation: (input: Schema.Json) => Invocation
   /**
-   * The durable flow, tagged with the descriptor's registry name. Delegate
+   * The durable input adapter. Its tag is source-qualified when the user's
+   * declaration already owns the descriptor's registry name. Delegate
    * already erases its call/execute services at this dynamic boundary; the
    * same host owns its codec services when registering and executing.
    */
@@ -1077,7 +1080,15 @@ export const fromDescriptor = (
         return lowered.priority === undefined ? carried : PlanNode.priority(carried, lowered.priority)
       }
     )
-    const flow = RuntimeFlow.make(descriptor.name, {
+    // A canonical declaration normally has the same tag as its registry name.
+    // Its payload codec is the user's schema; this admission adapter takes
+    // { input }. Registering both under that tag made whichever layer won
+    // decode the other's payload. Keep the declaration's tag and give only
+    // the private adapter a stable, source-qualified registration identity.
+    const adapterTag = body.flow?._tag === descriptor.name
+      ? `registry/entry/${Descriptor.executionDigest(descriptor)}/${descriptor.name}`
+      : descriptor.name
+    const flow = RuntimeFlow.make(adapterTag, {
       payload: Payload,
       // Preserve the delegate's codecs through the named bridge. Unknown loses
       // transformations and cannot encode tagged Error instances as JSON.
@@ -1095,6 +1106,7 @@ export const fromDescriptor = (
     })
     return {
       descriptor,
+      declaredTag: body.flow?._tag,
       delegate: body.flow === undefined ? name : undefined,
       lowered,
       invocation,
