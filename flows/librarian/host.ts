@@ -23,6 +23,8 @@ export interface Options extends SeatOptions {
   readonly gatewayId: string
   readonly credential: string
   readonly artifactDigest: string
+  readonly sourceRevision: string
+  readonly ownerGeneration: number
   readonly persistWiki: (receipt: WikiReceipt) => Promise<void | NonNullable<WikiReceipt["publishedPages"]>>
 }
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -56,6 +58,9 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
   if (!/^[\w.-]+\/[\w.-]+$/.test(options.repo)) throw new Error("SMITHERS_REPO must identify the owning repository")
   if (!options.credential.trim() || !options.gatewayId.trim()) throw new Error("Product host requires its gateway identity and bearer credential")
   if (!/^[a-f0-9]{64}$/.test(options.artifactDigest)) throw new Error("Product host requires its immutable artifact digest")
+  if (!/^[a-f0-9]{40}$/.test(options.sourceRevision) || !Number.isSafeInteger(options.ownerGeneration) || options.ownerGeneration <= 0) {
+    throw new Error("Product host requires an immutable source revision and positive owner generation")
+  }
   const native = NativeControl.make(platform, environment => Layer.effect(SeatResolver.SeatResolver)(
     Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, model, options))
   ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))))
@@ -73,7 +78,13 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       approvalAuthority: native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
-        capabilities: ["librarian/v1"] }, bind, root)
+        runtimeBridge: { protocol: "smithers.flow-runtime/v1", runtimeArtifactDigest: options.artifactDigest,
+          sourceRevision: options.sourceRevision, ownerGeneration: options.ownerGeneration },
+        capabilities: ["librarian/v1", "flow-runtime-bridge/v1"] }, {
+        ...bind,
+        runtimeBridge: { runtimeArtifactDigest: options.artifactDigest, sourceRevision: options.sourceRevision,
+          ownerGeneration: options.ownerGeneration }
+      }, root)
     }))).pipe(Layer.provideMerge(host))
   })))
 }

@@ -39,6 +39,7 @@ import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import { GatewayRpcs } from "./GatewayRpcs.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
 import { heartbeatIntervalMillis, Projections } from "./Projections.ts"
+import * as RuntimeBridge from "./RuntimeBridge.ts"
 
 /**
  * What `GET /health` answers: the `GatewaySchema.GatewayHealth` identity plus
@@ -49,7 +50,8 @@ import { heartbeatIntervalMillis, Projections } from "./Projections.ts"
  */
 export const Health = Schema.Struct({
   ...GatewaySchema.GatewayHealth.fields,
-  version: Schema.String
+  version: Schema.String,
+  runtimeBridge: Schema.optional(RuntimeBridge.Identity)
 })
 
 /**
@@ -340,6 +342,18 @@ export const layerSyncHttp = Layer.mergeAll(
 export const rpcPaths: ReadonlyArray<string> = ["/rpc", "/projections", "/sync"]
 
 /**
+ * POST mounts whose request bodies are bounded before their handlers read.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const boundedPostPaths: ReadonlyArray<string> = [
+  ...rpcPaths,
+  "/runtime/v1/command",
+  "/runtime/v1/observe"
+]
+
+/**
  * RPC paths whose upgrade or request must pass edge authentication.
  *
  * `POST /rpc` is deliberately not one of them. The control mount authenticates
@@ -369,7 +383,9 @@ export const protectedPaths: ReadonlyArray<string> = [
   "/sync",
   "/rpc/ws",
   "/projections/ws",
-  "/sync/ws"
+  "/sync/ws",
+  "/runtime/v1/command",
+  "/runtime/v1/observe"
 ]
 
 /**
@@ -663,7 +679,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
             const authorized = yield* options.authorize(request.headers)
             if (!authorized) return refuse(unauthorizedRequest(), 401)
           }
-          if (request.method !== "POST" || !rpcPaths.includes(path)) return yield* httpEffect
+          if (request.method !== "POST" || !boundedPostPaths.includes(path)) return yield* httpEffect
           // A declared length is a hint that saves reading a body already
           // known to be too big. It is never trusted the other way: a body
           // that declares less than it sends is still measured by the read,
@@ -692,7 +708,9 @@ export const layerIngress = (options: IngressOptions = {}) => {
             return refuse(answer.error, answer.status)
           }
           if (read.body === undefined) return yield* httpEffect
-          return carriesRpcRequest(serialization, read.body) ? yield* httpEffect : refuse(malformedRequest(path), 400)
+          return !rpcPaths.includes(path) || carriesRpcRequest(serialization, read.body)
+            ? yield* httpEffect
+            : refuse(malformedRequest(path), 400)
         })
     }),
     { global: true }
@@ -715,6 +733,8 @@ export interface LayerOptions {
   readonly heartbeatMillis?: number | undefined
   /** The ingress policy the RPC mounts run behind. */
   readonly ingress?: IngressOptions | undefined
+  /** Enables the authenticated Go-to-Control runtime bridge. */
+  readonly runtimeBridge?: RuntimeBridge.Config | undefined
 }
 
 /**
@@ -744,6 +764,7 @@ export const layer = (health: Health, options: LayerOptions = {}) => {
       : layerProjectionsHttp.pipe(Layer.provide(layerProjectionsKeepAlive(options.heartbeatMillis))),
     layerSyncHttp,
     layerHealth(health),
+    ...(options.runtimeBridge === undefined ? [] : [RuntimeBridge.layer(options.runtimeBridge)]),
     layerIngress(options.ingress)
   )
 }

@@ -1,0 +1,53 @@
+{
+  "launch": {
+    "protocol": "smithers.flow-runtime/v1",
+    "operation": "launch",
+    "applicationRequestId": "fixture-request-1",
+    "ownerGeneration": 7,
+    "attempt": 2,
+    "runtimeArtifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "flowId": "fixture/small",
+    "payload": { "value": 1 }
+  },
+  "commandResponse": {
+    "protocol": "smithers.flow-runtime/v1",
+    "ok": true,
+    "value": {
+      "operation": "launch",
+      "applicationRequestId": "fixture-request-1",
+      "ownerGeneration": 7,
+      "runtimeArtifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "planId": "plan-1",
+      "receipt": { "_tag": "Accepted", "receiptId": "receipt-1", "runId": "run-1" }
+    }
+  },
+  "observeResponse": {
+    "protocol": "smithers.flow-runtime/v1",
+    "ok": true,
+    "value": {
+      "run": {
+        "runId": "run-1",
+        "flowId": "fixture/small",
+        "status": "completed",
+        "planId": "plan-1",
+        "createdAt": 1,
+        "updatedAt": 2
+      },
+      "events": [
+        {
+          "cursor": { "sequence": 42 },
+          "sequence": 42,
+          "kind": "control.run.completed",
+          "runId": "run-1",
+          "occurredAt": 2,
+          "payload": null
+        }
+      ],
+      "nextCursor": "42",
+      "hasMore": false,
+      "terminal": true
+    }
+  }
+}

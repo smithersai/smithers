@@ -44,6 +44,7 @@
     "./GatewaySchema": "./src/GatewaySchema.ts",
     "./GatewayServer": "./src/GatewayServer.ts",
     "./Projections": "./src/Projections.ts",
+    "./RuntimeBridge": "./src/RuntimeBridge.ts",
     "./SuperviseRuntime": "./src/SuperviseRuntime.ts",
     "./index": "./src/index.ts",
     "./node/NodeGateway": "./src/node/NodeGateway.ts",
@@ -147,6 +148,16 @@
         "require": {
           "types": "./dist/cjs/Projections.d.ts",
           "default": "./dist/cjs/Projections.js"
+        }
+      },
+      "./RuntimeBridge": {
+        "import": {
+          "types": "./dist/esm/RuntimeBridge.d.ts",
+          "default": "./dist/esm/RuntimeBridge.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RuntimeBridge.d.ts",
+          "default": "./dist/cjs/RuntimeBridge.js"
         }
       },
       "./SuperviseRuntime": {

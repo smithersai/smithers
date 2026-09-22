@@ -45,6 +45,11 @@ export * as GatewayServer from "./GatewayServer.ts"
 export * as Projections from "./Projections.ts"
 
 /**
+ * @since 1.0.0 @category runtime bridge
+ */
+export * as RuntimeBridge from "./RuntimeBridge.ts"
+
+/**
  * @since 0.1.0 @category services
  */
 export * as SuperviseRuntime from "./SuperviseRuntime.ts"

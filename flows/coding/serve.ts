@@ -2,6 +2,8 @@
 import { Effect, Layer } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { mkdirSync } from "node:fs"
+import { readFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
@@ -29,6 +31,7 @@ if (parsed.values.version) {
     `Set ${CodingState.inRootVariable}=1 only for a local single-repository run that wants the old <root>/.flows layout.\n` +
     "Requires SMITHERS_GATEWAY_ID and SMITHERS_CODING_IMPLEMENT_MODEL; SMITHERS_API_KEY authenticates the existing gateway.\n" +
     "SMITHERS_CODING_PROJECT explicitly selects project JSON for the prompt route.\n" +
+    "SMITHERS_FLOW_ARTIFACT_SHA256, SMITHERS_SOURCE_REVISION and SMITHERS_OWNER_GENERATION bind the runtime bridge.\n" +
     "SMITHERS_PYTHON3 selects an absolute CPython 3 path; unset or empty uses /usr/bin/python3. Relative paths fail startup; PATH is never searched.\n" +
     "Optional SMITHERS_CODING_PLAN_MODEL, SMITHERS_CODING_POC_MODEL and SMITHERS_CODING_WIKI_MODEL select provider:model roles.\n" +
     "The provisioned SMITHERS_JJHUB_TOKEN and SMITHERS_JJHUB_API_URL enable coding/vibe; the token is consumed before any tool starts.\n")
@@ -48,7 +51,15 @@ if (parsed.values.version) {
   // the working copy and create it before any layer opens a database.
   const stateRoot = CodingState.resolveStateRoot({ root, explicit: parsed.values["state-dir"], environment: process.env })
   mkdirSync(stateRoot, { recursive: true, mode: 0o700 })
+  const runtimeArtifactDigest = createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex")
+  const expectedArtifactDigest = process.env.SMITHERS_FLOW_ARTIFACT_SHA256 ?? ""
+  if (expectedArtifactDigest !== runtimeArtifactDigest) throw new Error("SMITHERS_FLOW_ARTIFACT_SHA256 does not match the packaged host")
+  const ownerGeneration = Number(process.env.SMITHERS_OWNER_GENERATION ?? "")
+  if (!Number.isSafeInteger(ownerGeneration) || ownerGeneration <= 0) throw new Error("SMITHERS_OWNER_GENERATION must be a positive safe integer")
+  const runtimeSourceRevision = process.env.SMITHERS_SOURCE_REVISION ?? ""
+  if (!/^[0-9a-f]{40}$/.test(runtimeSourceRevision)) throw new Error("SMITHERS_SOURCE_REVISION must be an immutable 40-character revision")
   const options = { repositoryPath: root, stateRoot, credential: bind.credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "",
+    runtimeArtifactDigest, runtimeSourceRevision, ownerGeneration,
     implementationModel: process.env.SMITHERS_CODING_IMPLEMENT_MODEL ?? "",
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),
     ...(process.env.SMITHERS_CODING_POC_MODEL === undefined ? {} : { pocModel: process.env.SMITHERS_CODING_POC_MODEL }),

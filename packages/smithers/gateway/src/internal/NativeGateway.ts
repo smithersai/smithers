@@ -25,6 +25,7 @@ import { RpcSerialization } from "effect/unstable/rpc"
 import type { ListenOptions } from "node:net"
 import { GatewayError, settingRefusal } from "../GatewayError.ts"
 import * as GatewayServer from "../GatewayServer.ts"
+import type * as RuntimeBridge from "../RuntimeBridge.ts"
 
 /**
  * Where the gateway binds, and whether a non-loopback bind was asked for.
@@ -49,6 +50,8 @@ export interface ServerOptions extends ListenOptions {
   readonly heartbeatMillis?: number | undefined
   /** Maximum bytes accepted on one HTTP RPC request. Default one MiB. */
   readonly maxRequestBodyBytes?: number | undefined
+  /** Immutable identity of an opt-in packaged Flow runtime bridge. */
+  readonly runtimeBridge?: Omit<RuntimeBridge.Config, "authenticate"> | undefined
 }
 
 /**
@@ -121,6 +124,7 @@ export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptio
       heartbeatMillis: _cadence,
       listen: _listen,
       maxRequestBodyBytes: _maxBody,
+      runtimeBridge: _runtimeBridge,
       ...node
     } = options
     return Effect.succeed({ ...node, host: node.host ?? "127.0.0.1" })
@@ -260,7 +264,16 @@ export const makeLayer = (
       HttpRouter.serve(
         GatewayServer.layer(health, {
           ...(options.heartbeatMillis === undefined ? {} : { heartbeatMillis: options.heartbeatMillis }),
-          ingress: ingressOptions(options)
+          ingress: ingressOptions(options),
+          ...(options.runtimeBridge === undefined ? {} : {
+            runtimeBridge: {
+              ...options.runtimeBridge,
+              authenticate: ControlRpcs.bearerAuthenticator({
+                token: options.credential ?? "",
+                principal: bearerPrincipal
+              }).authenticate
+            }
+          })
         }).pipe(
           Layer.provide(layerAuth(options)),
           Layer.provide(RpcSerialization.layerNdjson)

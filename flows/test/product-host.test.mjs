@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createServer } from "node:http"
+import { createHash } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -12,6 +13,7 @@ const staged = process.env.SMITHERS_PRODUCT_HOST_ARTIFACT
 const built = staged === undefined ? await mkdtemp(join(tmpdir(), "product-host-artifact-")) : undefined
 const artifact = staged === undefined ? join(built, "smithers.mjs") : resolve(staged)
 const digest = staged === undefined ? await buildProductHost(artifact) : undefined
+const artifactDigest = createHash("sha256").update(await readFile(artifact)).digest("hex")
 const runtime = process.env.SMITHERS_PRODUCT_HOST_RUNTIME ?? process.execPath
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim()
@@ -47,12 +49,16 @@ test("standalone product gateway executes real librarian flows, publishes before
   const start = async () => {
     child = spawn(runtime, [artifact, "serve", "--root", root, "--port", String(port)], { cwd: root,
       env: { ...process.env, SMITHERS_API_KEY: "fixture", SMITHERS_GATEWAY_ID: "11111111-1111-4111-8111-111111111111",
+        SMITHERS_OWNER_GENERATION: "7", SMITHERS_SOURCE_REVISION: sourceHead,
+        SMITHERS_FLOW_ARTIFACT_SHA256: artifactDigest,
         SMITHERS_REPO: "fixture/demo", SMITHERS_PRODUCT_API_URL: `http://127.0.0.1:${publisher.address().port}` }, stdio: ["ignore", "pipe", "pipe"] })
     child.stdout.on("data", data => { logs += data }); child.stderr.on("data", data => { logs += data })
     for (let i = 0; i < 300; i++) {
       if (child.exitCode !== null) throw new Error(logs)
       const health = await fetch(`${base}/health`).then(r => r.ok ? r.json() : undefined).catch(() => undefined)
-      if (health) { assert.equal(health.protocolVersion, "1"); assert.deepEqual(health.capabilities, ["librarian/v1"]); return }
+      if (health) { assert.equal(health.protocolVersion, "1"); assert.deepEqual(health.capabilities, ["librarian/v1", "flow-runtime-bridge/v1"])
+        assert.deepEqual(health.runtimeBridge, { protocol: "smithers.flow-runtime/v1", runtimeArtifactDigest: artifactDigest,
+          sourceRevision: sourceHead, ownerGeneration: 7 }); return }
       await pause(100)
     }
     throw new Error(`Host did not listen: ${logs}`)
@@ -65,6 +71,14 @@ test("standalone product gateway executes real librarian flows, publishes before
     const result = text.trim().split("\n").map(JSON.parse).find(line => line._tag === "Exit")
     assert.equal(result?.exit._tag, "Success", text)
     return result.exit.value
+  }
+  const bridge = async (path, payload) => {
+    const response = await fetch(`${base}/runtime/v1/${path}`, { method: "POST",
+      headers: { authorization: "Bearer fixture", "content-type": "application/json" }, body: JSON.stringify(payload) })
+    const body = await response.json()
+    assert.equal(body.protocol, "smithers.flow-runtime/v1")
+    assert.equal(body.ok, true, JSON.stringify(body))
+    return body.value
   }
   const settled = async runId => {
     for (let i = 0; i < 300; i++) {
@@ -89,6 +103,30 @@ test("standalone product gateway executes real librarian flows, publishes before
   assert.match(await unauthorized.text(), /Unauthorized|unauthorized/)
   const list = await rpc("List", { _tag: "flows" })
   assert.deepEqual(list.items.map(item => item.flowId).sort(), ["librarian/history", "librarian/wiki"])
+  const bridgeRequest = { protocol: "smithers.flow-runtime/v1", operation: "launch", applicationRequestId: "product-host-bridge",
+    ownerGeneration: 7, attempt: 1, runtimeArtifactDigest: artifactDigest, sourceRevision: sourceHead,
+    flowId: "librarian/history", payload: { repo: "fixture/demo", _librarian: { kind: "history" } } }
+  const parked = await bridge("command", bridgeRequest)
+  assert.equal(parked.receipt._tag, "Parked")
+  await bridge("command", { protocol: "smithers.flow-runtime/v1", operation: "approve", applicationRequestId: "product-host-bridge-approval",
+    ownerGeneration: 7, approval: parked.approval })
+  const launched = await bridge("command", { ...bridgeRequest, attempt: 2 })
+  assert.equal(launched.receipt._tag, "Accepted")
+  let bridgeObservation
+  let bridgeCursor
+  for (let i = 0; i < 300; i++) {
+    bridgeObservation = await bridge("observe", { protocol: "smithers.flow-runtime/v1", runId: launched.receipt.runId,
+      ...(bridgeCursor === undefined ? {} : { afterCursor: bridgeCursor }), limit: 25 })
+    bridgeCursor = bridgeObservation.nextCursor
+    if (bridgeObservation.terminal) break
+    await pause(100)
+  }
+  assert.equal(bridgeObservation.run.status, "completed", logs)
+  assert.match(bridgeCursor, /^\d+$/)
+  const incompatible = await fetch(`${base}/runtime/v1/command`, { method: "POST",
+    headers: { authorization: "Bearer fixture", "content-type": "application/json" },
+    body: JSON.stringify({ ...bridgeRequest, protocol: "smithers.flow-runtime/v2" }) })
+  assert.equal(incompatible.status, 400)
   const wiki = await run("wiki")
   assert.equal(wiki.status, "completed", logs)
   assert.equal(published.sourceHead, sourceHead)

@@ -63,6 +63,10 @@ export interface Options extends NativeOptions {
   readonly implementationModel: string
   readonly exporterPath?: string | undefined
   readonly checkEnvironment?: Readonly<Record<string, string>> | undefined
+  /** Exact packaged host bytes and owning-process fence for the Go bridge. */
+  readonly runtimeArtifactDigest?: string | undefined
+  readonly runtimeSourceRevision?: string | undefined
+  readonly ownerGeneration?: number | undefined
   /** Enables the private prompt route using this repository's owning memory/check configuration. */
   readonly planning?: (Omit<MemoryOptions, "repositoryPath"> & { readonly reviewer?: string }) | undefined
   readonly planningModel?: string | undefined
@@ -100,6 +104,11 @@ const configured = (options: Options) => {
   if (!options.credential?.trim() && options.approvalAuthority === undefined) {
     throw new Error("A configured coding host requires SMITHERS_API_KEY or an explicit approval authority, including on loopback")
   }
+  if (options.runtimeArtifactDigest !== undefined && (
+    !/^[a-f0-9]{64}$/.test(options.runtimeArtifactDigest) ||
+    !/^[a-f0-9]{40}$/.test(options.runtimeSourceRevision ?? "") ||
+    !Number.isSafeInteger(options.ownerGeneration ?? 1) || (options.ownerGeneration ?? 1) <= 0
+  )) throw new Error("Runtime bridge identity requires an artifact digest, source revision, and positive owner generation")
 }
 
 /** Resolves the role through the existing workspace/user credential route. */
@@ -232,8 +241,22 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
+        ...(options.runtimeArtifactDigest === undefined ? {} : { runtimeBridge: {
+          protocol: "smithers.flow-runtime/v1" as const,
+          runtimeArtifactDigest: options.runtimeArtifactDigest,
+          sourceRevision: options.runtimeSourceRevision!,
+          ownerGeneration: options.ownerGeneration ?? 1
+        } }),
         capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", "coding-dispatch/v1", "repository-jobs/v1", "repository-source/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"]),
-          ...(options.landing === undefined || options.planning === undefined ? [] : ["coding-vibe/v1"])])] }, bind, root)
+          ...(options.landing === undefined || options.planning === undefined ? [] : ["coding-vibe/v1"]),
+          ...(options.runtimeArtifactDigest === undefined ? [] : ["flow-runtime-bridge/v1"])])] }, {
+        ...bind,
+        ...(options.runtimeArtifactDigest === undefined ? {} : { runtimeBridge: {
+          runtimeArtifactDigest: options.runtimeArtifactDigest,
+          sourceRevision: options.runtimeSourceRevision!,
+          ownerGeneration: options.ownerGeneration ?? 1
+        } })
+      }, root)
     }))).pipe(Layer.provideMerge(host))
   }).pipe(Effect.provide(platform.host))))
 }
