@@ -67,7 +67,7 @@ type AlertIncidentQuerier interface {
 	GetAlertIncidentByIncidentID(ctx context.Context, incidentID string) (clusterdb.AlertIncident, error)
 	GetAlertIncident(ctx context.Context, id int64) (clusterdb.AlertIncident, error)
 	AuthorizeAlertRemediationOutcomeRun(ctx context.Context, arg clusterdb.AuthorizeAlertRemediationOutcomeRunParams) (int64, error)
-	RecordAlertIncidentRemediationOutcomeGuarded(ctx context.Context, arg db.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error)
+	RecordAlertIncidentRemediationOutcomeGuarded(ctx context.Context, arg clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error)
 }
 
 // alertIncidentTxQuerier is satisfied by *deploymentdb.Queries. It lets admission
@@ -465,7 +465,7 @@ func (s *AlertIncidentService) recordRemediationOutcome(
 	state string,
 	artifactURL string,
 ) error {
-	rowsAffected, err := s.queries.RecordAlertIncidentRemediationOutcomeGuarded(ctx, db.RecordAlertIncidentRemediationOutcomeGuardedParams{
+	rowsAffected, err := s.queries.RecordAlertIncidentRemediationOutcomeGuarded(ctx, clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams{
 		ID:               row.ID,
 		State:            state,
 		RemediationPrUrl: artifactURL,

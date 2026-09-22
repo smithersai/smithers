@@ -1,4 +1,4 @@
-package db
+package clusterdb
 
 import (
 	"context"

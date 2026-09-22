@@ -94,8 +94,7 @@ RETURNING `+workspaceSessionExtReturningColumns, id))
 
 // SuspendRunningWorkspaceIfSessionless CASes a workspace from running to
 // suspended, but only while it has no active (pending/starting/running)
-// sessions or a live bound repository gateway. A native repository run needs
-// no terminal session, so it uses the same gateway fence as idle cleanup.
+// sessions. Hosted deploymentdb overrides this with a gateway lease guard.
 // The NOT EXISTS gates are evaluated in the same statement as the
 // status flip, so a session created concurrently with a last-session destroy
 // can never be stranded on a workspace this call just decided to suspend.
@@ -113,12 +112,6 @@ WHERE w.id = $1
       FROM workspace_sessions s
       WHERE s.workspace_id = w.id
         AND s.status IN ('pending', 'starting', 'running')
-  )
-  AND NOT EXISTS (
-      SELECT 1
-      FROM repo_gateways g
-      WHERE g.workspace_id = w.id AND g.vm_id = w.vm_id
-        AND g.deleted_at IS NULL AND g.status IN ('starting', 'running')
   )
 RETURNING `+workspaceExtReturningColumns, id))
 }

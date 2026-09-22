@@ -49,7 +49,7 @@ type AlertRemediationWorkerQuerier interface {
 	RetryAlertRemediationJob(ctx context.Context, arg clusterdb.RetryAlertRemediationJobParams) (int64, error)
 	FailAlertRemediationJobAndIncident(ctx context.Context, arg clusterdb.FailAlertRemediationJobAndIncidentParams) (bool, error)
 	GetAlertIncident(ctx context.Context, id int64) (clusterdb.AlertIncident, error)
-	UpdateAlertIncidentStateGuarded(ctx context.Context, arg db.UpdateAlertIncidentStateGuardedParams) (int64, error)
+	UpdateAlertIncidentStateGuarded(ctx context.Context, arg clusterdb.UpdateAlertIncidentStateGuardedParams) (int64, error)
 	GetWorkflowDefinitionByPath(ctx context.Context, arg db.GetWorkflowDefinitionByPathParams) (db.WorkflowDefinition, error)
 	FindAlertRemediationWorkflowRun(ctx context.Context, arg db.FindAlertRemediationWorkflowRunParams) (db.WorkflowRun, error)
 	HasLegacyAlertRemediationWorkflowRun(ctx context.Context, arg db.HasLegacyAlertRemediationWorkflowRunParams) (bool, error)
@@ -421,7 +421,7 @@ func (w *AlertRemediationWorker) ackDispatchedJob(
 		return
 	}
 
-	if _, err := w.queries.UpdateAlertIncidentStateGuarded(ctx, db.UpdateAlertIncidentStateGuardedParams{
+	if _, err := w.queries.UpdateAlertIncidentStateGuarded(ctx, clusterdb.UpdateAlertIncidentStateGuardedParams{
 		ID:    incident.ID,
 		State: "remediating",
 	}); err != nil {

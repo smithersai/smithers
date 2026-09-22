@@ -116,6 +116,76 @@ func (q *Queries) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg GetAc
 	return i, err
 }
 
+const getRepoGatewayByID = `-- name: GetRepoGatewayByID :one
+SELECT id, repository_id, user_id, workspace_id, vm_id, base_url, auth_token_hash, auth_token_ciphertext, landing_token_id, status, last_activity_at, deleted_at, created_at, updated_at FROM repo_gateways
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+// Relay lookup retains landing_token_id so revocation cannot lose its token.
+func (q *Queries) GetRepoGatewayByID(ctx context.Context, id string) (RepoGateway, error) {
+	row := q.db.QueryRow(ctx, getRepoGatewayByID, id)
+	var i RepoGateway
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.WorkspaceID,
+		&i.VmID,
+		&i.BaseUrl,
+		&i.AuthTokenHash,
+		&i.AuthTokenCiphertext,
+		&i.LandingTokenID,
+		&i.Status,
+		&i.LastActivityAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listActiveRepoGateways = `-- name: ListActiveRepoGateways :many
+SELECT id, repository_id, user_id, workspace_id, vm_id, base_url, auth_token_hash, auth_token_ciphertext, landing_token_id, status, last_activity_at, deleted_at, created_at, updated_at FROM repo_gateways
+WHERE deleted_at IS NULL
+  AND status IN ('running', 'suspended')
+`
+
+// Revocation sweep must carry every credential including landing_token_id.
+func (q *Queries) ListActiveRepoGateways(ctx context.Context) ([]RepoGateway, error) {
+	rows, err := q.db.Query(ctx, listActiveRepoGateways)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepoGateway{}
+	for rows.Next() {
+		var i RepoGateway
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.UserID,
+			&i.WorkspaceID,
+			&i.VmID,
+			&i.BaseUrl,
+			&i.AuthTokenHash,
+			&i.AuthTokenCiphertext,
+			&i.LandingTokenID,
+			&i.Status,
+			&i.LastActivityAt,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiscardedWorkspaceGateways = `-- name: ListDiscardedWorkspaceGateways :many
 SELECT id, repository_id, user_id, workspace_id, vm_id, base_url, auth_token_hash, auth_token_ciphertext, landing_token_id, status, last_activity_at, deleted_at, created_at, updated_at FROM repo_gateways
 WHERE workspace_id = $1::uuid

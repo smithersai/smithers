@@ -41,3 +41,13 @@ func BeginTx(ctx context.Context, queries any) (pgx.Tx, *Queries, bool, error) {
 func (q *Queries) ListIdleWorkspaces(ctx context.Context) ([]db.Workspace, error) {
 	return q.ClusterQueries.ListIdleWorkspaces(ctx)
 }
+
+// Hosted quotas include private gateway reservations as well as workspaces.
+func (q *Queries) CountActiveSandboxesForUser(ctx context.Context, userID int64) (int, error) {
+	return q.ClusterQueries.CountActiveSandboxesForUser(ctx, userID)
+}
+
+// Hosted suspend retains the private gateway lease fence in the same CAS.
+func (q *Queries) SuspendRunningWorkspaceIfSessionless(ctx context.Context, id string) (db.Workspace, error) {
+	return q.ClusterQueries.SuspendRunningWorkspaceIfSessionless(ctx, id)
+}

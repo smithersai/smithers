@@ -117,3 +117,14 @@ LIMIT 20;
 UPDATE repo_gateways SET updated_at = NOW()
 WHERE id = $1 AND workspace_id IS NOT NULL AND deleted_at IS NOT NULL;
 
+
+-- name: GetRepoGatewayByID :one
+-- Relay lookup retains landing_token_id so revocation cannot lose its token.
+SELECT * FROM repo_gateways
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: ListActiveRepoGateways :many
+-- Revocation sweep must carry every credential including landing_token_id.
+SELECT * FROM repo_gateways
+WHERE deleted_at IS NULL
+  AND status IN ('running', 'suspended');
