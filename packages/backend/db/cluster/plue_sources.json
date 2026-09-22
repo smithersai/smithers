@@ -20,6 +20,11 @@
       "snapshot": "migrations/0004_runner_fair_admission.sql",
       "upstream": "db/migrations/20260922100000_runner_fair_admission.sql",
       "sha256": "b3ba384b976459546f3827f5e4e09a7b01a4a32ef1e776d9829731f02b14c961"
+    },
+    {
+      "snapshot": "migrations/0005_durable_release_tokens.sql",
+      "upstream": "internal/clusterstorage/migrations/000004_durable_release_tokens.sql",
+      "sha256": "3ddbb2a264e62e5228c934ee647536e2e337b9ef642d68d64602d040bde3150c"
     }
   ],
   "complete_upstream_directories": [

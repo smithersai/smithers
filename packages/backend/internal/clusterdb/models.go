@@ -452,6 +452,7 @@ type PlueStorageRepositoryPlacement struct {
 	UpdatedAt           time.Time          `json:"updated_at"`
 	PublishedAt         pgtype.Timestamptz `json:"published_at"`
 	ReleasedAt          pgtype.Timestamptz `json:"released_at"`
+	ReleaseToken        pgtype.Text        `json:"release_token"`
 }
 
 type PlueStorageStorageNode struct {
