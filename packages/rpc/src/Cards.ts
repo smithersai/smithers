@@ -789,7 +789,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       )
     })
   }),
-  /* The tutorial's ranked repository chooser and its local-creation receipt. */
+  /* The tutorial's ranked repository chooser and its shared-backend creation receipt. */
   z.object({
     ...cardBaseShape,
     /*
@@ -825,7 +825,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       partial: z.boolean(),
       error: z.string().nullable(),
       selected: z.string().nullable(),
-      created: z.object({ name: z.string(), path: z.string() }).nullable(),
+      created: z.object({ fullName: z.string() }).nullable(),
       repositories: z.array(z.object({
         fullName: z.string(),
         count: z.number().nullable(),
@@ -2830,6 +2830,12 @@ export const CardSchema = Object.assign(
     }
     if (row.kind === "workspace" && payload?.facet === "snapshots") {
       return { ...row, payload: { ...payload, facet: "terminal" } }
+    }
+    if (row.kind === "repository-choice" && typeof payload?.created === "object" && payload.created !== null) {
+      const created = payload.created as Record<string, unknown>
+      if (typeof created.fullName !== "string" && typeof created.name === "string") {
+        return { ...row, payload: { ...payload, created: { fullName: created.name } } }
+      }
     }
     return value
   }, CurrentCardSchema),

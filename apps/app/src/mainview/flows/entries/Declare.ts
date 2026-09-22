@@ -47,6 +47,8 @@ export type CommandActions =
     | "submitCommand"
     | "commands"
     | "tappedFetch"
+    // Owner credential presentation is a composition-owned panel, never a command action.
+    | "localAuth"
     // Feature flags and the download URL are the composition root's configuration, never an action.
     | "features"
     | "downloadUrl"

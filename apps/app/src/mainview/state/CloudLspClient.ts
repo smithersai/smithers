@@ -132,7 +132,11 @@ export interface CloudLspClientOptions {
   /** The tunnel URL for one session; undefined where no socket can exist (tests, server render). */
   readonly socketUrl: (repo: string, sessionId: string, language: string) => string | undefined
   /** The local-session capability subprotocol; undefined means no socket opens. */
-  readonly socketProtocol: () => string | undefined
+  readonly socketProtocol?: () => string | undefined
+  /** Exchanges the selected application credential for a fresh one-use socket ticket. */
+  readonly authorizeSocket?: (url: string, signal?: AbortSignal) => Promise<string>
+  /** Test/platform seam; production uses the browser WebSocket constructor. */
+  readonly socketFactory?: (url: string, protocols?: ReadonlyArray<string>) => WebSocket
   /** One request's ceiling; default LSP_REQUEST_TIMEOUT_MS. */
   readonly requestTimeoutMs?: number
   /**
@@ -250,6 +254,8 @@ interface Connection extends EventScope {
 }
 
 export const createCloudLspClient = (options: CloudLspClientOptions): CloudLspClient => {
+  const socketFactory = options.socketFactory ?? ((url: string, protocols?: ReadonlyArray<string>) =>
+    protocols === undefined ? new WebSocket(url) : new WebSocket(url, [...protocols]))
   const requestTimeoutMs = options.requestTimeoutMs ?? LSP_REQUEST_TIMEOUT_MS
   const retry = options.retry ?? DEFAULT_RETRY
   const reconnectMs = options.reconnectMs ?? DEFAULT_RECONNECT_MS
@@ -283,7 +289,7 @@ export const createCloudLspClient = (options: CloudLspClientOptions): CloudLspCl
   const redact = (text: string): string => redactHostPaths(text, ROOT_PATH)
 
   const connection = (document: CloudLspDocument): Connection => {
-    const key = `${document.workspaceId} ${document.language}`
+    const key = `${document.workspaceId}\u0000${document.language}`
     let conn = connections.get(key)
     if (conn === undefined) {
       conn = {
@@ -555,16 +561,34 @@ export const createCloudLspClient = (options: CloudLspClientOptions): CloudLspCl
    * reason when the socket closed first (a refusal the tunnel classified, or a
    * server that died before ready).
    */
-  const openSocket = (conn: Connection, sessionId: string): Promise<{ readonly ok: true } | { readonly close: { readonly code: number; readonly reason: string } }> =>
-    new Promise((resolve) => {
+  const openSocket = async (
+    conn: Connection,
+    sessionId: string
+  ): Promise<{ readonly ok: true } | { readonly close: { readonly code: number; readonly reason: string } }> => {
+    assertActive()
+    const rawUrl = options.socketUrl(conn.repo, sessionId, conn.language)
+    const protocol = options.socketProtocol?.()
+    if (rawUrl === undefined || (options.authorizeSocket === undefined && protocol === undefined)) {
+      return { close: { code: 0, reason: "no cloud socket can open from here" } }
+    }
+    let url: string
+    try {
+      url = options.authorizeSocket === undefined
+        ? rawUrl
+        : await whileActive(options.authorizeSocket(rawUrl, lifetime.signal))
+    } catch (error) {
       assertActive()
-      const url = options.socketUrl(conn.repo, sessionId, conn.language)
-      const protocol = options.socketProtocol()
-      if (url === undefined || protocol === undefined) {
-        resolve({ close: { code: 0, reason: "no cloud socket can open from here" } })
+      return { close: { code: 0, reason: `socket authorization failed: ${errorText(error)}` } }
+    }
+    assertActive()
+    return new Promise((resolve) => {
+      let socket: WebSocket
+      try {
+        socket = socketFactory(url, protocol === undefined ? undefined : [protocol])
+      } catch (error) {
+        resolve({ close: { code: 0, reason: `socket open failed: ${errorText(error)}` } })
         return
       }
-      const socket = new WebSocket(url, [protocol])
       conn.socket = socket
       conn.ready = false
       conn.fragments = null
@@ -629,6 +653,7 @@ export const createCloudLspClient = (options: CloudLspClientOptions): CloudLspCl
         onClosed(conn, event.code, event.reason)
       }
     })
+  }
 
   /*
    * A close after `initialize` answered. 1011 (the server exited or broke the

@@ -2355,7 +2355,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       partial: true,
       error: "GitHub answered 403 for one repository",
       selected: "smithersai/smithers",
-      created: { name: "smithers-playground", path: "/tmp/smithers-playground" },
+      created: { fullName: "owner/smithers-playground" },
       repositories: [{
         fullName: "smithersai/smithers",
         count: 12,
@@ -2815,4 +2815,17 @@ describe("the dispatcher card's trigger rows", () => {
     ).toBe(false)
     expect(CardSchema.safeParse(dispatcher([{ ...OLD_ROW, fires: [{ outcome: null }] }])).success).toBe(false)
   })
+})
+
+test("a saved local repository receipt drops its retired path", () => {
+  const parsed = CardSchema.parse(card("repository-choice", {
+    cutoff: "2026-08-10T00:00:00Z",
+    partial: false,
+    error: null,
+    selected: "smithers-playground",
+    created: { name: "smithers-playground", path: "/tmp/smithers-playground" },
+    repositories: []
+  }))
+  if (parsed.kind !== "repository-choice") throw new Error("expected repository choice")
+  expect(parsed.payload.created).toEqual({ fullName: "smithers-playground" })
 })

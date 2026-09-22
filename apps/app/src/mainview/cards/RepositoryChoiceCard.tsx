@@ -17,7 +17,7 @@ export function RepositoryChoiceCard({ payload, onRunCommand }: {
     {repo.error ? <p>{repo.error}</p> : null}
   </li>
   return <div data-testid="repository-choice">
-    {payload.created ? <p>Created {payload.created.name} at {payload.created.path}</p> : <>
+    {payload.created ? <p>Created {payload.created.fullName}</p> : <>
       {payload.error ? <p>{payload.error}</p> : null}
       <ol>{payload.repositories.slice(0, RECENT_REPOSITORIES).map(row)}</ol>
       {/* The rest stay behind a native disclosure: the ranking already put the recently pushed ones first. */}

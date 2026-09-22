@@ -50,11 +50,19 @@ const harness = async (
 ) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requests: Array<string> = []
+  const writes: Array<{ readonly path: string; readonly method: string; readonly body: unknown }> = []
   const ctx: SeamContext = {
-    http: async (input) => {
+    http: async (input, init) => {
       requests.push(input)
       const stripped = input.startsWith("/") ? input.slice(1) : input
       const [path = "", search = ""] = stripped.split("?")
+      if (init?.method !== undefined && init.method !== "GET") {
+        writes.push({
+          path,
+          method: init.method,
+          body: typeof init.body === "string" ? JSON.parse(init.body) : null
+        })
+      }
       if (path === "api/user/workspaces" && options.workspaces !== undefined) return options.workspaces.clone()
       return route(path, new URLSearchParams(search))
     },
@@ -64,7 +72,7 @@ const harness = async (
     actor: () => "user",
     nextOrdinal: () => 0
   }
-  return { store, seam: createRepositoriesSeam(ctx), requests }
+  return { store, seam: createRepositoriesSeam(ctx), requests, writes }
 }
 
 const backend = (path: string): Response => {
@@ -223,6 +231,76 @@ describe("repositories seam", () => {
       ["will/smithers", "review", "suspended"],
       ["will/smithers", "bench", "suspended"]
     ])
+  })
+
+  test("follows the shared Link contract for repos, orgs, and workspaces", async () => {
+    const page = (body: unknown, next?: string): Response => new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        ...(next === undefined ? {} : { link: `<${next}>; rel="next"` })
+      }
+    })
+    const paged = (path: string, query: URLSearchParams): Response => {
+      if (path === "api/user/repos") {
+        return query.get("cursor") === "repos-2"
+          ? page([{ owner: "owner", name: "two", full_name: "owner/two", default_bookmark: null }])
+          : page([{ owner: "owner", name: "one", full_name: "owner/one", default_bookmark: null }], "/api/user/repos?limit=100&cursor=repos-2")
+      }
+      if (path === "api/user/orgs") {
+        return query.get("cursor") === "orgs-2"
+          ? page([{ login: "second-org" }])
+          : page([{ login: "first-org" }], "/api/user/orgs?limit=100&cursor=orgs-2")
+      }
+      if (path === "api/user/workspaces") {
+        return query.get("cursor") === "workspaces-2"
+          ? page([{ ...USER_WORKSPACE_ROW, workspace_id: "ws-2", workspace_title: "second" }])
+          : page([USER_WORKSPACE_ROW], "/api/user/workspaces?limit=100&cursor=workspaces-2")
+      }
+      return json(404, {})
+    }
+    const { store, seam, requests } = await harness(paged)
+    expect(await seam.loadRepositories()).toBeUndefined()
+    expect(repos(store).map((repo) => repo.id)).toEqual(["owner/one", "owner/two"])
+    expect(copies(store).map((copy) => copy.id)).toEqual(["workspace:ws-1", "workspace:ws-2"])
+    expect(requests.filter((request) => request.includes("cursor="))).toHaveLength(3)
+  })
+
+  test("never follows an absolute inventory next link", async () => {
+    const poisoned = (path: string): Response => path === "api/user/repos"
+      ? new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json", link: `<https://elsewhere.test/api/user/repos>; rel="next"` }
+      })
+      : json(200, [])
+    const { store, seam, requests } = await harness(poisoned)
+    expect(await seam.loadRepositories()).toBe("Inventory pagination returned an invalid next page.")
+    expect(requests.some((request) => request.includes("elsewhere.test"))).toBe(false)
+    expect(repos(store)).toEqual([])
+  })
+
+  test("creates a private initialized repository through the shared API", async () => {
+    const { store, seam, writes } = await harness((path) => path === "api/user/repos"
+      ? json(201, {
+        id: 7,
+        owner: "owner",
+        name: "smithers-playground",
+        full_name: "owner/smithers-playground",
+        private: true,
+        default_bookmark: "main"
+      })
+      : json(404, {}))
+    await expect(seam.createRepository("smithers-playground")).resolves.toEqual({ fullName: "owner/smithers-playground" })
+    expect(writes).toEqual([{
+      path: "api/user/repos",
+      method: "POST",
+      body: { name: "smithers-playground", private: true, auto_init: true }
+    }])
+    expect(store.collections.repositories.get("owner/smithers-playground")).toMatchObject({
+      id: "owner/smithers-playground",
+      ownerKind: "user",
+      head: { bookmark: "main", changeId: null, commitId: null }
+    })
   })
 
   test("a 300-repo inventory never has more than 6 bookmarks reads in flight", async () => {

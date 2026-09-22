@@ -72,10 +72,10 @@ export const authFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
      * agent's door, rendering this button in the chat.
      */
     name: "auth.sign-in",
-    summary: "Sign in with GitHub",
+    summary: "Sign in",
     runtime: ["identity"],
     userOnly: true,
-    userOnlyReason: "the GitHub OAuth redirect is the human's browser gesture; the agent renders the step with auth.prompt",
+    userOnlyReason: "sign-in is the human's browser gesture; the agent renders the step with auth.prompt",
     input: NoPayload,
     handler: (_payload, _signal, _call, gesture) => actions.signIn(gesture?.openExternal)
   }),

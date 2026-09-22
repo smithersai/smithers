@@ -34,6 +34,12 @@ export const nativeApplicationToken = async (): Promise<string | undefined> => {
   return (await rpc.proxy.request.applicationToken({})).token ?? undefined
 }
 
+/** Read the one-time owner setup secret only when the native setup form submits. */
+export const nativeApplicationBootstrapToken = async (): Promise<string | undefined> => {
+  if (rpc === undefined) return undefined
+  return (await rpc.proxy.request.applicationBootstrapToken({})).token ?? undefined
+}
+
 export interface NativeRepositories {
   readonly available: boolean
   readonly pickLocalRepository: (

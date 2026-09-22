@@ -4,6 +4,8 @@ import { lostActRefusal } from "./BrowserWriteFailure"
 import { openRequestedRepo } from "../RepoLink"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
+import type { ApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
+import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
@@ -17,6 +19,7 @@ import type { SlashItem,SlashRow } from "../flows/registry"
 import { flowRequirements } from "../flows/registry"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
+import type { ApplicationIdentityClient, LocalIdentityClient } from "../runtime/ApplicationClient"
 import type { FrameHistoryPort } from "../runtime/FrameHistory"
 import { localSocketProtocols } from "../runtime/LocalSession"
 import { createActorBindings } from "./ActorBindings"
@@ -33,6 +36,8 @@ import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { KnownRepositories } from "./RepoContext"
 import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,repositorySource,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
+import { createLocalAuthController } from "./LocalAuth"
+import type { LocalAuthController } from "./LocalAuth"
 import type { AccountController } from "./controller/account"
 import { createAccountController } from "./controller/account"
 import { createSignupController, type SignupController } from "./controller/signup"
@@ -442,6 +447,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly loadSession: () => Promise<void>
   /** Redirect to the identity seam's GitHub OAuth start. */
   readonly signIn: (reservedOpen?: (url: string) => Promise<boolean>) => Promise<void> | void
+  readonly localAuth: LocalAuthController | undefined
   readonly signOut: () => Promise<string | void>
   readonly requestAccess: () => Promise<string | void>
   /**
@@ -527,9 +533,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly viewEnvironment: EnvironmentSeam["viewEnvironment"]
   readonly setEnvironmentVar: EnvironmentSeam["setEnvironmentVar"]
   readonly listSecrets: SecretsSeam["listSecrets"]
-  readonly connectCodingProvider: SecretsSeam["connectCodingProvider"]
-  readonly listCodingProviders: SecretsSeam["listCodingProviders"]
-  readonly revokeCodingProvider: SecretsSeam["revokeCodingProvider"]
   readonly showHistory: HistorySeam["showHistory"]
   readonly retellHistory: HistorySeam["retellHistory"]
   readonly importRepository: RepoImportSeam["importRepository"]
@@ -655,6 +658,11 @@ export interface AppServices {
   /** Trusted local handoff, injectable by the embedding host; never projected as a tool. */
   readonly storageRecoveryHost?: StorageRecoveryHost
   readonly fetchImpl?: FetchLike
+  readonly applicationTarget?: ApplicationTarget
+  readonly localIdentity?: LocalIdentityClient
+  readonly localBootstrapToken?: () => Promise<string | undefined>
+  readonly applicationIdentity?: ApplicationIdentityClient
+  readonly authorizeSocket?: (url: string, signal?: AbortSignal) => Promise<string>
   /**
    * The per-launch local capability every cloud tunnel socket carries as its
    * subprotocol; default the page's injected token (runtime/LocalSession.ts).
@@ -849,8 +857,9 @@ export const createAppController = (
   }
   const issuesSeam = actors.pair(seamCtx, (context, select) => createIssuesSeam(context, request => select(renderFlowForm)(request)))
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
+  const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
   const tutorialRepository = actors.pair(ctx, (context) => createTutorialRepositoryController(context, {
-    localHandoff: async () => { await promptDownload() },
+    createRepository: repositoriesSeam.createRepository,
     publish: async (payload) => {
       const id = `tutorial-repository-${0}`
       const existing = context.store.collections.cards.get(id)
@@ -865,7 +874,7 @@ export const createAppController = (
   const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const notificationsSeam = actors.pair(seamCtx, (context) => createNotificationsSeam(context))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
-  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context, withToast))
+  const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context))
   const historySeam = actors.pair(seamCtx, (context, select) => createHistorySeam(context, async repo => {
     const result = await select(librarianRuns).bootstrapHistory(repo)
     return typeof result === "string" ? result : undefined
@@ -895,7 +904,6 @@ export const createAppController = (
     sessionEpoch: () => ctx.accountEpoch,
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
-  const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
   /* Lane citc: the cloud workspaces; its settle watches die with the controller. */
   const workspaceSeam = actors.pair(seamCtx, (context) => createWorkspaceSeam(context))
   /* The cloud agent sessions; their transcript streams die with the controller. */
@@ -930,6 +938,7 @@ export const createAppController = (
     return refusal
   }
 
+  let localAuth: LocalAuthController | undefined
   const {
     handleAuthReturn,
     adoptSession,
@@ -948,8 +957,33 @@ export const createAppController = (
     adminHealth,
     settleTurnBilling,
     watchIdentityAcrossTabs
-  } = actors.pair(ctx, (context) => createAuthBillingController(context, store.nextOrdinal,
-    services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud") ? loadCloudSession : undefined))
+  } = actors.pair(ctx, (context) => createAuthBillingController(
+    context,
+    store.nextOrdinal,
+    services.applicationIdentity === undefined && services.bootstrap?.host === "cloud" && hasCapability(services.bootstrap, "cloud")
+      ? loadCloudSession
+      : undefined,
+    () => {
+      if (localAuth === undefined) return false
+      localAuth.open()
+      return true
+    },
+    services.applicationIdentity === undefined
+      ? undefined
+      : {
+        current: services.applicationIdentity.current,
+        signInPath: APPLICATION_SIGN_IN_PATH,
+        settled: reloadRepositoriesWhenSignedIn
+      }
+  ))
+  if (
+    services.localIdentity !== undefined &&
+    services.applicationTarget?.ownership === "owner" &&
+    services.applicationTarget.auth.kind === "session"
+  ) {
+    localAuth = createLocalAuthController(services.localIdentity, loadSession, services.localBootstrapToken)
+    ctx.onDispose(localAuth.dispose)
+  }
   const { showPlugins, installPlugin, removePlugin, listPlugins } = actors.pair(ctx, createPluginsController)
   const { downloadUrl, openDownload, promptDownload, introduce } = actors.pair(ctx, (context) => createAppShellController(context))
   const { storageRecoveryState, promptStorageRecovery, exportStorageRecovery, resetStorageRecovery } = actors.pair(ctx, createStorageRecoveryController)
@@ -1057,9 +1091,13 @@ export const createAppController = (
   createHealthStatusController(ctx)
   /* Lane citc: the cloud-workspace terminal transport, one socket per session. */
   const cloudTerminal = createCloudTerminalClient({
-    auth: services.bootstrap?.host === "cloud" ? "cookie" : "subprotocol",
+    auth: services.authorizeSocket === undefined
+      ? services.bootstrap?.host === "cloud" ? "cookie" : "subprotocol"
+      : "ticket",
     socketUrl: services.cloudSocketUrl ?? ((repo, sessionId) => pageCloudSocketUrl(repo, sessionId, baseUrl)),
-    socketProtocol: () => socketProtocols()[0]
+    ...(services.authorizeSocket === undefined
+      ? { socketProtocol: () => socketProtocols()[0] }
+      : { authorizeSocket: services.authorizeSocket })
   })
   ctx.onDispose(cloudTerminal.dispose)
   /*
@@ -1073,7 +1111,9 @@ export const createAppController = (
       http: seamCtx.http,
       baseUrl,
       socketUrl: services.cloudLspSocketUrl ?? ((repo, sessionId, language) => pageCloudLspSocketUrl(repo, sessionId, language, baseUrl)),
-      socketProtocol: () => socketProtocols()[0]
+      ...(services.authorizeSocket === undefined
+        ? { socketProtocol: () => socketProtocols()[0] }
+        : { authorizeSocket: services.authorizeSocket })
     })
     : undefined
   if (cloudLsp !== undefined) ctx.onDispose(cloudLsp.dispose)
@@ -1800,9 +1840,6 @@ export const createAppController = (
     viewEnvironment: environmentSeam.viewEnvironment,
     setEnvironmentVar: environmentSeam.setEnvironmentVar,
     listSecrets: secretsSeam.listSecrets,
-    connectCodingProvider: secretsSeam.connectCodingProvider,
-    listCodingProviders: secretsSeam.listCodingProviders,
-    revokeCodingProvider: secretsSeam.revokeCodingProvider,
     showHistory: historySeam.showHistory,
     retellHistory: historySeam.retellHistory,
     registerTrigger,
@@ -2016,18 +2053,15 @@ export const createAppController = (
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
-    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls(); secretsSeam.resumeCodingProviders() } })
+    queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
     repositoryReadiness.resume()
     repositorySetup.resumeRepositorySetups()
     repoImportSeam.resume()
     runs.resumeApprovalRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
-  const cloudRecoverySubscription = store.collections.cloudSessions.subscribeChanges(() => {
-    repoImportSeam.resume()
-    queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
-  })
-  ctx.onDispose(() => cloudRecoverySubscription.unsubscribe())
+  const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => repoImportSeam.resume())
+  ctx.onDispose(() => importCloudSubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
   recommender.subscribe()
@@ -2077,6 +2111,7 @@ export const createAppController = (
     nativeAgentAvailable: agent.available,
     nativeRepositoriesAvailable: repositories.available,
     tappedFetch: http,
+    localAuth,
     commands,
     slashItems: (needle) => commands.slashItems(needle),
     slashTree: (needle) => commands.slashTree(needle),

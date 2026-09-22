@@ -3,7 +3,7 @@ import type { ControllerContext } from "./context"
 
 export interface RepositoryChoicePayload extends RepositoryRanking {
   readonly selected: string | null
-  readonly created: { readonly name: string; readonly path: string } | null
+  readonly created: { readonly fullName: string } | null
 }
 export interface TutorialRepositoryActions {
   readonly chooseTutorialRepository: (repo?: string) => Promise<string | void>
@@ -13,7 +13,7 @@ export interface TutorialRepositoryActions {
 export interface TutorialRepositoryPorts {
   /** Root binds card.upsert to the repository-choice schema; the card draft is durable. */
   readonly publish: (payload: RepositoryChoicePayload) => Promise<void>
-  readonly localHandoff: () => Promise<string | void>
+  readonly createRepository: (name: string) => Promise<{ readonly fullName: string } | string>
 }
 
 export function createTutorialRepositoryController(ctx: ControllerContext, ports: TutorialRepositoryPorts): TutorialRepositoryActions {
@@ -26,7 +26,7 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       const login = identity()?.state === "signed-in" ? identity()?.login : null
       const ranking = login ? await rankTutorialRepositories(ctx.boundedFetch, ctx.baseUrl) : {
         cutoff: new Date(Date.now() - 90 * 86400000).toISOString(), repositories: [], partial: true,
-        error: "Sign in to list GitHub repositories, or Skip to create a local repository."
+        error: "Sign in to list GitHub repositories, or Skip to create one."
       }
       if (!current(before)) return "The account or tutorial changed; choose the repository again."
       if (repo === undefined) {
@@ -43,6 +43,20 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: repo }).isPersisted.promise
       await ports.publish({ ...ranking, selected: repo, created: null })
     },
-    createTutorialRepository: async () => ports.localHandoff()
+    createTutorialRepository: async (name) => {
+      const before = scope()
+      const created = await ports.createRepository(name)
+      if (typeof created === "string") return created
+      if (!current(before)) return "The account or tutorial changed; create the repository again."
+      await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: created.fullName }).isPersisted.promise
+      await ports.publish({
+        cutoff: new Date(Date.now() - 90 * 86400000).toISOString(),
+        repositories: [],
+        partial: false,
+        error: null,
+        selected: created.fullName,
+        created
+      })
+    }
   }
 }

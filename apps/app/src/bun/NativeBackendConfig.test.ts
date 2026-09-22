@@ -3,7 +3,13 @@ import { nativeBackendConfig } from "./NativeBackendConfig"
 
 describe("native backend handshake", () => {
   test("own consumes the supervisor origin", () => {
-    expect(nativeBackendConfig({ SMITHERS_BACKEND_MODE: "own", SMITHERS_BACKEND_ORIGIN: "http://127.0.0.1:4400" }))
+    expect(nativeBackendConfig({}, {
+      mode: "own",
+      origin: "http://127.0.0.1:4400",
+      bootstrapToken: "native-bootstrap",
+      failure: undefined,
+      stop: async () => {}
+    }))
       .toEqual({
         rendererOrigin: "http://127.0.0.1:4400",
         target: {
@@ -14,17 +20,17 @@ describe("native backend handshake", () => {
           cors: "same-origin",
           developerExternal: false
         },
-        token: null
+        token: null,
+        bootstrapToken: "native-bootstrap"
       })
   })
 
   test("Plue never requests an owned backend launch", () => {
     const config = nativeBackendConfig({
-      SMITHERS_BACKEND_MODE: "plue",
       SMITHERS_API_ORIGIN: "https://plue.example.test",
       SMITHERS_RENDERER_ORIGIN: "http://127.0.0.1:5173",
       SMITHERS_API_TOKEN: "secret"
-    })
+    }, { mode: "plue", origin: undefined, bootstrapToken: undefined, failure: undefined, stop: async () => {} })
     expect(config.target).toMatchObject({
       mode: "native-plue",
       auth: { kind: "bearer" },
@@ -32,10 +38,15 @@ describe("native backend handshake", () => {
       developerExternal: false
     })
     expect(config.token).toBe("secret")
+    expect(config.bootstrapToken).toBeNull()
   })
 
   test("missing supervisor and remote origins fail before opening the app", () => {
-    expect(() => nativeBackendConfig({ SMITHERS_BACKEND_MODE: "own" })).toThrow("SMITHERS_BACKEND_ORIGIN is required")
-    expect(() => nativeBackendConfig({ SMITHERS_BACKEND_MODE: "plue" })).toThrow("SMITHERS_API_ORIGIN is required")
+    expect(() => nativeBackendConfig({}, {
+      mode: "own", origin: "", bootstrapToken: undefined, failure: undefined, stop: async () => {}
+    })).toThrow("owned backend origin is required")
+    expect(() => nativeBackendConfig({}, {
+      mode: "plue", origin: undefined, bootstrapToken: undefined, failure: undefined, stop: async () => {}
+    })).toThrow("SMITHERS_API_ORIGIN is required")
   })
 })

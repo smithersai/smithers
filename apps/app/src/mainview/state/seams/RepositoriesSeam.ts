@@ -31,6 +31,7 @@ import type { SeamContext } from "./SeamContext"
 export interface RepositoriesSeam {
   /** Refresh the repositories collection and the cloud working copies. */
   readonly loadRepositories: () => Promise<string | void>
+  readonly createRepository: (name: string) => Promise<{ readonly fullName: string } | string>
 }
 
 interface RepoWire {
@@ -51,6 +52,7 @@ const HEAD_LOOKUP_CONCURRENCY = 6
 const BOOKMARK_PAGE_LIMIT = 100
 /** The defensive bound against a cursor that never closes (BookmarksSeam's fetchAllBookmarks uses the same). */
 const MAX_BOOKMARK_PAGES = 100
+const MAX_INVENTORY_PAGES = 100
 
 const str = (value: unknown): string | null => typeof value === "string" && value !== "" ? value : null
 
@@ -155,8 +157,57 @@ const mapBounded = async <A, B>(items: ReadonlyArray<A>, limit: number, f: (item
   return answers
 }
 
+type NextPage =
+  | { readonly kind: "none" }
+  | { readonly kind: "next"; readonly path: string }
+  | { readonly kind: "invalid" }
+
+/** Go emits relative `/api/...` Link targets. Absolute or off-prefix targets never receive credentials. */
+const nextPage = (response: Response): NextPage => {
+  const header = response.headers.get("link")
+  if (header === null || header.trim() === "") return { kind: "none" }
+  for (const entry of header.split(",")) {
+    const relation = /(?:^|;)\s*rel\s*=\s*"?([^";]+)"?/i.exec(entry)?.[1]?.trim().split(/\s+/) ?? []
+    if (!relation.includes("next")) continue
+    const target = /^\s*<([^>]+)>/.exec(entry)?.[1]
+    if (target === undefined || !target.startsWith("/api/")) return { kind: "invalid" }
+    let parsed: URL
+    try {
+      parsed = new URL(target, "https://pagination.invalid")
+    } catch {
+      return { kind: "invalid" }
+    }
+    if (parsed.origin !== "https://pagination.invalid" || parsed.username !== "" || parsed.password !== "" || parsed.hash !== "") {
+      return { kind: "invalid" }
+    }
+    return { kind: "next", path: `${parsed.pathname.slice(4)}${parsed.search}` }
+  }
+  return { kind: "none" }
+}
+
 export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
-  const { get: getJson } = createCloudClient(ctx)
+  const { get: getJson, send } = createCloudClient(ctx)
+
+  const readAllPages = async (
+    first: string,
+    key: string
+  ): Promise<{ readonly rows: ReadonlyArray<unknown> } | { readonly error: string; readonly status: number | null }> => {
+    const rows: unknown[] = []
+    const seen = new Set<string>()
+    let path = first
+    for (let page = 0; page < MAX_INVENTORY_PAGES; page += 1) {
+      if (seen.has(path)) return { error: "Inventory pagination repeated a page.", status: null }
+      seen.add(path)
+      const answer = await getJson(path)
+      if ("error" in answer) return { error: answer.error, status: answer.status }
+      rows.push(...arrayOf(answer.body, key))
+      const next = nextPage(answer.response)
+      if (next.kind === "none") return { rows }
+      if (next.kind === "invalid") return { error: "Inventory pagination returned an invalid next page.", status: null }
+      path = next.path
+    }
+    return { error: "Inventory pagination limit reached.", status: null }
+  }
 
   type Head = { readonly bookmark: string; readonly changeId: string | null; readonly commitId: string | null }
 
@@ -206,16 +257,19 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
 
   return {
     loadRepositories: async () => {
-      const [reposAnswer, orgsAnswer] = await Promise.all([getJson("/user/repos"), getJson("/user/orgs")])
+      const [reposAnswer, orgsAnswer] = await Promise.all([
+        readAllPages("/user/repos?limit=100", "repos"),
+        readAllPages("/user/orgs?limit=100", "orgs")
+      ])
       if ("error" in reposAnswer) return reposAnswer.error
-      const repos = arrayOf(reposAnswer.body, "repos").flatMap((entry) => {
+      const repos = reposAnswer.rows.flatMap((entry) => {
         const parsed = parseRepo(entry)
         return parsed === null ? [] : [parsed]
       })
       const orgLogins = new Set(
         "error" in orgsAnswer
           ? []
-          : arrayOf(orgsAnswer.body, "orgs").flatMap((entry) => {
+          : orgsAnswer.rows.flatMap((entry) => {
             const login = isRecord(entry) ? ownerLogin(entry) : ownerLogin(entry)
             return login === null ? [] : [login]
           })
@@ -242,13 +296,13 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
        * and the honest answer is no workspace rows. Other failures leave the
        * rows alone: a transient error is not a fact about the inventory.
        */
-      const workspaces = await getJson("/user/workspaces")
+      const workspaces = await readAllPages("/user/workspaces?limit=100", "workspaces")
       if (!("error" in workspaces) || workspaces.status === 403) {
-        const body = "error" in workspaces ? null : workspaces.body
+        const rows = "error" in workspaces ? [] : workspaces.rows
         ctx.dispatch({
           type: "workingcopies.workspaces.loaded",
           actor: "system",
-          copies: arrayOf(body, "workspaces").flatMap((entry) => {
+          copies: rows.flatMap((entry) => {
             const parsed = parseWorkspace(entry)
             return parsed === null
               ? []
@@ -263,6 +317,30 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
           })
         })
       }
+    },
+    createRepository: async (name) => {
+      const answer = await send("POST", "/user/repos", { name, private: true, auto_init: true }, "repository creation")
+      if ("error" in answer) return answer.error
+      const repo = parseRepo(answer.body)
+      if (repo === null) return "The backend returned an unreadable repository."
+      const existing = [...ctx.store.collections.repositories.values()].filter((row) => row.id !== repo.id)
+      await ctx.dispatch({
+        type: "repositories.loaded",
+        actor: "system",
+        repositories: [
+          ...existing,
+          {
+            id: repo.id,
+            org: repo.org,
+            ownerKind: repo.ownerType ?? "user",
+            name: repo.name,
+            head: repo.defaultBookmark === null
+              ? null
+              : { bookmark: repo.defaultBookmark, changeId: null, commitId: null }
+          }
+        ]
+      }).isPersisted.promise
+      return { fullName: repo.id }
     }
   }
 }

@@ -189,6 +189,23 @@ describe("sign-in return path", () => {
     })
   })
 
+  test("a selected Go backend uses its GitHub start route", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const ctx = createControllerContext(store, repositories, agent, {
+      fetchImpl: async () => Response.json({})
+    })
+    const controller = createAuthBillingController(ctx, () => 0, undefined, undefined, {
+      current: async () => null,
+      signInPath: "/api/auth/github"
+    })
+    await controller.loadSession()
+    await withWindow("/", "", async (assigned) => {
+      controller.signIn()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(assigned).toEqual(["/api/auth/github"])
+    })
+  })
+
   test("the signed-in marker is handled silently; a failed return still speaks", async () => {
     const { store, controller } = await signedOutController()
     const messages = () => [...store.collections.messages.values()].length
@@ -199,6 +216,44 @@ describe("sign-in return path", () => {
     expect(controller.handleAuthReturn("?auth=failed")).toBe(true)
     expect(messages()).toBe(before + 1)
   })
+})
+
+test("selected backend identity also supplies the Cloud capability session", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const requested: string[] = []
+  const ctx = createControllerContext(store, repositories, agent, {
+    fetchImpl: async (input) => {
+      requested.push(String(input))
+      return Response.json({
+        state: "ok",
+        allowedToStartWork: true,
+        balance: { totalUsd: "0", lifetimeChargedUsd: "0", chargeCount: 0 }
+      })
+    }
+  })
+  ctx.withToast = async (_key, _title, _done, work) => work()
+  const settled: string[] = []
+  const controller = createAuthBillingController(ctx, () => 0, undefined, undefined, {
+    current: async () => ({ username: "owner", admin: true, scopes: "degraded" }),
+    signInPath: "/api/auth/github",
+    settled: () => settled.push("settled")
+  })
+
+  await controller.loadSession()
+
+  expect(store.collections.identitySessions.get("identity")).toMatchObject({
+    state: "signed-in",
+    login: "owner",
+    allowlisted: true,
+    admin: true
+  })
+  expect(store.collections.cloudSessions.get("cloud")).toMatchObject({
+    state: "signed-in",
+    username: "owner",
+    scopes: "degraded"
+  })
+  expect(settled).toEqual(["settled"])
+  expect(requested.some((url) => url.includes("/api/auth/session") || url.includes("/api/cloud-auth/session"))).toBe(false)
 })
 
 describe("native sign-in handoff ownership", () => {

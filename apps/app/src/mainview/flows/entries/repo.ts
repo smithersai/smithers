@@ -71,10 +71,10 @@ export const tutorialRepositoryFlows = (actions: import("../../state/controller/
   }),
   flow({
     name: "repo.create",
-    summary: "Create and open a local repository",
+    summary: "Create repository",
     args: "<name>", input: Schema.Struct({ name: Schema.String }),
     form: { fields: { name: { kind: "text" } } },
-    confirm: "create and open a local repository",
+    confirm: "create repository",
     handler: ({ name }) => actions.createTutorialRepository(name)
   })
 ]

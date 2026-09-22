@@ -19,6 +19,7 @@ import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { FailureController } from "./failures"
 import { TOAST_SUPERSEDED } from "./failures"
+import type { ApplicationIdentityClient } from "../../runtime/ApplicationClient"
 
 export interface AuthBillingController {
   readonly handleAuthReturn: (search: string) => boolean
@@ -45,12 +46,20 @@ export interface ResolvedSession {
   readonly login: string | null
   readonly allowlisted: boolean
   readonly admin: boolean
+  readonly scopes?: "degraded" | null
+}
+
+export interface SelectedBackendIdentity extends ApplicationIdentityClient {
+  readonly signInPath: string
+  readonly settled?: () => void
 }
 
 export const createAuthBillingController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
-  refreshCloudSession?: () => Promise<void>
+  refreshCloudSession?: () => Promise<void>,
+  openLocalAuth?: () => boolean,
+  selectedIdentity?: SelectedBackendIdentity
 ): AuthBillingController => {
   const { store, services, baseUrl, boundedFetch: http, errorMessageOf, unref } = ctx
   // Only a session validated during this controller lifetime can complete login.
@@ -63,6 +72,18 @@ export const createAuthBillingController = (
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
   const settleFirstRunTarget = (): void => ctx.settleFirstRunTarget()
+  const mirrorSelectedCloud = async (session: ResolvedSession): Promise<void> => {
+    if (selectedIdentity === undefined || session.state === "unavailable") return
+    await store.dispatch({
+      type: "cloud.session.loaded",
+      actor: "system",
+      state: session.state,
+      username: session.login,
+      expiresAt: null,
+      scopes: session.state === "signed-in" ? session.scopes ?? null : null
+    }).isPersisted.promise
+    if (!ctx.disposed) selectedIdentity.settled?.()
+  }
   // A definitive owner change revokes the old turn before any asynchronous
   // follow-up can deliver frames or restart a pending leg. Availability alone
   // does not revoke ownership: the persisted owner survives an outage.
@@ -130,7 +151,7 @@ export const createAuthBillingController = (
   const dispatchSignedOut = async (epoch: number, signal?: AbortSignal): Promise<void> => {
     if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
     fenceAccountTurn(null)
-    const scopesPlain = await fetchScopesPlain(signal)
+    const scopesPlain = selectedIdentity === undefined ? await fetchScopesPlain(signal) : null
     if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
     await store.dispatch({
       type: "identity.session.loaded",
@@ -141,6 +162,7 @@ export const createAuthBillingController = (
       admin: false,
       scopesPlain
     }).isPersisted.promise
+    await mirrorSelectedCloud({ state: "signed-out", login: null, allowlisted: false, admin: false })
     // The read that WRITES the row makes the first run's target choice: a read
     // that returned at its epoch guard has none to make, so a boot read raced
     // by a focus re-read (watchIdentityAcrossTabs) leaves no command parked.
@@ -163,7 +185,7 @@ export const createAuthBillingController = (
   }
 
   const finishSignedInSession = async (
-    session: Pick<ResolvedSession, "login" | "allowlisted" | "admin">,
+    session: Pick<ResolvedSession, "login" | "allowlisted" | "admin" | "scopes">,
     previous: ReturnType<typeof store.collections.identitySessions.get>
   ): Promise<void> => {
     if (ctx.disposed) return
@@ -179,6 +201,8 @@ export const createAuthBillingController = (
       scopesPlain: null
     })
     await persisted.isPersisted.promise
+    if (ctx.disposed || ctx.accountEpoch !== epoch) return
+    await mirrorSelectedCloud({ state: "signed-in", ...session })
     if (ctx.disposed || ctx.accountEpoch !== epoch) return
     if (previous?.state !== "signed-in" || previous.login !== session.login) ctx.identityChanged()
     // The balance read is driven by the session answer, not fired blind at
@@ -225,6 +249,28 @@ export const createAuthBillingController = (
     if (ctx.disposed || signal?.aborted) return
     const epoch = ++ctx.accountEpoch
     const previous = store.collections.identitySessions.get("identity")
+    if (selectedIdentity !== undefined) {
+      let identity: Awaited<ReturnType<ApplicationIdentityClient["current"]>>
+      try {
+        identity = await selectedIdentity.current(signal)
+      } catch {
+        if (ctx.accountEpoch !== epoch || signal?.aborted) return
+        dispatchUnavailable()
+        return
+      }
+      if (ctx.accountEpoch !== epoch || signal?.aborted) return
+      if (identity === null) {
+        await dispatchSignedOut(epoch, signal)
+        return
+      }
+      await finishSignedInSession({
+        login: identity.username,
+        allowlisted: true,
+        admin: identity.admin,
+        scopes: identity.scopes
+      }, previous)
+      return
+    }
     let response: Response
     try {
       response = await http(`${baseUrl}${AUTH_SESSION_PATH}`, { signal })
@@ -374,7 +420,7 @@ export const createAuthBillingController = (
       return
     }
     const origin = baseUrl !== "" ? baseUrl : typeof window === "undefined" ? "" : window.location.origin
-    const url = `${origin}${AUTH_SIGN_IN_PATH}?handoff=${encodeURIComponent(start.handoffId)}`
+    const url = `${origin}${selectedIdentity?.signInPath ?? AUTH_SIGN_IN_PATH}?handoff=${encodeURIComponent(start.handoffId)}`
     pendingHandoff = { generation, url }
     const opened = await openExternal(url)
     if (!current()) return
@@ -496,6 +542,7 @@ export const createAuthBillingController = (
       )
       return
     }
+    if (openLocalAuth?.() === true) return
     if (identity === undefined || identity.state === "unavailable") {
       toast(
         "auth.sign-in.unavailable",
@@ -532,7 +579,9 @@ export const createAuthBillingController = (
     const returnTo = signInReturnTo(window.location)
     const query = returnTo === null ? "" : `?${AUTH_RETURN_TO_PARAM}=${encodeURIComponent(returnTo)}`
     // The hop leaves the page: let the durable queue settle, or the state this click just changed is lost.
-    return Promise.resolve(store.settled?.()).then(() => { if (!ctx.disposed) window.location.assign(`${baseUrl}${AUTH_SIGN_IN_PATH}${query}`) })
+    return Promise.resolve(store.settled?.()).then(() => {
+      if (!ctx.disposed) window.location.assign(`${baseUrl}${selectedIdentity?.signInPath ?? AUTH_SIGN_IN_PATH}${query}`)
+    })
   }
 
   /*
@@ -557,6 +606,7 @@ export const createAuthBillingController = (
     } catch {
       return "Signed out, but local privacy cleanup is incomplete. Reload to retry before opening saved state or preparing recovery."
     }
+    await mirrorSelectedCloud({ state: "signed-out", login: null, allowlisted: false, admin: false })
     ctx.identityChanged()
   }
 

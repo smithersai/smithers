@@ -54,7 +54,7 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   // The hidden world.* aliases (entries/world.ts) carry their wiki.* twins' reason.
   "world.delete.confirm": "a confirm-dialog answer is the human's",
   "world.delete.cancel": "a confirm-dialog answer is the human's",
-  "auth.sign-in": "the GitHub OAuth redirect is the human's browser gesture; the agent renders the step with auth.prompt",
+  "auth.sign-in": "sign-in is the human's browser gesture; the agent renders the step with auth.prompt",
   "signup.google": SIGNUP_GOOGLE_USER_ONLY_REASON,
   "auth.sign-out": "dropping the human's session is theirs alone",
   "app.download": "a browser handoff the human clicks; the agent renders the step with app.download.prompt",

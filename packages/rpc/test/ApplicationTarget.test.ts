@@ -1,18 +1,20 @@
 import { describe, expect, test } from "vitest"
-import { resolveApplicationTarget, startsOwnedBackend } from "../src/ApplicationTarget"
+import { resolveApplicationTarget, startsOwnedBackend } from "../src/ApplicationTarget.js"
 
 const PAGE = "https://app.example.test"
 
 describe("application target matrix", () => {
-  test.each([
-    ["web-selfhost", "", "session", "owner", "none"],
-    ["web-plue", "", "session", "plue", "none"],
-    ["local-own", "http://127.0.0.1:4100", "token", "owner", "connect"],
-    ["local-plue", "https://plue.example.test", "bearer", "plue", "none"],
-    ["native-own", "http://127.0.0.1:4200", "session", "owner", "supervisor"],
-    ["native-plue", "https://plue.example.test", "bearer", "plue", "none"]
-  ] as const)("resolves %s without mode-specific product behavior", (mode, apiOrigin, auth, ownership, launch) => {
-    const external = apiOrigin !== "" && apiOrigin !== PAGE
+  test.each(
+    [
+      ["web-selfhost", "", "session", "owner", "none"],
+      ["web-plue", "", "session", "plue", "none"],
+      ["local-own", "http://127.0.0.1:4100", "token", "owner", "connect"],
+      ["local-plue", "https://plue.example.test", "bearer", "plue", "none"],
+      ["native-own", "http://127.0.0.1:4200", "session", "owner", "supervisor"],
+      ["native-plue", "https://plue.example.test", "bearer", "plue", "none"]
+    ] as const
+  )("resolves %s without mode-specific product behavior", (mode, apiOrigin, auth, ownership, launch) => {
+    const external = apiOrigin !== ""
     const target = resolveApplicationTarget({
       apiVersion: 1,
       mode,
@@ -40,17 +42,21 @@ describe("application target matrix", () => {
   })
 
   test("rejects implicit cross-origin Plue and missing owned launch handshakes", () => {
-    expect(() => resolveApplicationTarget({
-      apiVersion: 1,
-      mode: "web-plue",
-      apiOrigin: "https://plue.example.test",
-      auth: { kind: "bearer" }
-    }, PAGE)).toThrow("developerExternal")
-    expect(() => resolveApplicationTarget({
-      apiVersion: 1,
-      mode: "native-own",
-      apiOrigin: "",
-      auth: { kind: "session" }
-    }, PAGE)).toThrow("launch handshake")
+    expect(() =>
+      resolveApplicationTarget({
+        apiVersion: 1,
+        mode: "web-plue",
+        apiOrigin: "https://plue.example.test",
+        auth: { kind: "bearer" }
+      }, PAGE)
+    ).toThrow("developerExternal")
+    expect(() =>
+      resolveApplicationTarget({
+        apiVersion: 1,
+        mode: "native-own",
+        apiOrigin: "",
+        auth: { kind: "session" }
+      }, PAGE)
+    ).toThrow("launch handshake")
   })
 })

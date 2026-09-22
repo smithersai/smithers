@@ -29,9 +29,13 @@ export interface CloudTerminalClientOptions {
   /** The tunnel URL for one session; undefined where no socket can exist (tests, server render). */
   readonly socketUrl: (repo: string, sessionId: string) => string | undefined
   /** Native uses its local capability; the web host authenticates the same-origin cookie. */
-  readonly auth: "subprotocol" | "cookie"
+  readonly auth: "subprotocol" | "cookie" | "ticket"
   /** The local-session capability; required only in subprotocol mode. */
   readonly socketProtocol?: () => string | undefined
+  /** Exchanges the selected application credential for a fresh one-use socket ticket. */
+  readonly authorizeSocket?: (url: string, signal?: AbortSignal) => Promise<string>
+  /** Test/platform seam; production uses the browser WebSocket constructor. */
+  readonly openSocket?: (url: string, protocols?: ReadonlyArray<string>) => WebSocket
   /** The first reconnect delay; every later one doubles, up to maxReconnectMs. */
   readonly reconnectMs?: number
   readonly maxReconnectMs?: number
@@ -120,6 +124,7 @@ export const pageCloudSocketUrl = (repo: string, sessionId: string, baseUrl = ""
 
 interface Connection {
   socket: WebSocket | undefined
+  opening: AbortController | undefined
   readonly listeners: Set<CloudTerminalAttachment>
   readonly pending: Array<PendingFrame>
   reconnect: ReturnType<typeof setTimeout> | undefined
@@ -143,6 +148,8 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
   /** Reconnect dials reserved in the rolling minute (planned times, so simultaneous schedulers see each other). */
   const reconnectDials: Array<number> = []
   let disposed = false
+  const openSocket = options.openSocket ?? ((url: string, protocols?: ReadonlyArray<string>) =>
+    protocols === undefined ? new WebSocket(url) : new WebSocket(url, [...protocols]))
 
   const reconnectMs = options.reconnectMs ?? DEFAULT_RECONNECT_MS
   const maxReconnectMs = Math.max(options.maxReconnectMs ?? DEFAULT_MAX_RECONNECT_MS, reconnectMs)
@@ -202,11 +209,36 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
 
   const ensureSocket = (sessionId: string, entry: Entry): void => {
     const { conn } = entry
-    if (disposed || conn.socket !== undefined) return
-    const url = options.socketUrl(entry.repo, sessionId)
+    if (disposed || conn.socket !== undefined || conn.opening !== undefined) return
+    const rawUrl = options.socketUrl(entry.repo, sessionId)
     const protocol = options.auth === "subprotocol" ? options.socketProtocol?.() : undefined
-    if (url === undefined || (options.auth === "subprotocol" && protocol === undefined)) return
-    const opened = protocol === undefined ? new WebSocket(url) : new WebSocket(url, [protocol])
+    if (rawUrl === undefined || (options.auth === "subprotocol" && protocol === undefined)) return
+    if (options.auth === "ticket" && options.authorizeSocket === undefined) return
+    const opening = new AbortController()
+    conn.opening = opening
+    void (async () => {
+      let url: string
+      try {
+        url = options.authorizeSocket === undefined
+          ? rawUrl
+          : await options.authorizeSocket(rawUrl, opening.signal)
+      } catch (error) {
+        if (conn.opening !== opening || opening.signal.aborted || disposed) return
+        conn.opening = undefined
+        say(conn, `socket authorization failed: ${error instanceof Error ? error.message : String(error)}`)
+        scheduleReconnect(sessionId, entry)
+        return
+      }
+      if (conn.opening !== opening || opening.signal.aborted || disposed || conn.listeners.size === 0) return
+      conn.opening = undefined
+      let opened: WebSocket
+      try {
+        opened = openSocket(url, protocol === undefined ? undefined : [protocol])
+      } catch (error) {
+        say(conn, `socket open failed: ${error instanceof Error ? error.message : String(error)}`)
+        scheduleReconnect(sessionId, entry)
+        return
+      }
     // PTY frames are arbitrary byte chunks, not complete UTF-8 strings.
     // One decoder belongs to this socket so partial characters survive a
     // frame boundary without leaking into another session or reconnect.
@@ -289,9 +321,10 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
         : `session closed${reason ? `: ${reason}` : ""}`
       say(conn, note)
     }
-    opened.onerror = () => {
-      // onclose follows; the reconnect is its job.
-    }
+      opened.onerror = () => {
+        // onclose follows; the reconnect is its job.
+      }
+    })()
   }
 
   const attach: CloudTerminalClient["attach"] = (repo, sessionId, attachment) => {
@@ -301,6 +334,7 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
         repo,
         conn: {
           socket: undefined,
+          opening: undefined,
           listeners: new Set(),
           pending: [],
           reconnect: undefined,
@@ -320,6 +354,8 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
       if (current.conn.listeners.size > 0) return
       connections.delete(sessionId)
       current.conn.pending.length = 0
+      current.conn.opening?.abort()
+      current.conn.opening = undefined
       if (current.conn.reconnect !== undefined) {
         clearTimeout(current.conn.reconnect)
         current.conn.reconnect = undefined
@@ -372,6 +408,8 @@ export const createCloudTerminalClient = (options: CloudTerminalClientOptions): 
     disposed = true
     for (const entry of connections.values()) {
       if (entry.conn.reconnect !== undefined) clearTimeout(entry.conn.reconnect)
+      entry.conn.opening?.abort()
+      entry.conn.opening = undefined
       entry.conn.pending.length = 0
       entry.conn.socket = undefined
     }

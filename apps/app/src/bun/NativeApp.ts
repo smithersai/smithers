@@ -9,6 +9,7 @@ import type { BrowserWindow as NativeBrowserWindow } from "electrobun/main"
 import type { SmithersNativeRPC } from "@smthrs/rpc/NativeRPC"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
 import { nativeBackendConfig } from "./NativeBackendConfig"
+import { startNativeBackend } from "./NativeBackendProcess"
 import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
@@ -46,6 +47,13 @@ const stubAgent = Bun.env.SMITHERS_CHAT_STUB === "1"
   ? (await import("../../e2e/support/ChatStub")).createChatStub
   : undefined
 
+if (stubAgent === undefined && (Bun.env.SMITHERS_WEB_ROOT?.trim() ?? "") === "") {
+  Bun.env.SMITHERS_WEB_ROOT = defaultDistDir(import.meta.dir)
+}
+const backendProcess = stubAgent === undefined
+  ? await startNativeBackend({ stateDir })
+  : undefined
+
 // The retired Bun product host survives only as the deterministic packaged
 // test fixture. Production receives the actual shared Go backend origin from
 // the issue12 supervisor, or connects directly to Plue.
@@ -56,31 +64,52 @@ const testServer = stubAgent === undefined ? undefined : await startLocalServer(
   agent: stubAgent,
   cloudMode: "offline"
 })
-const backend = testServer === undefined
-  ? nativeBackendConfig(Bun.env)
-  : {
-    rendererOrigin: testServer.origin,
-    target: {
-      apiVersion: 1,
-      mode: "native-own",
-      apiOrigin: testServer.origin,
-      auth: { kind: "session" },
-      cors: "same-origin",
-      developerExternal: false
-    } as const,
-    token: null
+const backend = await (async () => {
+  try {
+    return testServer === undefined
+      ? nativeBackendConfig(Bun.env, backendProcess!)
+      : {
+        rendererOrigin: testServer.origin,
+        target: {
+          apiVersion: 1,
+          mode: "native-own",
+          apiOrigin: testServer.origin,
+          auth: { kind: "session" },
+          cors: "same-origin",
+          developerExternal: false
+        } as const,
+        token: null,
+        bootstrapToken: null
+      }
+  } catch (error) {
+    await backendProcess?.stop()
+    throw error
   }
+})()
 
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
+let backendFailure: Error | undefined
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
-    await testServer?.stop()
+    const results = await Promise.allSettled([
+      testServer?.stop() ?? Promise.resolve(),
+      backendProcess?.stop() ?? Promise.resolve()
+    ])
+    const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
+    if (backendFailure !== undefined) failures.push(backendFailure)
+    if (failures.length > 0) throw new AggregateError(failures, "Native runtime shutdown failed.")
   },
   quit: (code) => process.exit(code),
   onBeforeQuit: (handler) => { Electrobun.events.on("before-quit", handler) },
   log: (message) => console.error(message)
+})
+void backendProcess?.failure?.then((failure) => {
+  if (failure === undefined) return
+  backendFailure = failure
+  console.error(failure.message)
+  void shutdown()
 })
 
 if (headless) {
@@ -91,7 +120,8 @@ if (headless) {
       requests: {
         openExternal: async ({ url }) => ({ opened: await openExternal(url) }),
         applicationTarget: async () => ({ target: backend.target }),
-        applicationToken: async () => ({ token: backend.token })
+        applicationToken: async () => ({ token: backend.token }),
+        applicationBootstrapToken: async () => ({ token: backend.bootstrapToken })
       },
       messages: {}
     }

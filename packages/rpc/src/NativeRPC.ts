@@ -47,6 +47,15 @@ export interface SmithersNativeRPC {
         readonly params: Record<never, never>
         readonly response: { readonly token: string | null }
       }
+      /**
+       * First-owner setup material supplied by the owned native supervisor.
+       * It is requested only when the setup form submits and is never part of
+       * the persisted target document or renderer state.
+       */
+      readonly applicationBootstrapToken: {
+        readonly params: Record<never, never>
+        readonly response: { readonly token: string | null }
+      }
     }
     readonly messages: Record<never, never>
   }

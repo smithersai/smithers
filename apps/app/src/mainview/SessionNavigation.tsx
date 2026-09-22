@@ -3,6 +3,7 @@ import { useCallback,type CSSProperties } from "react"
 import { ChromeDock } from "./ChromeDock"
 import { useController } from "./ControllerContext"
 import { KeyboardNavigation } from "./KeyboardNavigation"
+import { LocalAuthPanel } from "./LocalAuthPanel"
 import { WORDMARK } from "./Wordmark"
 import { flowAction, flowSelector } from "./flows/FlowAction"
 import { GUIDE_KEYS } from "./onboarding/GuideButton"
@@ -59,8 +60,11 @@ export function SessionNavigation() {
       <h1 className="guide-wordmark" aria-label="Smithers" style={{ margin: 0 }}><Mark /></h1>
       {/* Signed in, the header carries no account chrome; Account lives in the dock and /account.show. */}
       {identity?.state !== "signed-in" && controller.commands.find("auth.sign-in") !== undefined && <div className="session-identity">
-        <button type="button" className="chrome-action" data-testid="chrome-sign-in" {...flowAction(controller.runCommand, "auth.sign-in")}>Sign in with GitHub</button>
+        <button type="button" className="chrome-action" data-testid="chrome-sign-in" {...flowAction(controller.runCommand, "auth.sign-in")}>
+          {controller.localAuth === undefined ? "Sign in with GitHub" : "Sign in"}
+        </button>
       </div>}
+      {controller.localAuth !== undefined && <LocalAuthPanel auth={controller.localAuth} />}
     </header>
     <ChromeDock />
   </>

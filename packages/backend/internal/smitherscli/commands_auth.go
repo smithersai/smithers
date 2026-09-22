@@ -218,6 +218,7 @@ func authCommand() *incur.Cli {
 		},
 	})
 	cmd.Group("claude", claudeAuthCommand())
+	cmd.Group("local", localOwnerAuthCommand())
 	registerProviderConnectionCommands(cmd)
 	return cmd
 }

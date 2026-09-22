@@ -137,7 +137,12 @@ describe("the native main process starts the local origin", () => {
 describe("the native RPC surface", () => {
   test("binds only platform and backend-configuration doors", async () => {
     const report = await probe({})
-    expect([...report.requestNames].sort()).toEqual(["applicationTarget", "applicationToken", "openExternal"])
+    expect([...report.requestNames].sort()).toEqual([
+      "applicationBootstrapToken",
+      "applicationTarget",
+      "applicationToken",
+      "openExternal"
+    ])
     expect(report.messageNames).toEqual([])
   }, PROBE_BUDGET_MS)
 
@@ -146,7 +151,8 @@ describe("the native RPC surface", () => {
       scenario: {
         exercises: [
           { label: "target", request: "applicationTarget", params: {} },
-          { label: "token", request: "applicationToken", params: {} }
+          { label: "token", request: "applicationToken", params: {} },
+          { label: "bootstrap-token", request: "applicationBootstrapToken", params: {} }
         ]
       }
     })
@@ -161,6 +167,7 @@ describe("the native RPC surface", () => {
       }
     })
     expect(report.results.token).toEqual({ token: null })
+    expect(report.results["bootstrap-token"]).toEqual({ token: null })
   }, PROBE_BUDGET_MS)
 
   test("openExternal refuses every scheme but http and https", async () => {

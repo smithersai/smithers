@@ -2,7 +2,12 @@ import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
 import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import { nativeOpenExternal, nativeRepositories, nativeShellAvailable } from "./native/NativeBridge"
+import {
+  nativeApplicationBootstrapToken,
+  nativeOpenExternal,
+  nativeRepositories,
+  nativeShellAvailable
+} from "./native/NativeBridge"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
@@ -66,6 +71,11 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         {
           fetchImpl: runtime.http,
           baseUrl: client.baseUrl,
+          applicationTarget: client.target,
+          localIdentity: client.localIdentity,
+          ...(nativeShellAvailable ? { localBootstrapToken: nativeApplicationBootstrapToken } : {}),
+          applicationIdentity: client.identity,
+          authorizeSocket: client.authorizeWebSocket,
           bootstrap: runtime.bootstrap,
           repositoryApp: requested ?? undefined,
           frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true }),
@@ -126,11 +136,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     }
     // An assigned seat this host cannot answer surfaces unasked (controller/models.ts).
     yield* Effect.sync(() => void controller.observeModels())
-    // Web identity loads its Cloud session before resuming parked commands.
-    // The native PAT is independent of GitHub and still needs its own read.
-    if (bootstrap.host === "local" && hasCapability(bootstrap, "cloud")) {
-      yield* Effect.sync(() => void controller.loadCloudSession())
-    }
+    // `/api/user` above is also the selected backend's Cloud-capability
+    // identity; no second native/cloud session probe is started.
     // Both URL rewrites keep the entry's state: on a repository path the
     // frame history stores the frame location there, not in the URL.
     // A GitHub App setup-URL return carries its own parameters.
