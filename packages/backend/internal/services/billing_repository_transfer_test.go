@@ -368,8 +368,8 @@ func TestBillingService_ConcurrentPrivateRepositoryCreatesStopAtExactCap(t *test
 				ownerID,
 				func(commitCtx context.Context) error {
 					_, err := pool.Exec(commitCtx,
-						`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-						 VALUES ($1, $2, $2, '', 's1', FALSE, 'main')`,
+						`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark)
+						 VALUES ($1, $2, $2, '', FALSE, 'main')`,
 						ownerID,
 						name,
 					)
@@ -454,8 +454,8 @@ func TestBillingService_DurablePrivateCommitIgnoresLockReleaseFailure(t *testing
 
 	err := service.AuthorizePrivateRepoCommitted(ctx, BillingOwnerTypeUser, ownerID, func(commitCtx context.Context) error {
 		_, insertErr := pool.Exec(commitCtx,
-			`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-			 VALUES ($1, $2, $2, '', 's1', FALSE, 'main')`,
+			`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark)
+			 VALUES ($1, $2, $2, '', FALSE, 'main')`,
 			ownerID,
 			name,
 		)
@@ -491,8 +491,8 @@ func createBillingTransferRepo(t *testing.T, pool *pgxpool.Pool, ownerID int64, 
 	var id int64
 	require.NoError(t, pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, $2, $2, '', 's1', $3, 'main') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark)
+		 VALUES ($1, $2, $2, '', $3, 'main') RETURNING id`,
 		ownerID,
 		name,
 		!private,
@@ -504,23 +504,23 @@ func stageBillingTransferOperation(t *testing.T, pool *pgxpool.Pool, repositoryI
 	t.Helper()
 	ctx := context.Background()
 	var sourceOwnerID int64
-	var sourceOwner, targetOwner, repositoryName, storageSetID string
+	var sourceOwner, targetOwner, repositoryName string
 	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT r.user_id, source.username, target.username, r.name, r.storage_set_id
+		SELECT r.user_id, source.username, target.username, r.name
 		FROM repositories AS r
 		JOIN users AS source ON source.id = r.user_id
 		JOIN users AS target ON target.id = $2
 		WHERE r.id = $1
-	`, repositoryID, targetOwnerID).Scan(&sourceOwnerID, &sourceOwner, &targetOwner, &repositoryName, &storageSetID))
+	`, repositoryID, targetOwnerID).Scan(&sourceOwnerID, &sourceOwner, &targetOwner, &repositoryName))
 
 	token := strings.Repeat(strings.ReplaceAll(uuid.NewString(), "-", ""), 2)
 	_, err := pool.Exec(ctx, `
 		INSERT INTO repository_storage_operations (
-			repository_id, operation_type, token, storage_set_id,
+			repository_id, operation_type, token, storage_route_key,
 			source_owner, source_repo, source_user_id,
 			target_owner, target_repo, target_user_id
 		) VALUES ($1, 'move', $2, $3, $4, $5, $6, $7, $5, $8)
-	`, repositoryID, token, storageSetID, sourceOwner, repositoryName, sourceOwnerID, targetOwner, targetOwnerID)
+	`, repositoryID, token, "static", sourceOwner, repositoryName, sourceOwnerID, targetOwner, targetOwnerID)
 	require.NoError(t, err)
 	return token
 }

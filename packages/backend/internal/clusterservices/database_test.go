@@ -20,6 +20,9 @@ func setupTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	raw := os.Getenv("SMITHERS_CLUSTER_TEST_DATABASE_URL")
 	if raw == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("SMITHERS_CLUSTER_TEST_DATABASE_URL is required")
+		}
 		t.Skip("set SMITHERS_CLUSTER_TEST_DATABASE_URL for cluster database integration")
 	}
 	cfg, err := pgxpool.ParseConfig(raw)

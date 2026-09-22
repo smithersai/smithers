@@ -284,7 +284,7 @@ func TestRepositoryStorageOperationRetryYieldsToUntouchedWork(t *testing.T) {
 
 	_, err := pool.Exec(ctx, `
 		INSERT INTO repository_storage_operations (
-			repository_id, operation_type, token, storage_set_id,
+			repository_id, operation_type, token, storage_route_key,
 			source_owner, source_repo, source_user_id, created_at, updated_at
 		) VALUES
 			($1, 'delete', $2, 's1', 'owner', 'first', 1, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours'),

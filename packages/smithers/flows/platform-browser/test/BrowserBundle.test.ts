@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 /**
  * The browser promise, executed for this package's complete Host bundle.
  *
@@ -16,7 +17,7 @@ describe("browser bundle", () => {
   ])("resolves the %s dependency graph without Node built-ins", async (_name, entry) => {
     const result = await build({
       bundle: true,
-      entryPoints: [new URL(entry, import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
       external: ["effect", "effect/*"],
       format: "esm",
       logLevel: "silent",

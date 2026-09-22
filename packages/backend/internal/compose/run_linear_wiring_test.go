@@ -62,6 +62,12 @@ func seedLinearWiringFixture(t *testing.T, dsn string) *linearWiringFixture {
 		 VALUES ($1, $1, $2, $2, $1) RETURNING id`,
 		owner, owner+"@example.com",
 	).Scan(&userID))
+	_, err = pool.Exec(ctx,
+		`INSERT INTO self_host_owners (singleton, user_id) VALUES (TRUE, $1)`, userID)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM self_host_owners WHERE user_id = $1`, userID)
+	})
 
 	var rawBytes [20]byte
 	_, err = rand.Read(rawBytes[:])
@@ -78,8 +84,8 @@ func seedLinearWiringFixture(t *testing.T, dsn string) *linearWiringFixture {
 
 	var repoID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number, storage_set_id)
-		 VALUES ($1, $2, $2, '', TRUE, 'main', 1, 's1') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number)
+		 VALUES ($1, $2, $2, '', TRUE, 'main', 1) RETURNING id`,
 		userID, repo,
 	).Scan(&repoID))
 

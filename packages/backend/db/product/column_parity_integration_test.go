@@ -20,6 +20,9 @@ import (
 func TestProductColumnsMatchHostedOrder(t *testing.T) {
 	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	if raw == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("SMITHERS_PRODUCT_TEST_DATABASE_URL is required")
+		}
 		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
 	}
 	ctx := context.Background()

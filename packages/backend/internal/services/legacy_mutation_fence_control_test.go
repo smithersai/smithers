@@ -11,7 +11,9 @@ import (
 func TestConfigureLegacyMutationFencesContractsTogetherAndNeverWeakens(t *testing.T) {
 	ctx := context.Background()
 	pool := getAgentTestPool(t)
-	_, err := pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `INSERT INTO legacy_mutation_fence_control (singleton) VALUES (TRUE) ON CONFLICT (singleton) DO NOTHING`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
 		UPDATE legacy_mutation_fence_control
 		SET enforce_repository_storage = FALSE,
 		    enforce_release_deletion = FALSE,

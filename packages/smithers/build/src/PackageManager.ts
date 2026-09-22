@@ -906,7 +906,7 @@ const pnpmInvocation = (
   runtimeExecutable: string
 ): Effect.Effect<{ readonly executable: string; readonly prefix: ReadonlyArray<string> }, PackageManagerError> =>
   Effect.gen(function*() {
-    if (options.executable !== undefined || options.platform.os !== "win32") {
+    if ((options.executable !== undefined && options.executable !== "pnpm") || options.platform.os !== "win32") {
       return { executable: options.executable ?? "pnpm", prefix: [] }
     }
     const mismatch = (shim: string) =>

@@ -550,6 +550,7 @@ describe("PackageManager.storeRoot", () => {
         PackageManager.makePnpm({
           requirement: "11.21.0",
           projectRoot: root,
+          executable: "pnpm",
           environment: { Path: `${root}/absent;"${bin}"`, SystemRoot: process.env.SystemRoot }
         }).pipe(
           Effect.provide(NodeServices.layer),

@@ -39,6 +39,9 @@ func TestMain(m *testing.M) {
 
 	if err := setupServicesIntegrationDatabase(databaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "agent integration database unavailable; integration tests will be skipped: %v\n", err)
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			os.Exit(1)
+		}
 	}
 
 	code := m.Run()
@@ -81,7 +84,7 @@ func setupServicesIntegrationDatabase(databaseURL string) error {
 
 	_, _ = schemaConn.Exec(context.Background(),
 		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`)
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		return fmt.Errorf("schema setup failed: %w", err)
 	}

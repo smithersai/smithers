@@ -126,7 +126,8 @@ export const make = (bash: JustBashLike) =>
     const resolveWorkingDirectory = Effect.fnUntraced(
       function*(options: ChildProcess.CommandOptions) {
         if (options.cwd === undefined) return undefined
-        const cwd = path.isAbsolute(options.cwd) ? path.normalize(options.cwd) : path.resolve("/", options.cwd)
+        const windowsAbsolute = /^[A-Za-z]:[\\/]/.test(options.cwd) || /^\\\\/.test(options.cwd)
+        const cwd = windowsAbsolute ? options.cwd : path.isAbsolute(options.cwd) ? path.normalize(options.cwd) : path.resolve("/", options.cwd)
         // A regular file passes a bare existence check and is then handed to
         // the interpreter as a working directory, where Node fails ENOTDIR.
         const info = yield* fs.stat(cwd)

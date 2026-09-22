@@ -64,7 +64,7 @@ func TestIssueStateProjectionMatchesCommittedOwnedRows(t *testing.T) {
 	name := fmt.Sprintf("issue_projection_%d", time.Now().UnixNano())
 	var user, repo int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES($1,$1) RETURNING id`, name).Scan(&user))
-	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name,storage_set_id) VALUES($1,$2,$2,'s1') RETURNING id`, user, name).Scan(&repo))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,$2,$2) RETURNING id`, user, name).Scan(&repo))
 	label, err := q.CreateLabel(ctx, db.CreateLabelParams{RepositoryID: repo, Name: "bug", Color: "red"})
 	require.NoError(t, err)
 	milestone, err := q.CreateMilestone(ctx, db.CreateMilestoneParams{RepositoryID: repo, Title: "v1"})

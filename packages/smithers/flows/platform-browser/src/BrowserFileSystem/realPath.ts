@@ -18,7 +18,8 @@ import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.ts"
  * @category utilities
  * @since 1.0.0-rc.0
  */
-const rootPath = (path: string): string => path.startsWith("/") ? path : `/${path}`
+const rootPath = (path: string): string =>
+  path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path) ? path : `/${path}`
 
 /**
  * Resolves a path to its canonical absolute pathname, following symlinks when

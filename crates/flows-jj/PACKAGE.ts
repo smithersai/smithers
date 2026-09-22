@@ -46,7 +46,7 @@ const cargoFmt = Smithers.Cargo.Fmt({
  * @category lint
  */
 const cargoClippy = Smithers.Cargo.Clippy({
-  workspace: true,
+  package: "flows-jj",
   allTargets: true,
   locked: true,
   denyWarnings: true,
@@ -60,7 +60,7 @@ const cargoClippy = Smithers.Cargo.Clippy({
  * @category test
  */
 const cargoTest = Smithers.Cargo.Test({
-  workspace: true,
+  package: "flows-jj",
   locked: true,
   data: sources
 })

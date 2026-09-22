@@ -46,9 +46,15 @@ func TestFailedGoldenBuilderCleanupDoesNotDeleteFromPartialRead(t *testing.T) {
 }
 
 func TestFailedGoldenBuilderSelectionPostgres(t *testing.T) {
-	url := os.Getenv("SMITHERS_TEST_DATABASE_URL")
+	url := os.Getenv("SMITHERS_SERVICES_TEST_DATABASE_URL")
 	if url == "" {
-		t.Skip("SMITHERS_TEST_DATABASE_URL is not set")
+		url = os.Getenv("SMITHERS_TEST_DATABASE_URL")
+	}
+	if url == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("services test database URL is required")
+		}
+		t.Skip("services test database URL is not set")
 	}
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, url)

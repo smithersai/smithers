@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	smitherscrypto "github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // routeLinearWebhookTestSessionSecret keys the AES-256-GCM encryption of the
@@ -102,6 +102,9 @@ func setupLinearWebhookRouteTestPool(t *testing.T) *pgxpool.Pool {
 
 	pool, err := resetLinearWebhookRouteTestDatabase(linearWebhookRouteTestDatabaseURL())
 	if err != nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("required routes database unavailable: %v", err)
+		}
 		t.Skipf("skipping DB integration test: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
@@ -159,7 +162,7 @@ func resetLinearWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("terminate existing connections: %w", err)
 	}
 
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		return nil, fmt.Errorf("reset schema: %w", err)
 	}

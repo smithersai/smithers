@@ -201,7 +201,9 @@ func TestProvisioningEnforcementAtomicallyTerminalizesUnboundLegacyImports(t *te
 	pool := getAgentTestPool(t)
 	ctx := context.Background()
 	userID, owner := createProvisioningTestUser(t)
-	_, err := pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `INSERT INTO repository_provisioning_control (singleton) VALUES (TRUE) ON CONFLICT (singleton) DO NOTHING`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
 		UPDATE repository_provisioning_control
 		SET enforce_insert_fence = FALSE, updated_at = NOW()
 		WHERE singleton

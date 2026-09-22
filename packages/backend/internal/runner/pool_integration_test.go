@@ -34,6 +34,9 @@ func TestMain(m *testing.M) {
 
 	if err := setupRunnerIntegrationDatabase(databaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "runner integration database unavailable; integration tests will be skipped: %v\n", err)
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			os.Exit(1)
+		}
 	}
 
 	code := m.Run()
@@ -74,7 +77,7 @@ func setupRunnerIntegrationDatabase(databaseURL string) error {
 	}
 	defer schemaConn.Close(context.Background())
 
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		return fmt.Errorf("schema setup failed: %w", err)
 	}
@@ -504,7 +507,7 @@ func mustCreateRepo(t *testing.T, pool *pgxpool.Pool, userID int64, name string)
 	var id int64
 	err := pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number, storage_set_id) VALUES ($1, $2, $3, '', TRUE, 'main', 1, 's1') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number) VALUES ($1, $2, $3, '', TRUE, 'main', 1) RETURNING id`,
 		userID,
 		name,
 		lowerName,

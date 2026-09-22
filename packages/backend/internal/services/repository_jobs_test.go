@@ -243,10 +243,28 @@ func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *deploymentdb.Queries, *
 	uid, rid := setupTestUserAndRepo(t, pool)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		_, err := pool.Exec(ctx, `DELETE FROM repositories WHERE id=$1`, rid)
+		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
-		_, err = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, uid)
+		defer func() { _ = tx.Rollback(ctx) }()
+		token := strings.ReplaceAll(uuid.NewString()+uuid.NewString(), "-", "")
+		_, err = tx.Exec(ctx, `
+			INSERT INTO repository_storage_operations (
+				repository_id, operation_type, token, storage_route_key,
+				source_owner, source_repo, source_user_id
+			)
+			SELECT r.id, 'delete', $2, 'static', u.username, r.name, r.user_id
+			FROM repositories r JOIN users u ON u.id = r.user_id WHERE r.id = $1
+		`, rid, token)
 		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `SELECT set_config('smithers.repository_storage_operation_token', $1, TRUE)`, token)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `DELETE FROM repositories WHERE id=$1`, rid)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `DELETE FROM repository_storage_operations WHERE repository_id=$1`, rid)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `DELETE FROM users WHERE id=$1`, uid)
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit(ctx))
 	})
 	input := repositoryJobTestInput()
 	var owner, name string

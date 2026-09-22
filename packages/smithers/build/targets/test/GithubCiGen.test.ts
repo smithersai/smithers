@@ -46,7 +46,7 @@ const bareNode = CiToolchain.Node({ runtime, release: "22.19.0", cachePackageSto
 const rust = CiToolchain.Rust({ toolchain: RustToolchain.Pinned({}) })
 
 describe("CI concurrency", () => {
-  it("cancels superseded PR runs while retaining a verdict for each pushed commit", () => {
+  it("cancels superseded PR and push runs in separate groups", () => {
     const workflow = render(goldenAttrs)
     expect(workflow).toContain(
       "concurrency:\n  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}\n  cancel-in-progress: true\n"

@@ -86,7 +86,7 @@ func observabilityCovSeedUserRepo(t *testing.T, ctx context.Context) (int64, int
 
 	repoName := "repo_" + suffix[:12]
 	var repoID int64
-	err = pool.QueryRow(ctx, `INSERT INTO repositories (user_id, name, lower_name, storage_set_id) VALUES ($1, $2, $2, 's1') RETURNING id`, userID, repoName).Scan(&repoID)
+	err = pool.QueryRow(ctx, `INSERT INTO repositories (user_id, name, lower_name) VALUES ($1, $2, $2) RETURNING id`, userID, repoName).Scan(&repoID)
 	require.NoError(t, err)
 	return userID, repoID
 }

@@ -198,9 +198,84 @@ const bubblewrap = Smithers.CiToolchain.Apt({ packages: ["bubblewrap"] })
 // persisted through two pushes with no Go and no Foundry declared, and 52 of
 // the 55 are the Windows `pnpm.cmd` shim problem, on a row that is advisory.
 // Foundry v1.8.1 installed cleanly on every runner when it was last declared.
-const go = Smithers.CiToolchain.Go({ release: "1.26.0" })
+const go = Smithers.CiToolchain.Go({ release: "1.26.8" })
 const foundry = Smithers.CiToolchain.Foundry({ release: "v1.8.1" })
 const dockerImageStore = Smithers.CiToolchain.Docker({ imageStore: "containerd" })
+
+// Hosted Go adapters need a real database; each package uses a separate name
+// because its TestMain may rebuild the schema. This target runs only in the
+// required Linux backend job, not in the cross-platform package matrix.
+const backendPostgres = Smithers.Docker.Service({
+  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test" },
+  ports: { "5432": 55435 },
+  readiness: {
+    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "postgres"],
+    timeout: "120s"
+  },
+  stop: { signal: "SIGTERM", grace: "10s" }
+})
+
+const backendDatabaseURL = (name: string) =>
+  `postgres://smithers:smithers-backend-test@127.0.0.1:55435/${name}?sslmode=disable`
+
+// Native FFI needs its own compiler floor. The flows-jj wasm artifact keeps
+// the repository's 1.89.0 pin; explicit `cargo +1.98.0` cannot change it.
+const nativeFfi = Smithers.Shell.Build({
+  shell: "mkdir -p .native-ffi; export RUSTUP_HOME=\"$PWD/.native-ffi/rustup\" CARGO_HOME=\"$PWD/.native-ffi/cargo\" CARGO_TARGET_DIR=\"$PWD/.native-ffi/target\"; rustup toolchain install 1.98.0 --profile minimal --component clippy && cargo +1.98.0 clippy -p smithers-ffi --all-targets --locked -- -D warnings && cargo +1.98.0 test -p smithers-ffi --locked && touch .native-ffi/qualified",
+  outDirs: ["//.native-ffi"],
+  data: [
+    Smithers.file("//Cargo.toml"),
+    Smithers.file("//Cargo.lock"),
+    Smithers.file("//crates/flows-jj/Cargo.toml"),
+    Smithers.glob("//crates/flows-jj/src/**/*.rs"),
+    Smithers.glob("//crates/smithers-ffi/**/*.rs"),
+    Smithers.file("//crates/smithers-ffi/Cargo.toml")
+  ],
+  sandbox: { network: true },
+  timeout: "30m"
+})
+
+// The only networked Go step fills a declared module cache on a clean runner.
+const backendGoModules = Smithers.Go.ModDownload({
+  mod: Smithers.file("//go.mod"),
+  sum: Smithers.file("//go.sum"),
+  outDirs: ["//.backend-go-modcache"],
+  sandbox: { network: true }
+})
+
+const backendGo = Smithers.Shell.Test({
+  // Services TestMain prepares the shared cluster fixture before clusterservices
+  // attaches. Only Plue-owned Terraform/monitoring source tests live in infra.
+  shell: "export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go test -count=1 $shared",
+  env: {
+    GOFLAGS: "-p=1 -buildvcs=false -mod=readonly",
+    GOMAXPROCS: "2",
+    SMITHERS_REQUIRE_DATABASE_TESTS: "1",
+    GOPROXY: "off",
+    SMITHERS_PRODUCT_TEST_DATABASE_URL: backendDatabaseURL("backend_product"),
+    SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL: backendDatabaseURL("backend_deploymentdb"),
+    SMITHERS_TEST_DB_DATABASE_URL: backendDatabaseURL("backend_db"),
+    SMITHERS_ROUTES_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),
+    SMITHERS_PROCESS_RUNTIME_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),
+    SMITHERS_WIKI_STREAM_TEST_DATABASE_URL: backendDatabaseURL("backend_wiki_stream"),
+    SMITHERS_TEST_DATABASE_URL: backendDatabaseURL("backend_control"),
+    SMITHERS_TEST_CMDSERVER_DATABASE_URL: backendDatabaseURL("backend_compose"),
+    SMITHERS_RUNNER_TEST_DATABASE_URL: backendDatabaseURL("backend_runner"),
+    SMITHERS_SERVICES_TEST_DATABASE_URL: backendDatabaseURL("backend_services"),
+    SMITHERS_TEST_ADMIN_CLI_DATABASE_URL: backendDatabaseURL("backend_services"),
+    SMITHERS_CLUSTER_TEST_DATABASE_URL: backendDatabaseURL("backend_services")
+  },
+  data: [
+    backendGoModules,
+    Smithers.file("//go.mod"),
+    Smithers.file("//go.sum"),
+    Smithers.glob("//packages/backend/**/*")
+  ],
+  services: [backendPostgres],
+  sandbox: { network: "loopback" },
+  timeout: "30m"
+})
 
 const ci = Smithers.GithubCiGen({
   summary: "Regenerate and drift-check .github/workflows/ci.yml, the pipeline definition (not the run itself).",
@@ -214,9 +289,11 @@ const ci = Smithers.GithubCiGen({
     { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },
     { name: "example typecheck", verb: Smithers.Verb.Build, pattern: "//examples/...", job: "test" },
     { name: "example suite", verb: Smithers.Verb.Test, pattern: "//examples/...", job: "test" },
+    { name: "shared Go backend", verb: Smithers.Verb.Test, pattern: "//:backendGo", job: "go-backend" },
+    { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
     { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//scripts:webBundleContract" }
   ],
-  requiredJobs: ["test", "apps-e2e", "rust", "wasm-repro", "browser", "e2e-faults", "packages"],
+  requiredJobs: ["test", "apps-e2e", "rust", "wasm-repro", "browser", "e2e-faults", "packages", "go-backend", "rust-ffi"],
   jobs: [
     {
       id: "cache-publish",
@@ -436,6 +513,20 @@ const ci = Smithers.GithubCiGen({
       ]
     },
     {
+      id: "rust-ffi",
+      name: "native FFI compiler and tests",
+      runsOn: ubuntu,
+      timeoutMinutes: 60,
+      toolchain: Smithers.CiToolchain.Needs({
+        runtimes: [node],
+        jj,
+        ripgrep,
+        apt: bubblewrap,
+        rust: Smithers.CiToolchain.Rust({ cache: false })
+      }),
+      steps: [{ name: "Native FFI clippy and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi" }]
+    },
+    {
       id: "wasm-repro",
       name: "wasm reproducibility",
       runsOn: ubuntu,
@@ -554,6 +645,21 @@ const ci = Smithers.GithubCiGen({
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.
       steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, pattern: "//packages/...", parallelism: 2 }]
+    },
+    {
+      id: "go-backend",
+      name: "shared Go backend (PostgreSQL)",
+      runsOn: ubuntu,
+      timeoutMinutes: 60,
+      toolchain: Smithers.CiToolchain.Needs({
+        runtimes: [node, bun],
+        jj,
+        ripgrep,
+        apt: bubblewrap,
+        go,
+        docker: dockerImageStore
+      }),
+      steps: [{ name: "Build and test shared backend", verb: Smithers.Verb.Test, pattern: "//:backendGo" }]
     },
     {
       // The model reviews, and the only job that plans them. `LlmLint`
@@ -726,6 +832,9 @@ export const packageDefaults = Smithers.PackageDefaults({
 
 export const Package = Smithers.Package({
   targets: {
+    backendGoModules,
+    backendGo,
+    nativeFfi,
     commit,
     changelog,
     ci,

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "@effect/vitest"
 import { Jj } from "@smthrs/jj"
 import type { SyncFsLike } from "@smthrs/jj/browser/WasiFs"
@@ -72,7 +73,7 @@ describe("BrowserHost composition", () => {
   it("builds its platform trio from BrowserServices", async () => {
     const result = await build({
       bundle: true,
-      entryPoints: [new URL("../src/BrowserHost.ts", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("../src/BrowserHost.ts", import.meta.url))],
       external: ["effect", "effect/*", "@smthrs/*"],
       format: "esm",
       logLevel: "silent",

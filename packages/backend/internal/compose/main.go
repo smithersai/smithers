@@ -105,6 +105,7 @@ type Options struct {
 	MetricsDoer           services.GMPDoer
 	Repository            *repohost.Client
 	RepositoryPlacement   services.RepoPlacementLookup
+	HostedRollout         ports.HostedRollout
 	Workspace             workspace.WorkspaceRuntime
 	FlowHostRegistry      *flowmanifest.Registry
 	FlowHostProductAPIURL string
@@ -252,6 +253,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	provisioningEnforced := false
 	if options.Role.hosted() {
+		if options.HostedRollout == nil {
+			return errors.New("hosted role requires a private rollout adapter")
+		}
 		provisioningEnforcementRequested := false
 		if raw := strings.TrimSpace(os.Getenv("SMITHERS_REPOSITORY_PROVISIONING_ENFORCE")); raw != "" {
 			provisioningEnforcementRequested, err = strconv.ParseBool(raw)
@@ -259,7 +263,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 				return fmt.Errorf("parse SMITHERS_REPOSITORY_PROVISIONING_ENFORCE: %w", err)
 			}
 		}
-		provisioningEnforced, err = services.ConfigureRepositoryProvisioningEnforcement(ctx, pool, provisioningEnforcementRequested)
+		provisioningEnforced, err = options.HostedRollout.ConfigureRepositoryProvisioningEnforcement(ctx, provisioningEnforcementRequested)
 		if err != nil {
 			return err
 		}
@@ -269,7 +273,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			slog.Error("REPOSITORY PROVISIONING LEGACY INSERT COMPATIBILITY IS ENABLED",
 				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
 		}
-		legacyMutationFences, fenceErr := services.ConfigureLegacyMutationFences(ctx, pool, provisioningEnforcementRequested)
+		legacyMutationFences, fenceErr := options.HostedRollout.ConfigureLegacyMutationFences(ctx, provisioningEnforcementRequested)
 		if fenceErr != nil {
 			return fenceErr
 		}

@@ -178,7 +178,7 @@ func mkPairRepo(t *testing.T, pool *pgxpool.Pool, userID int64) int64 {
 	name := fmt.Sprintf("pair-repo-%d", n)
 	var id int64
 	err := pool.QueryRow(context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, next_issue_number) VALUES ($1,$2,$3,'','s1',TRUE,'main',1) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number) VALUES ($1,$2,$3,'',TRUE,'main',1) RETURNING id`,
 		userID, name, strings.ToLower(name)).Scan(&id)
 	require.NoError(t, err)
 	return id

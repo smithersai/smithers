@@ -331,7 +331,7 @@ export type RipgrepSetup = typeof RipgrepSetup.Type
  * @category schemas
  * @since 0.1.0
  */
-export const GoRelease = Schema.Literals(["1.26.0"])
+export const GoRelease = Schema.Literals(["1.26.0", "1.26.8"])
 
 /**
  * The Go toolchains a runner may install.

@@ -667,11 +667,11 @@ func TestRegression_GitStreaming_UploadPackHandlerSetsContentType(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// 8. Migration parity — generated internal/db/ covers all schema tables
+// 8. Migration parity — generated internal/db/ covers product migration tables
 // ---------------------------------------------------------------------------
 
 // TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels verifies
-// that every table defined in db/schema.sql has a corresponding model type
+// that every table defined in the canonical product migrations has a corresponding model type
 // in internal/db/models.go. This ensures sqlc has been re-run after schema
 // changes and the generated code is not stale.
 //
@@ -687,11 +687,18 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 	repoRoot, err := findRepoRoot()
 	require.NoError(t, err, "must be able to locate repo root")
 
-	schemaPath := filepath.Join(repoRoot, "packages", "backend", "db", "schema.sql")
+	migrationPaths, err := filepath.Glob(filepath.Join(repoRoot, "packages", "backend", "db", "product", "migrations", "*.sql"))
+	require.NoError(t, err)
+	require.NotEmpty(t, migrationPaths, "product migrations must exist")
 	modelsPath := filepath.Join(repoRoot, "packages", "backend", "internal", "db", "models.go")
 
-	schemaBytes, err := os.ReadFile(schemaPath)
-	require.NoError(t, err, "db/schema.sql must exist")
+	var schema strings.Builder
+	for _, migrationPath := range migrationPaths {
+		migrationBytes, readErr := os.ReadFile(migrationPath)
+		require.NoError(t, readErr, "%s must exist", migrationPath)
+		schema.Write(migrationBytes)
+		schema.WriteByte('\n')
+	}
 
 	modelsBytes, err := os.ReadFile(modelsPath)
 	require.NoError(t, err, "internal/db/models.go must exist")
@@ -699,7 +706,7 @@ func TestRegression_MigrationParity_AllSchemaTablesHaveGeneratedModels(t *testin
 	modelsContent := string(modelsBytes)
 
 	// Extract table names from schema.
-	tables := extractTableNames(string(schemaBytes))
+	tables := extractTableNames(schema.String())
 	require.NotEmpty(t, tables, "schema must define at least one table")
 
 	// Tables that intentionally use non-standard naming or are internal
@@ -768,7 +775,7 @@ func extractTableNames(schema string) []string {
 		// The table name ends at the first space or '('.
 		for i, ch := range line {
 			if ch == ' ' || ch == '(' {
-				tables = append(tables, line[:i])
+				tables = append(tables, strings.TrimPrefix(line[:i], "public."))
 				break
 			}
 		}

@@ -110,6 +110,9 @@ func testDatabaseURL(t *testing.T) string {
 		cmdServerSchemaErr = setupCmdServerSchema(dsn)
 	})
 	if cmdServerSchemaErr != nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("required compose Postgres unavailable: %v", cmdServerSchemaErr)
+		}
 		t.Skipf("skipping run() test: Postgres unavailable: %v", cmdServerSchemaErr)
 	}
 	return dsn
@@ -167,7 +170,7 @@ func applyCmdServerSchemaOnce(dsn string, parsed *url.URL, dbName, schema string
 	defer schemaConn.Close(ctx)
 	// Fail fast on lock contention instead of hanging for the full deadline.
 	_, _ = schemaConn.Exec(ctx, `SET lock_timeout = '10s'`)
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + schema
+	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + schema
 	if _, err := schemaConn.Exec(ctx, combined); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
@@ -182,6 +185,7 @@ func baseRunEnv(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
 		"SMITHERS_DATABASE_URL":                  testDatabaseURL(t),
+		"SMITHERS_BLOB_DATA_DIR":                 t.TempDir(),
 		"SMITHERS_AUTH_MODE":                     "selfhost",
 		"SMITHERS_AUTH_BOOTSTRAP_TOKEN":          "test-bootstrap-token",
 		"SMITHERS_AUTH_SESSION_SECRET":           "test-secret",
@@ -587,9 +591,8 @@ func (failingShutdownExporter) Shutdown(context.Context) error {
 func TestRun_FullyConfigured(t *testing.T) {
 	preserveSlog(t)
 	env := baseRunEnv(t)
-	// GCS store + GCS agent-log store (client creation never dials).
-	env["STORAGE_EMULATOR_HOST"] = "localhost:1"
-	env["SMITHERS_BLOB_GCS_BUCKET"] = "test"
+	// Full shared startup uses the local blob adapter supplied by baseRunEnv.
+	// A cloud bucket requires a deployment-provided adapter.
 	// Microsandbox sandbox clients (constructor-only).
 	env["SMITHERS_MICROSANDBOX_CONTROL_URL"] = "https://sandbox.example.com"
 	env["SMITHERS_MICROSANDBOX_API_KEY"] = "sk-test"
@@ -598,7 +601,9 @@ func TestRun_FullyConfigured(t *testing.T) {
 	env["SMITHERS_AUTH_AUTH0_CLIENT_ID"] = "auth0-id"
 	env["SMITHERS_AUTH_AUTH0_CLIENT_SECRET"] = "auth0-secret"
 	// Stripe billing (constructor-only).
+	env["SMITHERS_BILLING_MODE"] = "stripe"
 	env["SMITHERS_BILLING_STRIPE_SECRET_KEY"] = "sk_test_123"
+	env["SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET"] = "whsec_test_123"
 	// Linear integration.
 	env["SMITHERS_AUTH_LINEAR_CLIENT_ID"] = "lin-id"
 	env["SMITHERS_AUTH_LINEAR_CLIENT_SECRET"] = "lin-secret"
@@ -676,6 +681,7 @@ func TestRun_ShutdownTimeoutWarn(t *testing.T) {
 	// Give the server a moment to accept + begin reading the request.
 	time.Sleep(50 * time.Millisecond)
 
-	h.shutdownAndWaitNil()
+	h.cancel()
+	require.ErrorIs(t, h.waitErr(), context.DeadlineExceeded)
 	assert.Contains(t, h.logs.String(), "context deadline exceeded")
 }

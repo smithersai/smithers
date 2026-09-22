@@ -62,6 +62,8 @@ func (h *candidateFallbackStagedHost) AbortStagedProvision(_ context.Context, st
 func createProvisioningTestUser(t *testing.T) (int64, string) {
 	t.Helper()
 	pool := getAgentTestPool(t)
+	_, err := pool.Exec(context.Background(), `INSERT INTO repo_storage_sets (id) VALUES ('s1') ON CONFLICT (id) DO NOTHING`)
+	require.NoError(t, err)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	username := "provision-" + suffix
 	email := username + "@example.com"
@@ -186,9 +188,9 @@ func TestImportProvenanceTrustsFailedJobOnlyWithDurablePublishedBinding(t *testi
 	var repositoryID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO repositories (
-			user_id, name, lower_name, description, storage_set_id,
+			user_id, name, lower_name, description,
 			is_public, default_bookmark
-		) VALUES ($1, 'published-mirror', 'published-mirror', '', 's1', FALSE, 'main')
+		) VALUES ($1, 'published-mirror', 'published-mirror', '', FALSE, 'main')
 		RETURNING id
 	`, userID).Scan(&repositoryID))
 	svc := &GitHubImportService{db: pool}

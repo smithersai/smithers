@@ -9,7 +9,7 @@
  *
  * @since 1.0.0
  */
-import { Action, DurableDeferred, Flow, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, HumanTask, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
@@ -77,6 +77,10 @@ export const TimerFlow = Flow.make("e2e/wait/timer", {
   payload: { millis: Schema.Number },
   success: Schema.Void,
   error: Sleep.SleepRequestInvalid,
+  // A second process cannot receive the winning process's in-memory wake.
+  // Poll the durable result promptly so the race checks ownership and exactly
+  // once execution instead of the default 30-second retry cap's phase.
+  suspendedRetryPolicy: RetryPolicy.make({ initialMs: 200, factor: 1.5, maxMs: 2_000 }),
   body: ({ millis }) => Node.andThen(Sleep.action.call({ millis }), TimerStep.call({}))
 })
 

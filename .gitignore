@@ -21,6 +21,8 @@ app/.electrobun/
 .eslintcache
 .cache/
 .pnpm-store/
+.backend-go-modcache/
+.native-ffi/
 .nyc_output/
 coverage/
 *.lcov

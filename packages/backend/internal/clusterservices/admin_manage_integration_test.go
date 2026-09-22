@@ -31,7 +31,7 @@ func TestAdminManagementSQLFilters(t *testing.T) {
 		name := fmt.Sprintf("manage-%d", v.user)
 		_, err = tx.Exec(ctx, `INSERT INTO users(id,username,lower_username) VALUES ($1,$2,$2)`, v.user, name)
 		require.NoError(t, err)
-		_, err = tx.Exec(ctx, `INSERT INTO repositories(id,user_id,name,lower_name,storage_set_id) VALUES ($1,$2,$3,$3,'s1')`, v.repo, v.user, name)
+		_, err = tx.Exec(ctx, `INSERT INTO repositories(id,user_id,name,lower_name) VALUES ($1,$2,$3,$3)`, v.repo, v.user, name)
 		require.NoError(t, err)
 	}
 	// Classification is independent of account type: an ordinary user may be
@@ -130,7 +130,7 @@ func TestAdminStopWorkspaceRetainsRowAndEndsSessions(t *testing.T) {
 	owner := fmt.Sprintf("stop-owner-%d", user)
 	_, err = tx.Exec(ctx, `INSERT INTO users(id,username,lower_username) VALUES ($1,$2,$2)`, user, owner)
 	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `INSERT INTO repositories(id,user_id,name,lower_name,storage_set_id) VALUES ($1,$2,'stop-repo','stop-repo','s1')`, repo, user)
+	_, err = tx.Exec(ctx, `INSERT INTO repositories(id,user_id,name,lower_name) VALUES ($1,$2,'stop-repo','stop-repo')`, repo, user)
 	require.NoError(t, err)
 	var tokenID int64
 	require.NoError(t, tx.QueryRow(ctx, `INSERT INTO access_tokens(user_id,name,scopes,token_hash) VALUES ($1,'head','write:repository',$2) RETURNING id`, user, uuid.NewString()).Scan(&tokenID))

@@ -176,6 +176,9 @@ func setupGitHubWebhookRouteTestPool(t *testing.T) *pgxpool.Pool {
 
 	pool, err := resetGitHubWebhookRouteTestDatabase(gitHubWebhookRouteTestDatabaseURL())
 	if err != nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("required routes database unavailable: %v", err)
+		}
 		t.Skipf("skipping DB integration test: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
@@ -233,7 +236,7 @@ func resetGitHubWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("terminate existing connections: %w", err)
 	}
 
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		return nil, fmt.Errorf("reset schema: %w", err)
 	}

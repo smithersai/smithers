@@ -344,9 +344,9 @@ func TestRepositoryStorageOperationCreateRejectsStaleSnapshotAfterTransfer(t *te
 	}
 	err = pool.QueryRow(ctx, `
 		INSERT INTO repositories (
-			user_id, name, lower_name, description, storage_set_id,
+			user_id, name, lower_name, description,
 			is_public, default_bookmark
-		) VALUES ($1, $2, $2, '', 's1', TRUE, 'main')
+		) VALUES ($1, $2, $2, '', TRUE, 'main')
 		RETURNING id
 	`, sourceID, repoName).Scan(&repository.ID)
 	require.NoError(t, err)

@@ -876,6 +876,18 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
       expect(error.reason).toMatchObject({ _tag: "NotFound", method: "makeDirectory" })
     }))
 
+  it.effect("preserves native Windows absolute paths at the realpath boundary", () =>
+    Effect.gen(function*() {
+      const observed: Array<string> = []
+      const adapter = BrowserFileSystem.make({
+        ...throwingFs(codeError("ENOENT")),
+        realpath: async (at: string) => { observed.push(at); return at }
+      })
+      const native = "C:\\Users\\runner\\repo"
+      expect(yield* adapter.realPath(native)).toBe(native)
+      expect(observed).toEqual([native])
+    }))
+
   it.effect("resolves realPath and access only for paths that exist", () =>
     Effect.gen(function*() {
       const canonical = yield* Effect.promise(() => NodeFsPromises.realpath(path("a.txt")))

@@ -28,6 +28,7 @@ type mockLandingWorkerQuerier struct {
 	getUserByIDFn               func(ctx context.Context, id int64) (db.User, error)
 	getOrgByIDFn                func(ctx context.Context, id int64) (db.Organization, error)
 	listAllProtectedBookmarksFn func(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
+	getRepositoryCiPolicyFn     func(ctx context.Context, repositoryID int64) (db.GetRepositoryCiLandingPolicyRow, error)
 	getLatestCommitStatusesFn   func(ctx context.Context, arg db.GetLatestCommitStatusesByChangeIDsAndContextsParams) ([]db.GetLatestCommitStatusesByChangeIDsAndContextsRow, error)
 	countUnresolvedThreadsFn    func(ctx context.Context, landingRequestID int64) (int64, error)
 	markLandingStartedFn        func(ctx context.Context, id int64) (db.LandingRequest, error)
@@ -114,6 +115,13 @@ func (m *mockLandingWorkerQuerier) ListAllProtectedBookmarksByRepo(ctx context.C
 		return m.listAllProtectedBookmarksFn(ctx, repositoryID)
 	}
 	return nil, nil
+}
+
+func (m *mockLandingWorkerQuerier) GetRepositoryCiLandingPolicy(ctx context.Context, repositoryID int64) (db.GetRepositoryCiLandingPolicyRow, error) {
+	if m.getRepositoryCiPolicyFn != nil {
+		return m.getRepositoryCiPolicyFn(ctx, repositoryID)
+	}
+	return db.GetRepositoryCiLandingPolicyRow{}, pgx.ErrNoRows
 }
 
 func (m *mockLandingWorkerQuerier) GetLatestCommitStatusesByChangeIDsAndContexts(ctx context.Context, arg db.GetLatestCommitStatusesByChangeIDsAndContextsParams) ([]db.GetLatestCommitStatusesByChangeIDsAndContextsRow, error) {

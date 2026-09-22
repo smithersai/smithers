@@ -1207,6 +1207,9 @@ func openMicrosandboxTestDatabase(t *testing.T) *pgxpool.Pool {
 	}
 	dsn := strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 	if dsn == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("SMITHERS_TEST_DATABASE_URL is required")
+		}
 		t.Skip("SMITHERS_TEST_DATABASE_URL is required for Microsandbox store integration tests")
 	}
 	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "db", "schema.sql"))

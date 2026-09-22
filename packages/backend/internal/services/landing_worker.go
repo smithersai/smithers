@@ -64,6 +64,7 @@ type LandingWorkerQuerier interface {
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
 	ListAllProtectedBookmarksByRepo(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
+	GetRepositoryCiLandingPolicy(ctx context.Context, repositoryID int64) (db.GetRepositoryCiLandingPolicyRow, error)
 	GetLatestCommitStatusesByChangeIDsAndContexts(ctx context.Context, arg db.GetLatestCommitStatusesByChangeIDsAndContextsParams) ([]db.GetLatestCommitStatusesByChangeIDsAndContextsRow, error)
 	CountUnresolvedLandingRequestThreads(ctx context.Context, landingRequestID int64) (int64, error)
 	MarkLandingStarted(ctx context.Context, id int64) (db.LandingRequest, error)
@@ -471,6 +472,19 @@ func (w *LandingWorker) executeTask(ctx context.Context, task db.LandingTask) er
 		return fmt.Errorf("evaluate protected bookmark rules: %w", err)
 	}
 	requiredContexts := unionLandingStatusContexts(protectedContexts, repo.LandingQueueRequiredChecks)
+	// A registered repository CI policy gates the landings the repository's own
+	// automation authored. A human landing in the same repository is untouched.
+	if appendRequest != nil || lr.AgentAuthored {
+		ci, err := w.queries.GetRepositoryCiLandingPolicy(ctx, repo.ID)
+		switch {
+		case err == nil:
+			requiredContexts = unionLandingStatusContexts(requiredContexts, []string{repositoryCiRequiredContext(ci.ID, ci.Revision, ci.Digest)})
+		case errors.Is(err, pgx.ErrNoRows):
+			// A missing row is no policy. A failed read is not.
+		default:
+			return fmt.Errorf("read repository CI policy: %w", err)
+		}
+	}
 
 	pinnedRevisions := make(map[string]string, len(changeIDs))
 	if err := w.recheckOwnershipAt(ctx, repo, ownerName, lr, changeIDs, rules, requiredHumanApprovals, requireAgentLGTM, appendRequest, pinnedRevisions); err != nil {

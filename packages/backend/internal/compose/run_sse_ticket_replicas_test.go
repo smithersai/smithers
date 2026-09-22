@@ -22,6 +22,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/hostedadapter"
 )
 
 // startReplica boots a full run() instance with the real SSE broker so a
@@ -32,6 +33,11 @@ func startReplica(t *testing.T, env map[string]string) *runHarness {
 	t.Helper()
 	applyEnv(t, env)
 	preserveSlog(t)
+	privatePool, err := database.NewPool(context.Background(), config.DatabaseConfig{
+		URL: env["SMITHERS_DATABASE_URL"], MaxConns: 4, MaxConnLifetime: 3600, MaxConnIdleTime: 1800,
+	})
+	require.NoError(t, err)
+	t.Cleanup(privatePool.Close)
 
 	lnCh := make(chan net.Listener, 1)
 	swapVar(t, &onListen, func(ln net.Listener) { lnCh <- ln })
@@ -40,7 +46,11 @@ func startReplica(t *testing.T, env map[string]string) *runHarness {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errCh := make(chan error, 1)
-	go func() { errCh <- RunWithOptions(ctx, nil, io.Discard, logs, Options{Role: RoleHostedAPI}) }()
+	go func() {
+		errCh <- RunWithOptions(ctx, nil, io.Discard, logs, Options{
+			Role: RoleHostedAPI, HostedRollout: hostedadapter.PrivateRollout{Pool: privatePool},
+		})
+	}()
 
 	select {
 	case ln := <-lnCh:
@@ -151,9 +161,15 @@ func TestRun_SSETicketsRedeemAcrossReplicas(t *testing.T) {
 	env := baseRunEnv(t)
 	env["SMITHERS_AUTH_MODE"] = "multitenant"
 	env["SMITHERS_FEATURE_FLAGS_NOTIFICATIONS"] = "true"
+	seedHostedRolloutControls(t, env["SMITHERS_DATABASE_URL"])
 
 	replicaA := startReplica(t, env)
-	replicaB := startReplica(t, env)
+	secondEnv := make(map[string]string, len(env))
+	for key, value := range env {
+		secondEnv[key] = value
+	}
+	secondEnv["SMITHERS_BLOB_DATA_DIR"] = t.TempDir()
+	replicaB := startReplica(t, secondEnv)
 	principal := seedSSETicketReplicaPAT(t, env["SMITHERS_DATABASE_URL"])
 
 	for _, tc := range []struct {
@@ -181,6 +197,19 @@ func TestRun_SSETicketsRedeemAcrossReplicas(t *testing.T) {
 
 	replicaB.shutdownAndWaitNil()
 	replicaA.shutdownAndWaitNil()
+}
+
+func seedHostedRolloutControls(t *testing.T, dsn string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, `INSERT INTO repository_provisioning_control (singleton, enforce_insert_fence) VALUES (TRUE, TRUE) ON CONFLICT (singleton) DO NOTHING`)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO legacy_mutation_fence_control (singleton, enforce_repository_storage, enforce_release_deletion) VALUES (TRUE, TRUE, TRUE) ON CONFLICT (singleton) DO NOTHING`)
+	require.NoError(t, err)
 }
 
 // sseTicketRouterQueries opens the production-configured pool for the router

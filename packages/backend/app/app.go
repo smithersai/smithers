@@ -44,6 +44,8 @@ type Config struct {
 	// RepositoryPlacement is supplied by a hosted deployment and keyed by the
 	// canonical repository ID. Single-owner installations leave it nil.
 	RepositoryPlacement ports.RepositoryPlacement
+	// HostedRollout reads and enforces private deployment migration controls.
+	HostedRollout ports.HostedRollout
 	// Workspace supplies the common execution boundary. The app closes it after
 	// requests and workers stop. Local deployments supply a trusted process
 	// runtime; hosted deployments supply an isolated runtime.
@@ -124,6 +126,7 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 			MetricsDoer:           cfg.MetricsDoer,
 			Repository:            cfg.Repository,
 			RepositoryPlacement:   cfg.RepositoryPlacement,
+			HostedRollout:         cfg.HostedRollout,
 			Workspace:             cfg.Workspace,
 			FlowHostRegistry:      cfg.FlowHostRegistry,
 			FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
@@ -165,6 +168,7 @@ func Run(ctx context.Context, cfg Config) error {
 		MetricsDoer:           cfg.MetricsDoer,
 		Repository:            cfg.Repository,
 		RepositoryPlacement:   cfg.RepositoryPlacement,
+		HostedRollout:         cfg.HostedRollout,
 		Workspace:             cfg.Workspace,
 		FlowHostRegistry:      cfg.FlowHostRegistry,
 		FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,

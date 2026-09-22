@@ -261,7 +261,7 @@ func mustCreateWebhookRepo(t *testing.T, pool *pgxpool.Pool, userID int64, name 
 	var id int64
 	err := pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number, storage_set_id) VALUES ($1, $2, $3, '', TRUE, 'main', 1, 's1') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number) VALUES ($1, $2, $3, '', TRUE, 'main', 1) RETURNING id`,
 		userID,
 		name,
 		lowerName,
