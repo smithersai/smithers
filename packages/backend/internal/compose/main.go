@@ -42,6 +42,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/webapp"
+	"github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // newRevocationBus is a test seam: run() tests capture the bus to prove its
@@ -99,6 +100,7 @@ type Options struct {
 	MetricsDoer         services.GMPDoer
 	Repository          *repohost.Client
 	RepositoryPlacement services.RepoPlacementLookup
+	Workspace           workspace.WorkspaceRuntime
 }
 
 // Role selects only process responsibilities. Every role assembles the same
@@ -131,6 +133,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if !options.Role.valid() {
 		return fmt.Errorf("unknown backend role %q", options.Role)
 	}
+	if options.Workspace != nil {
+		switch isolation := options.Workspace.Isolation(); isolation {
+		case workspace.IsolationTrustedProcess:
+			if options.Role.hosted() {
+				return errors.New("hosted backend requires an isolated workspace runtime")
+			}
+		case workspace.IsolationSandboxed:
+			if !options.Role.hosted() {
+				return errors.New("single-owner backend requires a trusted process workspace runtime")
+			}
+		default:
+			return fmt.Errorf("unsupported workspace isolation %q", isolation)
+		}
+	}
 	_ = stdout
 	// `smithers-backend migrate [apply|status]` is a server-free schema
 	// migration path: it applies the embedded product baseline and exits (non-zero on
@@ -162,6 +178,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: !options.Role.hosted() && options.Repository != nil,
+		WorkspaceRuntime:    options.Workspace != nil,
 	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
@@ -764,6 +781,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	landingService.SetAgentTurnDispatcher(agentService)
 
 	workspaceService := services.NewWorkspaceService(queries,
+		services.WithWorkspaceRuntime(options.Workspace),
 		services.WithWorkspaceCapabilityTransactions(pool),
 		services.WithWorkspaceBillingPolicy(billingPolicy),
 		services.WithWorkspaceSandboxClient(sandboxClient),
@@ -1466,8 +1484,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
 		// The renderer's agent capability targets /api/agent/turn. Repository
 		// agent sessions alone do not implement that transport.
-		billingCheckout: billingComposition.Service != nil,
-		isolatedSandbox: provider != nil,
+		billingCheckout:  billingComposition.Service != nil,
+		workspaceRuntime: options.Workspace != nil,
+		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
 	}), apiCORSOptions(cfg))
 	if options.Role == RoleLocal || options.Role == "" {
 		if options.Repository != nil {

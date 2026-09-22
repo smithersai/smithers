@@ -42,6 +42,10 @@ type Config struct {
 	// RepositoryPlacement is supplied by a hosted deployment and keyed by the
 	// canonical repository ID. Single-owner installations leave it nil.
 	RepositoryPlacement ports.RepositoryPlacement
+	// Workspace supplies the common execution boundary. The app closes it after
+	// requests and workers stop. Local deployments supply a trusted process
+	// runtime; hosted deployments supply an isolated runtime.
+	Workspace ports.WorkspaceRuntime
 }
 
 type Role = compose.Role
@@ -93,7 +97,7 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	ready := make(chan http.Handler, 1)
 	stdout, stderr := writers(cfg)
 	go func() {
-		instance.err = compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
+		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
 			Role:                cfg.Role,
 			TraceExporter:       cfg.TraceExporter,
 			Blobs:               cfg.Blobs,
@@ -101,9 +105,10 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 			MetricsDoer:         cfg.MetricsDoer,
 			Repository:          cfg.Repository,
 			RepositoryPlacement: cfg.RepositoryPlacement,
+			Workspace:           cfg.Workspace,
 		}, func(handler http.Handler) {
 			ready <- handler
-		})
+		}))
 		close(instance.done)
 	}()
 	select {
@@ -128,7 +133,7 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 // when startup or a worker fails.
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
-	return compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
+	return closeWorkspace(cfg.Workspace, compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
 		Role:                cfg.Role,
 		TraceExporter:       cfg.TraceExporter,
 		Blobs:               cfg.Blobs,
@@ -136,7 +141,15 @@ func Run(ctx context.Context, cfg Config) error {
 		MetricsDoer:         cfg.MetricsDoer,
 		Repository:          cfg.Repository,
 		RepositoryPlacement: cfg.RepositoryPlacement,
-	})
+		Workspace:           cfg.Workspace,
+	}))
+}
+
+func closeWorkspace(runtime ports.WorkspaceRuntime, runErr error) error {
+	if runtime == nil {
+		return runErr
+	}
+	return errors.Join(runErr, runtime.Close())
 }
 
 func writers(cfg Config) (io.Writer, io.Writer) {

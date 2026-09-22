@@ -1495,6 +1495,7 @@ func buildRouter(
 					r.With(writeWorkspace...).Delete("/workspaces/{id}", workspaceHandler.DeleteWorkspace)
 					r.With(writeWorkspace...).Post("/workspaces/{id}/suspend", workspaceHandler.SuspendWorkspace)
 					r.With(writeWorkspace...).Get("/workspaces/{id}/ssh", workspaceHandler.GetWorkspaceSSHConnectionInfo)
+					routes.RegisterWorkspaceRuntimeRoutes(r, workspaceHandler, readWorkspace, writeWorkspace)
 					if workspaceHandler.Desktop != nil {
 						// kind=desktop stream session mint: rotates the VNC password in
 						// the guest and returns the credentialed viewer URL once.
