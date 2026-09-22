@@ -18,6 +18,7 @@
     "@smthrs/engine": "workspace:*",
     "@smthrs/engine-store": "workspace:*",
     "@smthrs/flow": "workspace:*",
+    "@smthrs/gateway": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/migrate": "workspace:*",
     "@smthrs/model": "workspace:*",

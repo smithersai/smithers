@@ -56,8 +56,8 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
     assert.equal(attrs.timeout, "45m")
     assert.equal(attrs.args[0], "flows/test/coding-native-gate.mjs")
   }
-  assert.ok(!bunNativeTests.includes("coding-atoms.test.ts") && !bunNativeTests.includes("coding-correction.test.ts"))
-  assert.ok(bunNativeTests.includes("coding-request-host.test.ts"))
+  assert.ok(!bunNativeTests.includes("repository-check-context.test.ts"))
+  assert.ok(bunNativeTests.includes("coding-native.test.ts"))
 })
 
 test("native gate refuses absent prerequisites before an opt-in fixture can skip", () => {

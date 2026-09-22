@@ -55,6 +55,7 @@ const codingPackages = [
   "packages/smithers/agent/integrations",
   "packages/smithers/agent/memory",
   "packages/smithers/agent/model",
+  "packages/smithers/agent/model-host",
   "packages/smithers/agent/plugin",
   "packages/smithers/agent/registry",
   "packages/smithers/agent/scorers",
@@ -194,11 +195,7 @@ const egress = Smithers.NodeTest({
 // this target `egress` was the only one of its family declared anywhere, so the
 // rest ran under bare `pnpm test`, which no workflow invokes.
 //
-// The seven that skip every case without `PLUE_CODING_ADAPTER_SOURCE` and
-// `PLUE_JJ_EXPORT_BINARY` are absent on purpose: run unattended they report a
-// green job having asserted nothing. They are in the native gate's
-// `nativeTests`, where a missing prerequisite refuses. `check-context` and
-// `checks` are in both, having cases on each side of that line.
+// Native-only fixtures run in the separate gate, where a missing helper is a failure.
 const fixture = (name: string) => Smithers.file(`//flows/test/${name}`)
 const repositoryFixtures = ["apply-proof", "budget", "check-context", "check-receipt", "checks", "chore-events",
   "ci-policy", "consolidated-reply", "evaluation", "feature-issue-mode", "heldout", "inspection-sources",
@@ -221,7 +218,8 @@ const repository = Smithers.NodeTest({
 const fixtures = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([fixture("wiki-reuse.test.ts"), fixture("wiki-jev-citations.test.ts"),
-    fixture("content-jev-template.test.ts"), fixture("run-record.test.ts"), fixture("canary-coding-setup.test.mjs")]),
+    fixture("content-jev-template.test.ts"), fixture("run-record.test.ts"), fixture("canary-coding-setup.test.mjs"),
+    fixture("invoke-native-host.test.ts"), fixture("librarian-state.test.ts"), fixture("product-host-source.test.mjs")]),
   srcs: codingSources, deps: codingDependencies, cwd, timeout: "20m"
 })
 
