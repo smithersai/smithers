@@ -526,20 +526,19 @@ func isWorkspaceGuestNotReady(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeGuestNotReady
 }
 
+// Both runtime adapters apply the same admission rule. A running product row
+// retains its reservation when execution idle-sleeps; suspended rows need a slot.
+func (s *WorkspaceService) authorizeWorkspaceResume(ctx context.Context, row db.Workspace) error {
+	if row.Status == "running" {
+		return authorizeCountedSandboxResumeForUser(ctx, s.billing, row.UserID, row.ID, row.VmID)
+	}
+	return authorizeSandboxStartForUser(ctx, s.billing, row.UserID)
+}
+
 func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.Workspace) (out db.Workspace, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("resume", retErr) }()
-	// A running DB row is already part of the account's active-sandbox count.
-	// The provider may have idle-slept its VM while the row stayed running.
-	// Resume that same VM against the existing reservation; a genuinely
-	// suspended row still needs a fresh slot.
-	var admissionErr error
-	if workspace.Status == "running" {
-		admissionErr = authorizeCountedSandboxResumeForUser(ctx, s.billing, workspace.UserID, workspace.ID, workspace.VmID)
-	} else {
-		admissionErr = authorizeSandboxStartForUser(ctx, s.billing, workspace.UserID)
-	}
-	if admissionErr != nil {
-		return workspace, admissionErr
+	if err := s.authorizeWorkspaceResume(ctx, workspace); err != nil {
+		return workspace, err
 	}
 	var stampErr error
 	workspace, stampErr = s.stampResumedWorkspaceIdleTimeout(ctx, workspace)

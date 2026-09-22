@@ -209,6 +209,13 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	}
 
 	if observed.State == workspaceapi.WorkspaceStopped {
+		// Creation already holds the admission made before the product row was
+		// inserted. A later resume must recheck the common billing policy.
+		if !create {
+			if err := s.authorizeWorkspaceResume(ctx, row); err != nil {
+				return row, err
+			}
+		}
 		startCtx, contextErr := s.workspaceRuntimeContext(ctx, row, requesterID, workspaceLifecycleOperation(row, "start"))
 		if contextErr != nil {
 			return row, contextErr
