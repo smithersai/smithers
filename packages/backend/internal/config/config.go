@@ -87,7 +87,7 @@ type RateLimitConfig struct {
 }
 
 // EmailConfig holds email transport configuration.
-// Transport selection precedence: SendGrid (if API key set) > SMTP (if host set) > SES (if region set) > Noop.
+// Transport selection precedence: SendGrid (if API key set) > SMTP (if host set) > SES (if region set) > disabled.
 type EmailConfig struct {
 	// SendGrid backend (preferred for transactional email)
 	SendGridAPIKey string `mapstructure:"sendgrid_api_key"`

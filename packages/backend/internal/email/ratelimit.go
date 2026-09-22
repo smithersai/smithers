@@ -47,6 +47,13 @@ func NewRateLimitedTransport(inner Transport, cfg RateLimitConfig) Transport {
 	}
 }
 
+// Available delegates provider availability through the rate-limit wrapper.
+// Rate limiting changes admission to Send; it does not make a disabled inner
+// transport capable of delivery.
+func (t *RateLimitedTransport) Available() bool {
+	return t != nil && DeliveryConfigured(t.inner)
+}
+
 // Send checks rate limits before delegating to the inner transport.
 func (t *RateLimitedTransport) Send(ctx context.Context, msg Message) error {
 	t.mu.Lock()

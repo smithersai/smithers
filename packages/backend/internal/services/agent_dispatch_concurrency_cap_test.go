@@ -66,6 +66,22 @@ func TestEnforceConcurrencyCap_AtCapRejects(t *testing.T) {
 	assert.Equal(t, 1, counter.calls)
 }
 
+func TestUnlimitedBillingPolicy_DoesNotDisableFleetConcurrencyCap(t *testing.T) {
+	t.Parallel()
+
+	counter := &mockAgentConcurrencyCounter{count: 5}
+	d := newCapDispatch(counter, 5)
+	d.input.UserID = 7
+	d.svc.billing = NewUnlimitedBillingPolicy()
+
+	err := d.enforceConcurrencyCap()
+	require.Error(t, err)
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, pkgerrors.CodeQuotaExceeded, apiErr.Code)
+	assert.Equal(t, 1, counter.calls)
+}
+
 // Over cap (e.g. after a manual bump or overshoot) -> still rejected.
 func TestEnforceConcurrencyCap_OverCapRejects(t *testing.T) {
 	t.Parallel()

@@ -19,6 +19,22 @@ func TestRateLimitedTransport_NoLimitsReturnsInner(t *testing.T) {
 	assert.Equal(t, inner, wrapped)
 }
 
+func TestRateLimitedTransport_DelegatesAvailability(t *testing.T) {
+	t.Parallel()
+
+	disabled := NewRateLimitedTransport(&DisabledTransport{}, RateLimitConfig{
+		MaxPerSecond:           10,
+		MaxPerRecipientPerHour: 20,
+	})
+	assert.False(t, DeliveryConfigured(disabled))
+
+	available := NewRateLimitedTransport(&NoopTransport{}, RateLimitConfig{
+		MaxPerSecond:           10,
+		MaxPerRecipientPerHour: 20,
+	})
+	assert.True(t, DeliveryConfigured(available))
+}
+
 func TestRateLimitedTransport_GlobalRateLimit(t *testing.T) {
 	t.Parallel()
 

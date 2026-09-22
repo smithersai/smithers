@@ -99,3 +99,29 @@ func TestAgentDispatchPlanIdleTimeout(t *testing.T) {
 		assert.Equal(t, 5*time.Minute, d.svc.sandboxConfig.IdleTimeout)
 	}
 }
+
+func TestUnlimitedBillingPolicyIdleControlsRemainDeliberate(t *testing.T) {
+	t.Parallel()
+
+	policy := NewUnlimitedBillingPolicy()
+	q := &workspaceIdleStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{}}
+	q.getRepoByIDFn = func(context.Context, int64) (db.Repository, error) {
+		return db.Repository{WorkspaceIdleTimeoutSecs: 900}, nil
+	}
+	workspace := NewWorkspaceService(q, WithWorkspaceBillingPolicy(policy))
+	idle, err := workspace.sandboxIdleTimeout(t.Context(), 7, 9)
+	require.NoError(t, err)
+	assert.Equal(t, int32(900), idle, "repository idle policy still lowers an unlimited billing entitlement")
+
+	dispatch := &agentDispatch{
+		ctx:   t.Context(),
+		input: DispatchAgentRunInput{UserID: 7},
+		svc: &AgentService{
+			billing:       policy,
+			sandboxConfig: AgentSandboxConfig{IdleTimeout: 5 * time.Minute},
+		},
+	}
+	require.NoError(t, dispatch.enforceConcurrencyCap())
+	assert.Equal(t, 5*time.Minute, dispatch.sandboxConfig.IdleTimeout,
+		"no billing idle deadline preserves the operator-configured agent idle policy")
+}

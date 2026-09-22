@@ -177,7 +177,7 @@ type PairSessionService struct {
 	forker      PairForker
 	txBeginner  PairTxBeginner // optional; serializes session mutations and queue seq assignment
 	emailFrom   string
-	transport   email.Transport // optional; nil or NoopTransport => delivery unavailable
+	transport   email.Transport // optional; provider availability is delegated through wrappers
 	inviteBase  string          // e.g. https://smithers.sh — invite links point at /s/... acceptance
 	// staleSweepInterval overrides the StartStaleSweeper tick cadence. Zero means
 	// use pairStaleSweepInterval; only tests set it (to a small value) so the
@@ -1160,13 +1160,7 @@ func (s *PairSessionService) RevokeInviteByUsername(ctx context.Context, session
 }
 
 func (s *PairSessionService) deliveryConfigured() bool {
-	if s.transport == nil {
-		return false
-	}
-	if _, isNoop := s.transport.(*email.NoopTransport); isNoop {
-		return false
-	}
-	return s.emailFrom != ""
+	return s.emailFrom != "" && email.DeliveryConfigured(s.transport)
 }
 
 func (s *PairSessionService) sendInviteEmail(ctx context.Context, lowerEmail, sessionID, token string) error {

@@ -133,10 +133,14 @@ func (*UnlimitedBillingPolicy) AuthorizeSandboxStart(context.Context, int64) err
 
 func (*UnlimitedBillingPolicy) SandboxEntitlement(context.Context, int64) (SandboxEntitlement, error) {
 	return SandboxEntitlement{
-		PlanKey:             BillingPlanCustom,
+		PlanKey: BillingPlanCustom,
+		// Billing admission is unlimited; fleet/provider capacity guards are
+		// independent and continue to run after this policy authorizes a start.
 		ConcurrentSandboxes: unlimitedBillingQuantity,
-		IdleTimeoutSecs:     0,
-		HoursPerDay:         -1,
+		// Zero removes a billing-plan idle deadline. Service-specific runtime
+		// policies and repository overrides remain independent controls.
+		IdleTimeoutSecs: 0,
+		HoursPerDay:     -1,
 	}, nil
 }
 

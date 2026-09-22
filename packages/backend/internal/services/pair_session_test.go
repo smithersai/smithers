@@ -42,6 +42,17 @@ func (b *stubBilling) AuthorizePairing(_ context.Context, userID int64) error {
 	return pkgerrors.Forbidden("pairing requires a paid plan (Hobby or above)")
 }
 
+type unavailableCountingTransport struct {
+	sends atomic.Int32
+}
+
+func (*unavailableCountingTransport) Available() bool { return false }
+
+func (t *unavailableCountingTransport) Send(context.Context, email.Message) error {
+	t.sends.Add(1)
+	return email.ErrDeliveryNotConfigured
+}
+
 // stubForker implements PairForker by inserting a real fork workspace row (so
 // pair_sessions.workspace_id's FK is satisfied) and returning its id.
 type stubForker struct {
@@ -811,16 +822,20 @@ func TestInviteAccept_InsertsAlphaWhitelistBeforeSignup(t *testing.T) {
 	assert.Equal(t, 1, count, "invited email must be whitelisted before signup")
 }
 
-// TestInvite_NoTransport_ReportsDeliveryUnavailable: without a configured
-// transport the invite is recorded and honestly reports delivery unavailable —
-// never a fake sent state.
-func TestInvite_NoTransport_ReportsDeliveryUnavailable(t *testing.T) {
+// TestInvite_UnavailableTransportDoesNotSend: without a configured provider,
+// including when the disabled provider is wrapped, the invite is recorded and
+// honestly reports delivery unavailable without calling Send.
+func TestInvite_UnavailableTransportDoesNotSend(t *testing.T) {
 	fx := newPairFixture(t)
 	owner := mkPairUser(t, fx.pool, "notx-owner")
 	ws := mkPairWorkspace(t, fx.pool, owner, fx.repoID)
 
-	// nil transport AND explicit NoopTransport both count as unavailable.
-	for _, tr := range []email.Transport{nil, &email.NoopTransport{}} {
+	unavailable := &unavailableCountingTransport{}
+	wrappedUnavailable := email.NewRateLimitedTransport(unavailable, email.RateLimitConfig{
+		MaxPerSecond:           10,
+		MaxPerRecipientPerHour: 20,
+	})
+	for i, tr := range []email.Transport{nil, wrappedUnavailable} {
 		svc := newPairService(fx, map[int64]bool{owner: true}, false, tr)
 		session, err := svc.CreateSession(context.Background(), owner, fx.repoID, ws)
 		if err != nil {
@@ -829,11 +844,13 @@ func TestInvite_NoTransport_ReportsDeliveryUnavailable(t *testing.T) {
 			require.NoError(t, gerr)
 			session = live
 		}
-		res, err := svc.CreateInvite(context.Background(), session.ID, owner, "someone@example.com", PairRoleViewer)
+		invitee := fmt.Sprintf("someone-%d@example.com", i)
+		res, err := svc.CreateInvite(context.Background(), session.ID, owner, invitee, PairRoleViewer)
 		require.NoError(t, err)
 		assert.False(t, res.Delivered)
 		assert.Equal(t, "email delivery unavailable", res.DeliveryDetail)
 	}
+	assert.Zero(t, unavailable.sends.Load(), "unavailable delivery must not call Send")
 }
 
 // TestQueue_ViewerForbiddenEditorAllowed proves role enforcement on the queue:

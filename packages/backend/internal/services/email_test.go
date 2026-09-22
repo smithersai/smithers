@@ -316,15 +316,26 @@ func TestEmailService_RequestVerification(t *testing.T) {
 func TestEmailService_RequestVerification_UnconfiguredDoesNotCreateToken(t *testing.T) {
 	t.Parallel()
 
+	transport, err := email.NewTransport(email.TransportConfig{})
+	require.NoError(t, err)
+	transport = email.NewRateLimitedTransport(transport, email.RateLimitConfig{
+		MaxPerSecond:           10,
+		MaxPerRecipientPerHour: 20,
+	})
+
 	databaseCalled := false
 	svc := newTestEmailServiceWithTransport(mockEmailQuerier{
 		getEmailByIDFn: func(context.Context, int64) (db.EmailAddress, error) {
 			databaseCalled = true
 			return db.EmailAddress{}, nil
 		},
-	}, &email.DisabledTransport{})
+		createEmailVerificationTokenFn: func(context.Context, db.CreateEmailVerificationTokenParams) (db.EmailVerificationToken, error) {
+			databaseCalled = true
+			return db.EmailVerificationToken{}, nil
+		},
+	}, transport)
 
-	err := svc.RequestVerification(t.Context(), 42, 10)
+	err = svc.RequestVerification(t.Context(), 42, 10)
 	require.Error(t, err)
 	var apiErr *pkgerrors.APIError
 	require.ErrorAs(t, err, &apiErr)

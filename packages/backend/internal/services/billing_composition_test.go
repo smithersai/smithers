@@ -22,6 +22,7 @@ func TestNewBillingComposition_UnlimitedHasNoCommerceSurface(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, BillingPlanCustom, entitlement.PlanKey)
 	assert.Equal(t, unlimitedBillingQuantity, entitlement.ConcurrentSandboxes)
+	assert.Zero(t, entitlement.IdleTimeoutSecs, "unlimited billing imposes no idle deadline")
 	assert.Equal(t, int64(-1), entitlement.HoursPerDay)
 	require.NoError(t, composition.Policy.AuthorizePrivateRepo(t.Context(), BillingOwnerTypeUser, 1))
 	require.NoError(t, composition.Policy.AuthorizePairing(t.Context(), 1))
