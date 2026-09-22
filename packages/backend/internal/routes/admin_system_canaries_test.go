@@ -9,19 +9,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type mockAdminCanaryLister struct {
-	rows []db.CanaryResult
+	rows []clusterdb.CanaryResult
 	err  error
 }
 
-func (m *mockAdminCanaryLister) ListCanaryResults(_ context.Context) ([]db.CanaryResult, error) {
+func (m *mockAdminCanaryLister) ListCanaryResults(_ context.Context) ([]clusterdb.CanaryResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -52,7 +53,7 @@ func TestAdminSystemCanariesHandler_SystemCanaries(t *testing.T) {
 	}{
 		{
 			name: "maps rows and sorts by name",
-			store: &mockAdminCanaryLister{rows: []db.CanaryResult{
+			store: &mockAdminCanaryLister{rows: []clusterdb.CanaryResult{
 				{
 					Suite:           "workflow",
 					TestName:        "auth",
@@ -104,7 +105,7 @@ func TestAdminSystemCanariesHandler_SystemCanaries(t *testing.T) {
 		},
 		{
 			name:     "empty store returns an empty list",
-			store:    &mockAdminCanaryLister{rows: []db.CanaryResult{}},
+			store:    &mockAdminCanaryLister{rows: []clusterdb.CanaryResult{}},
 			wantCode: http.StatusOK,
 			assert: func(t *testing.T, body adminSystemCanariesResponse) {
 				assert.Empty(t, body.Canaries)
@@ -112,7 +113,7 @@ func TestAdminSystemCanariesHandler_SystemCanaries(t *testing.T) {
 		},
 		{
 			name: "staleness boundary follows the backend cadence",
-			store: &mockAdminCanaryLister{rows: []db.CanaryResult{
+			store: &mockAdminCanaryLister{rows: []clusterdb.CanaryResult{
 				{
 					Suite:      "workflow",
 					TestName:   "a-fresh",
@@ -191,7 +192,7 @@ func TestAdminSystemCanariesHandler_SystemCanaries_MissingStoreReturns500(t *tes
 func TestAdminSystemCanariesHandler_SystemCanaries_DefaultClockUsesNow(t *testing.T) {
 	t.Parallel()
 
-	handler := &AdminSystemCanariesHandler{Store: &mockAdminCanaryLister{rows: []db.CanaryResult{
+	handler := &AdminSystemCanariesHandler{Store: &mockAdminCanaryLister{rows: []clusterdb.CanaryResult{
 		{Suite: "workflow", TestName: "fresh", Status: "success", ReportedAt: time.Now().UTC()},
 		{Suite: "workflow", TestName: "old", Status: "success", ReportedAt: time.Now().UTC().Add(-time.Hour)},
 	}}}
@@ -211,8 +212,8 @@ func TestAdminSystemCanariesHandler_SystemCanaries_DefaultClockUsesNow(t *testin
 func TestAdminCanaryName_UnqualifiedWhenSuiteMissing(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "ui-health", adminCanaryName(db.CanaryResult{TestName: " ui-health "}))
-	assert.Equal(t, "playwright/ui-health", adminCanaryName(db.CanaryResult{Suite: "playwright", TestName: "ui-health"}))
+	assert.Equal(t, "ui-health", adminCanaryName(clusterdb.CanaryResult{TestName: " ui-health "}))
+	assert.Equal(t, "playwright/ui-health", adminCanaryName(clusterdb.CanaryResult{Suite: "playwright", TestName: "ui-health"}))
 }
 
 func TestAdminCanaryStatus_Mapping(t *testing.T) {

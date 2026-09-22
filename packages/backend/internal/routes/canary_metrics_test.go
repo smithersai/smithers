@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +28,7 @@ import (
 // stubCanaryQuerier satisfies routes.CanaryStatusQuerier for unit tests.
 type stubCanaryQuerier struct {
 	rows    []db.ListLatestCanaryStepStatusesRow
-	results []db.CanaryResult
+	results []clusterdb.CanaryResult
 	err     error
 }
 
@@ -34,7 +36,7 @@ func (s *stubCanaryQuerier) ListLatestCanaryStepStatuses(_ context.Context, _ st
 	return s.rows, s.err
 }
 
-func (s *stubCanaryQuerier) ListCanaryResults(_ context.Context) ([]db.CanaryResult, error) {
+func (s *stubCanaryQuerier) ListCanaryResults(_ context.Context) ([]clusterdb.CanaryResult, error) {
 	return s.results, s.err
 }
 
@@ -156,7 +158,7 @@ func TestCanaryStatusCollector_PersistedPlaywrightResultsReportStatusAndFreshnes
 
 	reportedAt := time.Unix(1_710_000_000, 0).UTC()
 	collector := routes.NewCanaryStatusCollector(&stubCanaryQuerier{
-		results: []db.CanaryResult{
+		results: []clusterdb.CanaryResult{
 			{
 				Suite:      routes.PlaywrightCanarySuite,
 				TestName:   "ui-health",

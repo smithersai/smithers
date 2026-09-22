@@ -8,24 +8,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 )
 
 type stubCanaryResultStore struct {
-	args []db.UpsertCanaryResultParams
+	args []clusterdb.UpsertCanaryResultParams
 	err  error
 }
 
-func (s *stubCanaryResultStore) UpsertCanaryResult(_ context.Context, arg db.UpsertCanaryResultParams) (db.CanaryResult, error) {
+func (s *stubCanaryResultStore) UpsertCanaryResult(_ context.Context, arg clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error) {
 	s.args = append(s.args, arg)
 	if s.err != nil {
-		return db.CanaryResult{}, s.err
+		return clusterdb.CanaryResult{}, s.err
 	}
-	return db.CanaryResult{
+	return clusterdb.CanaryResult{
 		Suite:      arg.Suite,
 		TestName:   arg.TestName,
 		Status:     arg.Status,
@@ -135,6 +136,6 @@ func TestCanaryReportHandler_PostResults_StoreErrorReturns500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
-func (s *stubCanaryResultStore) ResolveCanaryAlertIncidents(context.Context, db.ResolveCanaryAlertIncidentsParams) (int64, error) {
+func (s *stubCanaryResultStore) ResolveCanaryAlertIncidents(context.Context, clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error) {
 	return 0, nil
 }

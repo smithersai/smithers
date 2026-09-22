@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -75,7 +77,7 @@ var productionCanaryTests = append(append([]string{}, workflowCanaryTests...), p
 
 type CanaryStatusQuerier interface {
 	ListLatestCanaryStepStatuses(ctx context.Context, workflowPath string) ([]db.ListLatestCanaryStepStatusesRow, error)
-	ListCanaryResults(ctx context.Context) ([]db.CanaryResult, error)
+	ListCanaryResults(ctx context.Context) ([]clusterdb.CanaryResult, error)
 }
 
 type CanaryStatusCollector struct {

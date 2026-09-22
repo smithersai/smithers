@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCanaryMetrics_H_CollectPersistedPlaywrightResults(t *testing.T) {
 	reportedAt := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
 	q := &canaryMetricsCovQuerier{
-		results: []db.CanaryResult{
+		results: []clusterdb.CanaryResult{
 			{Suite: "other", TestName: "ui-health", Status: "success", ReportedAt: reportedAt.Add(time.Hour)},
 			{Suite: PlaywrightCanarySuite, TestName: "unknown", Status: "success", ReportedAt: reportedAt.Add(2 * time.Hour)},
 			{Suite: PlaywrightCanarySuite, TestName: "ui-health", Status: "success", ReportedAt: reportedAt},

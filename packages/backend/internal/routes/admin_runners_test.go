@@ -1,13 +1,15 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -19,23 +21,23 @@ import (
 )
 
 type mockAdminRunnerService struct {
-	listRunnersFn func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error)
+	listRunnersFn func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error)
 }
 
-func (m *mockAdminRunnerService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+func (m *mockAdminRunnerService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 	if m.listRunnersFn != nil {
 		return m.listRunnersFn(ctx, input)
 	}
-	return []db.RunnerPool{}, 0, nil
+	return []clusterdb.RunnerPool{}, 0, nil
 }
 
 func makeAdminUser() *db.User {
 	return &db.User{ID: 99, Username: "admin-user", IsAdmin: true}
 }
 
-func makeTestRunner(id int64, name, status string) db.RunnerPool {
+func makeTestRunner(id int64, name, status string) clusterdb.RunnerPool {
 	now := time.Now().UTC()
-	return db.RunnerPool{
+	return clusterdb.RunnerPool{
 		ID:              id,
 		Name:            name,
 		Status:          status,
@@ -61,11 +63,11 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 					assert.Equal(t, 1, input.Page)
 					assert.Equal(t, 30, input.PerPage)
 					assert.Equal(t, "", input.StatusFilter)
-					return []db.RunnerPool{
+					return []clusterdb.RunnerPool{
 						makeTestRunner(1, "runner-a", "idle"),
 						makeTestRunner(2, "runner-b", "busy"),
 					}, 2, nil
@@ -94,9 +96,9 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 					assert.Equal(t, "idle", input.StatusFilter)
-					return []db.RunnerPool{makeTestRunner(1, "r1", "idle")}, 1, nil
+					return []clusterdb.RunnerPool{makeTestRunner(1, "r1", "idle")}, 1, nil
 				},
 			},
 		}
@@ -115,7 +117,7 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 					return nil, 0, pkgerrors.BadRequest("invalid status filter: must be one of idle, busy, offline, draining, or empty for all")
 				},
 			},
@@ -147,8 +149,8 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
-					return []db.RunnerPool{}, 0, nil
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
+					return []clusterdb.RunnerPool{}, 0, nil
 				},
 			},
 		}
@@ -171,10 +173,10 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
 					assert.Equal(t, 2, input.Page)
 					assert.Equal(t, 5, input.PerPage)
-					return []db.RunnerPool{}, 12, nil
+					return []clusterdb.RunnerPool{}, 12, nil
 				},
 			},
 		}
@@ -194,8 +196,8 @@ func TestAdminRunnerHandler_ListRunners(t *testing.T) {
 
 		h := &AdminRunnerHandler{
 			Service: &mockAdminRunnerService{
-				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
-					return []db.RunnerPool{makeTestRunner(7, "runner-x", "draining")}, 1, nil
+				listRunnersFn: func(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
+					return []clusterdb.RunnerPool{makeTestRunner(7, "runner-x", "draining")}, 1, nil
 				},
 			},
 		}

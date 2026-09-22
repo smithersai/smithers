@@ -1,18 +1,19 @@
 package routes
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
 	"net/http"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
+
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // AdminRunnerRouteService is the service contract for admin runner endpoints.
 type AdminRunnerRouteService interface {
-	ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error)
+	ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error)
 }
 
 // AdminRunnerHandler handles /api/admin/runners requests.
@@ -30,7 +31,7 @@ type runnerResponse struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-func toRunnerResponse(r db.RunnerPool) runnerResponse {
+func toRunnerResponse(r clusterdb.RunnerPool) runnerResponse {
 	resp := runnerResponse{
 		ID:        r.ID,
 		Name:      r.Name,

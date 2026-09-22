@@ -8,23 +8,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type canaryResultsCovStore struct {
 	err  error
-	args []db.UpsertCanaryResultParams
+	args []clusterdb.UpsertCanaryResultParams
 }
 
-func (s *canaryResultsCovStore) UpsertCanaryResult(ctx context.Context, arg db.UpsertCanaryResultParams) (db.CanaryResult, error) {
+func (s *canaryResultsCovStore) UpsertCanaryResult(ctx context.Context, arg clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error) {
 	s.args = append(s.args, arg)
 	if s.err != nil {
-		return db.CanaryResult{}, s.err
+		return clusterdb.CanaryResult{}, s.err
 	}
-	return db.CanaryResult{Suite: arg.Suite, TestName: arg.TestName, Status: arg.Status, ReportedAt: arg.ReportedAt}, nil
+	return clusterdb.CanaryResult{Suite: arg.Suite, TestName: arg.TestName, Status: arg.Status, ReportedAt: arg.ReportedAt}, nil
 }
 
 func TestCanaryResults_Cov_PostResultsValidationAndPersistence(t *testing.T) {
@@ -91,6 +91,6 @@ func TestCanaryResults_Cov_PostResultsValidationAndPersistence(t *testing.T) {
 	})
 }
 
-func (s *canaryResultsCovStore) ResolveCanaryAlertIncidents(context.Context, db.ResolveCanaryAlertIncidentsParams) (int64, error) {
+func (s *canaryResultsCovStore) ResolveCanaryAlertIncidents(context.Context, clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error) {
 	return 0, nil
 }

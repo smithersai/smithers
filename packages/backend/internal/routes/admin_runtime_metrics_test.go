@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type adminRuntimeMetricsFake struct {
@@ -33,19 +33,19 @@ func (f *adminRuntimeMetricsFake) check(ctx context.Context, name string) error 
 	}
 	return nil
 }
-func (f *adminRuntimeMetricsFake) GetSandboxActiveVMsByKind(ctx context.Context) ([]db.GetSandboxActiveVMsByKindRow, error) {
+func (f *adminRuntimeMetricsFake) GetSandboxActiveVMsByKind(ctx context.Context) ([]clusterdb.GetSandboxActiveVMsByKindRow, error) {
 	err := f.check(ctx, "active")
-	return []db.GetSandboxActiveVMsByKindRow{{Kind: "workspace", Count: 3}, {Kind: "agent_session", Count: 0}}, err
+	return []clusterdb.GetSandboxActiveVMsByKindRow{{Kind: "workspace", Count: 3}, {Kind: "agent_session", Count: 0}}, err
 }
-func (f *adminRuntimeMetricsFake) GetSandboxInstancesByState(ctx context.Context) ([]db.GetSandboxInstancesByStateRow, error) {
+func (f *adminRuntimeMetricsFake) GetSandboxInstancesByState(ctx context.Context) ([]clusterdb.GetSandboxInstancesByStateRow, error) {
 	err := f.check(ctx, "instances")
-	return []db.GetSandboxInstancesByStateRow{{ObservedState: "running", Count: 3}, {ObservedState: "failed", Count: 2}}, err
+	return []clusterdb.GetSandboxInstancesByStateRow{{ObservedState: "running", Count: 3}, {ObservedState: "failed", Count: 2}}, err
 }
-func (f *adminRuntimeMetricsFake) GetAdminQueueMetrics(ctx context.Context) ([]db.GetAdminQueueMetricsRow, error) {
+func (f *adminRuntimeMetricsFake) GetAdminQueueMetrics(ctx context.Context) ([]clusterdb.GetAdminQueueMetricsRow, error) {
 	err := f.check(ctx, "queues")
-	rows := []db.GetAdminQueueMetricsRow{}
+	rows := []clusterdb.GetAdminQueueMetricsRow{}
 	for _, q := range []string{"landing_tasks", "workflow_tasks_runner", "workflow_tasks_sandbox", "workflow_tasks_agent", "github_webhook_jobs", "webhook_deliveries", "alert_remediation_jobs", "storage_deletion_queue", "import_jobs", "repo_replication_jobs", "pair_prompt_queue"} {
-		rows = append(rows, db.GetAdminQueueMetricsRow{Queue: q, Depth: 2, OldestAgeSeconds: 90})
+		rows = append(rows, clusterdb.GetAdminQueueMetricsRow{Queue: q, Depth: 2, OldestAgeSeconds: 90})
 	}
 	return rows, err
 }
@@ -97,7 +97,7 @@ type blockingInventoryFake struct {
 	calls   atomic.Int64
 }
 
-func (f *blockingInventoryFake) GetSandboxActiveVMsByKind(ctx context.Context) ([]db.GetSandboxActiveVMsByKindRow, error) {
+func (f *blockingInventoryFake) GetSandboxActiveVMsByKind(ctx context.Context) ([]clusterdb.GetSandboxActiveVMsByKindRow, error) {
 	f.calls.Add(1)
 	f.entered <- ctx
 	select {

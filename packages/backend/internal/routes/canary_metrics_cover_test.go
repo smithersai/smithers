@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +20,7 @@ import (
 
 type canaryMetricsCovQuerier struct {
 	rows         []db.ListLatestCanaryStepStatusesRow
-	results      []db.CanaryResult
+	results      []clusterdb.CanaryResult
 	rowsErr      error
 	resultsErr   error
 	workflowPath string
@@ -32,7 +34,7 @@ func (q *canaryMetricsCovQuerier) ListLatestCanaryStepStatuses(ctx context.Conte
 	return q.rows, nil
 }
 
-func (q *canaryMetricsCovQuerier) ListCanaryResults(ctx context.Context) ([]db.CanaryResult, error) {
+func (q *canaryMetricsCovQuerier) ListCanaryResults(ctx context.Context) ([]clusterdb.CanaryResult, error) {
 	if q.resultsErr != nil {
 		return nil, q.resultsErr
 	}

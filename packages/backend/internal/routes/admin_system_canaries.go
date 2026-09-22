@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // adminCanaryQueryTimeout bounds the canary listing query.
@@ -19,7 +20,7 @@ const adminCanaryQueryTimeout = 5 * time.Second
 // canary_results table holds one row per (suite, test_name), so the listing is
 // already a latest-state snapshot.
 type AdminCanaryLister interface {
-	ListCanaryResults(ctx context.Context) ([]db.CanaryResult, error)
+	ListCanaryResults(ctx context.Context) ([]clusterdb.CanaryResult, error)
 }
 
 // AdminSystemCanariesHandler handles GET /api/admin/system/canaries.
@@ -80,7 +81,7 @@ func (h *AdminSystemCanariesHandler) SystemCanaries(w http.ResponseWriter, r *ht
 }
 
 // adminCanaryFromResult maps one persisted canary row onto the admin API shape.
-func adminCanaryFromResult(row db.CanaryResult, now time.Time) adminSystemCanary {
+func adminCanaryFromResult(row clusterdb.CanaryResult, now time.Time) adminSystemCanary {
 	lastRunAt := row.ReportedAt.UTC()
 
 	canary := adminSystemCanary{
@@ -103,7 +104,7 @@ func adminCanaryFromResult(row db.CanaryResult, now time.Time) adminSystemCanary
 
 // adminCanaryName qualifies the test name with its suite so names stay unique
 // across suites, matching the (suite, test_name) key of the underlying table.
-func adminCanaryName(row db.CanaryResult) string {
+func adminCanaryName(row clusterdb.CanaryResult) string {
 	suite := strings.TrimSpace(row.Suite)
 	testName := strings.TrimSpace(row.TestName)
 	if suite == "" {

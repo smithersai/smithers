@@ -7,16 +7,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // AdminRuntimeMetricsQuerier reads durable sandbox inventory and queue backlog.
 type AdminRuntimeMetricsQuerier interface {
-	GetSandboxActiveVMsByKind(context.Context) ([]db.GetSandboxActiveVMsByKindRow, error)
-	GetSandboxInstancesByState(context.Context) ([]db.GetSandboxInstancesByStateRow, error)
-	GetAdminQueueMetrics(context.Context) ([]db.GetAdminQueueMetricsRow, error)
+	GetSandboxActiveVMsByKind(context.Context) ([]clusterdb.GetSandboxActiveVMsByKindRow, error)
+	GetSandboxInstancesByState(context.Context) ([]clusterdb.GetSandboxInstancesByStateRow, error)
+	GetAdminQueueMetrics(context.Context) ([]clusterdb.GetAdminQueueMetricsRow, error)
 }
 
 // AdminRuntimeMetricsCollector exports database snapshots, independent of API

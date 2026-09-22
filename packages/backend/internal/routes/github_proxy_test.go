@@ -9,14 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type mockGitHubProxyRouteStore struct {
@@ -24,8 +26,8 @@ type mockGitHubProxyRouteStore struct {
 	getRepoByIDFn               func(ctx context.Context, id int64) (db.Repository, error)
 	getUserByIDFn               func(ctx context.Context, id int64) (db.User, error)
 	getOrgByIDFn                func(ctx context.Context, id int64) (db.Organization, error)
-	insertGithubProxyAuditLogFn func(ctx context.Context, arg db.InsertGithubProxyAuditLogParams) error
-	auditRows                   []db.InsertGithubProxyAuditLogParams
+	insertGithubProxyAuditLogFn func(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
+	auditRows                   []clusterdb.InsertGithubProxyAuditLogParams
 }
 
 func (m *mockGitHubProxyRouteStore) GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error) {
@@ -56,7 +58,7 @@ func (m *mockGitHubProxyRouteStore) GetOrgByID(ctx context.Context, id int64) (d
 	return db.Organization{}, nil
 }
 
-func (m *mockGitHubProxyRouteStore) InsertGithubProxyAuditLog(ctx context.Context, arg db.InsertGithubProxyAuditLogParams) error {
+func (m *mockGitHubProxyRouteStore) InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error {
 	m.auditRows = append(m.auditRows, arg)
 	if m.insertGithubProxyAuditLogFn != nil {
 		return m.insertGithubProxyAuditLogFn(ctx, arg)
