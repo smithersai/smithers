@@ -59,9 +59,9 @@ func newChatComposition(options runOptions, pool *pgxpool.Pool) (*chatCompositio
 		}
 		return nil, errors.New("hosted chat requires an internal producer callback URL")
 	}
-	if options.Role.workers() && listener == nil {
-		return nil, errors.New("chat worker requires a private producer callback listener")
-	}
+	// Hosted workers dispatch into the shared journal through the hosted API's
+	// callback URL. Only API replicas need to serve those capability-authenticated
+	// routes, so workers require no listener of their own.
 	runtime, err := chat.NewRuntime(pool, options.ChatHost, callbackURL, chat.RuntimeOptions{})
 	if err != nil {
 		if listener != nil {

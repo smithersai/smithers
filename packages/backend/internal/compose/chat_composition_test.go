@@ -23,10 +23,11 @@ func (unusedChatHost) RunChatTurn(context.Context, ports.ChatTurnGrant) error { 
 func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
 	_, err := newChatComposition(runOptions{Options: Options{ChatProducerBaseURL: "http://127.0.0.1:1000"}}, nil)
 	require.ErrorContains(t, err, "requires a chat host")
-	_, err = newChatComposition(runOptions{Options: Options{
-		Role: RoleHostedWorker, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "http://chat.internal:1000",
-	}}, nil)
-	require.ErrorContains(t, err, "private producer callback listener")
+	worker, err := newChatComposition(runOptions{Options: Options{
+		Role: RoleHostedWorker, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	}}, &pgxpool.Pool{})
+	require.NoError(t, err)
+	require.Nil(t, worker.listener)
 
 	publicListener, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
