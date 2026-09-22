@@ -86,6 +86,7 @@ itself; every default on the optional half is the conservative one.
 | `narrowingCap`       | `number`                                          | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                      |
 | `unmovedCap`         | `number`                                          | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                          |
 | `unresolvedCap`      | `number`                                          | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`. |
+| `claimCap`           | `number`                                          | Caps completions bounced for a claim the run's record does not support; the one brake that asks the `Evaluator`. Armed by default at `CellTurn.defaultClaimDemands`; zero disarms it. |
 | `approvalChannel`    | `boolean`                                         | Whether a human can answer this run. Defaults to false; a run that claims it wrongly buys a run that waits forever.                          |
 | `limits`             | `Sandbox.Limits`                                  | The sandbox budget every cell runs under.                                                                                                    |
 

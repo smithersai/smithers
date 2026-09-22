@@ -453,6 +453,7 @@ describe("Agent.run", () => {
           readOnlyCap: 5,
           modelCallMs: 45_000,
           repeatCap: 0,
+          claimCap: 0,
           limits: { calls: 8 }
         }).pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
@@ -478,7 +479,7 @@ describe("Agent.run", () => {
     // constant the run records as if it were a choice, and a grader reading
     // `discipline-armed` cannot tell the two apart.
     const armed = events.find((event) => event._tag === "discipline-armed")
-    expect(armed).toMatchObject({ readOnlyCap: 5, modelCallMs: 45_000, repeatCap: 0, maxFrames: 2 })
+    expect(armed).toMatchObject({ readOnlyCap: 5, modelCallMs: 45_000, repeatCap: 0, claimCap: 0, maxFrames: 2 })
 
     // The declared layer set and session reach the call identity, which is what
     // the durable key is derived from.

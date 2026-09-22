@@ -214,6 +214,13 @@ export interface Options {
    */
   readonly unresolvedCap?: number | undefined
   /**
+   * Caps how many completions may be bounced for a claim the run's record does
+   * not support; see `CellTurn.make`. Armed by default; zero disarms the one
+   * brake that asks the `Evaluator`, which is what an interactive host whose
+   * human reads every answer passes when it binds no judge.
+   */
+  readonly claimCap?: number | undefined
+  /**
    * Whether a human can answer this run; see `CellTurn.make`.
    *
    * The default is false, because the default run is unattended. Only a caller
@@ -479,6 +486,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             narrowingCap: options.narrowingCap,
             unmovedCap: options.unmovedCap,
             unresolvedCap: options.unresolvedCap,
+            claimCap: options.claimCap,
             approvalChannel: options.approvalChannel
           })
           return CellTurn.run({
