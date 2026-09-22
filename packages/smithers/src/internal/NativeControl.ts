@@ -124,6 +124,8 @@ export type ModuleRegistration = Layer.Layer<
  * @private
  */
 export interface ExecutorOptions {
+  /** Product-host binding: require this exact catalog snapshot before admission. */
+  readonly expectedSourceRevision?: string | undefined
   /** An explicit host judge, including an evidence-based offline script. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Where seat credentials and the host's test declaration are read from. */
@@ -947,6 +949,18 @@ export const make = (
           ))
         )
         const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
+        // Product hosts must establish their pinned source before any run
+        // admission or gateway readiness. Generic native/library compositions
+        // omit this requirement and may continue to report no source revision.
+        const revisionAfter = SourceRevision.read(workspaceRoot)
+        const capturedRevision = catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
+          ? undefined
+          : revisionBefore
+        if (options.expectedSourceRevision !== undefined && capturedRevision !== options.expectedSourceRevision) {
+          return yield* Effect.die(new Error(capturedRevision === undefined
+            ? "Flow host source revision is unavailable; require a stable JJ snapshot or clean Git checkout"
+            : "Flow host source revision does not match its authorized workspace binding"))
+        }
         if (catalog !== undefined) yield* Deferred.succeed(catalogReady, catalog)
         // Planning reads this reference; see `hostCatalog`. The value is the
         // catalog service itself, which answers with whatever snapshot the
@@ -962,10 +976,7 @@ export const make = (
          * tree that moved during startup names nothing, exactly as a dirty git
          * checkout does.
          */
-        const revisionAfter = SourceRevision.read(workspaceRoot)
-        hostRevision = catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
-          ? undefined
-          : revisionBefore
+        hostRevision = capturedRevision
         // Optional, and read rather than required, because a host may build
         // its catalog itself: `flows/coding/host.ts` assembles a project
         // catalog and a bundled one with different loaders and provides the
@@ -1196,7 +1207,7 @@ export const make = (
   }
 
   const layerControlFromEngine = (
-    config: Application.Config,
+    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision">,
     registry: Layer.Layer<Registry.Registry>,
     engine: EngineDurable,
     modules?: ModuleRegistration
@@ -1209,6 +1220,7 @@ export const make = (
         environment: process.env,
         evaluator: config.evaluator,
         startsRuns: config.startsRuns,
+        expectedSourceRevision: config.expectedSourceRevision,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
@@ -1258,7 +1270,9 @@ export const make = (
         const journalService = yield* Journal.Journal
         return Serve.GatewayHost.of({
           launch: (health, options, root) =>
-            Layer.launch(layerGateway(health, options, root, engine, Layer.succeed(Journal.Journal, journalService)))
+            Effect.suspend(() => options.runtimeBridge !== undefined && hostRevision !== options.runtimeBridge.sourceRevision
+              ? Effect.die(new Error("Flow host source revision is unavailable or does not match the registered catalog"))
+              : Layer.launch(layerGateway(health, options, root, engine, Layer.succeed(Journal.Journal, journalService))))
               .pipe(
                 Effect.provideService(Control.Control, controlService),
                 Effect.provide(native.host),
@@ -1270,7 +1284,7 @@ export const make = (
   const layerMemory = (root: string, engine: EngineDurable = engineDurable(root)) =>
     MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
   const layerHost = (
-    config: Application.Config,
+    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision">,
     modules?: ModuleRegistration,
     suppliedRegistry?: Layer.Layer<Registry.Registry>
   ) => {

@@ -243,6 +243,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       if (!binding.capabilities.includes("import-source/v1")) return yield* Effect.die(new Error("Update the workspace native adapter before starting repository jobs; import-source/v1 is required"))
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, stateRoot, credential: options.credential,
+      expectedSourceRevision: options.runtimeSourceRevision,
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,

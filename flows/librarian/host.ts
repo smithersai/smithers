@@ -33,7 +33,9 @@ const sha = (value: string) => createHash("sha256").update(value).digest("hex")
 
 /** Identity includes the entire compiled host, not just a declaration's prose. */
 export const catalog = async (options: Options) => {
-  const directory = join(options.root, ".flows", "product", options.artifactDigest)
+  // These packaged descriptors are host state. Writing them into the served
+  // checkout would dirty Git and change JJ's source snapshot during startup.
+  const directory = join(options.stateRoot, "product", options.artifactDigest)
   await mkdir(directory, { recursive: true })
   return Promise.all(([ ["wiki", wiki], ["history", history] ] as const).map(async ([kind, declaration]) => {
     const path = join(directory, `${kind}.json`)
@@ -84,6 +86,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       agentRuntime, Layer.provide(registry), Layer.orDie
     )
     const host = native.layerHost({ root: options.root, stateRoot: options.stateRoot, credential: options.credential,
+      expectedSourceRevision: options.sourceRevision,
       approvalAuthority: native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,

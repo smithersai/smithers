@@ -180,7 +180,8 @@ func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(deliveries) < 3 || deliveries[len(deliveries)-1].Type != "caught-up" || deliveries[len(deliveries)-1].Terminal == nil || !*deliveries[len(deliveries)-1].Terminal {
-		t.Fatalf("terminal journal delivery missing: %#v", deliveries)
+		wire, _ := json.Marshal(deliveries)
+		t.Fatalf("terminal journal delivery missing: %s", wire)
 	}
 	wire, _ := json.Marshal(deliveries)
 	if bytes.Contains(wire, []byte("fixture-secret-do-not-persist")) {

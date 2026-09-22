@@ -258,7 +258,7 @@ export const execute = (
           input: input.payload,
           idempotencyKey: idempotencyKey(input, "plan")
         })
-        if (plan.graph?.sourceRevision !== undefined && plan.graph.sourceRevision !== input.sourceRevision) {
+        if (plan.graph?.sourceRevision !== input.sourceRevision) {
           return yield* Effect.fail(
             new BridgeError({
               code: "source_mismatch",

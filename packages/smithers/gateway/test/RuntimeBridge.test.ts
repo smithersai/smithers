@@ -179,6 +179,15 @@ describe("RuntimeBridge", () => {
         launch
       ))
       expect(source).toMatchObject({ code: "source_mismatch", retryable: false })
+      for (const graph of [undefined, { edges: [] }]) {
+        let runs = 0
+        const missing = yield* Effect.flip(RuntimeBridge.execute(config, service({
+          plan: () => Effect.succeed({ ...plan, graph }),
+          run: () => { runs++; return Effect.succeed(accepted) }
+        }), principal, launch))
+        expect(missing).toMatchObject({ code: "source_mismatch", retryable: false })
+        expect(runs).toBe(0)
+      }
     }))
 
   it.effect("adapts every mutation without owning its semantics", () =>

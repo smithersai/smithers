@@ -25,6 +25,7 @@ import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const definition = {
+  name: "native",
   description: "A native flow with two dependent steps.",
   input: Schema.Struct({ value: Schema.String }),
   output: Schema.Unknown,
@@ -37,6 +38,7 @@ const source = `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"
 export default Flow.make({
+  name: "native",
   description: ${JSON.stringify(definition.description)},
   input: Schema.Struct({ value: Schema.String }), output: Schema.Unknown,
   capabilities: [], flows: ["test/Planned"],
