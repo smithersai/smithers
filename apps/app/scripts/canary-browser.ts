@@ -150,7 +150,8 @@ try {
   results.observedRunning = observedRunning
   if (terminal !== "completed") throw new Error(`Real run ${runId} ended ${terminal || "without terminal receipt"}`)
   if (!observedRunning) throw new Error("Fixture completed before running-state Chat coverage; configure a longer safe flow")
-  await active.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${runId}"][data-status="completed"]`).waitFor({ timeout: 30_000 })
+  // RuntimeProjection maps a completed run to the card shell's acted status.
+  await active.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${runId}"][data-status="acted"]`).waitFor({ timeout: 30_000 })
   record("Chat usable through real remote completion")
   if (process.env.CANARY_BROWSER_FORCE_FAILURE === "1") throw new Error("Deliberate browser failure for alert delivery drill")
 } catch (error) {
