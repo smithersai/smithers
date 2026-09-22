@@ -126,9 +126,16 @@ func (p githubImportCovWorkspaceProvisioner) CreateWorkspaceAsync(context.Contex
 
 func TestGitHubImport_Cov_StartGetAndDetachedFailure(t *testing.T) {
 	ctx := context.Background()
-	pool := getAgentTestPool(t)
+	pool := newProductImportTestPool(t)
 	queries := db.New(pool)
-	user := githubImportCovSeedUser(t, ctx, "importer")
+	username := githubImportCovRepoName(t, "importer") + "-" + uuid.NewString()[:8]
+	var user db.User
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username, lower_username, email, lower_email, display_name)
+		VALUES ($1, $1, $2, $2, $1)
+		RETURNING id, username, lower_username, email, lower_email, display_name, bio, avatar_url, user_type, is_active, is_admin, prohibit_login, email_notifications_enabled, created_at, updated_at`,
+		username, username+"@example.com").Scan(&user.ID, &user.Username, &user.LowerUsername, &user.Email, &user.LowerEmail,
+		&user.DisplayName, &user.Bio, &user.AvatarUrl, &user.UserType, &user.IsActive, &user.IsAdmin,
+		&user.ProhibitLogin, &user.EmailNotificationsEnabled, &user.CreatedAt, &user.UpdatedAt))
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/repos/octo/"+githubImportCovRepoName(t, "source"), r.URL.Path)

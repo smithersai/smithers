@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/cors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +32,9 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 }
 
 func TestAppBootstrapRoute(t *testing.T) {
-	handler := withAppBootstrap(http.NotFoundHandler(), newAppBootstrap(bootstrapFeatures{identity: true}))
+	handler := withAppBootstrap(http.NotFoundHandler(), newAppBootstrap(bootstrapFeatures{identity: true}), cors.Options{
+		AllowedOrigins: []string{"https://app.example"}, AllowedMethods: []string{"GET", "OPTIONS"},
+	})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/bootstrap", nil))
 	require.Equal(t, http.StatusOK, response.Code)
@@ -43,6 +46,12 @@ func TestAppBootstrapRoute(t *testing.T) {
 	require.NotEmpty(t, body["version"])
 	require.NotEmpty(t, body["buildSha"])
 	require.Equal(t, []any{"identity"}, body["capabilities"])
+	response = httptest.NewRecorder()
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/bootstrap", nil)
+	preflight.Header.Set("Origin", "https://app.example")
+	preflight.Header.Set("Access-Control-Request-Method", "GET")
+	handler.ServeHTTP(response, preflight)
+	require.Equal(t, "https://app.example", response.Header().Get("Access-Control-Allow-Origin"))
 
 	for _, tc := range []struct {
 		method string

@@ -36,7 +36,10 @@ func TestInitializeBlobStore_FilesystemDefault(t *testing.T) {
 	store, client, expiry, err := initializeBlobStore(ctx, cfg)
 	require.NoError(t, err)
 	require.NotNil(t, store)
-	require.Nil(t, client)
+	if client != nil {
+		require.Same(t, store, client)
+		t.Cleanup(func() { require.NoError(t, client.Close()) })
+	}
 	assert.Equal(t, blob.DefaultSignedURLExpiry, expiry)
 
 	_, isFilesystem := store.(*blob.FilesystemStore)
@@ -53,7 +56,7 @@ func TestMountBlobTransferHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
-	handler := mountBlobTransferHandler(next, store)
+	handler := mountBlobTransferHandler(next, store, &config.Config{Server: config.ServerConfig{PublicURL: "https://app.example"}})
 	req := httptest.NewRequest(http.MethodGet, downloadURL, nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -63,6 +66,13 @@ func TestMountBlobTransferHandler(t *testing.T) {
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/unrelated", nil))
 	assert.Equal(t, http.StatusTeapot, rec.Code)
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/blob-transfer/key", nil)
+	preflight.Header.Set("Origin", "https://app.example")
+	preflight.Header.Set("Access-Control-Request-Method", "PUT")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, preflight)
+	assert.Equal(t, "https://app.example", rec.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestInitializeBlobStore_ProductionRequiresDurableAdapter(t *testing.T) {

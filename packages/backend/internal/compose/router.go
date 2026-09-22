@@ -388,22 +388,7 @@ func buildRouter(
 		})
 	}
 
-	allowedOrigins := apiAllowedOrigins(cfg)
-	apiCORS := cors.Options{
-		AllowOriginFunc: func(_ *http.Request, origin string) bool {
-			for _, allowedOrigin := range allowedOrigins {
-				if strings.EqualFold(origin, allowedOrigin) {
-					return true
-				}
-			}
-			return false
-		},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}
+	apiCORS := apiCORSOptions(cfg)
 
 	// Canonical LFS protocol endpoints intentionally resolve authorization in
 	// LFSService rather than LoadRepoContext: a git-lfs-authenticate credential

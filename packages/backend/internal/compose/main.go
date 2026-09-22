@@ -570,7 +570,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if gcsClient != nil {
 		defer func() { _ = gcsClient.Close() }()
 	}
-	if _, canPurge := blobStore.(blob.GenerationPurger); canPurge {
+	transferStore := blobStore
+	if _, canPurge := blobStore.(blob.GenerationPurger); options.Role.hosted() && canPurge {
 		legacyFinalKeyPurgeAllowed, gateErr := hostedQueries.IsLegacyFinalKeyPurgeAllowed(ctx)
 		if gateErr != nil {
 			return fmt.Errorf("load legacy final-key capability horizon: %w", gateErr)
@@ -1445,8 +1446,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		agent:           cfg.FeatureFlags.Agents && sandboxClient != nil && len(agentProviderEnv) != 0,
 		billingCheckout: billingComposition.Service != nil,
 		isolatedSandbox: provider != nil,
-	}))
-	r = mountBlobTransferHandler(r, blobStore)
+	}), apiCORSOptions(cfg))
+	r = mountBlobTransferHandler(r, transferStore, cfg)
 
 	requestTracker := newInFlightRequestTracker()
 	handler := requestTracker.Wrap(r)

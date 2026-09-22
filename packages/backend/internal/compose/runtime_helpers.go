@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/cors"
+
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
@@ -593,7 +595,7 @@ func initializeBlobStore(_ context.Context, cfg config.BlobConfig) (blob.Store, 
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("initialize filesystem blob store: %w", err)
 		}
-		return store, nil, expiry, nil
+		return store, store, expiry, nil
 	}
 
 	return nil, nil, 0, fmt.Errorf("GCS bucket %q requires an injected cloud blob adapter", cfg.GCSBucket)
@@ -615,15 +617,34 @@ func initializeAgentLogStore(_ io.Closer, _ config.BlobConfig, localStore ...blo
 	return blob.NewMemoryAgentLogStore()
 }
 
-func mountBlobTransferHandler(next http.Handler, store blob.Store) http.Handler {
+func mountBlobTransferHandler(next http.Handler, store blob.Store, cfg *config.Config) http.Handler {
 	transfers, ok := store.(blob.TransferHandlerProvider)
 	if !ok {
 		return next
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/api/blob-transfer/", transfers.TransferHandler())
+	mux.Handle("/api/blob-transfer/", cors.Handler(apiCORSOptions(cfg))(transfers.TransferHandler()))
 	mux.Handle("/", next)
 	return mux
+}
+
+func apiCORSOptions(cfg *config.Config) cors.Options {
+	allowedOrigins := apiAllowedOrigins(cfg)
+	return cors.Options{
+		AllowOriginFunc: func(_ *http.Request, origin string) bool {
+			for _, allowedOrigin := range allowedOrigins {
+				if strings.EqualFold(origin, allowedOrigin) {
+					return true
+				}
+			}
+			return false
+		},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}
 }
 
 // initEmailTransport creates an email transport from config using the factory.

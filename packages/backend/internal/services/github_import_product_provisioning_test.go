@@ -17,10 +17,16 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
-func TestProductImportReservationSurvivesRestartAndPublishesOnce(t *testing.T) {
+// newProductImportTestPool exercises the public product migration in an
+// isolated database, independent of the hosted integration schema and fences.
+func newProductImportTestPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	if agentTestDB == nil && os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL") == "" {
+		t.Skip("PostgreSQL integration database is unavailable")
+	}
 	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	if raw == "" {
-		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
+		raw = getTestDatabaseURL()
 	}
 	ctx := context.Background()
 	adminURL, err := url.Parse(raw)
@@ -60,10 +66,16 @@ func TestProductImportReservationSurvivesRestartAndPublishesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	if err := product.Apply(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
+	return pool
+}
+
+func TestProductImportReservationSurvivesRestartAndPublishesOnce(t *testing.T) {
+	pool := newProductImportTestPool(t)
+	ctx := context.Background()
 	var userID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO users(username, lower_username)
 		VALUES ('alice', 'alice') RETURNING id`).Scan(&userID); err != nil {

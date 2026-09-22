@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+
+	"github.com/go-chi/cors"
 )
 
 // appBootstrap describes only capabilities that this assembled process can
@@ -84,12 +86,8 @@ func buildIdentity() (version, sha string) {
 	return version, sha
 }
 
-func withAppBootstrap(next http.Handler, bootstrap appBootstrap) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/bootstrap" {
-			next.ServeHTTP(w, r)
-			return
-		}
+func withAppBootstrap(next http.Handler, bootstrap appBootstrap, corsOptions cors.Options) http.Handler {
+	bootstrapHandler := cors.Handler(corsOptions)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, HEAD")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -101,5 +99,12 @@ func withAppBootstrap(next http.Handler, bootstrap appBootstrap) http.Handler {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(bootstrap)
+	}))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/bootstrap" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		bootstrapHandler.ServeHTTP(w, r)
 	})
 }
