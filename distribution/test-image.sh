@@ -107,6 +107,9 @@ start_app() {
 }
 
 build_sha=${SMITHERS_BUILD_SHA:-}
+if [ -z "$build_sha" ] && command -v jj >/dev/null 2>&1; then
+  build_sha=$(cd "$root" && jj log -r @ --no-graph -T commit_id)
+fi
 if [ "${SMITHERS_DOCKER_SKIP_BUILD:-0}" != 1 ]; then
   if [ -z "$build_sha" ]; then build_sha=$(jj -R "$root" log -r @ --no-graph -T commit_id); fi
   test -n "$build_sha" || { printf 'BUILD_SHA is required\n' >&2; exit 1; }

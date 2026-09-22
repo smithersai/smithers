@@ -65,12 +65,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: rustup toolchain install 1.89.0 1.98.0
       - run: brew install postgresql@18
+      - run: pnpm --filter smithers-app exec playwright install chromium
       - name: Build packaged native app
         env:
-          SMITHERS_POSTGRES_BUNDLE_DIR: /opt/homebrew/opt/postgresql@18
           SMITHERS_NATIVE_E2E_CEF: "1"
           SMITHERS_NATIVE_E2E_CDP_PORT: "9444"
-        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts
+        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_POSTGRES_BUNDLE_DIR="$(brew --prefix postgresql@18)" bun apps/app/scripts/build-native.ts
       - name: Prove native owned and Plue process topology
         env:
           SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
