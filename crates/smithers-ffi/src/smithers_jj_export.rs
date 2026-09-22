@@ -2,6 +2,7 @@ use std::io::Read as _;
 use std::path::Path;
 
 mod file_eligibility;
+mod atomic_fs;
 mod source_create;
 mod source_import;
 mod source_publish;
@@ -14,6 +15,9 @@ const USAGE: &str = "usage: smithers-jj-export [--engine|--local] < JSON request
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.len() == 1 && args[0] == "--atomic-fs" {
+        return Ok(atomic_fs::serve()?);
+    }
     // Provisioning stages this helper into every workspace guest and smoke-tests
     // the staged copy before trusting it (internal/services/workspace_scripts).
     // The smoke must prove the dynamic loader resolved the binary without

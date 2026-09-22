@@ -1,6 +1,6 @@
 /**
  * The process transport beneath the atomic filesystem: resolving the
- * configured interpreter to a file the confined workspace cannot have
+ * configured helper to a file the confined workspace cannot have
  * supplied, and running one isolated, bounded helper process per framed
  * request.
  * @since 1.0.0
@@ -11,7 +11,6 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import type { Limits } from "../AtomicFileSystem.ts"
-import { source } from "./AtomicFileSystemHelperSource.ts"
 import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.ts"
 
 let startedHelpers = 0
@@ -42,7 +41,7 @@ const executablePath = (configured: string): string => {
   for (let links = 0; links < 40; links++) {
     if (current.endsWith("/")) throw new Error("atomic helper executable cannot end with a directory separator")
     // Bun's macOS realpath can return another hard link to the final inode:
-    // /usr/bin/python3 became /usr/bin/git during concurrent guarded reads.
+    // A hard-linked executable can change its entry name during guarded reads.
     // Directories cannot have those file aliases. Resolve the parent, preserve
     // the leaf name, and explicitly follow only actual leaf symlinks.
     const parent = realpathSync.native(dirname(current))
@@ -56,10 +55,10 @@ const executablePath = (configured: string): string => {
 }
 
 /**
- * Resolves the configured interpreter to an absolute, executable regular file
+ * Resolves the configured helper to an absolute, executable regular file
  * that the confined workspace cannot have supplied. Every failure throws, and
  * every throw becomes a fail-closed `PermissionDenied`, so a host without a
- * usable interpreter performs no filesystem operation at all.
+ * usable helper performs no filesystem operation at all.
  * @private
  * @since 1.0.0
  */
@@ -102,28 +101,11 @@ export const spawnHelper = <A>(
     let truncated = false
     let writeFailure: unknown
 
-    // `-I` (isolated) and `-X utf8` are part of the boundary, not tuning.
-    //
-    // Without `-I`, `python3 -c` prepends the CURRENT WORKING DIRECTORY to
-    // `sys.path`. A `base64.py` (or `re.py`, `stat.py`) reachable from there
-    // is imported and executed by the helper — arbitrary code inside the
-    // process that holds the pinned root descriptor. `-I` also implies `-E`,
-    // so `PYTHONPATH` and `PYTHONSTARTUP` cannot reintroduce the same hijack
-    // from the environment, and `-s`, so a user site directory cannot either.
-    // The cost is that `PYTHONHOME` is ignored too: an interpreter that needs
-    // it fails closed like any other unusable helper.
-    //
-    // `-X utf8` is a command-line option rather than `PYTHONUTF8`, because
-    // `-E` would discard the environment variable. It pins stdio and the
-    // filesystem encoding to UTF-8 so the request bytes, the path bytes the
-    // syscalls receive, and the response all agree regardless of the locale.
-    //
-    // The inert cwd and the empty environment make those guarantees
-    // structural rather than flag-deep: there is no ambient directory to
-    // search and no variable to read, whichever interpreter is configured.
+    // The packaged helper runs with an inert cwd and empty environment. The
+    // configured executable is validated outside the confined root first.
     let child: ChildProcessWithoutNullStreams
     try {
-      child = spawn(executable, ["-I", "-X", "utf8", "-c", source], {
+      child = spawn(executable, ["--atomic-fs"], {
         cwd: inertDirectory,
         env: {},
         stdio: ["pipe", "pipe", "pipe"]
@@ -204,7 +186,7 @@ export const spawnHelper = <A>(
       }
     })
     child.on("error", (cause) => complete(Effect.fail(failure(request, cause))))
-    // A helper that exits before draining stdin — an unavailable interpreter,
+    // A helper that exits before draining stdin — an unavailable helper,
     // a rejected request, an interrupt that killed it mid-write — makes the
     // request write fail with EPIPE. Without a listener that is an unhandled
     // `error` event on the pipe, which terminates the host process instead of

@@ -16,9 +16,8 @@ const guarded = KernelFileSystem.layer.pipe(
   Layer.provide(GrantStore.layerNoop)
 )
 
-// On macOS, git and python3 can name the same Apple tool-shim inode.
-// Interleave that other tool with real, confined file operations, not mocks of
-// spawn options: the failure was a different executable consuming Python flags.
+// Interleave another native process with real, confined file operations.
+// The helper path must resolve to the packaged binary on every request.
 const gitVersion = () =>
   new Promise<void>((resolve, reject) => {
     const child = spawn("/usr/bin/git", ["--version"], {

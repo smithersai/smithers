@@ -14,15 +14,10 @@
  * run owner is still running here. `ScopedProcess` runs transient commands with
  * supervised process cleanup and owns their input and output pipes.
  *
- * `AtomicFileSystem` is `NodeHost`'s filesystem slot, and it executes its
- * syscalls through a CPython 3 helper, so a POSIX host with `python3` at
- * `/usr/bin/python3` is a prerequisite by default. Smithers' Node and Bun control
- * hosts accept `SMITHERS_PYTHON3` as an absolute CPython 3 path at startup; unset
- * or empty keeps the default, and relative paths fail startup. They never search
- * `PATH`. Custom library compositions use `AtomicFileSystem.layerWith({ executable })`.
- * The layer BUILDS without an installed interpreter and then
- * fails every guarded filesystem call closed with `PermissionDenied`. Windows is
- * unsupported.
+ * `AtomicFileSystem` is `NodeHost`'s filesystem slot. It executes operations
+ * through the packaged `smithers-jj-export --atomic-fs` helper, selected by
+ * `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` or `layerWith({ executable })`.
+ * A missing helper fails guarded operations closed. Windows is unsupported.
  *
  * @since 0.1.0
  */

@@ -7,10 +7,8 @@
  * performs every guarded path operation descriptor-relative and no-follow
  * instead of failing closed.
  *
- * The extension runs its syscalls through a CPython 3 helper, so the host needs
- * an interpreter supporting `O_NOFOLLOW`, `O_DIRECTORY`, and `dir_fd` at
- * `/usr/bin/python3`. A host that keeps python3 somewhere else builds the layer
- * with {@link layerWith} instead. Windows is unsupported.
+ * The extension uses the packaged `smithers-jj-export --atomic-fs` helper.
+ * `layerWith` accepts another absolute executable path. Windows is unsupported.
  *
  * @since 1.0.0-rc.0
  */
@@ -29,11 +27,10 @@ import type * as Layer from "effect/Layer"
 export const layer: Layer.Layer<FileSystem> = AtomicFileSystem.layer
 
 /**
- * Provides the same filesystem against an explicitly configured interpreter and
+ * Provides the same filesystem against an explicitly configured helper and
  * set of byte limits.
  *
- * This is the escape hatch for a host whose python3 is not at
- * `/usr/bin/python3`, such as an alpine or nix image.
+ * This is the escape hatch for a host with a different packaged helper path.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -41,7 +38,7 @@ export const layer: Layer.Layer<FileSystem> = AtomicFileSystem.layer
 export const layerWith: (options: AtomicFileSystem.Options) => Layer.Layer<FileSystem> = AtomicFileSystem.layerWith
 
 /**
- * The interpreter and byte limits {@link layerWith} accepts.
+ * The helper path and byte limits {@link layerWith} accepts.
  *
  * @category models
  * @since 1.0.0-rc.0

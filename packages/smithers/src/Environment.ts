@@ -47,10 +47,6 @@ export const names: ReadonlyArray<Name> = [
   entry("BACKEND", "Database backend; only `sqlite` is supported"),
   entry("BUG_ENDPOINT", "Where `smthrs bug` posts its report"),
   entry("JJ_PATH", "Explicit path to the jj binary"),
-  entry(
-    "PYTHON3",
-    "Absolute CPython 3 path for native control hosts; unset or empty uses /usr/bin/python3, never PATH"
-  ),
   entry("DETACHED_ADMISSION_TIMEOUT_MS", "How long `up -d` waits for the detached run's admission line"),
   entry("INSIDE_RUN", "Set on an agent process by the engine; keeps its 0.x meaning"),
   entry("RUN_ID", "The run an agent process belongs to; keeps its 0.x meaning")

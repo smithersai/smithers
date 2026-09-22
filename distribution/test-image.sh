@@ -123,12 +123,17 @@ done
 docker run --rm --user 0 -v "$backup_volume:/backups" \
   --entrypoint /bin/sh "$image" -eu -c 'chown smithers:smithers /backups; chmod 0700 /backups'
 
+
 start_postgres "$postgres" "$postgres_volume"
 start_app "$app" "$data_volume" "$postgres"
 origin=$(published_origin "$app")
 wait_http "$app" "$origin"
 
 test "$(docker exec "$app" id -u)" != 0
+if docker run --rm --entrypoint /bin/sh "$image" -c 'command -v python3 >/dev/null 2>&1'; then
+  printf 'distribution image unexpectedly contains python3\n' >&2
+  exit 1
+fi
 docker exec "$app" sh -eu -c '
   test ! -w /opt/smithers
   test -x /opt/smithers/bin/node

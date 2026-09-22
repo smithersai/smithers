@@ -1,72 +1,25 @@
 /**
- * Descriptor-relative filesystem operations for the capability kernel.
- *
- * Node does not expose `openat(2)` / `renameat(2)`. This adapter delegates
- * each operation to a small POSIX helper. The helper opens the filesystem
- * root once, walks every component with `O_NOFOLLOW`, and performs the final
- * syscall relative to a pinned parent descriptor. Missing Python/POSIX
- * primitives are reported as a typed, fail-closed platform error.
- *
- * **Host prerequisite.** A POSIX host with CPython 3 installed at
- * {@link defaultExecutable} (`/usr/bin/python3`), whose `os` module supports
- * `O_NOFOLLOW`, `O_DIRECTORY`, and `dir_fd` for `open`, `mkdir`, `readlink`,
- * `rename`, `rmdir`, `stat`, and `unlink`. A host that installs its
- * interpreter somewhere else configures the absolute path through
- * {@link layerWith}. **Windows is not supported**: it has none of these
- * primitives, and `/usr/bin/python3` does not exist there, so every operation
- * fails closed rather than falling back to a path-based call.
- *
- * The interpreter is addressed by absolute path and never looked up through
- * `PATH`, and the helper runs isolated from the ambient environment — an inert
- * working directory, an empty environment, no module search path entry for the
- * cwd or `PYTHONPATH`, and UTF-8 pinned for the request, the response, and the
- * filesystem encoding — so neither the workspace it confines nor the
- * environment it was started under can change what it executes or which path
- * it addresses.
- *
- * Both directions of the helper protocol are length-framed and bounded by
- * {@link defaultLimits}, so neither a large file nor a malfunctioning helper
- * can make the host allocate without limit.
- *
- * **Cost.** Each ordinary operation or bounded read batch starts one CPython
- * helper. Batches amortize interpreter startup over up to 128 operations on
- * one pinned root. {@link Options.concurrency} exists because without a
- * ceiling an `Effect.forEach(..., { concurrency: "unbounded" })` over fifty
- * paths starts fifty interpreters at once. Batch a wide fan-out, and prefer one
- * recursive `readDirectory` (one fork for the whole tree) to a read per entry.
- * {@link Options.timeoutMs} is the wall-clock backstop underneath all of it.
- *
+ * Descriptor-relative filesystem operations through the packaged Rust helper.
+ * The helper pins the workspace root and walks each component with O_NOFOLLOW.
+ * Requests and responses are length-framed, size-limited, and cancellable.
  * @since 0.1.0
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Layer, PlatformError, Semaphore } from "effect"
 import { availableParallelism } from "node:os"
-import { source } from "./internal/AtomicFileSystemHelperSource.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 
 /**
- * The POSIX helper program the adapter runs. Exported so the protocol guards
- * on the helper's own side can be driven with frames the adapter would never
- * send, which is the only way to observe them.
+ * The default absolute path to the packaged helper. It is a fixed
+ * absolute path and never a `PATH` lookup, so a helper planted in the working
+ * directory or on an injected `PATH` cannot be selected.
  *
  * @since 0.1.0
  * @category constants
  */
-export const program: string = source
-
-/**
- * The absolute path the adapter runs the POSIX helper from. It is a fixed
- * absolute path and never a `PATH` lookup: `-I` isolates the interpreter only
- * *after* one has been chosen, so a `python3` planted in the working directory
- * or on an injected `PATH` would already have executed arbitrary code inside
- * the process that holds the pinned root descriptor.
- *
- * @since 0.1.0
- * @category constants
- */
-export const defaultExecutable = "/usr/bin/python3"
+export const defaultExecutable = "/usr/local/bin/smithers-jj-export"
 
 /**
  * Byte ceilings for the helper protocol. Every one of them is a contract, not
@@ -75,7 +28,7 @@ export const defaultExecutable = "/usr/bin/python3"
  *
  * - `content` bounds the bytes a single `readFile`/`writeFile` may carry.
  * - `request` bounds the framed request; an over-limit request is refused
- *   before an interpreter is even started.
+ *   before an helper is even started.
  * - `response` bounds the framed response, and is what a directory listing is
  *   charged against as it is built. It bounds the REJECTION envelope too, so a
  *   ceiling small enough to cut one off degrades that operation's typed reason
@@ -86,7 +39,7 @@ export const defaultExecutable = "/usr/bin/python3"
  *
  * All except `batchSize` count bytes. The two ceilings that decide whether the host
  * survives a wide fan-out are {@link Options.concurrency}, which bounds how
- * many interpreters run at once, and {@link Options.timeoutMs}, which bounds
+ * many helpers run at once, and {@link Options.timeoutMs}, which bounds
  * how long any one of them may take.
  *
  * @since 0.1.0
@@ -143,7 +96,7 @@ export const defaultConcurrency: number = availableParallelism()
 export const defaultTimeoutMs = 300_000
 
 /**
- * The deliberate seam for a POSIX host that installs CPython somewhere other
+ * The deliberate seam for a POSIX host that installs the native helper somewhere other
  * than {@link defaultExecutable}, or that needs different ceilings. It is
  * configuration, never discovery: the executable is validated as an absolute,
  * executable regular file outside the confined workspace on every request, and
@@ -161,7 +114,7 @@ export interface Options {
    *
    * Each ordinary operation or batch starts one helper, so an unbounded
    * `Effect.forEach` over a directory would start
-   * one interpreter per entry. This ceiling is what keeps a wide fan-out from
+   * one helper per entry. This ceiling is what keeps a wide fan-out from
    * pinning every core; it is a contract, not a tuning knob.
    */
   readonly concurrency?: number | undefined
@@ -302,7 +255,7 @@ const executeFramed = (options: Options, resolved: Settings | { readonly invalid
         }))
       }
       if (body.byteLength > limits.request) {
-        // Refused before an interpreter exists: an over-limit request is caller
+        // Refused before an helper exists: an over-limit request is caller
         // input, and nothing about it improves by being sent.
         return Effect.fail(PlatformError.badArgument({
           module: Protocol.moduleName,
@@ -312,7 +265,7 @@ const executeFramed = (options: Options, resolved: Settings | { readonly invalid
       }
       let executable: string
       try {
-        executable = Transport.usableExecutable(options.executable ?? defaultExecutable, request.boundaryRoot)
+        executable = Transport.usableExecutable(options.executable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ?? defaultExecutable, request.boundaryRoot)
       } catch (cause) {
         return Effect.fail(Protocol.failure(request, cause))
       }
@@ -331,7 +284,7 @@ const execute = (
 
 /**
  * A Node filesystem layer carrying the kernel's atomic host extension, built
- * against an explicitly configured interpreter, byte limits, process ceiling,
+ * against an explicitly configured helper, byte limits, process ceiling,
  * and helper timeout.
  *
  * Every field of {@link Options} except `executable` is read once, here. The

@@ -8,7 +8,7 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Fiber, FileSystem, Layer, Option, Path } from "effect"
-import { execFile, spawnSync } from "node:child_process"
+import { execFile } from "node:child_process"
 import {
   chmod,
   glob,
@@ -44,36 +44,6 @@ afterEach(async () => {
 
 /** Whether nothing is at `path` any more. */
 const gone = (path: string) => lstat(path).then(() => false, () => true)
-
-/**
- * Removes a chain of nested `d` directories descriptor-relative.
- *
- * A tree deeper than PATH_MAX cannot be named, so `rm -rf` and `fs.rm` both
- * fail on it. The suite builds one deliberately, and this is how it takes it
- * back down.
- */
-const unwind = (base: string) =>
-  promisify(execFile)(AtomicFileSystem.defaultExecutable, [
-    "-I",
-    "-c",
-    [
-      "import os, sys",
-      "stack = [os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)]",
-      "while True:",
-      "    try:",
-      "        stack.append(os.open('d', os.O_RDONLY | os.O_DIRECTORY, dir_fd=stack[-1]))",
-      "    except FileNotFoundError:",
-      "        break",
-      "for name in os.listdir(stack[-1]):",
-      "    os.unlink(name, dir_fd=stack[-1])",
-      "while len(stack) > 1:",
-      "    os.close(stack.pop())",
-      "    os.rmdir('d', dir_fd=stack[-1])",
-      "os.close(stack[0])",
-      "os.rmdir(sys.argv[1])"
-    ].join("\n"),
-    base
-  ]).then(() => undefined)
 
 const guarded = (root: string, host: Layer.Layer<FileSystem.FileSystem> = AtomicFileSystem.layer) =>
   KernelFileSystem.layer.pipe(
@@ -495,7 +465,7 @@ describe("Node atomic filesystem", () => {
   /**
    * The interpreter is configuration, not discovery, so every unusable helper
    * is reached through the layer seam rather than by editing `PATH`.
-   * `AtomicFileSystemHelper.test.ts` pins the identity and framing cases; this
+   * The Rust helper tests pin the identity and framing cases; this
    * one only pins that an unusable helper never degrades into a path-based
    * call.
    */
@@ -504,7 +474,7 @@ describe("Node atomic filesystem", () => {
       const root = yield* Effect.promise(() => temporaryDirectory())
       const bin = join(yield* Effect.promise(() => temporaryDirectory()), "bin")
       yield* Effect.promise(() => mkdir(bin))
-      const executable = join(bin, "python3")
+      const executable = join(bin, "helper")
       const trailing = yield* run(
         root,
         Effect.flatMap(FileSystem.FileSystem, (fs) => Effect.flip(fs.readFile(join(root, "missing.txt")))),
@@ -582,67 +552,6 @@ describe("Node atomic filesystem", () => {
       // The refused operations left the root and its contents untouched.
       expect(yield* Effect.promise(() => readFile(join(root, "kept", "file.txt"), "utf8"))).toBe("inside")
     }))
-
-  for (const competitor of ["directory", "file", "symlink"] as const) {
-    it.live(`reopens an intermediate mkdir race winner only when it is a directory: ${competitor}`, () =>
-      Effect.gen(function*() {
-        const root = yield* Effect.promise(async () => realpath(await temporaryDirectory()))
-        const outside = yield* Effect.promise(async () => realpath(await temporaryDirectory()))
-        const info = yield* Effect.promise(() => lstat(root))
-        // Inject a competing real syscall between ENOENT and mkdir, so the
-        // intermediate-component race is deterministic on every platform.
-        const prelude = [
-          "import os",
-          "real_mkdir = os.mkdir",
-          "injected = False",
-          "def competing_mkdir(path, mode=0o777, *, dir_fd=None):",
-          "    global injected",
-          "    if path == 'shared' and not injected:",
-          "        injected = True",
-          competitor === "directory"
-            ? "        real_mkdir(path, mode, dir_fd=dir_fd)"
-            : competitor === "file"
-            ? "        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, dir_fd=dir_fd))"
-            : `        os.symlink(${JSON.stringify(outside)}, path, dir_fd=dir_fd)`,
-          "    return real_mkdir(path, mode, dir_fd=dir_fd)",
-          "os.mkdir = competing_mkdir",
-          "os.supports_dir_fd.add(competing_mkdir)",
-          ""
-        ].join("\n")
-        const body = JSON.stringify({
-          operation: "makeDirectory",
-          boundaryRoot: root,
-          logicalRoot: root,
-          rootIdentity: `${info.dev}:${info.ino}`,
-          path: join(root, "shared", "child"),
-          options: { recursive: true }
-        })
-        const child = spawnSync(AtomicFileSystem.defaultExecutable, [
-          "-I",
-          "-X",
-          "utf8",
-          "-c",
-          prelude + AtomicFileSystem.program
-        ], {
-          cwd: "/",
-          env: {},
-          encoding: "utf8",
-          timeout: 10_000,
-          input: `flows-atomic/1 ${Buffer.byteLength(body)} 10000 10000 10000\n${body}`
-        })
-        expect(child.error).toBeUndefined()
-        const answer = JSON.parse(child.stdout.slice(child.stdout.indexOf("\n") + 1))
-        if (competitor === "directory") {
-          expect(answer).toMatchObject({ ok: true })
-          expect((yield* Effect.promise(() => lstat(join(root, "shared", "child")))).isDirectory()).toBe(true)
-        } else {
-          expect(answer).toMatchObject({ ok: false })
-          expect(["ENOTDIR", "ELOOP"]).toContain(answer.code)
-          expect(yield* Effect.promise(() => gone(join(root, "shared", "child")))).toBe(true)
-          expect(yield* Effect.promise(() => gone(join(outside, "child")))).toBe(true)
-        }
-      }))
-  }
 
   it.live("creates recursive directories concurrently under a shared missing ancestor", () =>
     Effect.gen(function*() {
@@ -1455,86 +1364,9 @@ describe("Node atomic filesystem", () => {
     }))
 
   /**
-   * Recursive removal used to recurse in the helper and list each directory in
-   * full, so a deep tree hit the interpreter's recursion limit and a wide one
-   * was materialized whole. Both are bounded now, and the outcome is one
-   * documented result rather than either of two.
-   */
-  it.live("removes a wide and a deep tree, and refuses one past the depth bound", () =>
-    Effect.gen(function*() {
-      const root = yield* Effect.promise(() => temporaryDirectory())
-      const wide = join(root, "wide")
-      yield* Effect.promise(() => mkdir(wide))
-      yield* Effect.promise(async () => {
-        for (let index = 0; index < 2_000; index += 1) {
-          await writeFile(join(wide, `entry-${index}.txt`), "")
-        }
-      })
-      // Built descriptor-relative, because these depths overrun PATH_MAX and
-      // no path-based mkdir can reach them. That is also the point: the
-      // removal walk is descriptor-relative, so it can delete a tree the
-      // ordinary tools cannot even name.
-      const chain = (depth: number, name: string) => {
-        const base = join(root, name)
-        return Effect.promise(async () => {
-          await mkdir(base)
-          await promisify(execFile)(AtomicFileSystem.defaultExecutable, [
-            "-I",
-            "-c",
-            [
-              "import os, sys",
-              "fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY)",
-              "for _ in range(int(sys.argv[2])):",
-              "    os.mkdir('d', dir_fd=fd)",
-              "    nxt = os.open('d', os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)",
-              "    os.close(fd)",
-              "    fd = nxt",
-              "os.close(os.open('leaf.txt', os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd))",
-              "os.close(fd)"
-            ].join("\n"),
-            base,
-            String(depth)
-          ])
-          return base
-        })
-      }
-      // Comfortably inside the 512-level ceiling, and far past the depth the
-      // old recursive helper could reach without exhausting the interpreter.
-      const deep = yield* chain(400, "deep")
-      // Past the ceiling, so it is refused with a typed reason instead of
-      // half-deleting the tree and reporting an interpreter crash.
-      const beyond = yield* chain(600, "beyond")
-
-      const outcome = yield* run(
-        root,
-        Effect.gen(function*() {
-          const fs = yield* FileSystem.FileSystem
-          return {
-            wide: yield* Effect.result(fs.remove(wide, { recursive: true })),
-            deep: yield* Effect.result(fs.remove(deep, { recursive: true })),
-            bounded: yield* Effect.flip(fs.remove(beyond, { recursive: true }))
-          }
-        })
-      )
-
-      expect(outcome.wide._tag).toBe("Success")
-      expect(outcome.deep._tag).toBe("Success")
-      expect(outcome.bounded).toMatchObject({ reason: { _tag: "BadResource" } })
-      expect(yield* Effect.promise(() => gone(wide))).toBe(true)
-      expect(yield* Effect.promise(() => gone(deep))).toBe(true)
-      // The refused removal stopped rather than finishing, so the tree is
-      // still there for an operator to deal with. It also cannot be cleaned up
-      // by name, which is why this case unwinds it descriptor-relative before
-      // the suite's own rm reaches it.
-      expect(yield* Effect.promise(() => gone(beyond))).toBe(false)
-      yield* Effect.promise(() => unwind(beyond))
-      expect(yield* Effect.promise(() => gone(beyond))).toBe(true)
-    }), 120_000)
-
-  /**
    * A named pipe used to read as a successful, EMPTY regular file, and a
    * write-only open of one parked the helper inside `open()` until a reader
-   * arrived. `AtomicFileSystemHelper.test.ts` pins the whole special-file
+   * arrived. The Rust helper tests pin the whole special-file
    * family; this case stays here because it is the one an ordinary workspace
    * writer can plant, and it must terminate.
    */
@@ -1545,15 +1377,7 @@ describe("Node atomic filesystem", () => {
         const flags: ReadonlyArray<FileSystem.OpenFlag> = ["w", "a", "r+", "w+", "a+"]
         const root = yield* Effect.promise(() => temporaryDirectory())
         const pipe = join(root, "pipe")
-        // The adapter already requires python3, so this needs no new dependency.
-        yield* Effect.promise(() =>
-          promisify(execFile)(AtomicFileSystem.defaultExecutable, [
-            "-I",
-            "-c",
-            "import os, sys; os.mkfifo(sys.argv[1])",
-            pipe
-          ])
-        )
+        yield* Effect.promise(() => promisify(execFile)("mkfifo", [pipe]))
 
         const outcome = yield* run(
           root,
@@ -1588,59 +1412,6 @@ describe("Node atomic filesystem", () => {
   )
 
   /**
-   * `python3 -c` prepends the current working directory to `sys.path`, and the
-   * cwd of a harness process is normally the very workspace this adapter
-   * confines. A module planted there — or on `PYTHONPATH` — used to be
-   * imported and executed inside the helper, which holds the pinned root
-   * descriptor, so writing one file into the workspace bought arbitrary code
-   * on the trusted side of the boundary. The proof is a planted `base64.py`
-   * that both records that it ran and corrupts the read it takes part in.
-   */
-  it.live("never imports a module planted in the working directory or on PYTHONPATH", () =>
-    Effect.gen(function*() {
-      const root = yield* Effect.promise(() => temporaryDirectory())
-      const target = join(root, "target.txt")
-      yield* Effect.promise(() => writeFile(target, "inside"))
-
-      const plant = async (marker: string) => {
-        const directory = await temporaryDirectory()
-        await writeFile(
-          join(directory, "base64.py"),
-          `open(${JSON.stringify(marker)}, "w").write("executed")\n` +
-            `def b64encode(data): return b"UFdORUQ="\n` +
-            `def b64decode(data): return b"PWNED"\n`
-        )
-        return directory
-      }
-      const workingDirectoryMarker = join(yield* Effect.promise(() => temporaryDirectory()), "cwd-executed")
-      const environmentMarker = join(yield* Effect.promise(() => temporaryDirectory()), "env-executed")
-      const workingDirectory = yield* Effect.promise(() => plant(workingDirectoryMarker))
-      const environmentDirectory = yield* Effect.promise(() => plant(environmentMarker))
-
-      const originalCwd = process.cwd()
-      const originalPythonPath = process.env.PYTHONPATH
-      let bytes: Uint8Array
-      try {
-        process.chdir(workingDirectory)
-        process.env.PYTHONPATH = environmentDirectory
-        bytes = yield* run(
-          root,
-          Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFile(target))
-        )
-      } finally {
-        process.chdir(originalCwd)
-        if (originalPythonPath === undefined) delete process.env.PYTHONPATH
-        else process.env.PYTHONPATH = originalPythonPath
-      }
-
-      // The real stdlib encoder ran, so the caller sees the real file...
-      expect(new TextDecoder().decode(bytes)).toBe("inside")
-      // ...and neither planted module was ever imported, so neither ran at all.
-      expect(yield* Effect.promise(() => readFile(workingDirectoryMarker, "utf8").catch(() => null))).toBe(null)
-      expect(yield* Effect.promise(() => readFile(environmentMarker, "utf8").catch(() => null))).toBe(null)
-    }))
-
-  /**
    * The request, the response, and the bytes the syscalls receive are all
    * UTF-8, whatever locale the host was started under. Decoding the request
    * with the ambient locale used to address a DIFFERENT file for any
@@ -1653,7 +1424,7 @@ describe("Node atomic filesystem", () => {
       const name = "ラン.txt"
       const target = join(root, name)
       const content = "héllo — ✓"
-      const overrides = { LANG: "en_US.ISO8859-1", LC_ALL: "en_US.ISO8859-1", PYTHONIOENCODING: "latin-1" }
+      const overrides = { LANG: "en_US.ISO8859-1", LC_ALL: "en_US.ISO8859-1" }
       const original = Object.fromEntries(
         Object.keys(overrides).map((key) => [key, process.env[key]])
       )
@@ -1693,7 +1464,7 @@ describe("Node atomic filesystem", () => {
       yield* Effect.promise(() => writeFile(target, "inside"))
       const bin = join(yield* Effect.promise(() => temporaryDirectory()), "bin")
       yield* Effect.promise(() => mkdir(bin))
-      const executable = join(bin, "python3")
+      const executable = join(bin, "helper")
       yield* Effect.promise(() =>
         writeFile(
           executable,

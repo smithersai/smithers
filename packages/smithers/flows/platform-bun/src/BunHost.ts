@@ -47,7 +47,7 @@ import * as BunFileSystem from "./BunFileSystem.ts"
  *
  * `AtomicFileSystem` is here for the same reason `NodeHost` re-exports it: it
  * owns the only configuration escape hatch the filesystem slot has, and a Bun
- * program whose python3 is not at `/usr/bin/python3` needs to reach
+ * program with a different packaged helper path needs to reach
  * `AtomicFileSystem.layerWith` without hand-composing the other four tags.
  *
  * `BunJj` is deliberately absent: it belongs to `@smthrs/jj` and is imported

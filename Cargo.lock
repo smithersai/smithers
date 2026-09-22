@@ -988,7 +988,7 @@ dependencies = [
  "faster-hex",
  "gix-features",
  "sha1-checked",
- "sha2",
+ "sha2 0.11.0",
  "thiserror",
 ]
 
@@ -2352,6 +2352,17 @@ dependencies = [
 
 [[package]]
 name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
@@ -2431,11 +2442,13 @@ dependencies = [
  "base64",
  "futures",
  "gix",
+ "globset",
  "jj-lib",
  "libc",
  "pollster",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "toml_edit",

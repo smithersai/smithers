@@ -2,7 +2,6 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Fiber, FileSystem, Layer, Path, Result } from "effect"
-import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   chmod,
@@ -372,58 +371,5 @@ describe("batch confinement and concurrent mutation", () => {
     expect(result.entries[0]!.result).toMatchObject({ _tag: "Failure", failure: { reason: { _tag: "BadResource" } } })
   })
 
-  it.each(["rewrite", "rename", "remove", "ancestor rename"])(
-    "refuses a %s during descriptor measurement",
-    async (mutation) => {
-      const root = await temporary()
-      const directory = mutation === "ancestor rename" ? join(root, "dir") : root
-      if (directory !== root) await mkdir(directory)
-      const target = join(directory, "a")
-      await writeFile(target, "before")
-      const prelude =
-        `import os\noriginal_read = os.read\ndid_mutate = False\ndef mutate_read(fd,count):\n    global did_mutate\n    data = original_read(fd,count)\n    if data and not did_mutate:\n        did_mutate = True\n${
-          mutation === "rewrite"
-            ? `        with open(${JSON.stringify(target)},'wb') as changed: changed.write(b'AFTER!')`
-            : mutation === "remove"
-            ? `        os.unlink(${JSON.stringify(target)})`
-            : mutation === "ancestor rename"
-            ? `        os.rename(${JSON.stringify(directory)},${JSON.stringify(join(root, "moved"))})`
-            : `        os.rename(${JSON.stringify(target)},${JSON.stringify(join(root, "moved"))})\n        with open(${
-              JSON.stringify(target)
-            },'wb') as changed: changed.write(b'before')`
-        }\n    return data\nos.read = mutate_read\n`
-      const request = {
-        operation: "batch",
-        boundaryRoot: root,
-        logicalRoot: root,
-        rootIdentity: await rootIdentity(root),
-        batchSize: 128,
-        batchEntry: 10000,
-        requests: [{ operation: "digest", path: target }]
-      }
-      const body = JSON.stringify(request)
-      const response = await new Promise<any>((resolve, reject) => {
-        const child = spawn(AtomicFileSystem.defaultExecutable, [
-          "-I",
-          "-X",
-          "utf8",
-          "-c",
-          prelude + AtomicFileSystem.program
-        ], { cwd: "/", env: {}, stdio: "pipe" })
-        const chunks: Array<Buffer> = []
-        child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
-        child.on("error", reject)
-        child.on("close", () => {
-          const output = Buffer.concat(chunks).toString("utf8")
-          try {
-            resolve(JSON.parse(output.slice(output.indexOf("\n") + 1)))
-          } catch (error) {
-            reject(error)
-          }
-        })
-        child.stdin.end(`flows-atomic/1 ${Buffer.byteLength(body)} 10000 10000 10000\n${body}`)
-      })
-      expect(response).toMatchObject({ ok: true, value: { entries: [{ result: { ok: false, code: "EBUSY" } }] } })
-    }
-  )
+
 })
