@@ -49,7 +49,7 @@ describe("CI concurrency", () => {
   it("cancels superseded PR runs while retaining a verdict for each pushed commit", () => {
     const workflow = render(goldenAttrs)
     expect(workflow).toContain(
-      "concurrency:\n  group: ci-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: true\n"
+      "concurrency:\n  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}\n  cancel-in-progress: true\n"
     )
     expect(render({ ...goldenAttrs, cancelInProgress: false })).toContain("cancel-in-progress: false")
   })
@@ -117,7 +117,7 @@ on:
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: ci-\${{ github.event.pull_request.number || github.sha }}
+  group: ci-\${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}
   cancel-in-progress: true
 jobs:
   "test":

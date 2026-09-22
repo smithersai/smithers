@@ -1335,7 +1335,7 @@ export const render = (attrs: Attrs): string => {
     "on:",
     ...triggers,
     "concurrency:",
-    "  group: ci-${{ github.event.pull_request.number || github.sha }}",
+    "  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}",
     `  cancel-in-progress: ${attrs.cancelInProgress}`,
     "jobs:"
   ]
