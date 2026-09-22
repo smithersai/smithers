@@ -52,7 +52,7 @@ try {
       SMITHERS_REAL_API_ORIGIN: apiOrigin,
       SMITHERS_REAL_NATIVE_CDP_ENDPOINT: envelope.cdpEndpoint,
       SMITHERS_REAL_NATIVE_WINDOW_URL: session.state.window!.url!,
-      SMITHERS_REAL_NATIVE_TARGET_NONCE: session.targetNonce
+      SMITHERS_REAL_NATIVE_TARGET_ID: session.targetId
     },
     stdin: "inherit",
     stdout: "inherit",

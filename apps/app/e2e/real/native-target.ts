@@ -2,11 +2,11 @@ import type { BrowserContext, Page } from "@playwright/test"
 
 const ATTACH_TIMEOUT_MS = 30_000
 
-/** Find the packaged CEF page across CDP contexts after it changes routes. */
+/** Find the bridge-correlated CEF target across CDP contexts after it changes routes. */
 export const nativeTarget = async (
   contexts: ReadonlyArray<BrowserContext>,
   windowUrl: string,
-  nonce: string
+  targetId: string
 ): Promise<{ readonly context: BrowserContext; readonly page: Page }> => {
   const origin = new URL(windowUrl).origin
   const deadline = Date.now() + ATTACH_TIMEOUT_MS
@@ -16,11 +16,15 @@ export const nativeTarget = async (
         let pageOrigin: string
         try { pageOrigin = new URL(page.url()).origin } catch { continue }
         if (pageOrigin !== origin) continue
-        const observed = await page.evaluate(() =>
-          (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget ??
-          sessionStorage.getItem("smithersNativeMatrixTarget")
-        ).catch(() => undefined)
-        if (observed === nonce) return { context, page }
+        const observed = await context.newCDPSession(page).then(async (session) => {
+          try {
+            const { targetInfo } = await session.send("Target.getTargetInfo") as { targetInfo?: { targetId?: string } }
+            return targetInfo?.targetId
+          } finally {
+            await session.detach()
+          }
+        }).catch(() => undefined)
+        if (observed === targetId) return { context, page }
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 100))

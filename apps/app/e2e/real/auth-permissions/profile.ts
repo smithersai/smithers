@@ -321,9 +321,9 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     if (typeof baseURL !== "string") throw new Error("The authenticated profile fixture requires a configured baseURL.")
     if (process.env.SMITHERS_REAL_NATIVE_CDP_ENDPOINT) {
       const windowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL
-      const nonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE
-      if (!windowUrl || !nonce) throw new Error("The packaged Electrobun target requires its window URL and nonce.")
-      const target = await nativeTarget(browser.contexts(), windowUrl, nonce)
+      const targetId = process.env.SMITHERS_REAL_NATIVE_TARGET_ID
+      if (!windowUrl || !targetId) throw new Error("The packaged Electrobun target requires its window URL and CDP target ID.")
+      const target = await nativeTarget(browser.contexts(), windowUrl, targetId)
       await use(target.context)
       return
     }
@@ -409,7 +409,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       : (await nativeTarget(
         [context],
         nativeWindowUrl,
-        process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE ?? ""
+        process.env.SMITHERS_REAL_NATIVE_TARGET_ID ?? ""
       )).page
     await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
     const requiredEnvironment = profileEnvironment

@@ -49,7 +49,7 @@ const fixtureRoot = resolve(supportDir, "../../fixtures")
 
 const nativeCDPEndpoint = process.env.SMITHERS_REAL_NATIVE_CDP_ENDPOINT?.trim()
 const nativeWindowUrl = process.env.SMITHERS_REAL_NATIVE_WINDOW_URL?.trim()
-const nativeTargetNonce = process.env.SMITHERS_REAL_NATIVE_TARGET_NONCE?.trim()
+const nativeTargetId = process.env.SMITHERS_REAL_NATIVE_TARGET_ID?.trim()
 const selectedBase = nativeCDPEndpoint === undefined || nativeCDPEndpoint === "" ? base : base.extend({
   browser: [async ({ playwright }, use) => {
     const browser = await playwright.chromium.connectOverCDP(nativeCDPEndpoint)
@@ -57,17 +57,17 @@ const selectedBase = nativeCDPEndpoint === undefined || nativeCDPEndpoint === ""
     // Electrobun owns the browser process. Its launcher performs teardown.
   }, { scope: "worker" }],
   context: async ({ browser }, use) => {
-    if (!nativeWindowUrl || !nativeTargetNonce) {
-      throw new Error("Native CDP attachment requires the packaged window URL and bridge correlation nonce.")
+    if (!nativeWindowUrl || !nativeTargetId) {
+      throw new Error("Native CDP attachment requires the packaged window URL and CDP target ID.")
     }
-    const target = await nativeTarget(browser.contexts(), nativeWindowUrl, nativeTargetNonce)
+    const target = await nativeTarget(browser.contexts(), nativeWindowUrl, nativeTargetId)
     await use(target.context)
   },
   page: async ({ context }, use) => {
-    if (!nativeWindowUrl || !nativeTargetNonce) {
-      throw new Error("Native CDP attachment requires the packaged window URL and bridge correlation nonce.")
+    if (!nativeWindowUrl || !nativeTargetId) {
+      throw new Error("Native CDP attachment requires the packaged window URL and CDP target ID.")
     }
-    await use((await nativeTarget([context], nativeWindowUrl, nativeTargetNonce)).page)
+    await use((await nativeTarget([context], nativeWindowUrl, nativeTargetId)).page)
   }
 })
 

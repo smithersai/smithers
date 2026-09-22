@@ -20,7 +20,7 @@ export interface NativeWindowDriverSession {
   readonly page: Page
   readonly state: PackagedAppState
   readonly rendererOrigin: string
-  readonly targetNonce: string
+  readonly targetId: string
   readonly close: () => Promise<void>
 }
 
@@ -115,16 +115,17 @@ export const launchNativeWindowDriver = async (options: {
     browser = await chromium.connectOverCDP(options.envelope.cdpEndpoint, { timeout: ATTACH_TIMEOUT_MS })
     const page = await pageForWindow(browser, state.window.url)
     const nonce = randomUUID()
-    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(nonce)}; sessionStorage.setItem("smithersNativeMatrixTarget", ${JSON.stringify(nonce)})`)
+    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(nonce)}`)
     const attachedNonce = await page.evaluate(() =>
       (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget)
     if (attachedNonce !== nonce) {
       throw new Error("CDP target did not correlate with the packaged window bridge")
     }
-    await page.addInitScript((value) => {
-      (globalThis as typeof globalThis & { __smithersNativeMatrixTarget?: string }).__smithersNativeMatrixTarget = value
-      sessionStorage.setItem("smithersNativeMatrixTarget", value)
-    }, nonce)
+    const cdp = await page.context().newCDPSession(page)
+    const { targetInfo } = await cdp.send("Target.getTargetInfo") as { targetInfo?: { targetId?: string } }
+    await cdp.detach()
+    const targetId = targetInfo?.targetId
+    if (!targetId) throw new Error("CDP did not identify the bridge-correlated packaged window target")
     const rendererOrigin = new URL(state.window.url).origin
     let closed = false
     return {
@@ -133,7 +134,7 @@ export const launchNativeWindowDriver = async (options: {
       page,
       state,
       rendererOrigin,
-      targetNonce: nonce,
+      targetId,
       close: async () => {
         if (closed) return
         closed = true
