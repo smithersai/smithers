@@ -149,6 +149,7 @@ type atomicRunnerWorkflowTaskClaimer interface {
 
 type runnerService struct {
 	queries              RunnerQuerier
+	requireTransactions  bool
 	dispatcher           webhooks.Dispatcher
 	commitStatusWriter   RunnerCommitStatusWriter
 	checkRunService      services.GitHubCheckRunService
@@ -172,6 +173,11 @@ var githubCommandAnnotationPattern = regexp.MustCompile(`^\s*::(error|warning|no
 var pathLineAnnotationPattern = regexp.MustCompile(`^\s*([^:\s][^:]*):(\d+)(?::(\d+))?:\s*(.+)$`)
 
 type RunnerServiceOption func(*runnerService)
+
+// WithRunnerTransactions requires atomic hosted task and runner transitions.
+func WithRunnerTransactions() RunnerServiceOption {
+	return func(s *runnerService) { s.requireTransactions = true }
+}
 
 func WithRunnerWebhookDispatcher(dispatcher webhooks.Dispatcher) RunnerServiceOption {
 	return func(s *runnerService) {
@@ -361,6 +367,14 @@ func (s *runnerService) Terminate(ctx context.Context, runnerID int64) error {
 		return pkgerrors.Internal("runner store unavailable")
 	}
 
+	if s.requireTransactions {
+		if _, ok := s.queries.(interface {
+			BeginTx(context.Context) (pgx.Tx, error)
+			WithTx(pgx.Tx) *deploymentdb.Queries
+		}); !ok {
+			return pkgerrors.Internal("runner store requires transactions")
+		}
+	}
 	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
 			return pkgerrors.Internal("failed to begin runner termination transaction")
@@ -852,6 +866,14 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 		}
 	}
 
+	if s.requireTransactions {
+		if _, ok := s.queries.(interface {
+			BeginTx(context.Context) (pgx.Tx, error)
+			WithTx(pgx.Tx) *deploymentdb.Queries
+		}); !ok {
+			return pkgerrors.Internal("runner store requires transactions")
+		}
+	}
 	if tx, txQueries, transactional, txErr := deploymentdb.BeginTx(ctx, s.queries); transactional {
 		if txErr != nil {
 			return pkgerrors.Internal("failed to begin task completion transaction")

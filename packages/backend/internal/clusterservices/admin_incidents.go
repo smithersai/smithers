@@ -40,9 +40,17 @@ type AdminIncidentBulkInput struct {
 }
 
 type AdminIncidentsService struct {
-	queries AdminIncidentsQuerier
-	now     func() time.Time
+	queries             AdminIncidentsQuerier
+	requireTransactions bool
+	now                 func() time.Time
 }
+
+// NewHostedAdminIncidentsService requires mutations and audit writes to share a transaction.
+func NewHostedAdminIncidentsService(q *deploymentdb.Queries) *AdminIncidentsService {
+	return &AdminIncidentsService{queries: q, now: time.Now, requireTransactions: true}
+}
+
+var _ incidentTransactionalQuerier = (*deploymentdb.Queries)(nil)
 
 func NewAdminIncidentsService(q AdminIncidentsQuerier) *AdminIncidentsService {
 	return &AdminIncidentsService{queries: q, now: time.Now}
@@ -112,6 +120,9 @@ func (s *AdminIncidentsService) transaction(ctx context.Context, fn func(AdminIn
 			return pkgerrors.Internal("failed to commit incident mutation")
 		}
 		return nil
+	}
+	if s.requireTransactions {
+		return pkgerrors.Internal("incident store requires transactions")
 	}
 	return fn(s.queries)
 }

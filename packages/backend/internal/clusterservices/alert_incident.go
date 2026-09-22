@@ -85,10 +85,11 @@ type alertIncidentTxQuerier interface {
 // alert_incidents rows and, when a policy is registered as auto-remediable,
 // enqueues alert_remediation_jobs drained by AlertRemediationWorker.
 type AlertIncidentService struct {
-	queries  AlertIncidentQuerier
-	registry *alertregistry.Registry
-	logger   *slog.Logger
-	now      func() time.Time
+	queries             AlertIncidentQuerier
+	requireTransactions bool
+	registry            *alertregistry.Registry
+	logger              *slog.Logger
+	now                 func() time.Time
 	// remediationEnabled gates only the ENQUEUE half of admission. Recording
 	// the incident is unconditional: alert ingestion is how an operator (and
 	// /api/admin/system/incidents) learns an alert fired at all, and it must
@@ -98,6 +99,13 @@ type AlertIncidentService struct {
 
 // AlertIncidentOption customizes AlertIncidentService construction.
 type AlertIncidentOption func(*AlertIncidentService)
+
+// WithAlertTransactions refuses admission when the store cannot serialize policy decisions.
+func WithAlertTransactions() AlertIncidentOption {
+	return func(s *AlertIncidentService) { s.requireTransactions = true }
+}
+
+var _ alertIncidentTxQuerier = (*deploymentdb.Queries)(nil)
 
 // WithAlertRemediationEnabled turns automatic remediation enqueueing on or off
 // without affecting incident recording. Pass false when no remediation worker
@@ -152,6 +160,9 @@ func (s *AlertIncidentService) HandleAlertIncident(ctx context.Context, incident
 
 	txq, ok := s.queries.(alertIncidentTxQuerier)
 	if !ok {
+		if s.requireTransactions {
+			return pkgerrors.Internal("alert store requires transactions")
+		}
 		// Unit-test fakes and any querier that doesn't support transactions
 		// degrade to the unserialized path (existing behavior).
 		return s.admitAndEnqueue(ctx, s.queries, incident, entry, runbook, workflow)
