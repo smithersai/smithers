@@ -15,7 +15,6 @@ func TestGetRepoByOwnerAndName_ResolvesUserOwnedAndOrgOwned(t *testing.T) {
 
 	userOwnerID := mustCreateUser(t, pool, "RepoOwner")
 	userRepo, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: userOwnerID, Valid: true},
 		Name:            "Mixed-Repo",
 		LowerName:       "mixed-repo",
@@ -33,7 +32,6 @@ func TestGetRepoByOwnerAndName_ResolvesUserOwnedAndOrgOwned(t *testing.T) {
 	})
 	require.NoError(t, err)
 	orgRepo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "Platform",
 		LowerName:       "platform",
@@ -97,7 +95,6 @@ func TestIsOrgOwnerForRepoUser_ReturnsTrueOnlyForOwnerRole(t *testing.T) {
 	})
 	require.NoError(t, err)
 	repo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "owner-check-repo",
 		LowerName:       "owner-check-repo",
@@ -217,7 +214,6 @@ func TestGetHighestTeamPermissionForRepoUser_ReturnsMaxPermission(t *testing.T) 
 	})
 	require.NoError(t, err)
 	repo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "team-repo",
 		LowerName:       "team-repo",

@@ -15,7 +15,6 @@ func TestSearchRepositoriesFTS_MatchesNameDescriptionTopicsAndRanks(t *testing.T
 	ownerID := mustCreateUser(t, pool, "search-repos-owner")
 
 	repoByName, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "auth-core",
 		LowerName:       "auth-core",
@@ -26,7 +25,6 @@ func TestSearchRepositoriesFTS_MatchesNameDescriptionTopicsAndRanks(t *testing.T
 	require.NoError(t, err)
 
 	repoByDesc, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "identity",
 		LowerName:       "identity",
@@ -37,7 +35,6 @@ func TestSearchRepositoriesFTS_MatchesNameDescriptionTopicsAndRanks(t *testing.T
 	require.NoError(t, err)
 
 	repoByTopic, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "service-tools",
 		LowerName:       "service-tools",
@@ -91,7 +88,6 @@ func TestSearchRepositoriesFTS_RespectsVisibility(t *testing.T) {
 
 	// Public user-owned repo (visible to everyone)
 	_, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "public-auth",
 		LowerName:       "public-auth",
@@ -103,7 +99,6 @@ func TestSearchRepositoriesFTS_RespectsVisibility(t *testing.T) {
 
 	// Private user-owned repo (visible only to owner)
 	_, err = q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "private-auth",
 		LowerName:       "private-auth",
@@ -147,7 +142,6 @@ func TestSearchRepositoriesFTS_RespectsVisibility(t *testing.T) {
 	require.NoError(t, err)
 
 	orgRepo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "org-auth",
 		LowerName:       "org-auth",

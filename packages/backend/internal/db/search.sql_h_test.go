@@ -26,7 +26,6 @@ func TestSearchSQL_H_FTSRoundTripAndDelete(t *testing.T) {
 		Name:            repoName,
 		LowerName:       strings.ToLower(repoName),
 		Description:     "repository " + term,
-		StorageSetID:    "s1",
 		IsPublic:        true,
 		DefaultBookmark: "main",
 	})

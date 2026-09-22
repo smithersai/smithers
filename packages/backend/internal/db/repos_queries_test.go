@@ -16,7 +16,6 @@ func TestCreateAndDeleteRepo(t *testing.T) {
 	ownerID := mustCreateUser(t, pool, "repo-query-owner")
 
 	repo, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: ownerID, Valid: true},
 		Name:            "query-repo",
 		LowerName:       "query-repo",
@@ -49,7 +48,6 @@ func TestCreateOrgRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	repo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "org-repo",
 		LowerName:       "org-repo",
@@ -65,7 +63,6 @@ func TestCreateOrgRepo(t *testing.T) {
 	// Same org namespace + same name must conflict.
 	mustExpectQueryError(t, pool, func(spQ *Queries) error {
 		_, err := spQ.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-			StorageSetID:    "s1",
 			OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 			Name:            "org-repo",
 			LowerName:       "org-repo",
@@ -95,7 +92,6 @@ func TestRepoLookupListUpdateAndCountQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	userRepo, err := q.CreateRepo(context.Background(), CreateRepoParams{
-		StorageSetID:    "s1",
 		UserID:          pgtype.Int8{Int64: userID, Valid: true},
 		Name:            "SurfaceRepo",
 		LowerName:       "surfacerepo",
@@ -106,7 +102,6 @@ func TestRepoLookupListUpdateAndCountQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	orgRepo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "OrgSurfaceRepo",
 		LowerName:       "orgsurfacerepo",
@@ -184,7 +179,6 @@ func TestListPublicOrgRepos_FiltersPrivateRepos(t *testing.T) {
 	require.NoError(t, err)
 
 	publicRepo, err := q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "public-repo",
 		LowerName:       "public-repo",
@@ -195,7 +189,6 @@ func TestListPublicOrgRepos_FiltersPrivateRepos(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = q.CreateOrgRepo(context.Background(), CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "private-repo",
 		LowerName:       "private-repo",
@@ -232,7 +225,6 @@ func TestDeleteOrganizationCascadesRepos(t *testing.T) {
 	require.NoError(t, err)
 
 	repo, err := q.CreateOrgRepo(ctx, CreateOrgRepoParams{
-		StorageSetID:    "s1",
 		OrgID:           pgtype.Int8{Int64: org.ID, Valid: true},
 		Name:            "cascade-repo",
 		LowerName:       "cascade-repo",

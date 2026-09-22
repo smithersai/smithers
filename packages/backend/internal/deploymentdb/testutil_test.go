@@ -1,4 +1,7 @@
-package db
+package deploymentdb
+
+// This fixture loads the hosted schema for tests of private query adapters.
+// Product-only schema checks live in db/product and use product.Apply.
 
 import (
 	"context"
@@ -20,17 +23,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/database"
+	productdb "github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
-const defaultTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test?sslmode=disable"
+const defaultTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_deploymentdb_test?sslmode=disable"
 
 // sharedPool is initialized once in TestMain and reused across all tests.
 var sharedPool *pgxpool.Pool
 
 // resolveDBTestDatabaseURL returns the database URL for db package tests.
-// Precedence: SMITHERS_TEST_DB_DATABASE_URL -> SMITHERS_TEST_DATABASE_URL -> default.
+// Precedence: SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL -> SMITHERS_TEST_DATABASE_URL -> default.
 func resolveDBTestDatabaseURL(getenv func(string) string) string {
-	if v := getenv("SMITHERS_TEST_DB_DATABASE_URL"); v != "" {
+	if v := getenv("SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL"); v != "" {
 		return v
 	}
 	if v := getenv("SMITHERS_TEST_DATABASE_URL"); v != "" {
@@ -145,7 +149,7 @@ func findSchemaPath() string {
 	return candidates[0] // will fail at ReadFile
 }
 
-func resetTestData(ctx context.Context, db DBTX) error {
+func resetTestData(ctx context.Context, db productdb.DBTX) error {
 	_, err := db.Exec(ctx, `
 		TRUNCATE
 			sandbox_egress_audit,
@@ -367,7 +371,7 @@ CREATE TRIGGER zzz_test_settle_repository_insert
     FOR EACH ROW EXECUTE FUNCTION test_settle_repository_insert();
 `
 
-func newQueries(t *testing.T) (*Queries, DBTX) {
+func newQueries(t *testing.T) (*Queries, productdb.DBTX) {
 	t.Helper()
 
 	tx, err := sharedPool.Begin(context.Background())
@@ -388,7 +392,7 @@ func schemaPath(t *testing.T) string {
 	return findSchemaPath()
 }
 
-func mustCreateUser(t *testing.T, pool DBTX, username string) int64 {
+func mustCreateUser(t *testing.T, pool productdb.DBTX, username string) int64 {
 	t.Helper()
 
 	lowerUsername := strings.ToLower(username)
@@ -409,7 +413,7 @@ func mustCreateUser(t *testing.T, pool DBTX, username string) int64 {
 	return id
 }
 
-func mustCreateRepo(t *testing.T, pool DBTX, userID int64, name string) int64 {
+func mustCreateRepo(t *testing.T, pool productdb.DBTX, userID int64, name string) int64 {
 	t.Helper()
 
 	lowerName := strings.ToLower(name)
@@ -443,7 +447,7 @@ func newRepositoryStorageOperationToken(t *testing.T) string {
 // delete protocol: persist the exact stable-id/source identity, authorize only
 // this transaction, delete the row, then remove the settled intent. It does not
 // contact repo-host and is therefore only suitable for database tests.
-func mustDurablyDeleteRepoForTest(t *testing.T, tx DBTX, repositoryID int64) {
+func mustDurablyDeleteRepoForTest(t *testing.T, tx productdb.DBTX, repositoryID int64) {
 	t.Helper()
 	pgxTx, ok := tx.(pgx.Tx)
 	require.True(t, ok, "durable repository test helper requires one explicit transaction")
@@ -502,7 +506,7 @@ func mustDurablyDeleteRepoCommittedForTest(t *testing.T, pool *pgxpool.Pool, rep
 // ownership transfer. Exactly one target owner must be supplied.
 func mustDurablyMoveRepoForTest(
 	t *testing.T,
-	tx DBTX,
+	tx productdb.DBTX,
 	repositoryID int64,
 	targetUserID pgtype.Int8,
 	targetOrgID pgtype.Int8,
@@ -565,7 +569,7 @@ func mustDurablyMoveRepoForTest(
 // in a single call. It returns both IDs so callers always use dynamically assigned
 // IDs instead of hard-coded values. This prevents FK constraint violations from
 // missing parent entities — the root cause of SCHEMA-3.
-func mustCreateUserAndRepo(t *testing.T, pool DBTX, username, repoName string) (userID int64, repoID int64) {
+func mustCreateUserAndRepo(t *testing.T, pool productdb.DBTX, username, repoName string) (userID int64, repoID int64) {
 	t.Helper()
 
 	userID = mustCreateUser(t, pool, username)
@@ -573,9 +577,9 @@ func mustCreateUserAndRepo(t *testing.T, pool DBTX, username, repoName string) (
 	return userID, repoID
 }
 
-func mustCreateIssue(t *testing.T, q *Queries, repoID, authorID int64, title string) Issue {
+func mustCreateIssue(t *testing.T, q *Queries, repoID, authorID int64, title string) productdb.Issue {
 	t.Helper()
-	issue, err := q.CreateIssue(context.Background(), CreateIssueParams{
+	issue, err := q.CreateIssue(context.Background(), productdb.CreateIssueParams{
 		RepositoryID: repoID,
 		Title:        title,
 		Body:         "",
@@ -586,9 +590,9 @@ func mustCreateIssue(t *testing.T, q *Queries, repoID, authorID int64, title str
 	return issue
 }
 
-func mustCreateLandingRequest(t *testing.T, q *Queries, repoID, authorID int64, title string) LandingRequest {
+func mustCreateLandingRequest(t *testing.T, q *Queries, repoID, authorID int64, title string) productdb.LandingRequest {
 	t.Helper()
-	lr, err := q.CreateLandingRequest(context.Background(), CreateLandingRequestParams{
+	lr, err := q.CreateLandingRequest(context.Background(), productdb.CreateLandingRequestParams{
 		RepositoryID:   repoID,
 		Title:          title,
 		Body:           "",
@@ -600,7 +604,7 @@ func mustCreateLandingRequest(t *testing.T, q *Queries, repoID, authorID int64, 
 	return lr
 }
 
-func mustExec(t *testing.T, pool DBTX, query string, args ...any) {
+func mustExec(t *testing.T, pool productdb.DBTX, query string, args ...any) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), query, args...)
 	require.NoError(t, err)
@@ -613,14 +617,6 @@ func mustExec(t *testing.T, pool DBTX, query string, args ...any) {
 
 // testSeqCounter is an atomic counter for generating unique identifiers.
 var testSeqCounter atomic.Int64
-
-func randSlug(t *testing.T) string {
-	t.Helper()
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	require.NoError(t, err)
-	return hex.EncodeToString(b)
-}
 
 // uniqueTestUsername generates a unique username scoped to the calling test.
 // Format: "t-{testName}-{seq}" truncated to fit database constraints.
@@ -686,7 +682,7 @@ func TestMustCreateRepo_FailsWithoutParentUser(t *testing.T) {
 // (e.g. unique-constraint violation) is rolled back without poisoning the
 // outer transaction. It asserts that fn returned a non-nil error and returns
 // that error so callers can make further assertions (e.g. ErrorIs).
-func mustExpectError(t *testing.T, db DBTX, fn func(sp DBTX) error) error {
+func mustExpectError(t *testing.T, db productdb.DBTX, fn func(sp productdb.DBTX) error) error {
 	t.Helper()
 	tx := db.(pgx.Tx)
 	sp, err := tx.Begin(context.Background())
@@ -703,35 +699,9 @@ func mustExpectError(t *testing.T, db DBTX, fn func(sp DBTX) error) error {
 
 // mustExpectQueryError is like mustExpectError but provides a *Queries backed
 // by the savepoint transaction so callers can use sqlc-generated methods.
-func mustExpectQueryError(t *testing.T, db DBTX, fn func(spQ *Queries) error) error {
+func mustExpectQueryError(t *testing.T, db productdb.DBTX, fn func(spQ *Queries) error) error {
 	t.Helper()
-	return mustExpectError(t, db, func(sp DBTX) error {
+	return mustExpectError(t, db, func(sp productdb.DBTX) error {
 		return fn(New(sp))
 	})
-}
-
-func mustCreateWorkspace(t *testing.T, pool DBTX, userID, repoID int64) string {
-	t.Helper()
-	var id string
-	err := pool.QueryRow(context.Background(),
-		`INSERT INTO workspaces (repository_id, user_id) VALUES ($1, $2) RETURNING id`,
-		repoID, userID,
-	).Scan(&id)
-	require.NoError(t, err)
-	return id
-}
-
-func mustCreateRunner(t *testing.T, pool DBTX, name string) int64 {
-	t.Helper()
-
-	var runnerID int64
-	err := pool.QueryRow(
-		context.Background(),
-		`INSERT INTO runner_pool (name, status, metadata)
-		 VALUES ($1, 'idle', '{}'::jsonb)
-		 RETURNING id`,
-		name,
-	).Scan(&runnerID)
-	require.NoError(t, err)
-	return runnerID
 }
