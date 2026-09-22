@@ -65,7 +65,8 @@ does not start.
 source, pass that returned id explicitly to `execute`; asking again mints a new id. It dies when the payload
 fails the flow's own schema, where `Flow.execute` fails with a typed
 `Schema.SchemaError` for the same input. Precompute an id only for a payload you
-have already validated.
+have already validated. Identity and `tokenFromPayload` helpers carry the payload schema's
+`EncodingServices` requirement because the ambient source may encode the payload.
 
 ### Child executions
 

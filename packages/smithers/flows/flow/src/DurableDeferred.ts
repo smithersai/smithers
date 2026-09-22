@@ -540,7 +540,7 @@ export const tokenFromPayload: {
     readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
   }): <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>
-  ) => Effect.Effect<Token, never, Crypto.Crypto>
+  ) => Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>
   <
     Success extends Schema.Constraint,
     Error extends Schema.Constraint,
@@ -551,7 +551,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Effect.Effect<Token, never, Crypto.Crypto>
+  ): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>
 } = dual(
   2,
   <
@@ -564,7 +564,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Effect.Effect<Token, never, Crypto.Crypto> =>
+  ): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]> =>
     Effect.map(options.flow.executionId(options.payload), (executionId) =>
       tokenFromExecutionId(self, {
         flow: options.flow,

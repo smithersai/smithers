@@ -805,16 +805,20 @@ const renderPlacement = (value: unknown): string => {
       return `[${members.join(",")}]`
     }
     if (!isPlainObject(object)) return Object.prototype.toString.call(object)
-    const members = Reflect.ownKeys(object)
+    const keys = Reflect.ownKeys(object)
       .filter((key) => Object.prototype.propertyIsEnumerable.call(object, key))
+      .sort((left, right) => String(left).localeCompare(String(right)))
+    // Select the bounded prefix before rendering values. Rendering every
+    // member and slicing afterward still traverses the entire omitted forest.
+    const members = keys.slice(0, maxPlacementMembers)
       .map((key) => {
         const member = Object.getOwnPropertyDescriptor(object, key)!
         const rendered = "value" in member ? render(member.value, depth + 1, nested) : "<accessor>"
         return `${String(key)}:${rendered}`
       })
       .sort()
-    const shown = members.length > maxPlacementMembers
-      ? [...members.slice(0, maxPlacementMembers), "<more>"]
+    const shown = keys.length > maxPlacementMembers
+      ? [...members, "<more>"]
       : members
     return `{${shown.join(",")}}`
   }

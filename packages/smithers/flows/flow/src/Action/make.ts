@@ -205,7 +205,7 @@ const makeDeclared = <
   Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
   Success extends Schema.Top = Schema.Void,
   Error extends Schema.Top = Schema.Never
->(tag: Tag, options: DeclaredOptions<Payload, Success, Error>): Declared<
+>(tag: Tag, options: DeclaredOptions<Payload, Success, Error>, site: DeclarationSite.DeclaredAt | undefined): Declared<
   Tag,
   Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
   Success,
@@ -235,11 +235,6 @@ const makeDeclared = <
   const requirement = Context.Service<Requirement<Tag>, Implementation>(
     `@smthrs/flow/Action/Requirement/${tag}`
   )
-  // Provenance, captured at the declaration rather than derived later: this is
-  // the only moment a stack still names the author's file. It rides on the
-  // value as a non-enumerable property (`internal/DeclarationSite.ts`), so it
-  // is invisible to canonical serialization and cannot re-key a step.
-  const site = DeclarationSite.capture()
   const self: Declared<Tag, PayloadSchema, Success, Error> = {
     [TypeId]: TypeId,
     name: tag,
@@ -258,13 +253,13 @@ const makeDeclared = <
       return makeDeclared(tag, {
         ...lowered,
         annotations: Context.add(annotations, key, value)
-      })
+      }, site)
     },
     annotateMerge(context: Context.Context<any>) {
       return makeDeclared(tag, {
         ...lowered,
         annotations: Context.merge(annotations, context)
-      })
+      }, site)
     },
     call(payload) {
       return Node.actionCall<Success["Type"], Error["Type"]>(self, tag, payload)
@@ -402,7 +397,7 @@ export const make: {
   }): Action<Success, Error, Exclude<R, FlowInstance | FlowRuntime | Scope>>
 } = ((first: string | Parameters<typeof makeInline>[0], second?: object) =>
   typeof first === "string"
-    ? makeDeclared(first, second as Parameters<typeof makeDeclared>[1])
+    ? makeDeclared(first, second as Parameters<typeof makeDeclared>[1], DeclarationSite.capture())
     : makeInline(first)) as any
 
 /**
@@ -439,7 +434,7 @@ export const makeSystem = <
   // from `toLayer`, and dropping it from `call` only means nothing asks for it.
   // Providing a service no one requires is always sound; the reverse would not
   // be, which is why this is the one place the channel is written off.
-  makeDeclared(tag, options) as unknown as Declared<
+  makeDeclared(tag, options, DeclarationSite.capture()) as unknown as Declared<
     Tag,
     Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
     Success,

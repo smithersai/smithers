@@ -318,7 +318,7 @@ export interface Flow<
    */
   readonly executionId: (
     payload: Payload["~type.make.in"]
-  ) => Effect.Effect<string, never, Crypto.Crypto>
+  ) => Effect.Effect<string, never, Crypto.Crypto | Payload["EncodingServices"]>
 
   /**
    * Runs an effect and registers how to undo its successful result if the
@@ -398,7 +398,7 @@ export interface Any {
   readonly [TypeId]: typeof TypeId
   readonly _tag: string
   readonly description?: string | undefined
-  readonly executionId: (payload: any) => Effect.Effect<string, never, Crypto.Crypto>
+  readonly executionId: (payload: any) => Effect.Effect<string, never, any>
   readonly payloadSchema: AnyStructSchema
   readonly successSchema: Schema.Top
   readonly errorSchema: Schema.Top

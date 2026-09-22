@@ -70,6 +70,7 @@ import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import type * as NodeRecord from "./FlowRuntime/NodeRecord.ts"
 import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.ts"
 import * as Graph from "./Graph.ts"
+import * as BoundedJson from "./internal/BoundedJson.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
 
 /**
@@ -448,7 +449,11 @@ const interpretWithPolicy = (
           code: refusalCode === "duplicate_node" ? "duplicate_node_id" : "incomplete_graph",
           flow: name,
           node,
-          message: reported === "" ? `building the graph of flow ${name} threw ${String(cause)}` : reported
+          message: reported === ""
+            ? `building the graph of flow ${name} threw ${
+              typeof cause === "string" ? cause : BoundedJson.render(cause, 512)
+            }`
+            : reported
         })
       }
     })
@@ -602,6 +607,40 @@ const interpretWithPolicy = (
         )
       }
       implementations.set(node.ast.action, implementation.value)
+    }
+
+    // Graph.build also accepts authored references. Unlike Plan.compile, this
+    // entry point has not yet checked them for cycles: a self-reference would
+    // join its own in-flight deferred forever. Validate the entire dependency
+    // graph before dispatch, including branch arms the execution might skip.
+    const remaining = new Map<string, number>()
+    const dependents = new Map<string, Array<string>>()
+    const ready: Array<string> = []
+    for (const node of graphNodes) {
+      const dependencies = KeyMaterial.dependencies(node.draft.material)
+      remaining.set(node.id, dependencies.length)
+      if (dependencies.length === 0) ready.push(node.id)
+      for (const dependency of dependencies) {
+        const consumers = dependents.get(dependency)
+        if (consumers === undefined) dependents.set(dependency, [node.id])
+        else consumers.push(node.id)
+      }
+    }
+    for (let index = 0; index < ready.length; index++) {
+      for (const consumer of dependents.get(ready[index]!) ?? []) {
+        const count = remaining.get(consumer)! - 1
+        remaining.set(consumer, count)
+        if (count === 0) ready.push(consumer)
+      }
+    }
+    if (ready.length !== graphNodes.length) {
+      const blocked = graphNodes.find((node) => remaining.get(node.id)! > 0)!
+      return yield* refuse(
+        "incomplete_graph",
+        blocked.id,
+        `Graph of "${name}" contains a dependency cycle blocking "${blocked.id}". ` +
+          "Use an acyclic reference, a child boundary, or a trampoline handoff."
+      )
     }
     // The children a node settles with, in the order graph building recorded
     // them: `first` then the arms of a branch, `first` then the continuation of

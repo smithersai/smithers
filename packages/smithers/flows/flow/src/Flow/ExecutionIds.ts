@@ -36,10 +36,10 @@ import type { Any } from "./Flow.ts"
  * @since 0.1.0
  */
 export interface ExecutionIdSource {
-  readonly mint: (
-    flow: Any,
+  readonly mint: <W extends Any>(
+    flow: W,
     payload: unknown
-  ) => Effect.Effect<string, never, Crypto.Crypto>
+  ) => Effect.Effect<string, never, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]>
 }
 
 /**
@@ -54,11 +54,15 @@ export interface ExecutionIdSource {
  *
  * @private
  */
-const canonicalKey = (
-  flow: Any,
+const canonicalKey = <W extends Any>(
+  flow: W,
   payload: unknown
-): Effect.Effect<string, ExecutionIdRequired, Crypto.Crypto> =>
-  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<unknown, unknown>).pipe(
+): Effect.Effect<string, ExecutionIdRequired, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]> =>
+  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
+    unknown,
+    unknown,
+    W["payloadSchema"]["EncodingServices"]
+  >).pipe(
     Effect.flatMap((encoded) => Schema.decodeUnknownEffect(DerivedKey)(encoded)),
     Effect.mapError(() => new ExecutionIdRequired({ flowName: flow._tag }))
   )

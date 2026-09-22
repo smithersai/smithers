@@ -39,7 +39,7 @@ import { TypeId } from "./TypeId.ts"
 const makeExecutionIdFromPayload = (
   self: AnyWithProps,
   payload: unknown
-): Effect.Effect<string, never, Crypto.Crypto> => {
+): Effect.Effect<string, never, any> => {
   const idempotencyKey = self.idempotencyKey
   return idempotencyKey === undefined
     ? Effect.flatMap(CurrentExecutionIds, (source) => source.mint(self, payload))
@@ -51,7 +51,7 @@ const resolveExecutionId = (
   self: AnyWithProps,
   payload: unknown,
   executionId: string | undefined
-): Effect.Effect<string, never, Crypto.Crypto> =>
+): Effect.Effect<string, never, any> =>
   executionId === undefined
     ? makeExecutionIdFromPayload(self, payload)
     : Effect.succeed(executionId)
@@ -59,32 +59,38 @@ const resolveExecutionId = (
 const Proto = {
   [TypeId]: TypeId,
   annotate(this: AnyWithProps, tag: Context.Key<any, any>, value: any) {
-    return makeProto({
-      _tag: this._tag,
-      description: this.description,
-      payloadSchema: this.payloadSchema,
-      successSchema: this.successSchema,
-      errorSchema: this.errorSchema,
-      annotations: Context.add(this.annotations, tag, value),
-      body: this.body,
-      idempotencyKey: this.idempotencyKey,
-      suspendedRetryPolicy: this.suspendedRetryPolicy,
-      maxRounds: this.maxRounds
-    })
+    return DeclarationSite.annotate(
+      makeProto({
+        _tag: this._tag,
+        description: this.description,
+        payloadSchema: this.payloadSchema,
+        successSchema: this.successSchema,
+        errorSchema: this.errorSchema,
+        annotations: Context.add(this.annotations, tag, value),
+        body: this.body,
+        idempotencyKey: this.idempotencyKey,
+        suspendedRetryPolicy: this.suspendedRetryPolicy,
+        maxRounds: this.maxRounds
+      }),
+      DeclarationSite.declaredAt(this)
+    )
   },
   annotateMerge(this: AnyWithProps, context: Context.Context<any>) {
-    return makeProto({
-      _tag: this._tag,
-      description: this.description,
-      payloadSchema: this.payloadSchema,
-      successSchema: this.successSchema,
-      errorSchema: this.errorSchema,
-      annotations: Context.merge(this.annotations, context),
-      body: this.body,
-      idempotencyKey: this.idempotencyKey,
-      suspendedRetryPolicy: this.suspendedRetryPolicy,
-      maxRounds: this.maxRounds
-    })
+    return DeclarationSite.annotate(
+      makeProto({
+        _tag: this._tag,
+        description: this.description,
+        payloadSchema: this.payloadSchema,
+        successSchema: this.successSchema,
+        errorSchema: this.errorSchema,
+        annotations: Context.merge(this.annotations, context),
+        body: this.body,
+        idempotencyKey: this.idempotencyKey,
+        suspendedRetryPolicy: this.suspendedRetryPolicy,
+        maxRounds: this.maxRounds
+      }),
+      DeclarationSite.declaredAt(this)
+    )
   },
   call(this: AnyWithProps, payload: unknown) {
     return Node.flowCall(this, this._tag, "inline", payload)
