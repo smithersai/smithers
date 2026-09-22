@@ -2740,3 +2740,136 @@ describe("plan sandbox limits embed an upgrade refusal", () => {
     expect(requests.filter(request => request === path)).toHaveLength(1)
   })
 })
+
+describe("workspace account fences", () => {
+  test("a held workspace view survives an identity and cloud refresh by the same owner", async () => {
+    let release!: (response: Response) => void
+    let requested!: () => void
+    const started = new Promise<void>(resolve => { requested = resolve })
+    const held = new Promise<Response>(resolve => { release = resolve })
+    const { store, seam } = await harness({
+      "GET api/repos/will/smithers/workspaces/ws-1": () => { requested(); return held }
+    })
+    const identity = { type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null } as const
+    await store.dispatch(identity).isPersisted.promise
+    await seedWorkspace(store)
+    const pending = seam.viewWorkspace("ws-1")
+    await started
+    await store.dispatch(identity).isPersisted.promise
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: null, scopes: null }).isPersisted.promise
+    release(json(200, { ...WS_RUNNING, name: "fresh name" }))
+    await pending
+    expect(store.collections.cloudWorkspaces.get("ws-1")?.name).toBe("fresh name")
+    expect(cardOf(store)).toBeDefined()
+    seam.dispose()
+  })
+
+  test("a held workspace view cannot restore a private row or card after sign-out", async () => {
+    let release!: (response: Response) => void
+    let requested!: () => void
+    const started = new Promise<void>(resolve => { requested = resolve })
+    const held = new Promise<Response>(resolve => { release = resolve })
+    const { store, seam, storage } = await harness({
+      "GET api/repos/will/smithers/workspaces/ws-1": () => { requested(); return held }
+    })
+    await seedWorkspace(store)
+    const pending = seam.viewWorkspace("ws-1")
+    await started
+    await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+    release(json(200, { ...WS_RUNNING, name: "private name" }))
+    await pending
+    expect(store.collections.cloudWorkspaces.get("ws-1")).toBeUndefined()
+    expect(cardOf(store)).toBeUndefined()
+    expect(storage.written()).not.toContain("private name")
+  })
+
+  test("a held workspace view stays stale across an A to B to A session cycle", async () => {
+    let release!: (response: Response) => void
+    let requested!: () => void
+    const started = new Promise<void>(resolve => { requested = resolve })
+    const held = new Promise<Response>(resolve => { release = resolve })
+    const { store, seam } = await harness({
+      "GET api/repos/will/smithers/workspaces/ws-1": () => { requested(); return held }
+    })
+    await seedWorkspace(store)
+    const pending = seam.viewWorkspace("ws-1")
+    await started
+    for (const username of ["other", "will"]) {
+      await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username, expiresAt: null, scopes: null }).isPersisted.promise
+    }
+    release(json(200, { ...WS_RUNNING, name: "old private name" }))
+    await pending
+    expect(store.collections.cloudWorkspaces.get("ws-1")?.name).toBe("review")
+    expect(cardOf(store)).toBeUndefined()
+  })
+
+  test("a held auxiliary read cannot restore a workspace card after sign-out", async () => {
+    let release!: (response: Response) => void
+    let requested!: () => void
+    const started = new Promise<void>(resolve => { requested = resolve })
+    const held = new Promise<Response>(resolve => { release = resolve })
+    const { store, seam } = await harness({
+      "GET api/repos/will/smithers/workspaces/ws-1/files": () => { requested(); return held }
+    })
+    await seedWorkspace(store)
+    const pending = seam.listFiles("/", "ws-1")
+    await started
+    await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+    release(json(200, { entries: [{ name: "secret.txt", type: "file" }] }))
+    await pending
+    expect(cardOf(store)).toBeUndefined()
+  })
+})
+
+test("disposing a workspace seam retires a held view", async () => {
+  let release!: (response: Response) => void
+  let requested!: () => void
+  const started = new Promise<void>(resolve => { requested = resolve })
+  const held = new Promise<Response>(resolve => { release = resolve })
+  const { store, seam } = await harness({
+    "GET api/repos/will/smithers/workspaces/ws-1": () => { requested(); return held }
+  })
+  await seedWorkspace(store)
+  const pending = seam.viewWorkspace("ws-1")
+  await started
+  seam.dispose()
+  release(json(200, { ...WS_RUNNING, name: "retired private name" }))
+  await pending
+  expect(store.collections.cloudWorkspaces.get("ws-1")?.name).toBe("review")
+  expect(cardOf(store)).toBeUndefined()
+})
+
+test("a held workspace mutation cannot publish its old owner's result", async () => {
+  let release!: (response: Response) => void
+  let requested!: () => void
+  const started = new Promise<void>(resolve => { requested = resolve })
+  const held = new Promise<Response>(resolve => { release = resolve })
+  const { store, seam } = await harness({
+    "POST api/repos/will/smithers/workspaces/ws-1/suspend": () => { requested(); return held }
+  })
+  await seedWorkspace(store)
+  const pending = seam.suspendWorkspace("ws-1")
+  await started
+  await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+  release(json(200, { ...WS_RUNNING, status: "suspended", name: "private name" }))
+  await pending
+  expect(store.collections.cloudWorkspaces.get("ws-1")).toBeUndefined()
+  expect(cardOf(store)).toBeUndefined()
+})
+
+test("a held workspace inventory cannot restore rows after sign-out", async () => {
+  let release!: (response: Response) => void
+  let requested!: () => void
+  const started = new Promise<void>(resolve => { requested = resolve })
+  const held = new Promise<Response>(resolve => { release = resolve })
+  const { store, seam } = await harness({
+    "GET api/user/workspaces": () => { requested(); return held }
+  })
+  const pending = seam.listWorkspaces()
+  await started
+  await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+  release(json(200, { workspaces: [USER_ROW] }))
+  await pending
+  expect(store.collections.cloudWorkspaces.get("ws-1")).toBeUndefined()
+  expect([...store.collections.messages.values()].some(row => row.text?.includes("will/smithers"))).toBe(false)
+})

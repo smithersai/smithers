@@ -70,6 +70,19 @@ export const readResult = (value: string): { readonly value: string } => {
   return { value: value.length <= cap ? value : value.slice(0, cap - suffix.length) + suffix }
 }
 
+/** A refresh by the same owner stays current; sign-out and account changes retire pending work. */
+export const captureCloudOwner = (ctx: SeamContext, requireCloudSignIn = true): (() => boolean) => {
+  const cloud = ctx.store.collections.cloudSessions.get("cloud")
+  const identity = ctx.store.collections.identitySessions.get("identity")
+  const identityOwnerRevision = identity?.ownerRevision ?? identity?.revision
+  const cloudOwnerRevision = cloud?.ownerRevision ?? cloud?.revision
+  return () => ctx.isDisposed?.() !== true
+    && (!requireCloudSignIn || cloud?.state === "signed-in")
+    && (!requireCloudSignIn || ctx.store.collections.cloudSessions.get("cloud")?.state === "signed-in")
+    && (ctx.store.collections.identitySessions.get("identity")?.ownerRevision ?? ctx.store.collections.identitySessions.get("identity")?.revision) === identityOwnerRevision
+    && (ctx.store.collections.cloudSessions.get("cloud")?.ownerRevision ?? ctx.store.collections.cloudSessions.get("cloud")?.revision) === cloudOwnerRevision
+}
+
 /**
  * The honest message out of a failed seam response, bounded and fallback-safe.
  *

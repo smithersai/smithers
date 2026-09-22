@@ -1,3 +1,4 @@
+import { captureCloudOwner } from "./SeamContext"
 import { flowArgs } from "../../flows/FlowArgs"
 import type { Toast } from "../AppState"
 import { renderPlanLimit } from "./BillingSeam"
@@ -651,11 +652,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
 
   /** The lifetime and authorization captured before an await must still own its answer. */
   const currentOperation = (workspaceId?: string): (() => boolean) => {
-    const session = ctx.store.collections.cloudSessions.get("cloud")
+    const owner = captureCloudOwner(ctx)
     const epoch = workspaceId === undefined ? undefined : workspaceEpochs.get(workspaceId)
-    return () => !lifecycle.disposed
-      && session?.state === "signed-in"
-      && ctx.store.collections.cloudSessions.get("cloud")?.revision === session.revision
+    return () => !lifecycle.disposed && owner()
       && (workspaceId === undefined || (
         ctx.store.collections.cloudWorkspaces.has(workspaceId)
         && workspaceEpochs.get(workspaceId) === epoch
@@ -693,7 +692,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * and the scope set — the legacy (degraded) token reads but never acts.
    */
   const gate = (): string | void => {
-    if (lifecycle.disposed) return "The workspace controller is disposed."
+    if (lifecycle.disposed || ctx.isDisposed?.()) return "The workspace controller is disposed."
     const session = ctx.store.collections.cloudSessions.get("cloud")
     if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
     if (session.scopes === "degraded") return refuseCloudSignIn(ctx, DEGRADED_WORKSPACE_REFUSAL)
@@ -1050,7 +1049,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   const refreshWorkspaces: WorkspaceSeam["refreshWorkspaces"] = async (repo) => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
     if (session?.state !== "signed-in") return
-    const loaded = await loadList(repo === undefined || repo === "" ? undefined : repo)
+    const current = currentOperation()
+    const loaded = await loadList(repo === undefined || repo === "" ? undefined : repo, current)
+    if (!current()) return SIGN_OUT_REFUSAL
     return typeof loaded === "string" ? loaded : undefined
   }
 
@@ -1060,7 +1061,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const target = repo === undefined || repo === "" ? undefined : resolveTargetRepo(ctx.store, repo)
     if (target !== undefined && "error" in target) return target.error
     const scope = target !== undefined && "repo" in target ? target.repo : undefined
-    const loaded = await loadList(scope)
+    const current = currentOperation()
+    const loaded = await loadList(scope, current)
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof loaded === "string") return loaded
     const listing = loaded.length === 0
       ? scope === undefined
@@ -1139,6 +1142,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       loadBookmarkHead(workspace.repoId, workspace.targetBookmark),
       loadSessions(workspace.repoId, workspace.id)
     ])
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     renderWorkspace(workspace, {
       bookmarkHead,
       ...(sessions === null ? {} : { sessions })
@@ -1156,7 +1160,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
+    const current = currentOperation(workspace.id)
     const answer = await getJson(repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return failOnCard(workspace, answer)
     const fresh = parseWorkspaceWire(answer.body, workspace.repoId)
     if (fresh === null) return `Smithers Cloud's answer for workspace ${workspace.id} was malformed.`
@@ -1166,6 +1172,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       loadBookmarkHead(fresh.repoId, fresh.targetBookmark),
       loadSessions(fresh.repoId, fresh.id)
     ])
+    if (!current()) return SIGN_OUT_REFUSAL
     renderWorkspace(fresh, {
       bookmarkHead,
       ...(sessions === null ? {} : { sessions })
@@ -1194,16 +1201,20 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     let fresh = parseWorkspaceWire(answer.body, workspace.repoId)
     if (fresh === null) {
       const reread = await getJson(repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+      if (!accountCurrent()) return SIGN_OUT_REFUSAL
       if ("error" in reread) {
-        await loadList(workspace.repoId)
+        await loadList(workspace.repoId, accountCurrent)
+        if (!accountCurrent()) return SIGN_OUT_REFUSAL
         return `Workspace "${workspace.name}" (${workspace.id}) ${verb}ed, but its new state could not be read — the list was refreshed.`
       }
       fresh = parseWorkspaceWire(reread.body, workspace.repoId)
       if (fresh === null) {
-        await loadList(workspace.repoId)
+        await loadList(workspace.repoId, accountCurrent)
+        if (!accountCurrent()) return SIGN_OUT_REFUSAL
         return `Workspace "${workspace.name}" (${workspace.id}) ${verb}ed, but its answer was malformed — the list was refreshed.`
       }
     }
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
     ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: fresh })
     if (UNSETTLED.has(fresh.status)) watch(fresh.id)
     renderWorkspace(fresh)
@@ -1216,7 +1227,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
+    const current = currentOperation(workspace.id)
     const sessions = await loadSessions(workspace.repoId, workspace.id)
+    if (!current()) return SIGN_OUT_REFUSAL
     if (sessions === null) return `The sessions of workspace ${workspace.id} couldn't be read right now.`
     renderWorkspace(workspace, { sessions })
     return {
@@ -1233,10 +1246,12 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if (refusal !== undefined) return refusal
     const resolved = resolveRepo(workspaceId)
     if ("error" in resolved) return resolved.error
+    const current = currentOperation(resolved.workspaceId)
     const destroyed = await sendJson(
       "POST",
       repoPath(resolved.repo, `/workspace/sessions/${encodeURIComponent(sessionId)}/destroy`)
     )
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in destroyed) return destroyed.error
     /*
      * Destroyed is a fact the tab and the card learn together: the terminal
@@ -1247,6 +1262,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     ctx.dispatch({ type: "workspace.session.destroyed", actor: ctx.actor(), sessionId })
     /* One repository-wide read is the refresh for every card in it. */
     const rows = await loadRepoSessions(resolved.repo)
+    if (!current()) return SIGN_OUT_REFUSAL
     for (const card of ctx.store.collections.cards.values()) {
       if (card.kind !== "workspace" || card.payload.repo !== resolved.repo) continue
       const row = ctx.store.collections.cloudWorkspaces.get(card.payload.workspaceId)
@@ -1270,7 +1286,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if (confirmName.trim() !== workspace.name) {
       return `Deleting "${workspace.name}" (${workspace.id}) needs its name typed back exactly — /workspace.delete ${workspace.id} ${workspace.name}.`
     }
+    const current = currentOperation(workspace.id)
     const deleted = await sendJson("DELETE", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in deleted) return failOnCard(workspace, deleted)
     /*
      * Gone is a fact: the card, the collection row, its tree copy, and its
@@ -1286,7 +1304,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     /* A retry loop for a computer that no longer exists has nothing to mint. */
     desktopMintEpochs.set(workspace.id, (desktopMintEpochs.get(workspace.id) ?? 0) + 1)
     ctx.dispatch({ type: "workspace.deleted", actor: ctx.actor(), workspaceId: workspace.id })
-    const loaded = await loadList(workspace.repoId)
+    const owner = captureCloudOwner(ctx)
+    const loaded = await loadList(workspace.repoId, owner)
+    if (!owner()) return SIGN_OUT_REFUSAL
     if (typeof loaded === "string") return loaded
     return { value: `Workspace "${workspace.name}" (${workspace.id}) is deleted.` }
   }
@@ -1301,7 +1321,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     path: string,
     facet?: WorkspaceFacet
   ): Promise<string | void> => {
+    const current = currentOperation(workspace.id)
     const files = await loadFiles(workspace.repoId, workspace.id, path)
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in files) {
       renderWorkspace(workspace, { ...(facet === undefined ? {} : { facet }), error: files.error })
       return files.error
@@ -1310,7 +1332,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   }
 
   const renderServices = async (workspace: CloudWorkspaceRow, facet?: WorkspaceFacet): Promise<string | void> => {
+    const current = currentOperation(workspace.id)
     const services = await loadServices(workspace.repoId, workspace.id)
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in services) {
       renderWorkspace(workspace, { ...(facet === undefined ? {} : { facet }), error: services.error })
       return services.error
@@ -1328,7 +1352,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     cursor?: string,
     facet?: WorkspaceFacet
   ): Promise<string | void> => {
+    const current = currentOperation(workspace.id)
     const page = await loadEgressPage(ctx, workspaceEgressPath(workspace.repoId, workspace.id), cursor)
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in page) {
       renderWorkspace(workspace, { ...(facet === undefined ? {} : { facet }), error: page.error })
       return page.error
@@ -1343,6 +1369,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
   }
 
   const setFacet = preparedView(ctx, (workspaceId: string, facet: WorkspaceFacet) => {
+    if (gate() !== undefined) return SIGN_OUT_REFUSAL
+    const current = currentOperation(workspaceId)
     const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
     if (row === undefined) return `Workspace ${workspaceId} is not loaded — /workspace.list refreshes the inventory`
     const existing = ctx.store.collections.cards.get(cardIdOf(row.id))
@@ -1359,12 +1387,14 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
           : facet === "terminal" ? { sessions: p.sessions.map(session => ({ ...session, kind: session.kind ?? null, language: session.language ?? null })) } : {}) })
       },
       before: async () => {
+        if (!current()) return SIGN_OUT_REFUSAL
         if (facet !== "desktop") {
           dropDesktopStream(workspaceId)
           desktopMintEpochs.set(workspaceId, (desktopMintEpochs.get(workspaceId) ?? 0) + 1)
         }
       },
       read: async () => {
+        if (!current()) return SIGN_OUT_REFUSAL
         let extra: Partial<CardAux> = { facet }
         if (facet === "terminal") {
           const sessions = await loadSessions(row.repoId, row.id)
@@ -1383,6 +1413,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
           if ("error" in page) return page.error
           extra = { facet, egress: page.rows, egressCursor: page.nextCursor }
         }
+        if (!current()) return SIGN_OUT_REFUSAL
         return { card: workspaceCard(row, extra) }
       },
     }
@@ -1396,7 +1427,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const { workspace } = resolved
     // `/` is how a human spells the working copy's root; plue's own spelling is the empty path.
     const at = path === undefined || path === "/" ? "" : path
+    const current = currentOperation(workspace.id)
     const failure = await renderFiles(workspace, at, "files")
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof failure === "string") return failure
     const card = ctx.store.collections.cards.get(cardIdOf(workspace.id))
     const files = card?.kind === "workspace" ? card.payload.files ?? [] : []
@@ -1414,9 +1447,11 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
+    const current = currentOperation(workspace.id)
     const answer = await getJson(
       `${workspacePath(workspace.repoId, workspace.id, "/files/content")}?path=${encodeURIComponent(path)}`
     )
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return failOnCard(workspace, answer)
     const body = isRecord(answer.body) ? answer.body : null
     const content = body === null || typeof body.content !== "string" ? null : body.content
@@ -1461,7 +1496,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
+    const current = currentOperation(workspace.id)
     const failure = await renderServices(workspace, "services")
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof failure === "string") return failure
     const card = ctx.store.collections.cards.get(cardIdOf(workspace.id))
     const services = card?.kind === "workspace" ? card.payload.services ?? [] : []
@@ -1480,7 +1517,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const resolved = resolveWorkspace(workspaceId)
     if ("error" in resolved) return resolved.error
     const { workspace } = resolved
+    const current = currentOperation(workspace.id)
     const failure = await renderEgress(workspace, cursor, "egress")
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof failure === "string") return failure
     const card = ctx.store.collections.cards.get(cardIdOf(workspace.id))
     const rows = card?.kind === "workspace" ? card.payload.egress ?? [] : []
@@ -1611,7 +1650,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    */
   const applyStatusEvent: WorkspaceSeam["applyStatusEvent"] = (workspaceId, event) => {
     const known = ctx.store.collections.cloudWorkspaces.get(workspaceId)
-    if (known === undefined || !isRecord(event)) return
+    if (known === undefined || !isRecord(event) || !currentOperation()()) return
     const status = isWorkspaceStatus(event.status) ? event.status : null
     const head = parseHead(event.head)
     const ahead = countOrNull(event.ahead)
@@ -1829,6 +1868,7 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
       progress("streaming")
       // Share the wait epoch with the mint: Stop and a later open invalidate both.
       const result = await mintDesktopSession(box.id, "open", { epoch, progress })
+      if (!current()) return
       if (result !== undefined) finish(typeof result === "string" ? result : "Desktop ready", typeof result === "string" ? "failed" : "ok")
       return result
     } finally {
@@ -1843,6 +1883,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * `/workspace.view` reads where it got to.
    */
   const stopDesktopWait: WorkspaceSeam["stopDesktopWait"] = async (workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
     const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
     if (row === undefined) return `Workspace ${workspaceId} is not loaded — /workspace.list refreshes the inventory`
     desktopMintEpochs.set(workspaceId, (desktopMintEpochs.get(workspaceId) ?? 0) + 1)
@@ -1865,7 +1907,9 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     if (refusal !== undefined) return refusal
     const target = resolveTargetRepo(ctx.store, repo)
     if ("error" in target) return target.error
+    const current = currentOperation()
     const answer = await getJson(repoPath(target.repo, "/environment-images"))
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return answer.error
     const images = arrayOf(answer.body, "images").flatMap((entry) => {
       const parsed = parseEnvironmentImage(entry)

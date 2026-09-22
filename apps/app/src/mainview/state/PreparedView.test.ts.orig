@@ -182,31 +182,3 @@ test("a late view result cannot read a closed owner or restart disposed preloads
   expect(resolves).toBe(1)
   expect(reads).toBe(1)
 })
-
-test("a cloud session change retires a held prepared view", async () => {
-  const { ctx, store } = await setup()
-  store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "alice", expiresAt: null, scopes: null })
-  const read = deferred<ViewResult>()
-  const open = preparedView(ctx, () => ({ id: "private", title: "Loading", read: () => read.promise }))
-  const pending = open()
-  store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "bob", expiresAt: null, scopes: null })
-  read.resolve(data("old private card"))
-  await pending
-  expect(store.collections.cards.get("private")?.title).not.toBe("old private card")
-})
-
-test("same-owner session refresh preserves a held prepared view", async () => {
-  const { ctx, store } = await setup()
-  const identity = { type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null } as const
-  const cloud = { type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "alice", expiresAt: null, scopes: null } as const
-  await store.dispatch(identity).isPersisted.promise
-  await store.dispatch(cloud).isPersisted.promise
-  const read = deferred<ViewResult>()
-  const open = preparedView(ctx, () => ({ id: "private", title: "Loading", read: () => read.promise }))
-  const pending = open()
-  await store.dispatch(identity).isPersisted.promise
-  await store.dispatch(cloud).isPersisted.promise
-  read.resolve(data("private"))
-  await pending
-  expect(store.collections.cards.get("private")?.title).toBe("private")
-})

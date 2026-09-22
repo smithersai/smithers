@@ -2555,6 +2555,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             })
           }
           collections.identitySessions.update("identity", (draft) => {
+            draft.ownerRevision = owner !== nextOwner || transition.state === "signed-out"
+              ? revision : existing.ownerRevision ?? existing.revision
             draft.accountOwnerLogin = transition.state === "signed-in"
               ? transition.login
               : transition.state === "signed-out" ? null : owner
@@ -2599,6 +2601,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (collections.identitySessions.get("identity") === undefined) return
           forgetAccountState(collections, createdAt)
           collections.identitySessions.update("identity", (draft) => {
+            draft.ownerRevision = revision
             draft.state = "signed-out"
             draft.login = null
             draft.accountOwnerLogin = null
@@ -3149,6 +3152,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           break
         }
         case "cloud.session.loaded": {
+          const previousCloud = collections.cloudSessions.get("cloud")
+          const previousOwner = previousCloud?.state === "signed-in" ? previousCloud.username : null
+          const nextCloudOwner = transition.state === "signed-in" ? transition.username : null
           const row: CloudSessionRow = {
             id: "cloud",
             state: transition.state,
@@ -3156,7 +3162,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             expiresAt: transition.expiresAt,
             scopes: transition.scopes,
             updatedAt: createdAt,
-            revision
+            revision,
+            ownerRevision: previousOwner !== nextCloudOwner || transition.state === "signed-out"
+              ? revision : previousCloud?.ownerRevision ?? previousCloud?.revision ?? 0
           }
           if (collections.cloudSessions.get("cloud") === undefined) collections.cloudSessions.insert(row)
           else {

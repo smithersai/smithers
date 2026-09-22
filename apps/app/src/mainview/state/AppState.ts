@@ -283,7 +283,8 @@ export const CloudSessionRowSchema = z.object({
   expiresAt: z.string().nullable(),
   scopes: z.literal("degraded").nullable(),
   updatedAt: z.number(),
-  revision: z.number().int().nonnegative()
+  revision: z.number().int().nonnegative(),
+  ownerRevision: z.number().int().nonnegative().optional()
 })
 export type CloudSessionRow = z.infer<typeof CloudSessionRowSchema>
 
@@ -1125,7 +1126,8 @@ export const IdentitySessionSchema = z.object({
   /** Plain-words scope list fetched from GET /api/auth/scopes; null = honest fallback copy. */
   scopesPlain: z.string().nullable(),
   updatedAt: z.number(),
-  revision: z.number().int().nonnegative()
+  revision: z.number().int().nonnegative(),
+  ownerRevision: z.number().int().nonnegative().optional()
 })
 export type IdentitySession = z.infer<typeof IdentitySessionSchema>
 
