@@ -364,7 +364,11 @@ func (s *WorkspaceService) ManageWorkspaceService(ctx context.Context, workspace
 			return WorkspaceManagedService{}, pkgerrors.Internal(action + " workspace service")
 		}
 		s.touchWorkspaceEntryRecency(ctx, row.ID, "service-"+action)
-		return runtimeManagedService(observed.Name, observed.State, observed.Address), nil
+		managed := runtimeManagedService(observed.Name, observed.State, observed.Address, observed.ExitCode)
+		if action == "stop" {
+			managed.State = "stopped"
+		}
+		return managed, nil
 	}
 
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite)

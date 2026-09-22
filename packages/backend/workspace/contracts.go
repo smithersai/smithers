@@ -142,6 +142,8 @@ type ServiceState string
 const (
 	ServiceRunning ServiceState = "running"
 	ServiceExited  ServiceState = "exited"
+	ServiceStopped ServiceState = "stopped"
+	ServiceFailed  ServiceState = "failed"
 )
 
 // ServiceObservation exposes bounded process evidence for diagnostics. It is

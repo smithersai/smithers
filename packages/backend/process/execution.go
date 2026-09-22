@@ -266,7 +266,14 @@ func (r *Runtime) InspectService(ctx context.Context, workspaceID, name string) 
 	result := workspaceapi.ServiceObservation{Service: workspaceapi.Service{Name: service.spec.Name, PID: process.cmd.Process.Pid, Address: service.spec.ReadyAddress}, State: workspaceapi.ServiceRunning}
 	select {
 	case <-process.done:
-		result.State = workspaceapi.ServiceExited
+		switch {
+		case service.stopped:
+			result.State = workspaceapi.ServiceStopped
+		case process.cmd.ProcessState != nil && process.cmd.ProcessState.ExitCode() != 0:
+			result.State = workspaceapi.ServiceFailed
+		default:
+			result.State = workspaceapi.ServiceExited
+		}
 		if process.cmd.ProcessState != nil {
 			result.ExitCode = process.cmd.ProcessState.ExitCode()
 		}
@@ -324,6 +331,7 @@ func (r *Runtime) StopService(ctx context.Context, workspaceID, name string) err
 		r.mu.Unlock()
 		return nil
 	}
+	service.stopped = true
 	r.mu.Unlock()
 	service.process.stop(r.grace)
 	r.unregister(workspaceID, service.process)

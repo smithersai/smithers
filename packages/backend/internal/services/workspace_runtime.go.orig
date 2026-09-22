@@ -683,7 +683,7 @@ func (s *WorkspaceService) LaunchWorkspaceService(ctx context.Context, workspace
 		return WorkspaceManagedService{}, pkgerrors.Internal("start workspace service: " + err.Error())
 	}
 	s.touchWorkspaceEntryRecency(ctx, row.ID, "service-start")
-	return runtimeManagedService(started.Name, workspaceapi.ServiceRunning, started.Address, 0), nil
+	return runtimeManagedService(started.Name, workspaceapi.ServiceRunning, started.Address), nil
 }
 
 func runtimeReadyAddress(port uint16) string {
@@ -693,17 +693,10 @@ func runtimeReadyAddress(port uint16) string {
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port)))
 }
 
-func runtimeManagedService(name string, state workspaceapi.ServiceState, address string, exitCode int) WorkspaceManagedService {
-	normalized := "stopped"
-	switch state {
-	case workspaceapi.ServiceRunning:
-		normalized = "running"
-	case workspaceapi.ServiceFailed:
-		normalized = "failed"
-	case workspaceapi.ServiceExited:
-		if exitCode != 0 {
-			normalized = "failed"
-		}
+func runtimeManagedService(name string, state workspaceapi.ServiceState, address string) WorkspaceManagedService {
+	normalized := "running"
+	if state == workspaceapi.ServiceExited {
+		normalized = "stopped"
 	}
 	port := 0
 	if _, rawPort, err := net.SplitHostPort(strings.TrimSpace(address)); err == nil {
@@ -729,7 +722,7 @@ func (s *WorkspaceService) listRuntimeWorkspaceServices(ctx context.Context, row
 	}
 	result := make([]WorkspaceManagedService, 0, len(observed))
 	for _, service := range observed {
-		result = append(result, runtimeManagedService(service.Name, service.State, service.Address, service.ExitCode))
+		result = append(result, runtimeManagedService(service.Name, service.State, service.Address))
 	}
 	return result, nil
 }

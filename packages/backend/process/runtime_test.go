@@ -169,6 +169,32 @@ func TestRuntimeSerializesStopAgainstRestart(t *testing.T) {
 	assert.Equal(t, workspaceapi.WorkspaceStopped, observed.State)
 }
 
+func TestRuntimeManagedServiceDistinguishesStopFromFailure(t *testing.T) {
+	runtime := newTestRuntime(t, t.TempDir())
+	workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "service-state"})
+	require.NoError(t, err)
+	_, err = runtime.StartWorkspace(context.Background(), workspace.ID)
+	require.NoError(t, err)
+
+	_, err = runtime.StartService(context.Background(), workspace.ID, workspaceapi.ServiceSpec{
+		Name: "stopped", Command: workspaceapi.Command{Args: []string{"/bin/sh", "-c", "sleep 30"}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, runtime.StopService(context.Background(), workspace.ID, "stopped"))
+	stopped, err := runtime.InspectService(context.Background(), workspace.ID, "stopped")
+	require.NoError(t, err)
+	assert.Equal(t, workspaceapi.ServiceStopped, stopped.State)
+
+	_, err = runtime.StartService(context.Background(), workspace.ID, workspaceapi.ServiceSpec{
+		Name: "failed", Command: workspaceapi.Command{Args: []string{"/bin/sh", "-c", "sleep 0.05; exit 7"}},
+	})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		failed, inspectErr := runtime.InspectService(context.Background(), workspace.ID, "failed")
+		return inspectErr == nil && failed.State == workspaceapi.ServiceFailed && failed.ExitCode == 7
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestRuntimeServicePreviewAndTerminal(t *testing.T) {
 	runtime := newTestRuntime(t, t.TempDir())
 	workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "interactive"})

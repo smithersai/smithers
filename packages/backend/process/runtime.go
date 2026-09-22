@@ -54,6 +54,7 @@ type managedService struct {
 	fingerprint string
 	stdout      *limitedBuffer
 	stderr      *limitedBuffer
+	stopped     bool
 }
 
 // Runtime owns persistent workspace directories and every child process it

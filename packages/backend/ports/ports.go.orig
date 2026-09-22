@@ -85,8 +85,6 @@ const (
 	WorkspaceRecoveryRequired = workspace.WorkspaceRecoveryRequired
 	ServiceRunning            = workspace.ServiceRunning
 	ServiceExited             = workspace.ServiceExited
-	ServiceStopped            = workspace.ServiceStopped
-	ServiceFailed             = workspace.ServiceFailed
 )
 
 var (
