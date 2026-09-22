@@ -258,6 +258,9 @@ BEGIN
        OR EXISTS (SELECT 1 FROM repository_provisioning_operations WHERE repository_id = NEW.id) THEN
         RETURN NEW;
     END IF;
+	-- Product SQLC inserts no placement column; hosted fixture placement is
+	-- supplied by this test-only adapter before hosted provenance checks.
+	NEW.storage_set_id := COALESCE(NEW.storage_set_id, 's1');
     SELECT COALESCE(u.username, o.name) INTO v_owner
     FROM (SELECT NEW.user_id AS user_id, NEW.org_id AS org_id) identity
     LEFT JOIN users u ON u.id = identity.user_id

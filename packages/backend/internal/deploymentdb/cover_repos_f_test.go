@@ -65,11 +65,10 @@ func TestFCov_Repos_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, unarchived.IsArchived)
 
-	// Fork. storage_set_id must reference an existing storage set
-	// (fk_repositories_storage_set); 's1' is seeded by the schema.
+	// Fork metadata retains the parent's default bookmark.
 	forkName := uniqueTestRepoName(t)
 	fork, err := q.CreateForkRepo(ctx, CreateForkRepoParams{
-		UserID: userInt8, Name: forkName, LowerName: forkName, Description: "",
+		UserID: userInt8, Name: forkName, LowerName: forkName, Description: "", DefaultBookmark: "main",
 		ForkID: pgtype.Int8{Int64: repoID, Valid: true},
 	})
 	require.NoError(t, err)
@@ -90,7 +89,7 @@ func TestFCov_Repos_RoundTrip(t *testing.T) {
 
 	// Re-create the fork for the list/transfer assertions below.
 	fork, err = q.CreateForkRepo(ctx, CreateForkRepoParams{
-		UserID: userInt8, Name: forkName, LowerName: forkName, Description: "",
+		UserID: userInt8, Name: forkName, LowerName: forkName, Description: "", DefaultBookmark: "main",
 		ForkID: pgtype.Int8{Int64: repoID, Valid: true},
 	})
 	require.NoError(t, err)
