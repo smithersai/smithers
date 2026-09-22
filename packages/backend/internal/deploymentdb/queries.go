@@ -63,3 +63,12 @@ func (q *Queries) SumStorageBytesByOwner(ctx context.Context, arg db.SumStorageB
 func (q *Queries) SumStorageBytesByRepository(ctx context.Context, repositoryID int64) (int64, error) {
 	return q.ClusterQueries.SumStorageBytesByRepository(ctx, repositoryID)
 }
+
+// Product interval cleanup knows workspaces and agents. Hosted cleanup also
+// reconciles gateway intervals against private gateway lifecycle state.
+func (q *Queries) CloseOrphanedSandboxUsageIntervals(ctx context.Context) error {
+	if err := q.ProductQueries.CloseOrphanedSandboxUsageIntervals(ctx); err != nil {
+		return err
+	}
+	return q.ClusterQueries.CloseOrphanedRepoGatewaySandboxUsageIntervals(ctx)
+}
