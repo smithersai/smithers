@@ -716,17 +716,16 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("feature_flags.devtools_snapshot_enabled", false)
 	v.SetDefault("feature_flags.run_shape_enabled", false)
 
-	// MVP gating flags (ticket 12). MVP-shipping families and repository secrets
-	// default to true; every other family defaults to false until it ships.
-	// Operators can flip flags per-environment via SMITHERS_FEATURE_FLAGS_<NAME>.
+	// Core repository operations are available in every deployment mode.
+	// Operators can still override the legacy flags per environment.
 	v.SetDefault("feature_flags.stacked_prs", true)
 	v.SetDefault("feature_flags.workflows", false)
 	v.SetDefault("feature_flags.sandboxes", true)
 	v.SetDefault("feature_flags.auto_push", true)
 
-	v.SetDefault("feature_flags.issues", false)
+	v.SetDefault("feature_flags.issues", true)
 	v.SetDefault("feature_flags.search", false)
-	v.SetDefault("feature_flags.workspaces", false)
+	v.SetDefault("feature_flags.workspaces", true)
 	v.SetDefault("feature_flags.agents", false)
 	v.SetDefault("feature_flags.web_dashboard", false)
 	v.SetDefault("feature_flags.changesets", false)

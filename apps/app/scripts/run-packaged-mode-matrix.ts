@@ -46,6 +46,7 @@ const revision = await sourceRevision()
 
 const outputDir = resolve(option("--output-dir") ?? process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? resolve(appDir, "test-results/mode-matrix"))
 const modeSelection = option("--modes")
+const wants = (mode: string): boolean => modeSelection === undefined || modeSelection.split(",").includes(mode)
 const configPath = resolve(outputDir, "config.json")
 const reportPath = resolve(outputDir, "report.json")
 mkdirSync(outputDir, { recursive: true })
@@ -66,7 +67,7 @@ let localSession: LocalOwnSession | undefined
 let nativeSession: NativeOwnSession | undefined
 let plueSessions: readonly PlueSession[] = []
 let launchFailure: unknown
-try {
+if (wants("web-selfhost")) try {
   session = await startPackagedWebSelfhost({
     rootDir,
     revision,
@@ -80,7 +81,7 @@ try {
 }
 const plueTarget = process.env.SMITHERS_MODE_MATRIX_PLUE_URL?.trim()
 const plueTokenEnvironment = "SMITHERS_MODE_MATRIX_PLUE_TOKEN"
-if (plueTarget && process.env[plueTokenEnvironment]?.trim()) {
+if (plueTarget && process.env[plueTokenEnvironment]?.trim() && (wants("web-plue") || wants("local-plue"))) {
   if (external.modes.some(({ mode }) => mode === "web-plue" || mode === "local-plue")) {
     throw new Error("external configuration must not duplicate the configured Plue web or local target")
   }
@@ -90,7 +91,7 @@ if (plueTarget && process.env[plueTokenEnvironment]?.trim()) {
     console.error(`Plue target launch failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
-try {
+if (wants("local-own")) try {
   localSession = await startLocalOwn(rootDir, revision, outputDir)
 } catch (error) {
   launchFailure = error
@@ -98,12 +99,12 @@ try {
 }
 const nativeExecutable = process.env.SMITHERS_MODE_MATRIX_NATIVE_EXECUTABLE?.trim()
 const nativeCDP = process.env.SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT?.trim()
-if (Boolean(nativeExecutable) !== Boolean(nativeCDP)) {
+if (wants("native-own") && Boolean(nativeExecutable) !== Boolean(nativeCDP)) {
   const error = new Error("native-own requires both SMITHERS_MODE_MATRIX_NATIVE_EXECUTABLE and SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT")
   launchFailure = error
   console.error(error.message)
 }
-if (nativeExecutable && nativeCDP && (modeSelection === undefined || modeSelection.split(",").includes("native-own"))) {
+if (nativeExecutable && nativeCDP && wants("native-own")) {
   try { nativeSession = await startNativeOwn(revision, outputDir, nativeExecutable, nativeCDP) }
   catch (error) {
     launchFailure = error

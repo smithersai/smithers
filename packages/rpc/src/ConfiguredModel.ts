@@ -218,11 +218,11 @@ export const modelCredentialEnvName = (name: string): string =>
   isBuiltinModelCredential(name) ? name : `${MODEL_CREDENTIAL_ENV_PREFIX}${name}`
 
 const isLoopbackHost = (hostname: string): boolean =>
-  hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(hostname)
+  hostname === "localhost" || hostname === "[::1]" || hostname === "host.docker.internal" || /^127(?:\.\d{1,3}){3}$/.test(hostname)
 
 /**
  * An origin in canonical form, or undefined when a credential may never travel
- * there: https to any host, `http:` to a loopback host only, and no userinfo,
+ * there: https to any host, `http:` to a loopback or Docker host alias only, and no userinfo,
  * query or fragment.
  *
  * @since 1.0.0
@@ -240,7 +240,7 @@ export const modelOriginOf = (value: string | undefined): string | undefined => 
   return url.protocol === "http:" && isLoopbackHost(url.hostname) ? url.origin : undefined
 }
 /**
- * Whether a canonical origin is on this machine.
+ * Whether a canonical origin is on this machine, including the Docker host alias.
  *
  * @since 1.0.0
  * @category guards

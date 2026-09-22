@@ -31,6 +31,13 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 	require.Equal(t, "none", unavailable.AuthFlow)
 }
 
+func TestAppBootstrapGitHubRequiresConfiguredIntegration(t *testing.T) {
+	without := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true})
+	require.NotContains(t, without.Capabilities, "github")
+	with := newAppBootstrap(bootstrapFeatures{role: RoleHostedAPI, identity: true, github: true})
+	require.Contains(t, with.Capabilities, "github")
+}
+
 func TestBuildIdentityUsesInjectedRevision(t *testing.T) {
 	old := BuildSHA
 	t.Cleanup(func() { BuildSHA = old })

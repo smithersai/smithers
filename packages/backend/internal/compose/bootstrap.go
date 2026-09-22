@@ -32,6 +32,7 @@ type bootstrapFeatures struct {
 	role             Role
 	identity         bool
 	redirectAuth     bool
+	github           bool
 	agent            bool
 	modelTurn        bool
 	workspace        bool
@@ -58,6 +59,9 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.agent {
 		result.Capabilities = append(result.Capabilities, "agent")
+	}
+	if features.github {
+		result.Capabilities = append(result.Capabilities, "github")
 	}
 	if features.modelTurn {
 		result.Capabilities = append(result.Capabilities, "model.turn")

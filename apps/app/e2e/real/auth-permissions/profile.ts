@@ -153,6 +153,14 @@ const readSessionAtOrigin = async (context: BrowserContext, origin: string): Pro
 const establishOwnerSession = async (context: BrowserContext, page: Page, baseURL: string): Promise<AuthenticatedSession> => {
   const origin = new URL(process.env.SMITHERS_REAL_API_ORIGIN ?? baseURL).origin
   const credentials = ownerCredentialsFromEnvironment()
+  const existing = await readSessionAtOrigin(context, baseURL)
+  if (existing !== undefined) {
+    if (existing.login !== credentials.username) throw new Error("The cached owner session belongs to a different user.")
+    const startedAt = performance.now()
+    await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
+    await awaitBoot(page, "navigate", startedAt)
+    return existing
+  }
   const statusResponse = await context.request.get(new URL("/api/auth/local/status", origin).toString())
   const status = await statusResponse.json().catch(() => undefined) as {
     readonly enabled?: unknown
@@ -323,6 +331,28 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       throw new Error("Application-token auth is only valid for the packaged native-window driver.")
     }
     if (realAuthKind() === "owner-session") {
+      const ownerProfile = process.env.SMITHERS_REAL_OWNER_PROFILE_DIR?.trim()
+      if (ownerProfile) {
+        const context = await playwright.chromium.launchPersistentContext(ownerProfile, {
+          baseURL, headless: process.env.SMITHERS_REAL_HEADED !== "1", viewport: { width: 1280, height: 900 }
+        })
+        const cookieCache = join(ownerProfile, "owner-session-cookies.json")
+        try {
+          try {
+            const cached = JSON.parse(await readFile(cookieCache, "utf8")) as Awaited<ReturnType<BrowserContext["cookies"]>>
+            await context.addCookies(cached)
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+          }
+          await use(context)
+        } finally {
+          // Local sessions are browser-session cookies; Chromium does not keep
+          // them when Playwright closes the context between scenario files.
+          try { await writeFile(cookieCache, JSON.stringify(await context.cookies(baseURL)), { mode: 0o600 }) }
+          finally { await context.close() }
+        }
+        return
+      }
       const browser = await playwright.chromium.launch({ headless: process.env.SMITHERS_REAL_HEADED !== "1" })
       const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
       try { await use(context) } finally {

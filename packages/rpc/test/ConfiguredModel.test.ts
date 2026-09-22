@@ -176,8 +176,8 @@ describe("credentials", () => {
     expect(customModelCredentials({ SMITHERS_MODEL_KEY_X: "k", SMITHERS_MODEL_KEY_X_ORIGIN: origin })).toEqual([])
   })
 
-  test.each(["http://127.0.0.1:1", "http://127.8.9.10", "http://[::1]:8080", "http://localhost"])(
-    "%s is loopback, so http is allowed",
+  test.each(["http://127.0.0.1:1", "http://127.8.9.10", "http://[::1]:8080", "http://localhost", "http://host.docker.internal:8080"])(
+    "%s is local to the host, so http is allowed",
     (origin) => {
       expect(modelOriginOf(origin)).toBe(origin)
     }

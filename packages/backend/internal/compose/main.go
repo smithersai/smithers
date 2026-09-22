@@ -438,6 +438,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// One public origin serves browser redirects, email, Git and blob transfers.
 	publicBaseURL := config.PublicOrigin(cfg)
+	workspaceGitBaseURL := publicBaseURL
+	if !options.Role.hosted() && options.Workspace != nil {
+		workspaceGitBaseURL, err = flowHostProductAPIURL(options, cfg.Server.Addr)
+		if err != nil {
+			return fmt.Errorf("workspace Git origin: %w", err)
+		}
+	}
 	agentAPIBaseURL := publicBaseURL + "/api"
 	emailService := services.NewEmailService(queries, emailTransport, services.EmailServiceConfig{
 		BaseURL: publicBaseURL,
@@ -805,7 +812,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithWorkspaceSandboxClient(sandboxClient),
 		services.WithWorkspaceSourceReader(repoHostClient),
 		services.WithWorkspaceSandboxMetrics(smithersMetrics),
-		services.WithWorkspaceGitBaseURL(publicBaseURL),
+		services.WithWorkspaceGitBaseURL(workspaceGitBaseURL),
 		services.WithWorkspaceSSHHost(cfg.Sandbox.WorkspaceSSHHost),
 		services.WithWorkspaceSSHDialHost(cfg.Sandbox.WorkspaceSSHDialHost),
 		// Advertise the SSH gateway's host key so the terminal client
@@ -1539,6 +1546,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		role: options.Role, identity: authHandler != nil,
 		agent:        options.ChatHost != nil && chatService != nil && options.Role.servesHTTP(),
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
+		github:       gitHubImportHandler != nil && strings.TrimSpace(cfg.Auth.GitHubClientID) != "",
 		// A configured model turn is available only when the durable journal
 		// routes are mounted; it does not imply a separate agent executor.
 		modelTurn:        chatService != nil && options.Role.servesHTTP(),

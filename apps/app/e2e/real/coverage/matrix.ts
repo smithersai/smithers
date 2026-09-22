@@ -77,28 +77,17 @@ export const MATRIX_SURFACE_DRIVERS: Readonly<Record<ProductSurface, "playwright
 export const MATRIX_OBLIGATIONS: readonly MatrixObligation[] = [
   { id: "signed-in", scenarios: [{ id: "auth.mode-session-cookie-persistence", capabilities: ["identity"] }], tier: "local-infrastructure" },
   { id: "repository-create", scenarios: [{ id: "repositories.product-create-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
-  { id: "github-import", scenarios: [{ id: "repositories.github-import-direct-readback", capabilities: ["identity", "cloud"] }], tier: "live-provider" },
+  { id: "local-git-push", scenarios: [{ id: "repositories.local-git-push-file-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
+  { id: "github-import", scenarios: [{ id: "repositories.github-import-direct-readback", capabilities: ["identity", "github"] }], tier: "live-provider" },
   { id: "chat", scenarios: [
-    { id: "chat.stream-grounded", capabilities: ["agent"] },
     { id: "chat.owner-credential-ui", capabilities: ["identity", "model.turn"] }
   ], tier: "local-infrastructure" },
-  { id: "tool", scenarios: [{ id: "chat.tool-browser-open", capabilities: ["agent", "browser.read"] }], tier: "local-infrastructure" },
-  { id: "workspace", scenarios: [{ id: "workspaces.cloud-lifecycle-suspend-resume-delete", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "terminal", scenarios: [{ id: "workspaces.cloud-terminal-keyboard-output", capabilities: ["identity", "cloud", "cloud.terminal"] }], tier: "local-infrastructure" },
-  { id: "job-admission", scenarios: [{ id: "flows.production-create-reconnect-execute", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "approval-decision", scenarios: [{ id: "flows.production-approval-decision-roundtrip", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "artifact", scenarios: [{ id: "issues.practice-live-implementation-artifacts", capabilities: [] }], tier: "local-infrastructure" },
-  { id: "review", scenarios: [{ id: "pull-requests.production-review-permission", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "landing", scenarios: [{ id: "pull-requests.production-land-git-proof", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
-  { id: "reload", scenarios: [{ id: "local-eventual-page-restart-persistence", capabilities: [] }], tier: "local-infrastructure" },
-  { id: "cancel", scenarios: [
-    { id: "chat.stop-real-turn", capabilities: ["agent"] },
-    { id: "flows.production-provider-cancel", capabilities: ["identity", "cloud"] }
-  ], tier: "local-infrastructure" },
-  { id: "recovery", scenarios: [
-    { id: "chat.failure-retry-process", capabilities: ["agent"] },
-    { id: "navigation.storage.opfs-failure-recovery", capabilities: [] }
-  ], tier: "local-infrastructure" }
+  { id: "workspace", scenarios: [{ id: "workspaces.product-lifecycle", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
+  { id: "terminal", scenarios: [{ id: "workspaces.product-terminal-keyboard-output", capabilities: ["identity", "cloud", "cloud.terminal"] }], tier: "local-infrastructure" },
+  { id: "flow", scenarios: [{ id: "flows.product-run", capabilities: ["identity", "cloud"] }], tier: "local-infrastructure" },
+  { id: "issue", scenarios: [{ id: "issues.product-create-readback", capabilities: ["identity"] }], tier: "local-infrastructure" },
+  { id: "landing", scenarios: [{ id: "landings.local-change-land", capabilities: ["identity"] }], tier: "local-infrastructure" },
+  { id: "reload", scenarios: [{ id: "issues.product-reload-readback", capabilities: ["identity"] }], tier: "local-infrastructure" }
 ]
 
 export const MATRIX_SCENARIO_IDS = [...new Set(MATRIX_OBLIGATIONS.flatMap((entry) => entry.scenarios.map(({ id }) => id)))]

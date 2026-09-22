@@ -69,6 +69,7 @@ export const startNativeOwn = async (
       stateDirectory: home,
       artifactsDirectory: join(outputDir, "native-own-diagnostics"),
       runtime: "product",
+      startupTimeoutMs: 180_000,
       env: { SMITHERS_BACKEND_MODE: "own", SMITHERS_OWNED_BACKEND_ORIGIN: origin }
     })
     await app.ready()

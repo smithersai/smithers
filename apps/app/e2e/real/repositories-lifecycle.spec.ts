@@ -108,7 +108,7 @@ authenticatedTest(
 authenticatedTest(
   "a GitHub source imports through the product and reads back from the direct repository facade",
   scenario("repositories.github-import-direct-readback", {
-    capabilities: ["identity", "cloud"],
+    capabilities: ["identity", "github"],
     description: "Create one owned private GitHub source, import it through repos.import, wait for the exact accepted job, then read its metadata, main bookmark, and README through the canonical repository API.",
     coverage: [
       "action:repos.import", "host:production", "path:success", "path:persistence", "door:slash",

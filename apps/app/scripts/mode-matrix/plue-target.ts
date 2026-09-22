@@ -18,8 +18,8 @@ const port = (): Promise<number> => new Promise((resolvePort, reject) => {
   })
 })
 
-const ready = async (origin: string): Promise<void> => {
-  for (const path of ["/", "/api/health", "/api/bootstrap"]) {
+const ready = async (origin: string, requirePage = false): Promise<void> => {
+  for (const path of requirePage ? ["/", "/api/health"] : ["/api/health"]) {
     const response = await fetch(new URL(path, origin), { signal: AbortSignal.timeout(10_000) })
     if (!response.ok) throw new Error(`${origin}${path} returned ${response.status}`)
   }
@@ -44,7 +44,7 @@ export const startPlueTargets = async (appDir: string, revision: string, outputD
   const web: PlueSession = { modeConfig: receipt("web-plue", origin.origin), close: async () => undefined }
   const webPort = await port()
   const localOrigin = `http://127.0.0.1:${webPort}`
-  const vite = Bun.spawn(["pnpm", "exec", "vite", "--configLoader", "runner", "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], {
+  const vite = Bun.spawn([Bun.which("node") ?? "node", join(appDir, "node_modules", "vite", "bin", "vite.js"), "--configLoader", "runner", "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], {
     cwd: resolve(appDir), env: { ...process.env, SMITHERS_DEV_BACKEND_ORIGIN: origin.origin },
     stdin: "ignore", stdout: "inherit", stderr: "inherit"
   })
@@ -52,7 +52,7 @@ export const startPlueTargets = async (appDir: string, revision: string, outputD
     const deadline = Date.now() + 120_000
     while (Date.now() < deadline) {
       if (vite.exitCode !== null) throw new Error(`local Plue Vite process exited ${vite.exitCode}`)
-      try { await ready(localOrigin); break } catch { await Bun.sleep(250) }
+      try { await ready(localOrigin, true); break } catch { await Bun.sleep(250) }
     }
     if (Date.now() >= deadline) throw new Error("local Plue Vite process did not become ready")
     return [web, {

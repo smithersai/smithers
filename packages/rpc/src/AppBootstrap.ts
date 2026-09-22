@@ -31,6 +31,7 @@ export const RuntimeCapabilitySchema = z.enum([
   "model.turn", // sealed turns on a configured model, independent of the default agent
   "browser.read", // guarded, pinned HTTPS page reads on this host
   "identity",
+  "github", // GitHub OAuth and import are configured on this host
   "cloud",
   "billing.checkout",
   "keys.byok",

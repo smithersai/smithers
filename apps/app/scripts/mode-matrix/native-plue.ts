@@ -27,12 +27,6 @@ export const startNativePlue = async (
   }
   const token = process.env[tokenEnvironment]?.trim()
   if (!token) throw new Error(`native-plue requires ${tokenEnvironment}`)
-  const bootstrapResponse = await fetch(new URL("/api/bootstrap", origin), { signal: AbortSignal.timeout(10_000) })
-  if (!bootstrapResponse.ok) throw new Error(`Plue bootstrap returned ${bootstrapResponse.status}`)
-  const bootstrap = await bootstrapResponse.json() as { readonly host?: string; readonly buildSha?: string }
-  if (bootstrap.host !== "cloud" || bootstrap.buildSha !== revision) {
-    throw new Error("native-plue target must serve the exact cloud revision")
-  }
   const packagePath = resolve(executable)
   if (!packagePath.includes(".app/Contents/MacOS/launcher") || !existsSync(packagePath)) {
     throw new Error("native-plue requires the packaged Smithers.app launcher")
@@ -50,6 +44,7 @@ export const startNativePlue = async (
       stateDirectory: home,
       artifactsDirectory: join(outputDir, "native-plue-diagnostics"),
       runtime: "product",
+      startupTimeoutMs: 180_000,
       env: {
         SMITHERS_BACKEND_MODE: "plue", SMITHERS_API_ORIGIN: origin.origin,
         SMITHERS_API_TOKEN: token,

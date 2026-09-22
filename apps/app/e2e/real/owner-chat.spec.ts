@@ -8,7 +8,7 @@ import { launchModelProvider } from "./support/model-provider-process"
 
 authenticatedTest("owner adds a model key in the UI and Chat streams its reply", scenario("chat.owner-credential-ui", {
   capabilities: ["identity", "model.turn"],
-  coverage: ["action:model.credential.enroll", "action:model.save", "action:model.assign", "host:local", "path:success", "path:error", "door:button", "dimension:owner-model-credential", "evidence:provider-request-journal"]
+  coverage: ["action:model.credential.enroll", "action:model.save", "action:model.assign", "host:local", "host:production", "host:native", "path:success", "path:error", "door:button", "dimension:owner-model-credential", "evidence:provider-request-journal"]
 }), async ({ page }) => {
   const key = "owner-playwright-provider-key"
   const provider = await launchModelProvider({ key })

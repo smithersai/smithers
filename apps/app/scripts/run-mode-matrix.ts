@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
@@ -89,6 +89,8 @@ for (const mode of selectedModes) {
   if (command !== "run" || state.status !== "passed" || modeConfig === undefined || !deterministicPassed) continue
 
   const evidence = resolve(appDir, "test-results", "mode-matrix", `${mode}.real-e2e.json`)
+  const ownerProfile = resolve(appDir, "test-results", "mode-matrix", `${mode}.owner-profile`)
+  if (modeConfig.auth.kind === "owner-session") rmSync(ownerProfile, { recursive: true, force: true })
   const selectedScenarios = applicableScenarioIds(state.capabilities)
   if (selectedScenarios.length === 0) continue
   const nativeDriver = modeConfig.surfaceDriver
@@ -97,6 +99,7 @@ for (const mode of selectedModes) {
     ? ["bun", "scripts/run-real-e2e.ts"]
     : ["bun", "scripts/run-native-mode-matrix.ts"]
   const childEnvironment = { ...process.env }
+  delete childEnvironment.SMITHERS_REAL_GIT_ORIGIN
   if (nativeDriver === undefined) {
     delete childEnvironment.SMITHERS_REAL_NATIVE_CDP_ENDPOINT
     delete childEnvironment.SMITHERS_REAL_NATIVE_WINDOW_URL
@@ -115,12 +118,14 @@ for (const mode of selectedModes) {
           ...(prelaunchedNative ? { SMITHERS_REAL_BASE_URL: new URL(process.env.SMITHERS_REAL_NATIVE_WINDOW_URL!).origin } : {})
         }),
       SMITHERS_REAL_E2E_MODE: mode,
+      ...(mode === "local-own" && process.env.SMITHERS_LOCAL_GIT_ORIGIN ? { SMITHERS_REAL_GIT_ORIGIN: process.env.SMITHERS_LOCAL_GIT_ORIGIN } : {}),
       SMITHERS_REAL_E2E_HOST: MODE_DESCRIPTORS[mode].legacyHost,
       SMITHERS_REAL_E2E_REVISION: config.revision,
       SMITHERS_REAL_E2E_RESULTS: evidence,
       SMITHERS_REAL_MATRIX_SCENARIOS: JSON.stringify(selectedScenarios),
       SMITHERS_REAL_AUTH_KIND: modeConfig.auth.kind,
       SMITHERS_REAL_AUTH_ENVIRONMENT: modeConfig.auth.environment,
+      ...(modeConfig.auth.kind === "owner-session" ? { SMITHERS_REAL_OWNER_PROFILE_DIR: ownerProfile } : {}),
       ...(modeConfig.auth.kind === "browser-profile" ? { SMITHERS_E2E_PROFILE: process.env[modeConfig.auth.environment] } : {})
     },
     stdin: "inherit",

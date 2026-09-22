@@ -997,11 +997,12 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			WebEditor:            false,
 			ClientErrorReporting: true,
 			ClientMetrics:        true,
-			// Legacy workflows require an explicit hosted opt-in.
 			StackedPRs: true,
 			Workflows:  false,
 			Sandboxes:  true,
 			AutoPush:   true,
+			Issues:     true,
+			Workspaces: true,
 			Secrets:    true,
 		},
 		RateLimit: RateLimitConfig{
@@ -1015,6 +1016,15 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 		},
 	}
 	assert.Equal(t, expected, cfg)
+}
+
+func TestLoad_CoreRepositoryOperationsEnabledByDefault(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load("")
+	require.NoError(t, err)
+	require.True(t, cfg.FeatureFlags.Issues)
+	require.False(t, cfg.FeatureFlags.Workflows)
+	require.True(t, cfg.FeatureFlags.Workspaces)
 }
 
 func TestLoad_RepositorySecretsDefaultOnWithEmergencyDisable(t *testing.T) {

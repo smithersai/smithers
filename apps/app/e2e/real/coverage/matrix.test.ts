@@ -63,6 +63,13 @@ describe("deployment mode matrix", () => {
     expect(MATRIX_OBLIGATIONS.filter(({ scenarios }) => scenarios.length === 0).map(({ id }) => id)).toEqual([])
   })
 
+  test("GitHub import runs only when the host advertises its configured integration", () => {
+    const owned = applicableScenarioIds(["identity", "agent", "model.turn", "cloud", "cloud.terminal"])
+    expect(owned).toContain("repositories.local-git-push-file-readback")
+    expect(owned).not.toContain("repositories.github-import-direct-readback")
+    expect(applicableScenarioIds(["identity", "github"])).toContain("repositories.github-import-direct-readback")
+  })
+
   test("parses credential-free origins and secret references without requiring every mode", () => {
     expect(parseMatrixConfig({
       revision,
@@ -101,15 +108,15 @@ describe("deployment mode matrix", () => {
     const readiness = { ...missingModeReadiness("web-selfhost", "not launched"), origin: "https://example.test" }
     const rows = scenarioReceipts(readiness, revision, [])
     expect(rows.every(({ status }) => status === "failed")).toBe(true)
-    expect(rows.find(({ obligation }) => obligation === "approval-decision")?.reason).toBe("not launched")
+    expect(rows.find(({ obligation }) => obligation === "flow")?.reason).toBe("not launched")
     expect(rows.find(({ obligation }) => obligation === "chat")?.reason).toBe("not launched")
   })
 
   test("a failed attempt prevents a later pass from satisfying an obligation", () => {
-    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test", capabilities: ["agent"], reasons: [] }
-    const base = { scenarioId: "chat.stream-grounded", host: "production" as const, mode: "web-plue" as const, revision, startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z" }
+    const readiness = { mode: "web-plue" as const, status: "passed" as const, tier: "plue-production" as const, origin: "https://example.test", capabilities: ["identity", "model.turn"], reasons: [] }
+    const base = { scenarioId: "chat.owner-credential-ui", host: "production" as const, mode: "web-plue" as const, revision, startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z" }
     const rows = scenarioReceipts(readiness, revision, [{ ...base, status: "failed" as const }, { ...base, status: "passed" as const }])
-    expect(rows.find(({ scenarioId }) => scenarioId === "chat.stream-grounded")?.status).toBe("failed")
+    expect(rows.find(({ scenarioId }) => scenarioId === "chat.owner-credential-ui")?.status).toBe("failed")
   })
 
   test("readiness joins a real execution receipt with health and advertised capabilities", async () => {

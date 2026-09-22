@@ -168,7 +168,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     if (restored.full_name !== `${username}/${repository}`) throw new Error("local-own restart lost its repository")
     const afterVolume = createHash("sha256").update(readFileSync(secrets)).digest("hex")
     if (beforeVolume !== afterVolume) throw new Error("local-own restart changed owner secrets")
-    vite = Bun.spawn(["pnpm", "exec", "vite", "--configLoader", "runner", "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], {
+    vite = Bun.spawn([nodeBinary, join(appDir, "node_modules", "vite", "bin", "vite.js"), "--configLoader", "runner", "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], {
       cwd: appDir, env: { ...process.env, SMITHERS_DEV_BACKEND_ORIGIN: backendOrigin }, stdin: "ignore", stdout: "inherit", stderr: "inherit"
     })
     await waitFor(`${origin}/api/bootstrap`, vite)
@@ -186,7 +186,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     const authEnvironment = "SMITHERS_LOCAL_OWNER_SESSION"
     return {
       modeConfig: { mode: "local-own", origin, auth: { kind: "owner-session", environment: authEnvironment }, executionReceipt: receiptPath },
-      runtimeEnvironment: { [authEnvironment]: JSON.stringify({ username, password, bootstrapToken }) }, close
+      runtimeEnvironment: { [authEnvironment]: JSON.stringify({ username, password, bootstrapToken }), SMITHERS_LOCAL_GIT_ORIGIN: backendOrigin }, close
     }
   } catch (error) {
     await close()

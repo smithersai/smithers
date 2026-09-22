@@ -11,6 +11,10 @@ const appDir = fileURLToPath(new URL("../", import.meta.url))
 const revision = process.env.SMITHERS_BUILD_SHA?.trim()
 const executable = process.argv[2]?.trim() ?? process.env.SMITHERS_MODE_MATRIX_NATIVE_EXECUTABLE?.trim()
 const cdpEndpoint = process.env.SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT?.trim()
+const selected = process.env.SMITHERS_MODE_MATRIX_NATIVE_MODES?.split(",") ?? ["native-own", "native-plue"]
+if (selected.length === 0 || selected.some((mode) => mode !== "native-own" && mode !== "native-plue")) {
+  throw new Error("SMITHERS_MODE_MATRIX_NATIVE_MODES must list native-own and/or native-plue")
+}
 if (!revision || !/^[0-9a-f]{40,64}$/.test(revision) || !executable || !cdpEndpoint) {
   throw new Error("native matrix requires SMITHERS_BUILD_SHA, a packaged launcher, and SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT")
 }
@@ -37,20 +41,22 @@ const run = async (
 }
 
 let failed = false
-const own = await startNativeOwn(revision, resolve(outputDir, "native-own"), executable, cdpEndpoint)
-try { failed = (await run("native-own", "run", own.modeConfig, own.runtimeEnvironment)) !== 0 || failed }
-finally { await own.close() }
+if (selected.includes("native-own")) {
+  const own = await startNativeOwn(revision, resolve(outputDir, "native-own"), executable, cdpEndpoint)
+  try { failed = (await run("native-own", "run", own.modeConfig, own.runtimeEnvironment)) !== 0 || failed }
+  finally { await own.close() }
+}
 
 const plueURL = process.env.SMITHERS_MODE_MATRIX_PLUE_URL?.trim()
 const plueToken = process.env.SMITHERS_MODE_MATRIX_PLUE_TOKEN?.trim()
 if (Boolean(plueURL) !== Boolean(plueToken)) {
   throw new Error("native-plue requires both SMITHERS_MODE_MATRIX_PLUE_URL and SMITHERS_MODE_MATRIX_PLUE_TOKEN")
 }
-if (plueURL && plueToken) {
+if (selected.includes("native-plue") && plueURL && plueToken) {
   const plue = await startNativePlue(revision, resolve(outputDir, "native-plue"), executable, cdpEndpoint, plueURL, "SMITHERS_MODE_MATRIX_PLUE_TOKEN")
   try { failed = (await run("native-plue", "run", plue.modeConfig, plue.runtimeEnvironment)) !== 0 || failed }
   finally { await plue.close() }
-} else {
+} else if (selected.includes("native-plue")) {
   failed = (await run("native-plue", "audit", undefined)) !== 0 || failed
 }
 if (failed) process.exitCode = 1

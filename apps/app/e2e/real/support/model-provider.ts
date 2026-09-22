@@ -164,7 +164,7 @@ const serve = async (protocol: ProviderProtocol, request: Request): Promise<Resp
 }
 
 const server = Bun.serve({
-  hostname: "127.0.0.1",
+  hostname: process.env.SMITHERS_MODEL_PROVIDER_HOSTNAME === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1",
   port,
   idleTimeout: 60,
   async fetch(request) {

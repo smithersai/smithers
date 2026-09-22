@@ -151,6 +151,12 @@ struct ChangeFile {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct TreeEntry {
+    path: String,
+    kind: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct Conflict {
     file_path: String,
     conflict_type: String,
@@ -901,6 +907,51 @@ impl RepoHandle {
 
         files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(files)
+    }
+
+    fn list_directory(
+        &self,
+        change_id: &str,
+        prefix: &str,
+        after: &str,
+        limit: u32,
+    ) -> Result<Vec<TreeEntry>, JjError> {
+        let prefix = prefix.trim_matches('/');
+        let files = self.list_files_at_change(change_id, Some(prefix))?;
+        let mut entries = std::collections::BTreeMap::new();
+        for file in files {
+            let rest = if prefix.is_empty() {
+                file.path.as_str()
+            } else if let Some(rest) = file
+                .path
+                .strip_prefix(prefix)
+                .and_then(|rest| rest.strip_prefix('/'))
+            {
+                rest
+            } else {
+                continue;
+            };
+            let Some((child, tail)) = rest.split_once('/') else {
+                if !rest.is_empty() {
+                    entries.insert(file.path, "file");
+                }
+                continue;
+            };
+            if !child.is_empty() && !tail.is_empty() {
+                let path = if prefix.is_empty() {
+                    child.to_string()
+                } else {
+                    format!("{prefix}/{child}")
+                };
+                entries.insert(path, "dir");
+            }
+        }
+        Ok(entries
+            .into_iter()
+            .filter(|(path, _)| path.as_str() > after)
+            .take(limit as usize)
+            .map(|(path, kind)| TreeEntry { path, kind })
+            .collect())
     }
 
     fn get_conflicts(&self, change_id: &str) -> Result<Vec<Conflict>, JjError> {
@@ -3648,6 +3699,27 @@ pub extern "C" fn smithers_list_tree_files(
     })
 }
 
+/// List one directory page at a change. The returned envelope is freed with
+/// [`smithers_free_string`].
+#[no_mangle]
+pub extern "C" fn smithers_list_directory(
+    store_path: *const c_char,
+    change_id: *const c_char,
+    prefix: *const c_char,
+    after: *const c_char,
+    limit: u32,
+) -> *mut c_char {
+    execute(|| {
+        let handle = open_repo(store_path)?;
+        let change_id = parse_c_string(change_id, "change_id")?;
+        let prefix = parse_c_string(prefix, "prefix")?;
+        let after = parse_c_string(after, "after")?;
+        handle
+            .list_directory(&change_id, &prefix, &after, limit)
+            .map_err(FfiError::from)
+    })
+}
+
 /// Fetch change conflicts and return a JSON response string.
 ///
 /// # Safety
@@ -5201,6 +5273,49 @@ mod tests {
             .expect("tree files")
             .iter()
             .any(|file| file["path"] == "README.md"));
+
+        let empty = c_string("");
+        let root = unsafe {
+            take_json(smithers_list_directory(
+                repo_path_c.as_ptr(),
+                commit_id_c.as_ptr(),
+                empty.as_ptr(),
+                empty.as_ptr(),
+                2,
+            ))
+        };
+        assert_eq!(
+            root,
+            serde_json::json!([
+                { "path": "README.md", "kind": "file" },
+                { "path": "src", "kind": "dir" }
+            ])
+        );
+        let src = c_string("src");
+        let nested = unsafe {
+            take_json(smithers_list_directory(
+                repo_path_c.as_ptr(),
+                commit_id_c.as_ptr(),
+                src.as_ptr(),
+                empty.as_ptr(),
+                1,
+            ))
+        };
+        assert_eq!(
+            nested,
+            serde_json::json!([{ "path": "src/main.rs", "kind": "file" }])
+        );
+        let after = c_string("README.md");
+        let page = unsafe {
+            take_json(smithers_list_directory(
+                repo_path_c.as_ptr(),
+                commit_id_c.as_ptr(),
+                empty.as_ptr(),
+                after.as_ptr(),
+                1,
+            ))
+        };
+        assert_eq!(page, serde_json::json!([{ "path": "src", "kind": "dir" }]));
 
         let file_from_commit = unsafe {
             take_json(smithers_get_file_content(

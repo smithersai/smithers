@@ -42,6 +42,7 @@ const terminate = async (child: ChildProcess): Promise<void> => {
 
 export const launchModelProvider = async (options: ModelProviderOptions): Promise<ModelProvider> => {
   const appDir = resolve(__dirname, "../../..")
+  const dockerSelfhost = process.env.SMITHERS_REAL_E2E_MODE === "web-selfhost"
   let child: ChildProcess | undefined
   let port = options.port ?? 0
   const boot = async (): Promise<void> => {
@@ -52,6 +53,7 @@ export const launchModelProvider = async (options: ModelProviderOptions): Promis
         ...process.env,
         SMITHERS_MODEL_PROVIDER_KEY: options.key,
         SMITHERS_MODEL_PROVIDER_PORT: String(port),
+        ...(dockerSelfhost ? { SMITHERS_MODEL_PROVIDER_HOSTNAME: "0.0.0.0" } : {}),
         ...(options.slowMs === undefined ? {} : { SMITHERS_MODEL_PROVIDER_SLOW_MS: String(options.slowMs) })
       },
       stdio: ["ignore", "pipe", "pipe"]
@@ -90,9 +92,10 @@ export const launchModelProvider = async (options: ModelProviderOptions): Promis
   }
   await boot()
   const origin = `http://127.0.0.1:${port}`
+  const productOrigin = dockerSelfhost ? `http://host.docker.internal:${port}` : origin
   return {
-    origin,
-    evaluationUrl: `${origin}${PROVIDER_PATHS.evaluation}`,
+    origin: productOrigin,
+    evaluationUrl: `${productOrigin}${PROVIDER_PATHS.evaluation}`,
     acceptedKeySha256: createHash("sha256").update(options.key).digest("hex"),
     journal: async () => {
       const response = await fetch(`${origin}${PROVIDER_PATHS.journal}`)
