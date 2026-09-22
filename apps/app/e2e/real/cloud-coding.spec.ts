@@ -39,6 +39,10 @@ configuredGatewayTest("a UI coding request validates a change and Vibe lands its
  const completed=await waitForTerminalRun(page,request,repo,requestRunId,600_000,workspaceId)
  await attachProductionJson(testInfo,"native-request",{repo,requestRunId,completed})
  expect(completed.status).toBe("completed")
+ const validation=JSON.stringify(completed.finalOutput)
+ expect(validation,"The coding result must report validation, rather than merely a terminal run").toContain('"status":"validated"')
+ expect(validation,"The approved plan must contain a required check").toContain('"required":true')
+ expect(validation,"The result must contain a passed check receipt").toContain('"status":"passed"')
  const card=page.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${requestRunId}"]`)
  const vibe=card.getByRole("button",{name:"Vibe this change",exact:true})
  await expect(vibe).toBeVisible({timeout:30_000})
@@ -54,6 +58,18 @@ configuredGatewayTest("a UI coding request validates a change and Vibe lands its
  const file=await readJson<{content:string;encoding:string}>(page,request,repositoryApiPath(repo,"/contents/README.md?ref=main"))
  expect(file.encoding).toBe("base64")
  expect(Buffer.from(file.content,"base64").toString()).toContain(marker)
+ // GitHub is an independent mirror read, not another Plue API route. The
+ // authenticated browser can read this private fixture without a token in the
+ // test process or an intercepted response.
+ const github=await page.context().newPage()
+ try {
+  const commitPage=await github.goto(`https://github.com/${repo}/commit/${result.mainCommitId}`,{waitUntil:"domcontentloaded"})
+  expect(commitPage?.status(),"GitHub must resolve the exact landed commit").toBe(200)
+  await expect(github).toHaveURL(new RegExp(`/commit/${result.mainCommitId}$`))
+  const filePage=await github.goto(`https://github.com/${repo}/blob/${result.mainCommitId}/README.md`,{waitUntil:"domcontentloaded"})
+  expect(filePage?.status(),"GitHub must resolve README at that exact commit").toBe(200)
+  await expect(github.locator("body")).toContainText(marker)
+ } finally { await github.close() }
  await attachProductionJson(testInfo,"native-landed-git-proof",{repo,marker,requestRunId,vibeRunId,mainCommitId:result.mainCommitId})
  } catch (error) {
   bodyError = error
