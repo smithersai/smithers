@@ -26,11 +26,15 @@ func TestBuildProcessSpecUsesSameImmutableIdentityForWorkspaceAdapters(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:4317", spec.ReadyAddress)
 	assert.Equal(t, []string{"/opt/smithers/coding-host", "serve", "--root", "/workspace/repo", "--state-dir",
-		"/workspace/state/flow-runtime/11111111-1111-4111-8111-111111111111", "--host", "127.0.0.1", "--port", "4317", "--listen"}, spec.Args)
+		"/workspace/state", "--host", "127.0.0.1", "--port", "4317", "--listen"}, spec.Args)
 	assert.Equal(t, "bearer", spec.Environment["SMITHERS_API_KEY"])
 	assert.Equal(t, "7", spec.Environment["SMITHERS_OWNER_GENERATION"])
 	assert.Equal(t, "openai:gpt-5", spec.Environment["SMITHERS_CODING_IMPLEMENT_MODEL"])
 	assert.NotContains(t, spec.Identity, "bearer")
+	otherPort, err := BuildProcessSpec(HostLaunch{Binding: binding, Authority: authority, Catalog: catalog, Credential: "bearer"}, WorkspacePaths{Root: "/workspace/repo", StateDir: "/workspace/state"}, 4318)
+	require.NoError(t, err)
+	assert.Equal(t, spec.Identity, otherPort.Identity)
+	assert.NotEqual(t, spec.ReadyAddress, otherPort.ReadyAddress)
 	catalog.ImplementationModel = ""
 	_, err = validateCatalog(catalog)
 	require.NoError(t, err)

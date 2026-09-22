@@ -411,10 +411,39 @@ func (r *Runtime) commandLocked(ws *workspace, command workspaceapi.Command) (*e
 	environment["TMPDIR"] = filepath.Join(ws.directory, "tmp")
 	environment["SMITHERS_WORKSPACE_ROOT"] = filepath.Join(ws.directory, "root")
 	environment["SMITHERS_WORKSPACE_STATE_DIR"] = filepath.Join(ws.directory, "state")
-	cmd := exec.Command(command.Args[0], command.Args[1:]...)
+	executable, err := workspaceExecutable(command.Args[0], environment["PATH"], directory)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(executable, command.Args[1:]...)
+	cmd.Args[0] = command.Args[0]
 	cmd.Dir = directory
 	cmd.Env = flattenEnvironment(environment)
 	return cmd, nil
+}
+
+// exec.Command resolves bare names using the backend's PATH before Cmd.Env
+// is assigned. Resolve against the actual workspace environment instead.
+func workspaceExecutable(name, searchPath, directory string) (string, error) {
+	if strings.ContainsRune(name, filepath.Separator) || strings.Contains(name, "/") {
+		return name, nil
+	}
+	for _, entry := range filepath.SplitList(searchPath) {
+		candidate := filepath.Join(entry, name)
+		relative := !filepath.IsAbs(candidate)
+		if relative {
+			candidate = filepath.Join(directory, candidate)
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		if relative {
+			return "", &exec.Error{Name: name, Err: exec.ErrDot}
+		}
+		return candidate, nil
+	}
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
 func validateEnvironmentName(name string) error {

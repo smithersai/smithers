@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.8
 # The committed WebAssembly artifact is reproducible only on this host triple.
 FROM --platform=linux/amd64 rust:1.89.0-bookworm AS flows-jj
 WORKDIR /src

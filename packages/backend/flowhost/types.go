@@ -36,15 +36,11 @@ type SecretCodec interface {
 // Executable is supplied locally by the distribution; resolving a catalog
 // never downloads an artifact.
 type Catalog struct {
-	Key            string
-	Family         string
-	Executable     string
-	ArtifactDigest string
-	ServiceName    string
-	// Port is the stable guest port for an isolated workspace. It may be zero
-	// when the trusted-process adapter allocates a host port before building
-	// the process spec.
-	Port                uint16
+	Key                 string
+	Family              string
+	Executable          string
+	ArtifactDigest      string
+	ServiceName         string
 	ReadyTimeout        time.Duration
 	Environment         map[string]string
 	ProductAPIURL       string
@@ -54,6 +50,8 @@ type Catalog struct {
 type WorkspacePaths struct {
 	Root     string
 	StateDir string
+	// Host is allocated by the workspace adapter; empty retains IPv4 loopback.
+	Host string
 }
 
 // ProcessSpec is the identical canonical-host argv/environment contract used
@@ -136,7 +134,7 @@ type Connection struct {
 // Inspect must return ErrHostNotRunning when no live process owns the binding;
 // it must not claim readiness from a stale product row or a bare TCP listener.
 type Launcher interface {
-	InspectFlowHost(context.Context, Binding, Authority, Catalog) (Connection, error)
+	InspectFlowHost(context.Context, HostLaunch) (Connection, error)
 	StartFlowHost(context.Context, HostLaunch) (Connection, error)
 }
 

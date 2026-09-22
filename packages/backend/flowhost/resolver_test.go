@@ -117,7 +117,7 @@ func (launcher *memoryLauncher) connection(binding Binding, credential string) C
 	return Connection{Endpoint: "http://127.0.0.1:7331", HTTPClient: &http.Client{Transport: launcher.transport}}
 }
 
-func (launcher *memoryLauncher) InspectFlowHost(_ context.Context, binding Binding, _ Authority, _ Catalog) (Connection, error) {
+func (launcher *memoryLauncher) InspectFlowHost(_ context.Context, _ HostLaunch) (Connection, error) {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
 	if !launcher.running {
@@ -147,7 +147,7 @@ func testResolver(t *testing.T) (*Resolver, *memoryBindingStore, *memoryLauncher
 		Targets: TargetResolverFunc(func(context.Context, flowruntime.Target) (Authority, error) { return authority, nil }),
 		Catalogs: []Catalog{{Key: CatalogCoding, Family: CatalogCoding, Executable: "/opt/smithers/coding-host",
 			ArtifactDigest: strings.Repeat("a", 64),
-			ServiceName:    "smithers-flow-coding", Port: 7331, ImplementationModel: "openai:gpt-5"}},
+			ServiceName:    "smithers-flow-coding", ImplementationModel: "openai:gpt-5"}},
 	})
 	require.NoError(t, err)
 	return resolver, store, launcher, target
@@ -230,7 +230,7 @@ func TestResolverRefusesTargetResolverScopeSubstitution(t *testing.T) {
 func TestCatalogRejectsReservedIdentityEnvironment(t *testing.T) {
 	_, err := validateCatalog(Catalog{Key: CatalogCoding, Family: CatalogCoding, Executable: "/host",
 		ArtifactDigest: strings.Repeat("a", 64),
-		ServiceName:    "host", Port: 7331, ImplementationModel: "openai:gpt-5",
+		ServiceName:    "host", ImplementationModel: "openai:gpt-5",
 		Environment: map[string]string{"SMITHERS_API_KEY": "caller-value"}})
 	require.Error(t, err)
 }

@@ -172,7 +172,7 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 	defer lease.Close() // best effort: caller error takes precedence over unlock diagnostics.
 
 	binding := lease.Binding()
-	connection, inspectErr := resolver.launcher.InspectFlowHost(ctx, binding, authority, catalog)
+	connection, inspectErr := resolver.launcher.InspectFlowHost(ctx, HostLaunch{Binding: binding, Authority: authority, Catalog: catalog, Credential: lease.Credential()})
 	if inspectErr == nil {
 		client, err := resolver.verifiedClient(ctx, connection, lease.Credential(), binding)
 		if err != nil {

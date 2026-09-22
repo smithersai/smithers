@@ -3,6 +3,7 @@ package flowhost
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"path"
@@ -25,7 +26,15 @@ func BuildProcessSpec(launch HostLaunch, paths WorkspacePaths, port uint16) (Pro
 	if root == "" || stateBase == "" || !path.IsAbs(root) || !path.IsAbs(stateBase) {
 		return ProcessSpec{}, errors.New("flow host workspace root and state directory must be absolute runtime paths")
 	}
-	stateDir := path.Join(stateBase, "flow-runtime", launch.Binding.ID)
+	// The managed-host adapter already supplied a binding-specific state path.
+	stateDir := stateBase
+	host := paths.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if net.ParseIP(host) == nil {
+		return ProcessSpec{}, errors.New("flow host bind address must be an adapter-selected IP")
+	}
 	environment := make(map[string]string, len(launch.Catalog.Environment)+8)
 	for name, value := range launch.Catalog.Environment {
 		environment[name] = value
@@ -53,14 +62,25 @@ func BuildProcessSpec(launch HostLaunch, paths WorkspacePaths, port uint16) (Pro
 		return ProcessSpec{}, errors.New("flow host family is unsupported")
 	}
 	args := []string{launch.Catalog.Executable, "serve", "--root", root, "--state-dir", stateDir,
-		"--host", "127.0.0.1", "--port", strconv.Itoa(int(port)), "--listen"}
-	identityInput := strings.Join([]string{launch.Binding.ID, launch.Catalog.Key, launch.Catalog.Executable,
-		launch.Binding.RuntimeArtifactDigest, launch.Binding.SourceRevision,
-		strconv.FormatInt(launch.Binding.OwnerGeneration, 10), root, stateDir, strconv.Itoa(int(port))}, "\x00")
-	digest := sha256.Sum256([]byte(identityInput))
+		"--host", host, "--port", strconv.Itoa(int(port)), "--listen"}
 	return ProcessSpec{
-		Name: launch.Binding.ServiceName, Identity: "flow-host:" + hex.EncodeToString(digest[:]),
-		Args: args, Environment: environment, ReadyAddress: net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))),
+		Name: launch.Binding.ServiceName, Identity: hostServiceIdentity(launch),
+		Args: args, Environment: environment, ReadyAddress: net.JoinHostPort(host, strconv.Itoa(int(port))),
 		ReadyTimeout: launch.Catalog.ReadyTimeout,
 	}, nil
+}
+
+// Port and adapter paths are observations, not immutable host authority.
+// Include the entire operator configuration so changed model/env settings
+// cannot silently reuse a live process with an older command.
+func hostServiceIdentity(launch HostLaunch) string {
+	identity := struct {
+		BindingID, WorkspaceID, Artifact, Revision string
+		Generation                                 int64
+		Catalog                                    Catalog
+		Repository                                 string
+	}{launch.Binding.ID, launch.Binding.WorkspaceID, launch.Binding.RuntimeArtifactDigest, launch.Binding.SourceRevision, launch.Binding.OwnerGeneration, launch.Catalog, launch.Authority.Repository}
+	data, _ := json.Marshal(identity)
+	digest := sha256.Sum256(data)
+	return "flow-host:" + hex.EncodeToString(digest[:])
 }
