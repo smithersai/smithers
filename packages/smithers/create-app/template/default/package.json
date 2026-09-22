@@ -19,16 +19,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.0",
-    "@smthrs/create-app": "1.0.0-rc.0",
-    "@smthrs/harness": "1.0.0-rc.0",
-    "@smthrs/targets": "1.0.0-rc.0",
+    "@smthrs/core": "1.0.0-rc.1",
+    "@smthrs/create-app": "1.0.0-rc.1",
+    "@smthrs/harness": "1.0.0-rc.1",
+    "@smthrs/targets": "1.0.0-rc.1",
     "effect": "4.0.0-rc.115",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.0",
+    "@smthrs/build-cli": "1.0.0-rc.1",
     "@cloudflare/vite-plugin": "^1.54.4",
     "@cloudflare/workers-types": "^5.20260904.1",
     "@types/node": "^26.4.1",
@@ -41,6 +41,6 @@
     "wrangler": "^4.129.0",
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/platform-node-shared": "4.0.0-rc.115",
-    "@smthrs/testing": "1.0.0-rc.0"
+    "@smthrs/testing": "1.0.0-rc.1"
   }
 }

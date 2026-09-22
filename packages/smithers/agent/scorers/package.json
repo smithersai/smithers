@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/scorers",
   "type": "module",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -191,9 +191,9 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.0",
-    "@smthrs/database": "1.0.0-rc.0",
-    "@smthrs/journal": "1.0.0-rc.0"
+    "@smthrs/core": "1.0.0-rc.1",
+    "@smthrs/database": "1.0.0-rc.1",
+    "@smthrs/journal": "1.0.0-rc.1"
   },
   "peerDependencies": {
     "effect": "4.0.0-rc.115"

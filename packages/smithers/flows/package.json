@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/flows",
   "type": "module",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -134,26 +134,26 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/artifacts": "1.0.0-rc.0",
-    "@smthrs/canonical": "1.0.0-rc.0",
-    "@smthrs/capability": "1.0.0-rc.0",
-    "@smthrs/crypto": "1.0.0-rc.0",
-    "@smthrs/database": "1.0.0-rc.0",
-    "@smthrs/engine": "1.0.0-rc.0",
-    "@smthrs/engine-store": "1.0.0-rc.0",
-    "@smthrs/flow": "1.0.0-rc.0",
-    "@smthrs/jj": "1.0.0-rc.0",
-    "@smthrs/journal": "1.0.0-rc.0",
-    "@smthrs/kernel": "1.0.0-rc.0",
-    "@smthrs/keys": "1.0.0-rc.0",
-    "@smthrs/observability": "1.0.0-rc.0",
-    "@smthrs/plan": "1.0.0-rc.0",
-    "@smthrs/plan-store": "1.0.0-rc.0",
-    "@smthrs/run-store": "1.0.0-rc.0",
-    "@smthrs/sandbox": "1.0.0-rc.0",
-    "@smthrs/step-cache": "1.0.0-rc.0",
-    "@smthrs/sync": "1.0.0-rc.0",
-    "@smthrs/time-travel": "1.0.0-rc.0",
+    "@smthrs/artifacts": "1.0.0-rc.1",
+    "@smthrs/canonical": "1.0.0-rc.1",
+    "@smthrs/capability": "1.0.0-rc.1",
+    "@smthrs/crypto": "1.0.0-rc.1",
+    "@smthrs/database": "1.0.0-rc.1",
+    "@smthrs/engine": "1.0.0-rc.1",
+    "@smthrs/engine-store": "1.0.0-rc.1",
+    "@smthrs/flow": "1.0.0-rc.1",
+    "@smthrs/jj": "1.0.0-rc.1",
+    "@smthrs/journal": "1.0.0-rc.1",
+    "@smthrs/kernel": "1.0.0-rc.1",
+    "@smthrs/keys": "1.0.0-rc.1",
+    "@smthrs/observability": "1.0.0-rc.1",
+    "@smthrs/plan": "1.0.0-rc.1",
+    "@smthrs/plan-store": "1.0.0-rc.1",
+    "@smthrs/run-store": "1.0.0-rc.1",
+    "@smthrs/sandbox": "1.0.0-rc.1",
+    "@smthrs/step-cache": "1.0.0-rc.1",
+    "@smthrs/sync": "1.0.0-rc.1",
+    "@smthrs/time-travel": "1.0.0-rc.1",
     "esbuild": "0.28.2"
   },
   "devDependencies": {
@@ -161,11 +161,11 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
-    "@smthrs/control": "1.0.0-rc.0",
-    "@smthrs/model": "1.0.0-rc.0",
-    "@smthrs/notifications": "1.0.0-rc.0",
-    "@smthrs/platform-node": "1.0.0-rc.0",
-    "@smthrs/registry": "1.0.0-rc.0",
+    "@smthrs/control": "1.0.0-rc.1",
+    "@smthrs/model": "1.0.0-rc.1",
+    "@smthrs/notifications": "1.0.0-rc.1",
+    "@smthrs/platform-node": "1.0.0-rc.1",
+    "@smthrs/registry": "1.0.0-rc.1",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -180,12 +180,12 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@smthrs/platform-bun": "1.0.0-rc.0"
+    "@smthrs/platform-bun": "1.0.0-rc.1"
   },
   "peerDependencies": {
-    "@smthrs/platform-node": "1.0.0-rc.0",
+    "@smthrs/platform-node": "1.0.0-rc.1",
     "effect": "4.0.0-rc.115",
-    "@smthrs/platform-bun": "1.0.0-rc.0"
+    "@smthrs/platform-bun": "1.0.0-rc.1"
   },
   "peerDependenciesMeta": {
     "@smthrs/platform-node": {

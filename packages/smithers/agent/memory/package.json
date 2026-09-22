@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/memory",
   "type": "module",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -290,10 +290,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.0",
-    "@smthrs/database": "1.0.0-rc.0",
-    "@smthrs/flow": "1.0.0-rc.0",
-    "@smthrs/patterns": "1.0.0-rc.0"
+    "@smthrs/core": "1.0.0-rc.1",
+    "@smthrs/database": "1.0.0-rc.1",
+    "@smthrs/flow": "1.0.0-rc.1",
+    "@smthrs/patterns": "1.0.0-rc.1"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

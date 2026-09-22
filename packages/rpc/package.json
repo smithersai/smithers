@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "zod": "4.5.4",
-    "@smthrs/canonical": "1.0.0-rc.0"
+    "@smthrs/canonical": "1.0.0-rc.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

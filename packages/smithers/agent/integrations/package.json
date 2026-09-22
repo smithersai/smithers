@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/integrations",
   "type": "module",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -492,12 +492,12 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/control": "1.0.0-rc.0",
-    "@smthrs/database": "1.0.0-rc.0",
-    "@smthrs/errors": "1.0.0-rc.0",
-    "@smthrs/flow": "1.0.0-rc.0",
-    "@smthrs/notifications": "1.0.0-rc.0",
-    "@smthrs/canonical": "1.0.0-rc.0"
+    "@smthrs/control": "1.0.0-rc.1",
+    "@smthrs/database": "1.0.0-rc.1",
+    "@smthrs/errors": "1.0.0-rc.1",
+    "@smthrs/flow": "1.0.0-rc.1",
+    "@smthrs/notifications": "1.0.0-rc.1",
+    "@smthrs/canonical": "1.0.0-rc.1"
   },
   "peerDependencies": {
     "effect": "4.0.0-rc.115"
@@ -507,7 +507,7 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
-    "@smthrs/engine": "1.0.0-rc.0",
+    "@smthrs/engine": "1.0.0-rc.1",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
