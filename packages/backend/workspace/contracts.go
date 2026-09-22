@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net/http"
 	"time"
 )
 
@@ -33,6 +34,22 @@ var ErrWorkspaceNotFound = errors.New("workspace not found")
 // ErrWorkspaceStopped is returned when an operation needs a running workspace.
 var ErrWorkspaceStopped = errors.New("workspace is stopped")
 
+// ErrManagedHostNotRunning means no live managed process owns the requested
+// host binding. Callers may start that binding after their common product lock
+// and owner-generation fence are held.
+var ErrManagedHostNotRunning = errors.New("managed host is not running")
+
+// ErrManagedHostIdentityConflict means a live process answered with identity
+// other than the exact protocol, artifact, source revision, and owner
+// generation expected by common product state. It must never be replaced
+// opportunistically while it is still live.
+var ErrManagedHostIdentityConflict = errors.New("managed host identity conflict")
+
+// ErrWorkspaceSourceUnavailable means the runtime workspace does not expose a
+// supported immutable repository snapshot. Callers must not substitute a
+// package build revision or fabricate a source identity.
+var ErrWorkspaceSourceUnavailable = errors.New("workspace source revision is unavailable")
+
 // WorkspaceState is the execution lifecycle observed by product code. A
 // stopped persistent workspace keeps its files but owns no live processes.
 type WorkspaceState string
@@ -50,13 +67,15 @@ const (
 // particular, ColdSnapshots must remain false for a process adapter that only
 // persists the workspace directory.
 type WorkspaceCapabilities struct {
-	PersistentFiles bool
-	Execution       bool
-	ManagedServices bool
-	Terminal        bool
-	LoopbackPreview bool
-	FileOperations  bool
-	ColdSnapshots   bool
+	PersistentFiles  bool
+	Execution        bool
+	ManagedServices  bool
+	ManagedHTTPHosts bool
+	SourceRevision   bool
+	Terminal         bool
+	LoopbackPreview  bool
+	FileOperations   bool
+	ColdSnapshots    bool
 }
 
 // WorkspaceSpec carries only durable execution identity. Authentication,
@@ -202,6 +221,95 @@ type WorkspaceServiceCatalog interface {
 // common product service.
 type WorkspaceNamedServiceController interface {
 	ManageService(ctx context.Context, workspaceID, name, action string) (ServiceObservation, error)
+}
+
+// ManagedHostIdentity is immutable readiness evidence returned by the
+// canonical Flow runtime protocol. SourceRevision is repository-specific;
+// adapters compare these values exactly and never infer them from a process or
+// listening socket.
+type ManagedHostIdentity struct {
+	Protocol        string
+	ArtifactDigest  string
+	SourceRevision  string
+	OwnerGeneration int64
+}
+
+// ManagedHostConnection is a private control-plane connection. Trusted local
+// execution uses a loopback endpoint and nil HTTPClient. An isolated adapter
+// supplies a client whose transport opens a placement-fenced workspace port;
+// neither form is a public preview URL.
+type ManagedHostConnection struct {
+	Endpoint   string
+	HTTPClient *http.Client
+}
+
+// ManagedHostPlacement contains paths and an address chosen by the adapter in
+// the workspace's own namespace. StateDir is stable for Spec.ID across owner
+// generations. A command builder must use these values rather than choosing a
+// fixed port or a backend-host path.
+type ManagedHostPlacement struct {
+	Workspace Workspace
+	StateDir  string
+	Host      string
+	Port      uint16
+	Address   string
+}
+
+// ManagedHostBuilder materializes a canonical coding or librarian command
+// after the execution adapter allocates the address.
+type ManagedHostBuilder interface {
+	BuildManagedHost(context.Context, ManagedHostPlacement) (Command, error)
+}
+
+type ManagedHostBuilderFunc func(context.Context, ManagedHostPlacement) (Command, error)
+
+func (build ManagedHostBuilderFunc) BuildManagedHost(ctx context.Context, placement ManagedHostPlacement) (Command, error) {
+	return build(ctx, placement)
+}
+
+// ManagedHostProbe authenticates to the canonical host and decodes its
+// protocol identity. The execution adapter performs the exact comparison with
+// ManagedHostSpec.Expected before returning a connection.
+type ManagedHostProbe interface {
+	ProbeManagedHost(context.Context, ManagedHostConnection) (ManagedHostIdentity, error)
+}
+
+type ManagedHostProbeFunc func(context.Context, ManagedHostConnection) (ManagedHostIdentity, error)
+
+func (probe ManagedHostProbeFunc) ProbeManagedHost(ctx context.Context, connection ManagedHostConnection) (ManagedHostIdentity, error) {
+	return probe(ctx, connection)
+}
+
+// ManagedHostSpec is an in-process launch request assembled from durable,
+// server-resolved product binding and catalog state. ID remains stable for the
+// binding; Identity is a secret-free digest of the exact service command
+// inputs and changes when its immutable owner identity changes.
+type ManagedHostSpec struct {
+	ID           string
+	Name         string
+	Identity     string
+	Expected     ManagedHostIdentity
+	ReadyTimeout time.Duration
+	Builder      ManagedHostBuilder
+	Probe        ManagedHostProbe
+}
+
+// WorkspaceManagedHosts is an optional runtime facet layered over the same
+// WorkspaceExecution service lifecycle. Product authorization, durable
+// bindings, cross-replica locking, bearer protection, and Flow receipts remain
+// common. Stop and workspace teardown continue through WorkspaceExecution and
+// WorkspaceLifecycle rather than a second host service model.
+type WorkspaceManagedHosts interface {
+	InspectManagedHost(ctx context.Context, workspaceID string, spec ManagedHostSpec) (ManagedHostConnection, error)
+	StartManagedHost(ctx context.Context, workspaceID string, spec ManagedHostSpec) (ManagedHostConnection, error)
+}
+
+// WorkspaceSourceRevisionResolver resolves the repository snapshot actually
+// mounted in a running workspace. Jujutsu workspaces resolve their immutable
+// working-copy commit; Git workspaces resolve HEAD only when the worktree is
+// clean. Implementations return exactly 40 lowercase hexadecimal characters.
+type WorkspaceSourceRevisionResolver interface {
+	ResolveWorkspaceSourceRevision(ctx context.Context, workspaceID string) (string, error)
 }
 
 // WorkspaceTerminal opens a real PTY after common authorization succeeds.

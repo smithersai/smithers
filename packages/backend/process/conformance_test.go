@@ -31,13 +31,15 @@ func TestRuntimeWorkspaceConformance(t *testing.T) {
 		FileMode:      0o640,
 		WantIsolation: workspaceapi.IsolationTrustedProcess,
 		WantCapabilities: workspaceapi.WorkspaceCapabilities{
-			PersistentFiles: true,
-			Execution:       true,
-			ManagedServices: true,
-			Terminal:        true,
-			LoopbackPreview: true,
-			FileOperations:  true,
-			ColdSnapshots:   false,
+			PersistentFiles:  true,
+			Execution:        true,
+			ManagedServices:  true,
+			ManagedHTTPHosts: true,
+			SourceRevision:   true,
+			Terminal:         true,
+			LoopbackPreview:  true,
+			FileOperations:   true,
+			ColdSnapshots:    false,
 		},
 	})
 }

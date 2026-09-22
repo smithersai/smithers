@@ -259,52 +259,150 @@ func TestRuntimeServicePreviewAndTerminal(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestStartCodingHostInvokesBundledHostDirectlyAndDeduplicates(t *testing.T) {
-	marker := filepath.Join(t.TempDir(), "coding-host.json")
-	wrapper := filepath.Join(t.TempDir(), "smithers-coding-host")
-	script := "#!/bin/sh\nexec \"$SMITHERS_TEST_BINARY\" -test.run='^TestProcessHelper$' -- \"$@\"\n"
-	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o700))
-	runtime := newTestRuntime(t, t.TempDir(), func(config *Config) {
-		config.Environment = map[string]string{"SMITHERS_TEST_BINARY": os.Args[0]}
-	})
-	workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "coding"})
+func TestManagedHostAllocatesAddressPersistsBindingAndVerifiesIdentity(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "managed-host.json")
+	runtime := newTestRuntime(t, t.TempDir())
+	workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "flow-host"})
 	require.NoError(t, err)
 	_, err = runtime.StartWorkspace(context.Background(), workspace.ID)
 	require.NoError(t, err)
-	config := CodingHostConfig{Executable: wrapper, GatewayID: "12345678-1234-1234-1234-123456789abc",
-		ImplementationModel: "openai:gpt-5", Credential: "private", OwnerGeneration: 7, ArtifactDigest: strings.Repeat("a", 64), Environment: map[string]string{
-			"SMITHERS_TEST_HELPER": "coding", "SMITHERS_TEST_MARKER": marker,
-		}, ReadyTimeout: 2 * time.Second}
-	first, err := runtime.StartCodingHost(context.Background(), workspace.ID, config)
+	assert.True(t, runtime.Capabilities().ManagedHTTPHosts)
+
+	expected := workspaceapi.ManagedHostIdentity{
+		Protocol: "smithers.flow-runtime/v1", ArtifactDigest: strings.Repeat("a", 64),
+		SourceRevision: strings.Repeat("b", 40), OwnerGeneration: 7,
+	}
+	var placements []workspaceapi.ManagedHostPlacement
+	spec := workspaceapi.ManagedHostSpec{
+		ID: "12345678-1234-1234-1234-123456789abc", Name: "flow-coding",
+		Identity: "flow-host:fixture-owner-7", Expected: expected, ReadyTimeout: 2 * time.Second,
+		Builder: workspaceapi.ManagedHostBuilderFunc(func(_ context.Context, placement workspaceapi.ManagedHostPlacement) (workspaceapi.Command, error) {
+			placements = append(placements, placement)
+			return helperCommand("managed-host", map[string]string{
+				"SMITHERS_TEST_ADDRESS":          placement.Address,
+				"SMITHERS_TEST_MARKER":           marker,
+				"SMITHERS_TEST_STATE_DIR":        placement.StateDir,
+				"SMITHERS_TEST_PROTOCOL":         expected.Protocol,
+				"SMITHERS_TEST_ARTIFACT_DIGEST":  expected.ArtifactDigest,
+				"SMITHERS_TEST_SOURCE_REVISION":  expected.SourceRevision,
+				"SMITHERS_TEST_OWNER_GENERATION": strconv.FormatInt(expected.OwnerGeneration, 10),
+			}), nil
+		}),
+		Probe: workspaceapi.ManagedHostProbeFunc(func(ctx context.Context, connection workspaceapi.ManagedHostConnection) (workspaceapi.ManagedHostIdentity, error) {
+			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, connection.Endpoint+"/health", nil)
+			if requestErr != nil {
+				return workspaceapi.ManagedHostIdentity{}, requestErr
+			}
+			request.Header.Set("Authorization", "Bearer private")
+			client := connection.HTTPClient
+			if client == nil {
+				client = http.DefaultClient
+			}
+			response, requestErr := client.Do(request)
+			if requestErr != nil {
+				return workspaceapi.ManagedHostIdentity{}, requestErr
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				return workspaceapi.ManagedHostIdentity{}, fmt.Errorf("health returned %s", response.Status)
+			}
+			var identity workspaceapi.ManagedHostIdentity
+			return identity, json.NewDecoder(response.Body).Decode(&identity)
+		}),
+	}
+
+	first, err := runtime.StartManagedHost(context.Background(), workspace.ID, spec)
 	require.NoError(t, err)
-	second, err := runtime.StartCodingHost(context.Background(), workspace.ID, config)
+	second, err := runtime.StartManagedHost(context.Background(), workspace.ID, spec)
 	require.NoError(t, err)
-	assert.Equal(t, first, second)
+	assert.Equal(t, first.Endpoint, second.Endpoint)
+	require.Len(t, placements, 1, "an idempotent ensure must not allocate another port")
+	assert.Equal(t, workspace.Root, placements[0].Workspace.Root)
+	assert.Equal(t, "127.0.0.1", placements[0].Host)
+	assert.NotZero(t, placements[0].Port)
+	assert.Equal(t, first.Endpoint, "http://"+placements[0].Address)
+	assert.DirExists(t, placements[0].StateDir)
+	assert.FileExists(t, filepath.Join(placements[0].StateDir, managedHostMetadataName))
 
 	var receipt struct {
-		Args            []string `json:"args"`
-		Home            string   `json:"home"`
-		Gateway         string   `json:"gateway"`
-		Model           string   `json:"model"`
-		OwnerGeneration string   `json:"ownerGeneration"`
-		ArtifactDigest  string   `json:"artifactDigest"`
-		HasAPIKey       bool     `json:"hasApiKey"`
+		Address  string `json:"address"`
+		StateDir string `json:"stateDir"`
+		Home     string `json:"home"`
 	}
 	contents, err := os.ReadFile(marker)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(contents, &receipt))
+	assert.Equal(t, placements[0].Address, receipt.Address)
+	assert.Equal(t, placements[0].StateDir, receipt.StateDir)
 	assert.Equal(t, workspace.Home, receipt.Home)
-	assert.Equal(t, config.GatewayID, receipt.Gateway)
-	assert.Equal(t, config.ImplementationModel, receipt.Model)
-	assert.Equal(t, "7", receipt.OwnerGeneration)
-	assert.Equal(t, config.ArtifactDigest, receipt.ArtifactDigest)
-	assert.True(t, receipt.HasAPIKey)
-	assert.Equal(t, "serve", receipt.Args[0])
-	assert.Equal(t, workspace.Root, argumentValue(receipt.Args, "--root"))
-	assert.Equal(t, workspace.StateDir, argumentValue(receipt.Args, "--state-dir"))
-	assert.Equal(t, "127.0.0.1", argumentValue(receipt.Args, "--host"))
-	assert.NotEmpty(t, argumentValue(receipt.Args, "--port"))
-	assert.Contains(t, receipt.Args, "--listen")
+	require.NoError(t, os.WriteFile(filepath.Join(receipt.StateDir, "journal"), []byte("durable"), 0o600))
+
+	inspected, err := runtime.InspectManagedHost(context.Background(), workspace.ID, spec)
+	require.NoError(t, err)
+	assert.Equal(t, first.Endpoint, inspected.Endpoint)
+	mismatch := spec
+	mismatch.Expected.OwnerGeneration++
+	_, err = runtime.InspectManagedHost(context.Background(), workspace.ID, mismatch)
+	require.ErrorIs(t, err, workspaceapi.ErrManagedHostIdentityConflict)
+
+	require.NoError(t, runtime.StopService(context.Background(), workspace.ID, spec.Name))
+	_, err = runtime.InspectManagedHost(context.Background(), workspace.ID, spec)
+	require.ErrorIs(t, err, workspaceapi.ErrManagedHostNotRunning)
+	_, err = runtime.StartManagedHost(context.Background(), workspace.ID, spec)
+	require.NoError(t, err)
+	require.Len(t, placements, 2)
+	assert.Equal(t, placements[0].StateDir, placements[1].StateDir)
+	journal, err := os.ReadFile(filepath.Join(placements[1].StateDir, "journal"))
+	require.NoError(t, err)
+	assert.Equal(t, "durable", string(journal))
+}
+
+func TestWorkspaceSourceRevisionUsesJujutsuSnapshotOrCleanGitHead(t *testing.T) {
+	revision := strings.Repeat("c", 40)
+
+	t.Run("Jujutsu working-copy commit", func(t *testing.T) {
+		bin := t.TempDir()
+		writeTestExecutable(t, filepath.Join(bin, "jj"), "#!/bin/sh\nprintf '%s\\n' \"$SMITHERS_TEST_REVISION\"\n")
+		runtime := newTestRuntime(t, t.TempDir(), func(config *Config) {
+			config.Environment = map[string]string{"PATH": bin + ":/usr/bin:/bin", "SMITHERS_TEST_REVISION": revision}
+		})
+		workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "source-jj"})
+		require.NoError(t, err)
+		_, err = runtime.StartWorkspace(context.Background(), workspace.ID)
+		require.NoError(t, err)
+		require.NoError(t, os.Mkdir(filepath.Join(workspace.Root, ".jj"), 0o700))
+		resolved, err := runtime.ResolveWorkspaceSourceRevision(context.Background(), workspace.ID)
+		require.NoError(t, err)
+		assert.Equal(t, revision, resolved)
+	})
+
+	t.Run("clean Git HEAD", func(t *testing.T) {
+		bin := t.TempDir()
+		git := filepath.Join(bin, "git")
+		cleanScript := "#!/bin/sh\ncase \"$1\" in\nrev-parse) printf '%s\\n' \"$SMITHERS_TEST_REVISION\" ;;\nstatus) : ;;\n*) exit 2 ;;\nesac\n"
+		writeTestExecutable(t, git, cleanScript)
+		runtime := newTestRuntime(t, t.TempDir(), func(config *Config) {
+			config.Environment = map[string]string{"PATH": bin + ":/usr/bin:/bin", "SMITHERS_TEST_REVISION": revision}
+		})
+		workspace, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: "source-git"})
+		require.NoError(t, err)
+		_, err = runtime.StartWorkspace(context.Background(), workspace.ID)
+		require.NoError(t, err)
+		require.NoError(t, os.Mkdir(filepath.Join(workspace.Root, ".git"), 0o700))
+		resolved, err := runtime.ResolveWorkspaceSourceRevision(context.Background(), workspace.ID)
+		require.NoError(t, err)
+		assert.Equal(t, revision, resolved)
+
+		dirtyScript := "#!/bin/sh\ncase \"$1\" in\nrev-parse) printf '%s\\n' \"$SMITHERS_TEST_REVISION\" ;;\nstatus) printf '%s\\n' ' M changed.txt' ;;\n*) exit 2 ;;\nesac\n"
+		writeTestExecutable(t, git, dirtyScript)
+		_, err = runtime.ResolveWorkspaceSourceRevision(context.Background(), workspace.ID)
+		require.ErrorIs(t, err, workspaceapi.ErrWorkspaceSourceUnavailable)
+	})
+}
+
+func writeTestExecutable(t *testing.T, path, contents string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o700))
 }
 
 func helperCommand(mode string, environment map[string]string) workspaceapi.Command {
@@ -349,16 +447,14 @@ func TestProcessHelper(t *testing.T) {
 		return
 	}
 	var address string
+	var handler http.Handler
 	switch mode {
 	case "serve":
 		address = os.Getenv("SMITHERS_TEST_ADDRESS")
-	case "coding":
-		args := flagArguments(os.Args)
-		port := argumentValue(args, "--port")
-		address = net.JoinHostPort(argumentValue(args, "--host"), port)
-		receipt := map[string]any{"args": args, "home": os.Getenv("HOME"), "gateway": os.Getenv("SMITHERS_GATEWAY_ID"),
-			"model": os.Getenv("SMITHERS_CODING_IMPLEMENT_MODEL"), "ownerGeneration": os.Getenv("SMITHERS_OWNER_GENERATION"),
-			"artifactDigest": os.Getenv("SMITHERS_FLOW_ARTIFACT_SHA256"), "hasApiKey": os.Getenv("SMITHERS_API_KEY") != ""}
+		handler = http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { _, _ = response.Write([]byte("ready")) })
+	case "managed-host":
+		address = os.Getenv("SMITHERS_TEST_ADDRESS")
+		receipt := map[string]any{"address": address, "stateDir": os.Getenv("SMITHERS_TEST_STATE_DIR"), "home": os.Getenv("HOME")}
 		contents, err := json.Marshal(receipt)
 		if err != nil {
 			panic(err)
@@ -366,6 +462,24 @@ func TestProcessHelper(t *testing.T) {
 		if err := os.WriteFile(os.Getenv("SMITHERS_TEST_MARKER"), contents, 0o600); err != nil {
 			panic(err)
 		}
+		identity := workspaceapi.ManagedHostIdentity{
+			Protocol: os.Getenv("SMITHERS_TEST_PROTOCOL"), ArtifactDigest: os.Getenv("SMITHERS_TEST_ARTIFACT_DIGEST"),
+			SourceRevision: os.Getenv("SMITHERS_TEST_SOURCE_REVISION"),
+		}
+		identity.OwnerGeneration, err = strconv.ParseInt(os.Getenv("SMITHERS_TEST_OWNER_GENERATION"), 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		handler = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			if request.URL.Path != "/health" || request.Header.Get("Authorization") != "Bearer private" {
+				http.Error(response, "forbidden", http.StatusForbidden)
+				return
+			}
+			response.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(response).Encode(identity); err != nil {
+				panic(err)
+			}
+		})
 	default:
 		panic(fmt.Sprintf("unknown helper mode %q", mode))
 	}
@@ -373,7 +487,6 @@ func TestProcessHelper(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	handler := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { _, _ = response.Write([]byte("ready")) })
 	if err := http.Serve(listener, handler); err != nil {
 		panic(err)
 	}

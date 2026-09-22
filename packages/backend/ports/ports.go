@@ -90,8 +90,11 @@ const (
 )
 
 var (
-	ErrWorkspaceNotFound = workspace.ErrWorkspaceNotFound
-	ErrWorkspaceStopped  = workspace.ErrWorkspaceStopped
+	ErrWorkspaceNotFound           = workspace.ErrWorkspaceNotFound
+	ErrWorkspaceStopped            = workspace.ErrWorkspaceStopped
+	ErrManagedHostNotRunning       = workspace.ErrManagedHostNotRunning
+	ErrManagedHostIdentityConflict = workspace.ErrManagedHostIdentityConflict
+	ErrWorkspaceSourceUnavailable  = workspace.ErrWorkspaceSourceUnavailable
 )
 
 type Terminal = workspace.Terminal
@@ -128,6 +131,16 @@ type RoutedPreview = workspace.RoutedPreview
 type WorkspaceRoutedPreview = workspace.RoutedPreviewPublisher
 type WorkspaceServiceCatalog = workspace.WorkspaceServiceCatalog
 type WorkspaceNamedServiceController = workspace.WorkspaceNamedServiceController
+type ManagedHostIdentity = workspace.ManagedHostIdentity
+type ManagedHostConnection = workspace.ManagedHostConnection
+type ManagedHostPlacement = workspace.ManagedHostPlacement
+type ManagedHostBuilder = workspace.ManagedHostBuilder
+type ManagedHostBuilderFunc = workspace.ManagedHostBuilderFunc
+type ManagedHostProbe = workspace.ManagedHostProbe
+type ManagedHostProbeFunc = workspace.ManagedHostProbeFunc
+type ManagedHostSpec = workspace.ManagedHostSpec
+type WorkspaceManagedHosts = workspace.WorkspaceManagedHosts
+type WorkspaceSourceRevisionResolver = workspace.WorkspaceSourceRevisionResolver
 
 const WorkspacePortPurposeFlowRuntime = workspace.PortPurposeFlowRuntime
 

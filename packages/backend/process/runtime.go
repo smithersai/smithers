@@ -146,7 +146,7 @@ func (r *Runtime) WorkspaceIsolation(ctx context.Context, workspaceID string) (w
 
 func (r *Runtime) Capabilities() workspaceapi.WorkspaceCapabilities {
 	return workspaceapi.WorkspaceCapabilities{
-		PersistentFiles: true, Execution: true, ManagedServices: true, Terminal: true,
+		PersistentFiles: true, Execution: true, ManagedServices: true, ManagedHTTPHosts: true, SourceRevision: true, Terminal: true,
 		LoopbackPreview: true, FileOperations: true, ColdSnapshots: false,
 	}
 }
