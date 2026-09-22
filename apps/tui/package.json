@@ -1,0 +1,38 @@
+{
+  "name": "smithers-tui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A minimal terminal coding agent over the Smithers cell harness",
+  "type": "module",
+  "bin": {
+    "smithers-tui": "./src/main.tsx"
+  },
+  "scripts": {
+    "start": "bun src/main.tsx",
+    "ask": "bun src/ask.ts",
+    "test": "bun test test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@opentui/core": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/capability": "workspace:*",
+    "@smthrs/cli": "workspace:*",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/harness": "workspace:*",
+    "@smthrs/kernel": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/plan": "workspace:*",
+    "@smthrs/registry": "workspace:*",
+    "effect": "4.0.0-rc.115",
+    "react": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "bun-types": "^1.4.0",
+    "typescript": "~5.9.3"
+  }
+}

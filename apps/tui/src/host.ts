@@ -1,0 +1,217 @@
+/**
+ * The agent host: one in-process Smithers cell harness bound to a directory.
+ *
+ * A turn is one `Agent.run` executed as one durable flow on an in-memory
+ * engine. Every `AgentEvent` the run emits reaches `onEvent` as it happens,
+ * so the UI renders cells while the model is still writing them.
+ *
+ * The agent has no tools. It writes JavaScript cells that call flows through
+ * `ctx.call`; the standard filesystem and shell flows are the catalog here.
+ */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Agent from "@smthrs/agent/Agent"
+import * as Budget from "@smthrs/agent/Budget"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import * as NodeControl from "@smthrs/cli/NodeControl"
+import * as Capability from "@smthrs/capability/Capability"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as Registry from "@smthrs/registry/Registry"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Scope, Stream } from "effect"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type * as FileSystem from "effect/FileSystem"
+import type * as Path from "effect/Path"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+
+/** One earlier exchange, replayed to the next turn as conversation context. */
+export interface Exchange {
+  readonly user: string
+  readonly answer: string
+}
+
+/** How a turn ended. */
+export type Outcome =
+  | { readonly _tag: "done"; readonly answer: string }
+  | { readonly _tag: "failed"; readonly message: string; readonly detail: string }
+  | { readonly _tag: "cancelled" }
+
+export interface TurnInput {
+  readonly prompt: string
+  readonly seat: string
+  readonly history: ReadonlyArray<Exchange>
+  readonly onEvent: (event: AgentEvent.AgentEvent) => void
+}
+
+export interface Turn {
+  readonly done: Promise<Outcome>
+  readonly cancel: () => void
+}
+
+export interface Host {
+  readonly cwd: string
+  /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
+  readonly judged: boolean
+  readonly run: (input: TurnInput) => Turn
+  readonly dispose: () => Promise<void>
+}
+
+/**
+ * Bun's fetch is the transport. It honours `HTTPS_PROXY`/`NO_PROXY` itself;
+ * the Undici client `smithers run` uses cannot run under Bun, which the
+ * renderer requires.
+ */
+const executor = RequestExecutor.layer.pipe(
+  Layer.provide(KernelHttpClient.layer),
+  Layer.provide(GrantStore.layerNoop),
+  Layer.provide(FetchHttpClient.layer)
+)
+
+const registry = Registry.makeNoop()
+
+/**
+ * Edits are compensable actions, and the engine admits them only under a
+ * snapshot boundary. This one records the boundary and restores nothing,
+ * like `smithers suggest`: the working tree's own VCS is the undo here.
+ */
+const snapshots = Layer.succeed(FlowEngine.SnapshotBoundary)({
+  snapshot: (options) => Effect.succeed({ boundary: "smithers-tui", key: options.key }),
+  restore: () => Effect.void,
+  diff: () => Effect.succeed(undefined)
+})
+
+const turnFlow = (index: number) =>
+  Flow.make(`tui/turn-${index}`, {
+    payload: {},
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    // Inert: the registered handler below is the whole turn.
+    body: () => Node.succeed(undefined)
+  })
+
+const system = (cwd: string, history: ReadonlyArray<Exchange>): Array<string> => {
+  const parts = [
+    `You are a coding agent working in ${cwd}. Read before you change, keep edits small, and verify with the repository's own commands. Paths are relative to ${cwd}.`
+  ]
+  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+    const file = join(cwd, name)
+    if (existsSync(file)) parts.push(`${name}:\n${readFileSync(file, "utf8")}`)
+  }
+  if (history.length > 0) {
+    parts.push(
+      "The conversation so far, oldest first:\n" +
+        history.map((exchange) => `User: ${exchange.user}\nYou answered: ${exchange.answer}`).join("\n\n")
+    )
+  }
+  return parts
+}
+
+/** Builds a host for `cwd`. The runtime is shared by every turn. */
+export const make = (options: {
+  readonly cwd: string
+  /** The credentials environment; see `models.ts` `detect`. */
+  readonly environment: Readonly<Record<string, string | undefined>>
+}): Host => {
+  const env = options.environment
+  const judged = (env[Evaluator.environmentKey] ?? "").trim() !== ""
+  const judge = judged
+    ? Evaluator.layerFromEnvironment(env, "smithers-tui").pipe(Layer.provide(FetchHttpClient.layer))
+    : Evaluator.layerUnavailable()
+  const layer = Layer.mergeAll(
+    Agent.layer.pipe(Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded()))),
+    Agent.layerDefaults,
+    NodeControl.layerSeatResolver(env).pipe(Layer.provide(executor)),
+    judge,
+    QuotaPolicy.layerDefault(),
+    Budget.layerUnbounded(),
+    FlowEngine.layerMemory,
+    snapshots,
+    // Measures the tree at both ends of every frame. Without it a sealed read
+    // is keyed on no workspace digest and replays its first answer after an
+    // edit: write "one", read, write "two", read returned "one" twice.
+    NodeControl.layerObserver(options.cwd),
+    NodeCrypto.layer,
+    NodeServices.layer
+  )
+  const runtime = ManagedRuntime.make(layer)
+  let turns = 0
+
+  const run = (input: TurnInput): Turn => {
+    const index = ++turns
+    const program = Effect.gen(function*() {
+      const seat = yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
+      const agent = yield* Agent.Agent
+      const engine = yield* FlowRuntime.FlowRuntime
+      const services = yield* Effect.context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>()
+      const flow = turnFlow(index)
+      const settled = Deferred.makeUnsafe<string, unknown>()
+      let answer = ""
+      const body = agent.run({
+        session: `tui-${process.pid}-${index}`,
+        seat,
+        prompt: input.prompt,
+        system: system(options.cwd, input.history),
+        registry,
+        flows: [StandardFlows.filesystem(services), StandardFlows.shell(services)],
+        capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+        // The same explicit cell budget `smithers run` uses; never unlimited.
+        limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 },
+        // A person reads every answer here, so without a gateway key the one
+        // brake that needs Jev is disarmed instead of failing every turn.
+        ...(judged ? {} : { claimCap: 0 }),
+        maxFrames: 40
+      }).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event._tag === "resolved") answer = text(event.message.content)
+            input.onEvent(event)
+          })
+        )
+      )
+      const scope = yield* Effect.scope
+      yield* engine.register(flow, () =>
+        Effect.onExit(body, (exit) =>
+          Exit.isSuccess(exit)
+            ? Deferred.succeed(settled, answer)
+            : Deferred.failCause(settled, exit.cause))).pipe(Scope.provide(scope))
+      yield* engine.execute(flow, { executionId: `tui-${index}`, payload: {}, discard: true })
+      return yield* Deferred.await(settled)
+    }).pipe(Effect.scoped)
+
+    const fiber = runtime.runFork(program)
+    const done = new Promise<Outcome>((resolve) => {
+      fiber.addObserver((exit) => {
+        if (Exit.isSuccess(exit)) return resolve({ _tag: "done", answer: exit.value })
+        if (Cause.hasInterruptsOnly(exit.cause)) return resolve({ _tag: "cancelled" })
+        resolve({ _tag: "failed", message: describe(exit.cause), detail: Cause.pretty(exit.cause) })
+      })
+    })
+    return { done, cancel: () => void runtime.runFork(Fiber.interrupt(fiber)) }
+  }
+
+  return { cwd: options.cwd, judged, run, dispose: () => runtime.dispose() }
+}
+
+const text = (content: ReadonlyArray<{ readonly type: string; readonly text?: string }>): string =>
+  content.flatMap((part) => (part.type === "text" && part.text !== undefined ? [part.text] : [])).join("")
+
+/** The innermost message: "The cell frame failed" wraps the provider's own words. */
+const describe = (cause: Cause.Cause<unknown>): string => {
+  let error: unknown = Cause.squash(cause)
+  let message = Cause.pretty(cause)
+  while (typeof error === "object" && error !== null) {
+    if ("message" in error && typeof error.message === "string" && error.message !== "") message = error.message
+    error = "cause" in error ? error.cause : undefined
+  }
+  return message
+}
