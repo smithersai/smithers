@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"github.com/smithersai/smithers/packages/backend/ports"
 	"sync"
 	"time"
 )
@@ -74,7 +75,11 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		// fact. Leave the lease for restart recovery. An explicit user cancel
 		// has already committed its terminal batch before interrupting this host.
 		if parent.Err() == nil {
-			_ = d.store.FailProducer(context.WithoutCancel(parent), grant, "host_failed")
+			code := "host_failed"
+			if errors.Is(err, ports.ErrModelCredentialMissing) {
+				code = "credential_missing"
+			}
+			_ = d.store.FailProducer(context.WithoutCancel(parent), grant, code)
 		}
 		return
 	}

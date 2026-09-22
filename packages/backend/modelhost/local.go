@@ -131,7 +131,7 @@ func credentialEnvironment(binding Binding) (map[string]string, error) {
 	if !json.Valid(binding.Model) || len(binding.Model) == 0 || len(binding.Model) > 64<<10 {
 		return nil, errors.New("model binding is invalid")
 	}
-	builtin := name == "ANTHROPIC_API_KEY" || name == "OPENAI_API_KEY" || name == "CEREBRAS_API_KEY" || name == "OPENROUTER_API_KEY" || name == "AI_GATEWAY_API_KEY"
+	builtin := builtinCredential(name)
 	envName := name
 	if !builtin {
 		envName = "SMITHERS_MODEL_KEY_" + name

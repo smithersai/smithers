@@ -6,6 +6,7 @@ package ports
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/repository"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
+
+var ErrModelCredentialMissing = errors.New("model credential is missing")
 
 // RepositoryEndpointResolver chooses the storage/execution endpoint for a
 // repository. The common repository client still owns its operation protocol;

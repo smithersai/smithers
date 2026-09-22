@@ -14,6 +14,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/app"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/localbootstrap"
+	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/native"
 	"github.com/smithersai/smithers/packages/backend/postgres"
 	"github.com/smithersai/smithers/packages/backend/process"
@@ -77,6 +78,25 @@ func run(ctx context.Context, args []string) (runErr error) {
 	// app.Run normally owns this close. Retain a final close for migration or
 	// startup failures before app.Run gets control of the adapter.
 	defer func() { runErr = errors.Join(runErr, workspaceRuntime.Close()) }()
+	launcher, err := modelhost.NewLocalLauncher(modelhost.LocalConfig{
+		Runtime:    workspaceRuntime,
+		NodeBinary: strings.TrimSpace(os.Getenv("SMITHERS_NODE_BINARY")),
+		BundlePath: strings.TrimSpace(os.Getenv("SMITHERS_MODEL_HOST_BUNDLE")),
+	})
+	if err != nil {
+		return fmt.Errorf("configure local model host: %w", err)
+	}
+	resolver, err := modelhost.NewOwnerSecretResolver(
+		func() string { return os.Getenv("SMITHERS_DATABASE_URL") },
+		func() string { return os.Getenv("SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY") },
+	)
+	if err != nil {
+		return err
+	}
+	chatHost, err := modelhost.New(resolver, launcher)
+	if err != nil {
+		return err
+	}
 
 	appConfig := app.Config{
 		Role:             app.RoleLocal,
@@ -84,6 +104,7 @@ func run(ctx context.Context, args []string) (runErr error) {
 		Repository:       local.Client(),
 		Workspace:        workspaceRuntime,
 		FlowHostRegistry: &registry,
+		ChatHost:         chatHost,
 	}
 	if nativeBin != "" {
 		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))
