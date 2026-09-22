@@ -11,4 +11,18 @@
 | Repo gateway and sandbox orphan reapers (1342–1343), golden snapshots (1357) | `repo_gateways`, `sandbox_orphans`, `sandbox_golden_snapshots` | Use local workspace/executor lifecycle; Plue owns fleet cleanup. |
 | Storage deletion and egress cleaners (1352–1354) | `storage_deletion_queue`, `sandbox_egress_audit` | Local filesystem cleanup and sandbox audit implementation must be injected. |
 
-The copied generated queries still use `repositories.storage_set_id`, while the product baseline deliberately removes that placement column. The local repository adapter does not require it. The old `db/schema.sql`, SQL queries, generated sqlc, and Atlas migrations remain transitional until the product services stop querying cluster state and Plue imports the shared public composition. Running `sqlc generate` against the product baseline before that service split will break the transitional API.
+The canonical product queries and models now generate into `internal/db` and
+exclude `repositories.storage_set_id`. Private cluster queries generate into
+`internal/clusterdb`; shared model types alias `internal/db`. The copied
+`db/schema.sql` and Atlas migrations remain transitional Plue sources until
+Plue's own placement migration lands. `CountPrivateReposByOwner` and the
+storage byte queries count product allocations only; Plue must add pending
+private provisioning/deletion allocations through its billing adapter before
+switching to these queries.
+
+The product `ListIdleWorkspaces` query excludes active browser sessions. Local
+composition must keep the idle sweeper disabled until the local executor can
+provide an active-runtime lease; otherwise a native run without a browser
+could be suspended. Product `HasUnsettledRunnerOwnershipForWorkflowRun` guards
+resume by treating a non-null `workflow_tasks.runner_id` as unsettled even
+when the private runner pool is unavailable.
