@@ -1,9 +1,10 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"net/http"
 	"testing"
 
@@ -17,10 +18,10 @@ func TestTranslateGCSPromoteErrorMapsHTTPNotFound(t *testing.T) {
 	t.Parallel()
 
 	notFound := fmt.Errorf("rewrite source: %w", &googleapi.Error{Code: http.StatusNotFound})
-	assert.ErrorIs(t, translateGCSPromoteError(notFound), ErrObjectNotFound)
+	assert.ErrorIs(t, translateGCSPromoteError(notFound), blob.ErrObjectNotFound)
 
 	precondition := &googleapi.Error{Code: http.StatusPreconditionFailed}
-	assert.ErrorIs(t, translateGCSPromoteError(precondition), ErrObjectAlreadyExists)
+	assert.ErrorIs(t, translateGCSPromoteError(precondition), blob.ErrObjectAlreadyExists)
 
 	expected := errors.New("transient storage failure")
 	assert.ErrorIs(t, translateGCSPromoteError(expected), expected)
@@ -93,7 +94,7 @@ func TestGCSStore_PromoteCreateOnlyUsesConfiguredBucketAndKeys(t *testing.T) {
 func TestMemoryStore_PromoteCreateOnlyMovesWithoutOverwrite(t *testing.T) {
 	t.Parallel()
 
-	store := NewMemoryStore()
+	store := blob.NewMemoryStore()
 	_, err := store.SignedUploadURL(context.Background(), "pending", "application/octet-stream", 1, 0)
 	require.NoError(t, err)
 	require.NoError(t, store.PromoteCreateOnly(context.Background(), "pending", "final"))
@@ -104,5 +105,5 @@ func TestMemoryStore_PromoteCreateOnlyMovesWithoutOverwrite(t *testing.T) {
 
 	_, err = store.SignedUploadURL(context.Background(), "other", "application/octet-stream", 1, 0)
 	require.NoError(t, err)
-	assert.ErrorIs(t, store.PromoteCreateOnly(context.Background(), "other", "final"), ErrObjectAlreadyExists)
+	assert.ErrorIs(t, store.PromoteCreateOnly(context.Background(), "other", "final"), blob.ErrObjectAlreadyExists)
 }

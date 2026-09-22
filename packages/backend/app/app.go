@@ -32,8 +32,9 @@ type Config struct {
 	TraceExporter trace.SpanExporter
 	// Blobs and AgentLogs are deployment adapters. Nil uses the configured
 	// single-process default, which the self-hosted app supplies locally.
-	Blobs     ports.BlobStore
-	AgentLogs ports.AgentLogStore
+	Blobs       ports.BlobStore
+	AgentLogs   ports.AgentLogStore
+	MetricsDoer ports.MetricsDoer
 	// Repository is the same native Git/jj client in local and Plue modes.
 	// A local host supplies repository.OpenLocal(...).Client(); Plue supplies
 	// repository.NewRemoteClient(...).
@@ -94,6 +95,7 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 			TraceExporter: cfg.TraceExporter,
 			Blobs:         cfg.Blobs,
 			AgentLogs:     cfg.AgentLogs,
+			MetricsDoer:   cfg.MetricsDoer,
 			Repository:    cfg.Repository,
 		}, func(handler http.Handler) {
 			ready <- handler
@@ -127,6 +129,7 @@ func Run(ctx context.Context, cfg Config) error {
 		TraceExporter: cfg.TraceExporter,
 		Blobs:         cfg.Blobs,
 		AgentLogs:     cfg.AgentLogs,
+		MetricsDoer:   cfg.MetricsDoer,
 		Repository:    cfg.Repository,
 	})
 }

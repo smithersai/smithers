@@ -1,11 +1,13 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,11 +85,32 @@ func TestGCSIntegration_Delete_RemovesObject(t *testing.T) {
 }
 
 func TestGCSIntegration_StoreContract(t *testing.T) {
-	requireGCSEmulator(t)
-	runStoreContract(t, func(t *testing.T) Store {
-		client, bucket := newEmulatorClientAndBucket(t)
-		return NewGCSStore(client, bucket)
-	})
+	client, bucket := newEmulatorClientAndBucket(t)
+	store := NewGCSStore(client, bucket)
+	ctx := context.Background()
+	const key = "repos/7/artifacts/a"
+	if err := blob.Put(ctx, store, key, "text/plain", strings.NewReader("durable")); err != nil {
+		t.Fatal(err)
+	}
+	attrs, err := store.Stat(ctx, key)
+	if err != nil || attrs.Size != 7 {
+		t.Fatalf("stat: %+v %v", attrs, err)
+	}
+	r, err := store.NewReader(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(r)
+	_ = r.Close()
+	if err != nil || string(data) != "durable" {
+		t.Fatalf("read: %q %v", data, err)
+	}
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Stat(ctx, key); !errors.Is(err, blob.ErrObjectNotFound) {
+		t.Fatalf("deleted object remains: %v", err)
+	}
 }
 
 func TestGCSIntegration_SignedUploadURL_WithHook(t *testing.T) {

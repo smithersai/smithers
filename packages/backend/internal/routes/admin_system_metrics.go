@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 const (
@@ -131,21 +131,15 @@ type AdminSystemMetricsHandler struct {
 // Query method answers 501, so callers should register the route
 // unconditionally rather than skipping it on nil.
 //
-// Pass a nil doer to authenticate with Application Default Credentials
-// (Workload Identity on GKE); the workload service account needs
-// roles/monitoring.viewer.
+// The deployment injects its authenticated doer. Nil leaves the query
+// endpoint disabled without pulling provider credentials into product code.
 func NewAdminSystemMetricsHandler(projectID string, doer services.GMPDoer) *AdminSystemMetricsHandler {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil
 	}
 	if doer == nil {
-		built, err := services.NewGoogleMonitoringDoer(context.Background(), metricsQueryUpstreamTimeout)
-		if err != nil {
-			slog.Warn("admin metrics query endpoint disabled: no google credentials", "error", err)
-			return nil
-		}
-		doer = built
+		return nil
 	}
 	client := services.NewGMPClient(projectID, doer)
 	if client == nil {

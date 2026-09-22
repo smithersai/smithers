@@ -18,9 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cloud.google.com/go/storage"
-	"google.golang.org/api/option"
-
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
@@ -510,7 +507,7 @@ func buildAuthProviders(cfg config.AuthConfig) (services.KeyAuthVerifier, servic
 
 var apiJSONTimeout = 30 * time.Second
 
-func selectBlobStore(ctx context.Context, cfg config.BlobConfig, provided blob.Store) (blob.Store, *storage.Client, time.Duration, error) {
+func selectBlobStore(ctx context.Context, cfg config.BlobConfig, provided blob.Store) (blob.Store, io.Closer, time.Duration, error) {
 	if provided == nil {
 		return newBlobStore(ctx, cfg)
 	}
@@ -572,9 +569,9 @@ func validateGitHubOAuthConfig(cfg config.AuthConfig) error {
 	return nil
 }
 
-// initializeBlobStore creates either the cluster GCS adapter or the durable
-// single-owner filesystem adapter. It never silently substitutes memory.
-func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store, *storage.Client, time.Duration, error) {
+// initializeBlobStore creates the durable single-owner filesystem adapter.
+// Hosted cloud storage is injected explicitly through the public app config.
+func initializeBlobStore(_ context.Context, cfg config.BlobConfig) (blob.Store, io.Closer, time.Duration, error) {
 	// Parse expiry first (needed for both adapters).
 	expiry, err := blob.ParseSignedURLExpiry(cfg.SignedURLExpiry)
 	if err != nil {
@@ -599,21 +596,7 @@ func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store
 		return store, nil, expiry, nil
 	}
 
-	// Configure client options for emulator if needed
-	var clientOpts []option.ClientOption
-	if os.Getenv("STORAGE_EMULATOR_HOST") != "" {
-		clientOpts = append(clientOpts, option.WithoutAuthentication())
-	}
-
-	// Create GCS client
-	client, err := storage.NewClient(ctx, clientOpts...)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to create GCS client: %w", err)
-	}
-
-	// Create GCS store
-	store := blob.NewGCSStore(client, cfg.GCSBucket)
-	return store, client, expiry, nil
+	return nil, nil, 0, fmt.Errorf("GCS bucket %q requires an injected cloud blob adapter", cfg.GCSBucket)
 }
 
 // initializeAgentLogStore selects the store for archived agent session
@@ -623,23 +606,13 @@ func initializeBlobStore(ctx context.Context, cfg config.BlobConfig) (blob.Store
 // fall back to the blobs bucket so transcripts archived before the cutover
 // stay retrievable. The local adapter stores transcripts in its durable data
 // root; memory remains available only to tests that provide no local store.
-func initializeAgentLogStore(gcsClient *storage.Client, cfg config.BlobConfig, localStore ...blob.Store) services.AgentLogStore {
-	bucket := cfg.AgentLogsBucket()
-	if gcsClient == nil {
-		if len(localStore) > 0 {
-			if filesystem, ok := localStore[0].(*blob.FilesystemStore); ok {
-				return blob.NewFilesystemAgentLogStore(filesystem)
-			}
+func initializeAgentLogStore(_ io.Closer, _ config.BlobConfig, localStore ...blob.Store) services.AgentLogStore {
+	if len(localStore) > 0 {
+		if filesystem, ok := localStore[0].(*blob.FilesystemStore); ok {
+			return blob.NewFilesystemAgentLogStore(filesystem)
 		}
-		return blob.NewMemoryAgentLogStore()
 	}
-	if bucket == "" {
-		return blob.NewMemoryAgentLogStore()
-	}
-	if legacy := strings.TrimSpace(cfg.GCSBucket); legacy != "" && legacy != bucket {
-		return blob.NewGCSAgentLogStoreWithReadFallback(gcsClient, bucket, legacy)
-	}
-	return blob.NewGCSAgentLogStore(gcsClient, bucket)
+	return blob.NewMemoryAgentLogStore()
 }
 
 func mountBlobTransferHandler(next http.Handler, store blob.Store) http.Handler {

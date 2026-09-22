@@ -1,7 +1,8 @@
-package blob
+package gcsblob
 
 import (
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"testing"
 	"time"
 
@@ -12,36 +13,36 @@ import (
 
 func TestParseSignedURLExpiry_DefaultWhenEmpty(t *testing.T) {
 	t.Parallel()
-	expiry, err := ParseSignedURLExpiry("")
+	expiry, err := blob.ParseSignedURLExpiry("")
 	require.NoError(t, err)
-	assert.Equal(t, DefaultSignedURLExpiry, expiry)
+	assert.Equal(t, blob.DefaultSignedURLExpiry, expiry)
 }
 
 func TestParseSignedURLExpiry_CustomDuration(t *testing.T) {
 	t.Parallel()
-	expiry, err := ParseSignedURLExpiry("12m")
+	expiry, err := blob.ParseSignedURLExpiry("12m")
 	require.NoError(t, err)
 	assert.Equal(t, 12*time.Minute, expiry)
 }
 
 func TestParseSignedURLExpiry_MaximumBoundary(t *testing.T) {
 	t.Parallel()
-	expiry, err := ParseSignedURLExpiry("168h")
+	expiry, err := blob.ParseSignedURLExpiry("168h")
 	require.NoError(t, err)
-	assert.Equal(t, MaxSignedURLExpiry, expiry)
+	assert.Equal(t, blob.MaxSignedURLExpiry, expiry)
 
-	_, err = ParseSignedURLExpiry("168h1ns")
+	_, err = blob.ParseSignedURLExpiry("168h1ns")
 	require.EqualError(t, err, "signed URL expiry must not exceed 168h")
 }
 
 func TestNormalizeSignedURLExpiry_ClampsDirectCallers(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, MaxSignedURLExpiry, normalizeSignedURLExpiry(MaxSignedURLExpiry+time.Hour))
+	assert.Equal(t, blob.MaxSignedURLExpiry, blob.NormalizeSignedURLExpiry(blob.MaxSignedURLExpiry+time.Hour))
 }
 
 func TestParseSignedURLExpiry_InvalidDuration(t *testing.T) {
 	t.Parallel()
-	_, err := ParseSignedURLExpiry("not-a-duration")
+	_, err := blob.ParseSignedURLExpiry("not-a-duration")
 	require.Error(t, err)
 }
 
@@ -55,5 +56,5 @@ func TestGCSStore_SignedUploadURL_ZeroExpiryUsesDefault(t *testing.T) {
 	}, nil, nil, nil)
 	_, err := store.SignedUploadURL(context.Background(), "obj", "application/octet-stream", 0, 0)
 	require.NoError(t, err)
-	assert.WithinDuration(t, before.Add(DefaultSignedURLExpiry), gotExpiry, 2*time.Second)
+	assert.WithinDuration(t, before.Add(blob.DefaultSignedURLExpiry), gotExpiry, 2*time.Second)
 }

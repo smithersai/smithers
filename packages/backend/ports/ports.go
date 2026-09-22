@@ -4,6 +4,8 @@
 package ports
 
 import (
+	"net/http"
+
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/repository"
@@ -43,8 +45,13 @@ var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
 
-// Workspace lifecycle aliases keep deployment injection types available from
-// ports without making common services import this composition package.
+// MetricsDoer is a deployment-authenticated HTTP client for hosted metrics.
+// Local deployments leave it nil.
+type MetricsDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// Workspace aliases keep the common runtime contract independent of composition.
 type IsolationLevel = workspace.IsolationLevel
 
 const (

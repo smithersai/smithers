@@ -1,8 +1,9 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"io"
 	"strings"
 	"testing"
@@ -129,8 +130,8 @@ func TestGCS_Cover_Stat_PropagatesError(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("gcs-cover stat failed")
 	store := NewGCSStoreWithHooks("smithers-blobs", nil, nil, nil,
-		func(context.Context, string, string) (ObjectAttrs, error) {
-			return ObjectAttrs{}, sentinel
+		func(context.Context, string, string) (blob.ObjectAttrs, error) {
+			return blob.ObjectAttrs{}, sentinel
 		})
 	_, err := store.Stat(context.Background(), "objects/x")
 	require.Error(t, err)

@@ -1,9 +1,10 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func TestGCSStore_SignedCreateOnlyUploadURL_UnknownSizeOmitsBound(t *testing.T) 
 		gotOpts = opts
 		return "https://example.test/upload", nil
 	}, nil, nil, nil)
-	upload, err := store.SignedCreateOnlyUploadURL(context.Background(), "path/object.bin", "application/octet-stream", UnknownObjectSize, 5*time.Minute)
+	upload, err := store.SignedCreateOnlyUploadURL(context.Background(), "path/object.bin", "application/octet-stream", blob.UnknownObjectSize, 5*time.Minute)
 	require.NoError(t, err)
 	require.NotNil(t, gotOpts)
 	assert.Equal(t, []string{"x-goog-if-generation-match:0"}, gotOpts.Headers)
@@ -114,8 +115,8 @@ func TestGCSStore_DeletePendingUsesAllGenerationPurge(t *testing.T) {
 // headers, and the MemoryStore still registers the key on signing.
 func TestSignedCreateOnlyUpload_FallsBackForMemoryStore(t *testing.T) {
 	t.Parallel()
-	mem := NewMemoryStore()
-	upload, err := SignedCreateOnlyUpload(context.Background(), mem, "k", "application/octet-stream", 0, time.Minute)
+	mem := blob.NewMemoryStore()
+	upload, err := blob.SignedCreateOnlyUpload(context.Background(), mem, "k", "application/octet-stream", 0, time.Minute)
 	require.NoError(t, err)
 	plain, err := mem.SignedUploadURL(context.Background(), "k", "application/octet-stream", 0, time.Minute)
 	require.NoError(t, err)
@@ -187,7 +188,7 @@ func TestGCSStore_CreateOnlyUpload_StaleURLCannotOverwriteGeneration1(t *testing
 		return server.URL + "/" + object, nil
 	}, nil, nil, nil)
 
-	doPut := func(upload SignedUpload, body string) int {
+	doPut := func(upload blob.SignedUpload, body string) int {
 		req, err := http.NewRequest(http.MethodPut, upload.URL, strings.NewReader(body))
 		require.NoError(t, err)
 		// Send exactly the headers the LFS action advertises, as a
@@ -202,9 +203,9 @@ func TestGCSStore_CreateOnlyUpload_StaleURLCannotOverwriteGeneration1(t *testing
 	}
 
 	// Two concurrent batch calls hand out two live actions for the same key.
-	first, err := store.SignedCreateOnlyUploadURL(context.Background(), "repos/1/lfs/abc", "application/octet-stream", UnknownObjectSize, time.Minute)
+	first, err := store.SignedCreateOnlyUploadURL(context.Background(), "repos/1/lfs/abc", "application/octet-stream", blob.UnknownObjectSize, time.Minute)
 	require.NoError(t, err)
-	stale, err := store.SignedCreateOnlyUploadURL(context.Background(), "repos/1/lfs/abc", "application/octet-stream", UnknownObjectSize, time.Minute)
+	stale, err := store.SignedCreateOnlyUploadURL(context.Background(), "repos/1/lfs/abc", "application/octet-stream", blob.UnknownObjectSize, time.Minute)
 	require.NoError(t, err)
 
 	require.Equal(t, http.StatusOK, doPut(first, "verified content"))
@@ -218,7 +219,7 @@ func TestGCSStore_CreateOnlyUpload_StaleURLCannotOverwriteGeneration1(t *testing
 
 	// A client that strips the precondition header breaks the signature and is
 	// rejected outright — the header is mandatory, not advisory.
-	bare := SignedUpload{URL: stale.URL, Header: map[string]string{"Content-Type": "application/octet-stream"}}
+	bare := blob.SignedUpload{URL: stale.URL, Header: map[string]string{"Content-Type": "application/octet-stream"}}
 	assert.Equal(t, http.StatusForbidden, doPut(bare, "corrupted content"))
 	assert.Equal(t, "verified content", string(fake.content["repos/1/lfs/abc"]))
 }

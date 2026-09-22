@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,53 +18,12 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
 
-func TestInitializeBlobStore_GCSPath(t *testing.T) {
-	// This test requires either GCS ADC credentials or a storage emulator.
-	// Skip in CI/local environments where neither is configured.
-	if os.Getenv("STORAGE_EMULATOR_HOST") == "" && os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
-		// Check if ADC is available via well-known file
-		home, _ := os.UserHomeDir()
-		adcFile := home + "/.config/gcloud/application_default_credentials.json"
-		if _, err := os.Stat(adcFile); os.IsNotExist(err) {
-			t.Skip("skipping GCS test: no GCS credentials (ADC) or emulator configured")
-		}
-	}
-
-	os.Unsetenv("STORAGE_EMULATOR_HOST") // Ensure emulator is not set
-
-	cfg := config.BlobConfig{
-		GCSBucket:       "test-bucket",
-		SignedURLExpiry: "10m",
-	}
-
-	ctx := context.Background()
-	store, client, expiry, err := initializeBlobStore(ctx, cfg)
-	require.NoError(t, err)
-	require.NotNil(t, store)
-	require.NotNil(t, client)
-	assert.Equal(t, 10*time.Minute, expiry)
-
-	_, isGCS := store.(*blob.GCSStore)
-	assert.True(t, isGCS, "Expected store to be *blob.GCSStore")
-}
-
-func TestInitializeBlobStore_EmulatorPath(t *testing.T) {
-	os.Setenv("STORAGE_EMULATOR_HOST", "localhost:8080")
-	defer os.Unsetenv("STORAGE_EMULATOR_HOST")
-
-	cfg := config.BlobConfig{
-		GCSBucket: "test-emulator-bucket",
-	}
-
-	ctx := context.Background()
-	store, client, expiry, err := initializeBlobStore(ctx, cfg)
-	require.NoError(t, err)
-	require.NotNil(t, store)
-	require.NotNil(t, client)
-	assert.Equal(t, blob.DefaultSignedURLExpiry, expiry)
-
-	_, isGCS := store.(*blob.GCSStore)
-	assert.True(t, isGCS, "Expected store to be *blob.GCSStore")
+func TestInitializeBlobStore_GCSRequiresInjectedAdapter(t *testing.T) {
+	store, client, expiry, err := initializeBlobStore(context.Background(), config.BlobConfig{GCSBucket: "hosted-bucket"})
+	require.ErrorContains(t, err, "requires an injected cloud blob adapter")
+	assert.Nil(t, store)
+	assert.Nil(t, client)
+	assert.Zero(t, expiry)
 }
 
 func TestInitializeBlobStore_FilesystemDefault(t *testing.T) {

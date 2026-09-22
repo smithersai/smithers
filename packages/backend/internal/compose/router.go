@@ -259,7 +259,7 @@ func buildRouter(
 		// Outcome callbacks only need the durable run/job binding. Keep this
 		// route available on every healthy API replica even when that replica
 		// could not start the background dispatcher.
-		alertIncidentService = clusterservices.NewAlertIncidentService(clusterQueries, nil)
+		alertIncidentService = clusterservices.NewAlertIncidentService(clusterQueries, nil, clusterservices.WithAlertTransactions())
 	}
 	if alertWebhookHandler := routes.NewAlertWebhookHandler(os.Getenv("SMITHERS_ALERT_WEBHOOK_SIGNING_KEY")); alertWebhookHandler != nil {
 		ready := len(alertRemediationReady) > 0 && alertRemediationReady[0]
@@ -283,6 +283,7 @@ func buildRouter(
 				clusterQueries,
 				alertRegistry,
 				clusterservices.WithAlertRemediationEnabled(ready),
+				clusterservices.WithAlertTransactions(),
 			)
 			alertWebhookHandler.Receiver = alertIncidentService
 		}
@@ -424,7 +425,10 @@ func buildRouter(
 		})
 	}
 
-	integrationsHandler := routes.NewIntegrationsHandler()
+	integrationsHandler := routes.NewIntegrationsHandler(routes.IntegrationCatalog(routes.IntegrationCapabilities{
+		GitHubMirror: gitHubSyncedReposHandler != nil && strings.TrimSpace(cfg.Webhook.GitHubAppSecret) != "",
+		Linear:       linearHandler != nil && strings.TrimSpace(cfg.Auth.LinearClientID) != "" && strings.TrimSpace(cfg.Auth.LinearClientSecret) != "",
+	})...)
 
 	// SSE workflow run log stream — registered at the top-level router (outside /api's JSONTimeout
 	// middleware group) so the connection is not subject to the 30s request timeout.
@@ -1886,7 +1890,7 @@ func buildRouter(
 				// observe-v2: api-incidents
 				if adminSystemIncidentsHandler != nil {
 					if adminSystemIncidentsHandler.Actions == nil && hosted && queries != nil {
-						adminSystemIncidentsHandler.Actions = clusterservices.NewAdminIncidentsService(clusterQueries)
+						adminSystemIncidentsHandler.Actions = clusterservices.NewHostedAdminIncidentsService(clusterQueries)
 					}
 					r.With(writeAdmin...).Post("/system/incidents/{id}/acknowledge", adminSystemIncidentsHandler.Acknowledge)
 					r.With(writeAdmin...).Post("/system/incidents/{id}/unacknowledge", adminSystemIncidentsHandler.Unacknowledge)

@@ -1,14 +1,17 @@
-package blob
+package gcsblob
 
-import "testing"
+import (
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
+	"testing"
+)
 
 func TestPendingUploadKey(t *testing.T) {
 	t.Parallel()
 
-	got := PendingUploadKey("release-assets", "/repos/7/releases/9/assets/11/app.tgz")
+	got := blob.PendingUploadKey("release-assets", "/repos/7/releases/9/assets/11/app.tgz")
 	want := "pending/release-assets/repos/7/releases/9/assets/11/app.tgz"
 	if got != want {
-		t.Fatalf("PendingUploadKey() = %q, want %q", got, want)
+		t.Fatalf("blob.PendingUploadKey() = %q, want %q", got, want)
 	}
 }
 

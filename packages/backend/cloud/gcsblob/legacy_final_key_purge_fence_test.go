@@ -1,8 +1,9 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newPurgeFenceTestStore(t *testing.T, gate LegacyFinalKeyPurgeGate) (*LegacyFinalKeyPurgeFencedStore, *[]string) {
+func newPurgeFenceTestStore(t *testing.T, gate blob.LegacyFinalKeyPurgeGate) (*blob.LegacyFinalKeyPurgeFencedStore, *[]string) {
 	t.Helper()
 	deleted := []string{}
 	base := NewGCSStoreWithHooks(
@@ -22,9 +23,9 @@ func newPurgeFenceTestStore(t *testing.T, gate LegacyFinalKeyPurgeGate) (*Legacy
 			deleted = append(deleted, key)
 			return nil
 		},
-		func(context.Context, string, string) (ObjectAttrs, error) { return ObjectAttrs{}, nil },
+		func(context.Context, string, string) (blob.ObjectAttrs, error) { return blob.ObjectAttrs{}, nil },
 	)
-	store, err := NewLegacyFinalKeyPurgeFencedStore(base, gate)
+	store, err := blob.NewLegacyFinalKeyPurgeFencedStore(base, gate)
 	require.NoError(t, err)
 	return store, &deleted
 }
@@ -37,9 +38,9 @@ func TestLegacyFinalKeyPurgeFencedStoreFailsClosedForFinalKeys(t *testing.T) {
 	})
 
 	err := store.Delete(context.Background(), "repos/7/lfs/abc")
-	require.ErrorIs(t, err, ErrLegacyFinalKeyPurgeFenced)
+	require.ErrorIs(t, err, blob.ErrLegacyFinalKeyPurgeFenced)
 	err = store.PurgeAllGenerations(context.Background(), "workflow-artifacts/7/file")
-	require.ErrorIs(t, err, ErrLegacyFinalKeyPurgeFenced)
+	require.ErrorIs(t, err, blob.ErrLegacyFinalKeyPurgeFenced)
 	assert.Equal(t, 2, gateCalls)
 	assert.Empty(t, *deleted)
 }
@@ -65,7 +66,7 @@ func TestLegacyFinalKeyPurgeFencedStoreAllowsOnlyKnownStagingNamespaces(t *testi
 	assert.Equal(t, keys, *deleted)
 
 	err := store.Delete(context.Background(), "pending/unknown/final-key")
-	require.ErrorIs(t, err, ErrLegacyFinalKeyPurgeFenced)
+	require.ErrorIs(t, err, blob.ErrLegacyFinalKeyPurgeFenced)
 }
 
 func TestLegacyFinalKeyPurgeFencedStoreRechecksGateForEveryFinalPurge(t *testing.T) {
@@ -77,7 +78,7 @@ func TestLegacyFinalKeyPurgeFencedStoreRechecksGateForEveryFinalPurge(t *testing
 
 	require.NoError(t, store.Delete(context.Background(), "final/one"))
 	err := store.PurgeAllGenerations(context.Background(), "final/two")
-	require.ErrorIs(t, err, ErrLegacyFinalKeyPurgeFenced)
+	require.ErrorIs(t, err, blob.ErrLegacyFinalKeyPurgeFenced)
 	assert.Equal(t, 2, gateCalls)
 	assert.Equal(t, []string{"final/one"}, *deleted)
 }
@@ -96,9 +97,9 @@ func TestLegacyFinalKeyPurgeFencedStorePropagatesGateFailure(t *testing.T) {
 func TestLegacyFinalKeyPurgeFencedStorePreservesCreateOnlyCapabilities(t *testing.T) {
 	store, _ := newPurgeFenceTestStore(t, func(context.Context) (bool, error) { return false, nil })
 
-	_, signerOK := any(store).(CreateOnlyUploadSigner)
-	_, promoterOK := any(store).(CreateOnlyPromoter)
-	_, purgerOK := any(store).(GenerationPurger)
+	_, signerOK := any(store).(blob.CreateOnlyUploadSigner)
+	_, promoterOK := any(store).(blob.CreateOnlyPromoter)
+	_, purgerOK := any(store).(blob.GenerationPurger)
 	assert.True(t, signerOK)
 	assert.True(t, promoterOK)
 	assert.True(t, purgerOK)

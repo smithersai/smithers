@@ -1,8 +1,9 @@
-package blob
+package gcsblob
 
 import (
 	"bytes"
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"net/http"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ func TestAgentLogs_H_GCSStorePutGetRoundTrip(t *testing.T) {
 
 	require.NoError(t, store.PutSessionLog(ctx, 42, "session-round-trip", payload))
 
-	key := AgentLogObjectKey(42, "session-round-trip")
+	key := blob.AgentLogObjectKey(42, "session-round-trip")
 	stored, ok := fake.object(bucket, key)
 	require.True(t, ok)
 	assert.Equal(t, payload, stored.body)
@@ -54,7 +55,7 @@ func TestAgentLogs_H_GCSStorePutCloseError(t *testing.T) {
 	fake := gcsHNewFakeServer(t)
 	client := gcsHNewFakeClient(t, fake)
 	store := NewGCSAgentLogStore(client, bucket)
-	key := AgentLogObjectKey(8, "session-close-error")
+	key := blob.AgentLogObjectKey(8, "session-close-error")
 	fake.setUploadStatus(bucket, key, http.StatusInternalServerError)
 
 	err := store.PutSessionLog(ctx, 8, "session-close-error", []byte(`{"close":"fails"}`))
@@ -74,7 +75,7 @@ func TestAgentLogs_H_GCSStoreGetOpenErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "open agent log")
 
-	key := AgentLogObjectKey(9, "server-error")
+	key := blob.AgentLogObjectKey(9, "server-error")
 	fake.putObject(bucket, key, []byte(`{"open":"server-error"}`), "application/json")
 	fake.setDownloadStatus(bucket, key, http.StatusInternalServerError)
 	_, err = store.GetSessionLog(ctx, 9, "server-error")
@@ -89,7 +90,7 @@ func TestAgentLogs_H_GCSStoreGetReadError(t *testing.T) {
 	fake := gcsHNewFakeServer(t)
 	client := gcsHNewFakeClient(t, fake)
 	store := NewGCSAgentLogStore(client, bucket)
-	key := AgentLogObjectKey(10, "truncated")
+	key := blob.AgentLogObjectKey(10, "truncated")
 	fake.putObject(bucket, key, []byte(`{"short":true}`), "application/json")
 	fake.setTruncatedDownload(bucket, key)
 
@@ -105,8 +106,8 @@ func TestAgentLogs_H_GCSStoreGetOversized(t *testing.T) {
 	fake := gcsHNewFakeServer(t)
 	client := gcsHNewFakeClient(t, fake)
 	store := NewGCSAgentLogStore(client, bucket)
-	key := AgentLogObjectKey(11, "oversized")
-	payload := append(bytes.Repeat([]byte("a"), MaxAgentSessionLogBytes), 'b')
+	key := blob.AgentLogObjectKey(11, "oversized")
+	payload := append(bytes.Repeat([]byte("a"), blob.MaxAgentSessionLogBytes), 'b')
 	fake.putObject(bucket, key, payload, "application/json")
 
 	_, err := store.GetSessionLog(ctx, 11, "oversized")

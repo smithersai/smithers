@@ -12,11 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-
-	"github.com/smithersai/smithers/packages/backend/internal/observability"
 )
 
 const (
@@ -147,27 +142,6 @@ func NewGMPClient(projectID string, doer GMPDoer, opts ...GMPClientOption) *GMPC
 		opt(c)
 	}
 	return c
-}
-
-// NewGoogleMonitoringDoer builds an HTTP client authenticated with Application
-// Default Credentials (Workload Identity on GKE). It returns an error when no
-// credentials are discoverable, which callers treat as "backend unconfigured"
-// rather than a fatal startup failure.
-func NewGoogleMonitoringDoer(ctx context.Context, timeout time.Duration) (GMPDoer, error) {
-	if timeout <= 0 {
-		timeout = 15 * time.Second
-	}
-	source, err := google.DefaultTokenSource(ctx, MonitoringReadScope)
-	if err != nil {
-		return nil, fmt.Errorf("google application default credentials: %w", err)
-	}
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &oauth2.Transport{
-			Source: source,
-			Base:   observability.NewHTTPTransport(http.DefaultTransport),
-		},
-	}, nil
 }
 
 // promQueryRangeResponse is the Prometheus HTTP API query_range envelope.

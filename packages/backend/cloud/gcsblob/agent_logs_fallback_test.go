@@ -1,7 +1,8 @@
-package blob
+package gcsblob
 
 import (
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"net/http"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestGCSAgentLogStoreWithReadFallback_GetFallsBackToLegacyBucket(t *testing.
 	store := NewGCSAgentLogStoreWithReadFallback(client, primary, legacy)
 
 	payload := []byte(`{"archived":"before-cutover"}`)
-	fake.putObject(legacy, AgentLogObjectKey(42, "session-legacy"), payload, "application/json")
+	fake.putObject(legacy, blob.AgentLogObjectKey(42, "session-legacy"), payload, "application/json")
 
 	got, err := store.GetSessionLog(ctx, 42, "session-legacy")
 	require.NoError(t, err)
@@ -35,7 +36,7 @@ func TestGCSAgentLogStoreWithReadFallback_PrimaryWinsOverLegacy(t *testing.T) {
 	client := gcsHNewFakeClient(t, fake)
 	store := NewGCSAgentLogStoreWithReadFallback(client, primary, legacy)
 
-	key := AgentLogObjectKey(7, "session-both")
+	key := blob.AgentLogObjectKey(7, "session-both")
 	fresh := []byte(`{"archived":"after-cutover"}`)
 	stale := []byte(`{"archived":"before-cutover"}`)
 	fake.putObject(primary, key, fresh, "application/json")
@@ -58,7 +59,7 @@ func TestGCSAgentLogStoreWithReadFallback_PutWritesPrimaryOnly(t *testing.T) {
 	payload := []byte(`{"steps":[{"status":"ok"}]}`)
 	require.NoError(t, store.PutSessionLog(ctx, 9, "session-write", payload))
 
-	key := AgentLogObjectKey(9, "session-write")
+	key := blob.AgentLogObjectKey(9, "session-write")
 	stored, ok := fake.object(primary, key)
 	require.True(t, ok, "transcript must land in the retention bucket")
 	assert.Equal(t, payload, stored.body)
@@ -88,7 +89,7 @@ func TestGCSAgentLogStoreWithReadFallback_PrimaryServerErrorDoesNotFallBack(t *t
 	client := gcsHNewFakeClient(t, fake)
 	store := NewGCSAgentLogStoreWithReadFallback(client, primary, legacy)
 
-	key := AgentLogObjectKey(13, "session-500")
+	key := blob.AgentLogObjectKey(13, "session-500")
 	fake.putObject(legacy, key, []byte(`{"archived":"legacy"}`), "application/json")
 	fake.setDownloadStatus(primary, key, http.StatusInternalServerError)
 

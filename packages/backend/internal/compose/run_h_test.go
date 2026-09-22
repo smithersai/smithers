@@ -23,8 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"cloud.google.com/go/storage"
-
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
@@ -478,7 +476,7 @@ func TestRun_BlobStoreNotWorkflowCacheStore(t *testing.T) {
 	stubSSEBroker(t)
 	// nil blob.Store fails the WorkflowCacheStore type assertion (the only
 	// reachable failure, since the interface is a subset of blob.Store).
-	swapVar(t, &newBlobStore, func(context.Context, config.BlobConfig) (blob.Store, *storage.Client, time.Duration, error) {
+	swapVar(t, &newBlobStore, func(context.Context, config.BlobConfig) (blob.Store, io.Closer, time.Duration, error) {
 		return nil, nil, 5 * time.Minute, nil
 	})
 	stderr := &syncBuffer{}

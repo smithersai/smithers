@@ -1,4 +1,4 @@
-package blob
+package gcsblob
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 )
@@ -17,7 +18,7 @@ import (
 type gcsSignerFn func(bucket, object string, opts *storage.SignedURLOptions) (string, error)
 type gcsExistsFn func(ctx context.Context, bucket, object string) (bool, error)
 type gcsDeleteFn func(ctx context.Context, bucket, object string) error
-type gcsStatFn func(ctx context.Context, bucket, object string) (ObjectAttrs, error)
+type gcsStatFn func(ctx context.Context, bucket, object string) (blob.ObjectAttrs, error)
 type gcsNewReaderFn func(ctx context.Context, bucket, object string) (io.ReadCloser, error)
 type gcsPromoteFn func(ctx context.Context, bucket, sourceObject, destinationObject string) error
 type gcsPutFn func(ctx context.Context, bucket, object, contentType string, r io.Reader) error
@@ -65,21 +66,21 @@ func NewGCSStore(client *storage.Client, bucket string) *GCSStore {
 		s.purgeFn = func(ctx context.Context, bucket, object string) error {
 			return hardDeleteGCSObjectGenerations(ctx, client.Bucket(bucket), object)
 		}
-		s.statFn = func(ctx context.Context, bucket, object string) (ObjectAttrs, error) {
+		s.statFn = func(ctx context.Context, bucket, object string) (blob.ObjectAttrs, error) {
 			attrs, err := client.Bucket(bucket).Object(object).Attrs(ctx)
 			if err != nil {
 				if stdErrors.Is(err, storage.ErrObjectNotExist) {
-					return ObjectAttrs{}, ErrObjectNotFound
+					return blob.ObjectAttrs{}, blob.ErrObjectNotFound
 				}
-				return ObjectAttrs{}, err
+				return blob.ObjectAttrs{}, err
 			}
-			return ObjectAttrs{Size: attrs.Size}, nil
+			return blob.ObjectAttrs{Size: attrs.Size}, nil
 		}
 		s.newReaderFn = func(ctx context.Context, bucket, object string) (io.ReadCloser, error) {
 			r, err := client.Bucket(bucket).Object(object).NewReader(ctx)
 			if err != nil {
 				if stdErrors.Is(err, storage.ErrObjectNotExist) {
-					return nil, ErrObjectNotFound
+					return nil, blob.ErrObjectNotFound
 				}
 				return nil, err
 			}
@@ -115,13 +116,13 @@ func translateGCSPromoteError(err error) error {
 	if stdErrors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case http.StatusPreconditionFailed:
-			return ErrObjectAlreadyExists
+			return blob.ErrObjectAlreadyExists
 		case http.StatusNotFound:
-			return ErrObjectNotFound
+			return blob.ErrObjectNotFound
 		}
 	}
 	if stdErrors.Is(err, storage.ErrObjectNotExist) {
-		return ErrObjectNotFound
+		return blob.ErrObjectNotFound
 	}
 	return err
 }
@@ -146,9 +147,9 @@ func NewGCSStoreWithHooks(bucket string, signerFn gcsSignerFn, existsFn gcsExist
 // Failed unless no live object exists at the key.
 const GCSIfGenerationMatchHeader = "x-goog-if-generation-match"
 
-var _ CreateOnlyUploadSigner = (*GCSStore)(nil)
-var _ CreateOnlyPromoter = (*GCSStore)(nil)
-var _ GenerationPurger = (*GCSStore)(nil)
+var _ blob.CreateOnlyUploadSigner = (*GCSStore)(nil)
+var _ blob.CreateOnlyPromoter = (*GCSStore)(nil)
+var _ blob.GenerationPurger = (*GCSStore)(nil)
 
 // SignedCreateOnlyUploadURL returns a V4 signed PUT URL whose signature covers
 // x-goog-if-generation-match: 0, so the upload only succeeds while no live
@@ -157,10 +158,10 @@ var _ GenerationPurger = (*GCSStore)(nil)
 // instead of silently overwriting verified content. The returned Header map
 // carries every signed header the uploader must send. Unlike the legacy plain
 // upload signer, a declared size is exact: N,N permits only N bytes, including
-// 0,0 for an empty object. UnknownObjectSize disables the length constraint.
-func (g *GCSStore) SignedCreateOnlyUploadURL(_ context.Context, key string, contentType string, exactSizeBytes int64, expiry time.Duration) (SignedUpload, error) {
+// 0,0 for an empty object. blob.UnknownObjectSize disables the length constraint.
+func (g *GCSStore) SignedCreateOnlyUploadURL(_ context.Context, key string, contentType string, exactSizeBytes int64, expiry time.Duration) (blob.SignedUpload, error) {
 	if g.signerFn == nil {
-		return SignedUpload{}, fmt.Errorf("gcs signer is not configured")
+		return blob.SignedUpload{}, fmt.Errorf("gcs signer is not configured")
 	}
 	opts := &storage.SignedURLOptions{
 		// V4 signing is required: it includes extension headers in the
@@ -169,7 +170,7 @@ func (g *GCSStore) SignedCreateOnlyUploadURL(_ context.Context, key string, cont
 		Scheme:      storage.SigningSchemeV4,
 		Method:      "PUT",
 		ContentType: contentType,
-		Expires:     time.Now().Add(normalizeSignedURLExpiry(expiry)),
+		Expires:     time.Now().Add(blob.NormalizeSignedURLExpiry(expiry)),
 		Headers:     []string{GCSIfGenerationMatchHeader + ":0"},
 	}
 	header := map[string]string{GCSIfGenerationMatchHeader: "0"}
@@ -183,9 +184,9 @@ func (g *GCSStore) SignedCreateOnlyUploadURL(_ context.Context, key string, cont
 	}
 	u, err := g.signerFn(g.bucket, key, opts)
 	if err != nil {
-		return SignedUpload{}, err
+		return blob.SignedUpload{}, err
 	}
-	return SignedUpload{URL: u, Header: header}, nil
+	return blob.SignedUpload{URL: u, Header: header}, nil
 }
 
 // PromoteCreateOnly copies a staged object to its permanent key with a GCS
@@ -206,7 +207,7 @@ func (g *GCSStore) SignedUploadURL(_ context.Context, key string, contentType st
 		Scheme:      storage.SigningSchemeV4,
 		Method:      "PUT",
 		ContentType: contentType,
-		Expires:     time.Now().Add(normalizeSignedURLExpiry(expiry)),
+		Expires:     time.Now().Add(blob.NormalizeSignedURLExpiry(expiry)),
 	}
 	if maxSizeBytes > 0 {
 		opts.Headers = []string{fmt.Sprintf("x-goog-content-length-range:0,%d", maxSizeBytes)}
@@ -221,7 +222,7 @@ func (g *GCSStore) SignedDownloadURL(_ context.Context, key string, expiry time.
 	return g.signerFn(g.bucket, key, &storage.SignedURLOptions{
 		Scheme:  storage.SigningSchemeV4,
 		Method:  "GET",
-		Expires: time.Now().Add(normalizeSignedURLExpiry(expiry)),
+		Expires: time.Now().Add(blob.NormalizeSignedURLExpiry(expiry)),
 	})
 }
 
@@ -249,7 +250,7 @@ func (g *GCSStore) PurgeAllGenerations(ctx context.Context, key string) error {
 }
 
 func isGenerationPurgeKey(key string) bool {
-	if strings.HasPrefix(key, "lfs-pending/") || strings.HasPrefix(key, PendingUploadPrefix) {
+	if strings.HasPrefix(key, "lfs-pending/") || strings.HasPrefix(key, blob.PendingUploadPrefix) {
 		return true
 	}
 	if !strings.HasPrefix(key, "repos/") {
@@ -349,9 +350,9 @@ func (g *GCSStore) Exists(ctx context.Context, key string) (bool, error) {
 	return g.existsFn(ctx, g.bucket, key)
 }
 
-func (g *GCSStore) Stat(ctx context.Context, key string) (ObjectAttrs, error) {
+func (g *GCSStore) Stat(ctx context.Context, key string) (blob.ObjectAttrs, error) {
 	if g.statFn == nil {
-		return ObjectAttrs{}, fmt.Errorf("gcs stat is not configured")
+		return blob.ObjectAttrs{}, fmt.Errorf("gcs stat is not configured")
 	}
 	return g.statFn(ctx, g.bucket, key)
 }
@@ -372,4 +373,4 @@ func (g *GCSStore) Put(ctx context.Context, key, contentType string, r io.Reader
 	return g.putFn(ctx, g.bucket, key, contentType, r)
 }
 
-var _ Putter = (*GCSStore)(nil)
+var _ blob.Putter = (*GCSStore)(nil)

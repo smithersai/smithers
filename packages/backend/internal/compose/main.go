@@ -95,6 +95,7 @@ type Options struct {
 	TraceExporter trace.SpanExporter
 	Blobs         blob.Store
 	AgentLogs     services.AgentLogStore
+	MetricsDoer   services.GMPDoer
 	Repository    *repohost.Client
 }
 
@@ -533,6 +534,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithIssueOwnershipGuard(repoOwnershipFence),
 	)
 	runnerOptions := []clusterservices.RunnerServiceOption{
+		clusterservices.WithRunnerTransactions(),
 		clusterservices.WithRunnerMetrics(smithersMetrics),
 		clusterservices.WithRunnerWebhookDispatcher(webhookDispatcher),
 		clusterservices.WithRunnerCommitStatusWriter(commitStatusService),
@@ -670,6 +672,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// dedicated agent-logs bucket, not the versioned long-retention blobs bucket.
 	agentLogStore := options.AgentLogs
 	if agentLogStore == nil {
+		if strings.TrimSpace(cfg.Blob.GCSBucket) != "" {
+			return errors.New("GCS agent logs require an injected cloud agent-log adapter")
+		}
 		agentLogStore = initializeAgentLogStore(gcsClient, cfg.Blob, blobStore)
 	}
 
@@ -1045,7 +1050,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	adminSystemIncidentsHandler := &routes.AdminSystemIncidentsHandler{
 		Service: clusterservices.NewAdminSystemIncidentsService(adminSystemConsoleStore),
 	}
-	adminSystemMetricsHandler := routes.NewAdminSystemMetricsHandler(cfg.MetricsQueryProjectID(), nil)
+	adminSystemMetricsHandler := routes.NewAdminSystemMetricsHandler(cfg.MetricsQueryProjectID(), options.MetricsDoer)
 	if adminSystemMetricsHandler == nil {
 		// No GCP project (or no credentials): mount a backend-less handler so the
 		// endpoint answers 501 "metrics backend not configured" instead of 404,

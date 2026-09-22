@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,46 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
-
-func TestServerStartup_WithGCSEmulator(t *testing.T) {
-	emulatorEndpoint := os.Getenv("SMITHERS_TEST_GCS_ENDPOINT")
-	if emulatorEndpoint == "" {
-		t.Skip("SMITHERS_TEST_GCS_ENDPOINT not set, skipping GCS emulator integration test")
-	}
-
-	// Set environment for the emulator
-	os.Setenv("STORAGE_EMULATOR_HOST", emulatorEndpoint)
-	defer os.Unsetenv("STORAGE_EMULATOR_HOST")
-
-	ctx := context.Background()
-	cfg := config.BlobConfig{
-		GCSBucket:       "test-integration-bucket",
-		SignedURLExpiry: "5m",
-	}
-
-	// Ensure we can initialize the blob store
-	store, client, expiry, err := initializeBlobStore(ctx, cfg)
-	require.NoError(t, err, "Failed to initialize blob store with emulator")
-	require.NotNil(t, store)
-	require.NotNil(t, client)
-	assert.Equal(t, 5*time.Minute, expiry)
-
-	// Clean up client
-	defer client.Close()
-
-	// Verify the store works by interacting with it (assuming emulator is running)
-	// We'll just verify the store type and existence, as the emulator may or may not
-	// have the bucket created depending on the setup. The goal is testing the initialization logic.
-	_, isGCS := store.(*blob.GCSStore)
-	assert.True(t, isGCS, "Expected store to be *blob.GCSStore")
-}
 
 func TestServerRouter_WorkflowRunLogsSSEPreflightIncludesCORSHeaders(t *testing.T) {
 	t.Parallel()

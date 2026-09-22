@@ -434,7 +434,7 @@ func TestInitializeBlobStore_GCSClientError(t *testing.T) {
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(t.TempDir(), "nonexistent.json"))
 	_, _, _, err := initializeBlobStore(context.Background(), config.BlobConfig{GCSBucket: "b"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to create GCS client")
+	assert.Contains(t, err.Error(), "requires an injected cloud blob adapter")
 }
 
 // ---------------------------------------------------------------------------

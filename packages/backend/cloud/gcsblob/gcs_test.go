@@ -1,8 +1,9 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"errors"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"testing"
 	"time"
 
@@ -150,10 +151,10 @@ func TestGCSStore_Exists_PropagatesError(t *testing.T) {
 func TestGCSStore_Stat_ReturnsSize(t *testing.T) {
 	t.Parallel()
 
-	store := NewGCSStoreWithHooks("smithers-blobs", nil, nil, nil, func(ctx context.Context, bucket, object string) (ObjectAttrs, error) {
+	store := NewGCSStoreWithHooks("smithers-blobs", nil, nil, nil, func(ctx context.Context, bucket, object string) (blob.ObjectAttrs, error) {
 		assert.Equal(t, "smithers-blobs", bucket)
 		assert.Equal(t, "path/object.bin", object)
-		return ObjectAttrs{Size: 123}, nil
+		return blob.ObjectAttrs{Size: 123}, nil
 	})
 
 	attrs, err := store.Stat(context.Background(), "path/object.bin")

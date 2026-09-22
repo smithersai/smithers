@@ -158,6 +158,12 @@ func normalizeSignedURLExpiry(expiry time.Duration) time.Duration {
 	return expiry
 }
 
+// NormalizeSignedURLExpiry applies the shared capability lifetime bounds to
+// optional storage adapters that sign their own transfer URLs.
+func NormalizeSignedURLExpiry(expiry time.Duration) time.Duration {
+	return normalizeSignedURLExpiry(expiry)
+}
+
 // GenerationPurger permanently removes every live and archived generation of
 // one exact key. GCS implements this with generation-specific deletes so
 // bucket versioning cannot turn cleanup into a hidden noncurrent object.

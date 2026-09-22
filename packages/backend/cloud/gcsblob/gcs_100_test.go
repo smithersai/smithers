@@ -1,9 +1,10 @@
-package blob
+package gcsblob
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -370,10 +371,10 @@ func TestGCS_H_NewGCSStoreHTTPClientClosures(t *testing.T) {
 	require.NoError(t, store.Delete(ctx, "objects/existing.txt"))
 
 	_, err = store.Stat(ctx, "objects/existing.txt")
-	require.ErrorIs(t, err, ErrObjectNotFound)
+	require.ErrorIs(t, err, blob.ErrObjectNotFound)
 
 	reader, err = store.NewReader(ctx, "objects/existing.txt")
-	require.ErrorIs(t, err, ErrObjectNotFound)
+	require.ErrorIs(t, err, blob.ErrObjectNotFound)
 	assert.Nil(t, reader)
 }
 
@@ -392,7 +393,7 @@ func TestGCS_H_NewGCSStoreHTTPClientErrorBranches(t *testing.T) {
 
 	_, err = store.Stat(ctx, "objects/attrs-500.txt")
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrObjectNotFound)
+	assert.NotErrorIs(t, err, blob.ErrObjectNotFound)
 
 	fake.putObject(bucket, "objects/delete-500.txt", []byte("delete"), "text/plain")
 	fake.setDeleteStatus(bucket, "objects/delete-500.txt", http.StatusInternalServerError)
