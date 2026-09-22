@@ -73,8 +73,6 @@ type WorkflowArtifactService interface {
 }
 
 type WorkflowArtifactQuerier interface {
-	purgedStorageDeletionClearer
-
 	GetWorkflowRun(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
 	CreateWorkflowArtifact(ctx context.Context, arg db.CreateWorkflowArtifactParams) (db.WorkflowArtifact, error)
 	ConfirmWorkflowArtifactUpload(ctx context.Context, arg db.ConfirmWorkflowArtifactUploadParams) (db.WorkflowArtifact, error)

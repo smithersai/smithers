@@ -67,8 +67,6 @@ func normalizeWorkflowCacheConfig(cfg WorkflowCacheConfig) WorkflowCacheConfig {
 }
 
 type WorkflowCacheQuerier interface {
-	purgedStorageDeletionClearer
-
 	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
 	GetWorkflowCacheByID(ctx context.Context, id int64) (db.WorkflowCache, error)
 	GetWorkflowCacheByScopeVersion(ctx context.Context, arg db.GetWorkflowCacheByScopeVersionParams) (db.WorkflowCache, error)

@@ -23,18 +23,24 @@ type purgedStorageDeletionClearer interface {
 
 func clearPurgedStorageDeletionKeys(
 	ctx context.Context,
-	queries purgedStorageDeletionClearer,
+	queries any,
 	repositoryID int64,
 	allocationKey string,
 	objectKeys ...string,
 ) error {
+	// The product schema has no private deletion queue. Hosted adapters expose
+	// this narrow capability; local storage has no fence to clear.
+	clearer, ok := queries.(purgedStorageDeletionClearer)
+	if !ok {
+		return nil
+	}
 	clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), purgedStorageDeletionClearTimeout)
 	defer cancel()
 	for _, objectKey := range objectKeys {
 		if strings.TrimSpace(objectKey) == "" {
 			continue
 		}
-		if _, err := queries.ClearPurgedStorageDeletionByExactKey(clearCtx, clusterdb.ClearPurgedStorageDeletionByExactKeyParams{
+		if _, err := clearer.ClearPurgedStorageDeletionByExactKey(clearCtx, clusterdb.ClearPurgedStorageDeletionByExactKeyParams{
 			RepositoryID:  repositoryID,
 			AllocationKey: allocationKey,
 			ObjectKey:     objectKey,
