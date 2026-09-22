@@ -220,9 +220,9 @@ const backendDatabaseURL = (name: string) =>
   `postgres://smithers:smithers-backend-test@127.0.0.1:55435/${name}?sslmode=disable`
 
 // Native FFI needs its own compiler floor. The flows-jj wasm artifact keeps
-// the repository's 1.89.0 pin; explicit `cargo +1.98.0` cannot change it.
+// the repository's 1.89.0 pin; `rustup run 1.98.0 cargo` cannot change it.
 const nativeFfi = Smithers.Shell.Build({
-  shell: "mkdir -p .native-ffi; export RUSTUP_HOME=\"$PWD/.native-ffi/rustup\" CARGO_HOME=\"$PWD/.native-ffi/cargo\" CARGO_TARGET_DIR=\"$PWD/.native-ffi/target\"; rustup toolchain install 1.98.0 --profile minimal --component clippy && cargo +1.98.0 clippy -p smithers-ffi --all-targets --locked -- -D warnings && cargo +1.98.0 test -p smithers-ffi --locked && touch .native-ffi/qualified",
+  shell: "mkdir -p .native-ffi; export RUSTUP_HOME=\"$PWD/.native-ffi/rustup\" CARGO_TARGET_DIR=\"$PWD/.native-ffi/target\"; rustup toolchain install 1.98.0 --profile minimal --component clippy && rustup run 1.98.0 cargo clippy -p smithers-ffi --all-targets --locked -- -D warnings && rustup run 1.98.0 cargo test -p smithers-ffi --locked && touch .native-ffi/qualified",
   outDirs: ["//.native-ffi"],
   data: [
     Smithers.file("//Cargo.toml"),

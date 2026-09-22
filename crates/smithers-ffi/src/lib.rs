@@ -6139,7 +6139,7 @@ mod tests {
         let base = handle
             .repo
             .store()
-            .get_commit(&CommitId::try_from_hex(&current_commit_id(&path)).unwrap())
+            .get_commit(&CommitId::try_from_hex(current_commit_id(&path)).unwrap())
             .unwrap();
         let mut tx = handle.repo.start_transaction();
         let left = tx

@@ -284,12 +284,19 @@ reproduced in the root `THIRD_PARTY_NOTICES.md`).
 
 {{crates:Zlib}}
 
+### MPL-2.0
+
+The crate below is licensed under the Mozilla Public License 2.0. Its
+source is linked in the inventory; the license text is available at
+<https://www.mozilla.org/en-US/MPL/2.0/>.
+
+{{crates:MPL-2.0}}
+
 ### Combined or multi-option licenses
 
-These crates offer more than two alternatives, or combine a permissive
-license with an additional narrow grant. Each includes at least one option
-(MIT, MIT-0, or plain Apache-2.0) that this project's own MIT distribution
-already satisfies.
+These crates offer more than two alternatives, or combine license terms.
+The SPDX expression for each crate remains in its own source metadata;
+`encoding_rs` also carries BSD-3-Clause terms.
 
 {{crates:Combined}}
 
