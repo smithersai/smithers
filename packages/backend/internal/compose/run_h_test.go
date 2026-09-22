@@ -183,12 +183,15 @@ func baseRunEnv(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
 		"SMITHERS_DATABASE_URL":                  testDatabaseURL(t),
+		"SMITHERS_AUTH_MODE":                     "selfhost",
+		"SMITHERS_AUTH_BOOTSTRAP_TOKEN":          "test-bootstrap-token",
 		"SMITHERS_AUTH_SESSION_SECRET":           "test-secret",
 		"SMITHERS_LFS_SIGNING_SECRET":            "test-lfs-signing-secret",
 		"SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY": "test-webhook-key",
 		"SMITHERS_REPO_HOST_AUTH_TOKEN":          "repo-token",
 		"SMITHERS_PUSH_HOOK_CALLBACK_TOKEN":      "push-callback-token",
 		"SMITHERS_SERVER_ADDR":                   "127.0.0.1:0",
+		"SMITHERS_PUBLIC_URL":                    "http://127.0.0.1:4000",
 		"SMITHERS_FEATURE_FLAGS_WORKFLOWS":       "false",
 		"SMITHERS_FEATURE_FLAGS_SANDBOXES":       "false",
 	}
@@ -344,6 +347,7 @@ func TestRun_ConfigLoadError(t *testing.T) {
 func TestRun_InvalidStartupConfig(t *testing.T) {
 	preserveSlog(t)
 	// Empty database URL fails ValidateServerStartup.
+	t.Setenv("SMITHERS_AUTH_MODE", "selfhost")
 	t.Setenv("SMITHERS_DATABASE_URL", "")
 	t.Setenv("SMITHERS_AUTH_SESSION_SECRET", "s")
 	t.Setenv("SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY", "k")
@@ -606,7 +610,6 @@ func TestRun_FullyConfigured(t *testing.T) {
 	// E2E dev auto-authorize.
 	env["SMITHERS_ENABLE_E2E_TEST_ROUTES"] = "true"
 	// API base URL /api suffix trim.
-	env["SMITHERS_API_BASE_URL"] = "https://api.example.com/api"
 	// Custom active storage set.
 	env["ACTIVE_STORAGE_SET"] = "custom"
 	// Closed alpha -> oauth2AlphaAccess wired.

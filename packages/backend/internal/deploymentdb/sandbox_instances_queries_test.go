@@ -51,9 +51,9 @@ func TestListOrphanedSandboxInstances_FindsVMsWhoseOwnerRowIsGone(t *testing.T) 
 	require.NoError(t, err)
 	assert.Empty(t, orphanIDs(orphans), "nothing is orphaned while both owner rows are live")
 
-	// This is the production sequence: one DELETE of the repository takes the
-	// gateway row AND the workspace row with it, and leaves both VMs behind.
-	mustExec(t, pool, `DELETE FROM repositories WHERE id = $1`, repoID)
+	// A durable repository deletion takes the gateway and workspace rows with
+	// it, leaving both VMs for the orphan sweep.
+	mustDurablyDeleteRepoForTest(t, pool, repoID)
 
 	orphans, err = q.ListOrphanedSandboxInstances(ctx, ListOrphanedSandboxInstancesParams{
 		MinAgeSeconds: 1800, MaxRows: 50,

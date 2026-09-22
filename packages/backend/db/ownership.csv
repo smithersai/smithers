@@ -15,7 +15,7 @@ ssh_keys,product,product baseline; transitional copy also present
 access_tokens,product,product baseline; transitional copy also present
 user_ai_keys,product,product baseline; transitional copy also present
 repositories,product,product baseline; transitional copy also present
-repository_storage_operations,infrastructure-seam,excluded from product baseline; Plue split pending
+repository_storage_operations,product,product migration 0007; neutral repository recovery journal
 legacy_mutation_fence_control,infrastructure-seam,excluded from product baseline; Plue split pending
 repo_storage_sets,infrastructure-seam,excluded from product baseline; Plue split pending
 repo_storage_nodes,infrastructure-seam,excluded from product baseline; Plue split pending
@@ -214,3 +214,11 @@ repository_job_dispatches,product,product baseline; transitional copy also prese
 repository_job_trials,product,product baseline; transitional copy also present
 repository_job_comments,product,product baseline; transitional copy also present
 workspace_capability_bindings,product,product baseline; transitional copy also present
+repository_job_approvals,product,product migration 0004
+repository_ci_check_receipts,product,product migration 0004
+self_host_owners,product,product migration 0005
+local_credentials,product,product migration 0005
+product_job_streams,product,product migration 0006
+product_job_requests,product,product migration 0006
+product_job_dispatches,product,product migration 0006
+product_job_events,product,product migration 0006

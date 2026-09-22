@@ -36,6 +36,11 @@ var migrationRegistry = []migrationSpec{
 	{BaselineVersion, "migrations/0001_product_baseline.sql"},
 	{2, "migrations/0002_import_publication.sql"},
 	{3, "migrations/0003_repository_creation_jobs.sql"},
+	{4, "migrations/0004_repository_job_receipts_and_approvals.sql"},
+	{5, "migrations/0005_single_owner_identity.sql"},
+	{6, "migrations/0006_durable_product_jobs.sql"},
+	{7, "migrations/0007_repository_storage_operations.sql"},
+	{8, "migrations/0008_provider_connection_web_request.sql"},
 }
 
 type migration struct {

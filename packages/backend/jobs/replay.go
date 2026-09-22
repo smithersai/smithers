@@ -36,12 +36,20 @@ func (store *Store) Replay(ctx context.Context, scope Scope, cursor int64, limit
 	if limit <= 0 || limit > maxReplayPage {
 		limit = maxReplayPage
 	}
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly, IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return ReplayPage{}, err
+	}
+	defer rollback(tx)
 	var head, floor int64
-	err := store.pool.QueryRow(ctx, `SELECT head, retention_floor FROM product_job_streams
+	err = tx.QueryRow(ctx, `SELECT head, retention_floor FROM product_job_streams
 		WHERE tenant_id=$1 AND principal_id=$2`, scope.TenantID, scope.PrincipalID).Scan(&head, &floor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if cursor > 0 {
 			return ReplayPage{}, ErrCursorAhead
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return ReplayPage{}, err
 		}
 		return ReplayPage{Cursor: 0, Head: 0}, nil
 	}
@@ -54,7 +62,7 @@ func (store *Store) Replay(ctx context.Context, scope Scope, cursor int64, limit
 	if cursor > head {
 		return ReplayPage{}, ErrCursorAhead
 	}
-	rows, err := store.pool.Query(ctx, `
+	rows, err := tx.Query(ctx, `
 		SELECT tenant_id, principal_id, sequence, event_id, operation_id,
 		       event_type, state, data, recorded_at
 		FROM product_job_events
@@ -77,12 +85,17 @@ func (store *Store) Replay(ctx context.Context, scope Scope, cursor int64, limit
 		page.Cursor = event.Sequence
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return ReplayPage{}, err
 	}
+	rows.Close()
 	if len(page.Events) == 0 {
 		page.Cursor = head
 	}
 	page.More = page.Cursor < head
+	if err := tx.Commit(ctx); err != nil {
+		return ReplayPage{}, err
+	}
 	return page, nil
 }
 
@@ -99,7 +112,7 @@ func (store *Store) Snapshot(ctx context.Context, scope Scope, limit int) (Snaps
 	if err != nil {
 		return Snapshot{}, err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	var head int64
 	err = tx.QueryRow(ctx, `SELECT head FROM product_job_streams
 		WHERE tenant_id=$1 AND principal_id=$2`, scope.TenantID, scope.PrincipalID).Scan(&head)
@@ -115,6 +128,7 @@ func (store *Store) Snapshot(ctx context.Context, scope Scope, limit int) (Snaps
 		       request.authorization_context, request.state, request.request_receipt,
 		       dispatch.external_receipt, request.terminal_receipt,
 		       dispatch.effect_policy, dispatch.effect_key, dispatch.attempt,
+		       dispatch.external_attempt,
 		       dispatch.generation, dispatch.reconcile_required,
 		       request.cancellation_requested, request.cancellation_requested_at,
 		       request.created_at, request.updated_at,
@@ -139,7 +153,7 @@ func (store *Store) Snapshot(ctx context.Context, scope Scope, limit int) (Snaps
 			&operation.Operation, &operation.RequestID, &fingerprint, &operation.Payload,
 			&operation.AuthorizationContext, &operation.State, &operation.RequestReceipt,
 			&external, &terminal, &operation.EffectPolicy, &operation.EffectKey,
-			&operation.Attempt, &operation.Generation, &operation.NeedsReconciliation,
+			&operation.Attempt, &operation.ExternalAttempt, &operation.Generation, &operation.NeedsReconciliation,
 			&operation.CancellationRequested, &cancelledAt,
 			&operation.CreatedAt, &operation.UpdatedAt, &total); err != nil {
 			return Snapshot{}, err
@@ -173,7 +187,7 @@ func (store *Store) ExpireEventsThrough(ctx context.Context, scope Scope, sequen
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	var head int64
 	err = tx.QueryRow(ctx, `SELECT head FROM product_job_streams
 		WHERE tenant_id=$1 AND principal_id=$2 FOR UPDATE`, scope.TenantID, scope.PrincipalID).Scan(&head)

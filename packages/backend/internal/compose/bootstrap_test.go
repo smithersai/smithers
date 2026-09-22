@@ -11,7 +11,7 @@ import (
 )
 
 func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
-	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, workspaceRuntime: true})
+	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, redirectAuth: true, workspaceRuntime: true})
 	require.Equal(t, "local", local.Host)
 	require.Equal(t, []string{"identity"}, local.Capabilities)
 	require.Equal(t, "credentials", local.AuthFlow)

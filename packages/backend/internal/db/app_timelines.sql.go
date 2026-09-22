@@ -38,7 +38,7 @@ type CreateAppTimelineParams struct {
 }
 
 // ---- App-machine timelines (realtime-synchronized xstate history) ----
-// See db/migrations/20260719144500_add_app_timelines.sql. Writes are REST
+// See db/product/migrations/0001_product_baseline.sql. Writes are REST
 // (routes/app_timelines.go -> services/app_timeline.go); reads are the
 // membership-authorized app_timeline_* realtime streams.
 // Race-safe find-or-create half: the partial-unique conflict target makes a

@@ -75,7 +75,7 @@ func alertLinearRouterForTestWithReadiness(
 		nil, // pairSessionHandler
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil,                                // adminRunnerHandler
+		&routes.AdminRunnerHandler{},       // hosted composition marker
 		nil,                                // adminUserHandler
 		nil,                                // adminOrgHandler
 		nil,                                // adminRepoHandler

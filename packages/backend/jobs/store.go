@@ -58,6 +58,30 @@ func validateAdmission(input Admission) (json.RawMessage, json.RawMessage, error
 // ordered event. It performs no provider or runtime call. A successful return
 // therefore means durable acceptance, not launch or completion.
 func (store *Store) Admit(ctx context.Context, input Admission) (RequestReceipt, error) {
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	defer rollback(tx)
+
+	receipt, err := store.AdmitInTx(ctx, tx, input)
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return RequestReceipt{}, err
+	}
+	return receipt, nil
+}
+
+// AdmitInTx adds admission to a caller-owned product transaction. The caller
+// must use a transaction from the same PostgreSQL database as Store and owns
+// commit or rollback. This is the integration seam for domain authorization
+// and product admission that must become durable together.
+func (store *Store) AdmitInTx(ctx context.Context, tx pgx.Tx, input Admission) (RequestReceipt, error) {
+	if tx == nil {
+		return RequestReceipt{}, errors.New("jobs: admission transaction is required")
+	}
 	payload, authorization, err := validateAdmission(input)
 	if err != nil {
 		return RequestReceipt{}, err
@@ -84,12 +108,6 @@ func (store *Store) Admit(ctx context.Context, input Admission) (RequestReceipt,
 	if availableAt.IsZero() {
 		availableAt = acceptedAt
 	}
-
-	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return RequestReceipt{}, err
-	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
 
 	var inserted bool
 	err = tx.QueryRow(ctx, `
@@ -121,9 +139,6 @@ func (store *Store) Admit(ctx context.Context, input Admission) (RequestReceipt,
 		}
 		receipt.OperationID = existingID
 		receipt.Joined = true
-		if err := tx.Commit(ctx); err != nil {
-			return RequestReceipt{}, err
-		}
 		return receipt, nil
 	}
 	if err != nil {
@@ -139,9 +154,6 @@ func (store *Store) Admit(ctx context.Context, input Admission) (RequestReceipt,
 		return RequestReceipt{}, err
 	}
 	if _, err := appendEvent(ctx, tx, input.Scope, operationID, "operation.accepted", StateAccepted, receiptJSON); err != nil {
-		return RequestReceipt{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return RequestReceipt{}, err
 	}
 	return receipt, nil
@@ -202,6 +214,28 @@ func (store *Store) Get(ctx context.Context, scope Scope, operationID string) (O
 	return queryOperation(ctx, store.pool, scope, operationID, false)
 }
 
+// GetByRequest reconnects a caller-visible idempotency key to its durable
+// operation without crossing the tenant/principal/operation boundary.
+func (store *Store) GetByRequest(ctx context.Context, scope Scope, operation, requestID string) (Operation, error) {
+	if err := scope.validate(); err != nil {
+		return Operation{}, err
+	}
+	if operation == "" || requestID == "" {
+		return Operation{}, errors.New("jobs: operation and request ID are required")
+	}
+	var operationID string
+	err := store.pool.QueryRow(ctx, `SELECT id FROM product_job_requests
+		WHERE tenant_id=$1 AND principal_id=$2 AND operation=$3 AND request_id=$4`,
+		scope.TenantID, scope.PrincipalID, operation, requestID).Scan(&operationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, ErrNotFound
+	}
+	if err != nil {
+		return Operation{}, err
+	}
+	return queryOperation(ctx, store.pool, scope, operationID, false)
+}
+
 type rowQuerier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
@@ -213,6 +247,7 @@ func queryOperation(ctx context.Context, q rowQuerier, scope Scope, operationID 
 		       request.authorization_context, request.state, request.request_receipt,
 		       dispatch.external_receipt, request.terminal_receipt,
 		       dispatch.effect_policy, dispatch.effect_key, dispatch.attempt,
+		       dispatch.external_attempt,
 		       dispatch.generation, dispatch.reconcile_required,
 		       request.cancellation_requested, request.cancellation_requested_at,
 		       request.created_at, request.updated_at
@@ -232,7 +267,7 @@ func queryOperation(ctx context.Context, q rowQuerier, scope Scope, operationID 
 		&operation.Operation, &operation.RequestID, &fingerprint, &operation.Payload,
 		&operation.AuthorizationContext, &operation.State, &operation.RequestReceipt,
 		&external, &terminal, &operation.EffectPolicy, &operation.EffectKey,
-		&operation.Attempt, &operation.Generation, &operation.NeedsReconciliation,
+		&operation.Attempt, &operation.ExternalAttempt, &operation.Generation, &operation.NeedsReconciliation,
 		&operation.CancellationRequested, &cancelledAt,
 		&operation.CreatedAt, &operation.UpdatedAt,
 	)

@@ -53,7 +53,7 @@ type CreateAnonSandboxParams struct {
 }
 
 // ---- Anonymous sandboxes (../multi SPEC.md §3 signed-out open) ----
-// See db/migrations/20260719163427_add_anon_sandboxes.sql. Rows carry no user
+// See db/product/migrations/0001_product_baseline.sql. Rows carry no user
 // linkage by design; access is a token capability checked in the service.
 func (q *Queries) CreateAnonSandbox(ctx context.Context, arg CreateAnonSandboxParams) (AnonSandbox, error) {
 	row := q.db.QueryRow(ctx, createAnonSandbox,

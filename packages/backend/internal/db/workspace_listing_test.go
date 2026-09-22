@@ -415,8 +415,7 @@ func TestListUserWorkspacesAcrossRepos_CollaboratorRepoShows_RevokeHides(t *test
 	// only the collaborator grant opens access.
 	var repoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, $2, $3, 's1', FALSE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, $2, $3, FALSE) RETURNING id`,
 		ownerID, "collab-repo", "collab-repo",
 	).Scan(&repoID)
 	require.NoError(t, err)
@@ -582,8 +581,7 @@ func TestListUserWorkspacesAcrossRepos_PublicRepoShowsOwnerScoped(t *testing.T) 
 	// (they opened a sandbox on a public repo). pub-reader should see them.
 	var repoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, $2, $3, 's1', TRUE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, $2, $3, TRUE) RETURNING id`,
 		ownerID, "pub-repo", "pub-repo",
 	).Scan(&repoID)
 	require.NoError(t, err)
@@ -678,8 +676,7 @@ func TestListReadableReposForUser_Matrix(t *testing.T) {
 	// Owner repo — private.
 	var ownerRepoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, 'mine', 'mine', 's1', FALSE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, 'mine', 'mine', FALSE) RETURNING id`,
 		userID,
 	).Scan(&ownerRepoID)
 	require.NoError(t, err)
@@ -700,8 +697,7 @@ func TestListReadableReposForUser_Matrix(t *testing.T) {
 	// Collaborator repo — private, other user's.
 	var collabRepoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, 'collab', 'collab', 's1', FALSE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, 'collab', 'collab', FALSE) RETURNING id`,
 		otherID,
 	).Scan(&collabRepoID)
 	require.NoError(t, err)
@@ -713,8 +709,7 @@ func TestListReadableReposForUser_Matrix(t *testing.T) {
 	// Public repo — user has no grant, public-read should carry them.
 	var publicRepoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, 'open', 'open', 's1', TRUE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, 'open', 'open', TRUE) RETURNING id`,
 		otherID,
 	).Scan(&publicRepoID)
 	require.NoError(t, err)
@@ -722,8 +717,7 @@ func TestListReadableReposForUser_Matrix(t *testing.T) {
 	// Private repo belonging to other user, NO grant — must NOT appear.
 	var hiddenRepoID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id, is_public)
-		 VALUES ($1, 'hidden', 'hidden', 's1', FALSE) RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, is_public) VALUES ($1, 'hidden', 'hidden', FALSE) RETURNING id`,
 		otherID,
 	).Scan(&hiddenRepoID)
 	require.NoError(t, err)

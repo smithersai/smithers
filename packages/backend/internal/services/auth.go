@@ -334,6 +334,9 @@ func (s *AuthService) CreateKeyAuthNonce(ctx context.Context) (string, error) {
 
 func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature string) (result VerifyKeyAuthResult, retErr error) {
 	defer func() { s.observeLogin("key", retErr) }()
+	if config.IsSingleOwner(s.cfg) {
+		return VerifyKeyAuthResult{}, pkgerrors.NotFound("key authentication is not available in single-owner mode")
+	}
 	if s.keyAuthVerifier == nil {
 		return VerifyKeyAuthResult{}, pkgerrors.Internal("key auth verifier is not configured")
 	}
@@ -415,14 +418,7 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 		return VerifyKeyAuthResult{}, err
 	}
 
-	rawSessionKey := s.generateSession()
-	session, err := s.queries.CreateAuthSession(ctx, db.CreateAuthSessionParams{
-		SessionKey: sessionStorageKey(rawSessionKey),
-		UserID:     user.ID,
-		Username:   user.Username,
-		IsAdmin:    user.IsAdmin,
-		ExpiresAt:  s.now().Add(s.sessionDuration()),
-	})
+	rawSessionKey, session, err := s.createSession(ctx, user)
 	if err != nil {
 		return VerifyKeyAuthResult{}, pkgerrors.Internal("failed to create session")
 	}
@@ -571,14 +567,7 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 		return OAuthCallbackResult{User: user, AdminCLI: adminCLI}, nil
 	}
 
-	rawSessionKey := s.generateSession()
-	session, err := s.queries.CreateAuthSession(ctx, db.CreateAuthSessionParams{
-		SessionKey: sessionStorageKey(rawSessionKey),
-		UserID:     user.ID,
-		Username:   user.Username,
-		IsAdmin:    user.IsAdmin,
-		ExpiresAt:  s.now().Add(s.sessionDuration()),
-	})
+	rawSessionKey, session, err := s.createSession(ctx, user)
 	if err != nil {
 		return OAuthCallbackResult{}, pkgerrors.Internal("failed to create session")
 	}
@@ -652,7 +641,17 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		if err != nil {
 			return db.User{}, pkgerrors.Internal("failed to load oauth user")
 		}
-		if !user.IsAdmin {
+		if config.IsSingleOwner(s.cfg) {
+			localQueries, localErr := s.localIdentityQueries()
+			if localErr != nil {
+				return db.User{}, localErr
+			}
+			owner, ownerErr := localQueries.GetSelfHostOwner(ctx)
+			if ownerErr != nil || owner.ID != user.ID {
+				return db.User{}, pkgerrors.Forbidden("external identity is not linked to the installation owner")
+			}
+			user = owner
+		} else if !user.IsAdmin {
 			if accessErr := s.enforceWorkOSWaitlistAccess(ctx, profile, emails, candidateIdentities); accessErr != nil {
 				return db.User{}, accessErr
 			}
@@ -661,27 +660,35 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		if !stdErrors.Is(err, pgx.ErrNoRows) {
 			return db.User{}, pkgerrors.Internal("failed to query oauth account")
 		}
-		if accessErr := s.enforceWorkOSWaitlistAccess(ctx, profile, emails, candidateIdentities); accessErr != nil {
-			return db.User{}, accessErr
-		}
-
-		email := pickEmail(emails)
-		emailText := pgtype.Text{String: email, Valid: email != ""}
-		user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
-			Username:      profile.Login,
-			LowerUsername: strings.ToLower(profile.Login),
-			Email:         emailText,
-			LowerEmail:    pgtype.Text{String: strings.ToLower(email), Valid: email != ""},
-			DisplayName:   firstNonEmpty(profile.Name, profile.Login),
-		})
-		if err != nil {
-			if isUniqueViolation(err) {
-				if isUsernameUniqueViolation(err) {
-					return db.User{}, pkgerrors.Conflict("username is already in use")
-				}
-				return db.User{}, pkgerrors.Conflict("email address is already in use")
+		if config.IsSingleOwner(s.cfg) {
+			// Never infer that a previously unseen external identity owns this
+			// installation. Provider/repository connections are authorized by an
+			// existing owner session through their dedicated routes; they are not
+			// an alternate self-host account-provisioning path.
+			return db.User{}, pkgerrors.Forbidden("external identity is not linked to the installation owner")
+		} else {
+			if accessErr := s.enforceWorkOSWaitlistAccess(ctx, profile, emails, candidateIdentities); accessErr != nil {
+				return db.User{}, accessErr
 			}
-			return db.User{}, pkgerrors.Internal("failed to create oauth user")
+
+			email := pickEmail(emails)
+			emailText := pgtype.Text{String: email, Valid: email != ""}
+			user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
+				Username:      profile.Login,
+				LowerUsername: strings.ToLower(profile.Login),
+				Email:         emailText,
+				LowerEmail:    pgtype.Text{String: strings.ToLower(email), Valid: email != ""},
+				DisplayName:   firstNonEmpty(profile.Name, profile.Login),
+			})
+			if err != nil {
+				if isUniqueViolation(err) {
+					if isUsernameUniqueViolation(err) {
+						return db.User{}, pkgerrors.Conflict("username is already in use")
+					}
+					return db.User{}, pkgerrors.Conflict("email address is already in use")
+				}
+				return db.User{}, pkgerrors.Internal("failed to create oauth user")
+			}
 		}
 	}
 
@@ -689,8 +696,10 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		return db.User{}, pkgerrors.Forbidden("account is suspended")
 	}
 
-	if err := s.enforceClosedBetaForUser(ctx, user, candidateIdentities); err != nil {
-		return db.User{}, err
+	if !config.IsSingleOwner(s.cfg) {
+		if err := s.enforceClosedBetaForUser(ctx, user, candidateIdentities); err != nil {
+			return db.User{}, err
+		}
 	}
 
 	profileData, err := authJSONMarshal(profile)
@@ -845,9 +854,13 @@ func (s *AuthService) ExchangeGitHubToken(ctx context.Context, githubAccessToken
 	// Rotate mint-first: create the replacement token BEFORE deleting the old
 	// one(s), so a failed mint leaves the previous token (still sealed in other
 	// sessions) valid instead of stranding the user with no credential at all.
+	exchangeScopes := []string{"repo", "user", "org"}
+	if config.IsSingleOwner(s.cfg) {
+		exchangeScopes = []string{"repo", "user", "workspace", "approval", "agent"}
+	}
 	created, err := s.CreateToken(ctx, user.ID, CreateTokenRequest{
 		Name:      name,
-		Scopes:    []string{"repo", "user", "org"},
+		Scopes:    exchangeScopes,
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
@@ -1076,6 +1089,21 @@ func (s *AuthService) sessionDuration() time.Duration {
 		return 720 * time.Hour
 	}
 	return duration
+}
+
+// createSession is the one session-minting seam for local credentials and
+// optional external providers. The browser receives the raw random key while
+// PostgreSQL stores only its digest.
+func (s *AuthService) createSession(ctx context.Context, user db.User) (string, db.AuthSession, error) {
+	rawSessionKey := s.generateSession()
+	session, err := s.queries.CreateAuthSession(ctx, db.CreateAuthSessionParams{
+		SessionKey: sessionStorageKey(rawSessionKey),
+		UserID:     user.ID,
+		Username:   user.Username,
+		IsAdmin:    user.IsAdmin,
+		ExpiresAt:  s.now().Add(s.sessionDuration()),
+	})
+	return rawSessionKey, session, err
 }
 
 type closedAlphaIdentity struct {

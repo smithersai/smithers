@@ -9,8 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type RepositoryJobRouteService interface {
@@ -22,6 +22,9 @@ type RepositoryJobRouteService interface {
 	CreateComment(context.Context, string, string, string, string, services.RepositoryJobCommentInput) (services.RepositoryJobCommentResult, error)
 	Source(context.Context, int64, int64) (services.RepositorySource, error)
 	RunManual(context.Context, string, string, string, string, services.RepositoryJobManualInput) (services.RepositoryJobManualResult, error)
+	CreateCheckReceipt(context.Context, string, string, string, services.RepositoryCheckReceiptInput) (services.RepositoryCheckReceiptResponse, bool, error)
+	RecordApproval(context.Context, int64, int64, string, services.RepositoryJobApprovalInput) (services.RepositoryJobApproval, error)
+	Approvals(context.Context, int64, int64, string) ([]services.RepositoryJobApproval, error)
 }
 
 func (h *RepoGatewayHandler) PutRepositoryJob(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +182,43 @@ func (h *RepoGatewayHandler) PauseRepositoryJob(w http.ResponseWriter, r *http.R
 		return
 	}
 	result, err := h.RepositoryJobs.Pause(r.Context(), repo, user, chi.URLParam(r, "job"))
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *RepoGatewayHandler) PostRepositoryJobApproval(w http.ResponseWriter, r *http.Request) {
+	repo, user, ok := h.repositoryJobScope(w, r)
+	if !ok {
+		return
+	}
+	var input services.RepositoryJobApprovalInput
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid repository job approval"))
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("approval must contain one JSON object"))
+		return
+	}
+	result, err := h.RepositoryJobs.RecordApproval(r.Context(), repo, user, chi.URLParam(r, "job"), input)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *RepoGatewayHandler) GetRepositoryJobApprovals(w http.ResponseWriter, r *http.Request) {
+	repo, user, ok := h.repositoryJobScope(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.RepositoryJobs.Approvals(r.Context(), repo, user, chi.URLParam(r, "job"))
 	if err != nil {
 		writeRouteError(w, r, err)
 		return

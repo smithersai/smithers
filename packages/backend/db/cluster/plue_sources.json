@@ -1,0 +1,28 @@
+{
+  "authority": "plue",
+  "files": [
+    {
+      "snapshot": "migrations/0001_repository_storage_routing.sql",
+      "upstream": "internal/clusterstorage/migrations/000001_repository_storage_routing.sql",
+      "sha256": "485fef89eb43fab71962f42e343ab366a698ab5fc8f5c3fe15d1bb478657bde4"
+    },
+    {
+      "snapshot": "migrations/0002_repository_placements.sql",
+      "upstream": "internal/clusterstorage/migrations/000002_repository_placements.sql",
+      "sha256": "a4888d54b9a6cfb703b9273e5221c570bce262bc27021bef7ae779d7cd9e83a3"
+    },
+    {
+      "snapshot": "migrations/0003_harden_placement_locking.sql",
+      "upstream": "internal/clusterstorage/migrations/000003_harden_placement_locking.sql",
+      "sha256": "453acbaed5c5336fda401ce169fcd7dc67b537cfe68f9310a1e5f6a222a2d3aa"
+    },
+    {
+      "snapshot": "migrations/0004_runner_fair_admission.sql",
+      "upstream": "db/migrations/20260922100000_runner_fair_admission.sql",
+      "sha256": "b3ba384b976459546f3827f5e4e09a7b01a4a32ef1e776d9829731f02b14c961"
+    }
+  ],
+  "complete_upstream_directories": [
+    "internal/clusterstorage/migrations"
+  ]
+}

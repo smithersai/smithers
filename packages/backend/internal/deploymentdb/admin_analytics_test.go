@@ -2,7 +2,6 @@ package deploymentdb
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -150,7 +149,7 @@ func TestAnalyticsOwnershipAndDefinitions(t *testing.T) {
 	var orgID, orgRepo int64
 	err = tx.QueryRow(ctx, "INSERT INTO organizations (name,lower_name) VALUES ('analytics-org','analytics-org') RETURNING id").Scan(&orgID)
 	require.NoError(t, err)
-	err = tx.QueryRow(ctx, "INSERT INTO repositories (org_id,name,lower_name,storage_set_id) VALUES ($1,'org-repo','org-repo','s1') RETURNING id", orgID).Scan(&orgRepo)
+	err = tx.QueryRow(ctx, "INSERT INTO repositories (org_id, name, lower_name) VALUES ($1, 'org-repo', 'org-repo') RETURNING id", orgID).Scan(&orgRepo)
 	require.NoError(t, err)
 	_, err = tx.Exec(ctx, "UPDATE repositories SET created_at=$1", recent)
 	require.NoError(t, err)
@@ -313,28 +312,6 @@ func TestAnalyticsOwnershipAndDefinitions(t *testing.T) {
 	}
 	_ = synRepo
 	_ = orgRepo
-}
-
-func TestAnalyticsSyntheticMigrationBackfill(t *testing.T) {
-	_, tx := newQueries(t)
-	ctx := context.Background()
-	for _, username := range []string{"smithers-canary", "codeplanesmithers", "smithers-observer", "ordinary", "service-account"} {
-		mustCreateUser(t, tx, username)
-	}
-	_, err := tx.Exec(ctx, "UPDATE users SET user_type='service' WHERE lower_username='service-account'")
-	require.NoError(t, err)
-	// Reapply the actual migration on the pre-column shape inside the rolled-back transaction.
-	_, err = tx.Exec(ctx, "ALTER TABLE users DROP COLUMN is_synthetic")
-	require.NoError(t, err)
-	migration, err := os.ReadFile("../../db/migrations/20260914000200_users_is_synthetic.sql")
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, string(migration))
-	require.NoError(t, err)
-	var synthetic, human int
-	err = tx.QueryRow(ctx, "SELECT count(*) FILTER (WHERE is_synthetic),count(*) FILTER (WHERE NOT is_synthetic) FROM users").Scan(&synthetic, &human)
-	require.NoError(t, err)
-	require.Equal(t, 4, synthetic)
-	require.Equal(t, 1, human)
 }
 
 func TestAnalyticsUTCDayBoundaries(t *testing.T) {

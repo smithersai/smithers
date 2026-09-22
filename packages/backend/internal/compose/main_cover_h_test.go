@@ -29,7 +29,7 @@ import (
 
 // writeRunConfigYAML writes yaml to a temp config.yaml in t.TempDir() and
 // returns the path. An explicit YAML file is the only way to set
-// email.from/email.smtp_from/email.base_url to the empty string, because
+// email.from/email.smtp_from to the empty string, because
 // internal/config uses viper AutomaticEnv WITHOUT AllowEmptyEnv (an empty env
 // var reads as unset, so the non-empty defaults win).
 func writeRunConfigYAML(t *testing.T, yaml string) string {
@@ -39,20 +39,17 @@ func writeRunConfigYAML(t *testing.T, yaml string) string {
 	return path
 }
 
-// TestRun_EmailFromSMTPFallbackAndLocalhostBaseURL covers main.go:325 (emailFrom
-// falls back to SMTPFrom) and :337 (publicBaseURL localhost fallback). The
-// newSecretCodec seam is swapped to an error so run() returns synchronously at
-// :390 — after the email/base-URL fallback statements — without ever listening.
-func TestRun_EmailFromSMTPFallbackAndLocalhostBaseURL(t *testing.T) {
+// TestRun_EmailFromSMTPFallback covers the email sender fallback. The
+// newSecretCodec seam returns an error after the sender is selected, before
+// the server listens.
+func TestRun_EmailFromSMTPFallback(t *testing.T) {
 	preserveSlog(t)
 	applyEnv(t, baseRunEnv(t))
-	// Force the localhost base-URL fallback: SMITHERS_API_BASE_URL unset ("").
-	t.Setenv("SMITHERS_API_BASE_URL", "")
 	stubSSEBroker(t)
 	swapVar(t, &newSecretCodec, func(string) (*webhook.AESGCMSecretCodec, error) {
 		return nil, errors.New("stop here")
 	})
-	path := writeRunConfigYAML(t, "email:\n  from: \"\"\n  smtp_from: \"fallback@example.com\"\n  base_url: \"\"\n")
+	path := writeRunConfigYAML(t, "email:\n  from: \"\"\n  smtp_from: \"fallback@example.com\"\n")
 
 	stderr := &syncBuffer{}
 	err := run(context.Background(), []string{"-config", path}, io.Discard, stderr)
@@ -387,12 +384,12 @@ func TestAPIAllowedOrigins_NilConfigAndBadBaseURL(t *testing.T) {
 
 	// BaseURL parses but has no scheme/host -> nil.
 	cfg := &config.Config{}
-	cfg.Email.BaseURL = "not-a-url"
+	cfg.Server.PublicURL = "not-a-url"
 	assert.Nil(t, apiAllowedOrigins(cfg))
 
 	// BaseURL that fails url.Parse -> nil.
 	cfg2 := &config.Config{}
-	cfg2.Email.BaseURL = "http://[::bad"
+	cfg2.Server.PublicURL = "http://[::bad"
 	assert.Nil(t, apiAllowedOrigins(cfg2))
 }
 

@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -60,6 +59,7 @@ var apiCSRFBypassPaths = []string{
 	"/api/gateways/{gatewayID}/repository-jobs/{job}/trials/{requestID}",
 	"/api/gateways/{gatewayID}/repository-jobs/{job}/comments/{step}",
 	"/api/gateways/{gatewayID}/repository-jobs/{job}/manual/{requestID}",
+	"/api/gateways/{gatewayID}/repository-jobs/ci/check-receipts/{requestID}",
 }
 
 func apiCSRFMiddleware(next http.Handler) http.Handler {
@@ -434,22 +434,22 @@ func apiAllowedOrigins(cfg *config.Config) []string {
 		return nil
 	}
 
-	if origins := normalizeAllowedOrigins(cfg.Server.AllowedOrigins); len(origins) > 0 {
-		return origins
+	if len(cfg.Server.AllowedOrigins) > 0 {
+		// An explicitly configured but invalid allowlist fails closed. Startup
+		// validation reports the bad value; unit-built routers must not silently
+		// fall back to a different trusted origin meanwhile.
+		return normalizeAllowedOrigins(cfg.Server.AllowedOrigins)
 	}
 
 	baseURL := config.PublicOrigin(cfg)
-	if baseURL == "" {
+
+	origin, err := config.CanonicalOrigin(baseURL)
+	if err != nil {
+		slog.Warn("invalid public API origin for CORS allowlist", "base_url", baseURL, "error", err)
 		return nil
 	}
 
-	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		slog.Warn("invalid public URL for API CORS origin allowlist", "base_url", baseURL, "error", err)
-		return nil
-	}
-
-	return []string{parsed.Scheme + "://" + parsed.Host}
+	return []string{origin}
 }
 
 func normalizeAllowedOrigins(values []string) []string {
@@ -461,12 +461,11 @@ func normalizeAllowedOrigins(values []string) []string {
 			if raw == "" {
 				continue
 			}
-			parsed, err := url.Parse(raw)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			origin, err := config.CanonicalOrigin(raw)
+			if err != nil {
 				slog.Warn("invalid server.allowed_origins entry for API CORS origin allowlist", "origin", raw, "error", err)
 				continue
 			}
-			origin := parsed.Scheme + "://" + parsed.Host
 			key := strings.ToLower(origin)
 			if _, ok := seen[key]; ok {
 				continue
@@ -640,9 +639,9 @@ func apiCORSOptions(cfg *config.Config) cors.Options {
 			return false
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Smithers-Bootstrap-Token"},
 		ExposedHeaders:   []string{"Link", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           300,
 	}
 }

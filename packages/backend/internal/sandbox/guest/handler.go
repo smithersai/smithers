@@ -1115,7 +1115,7 @@ func (h *Handler) handleEmitApprovalRequest(req *EmitApprovalRequestRequest) (*E
 
 // validDevtoolsSnapshotKinds mirrors the closed enum enforced by
 // internal/services/devtools.go and the CHECK constraint in
-// db/migrations/000037_add_devtools_snapshots.sql. The guest keeps its own
+// db/product/migrations/0001_product_baseline.sql. The guest keeps its own
 // copy so it can fail-fast before putting a bad envelope on the wire; Smithers
 // re-validates authoritatively.
 var validDevtoolsSnapshotKinds = map[string]struct{}{

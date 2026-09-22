@@ -30,10 +30,11 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
+	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // Server is the Smithers SSH server for git operations.
@@ -72,6 +73,10 @@ type Server struct {
 	// establishes a second, authenticated SSH connection through the private
 	// Microsandbox control plane. Nil preserves the repository-only server.
 	WorkspaceBridge WorkspaceBridge
+	// OwnerBoundary is set by single-owner composition. User SSH keys must
+	// resolve to the installation owner; repository deploy keys and ephemeral
+	// workspace grants remain resource-scoped capabilities.
+	OwnerBoundary identity.OwnerAuthorizer
 
 	// drainTimeout overrides defaultReceivePackDrainTimeout in tests.
 	drainTimeout time.Duration
@@ -459,6 +464,11 @@ func (s *Server) passwordHandler(ctx ssh.Context, password string) bool {
 func (s *Server) lookupPrincipal(ctx context.Context, fingerprint string) (sshPrincipal, error) {
 	principal, err := s.Queries.GetUserBySSHFingerprint(ctx, fingerprint)
 	if err == nil {
+		if s.OwnerBoundary != nil {
+			if ownerErr := s.OwnerBoundary.AuthorizeOwner(ctx, principal.UserID); ownerErr != nil {
+				return sshPrincipal{}, ownerErr
+			}
+		}
 		return sshPrincipal{
 			UserID:      principal.UserID,
 			Username:    principal.Username,

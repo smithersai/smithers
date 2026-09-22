@@ -37,7 +37,7 @@ import (
 const MaxDevtoolsPayloadBytes = 256 * 1024
 
 // Devtools snapshot kinds. Mirrors the CHECK constraint in
-// db/migrations/000037_add_devtools_snapshots.sql. Callers MUST use these
+// db/product/migrations/0001_product_baseline.sql. Callers MUST use these
 // constants instead of string literals so a schema-level kind addition is
 // a single-line PR.
 const (

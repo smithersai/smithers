@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
@@ -39,6 +40,7 @@ type GitHTTPProxyService struct {
 	authorizer                   SSHAuthorizer
 	repoHost                     GitHTTPRepoHostClient
 	runnerTaskTokenSigningSecret string
+	ownerBoundary                identity.OwnerAuthorizer
 }
 
 type GitHTTPProxyServiceOption func(*GitHTTPProxyService)
@@ -46,6 +48,14 @@ type GitHTTPProxyServiceOption func(*GitHTTPProxyService)
 func WithGitHTTPRunnerTaskTokenSecret(token string) GitHTTPProxyServiceOption {
 	return func(s *GitHTTPProxyService) {
 		s.runnerTaskTokenSigningSecret = strings.TrimSpace(token)
+	}
+}
+
+// WithGitHTTPSingleOwnerBoundary applies the installation-owner invariant to
+// Git smart HTTP, whose token resolver intentionally lives outside AuthLoader.
+func WithGitHTTPSingleOwnerBoundary(queries identity.OwnerQuerier) GitHTTPProxyServiceOption {
+	return func(s *GitHTTPProxyService) {
+		s.ownerBoundary = identity.NewSingleOwnerBoundary(queries)
 	}
 }
 
@@ -277,10 +287,6 @@ func (s *GitHTTPProxyService) authenticateTokenWithPaths(
 		return nil, nil, nil, "", errors.Internal("failed to authenticate token")
 	}
 
-	if err := s.queries.UpdateAccessTokenLastUsed(ctx, authRow.TokenID); err != nil {
-		return nil, nil, nil, "", errors.Internal("failed to update token last used timestamp")
-	}
-
 	user := db.User{
 		ID:            authRow.ID,
 		Username:      authRow.Username,
@@ -298,6 +304,14 @@ func (s *GitHTTPProxyService) authenticateTokenWithPaths(
 		LastLoginAt:   authRow.LastLoginAt,
 		CreatedAt:     authRow.CreatedAt,
 		UpdatedAt:     authRow.UpdatedAt,
+	}
+	if s.ownerBoundary != nil {
+		if err := s.ownerBoundary.AuthorizeOwner(ctx, user.ID); err != nil {
+			return nil, nil, nil, "", err
+		}
+	}
+	if err := s.queries.UpdateAccessTokenLastUsed(ctx, authRow.TokenID); err != nil {
+		return nil, nil, nil, "", errors.Internal("failed to update token last used timestamp")
 	}
 
 	if restriction := middleware.ParseTokenRepositoryRestriction(authRow.TokenScopes); restriction != 0 &&

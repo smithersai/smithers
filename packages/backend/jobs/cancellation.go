@@ -19,16 +19,17 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 	if err != nil {
 		return Operation{}, err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	// Claims lock dispatch before mutating the request. Take the same order so a
 	// cancellation racing a claim cannot deadlock as each waits on the other.
 	var dispatchStatus string
+	var externalStarted bool
 	err = tx.QueryRow(ctx, `
-		SELECT dispatch.status
+		SELECT dispatch.status, dispatch.external_started_at IS NOT NULL
 		FROM product_job_dispatches dispatch
 		JOIN product_job_requests request ON request.id=dispatch.operation_id
 		WHERE request.tenant_id=$1 AND request.principal_id=$2 AND request.id=$3
-		FOR UPDATE OF dispatch`, scope.TenantID, scope.PrincipalID, operationID).Scan(&dispatchStatus)
+		FOR UPDATE OF dispatch`, scope.TenantID, scope.PrincipalID, operationID).Scan(&dispatchStatus, &externalStarted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Operation{}, ErrNotFound
 	}
@@ -57,7 +58,7 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 		return Operation{}, err
 	}
 	data := json.RawMessage(`{"kind":"requested"}`)
-	if dispatchStatus == "ready" {
+	if dispatchStatus == "ready" && !externalStarted {
 		data = json.RawMessage(`{"kind":"cancelled-before-dispatch"}`)
 		if _, err := tx.Exec(ctx, `UPDATE product_job_requests
 			SET state='cancelled', terminal_receipt=$2, updated_at=clock_timestamp()
@@ -72,6 +73,14 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 			return Operation{}, err
 		}
 	} else {
+		// External work must be reconciled promptly even when previously parked.
+		if dispatchStatus == "ready" {
+			if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
+				SET next_attempt_at=clock_timestamp(), updated_at=clock_timestamp()
+				WHERE operation_id=$1`, operationID); err != nil {
+				return Operation{}, err
+			}
+		}
 		if _, err := appendEvent(ctx, tx, scope, operationID, "operation.cancellation_requested", operation.State, data); err != nil {
 			return Operation{}, err
 		}

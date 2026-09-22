@@ -92,6 +92,17 @@ func BuildStorageSetResolverTemplate(baseURL, activeStorageSet string) string {
 // ResolveURL fetches the repository from the DB to find its assigned storage set ID,
 // then constructs the backend repository host URL.
 func (r *DBStorageSetResolver) ResolveURL(ctx context.Context, owner, repo string) (string, error) {
+	storageSetID, err := r.ResolveStorageRouteKey(ctx, owner, repo)
+	if err != nil {
+		return "", err
+	}
+	return r.ResolveStorageSetURL(ctx, storageSetID)
+}
+
+// ResolveStorageRouteKey reads the canonical repository ID first, then asks the
+// deployment adapter for its opaque storage route. The repository product row
+// does not contain placement.
+func (r *DBStorageSetResolver) ResolveStorageRouteKey(ctx context.Context, owner, repo string) (string, error) {
 	row, err := r.queries.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{
 		Owner:     owner,
 		LowerName: strings.ToLower(repo),
@@ -110,7 +121,10 @@ func (r *DBStorageSetResolver) ResolveURL(ctx context.Context, owner, repo strin
 	if err != nil {
 		return "", fmt.Errorf("resolve repository %d placement: %w", row.ID, err)
 	}
-	return r.ResolveStorageSetURL(ctx, storageSetID)
+	if strings.TrimSpace(storageSetID) == "" {
+		return "", fmt.Errorf("repository %d placement is empty", row.ID)
+	}
+	return storageSetID, nil
 }
 
 // ResolveStorageSetURL maps a trusted storage-set identifier without looking

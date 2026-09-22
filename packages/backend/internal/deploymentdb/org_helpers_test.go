@@ -27,7 +27,7 @@ func mustCreateOrgRepo(t *testing.T, db DBTX, orgID int64, name string, isPublic
 	var id int64
 	err := db.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark, next_issue_number) VALUES ($1, $2, $3, '', 's1', $4, 'main', 1) RETURNING id`,
+		`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark, next_issue_number) VALUES ($1, $2, $3, '', $4, 'main', 1) RETURNING id`,
 		orgID, name, lowerName, isPublic,
 	).Scan(&id)
 	require.NoError(t, err)

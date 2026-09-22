@@ -389,6 +389,16 @@ type mockAuthLoaderQuerier struct {
 	getUserByIDHit                int
 }
 
+type mockSingleOwnerAuthLoaderQuerier struct {
+	*mockAuthLoaderQuerier
+	owner db.User
+	err   error
+}
+
+func (m *mockSingleOwnerAuthLoaderQuerier) GetSelfHostOwner(context.Context) (db.User, error) {
+	return m.owner, m.err
+}
+
 func (m *mockAuthLoaderQuerier) GetAuthSessionBySessionKey(ctx context.Context, sessionKey string) (db.AuthSession, error) {
 	m.getAuthSessionBySessionKeyHit++
 	if m.getAuthSessionBySessionKeyFn != nil {
@@ -457,6 +467,82 @@ func TestAuthLoader_AllowsAnonymousRequest(t *testing.T) {
 	assert.True(t, nextCalled)
 	assert.Equal(t, 0, q.getAuthSessionBySessionKeyHit)
 	assert.Equal(t, 0, q.getAuthInfoByTokenHashHit)
+}
+
+func TestAuthLoader_SelfhostOwnerBoundaryAppliesOutsideAPIRoutes(t *testing.T) {
+	t.Parallel()
+	const token = "smithers_0123456789abcdef0123456789abcdef01234567"
+
+	for _, tc := range []struct {
+		name       string
+		principal  int64
+		wantStatus int
+		wantNext   bool
+	}{
+		{name: "owner", principal: 7, wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "foreign principal", principal: 8, wantStatus: http.StatusForbidden},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			q := &mockSingleOwnerAuthLoaderQuerier{
+				mockAuthLoaderQuerier: &mockAuthLoaderQuerier{getAuthInfoByTokenHashFn: func(context.Context, string) (db.GetAuthInfoByTokenHashRow, error) {
+					return db.GetAuthInfoByTokenHashRow{ID: tc.principal, Username: "principal", TokenID: 9, TokenScopes: "read:user"}, nil
+				}},
+				owner: db.User{ID: 7, Username: "owner"},
+			}
+			nextCalled := false
+			handler := AuthLoader(q, config.AuthConfig{Mode: config.AuthModeSelfHosted})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				nextCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/events/stream", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+			assert.Equal(t, tc.wantStatus, rec.Code)
+			assert.Equal(t, tc.wantNext, nextCalled)
+			if tc.wantNext {
+				assert.Equal(t, 1, q.updateAccessTokenLastUsedHit)
+			} else {
+				assert.Zero(t, q.updateAccessTokenLastUsedHit, "rejected foreign credentials must not record authenticated use")
+			}
+		})
+	}
+}
+
+func TestAuthLoader_SelfhostOwnerBoundaryRejectsForeignSessionOnLFS(t *testing.T) {
+	t.Parallel()
+	const sessionKey = "8b2f8357-9165-4e72-b154-f1d871f420e6"
+
+	q := &mockSingleOwnerAuthLoaderQuerier{
+		mockAuthLoaderQuerier: &mockAuthLoaderQuerier{
+			getAuthSessionBySessionKeyFn: func(_ context.Context, key string) (db.AuthSession, error) {
+				if key != sessionKey {
+					return db.AuthSession{}, pgx.ErrNoRows
+				}
+				return db.AuthSession{SessionKey: key, UserID: 8, ExpiresAt: time.Now().Add(time.Hour)}, nil
+			},
+			getUserByIDFn: func(context.Context, int64) (db.User, error) {
+				return db.User{ID: 8, Username: "foreign", IsActive: true}, nil
+			},
+		},
+		owner: db.User{ID: 7, Username: "owner"},
+	}
+	nextCalled := false
+	handler := AuthLoader(q, config.AuthConfig{
+		Mode:              config.AuthModeSelfHosted,
+		SessionCookieName: "smithers_session",
+	})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalled = true }))
+	req := httptest.NewRequest(http.MethodPost, "/owner/repo.git/info/lfs/objects/batch", nil)
+	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.False(t, nextCalled)
+	assert.Zero(t, q.refreshAuthSessionHit, "rejected foreign sessions must not be extended")
 }
 
 func TestRequireAuth_RejectsAnonymous(t *testing.T) {
@@ -1251,7 +1337,7 @@ func TestAuthLoader_TokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
 }
 
 // TestTokenAuth_ExpiredTokenRejected pins the expired-PAT contract: expiry is
-// enforced in SQL by GetAuthInfoByTokenHash (db/queries/users.sql — the lookup
+// enforced in SQL by GetAuthInfoByTokenHash (db/product/queries/users.sql — the lookup
 // includes `expires_at IS NULL OR expires_at > NOW()`), so an expired token's
 // hash matches no row (pgx.ErrNoRows) and both middleware token paths must
 // answer 401 rather than authenticating or 500ing. The mock reproduces the SQL

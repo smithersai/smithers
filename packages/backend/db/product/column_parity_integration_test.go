@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strings"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Product SQLC models scan SELECT * in column order. Keep that order aligned
-// with the hosted schema, except for the intentionally removed placement key.
+// Product SQLC models scan SELECT * in column order. The hosted schema is
+// composed from the same product migrations and must have identical columns.
 func TestProductColumnsMatchHostedOrder(t *testing.T) {
 	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
 	if raw == "" {
@@ -91,20 +91,7 @@ func TestProductColumnsMatchHostedOrder(t *testing.T) {
 		table := row[0]
 		got := tableColumns(t, ctx, product, table)
 		want := tableColumns(t, ctx, hosted, table)
-		if len(want) == 0 {
-			// Additive product migrations may introduce tables absent from the
-			// transitional hosted schema until its separate migration runs.
-			continue
-		}
-		if table == "repositories" {
-			want = removeColumn(want, "storage_set_id")
-		}
-		if table == "import_jobs" {
-			// Migration 0002 adds product publication state. Plue applies
-			// its matching migration to the hosted schema separately.
-			got = removeColumn(removeColumn(got, "default_bookmark"), "publish_ready")
-		}
-		if strings.Join(got, ",") != strings.Join(want, ",") {
+		if !slices.Equal(got, want) {
 			t.Errorf("%s SELECT * column order differs: product=%v hosted=%v", table, got, want)
 		}
 	}
@@ -130,14 +117,4 @@ func tableColumns(t *testing.T, ctx context.Context, conn *pgx.Conn, table strin
 		t.Fatal(fmt.Errorf("%s columns: %w", table, err))
 	}
 	return columns
-}
-
-func removeColumn(columns []string, excluded string) []string {
-	var kept []string
-	for _, column := range columns {
-		if column != excluded {
-			kept = append(kept, column)
-		}
-	}
-	return kept
 }

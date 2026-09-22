@@ -32,7 +32,7 @@ func TestSchemaContract_RequiredTablesExist(t *testing.T) {
 		"landing_requests", "landing_request_changes", "landing_request_reviews", "landing_request_comments",
 		"bookmarks", "changes", "conflicts", "protected_bookmarks", "jj_operations",
 		"lfs_objects", "lfs_locks",
-		"workflow_definitions", "workflow_runs", "workflow_steps", "workflow_tasks", "workflow_logs", "workflow_run_logs", "commit_statuses", "runner_pool",
+		"workflow_definitions", "workflow_runs", "workflow_steps", "workflow_tasks", "workflow_logs", "workflow_run_logs", "commit_statuses",
 		"agent_sessions", "agent_messages", "agent_parts",
 		"notifications", "stars", "watches", "webhooks", "webhook_deliveries",
 	}
@@ -195,11 +195,10 @@ func TestSchemaContract_WorkflowTasksQueueColumns(t *testing.T) {
 	assert.False(t, columnExists(t, pool, "workflow_tasks", "claimed_by"))
 	assert.False(t, columnExists(t, pool, "workflow_tasks", "claimed_at"))
 
-	var referencedTable string
-	var referencedColumn string
+	var privateRunnerFKs int
 	err = pool.QueryRow(
 		context.Background(),
-		`SELECT ccu.table_name, ccu.column_name
+		`SELECT count(*)
 		 FROM information_schema.table_constraints tc
 		 JOIN information_schema.key_column_usage kcu
 		   ON tc.constraint_name = kcu.constraint_name
@@ -211,10 +210,9 @@ func TestSchemaContract_WorkflowTasksQueueColumns(t *testing.T) {
 		   AND tc.table_name = 'workflow_tasks'
 		   AND tc.constraint_type = 'FOREIGN KEY'
 		   AND kcu.column_name = 'runner_id'`,
-	).Scan(&referencedTable, &referencedColumn)
+	).Scan(&privateRunnerFKs)
 	require.NoError(t, err)
-	assert.Equal(t, "runner_pool", referencedTable)
-	assert.Equal(t, "id", referencedColumn)
+	assert.Zero(t, privateRunnerFKs, "product tasks must not depend on the private runner pool")
 
 	rows, err := pool.Query(
 		context.Background(),
@@ -597,15 +595,13 @@ func TestSchemaContract_RepositoryOwnershipAndBookmarkNaming(t *testing.T) {
 
 	// Namespace uniqueness for org repos: same org + same lower_name must conflict even across different users.
 	mustExec(t, pool, `
-		INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		VALUES ($1, 'shared', 'shared', '', 's1', TRUE, 'main')
+		INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'shared', 'shared', '', TRUE, 'main')
 	`, orgID)
 
 	mustExpectError(t, pool, func(sp DBTX) error {
 		_, err := sp.Exec(
 			context.Background(),
-			`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-			 VALUES ($1, 'shared', 'shared', '', 's1', TRUE, 'main')`,
+			`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'shared', 'shared', '', TRUE, 'main')`,
 			orgID,
 		)
 		return err
@@ -615,16 +611,14 @@ func TestSchemaContract_RepositoryOwnershipAndBookmarkNaming(t *testing.T) {
 	mustExpectError(t, pool, func(sp DBTX) error {
 		_, err := sp.Exec(
 			context.Background(),
-			`INSERT INTO repositories (name, lower_name, description, storage_set_id, is_public, default_bookmark)
-			 VALUES ('no-owner', 'no-owner', '', 's1', TRUE, 'main')`,
+			`INSERT INTO repositories (name, lower_name, description, is_public, default_bookmark) VALUES ('no-owner', 'no-owner', '', TRUE, 'main')`,
 		)
 		return err
 	})
 
 	_, err = pool.Exec(
 		context.Background(),
-		`INSERT INTO repositories (user_id, org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, $2, 'dual-owner', 'dual-owner', '', 's1', TRUE, 'main')`,
+		`INSERT INTO repositories (user_id, org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, $2, 'dual-owner', 'dual-owner', '', TRUE, 'main')`,
 		userA,
 		orgID,
 	)
@@ -907,8 +901,7 @@ func TestCanViewRepository_PrivateUserRepoOwnerAllowedOutsiderDenied(t *testing.
 	var repoID int64
 	err := pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'cvr-priv-repo', 'cvr-priv-repo', '', 's1', FALSE, 'main') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'cvr-priv-repo', 'cvr-priv-repo', '', FALSE, 'main') RETURNING id`,
 		ownerID,
 	).Scan(&repoID)
 	require.NoError(t, err)
@@ -986,8 +979,7 @@ func TestCanViewRepository_PrivateUserRepoCollaboratorAllowed(t *testing.T) {
 	var repoID int64
 	err := pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'cvr-collab-repo', 'cvr-collab-repo', '', 's1', FALSE, 'main') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'cvr-collab-repo', 'cvr-collab-repo', '', FALSE, 'main') RETURNING id`,
 		ownerID,
 	).Scan(&repoID)
 	require.NoError(t, err)

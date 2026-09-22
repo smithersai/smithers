@@ -9,8 +9,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 // SSETicketPrincipal describes the identity and authority granted by a
@@ -127,7 +128,11 @@ type SSETicketMetrics struct {
 //
 // If a ticket is present and valid, the user is injected into the request context.
 // If a ticket is present but invalid, a 401 Unauthorized response is returned.
-func SSETicketAuth(validator SSETicketValidator, metrics *SSETicketMetrics) func(http.Handler) http.Handler {
+func SSETicketAuth(validator SSETicketValidator, metrics *SSETicketMetrics, boundaries ...identity.OwnerAuthorizer) func(http.Handler) http.Handler {
+	var ownerBoundary identity.OwnerAuthorizer
+	if len(boundaries) > 0 {
+		ownerBoundary = boundaries[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ticket := r.URL.Query().Get("ticket")
@@ -150,6 +155,22 @@ func SSETicketAuth(validator SSETicketValidator, metrics *SSETicketMetrics) func
 				}
 				errors.WriteError(w, errors.Unauthorized("invalid or expired SSE ticket"))
 				return
+			}
+			if principal == nil || principal.User == nil {
+				if metrics != nil && metrics.TicketsValidated != nil {
+					metrics.TicketsValidated.WithLabelValues("invalid").Inc()
+				}
+				errors.WriteError(w, errors.Unauthorized("invalid or expired SSE ticket"))
+				return
+			}
+			if ownerBoundary != nil {
+				if err := ownerBoundary.AuthorizeOwner(r.Context(), principal.User.ID); err != nil {
+					if metrics != nil && metrics.TicketsValidated != nil {
+						metrics.TicketsValidated.WithLabelValues("wrong_owner").Inc()
+					}
+					errors.WriteError(w, err)
+					return
+				}
 			}
 
 			if metrics != nil && metrics.TicketsValidated != nil {

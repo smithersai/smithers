@@ -27,7 +27,6 @@ var (
 
 func TestMain(main *testing.M) {
 	dsn := strings.TrimSpace(os.Getenv("SMITHERS_JOBS_TEST_DATABASE_URL"))
-	useProvidedDatabase := dsn != ""
 	if dsn == "" {
 		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 	}
@@ -41,26 +40,19 @@ func TestMain(main *testing.M) {
 		fmt.Fprintf(os.Stderr, "jobs test PostgreSQL configuration invalid: %v\n", err)
 		os.Exit(1)
 	}
-	databaseName := targetConfig.ConnConfig.Database
-	if !useProvidedDatabase {
-		databaseName = "smithers_issue1661_jobs_test"
-		adminConfig, parseErr := pgx.ParseConfig(dsn)
-		if parseErr != nil {
-			err = parseErr
-		} else {
-			adminConfig.Database = "postgres"
-			var admin *pgx.Conn
-			admin, err = pgx.ConnectConfig(ctx, adminConfig)
-			if err == nil {
-				var exists bool
-				err = admin.QueryRow(ctx, `SELECT EXISTS (
-					SELECT 1 FROM pg_database WHERE datname=$1)`, databaseName).Scan(&exists)
-				if err == nil && !exists {
-					_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{databaseName}.Sanitize())
-				}
-				_ = admin.Close(context.Background())
-			}
-		}
+	databaseName := "smithers_issue1661_jobs_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	adminConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		cancel()
+		fmt.Fprintf(os.Stderr, "jobs test PostgreSQL admin configuration invalid: %v\n", err)
+		os.Exit(1)
+	}
+	adminConfig.Database = "postgres"
+	admin, err := pgx.ConnectConfig(ctx, adminConfig)
+	databaseCreated := false
+	if err == nil {
+		_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{databaseName}.Sanitize())
+		databaseCreated = err == nil
 	}
 	if err == nil {
 		targetConfig.ConnConfig.Database = databaseName
@@ -73,13 +65,28 @@ func TestMain(main *testing.M) {
 			jobsTestDatabase, err = pgxpool.NewWithConfig(ctx, targetConfig)
 		}
 	}
-	cancel()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "jobs test database setup failed: %v\n", err)
+		if admin != nil {
+			if databaseCreated {
+				_, _ = admin.Exec(ctx, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)")
+			}
+			_ = admin.Close(context.Background())
+		}
 		os.Exit(1)
 	}
+	cancel()
 	code := main.Run()
 	jobsTestDatabase.Close()
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	if _, dropErr := admin.Exec(cleanupContext, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)"); dropErr != nil {
+		fmt.Fprintf(os.Stderr, "jobs test database cleanup failed: %v\n", dropErr)
+		if code == 0 {
+			code = 1
+		}
+	}
+	cleanupCancel()
+	_ = admin.Close(context.Background())
 	os.Exit(code)
 }
 
@@ -152,12 +159,100 @@ func TestAdmissionIsIdempotentAndPrivatelyScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, operation.RequestReceipt)
 	require.Empty(t, operation.TerminalReceipt)
+	byRequest, err := store.GetByRequest(ctx, owner, "flow.launch", "request-1")
+	require.NoError(t, err)
+	require.Equal(t, first.OperationID, byRequest.ID)
+	_, err = store.GetByRequest(ctx, otherOwner, "flow.launch", "request-1")
+	require.NotEqual(t, first.OperationID, other.OperationID)
+	require.NoError(t, err)
+	_, err = store.GetByRequest(ctx, Scope{TenantID: "tenant-b", PrincipalID: "owner-a"}, "flow.launch", "request-1")
+	require.ErrorIs(t, err, ErrNotFound)
 
 	var requestCount, dispatchCount int
 	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests`).Scan(&requestCount))
 	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM product_job_dispatches`).Scan(&dispatchCount))
 	require.Equal(t, 3, requestCount)
 	require.Equal(t, 3, dispatchCount)
+}
+
+func TestConcurrentDuplicateAdmissionCreatesOneDispatch(t *testing.T) {
+	store := newTestStore(t)
+	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	const callers = 16
+	type result struct {
+		receipt RequestReceipt
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan result, callers)
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for index := 0; index < callers; index++ {
+		go func() {
+			defer wait.Done()
+			<-start
+			receipt, err := store.Admit(context.Background(), testAdmission(scope, "same-request", EffectReconcile, `{"flow":"setup"}`))
+			results <- result{receipt: receipt, err: err}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	operationID := ""
+	inserted := 0
+	for admitted := range results {
+		require.NoError(t, admitted.err)
+		if operationID == "" {
+			operationID = admitted.receipt.OperationID
+		}
+		require.Equal(t, operationID, admitted.receipt.OperationID)
+		if !admitted.receipt.Joined {
+			inserted++
+		}
+	}
+	require.Equal(t, 1, inserted)
+	var requests, dispatches, events int
+	require.NoError(t, store.pool.QueryRow(context.Background(), `SELECT count(*) FROM product_job_requests`).Scan(&requests))
+	require.NoError(t, store.pool.QueryRow(context.Background(), `SELECT count(*) FROM product_job_dispatches`).Scan(&dispatches))
+	require.NoError(t, store.pool.QueryRow(context.Background(), `SELECT count(*) FROM product_job_events`).Scan(&events))
+	require.Equal(t, 1, requests)
+	require.Equal(t, 1, dispatches)
+	require.Equal(t, 1, events)
+}
+
+func TestAdmitInTxCommitsWithDomainStateAndRollsBackTogether(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	_, err := store.pool.Exec(ctx, `CREATE TABLE domain_requests (id text PRIMARY KEY)`)
+	require.NoError(t, err)
+
+	rolledBack, err := store.pool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = rolledBack.Exec(ctx, `INSERT INTO domain_requests (id) VALUES ('rollback')`)
+	require.NoError(t, err)
+	_, err = store.AdmitInTx(ctx, rolledBack, testAdmission(scope, "rollback", EffectIdempotent, `{"value":1}`))
+	require.NoError(t, err)
+	require.NoError(t, rolledBack.Rollback(ctx))
+
+	var domainCount, requestCount int
+	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM domain_requests`).Scan(&domainCount))
+	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests`).Scan(&requestCount))
+	require.Zero(t, domainCount)
+	require.Zero(t, requestCount)
+
+	committed, err := store.pool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = committed.Exec(ctx, `INSERT INTO domain_requests (id) VALUES ('commit')`)
+	require.NoError(t, err)
+	receipt, err := store.AdmitInTx(ctx, committed, testAdmission(scope, "commit", EffectIdempotent, `{"value":2}`))
+	require.NoError(t, err)
+	require.NoError(t, committed.Commit(ctx))
+	require.NotEmpty(t, receipt.OperationID)
+	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM domain_requests`).Scan(&domainCount))
+	require.NoError(t, store.pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests`).Scan(&requestCount))
+	require.Equal(t, 1, domainCount)
+	require.Equal(t, 1, requestCount)
 }
 
 func TestAdmissionReturnsWhileWorkerLaunchIsUnresolved(t *testing.T) {
@@ -253,9 +348,180 @@ func TestCommitRecoveryAndClaimFencing(t *testing.T) {
 	require.JSONEq(t, `{"runId":"actual"}`, string(operation.TerminalReceipt))
 }
 
+func TestOperationFilteredParkingReusesExternalAttemptAndDeduplicatesCheckpoint(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	flowAdmission := testAdmission(scope, "flow", EffectReconcile, `{"flow":"setup"}`)
+	flowAdmission.Operation = "flow.launch"
+	flowReceipt, err := store.Admit(ctx, flowAdmission)
+	require.NoError(t, err)
+	importAdmission := testAdmission(scope, "import", EffectIdempotent, `{"repository":"private"}`)
+	importAdmission.Operation = "repository.import"
+	importReceipt, err := store.Admit(ctx, importAdmission)
+	require.NoError(t, err)
+
+	first, err := store.ClaimForOperations(ctx, "flow-worker-a", 30*time.Second, []string{"flow.launch"})
+	require.NoError(t, err)
+	require.Equal(t, flowReceipt.OperationID, first.OperationID)
+	stableAttempt, err := store.BeginExternal(ctx, first, json.RawMessage(`{"kind":"launching"}`))
+	require.NoError(t, err)
+	require.Equal(t, first.Attempt, stableAttempt)
+	checkpoint := json.RawMessage(`{"runId":"run-1","cursor":"7","status":"parked"}`)
+	require.NoError(t, store.Park(ctx, first, checkpoint, 0))
+
+	operation, err := store.Get(ctx, scope, flowReceipt.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, StateWaiting, operation.State)
+	require.Equal(t, stableAttempt, operation.ExternalAttempt)
+	require.JSONEq(t, string(checkpoint), string(operation.ExternalReceipt))
+
+	second, err := store.ClaimForOperations(ctx, "flow-worker-b", 30*time.Second, []string{"flow.launch", "flow.launch"})
+	require.NoError(t, err)
+	require.Equal(t, flowReceipt.OperationID, second.OperationID)
+	require.Greater(t, second.Attempt, first.Attempt)
+	require.Equal(t, stableAttempt, second.ExternalAttempt)
+	require.Equal(t, stableAttempt, second.DeliveryAttempt())
+	reusedAttempt, err := store.BeginExternal(ctx, second, json.RawMessage(`{"kind":"reconcile"}`))
+	require.NoError(t, err)
+	require.Equal(t, stableAttempt, reusedAttempt)
+	headBefore, err := store.Head(ctx, scope)
+	require.NoError(t, err)
+	changed, err := store.Checkpoint(ctx, second, checkpoint)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.NoError(t, store.Park(ctx, second, checkpoint, 0))
+	headAfter, err := store.Head(ctx, scope)
+	require.NoError(t, err)
+	require.Equal(t, headBefore, headAfter)
+
+	third, err := store.ClaimForOperations(ctx, "flow-worker-c", 30*time.Second, []string{"flow.launch"})
+	require.NoError(t, err)
+	require.NoError(t, store.Complete(ctx, third, json.RawMessage(`{"runId":"run-1","status":"completed"}`)))
+	importClaim, err := store.ClaimForOperations(ctx, "import-worker", 30*time.Second, []string{"repository.import"})
+	require.NoError(t, err)
+	require.Equal(t, importReceipt.OperationID, importClaim.OperationID)
+	require.NoError(t, store.Complete(ctx, importClaim, json.RawMessage(`{"status":"completed"}`)))
+}
+
+func TestRunWorkerRecoversExpiredFilteredClaim(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	input := testAdmission(scope, "crash", EffectIdempotent, `{"work":true}`)
+	input.Operation = "flow.recover"
+	receipt, err := store.Admit(ctx, input)
+	require.NoError(t, err)
+	dead, err := store.ClaimForOperations(ctx, "dead-process", 30*time.Second, []string{"flow.recover"})
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, `UPDATE product_job_dispatches
+		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, dead.OperationID)
+	require.NoError(t, err)
+
+	workerContext, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	handled := make(chan Claim, 1)
+	go func() {
+		done <- store.RunWorker(workerContext, WorkerConfig{
+			WorkerID: "replacement", Capacity: 1, Lease: time.Second,
+			PollInterval: 5 * time.Millisecond, RecoveryInterval: 5 * time.Millisecond,
+			Operations: []string{"flow.recover"},
+		}, func(handlerContext context.Context, lease *Lease) error {
+			if err := lease.Complete(handlerContext, json.RawMessage(`{"status":"completed"}`)); err != nil {
+				return err
+			}
+			handled <- lease.Claim()
+			return nil
+		})
+	}()
+	select {
+	case replacement := <-handled:
+		require.Equal(t, receipt.OperationID, replacement.OperationID)
+		require.Greater(t, replacement.Generation, dead.Generation)
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not recover and claim expired work")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not stop")
+	}
+}
+
+func TestRunWorkerTreatsDurableDeferAsSuccessfulRelease(t *testing.T) {
+	store := newTestStore(t)
+	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	input := testAdmission(scope, "defer", EffectReconcile, `{"work":true}`)
+	input.Operation = "flow.defer"
+	receipt, err := store.Admit(context.Background(), input)
+	require.NoError(t, err)
+
+	workerContext, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	deferred := make(chan error, 1)
+	reported := make(chan error, 1)
+	go func() {
+		done <- store.RunWorker(workerContext, WorkerConfig{
+			WorkerID: "parking-worker", Capacity: 1, Lease: time.Second,
+			PollInterval: 5 * time.Millisecond, Operations: []string{"flow.defer"},
+			OnError: func(workerErr error) { reported <- workerErr },
+		}, func(handlerContext context.Context, lease *Lease) error {
+			if err := lease.StartExternal(handlerContext, json.RawMessage(`{"runtime":"pinned"}`)); err != nil {
+				return err
+			}
+			err := lease.Defer(handlerContext, json.RawMessage(`{"runId":"run-1","cursor":"0"}`), time.Hour)
+			deferred <- err
+			return err
+		})
+	}()
+	select {
+	case err := <-deferred:
+		require.ErrorIs(t, err, ErrDeferred)
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not durably defer work")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not stop after defer")
+	}
+	select {
+	case err := <-reported:
+		t.Fatalf("durable defer reported a worker error: %v", err)
+	default:
+	}
+	operation, err := store.Get(context.Background(), scope, receipt.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, StateWaiting, operation.State)
+}
+
 func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	store := newTestStore(t)
 	scope := Scope{TenantID: "tenant", PrincipalID: "owner"}
+	lostAckReceipt, err := store.Admit(context.Background(), testAdmission(scope, "lost-launch-ack", EffectReconcile, `{"target":"runtime"}`))
+	require.NoError(t, err)
+	lostAckClaim, err := store.Claim(context.Background(), "launch-worker", 30*time.Second)
+	require.NoError(t, err)
+	lostAckAttempt, err := store.BeginExternal(context.Background(), lostAckClaim, json.RawMessage(`{"runtimeIdentity":"host-1"}`))
+	require.NoError(t, err)
+	_, err = store.pool.Exec(context.Background(), `UPDATE product_job_dispatches
+		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, lostAckClaim.OperationID)
+	require.NoError(t, err)
+	recovered, err := store.RecoverExpired(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	lostAckClaim, err = store.Claim(context.Background(), "launch-reconciler", 30*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, lostAckReceipt.OperationID, lostAckClaim.OperationID)
+	require.True(t, lostAckClaim.NeedsReconciliation)
+	require.Equal(t, lostAckAttempt, lostAckClaim.DeliveryAttempt())
+	require.JSONEq(t, `{"runtimeIdentity":"host-1"}`, string(lostAckClaim.ExternalReceipt))
+	require.NoError(t, store.Complete(context.Background(), lostAckClaim, json.RawMessage(`{"runtimeRunId":"found"}`)))
+
 	unsafeReceipt, err := store.Admit(context.Background(), testAdmission(scope, "unsafe", EffectUnsafe, `{"target":"charge"}`))
 	require.NoError(t, err)
 	unsafeClaim, err := store.Claim(context.Background(), "worker-a", 30*time.Second)
@@ -264,7 +530,7 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	_, err = store.pool.Exec(context.Background(), `UPDATE product_job_dispatches
 		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, unsafeClaim.OperationID)
 	require.NoError(t, err)
-	recovered, err := store.RecoverExpired(context.Background(), 10)
+	recovered, err = store.RecoverExpired(context.Background(), 10)
 	require.NoError(t, err)
 	require.Equal(t, 1, recovered)
 	operation, err := store.Get(context.Background(), scope, unsafeReceipt.OperationID)
@@ -277,6 +543,7 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	retryClaim, err := store.Claim(context.Background(), "explicit-retry", 30*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, unsafeReceipt.OperationID, retryClaim.OperationID)
+	require.Equal(t, unsafeClaim.ExternalAttempt+1, retryClaim.ExternalAttempt)
 	require.NoError(t, store.Complete(context.Background(), retryClaim, json.RawMessage(`{"result":"reconciled"}`)))
 
 	reconcileReceipt, err := store.Admit(context.Background(), testAdmission(scope, "reconcile", EffectReconcile, `{"target":"provider"}`))
@@ -284,7 +551,9 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	reconcileClaim, err := store.Claim(context.Background(), "worker-b", 30*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, reconcileReceipt.OperationID, reconcileClaim.OperationID)
-	require.NoError(t, store.MarkExternalStarted(context.Background(), reconcileClaim, json.RawMessage(`{"externalId":"maybe"}`)))
+	stableAttempt, err := store.BeginExternal(context.Background(), reconcileClaim, json.RawMessage(`{"externalId":"maybe"}`))
+	require.NoError(t, err)
+	require.Equal(t, reconcileClaim.Attempt, stableAttempt)
 	require.NoError(t, store.MarkWaiting(context.Background(), reconcileClaim, json.RawMessage(`{"runtimeRunId":"run-1"}`)))
 	_, err = store.pool.Exec(context.Background(), `UPDATE product_job_dispatches
 		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, reconcileClaim.OperationID)
@@ -295,6 +564,8 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	reconcileClaim, err = store.Claim(context.Background(), "reconciler", 30*time.Second)
 	require.NoError(t, err)
 	require.True(t, reconcileClaim.NeedsReconciliation)
+	require.Equal(t, stableAttempt, reconcileClaim.ExternalAttempt)
+	require.Equal(t, stableAttempt, reconcileClaim.DeliveryAttempt())
 	require.JSONEq(t, `{"runtimeRunId":"run-1"}`, string(reconcileClaim.ExternalReceipt))
 	require.NoError(t, store.Complete(context.Background(), reconcileClaim, json.RawMessage(`{"externalId":"found"}`)))
 }
@@ -321,6 +592,24 @@ func TestCancellationReceiptsAndCompletionRace(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, cancelRequested)
 	require.NoError(t, store.AcknowledgeCancellation(context.Background(), claim, json.RawMessage(`{"killed":true}`)))
+
+	deferred, err := store.Admit(context.Background(), testAdmission(scope, "deferred-cancel", EffectReconcile, `{"n":5}`))
+	require.NoError(t, err)
+	deferredClaim, err := store.Claim(context.Background(), "waiting-worker", 30*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, deferred.OperationID, deferredClaim.OperationID)
+	_, err = store.BeginExternal(context.Background(), deferredClaim, json.RawMessage(`{"runtime":"pinned"}`))
+	require.NoError(t, err)
+	require.NoError(t, store.Park(context.Background(), deferredClaim, json.RawMessage(`{"runId":"running"}`), 0))
+	pendingDeferred, err := store.RequestCancellation(context.Background(), scope, deferred.OperationID)
+	require.NoError(t, err)
+	require.Equal(t, StateWaiting, pendingDeferred.State)
+	require.True(t, pendingDeferred.CancellationRequested)
+	reconnected, err := store.Claim(context.Background(), "cancel-delivery", 30*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, deferred.OperationID, reconnected.OperationID)
+	require.True(t, reconnected.CancellationRequested)
+	require.NoError(t, store.AcknowledgeCancellation(context.Background(), reconnected, json.RawMessage(`{"runtimeStatus":"cancelled"}`)))
 
 	crashed, err := store.Admit(context.Background(), testAdmission(scope, "cancel-then-crash", EffectIdempotent, `{"n":4}`))
 	require.NoError(t, err)

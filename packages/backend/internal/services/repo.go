@@ -429,6 +429,7 @@ func NewProductRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, pool *pgxpo
 	}
 	if pool != nil {
 		s.ownershipTx = &pgxRepoOwnershipTxManager{pool: pool}
+		s.storageOperations = newPostgresRepositoryStorageOperationStore(pool)
 		if provisioner, ok := rh.(repoHostProvisioningClient); ok {
 			s.productProvisioning = &productRepositoryProvisioner{pool: pool, host: provisioner}
 		}

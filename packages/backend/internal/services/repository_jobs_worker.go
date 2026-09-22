@@ -307,10 +307,17 @@ func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.Repository
 	}
 	var plan repositoryJobPlan
 	if len(claim.Plan) == 0 {
-		input := map[string]interface{}{"repo": connection.RepoOwner + "/" + connection.RepoName, "job": reg.Job,
-			"revision": reg.Revision, "digest": reg.Digest, "sourceRevision": reg.SourceRevision,
-			"configuration": config.Input, "event": event}
-		body, err := call("Plan", map[string]interface{}{"flowId": reg.FlowID, "input": input, "idempotencyKey": key + ":plan"})
+		// A registered flow receives exactly the input a person approved. Trigger
+		// provenance remains in the durable dispatch row and idempotency key.
+		var planInput interface{}
+		if repositoryFlowJobKey.MatchString(reg.Job) {
+			planInput = json.RawMessage(config.Input)
+		} else {
+			planInput = map[string]interface{}{"repo": connection.RepoOwner + "/" + connection.RepoName, "job": reg.Job,
+				"revision": reg.Revision, "digest": reg.Digest, "sourceRevision": reg.SourceRevision,
+				"configuration": config.Input, "event": event}
+		}
+		body, err := call("Plan", map[string]interface{}{"flowId": reg.FlowID, "input": planInput, "idempotencyKey": key + ":plan"})
 		if err != nil {
 			return err
 		}
@@ -324,7 +331,8 @@ func (s *RepositoryJobService) dispatch(ctx context.Context, claim db.Repository
 		}
 	}
 	if json.Unmarshal(claim.Plan, &plan) != nil || plan.PlanID == "" || plan.Digest == "" || plan.FlowID != reg.FlowID ||
-		plan.ExecutionDigest != config.ExecutionDigest || !sameRepositoryJobJSON(plan.Envelope, config.Envelope) {
+		plan.ExecutionDigest != config.ExecutionDigest || !sameRepositoryJobJSON(plan.Envelope, config.Envelope) ||
+		(repositoryFlowJobKey.MatchString(reg.Job) && plan.Digest != config.ApprovedPlanDigest) {
 		_, err := s.settle(ctx, claim, "failed", "", nil, "The registered flow or its authority changed; review and apply a new version")
 		return err
 	}

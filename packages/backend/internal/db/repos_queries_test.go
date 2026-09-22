@@ -234,30 +234,13 @@ func TestDeleteOrganizationCascadesRepos(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Post-drain enforcement rejects an unjournaled owner delete while a
-	// repository still exists.
-	tx := pool.(pgx.Tx)
-	_, err = tx.Exec(ctx,
-		`UPDATE legacy_mutation_fence_control SET enforce_repository_storage = TRUE WHERE singleton`)
-	require.NoError(t, err)
+	// Product repository ownership is fenced by the durable deletion journal.
 	deleteErr := mustExpectQueryError(t, pool, func(spQ *Queries) error {
 		return spQ.DeleteOrganization(ctx, org.ID)
 	})
 	var pgErr *pgconn.PgError
 	require.ErrorAs(t, deleteErr, &pgErr)
 	assert.Equal(t, "55006", pgErr.Code)
-
-	// Compatibility mode preserves the previous binary's cascading delete for
-	// rows without a durable operation, so old pods keep working mid-rollout.
-	compat, err := tx.Begin(ctx)
-	require.NoError(t, err)
-	_, err = compat.Exec(ctx,
-		`UPDATE legacy_mutation_fence_control SET enforce_repository_storage = FALSE WHERE singleton`)
-	require.NoError(t, err)
-	require.NoError(t, New(compat).DeleteOrganization(ctx, org.ID))
-	_, err = New(compat).GetRepoByID(ctx, repo.ID)
-	require.ErrorIs(t, err, pgx.ErrNoRows)
-	require.NoError(t, compat.Rollback(ctx))
 
 	mustDurablyDeleteRepoForTest(t, pool, repo.ID)
 	require.NoError(t, q.DeleteOrganization(ctx, org.ID))

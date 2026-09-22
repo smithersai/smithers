@@ -206,3 +206,49 @@ SELECT i.payload FROM github_synced_repos g JOIN github_synced_issues i ON i.syn
 WHERE g.owner_login_lower=LOWER(sqlc.arg(github_owner)::text)
   AND g.repo_name_lower=LOWER(sqlc.arg(github_repo)::text) AND g.sync_state<>'disabled'
   AND i.resource=sqlc.arg(resource)::text AND i.number=sqlc.arg(number);
+
+-- name: GetRepositoryCiLandingPolicy :one
+-- Deliberately not filtered on enabled: PauseRepositoryJob keeps the row, so
+-- pausing CI keeps the landing protection it registered.
+SELECT id, revision, digest, workspace_id, configuration
+FROM repository_job_registrations
+WHERE repository_id = $1 AND job = 'ci' AND mode = 'enabled';
+
+-- name: LockRepositoryCiCheckReceipt :exec
+SELECT pg_advisory_xact_lock(hashtextextended('repository_ci_check_receipt:' || sqlc.arg(registration_id)::text || ':' || sqlc.arg(request_id)::text,0));
+
+-- name: GetRepositoryCiCheckReceipt :one
+SELECT * FROM repository_ci_check_receipts WHERE registration_id=$1 AND request_id=$2;
+
+-- name: CreateRepositoryCiCheckReceipt :one
+INSERT INTO repository_ci_check_receipts
+  (repository_id,registration_id,revision,digest,execution_digest,workspace_id,run_id,execution_id,
+   commit_sha,change_id,base_commit_sha,checks,context,commit_status_id,request_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *;
+
+-- name: GetRepositoryCiDispatchRunStatus :one
+-- The receipt must name a run retained for this repository and workspace. A
+-- usable dispatch is preferred over a retired one for the same run.
+SELECT d.status FROM repository_job_dispatches d
+JOIN repository_job_registrations r ON r.id=d.registration_id
+WHERE r.repository_id=$1 AND r.workspace_id=$2 AND d.run_id=sqlc.arg(run_id)::text
+ORDER BY (d.status IN ('failed','skipped')), d.created_at DESC, d.id DESC LIMIT 1;
+
+-- name: UpsertRepositoryJobApproval :one
+-- approved_by and approved_at come from the authenticated session and now();
+-- no request field can name either of them.
+INSERT INTO repository_job_approvals
+  (repository_id,job,plan_digest,plan_id,flow_id,envelope,approved_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
+ON CONFLICT (repository_id,job,plan_digest) DO UPDATE SET
+  plan_id=EXCLUDED.plan_id, flow_id=EXCLUDED.flow_id, envelope=EXCLUDED.envelope,
+  approved_by=EXCLUDED.approved_by, approved_at=now()
+RETURNING *;
+
+-- name: GetRepositoryJobApproval :one
+SELECT * FROM repository_job_approvals
+WHERE repository_id=$1 AND job=$2 AND plan_digest=$3;
+
+-- name: ListRepositoryJobApprovals :many
+SELECT * FROM repository_job_approvals
+WHERE repository_id=$1 AND job=$2 ORDER BY approved_at DESC LIMIT 50;

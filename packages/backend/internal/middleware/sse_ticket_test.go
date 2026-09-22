@@ -14,12 +14,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
 type mockSSETicketValidator struct {
 	validateFn func(ctx context.Context, rawTicket string) (*SSETicketPrincipal, error)
+}
+
+type ownerAuthorizerFunc func(context.Context, int64) *errors.APIError
+
+func (f ownerAuthorizerFunc) AuthorizeOwner(ctx context.Context, userID int64) *errors.APIError {
+	return f(ctx, userID)
 }
 
 func (m *mockSSETicketValidator) ValidateTicket(ctx context.Context, rawTicket string) (*SSETicketPrincipal, error) {
@@ -190,6 +196,29 @@ func TestSSETicketAuth_ValidTicket_SetsContext(t *testing.T) {
 
 	assert.True(t, handlerCalled)
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestSSETicketAuth_RejectsForeignSingleOwnerPrincipal(t *testing.T) {
+	t.Parallel()
+
+	validator := &mockSSETicketValidator{validateFn: func(context.Context, string) (*SSETicketPrincipal, error) {
+		return &SSETicketPrincipal{User: &db.User{ID: 42, Username: "foreign"}}, nil
+	}}
+	boundary := ownerAuthorizerFunc(func(_ context.Context, userID int64) *errors.APIError {
+		assert.Equal(t, int64(42), userID)
+		return errors.Forbidden("credential does not belong to the installation owner")
+	})
+	nextCalled := false
+	handler := SSETicketAuth(validator, nil, boundary)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		nextCalled = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/events/stream?ticket=foreign", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.False(t, nextCalled)
 }
 
 func TestSSETicketAuth_TokenMintedTicket_EnforcesTokenScopes(t *testing.T) {

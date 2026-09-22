@@ -2,11 +2,8 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -116,38 +113,4 @@ func TestIssueStateFactsSerializeCommittedCounterAndNotify(t *testing.T) {
 	journal, err = q.GetIssueStateJournal(ctx, repo)
 	require.NoError(t, err)
 	require.Equal(t, int64(4), journal.Head)
-}
-func TestIssueStateFactsMigrationCreatesLegacyMembershipBaseline(t *testing.T) {
-	ctx := context.Background()
-	tx, err := sharedPool.Begin(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback(ctx)
-	schema := "issue_legacy_" + randSlug(t)
-	_, err = tx.Exec(ctx, `CREATE SCHEMA `+pgx.Identifier{schema}.Sanitize()+`; SET LOCAL search_path TO `+pgx.Identifier{schema}.Sanitize()+`,public`)
-	require.NoError(t, err)
-	// Minimal pre-migration tables preserve the exact columns needed by seed.
-	_, err = tx.Exec(ctx, `CREATE TABLE repositories(id BIGINT PRIMARY KEY);INSERT INTO repositories VALUES(1),(2);CREATE TABLE issues(id BIGINT PRIMARY KEY,repository_id BIGINT,number BIGINT,title TEXT,body TEXT,state TEXT,author_id BIGINT,search_vector TSVECTOR,created_at TIMESTAMPTZ,updated_at TIMESTAMPTZ);CREATE TABLE issue_labels(issue_id BIGINT,label_id BIGINT,created_at TIMESTAMPTZ);CREATE TABLE issue_assignees(id BIGINT PRIMARY KEY,issue_id BIGINT,user_id BIGINT,created_at TIMESTAMPTZ);INSERT INTO issues VALUES(3,1,1,'old','old body','closed',9,NULL,'2025-06-01T00:00:00Z','2025-06-02T00:00:00Z');INSERT INTO issue_labels VALUES(3,7,'2025-06-01T00:00:00Z');INSERT INTO issue_assignees VALUES(4,3,NULL,'2025-06-01T00:00:00Z')`)
-	require.NoError(t, err)
-	migration, err := os.ReadFile(filepath.Join(findMigrationsDir(t), "20260914200100_issue_state_facts.sql"))
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, string(migration))
-	require.NoError(t, err)
-	q := New(tx)
-	journal, err := q.GetIssueStateJournal(ctx, 1)
-	require.NoError(t, err)
-	require.Equal(t, "legacy_snapshot", journal.CoverageKind)
-	require.Equal(t, int64(3), journal.Head)
-	empty, err := q.GetIssueStateJournal(ctx, 2)
-	require.NoError(t, err)
-	require.Zero(t, empty.Head)
-	require.Equal(t, "legacy_snapshot", empty.CoverageKind)
-	rows, err := q.ListIssueStateFacts(ctx, ListIssueStateFactsParams{RepositoryID: 1, ThroughSequence: 3, PageSize: 1000})
-	require.NoError(t, err)
-	for i, row := range rows {
-		require.Equal(t, int64(i+1), row.Sequence)
-		require.Equal(t, "baseline", row.Operation)
-		require.True(t, json.Valid(row.PostImage))
-		require.True(t, strings.Contains(string(row.PostImage), "2025-"))
-		require.NotContains(t, string(row.PostImage), "search_vector")
-	}
 }

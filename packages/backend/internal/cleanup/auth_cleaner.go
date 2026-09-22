@@ -22,7 +22,7 @@ type CleanupStore interface {
 	DeleteExpiredVerificationTokens(ctx context.Context) error
 	DeleteExpiredSSETickets(ctx context.Context) error
 	// DeleteExpiredAccessTokens prunes PATs whose expires_at passed more than
-	// a grace day ago; bounded per sweep (see db/queries/auth.sql). Returns
+	// a grace day ago; bounded per sweep (see db/product/queries/auth.sql). Returns
 	// the number of rows deleted.
 	DeleteExpiredAccessTokens(ctx context.Context) (int64, error)
 }

@@ -221,7 +221,11 @@ func newProductProvisionTestPool(t *testing.T, ctx context.Context, raw string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = admin.Close(cleanupCtx)
+	})
 	name := fmt.Sprintf("smithers_repo_creation_%d", time.Now().UnixNano())
 	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
 		t.Fatal(err)
@@ -242,7 +246,9 @@ func newProductProvisionTestPool(t *testing.T, ctx context.Context, raw string) 
 	}
 	t.Cleanup(func() {
 		pool.Close()
-		if _, err := admin.Exec(context.Background(), `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(cleanupCtx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
 			t.Errorf("drop test DB: %v", err)
 		}
 	})

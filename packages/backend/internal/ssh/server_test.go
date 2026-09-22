@@ -24,11 +24,12 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
+	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockSSHPrincipalQuerier struct {
@@ -38,6 +39,14 @@ type mockSSHPrincipalQuerier struct {
 	getDeployKeyByFingerprintFn       func(ctx context.Context, arg db.GetDeployKeyByFingerprintParams) (db.DeployKey, error)
 	touchDeployKeyLastUsedFn          func(ctx context.Context, id int64) error
 	listAllProtectedBookmarksByRepoFn func(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
+}
+
+type sshOwnerQuerier struct {
+	owner db.User
+}
+
+func (q sshOwnerQuerier) GetSelfHostOwner(context.Context) (db.User, error) {
+	return q.owner, nil
 }
 
 func (m *mockSSHPrincipalQuerier) GetUserBySSHFingerprint(ctx context.Context, fingerprint string) (db.GetUserBySSHFingerprintRow, error) {
@@ -1258,6 +1267,37 @@ func TestPublicKeyHandler_AcceptsDeployKeyFingerprint(t *testing.T) {
 	assert.True(t, principal.IsDeployKey)
 	assert.Equal(t, expectedFingerprint, principal.Fingerprint)
 	assert.Equal(t, "deploy-key", principal.Username)
+}
+
+func TestLookupPrincipal_SelfhostRejectsForeignUserButKeepsDeployKeys(t *testing.T) {
+	t.Parallel()
+
+	queries := &mockSSHPrincipalQuerier{
+		getUserBySSHFingerprintFn: func(_ context.Context, fingerprint string) (db.GetUserBySSHFingerprintRow, error) {
+			if fingerprint == "SHA256:user" {
+				return db.GetUserBySSHFingerprintRow{UserID: 8, Username: "foreign"}, nil
+			}
+			return db.GetUserBySSHFingerprintRow{}, pgx.ErrNoRows
+		},
+		getAnyDeployKeyByFingerprint: func(_ context.Context, fingerprint string) (db.DeployKey, error) {
+			if fingerprint == "SHA256:deploy" {
+				return db.DeployKey{ID: 9}, nil
+			}
+			return db.DeployKey{}, pgx.ErrNoRows
+		},
+	}
+	server := &Server{
+		Queries:       queries,
+		OwnerBoundary: identity.NewSingleOwnerBoundary(sshOwnerQuerier{owner: db.User{ID: 7, Username: "owner"}}),
+	}
+
+	_, err := server.lookupPrincipal(context.Background(), "SHA256:user")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "installation owner")
+
+	principal, err := server.lookupPrincipal(context.Background(), "SHA256:deploy")
+	require.NoError(t, err)
+	assert.True(t, principal.IsDeployKey)
 }
 
 func TestAuthorizePrincipal_DeployKeyAllowsMatchingRepoRead(t *testing.T) {

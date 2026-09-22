@@ -42,53 +42,53 @@ var (
 // a repo-host journal without the API process that created it. Owner IDs are
 // the decision identity; exact names are the physical repo-host path identity.
 type repositoryStorageOperation struct {
-	RepositoryID  int64
-	OperationType string
-	Token         string
-	StorageSetID  string
-	SourceOwner   string
-	SourceRepo    string
-	SourceUserID  pgtype.Int8
-	SourceOrgID   pgtype.Int8
-	TargetOwner   pgtype.Text
-	TargetRepo    pgtype.Text
-	TargetUserID  pgtype.Int8
-	TargetOrgID   pgtype.Int8
-	ClaimToken    pgtype.Text
-	ClaimedAt     pgtype.Timestamptz
-	Attempts      int32
-	LastError     pgtype.Text
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	RepositoryID    int64
+	OperationType   string
+	Token           string
+	StorageRouteKey string
+	SourceOwner     string
+	SourceRepo      string
+	SourceUserID    pgtype.Int8
+	SourceOrgID     pgtype.Int8
+	TargetOwner     pgtype.Text
+	TargetRepo      pgtype.Text
+	TargetUserID    pgtype.Int8
+	TargetOrgID     pgtype.Int8
+	ClaimToken      pgtype.Text
+	ClaimedAt       pgtype.Timestamptz
+	Attempts        int32
+	LastError       pgtype.Text
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func newDeleteStorageOperation(repository db.Repository, owner string, staged repohost.StagedDelete) repositoryStorageOperation {
 	return repositoryStorageOperation{
-		RepositoryID:  repository.ID,
-		OperationType: repositoryStorageOperationDelete,
-		Token:         staged.Token,
-		StorageSetID:  staged.StorageSetID,
-		SourceOwner:   owner,
-		SourceRepo:    repository.Name,
-		SourceUserID:  repository.UserID,
-		SourceOrgID:   repository.OrgID,
+		RepositoryID:    repository.ID,
+		OperationType:   repositoryStorageOperationDelete,
+		Token:           staged.Token,
+		StorageRouteKey: staged.StorageRouteKey,
+		SourceOwner:     owner,
+		SourceRepo:      repository.Name,
+		SourceUserID:    repository.UserID,
+		SourceOrgID:     repository.OrgID,
 	}
 }
 
 func newMoveStorageOperation(repository db.Repository, owner string, target repoTransferTarget, staged repohost.StagedMove) repositoryStorageOperation {
 	return repositoryStorageOperation{
-		RepositoryID:  repository.ID,
-		OperationType: repositoryStorageOperationMove,
-		Token:         staged.Token,
-		StorageSetID:  staged.StorageSetID,
-		SourceOwner:   owner,
-		SourceRepo:    repository.Name,
-		SourceUserID:  repository.UserID,
-		SourceOrgID:   repository.OrgID,
-		TargetOwner:   pgtype.Text{String: target.ownerName, Valid: true},
-		TargetRepo:    pgtype.Text{String: repository.Name, Valid: true},
-		TargetUserID:  target.userID,
-		TargetOrgID:   target.orgID,
+		RepositoryID:    repository.ID,
+		OperationType:   repositoryStorageOperationMove,
+		Token:           staged.Token,
+		StorageRouteKey: staged.StorageRouteKey,
+		SourceOwner:     owner,
+		SourceRepo:      repository.Name,
+		SourceUserID:    repository.UserID,
+		SourceOrgID:     repository.OrgID,
+		TargetOwner:     pgtype.Text{String: target.ownerName, Valid: true},
+		TargetRepo:      pgtype.Text{String: repository.Name, Valid: true},
+		TargetUserID:    target.userID,
+		TargetOrgID:     target.orgID,
 	}
 }
 
@@ -122,6 +122,9 @@ func newPostgresRepositoryStorageOperationStore(pool *pgxpool.Pool) *postgresRep
 // later ownership transaction: it must survive an API process stop at any
 // point after repo-host is allowed to see the prepared token.
 func (s *postgresRepositoryStorageOperationStore) Create(ctx context.Context, operation repositoryStorageOperation) (retErr error) {
+	if strings.TrimSpace(operation.StorageRouteKey) == "" {
+		return fmt.Errorf("durable repository storage operation has no trusted route key")
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin repository storage operation: %w", err)
@@ -168,12 +171,12 @@ func (s *postgresRepositoryStorageOperationStore) Create(ctx context.Context, op
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO repository_storage_operations (
-			repository_id, operation_type, token, storage_set_id,
+			repository_id, operation_type, token, storage_route_key,
 			source_owner, source_repo, source_user_id, source_org_id,
 			target_owner, target_repo, target_user_id, target_org_id
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`,
-		operation.RepositoryID, operation.OperationType, operation.Token, operation.StorageSetID,
+		operation.RepositoryID, operation.OperationType, operation.Token, operation.StorageRouteKey,
 		operation.SourceOwner, operation.SourceRepo, nullableInt8(operation.SourceUserID), nullableInt8(operation.SourceOrgID),
 		nullableText(operation.TargetOwner), nullableText(operation.TargetRepo), nullableInt8(operation.TargetUserID), nullableInt8(operation.TargetOrgID),
 	)
@@ -250,7 +253,7 @@ func (s *postgresRepositoryStorageOperationStore) Claim(
 		FROM candidates
 		WHERE operation.repository_id = candidates.repository_id
 		RETURNING operation.repository_id, operation.operation_type, operation.token,
-			operation.storage_set_id, operation.source_owner, operation.source_repo,
+			operation.storage_route_key, operation.source_owner, operation.source_repo,
 			operation.source_user_id, operation.source_org_id,
 			operation.target_owner, operation.target_repo,
 			operation.target_user_id, operation.target_org_id,
@@ -301,7 +304,7 @@ func (s *postgresRepositoryStorageOperationStore) ProcessClaim(
 		return false, fmt.Errorf("lock repository for storage reconciliation: %w", err)
 	}
 	row := tx.QueryRow(ctx, `
-		SELECT repository_id, operation_type, token, storage_set_id,
+		SELECT repository_id, operation_type, token, storage_route_key,
 			source_owner, source_repo, source_user_id, source_org_id,
 			target_owner, target_repo, target_user_id, target_org_id,
 			claim_token, claimed_at, attempts, last_error, created_at, updated_at
@@ -368,7 +371,7 @@ type rowScanner interface {
 func scanRepositoryStorageOperation(row rowScanner) (repositoryStorageOperation, error) {
 	var operation repositoryStorageOperation
 	err := row.Scan(
-		&operation.RepositoryID, &operation.OperationType, &operation.Token, &operation.StorageSetID,
+		&operation.RepositoryID, &operation.OperationType, &operation.Token, &operation.StorageRouteKey,
 		&operation.SourceOwner, &operation.SourceRepo, &operation.SourceUserID, &operation.SourceOrgID,
 		&operation.TargetOwner, &operation.TargetRepo, &operation.TargetUserID, &operation.TargetOrgID,
 		&operation.ClaimToken, &operation.ClaimedAt, &operation.Attempts, &operation.LastError,
@@ -518,10 +521,10 @@ func (r *RepositoryStorageOperationReconciler) reconcile(
 	switch operation.OperationType {
 	case repositoryStorageOperationDelete:
 		staged := repohost.StagedDelete{
-			StorageSetID: operation.StorageSetID,
-			Token:        operation.Token,
-			Owner:        operation.SourceOwner,
-			Repo:         operation.SourceRepo,
+			StorageRouteKey: operation.StorageRouteKey,
+			Token:           operation.Token,
+			Owner:           operation.SourceOwner,
+			Repo:            operation.SourceRepo,
 		}
 		if current == nil {
 			return r.repoHost.FinalizeStagedDelete(actionCtx, staged)
@@ -536,12 +539,12 @@ func (r *RepositoryStorageOperationReconciler) reconcile(
 			return fmt.Errorf("%w: moved repository no longer exists", errRepositoryStorageStateUnknown)
 		}
 		staged := repohost.StagedMove{
-			StorageSetID: operation.StorageSetID,
-			Token:        operation.Token,
-			SrcOwner:     operation.SourceOwner,
-			SrcRepo:      operation.SourceRepo,
-			DstOwner:     operation.TargetOwner.String,
-			DstRepo:      operation.TargetRepo.String,
+			StorageRouteKey: operation.StorageRouteKey,
+			Token:           operation.Token,
+			SrcOwner:        operation.SourceOwner,
+			SrcRepo:         operation.SourceRepo,
+			DstOwner:        operation.TargetOwner.String,
+			DstRepo:         operation.TargetRepo.String,
 		}
 		if repositoryMatchesStorageIdentity(*current, operation.TargetUserID, operation.TargetOrgID, operation.TargetRepo.String) {
 			return r.repoHost.FinalizeStagedMove(actionCtx, staged)

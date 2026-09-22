@@ -18,6 +18,7 @@ type Config = repohostserver.Config
 type Client = repohost.Client
 type StorageSetResolver = repohost.StorageSetResolver
 type StorageSetURLResolver = repohost.StorageSetURLResolver
+type StorageRouteResolver = repohost.StorageRouteResolver
 type StagedProvision = repohost.StagedProvision
 type StagedDelete = repohost.StagedDelete
 type StagedMove = repohost.StagedMove

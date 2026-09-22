@@ -147,7 +147,7 @@ func TestDeleteRepoPersistsPreparedHandleBeforeStorageMutation(t *testing.T) {
 		prepareDeleteFn: func(_ context.Context, owner, repo string) (repohost.StagedDelete, error) {
 			events = append(events, "prepare-delete")
 			assert.Equal(t, "Alice", owner, "request casing must not become the physical path")
-			return repohost.StagedDelete{BaseURL: "http://s1.test", Token: token, Owner: owner, Repo: repo}, nil
+			return repohost.StagedDelete{BaseURL: "http://s1.test", StorageRouteKey: "s1", Token: token, Owner: owner, Repo: repo}, nil
 		},
 		executeDeleteFn: func(_ context.Context, staged repohost.StagedDelete) error {
 			events = append(events, "execute-delete")
@@ -184,7 +184,7 @@ func TestDeleteRepoRetainsIntentWhenFinalizationFails(t *testing.T) {
 			return stdErrors.New("repo-host unavailable")
 		}},
 		prepareDeleteFn: func(_ context.Context, owner, repo string) (repohost.StagedDelete, error) {
-			return repohost.StagedDelete{BaseURL: "http://s1.test", Token: token, Owner: owner, Repo: repo}, nil
+			return repohost.StagedDelete{BaseURL: "http://s1.test", StorageRouteKey: "s1", Token: token, Owner: owner, Repo: repo}, nil
 		},
 		executeDeleteFn: func(context.Context, repohost.StagedDelete) error { return nil },
 	}
@@ -236,7 +236,7 @@ func TestTransferRepoPersistsPreparedHandleBeforeStorageMutation(t *testing.T) {
 			events = append(events, "prepare-move")
 			assert.Equal(t, "Alice", srcOwner)
 			assert.Equal(t, "Bob", dstOwner)
-			return repohost.StagedMove{BaseURL: "http://s1.test", Token: token, SrcOwner: srcOwner, SrcRepo: srcRepo, DstOwner: dstOwner, DstRepo: dstRepo}, nil
+			return repohost.StagedMove{BaseURL: "http://s1.test", StorageRouteKey: "s1", Token: token, SrcOwner: srcOwner, SrcRepo: srcRepo, DstOwner: dstOwner, DstRepo: dstRepo}, nil
 		},
 		executeMoveFn: func(context.Context, repohost.StagedMove) error {
 			events = append(events, "execute-move")
@@ -266,7 +266,7 @@ func TestRepositoryStorageReconcilerUsesOnlyStableExactIdentity(t *testing.T) {
 		host.finalizeDeleteCalls = 0
 		err := reconciler.reconcile(context.Background(), repositoryStorageOperation{
 			RepositoryID: 1, OperationType: repositoryStorageOperationDelete,
-			Token: strings.Repeat("d", 64), StorageSetID: "s1",
+			Token: strings.Repeat("d", 64), StorageRouteKey: "s1",
 			SourceOwner: "Alice", SourceRepo: "Demo", SourceUserID: userOne,
 		}, nil)
 		require.NoError(t, err)
@@ -277,7 +277,7 @@ func TestRepositoryStorageReconcilerUsesOnlyStableExactIdentity(t *testing.T) {
 		host.restoreDeleteCalls = 0
 		err := reconciler.reconcile(context.Background(), repositoryStorageOperation{
 			RepositoryID: 1, OperationType: repositoryStorageOperationDelete,
-			Token: strings.Repeat("e", 64), StorageSetID: "s1",
+			Token: strings.Repeat("e", 64), StorageRouteKey: "s1",
 			SourceOwner: "Alice", SourceRepo: "Demo", SourceUserID: userOne,
 		}, &db.Repository{ID: 1, UserID: userOne, Name: "Demo", LowerName: "demo"})
 		require.NoError(t, err)
@@ -289,7 +289,7 @@ func TestRepositoryStorageReconcilerUsesOnlyStableExactIdentity(t *testing.T) {
 		host.finalizeDeleteCalls = 0
 		err := reconciler.reconcile(context.Background(), repositoryStorageOperation{
 			RepositoryID: 1, OperationType: repositoryStorageOperationDelete,
-			Token: strings.Repeat("f", 64), StorageSetID: "s1",
+			Token: strings.Repeat("f", 64), StorageRouteKey: "s1",
 			SourceOwner: "Alice", SourceRepo: "Demo", SourceUserID: userOne,
 		}, &db.Repository{ID: 1, UserID: userTwo, Name: "Demo", LowerName: "demo"})
 		require.ErrorIs(t, err, errRepositoryStorageStateUnknown)
@@ -299,7 +299,7 @@ func TestRepositoryStorageReconcilerUsesOnlyStableExactIdentity(t *testing.T) {
 
 	move := repositoryStorageOperation{
 		RepositoryID: 2, OperationType: repositoryStorageOperationMove,
-		Token: strings.Repeat("1", 64), StorageSetID: "s1",
+		Token: strings.Repeat("1", 64), StorageRouteKey: "s1",
 		SourceOwner: "Alice", SourceRepo: "Demo", SourceUserID: userOne,
 		TargetOwner: pgtype.Text{String: "Bob", Valid: true},
 		TargetRepo:  pgtype.Text{String: "Demo", Valid: true}, TargetUserID: userTwo,
@@ -361,7 +361,7 @@ func TestRepositoryStorageOperationCreateRejectsStaleSnapshotAfterTransfer(t *te
 		_, _ = cleanupTx.Exec(cleanupCtx, `DELETE FROM repository_storage_operations WHERE repository_id = $1`, repository.ID)
 		_, _ = cleanupTx.Exec(cleanupCtx, `
 			INSERT INTO repository_storage_operations (
-				repository_id, operation_type, token, storage_set_id,
+				repository_id, operation_type, token, storage_route_key,
 				source_owner, source_repo, source_user_id
 			) VALUES ($1, 'delete', $2, 's1', $3, $4, $5)
 		`, repository.ID, cleanupToken, targetName, repository.Name, targetID)
@@ -380,7 +380,7 @@ func TestRepositoryStorageOperationCreateRejectsStaleSnapshotAfterTransfer(t *te
 	moveToken := strings.Repeat("3", 64)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO repository_storage_operations (
-			repository_id, operation_type, token, storage_set_id,
+			repository_id, operation_type, token, storage_route_key,
 			source_owner, source_repo, source_user_id,
 			target_owner, target_repo, target_user_id
 		) VALUES ($1, 'move', $2, 's1', $3, $4, $5, $6, $4, $7)
@@ -398,7 +398,7 @@ func TestRepositoryStorageOperationCreateRejectsStaleSnapshotAfterTransfer(t *te
 	createResult := make(chan error, 1)
 	go func() {
 		createResult <- store.Create(context.Background(), newDeleteStorageOperation(repository, sourceName, repohost.StagedDelete{
-			BaseURL: "http://s1.test", Token: strings.Repeat("2", 64), Owner: sourceName, Repo: repository.Name,
+			BaseURL: "http://s1.test", StorageRouteKey: "s1", Token: strings.Repeat("2", 64), Owner: sourceName, Repo: repository.Name,
 		}))
 	}()
 	require.NoError(t, tx.Commit(ctx))

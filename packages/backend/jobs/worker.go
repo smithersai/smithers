@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,38 +18,99 @@ type WorkerConfig struct {
 	Lease        time.Duration
 	PollInterval time.Duration
 	RetryDelay   time.Duration
-	OnError      func(error)
+	// SettlementTimeout bounds receipt writes and cleanup after handler cancellation.
+	SettlementTimeout time.Duration
+	// Operations is an exact allowlist. Empty means every product operation.
+	Operations       []string
+	RecoveryInterval time.Duration
+	RecoveryLimit    int
+	OnError          func(error)
 }
 
 // Lease exposes only fenced mutations to a handler. StartExternal must be
 // called immediately before a provider call, not after it returns.
 type Lease struct {
-	store *Store
-	claim Claim
+	store             *Store
+	claim             Claim
+	released          atomic.Bool
+	settlementTimeout time.Duration
 }
 
 func (lease *Lease) Claim() Claim { return lease.claim }
 
 func (lease *Lease) StartExternal(ctx context.Context, observation json.RawMessage) error {
-	return lease.store.MarkExternalStarted(ctx, lease.claim, observation)
+	attempt, err := lease.store.BeginExternal(ctx, lease.claim, observation)
+	if err == nil {
+		lease.claim.ExternalAttempt = attempt
+	}
+	return err
 }
+
+// DeliveryAttempt returns the stable external attempt after StartExternal.
+func (lease *Lease) DeliveryAttempt() int { return lease.claim.DeliveryAttempt() }
 
 func (lease *Lease) Waiting(ctx context.Context, reason json.RawMessage) error {
 	return lease.store.MarkWaiting(ctx, lease.claim, reason)
 }
 
+func (lease *Lease) Checkpoint(ctx context.Context, receipt json.RawMessage) (bool, error) {
+	return lease.store.Checkpoint(ctx, lease.claim, receipt)
+}
+
+// Park saves a non-terminal checkpoint and releases this claim so another
+// process can reconcile the external operation after retryAfter.
+func (lease *Lease) Park(ctx context.Context, receipt json.RawMessage, retryAfter time.Duration) error {
+	if err := lease.store.Park(ctx, lease.claim, receipt, retryAfter); err != nil {
+		return err
+	}
+	lease.released.Store(true)
+	return nil
+}
+
+// Defer durably parks an external operation and returns ErrDeferred so a
+// handler can directly return the result. RunWorker consumes the sentinel.
+func (lease *Lease) Defer(ctx context.Context, receipt json.RawMessage, retryAfter time.Duration) error {
+	ctx, cancel := settlementContext(ctx, lease.settlementTimeout)
+	defer cancel()
+	if err := lease.Park(ctx, receipt, retryAfter); err != nil {
+		return err
+	}
+	return ErrDeferred
+}
+
 func (lease *Lease) Complete(ctx context.Context, receipt json.RawMessage) error {
-	return lease.store.Complete(ctx, lease.claim, receipt)
+	return lease.release(lease.store.Complete(ctx, lease.claim, receipt))
 }
 
 func (lease *Lease) Fail(ctx context.Context, receipt json.RawMessage) error {
-	return lease.store.Fail(ctx, lease.claim, receipt)
+	return lease.release(lease.store.Fail(ctx, lease.claim, receipt))
 }
 
 func (lease *Lease) Cancelled(ctx context.Context, receipt json.RawMessage) error {
 	// The handler learns about cancellation through ctx, so the receipt write
 	// itself must remain usable after ctx becomes done.
-	return lease.store.AcknowledgeCancellation(context.WithoutCancel(ctx), lease.claim, receipt)
+	ctx, cancel := settlementContext(ctx, lease.settlementTimeout)
+	defer cancel()
+	return lease.release(lease.store.AcknowledgeCancellation(ctx, lease.claim, receipt))
+}
+
+// CancelledObserved records cancellation reported by the external authority.
+// Unlike Cancelled, it does not require a preceding product cancel request.
+func (lease *Lease) CancelledObserved(ctx context.Context, receipt json.RawMessage) error {
+	return lease.release(lease.store.RecordExternalCancellation(ctx, lease.claim, receipt))
+}
+
+func (lease *Lease) ExternalCancelled(ctx context.Context, receipt json.RawMessage) error {
+	ctx, cancel := settlementContext(ctx, lease.settlementTimeout)
+	defer cancel()
+	return lease.release(lease.store.ExternalCancelled(ctx, lease.claim, receipt))
+}
+
+func (lease *Lease) release(err error) error {
+	if err == nil {
+		lease.released.Store(true)
+	}
+	return err
 }
 
 // RunWorker runs a bounded worker pool. It is intended to be attached to the
@@ -63,11 +125,31 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 	if config.Lease <= 0 {
 		return errors.New("jobs: worker lease must be positive")
 	}
+	if config.SettlementTimeout < 0 {
+		return errors.New("jobs: settlement timeout cannot be negative")
+	}
 	if handler == nil {
 		return errors.New("jobs: worker handler is required")
 	}
 	if config.PollInterval <= 0 {
 		config.PollInterval = 250 * time.Millisecond
+	}
+	if config.Operations != nil && len(config.Operations) == 0 {
+		return errors.New("jobs: worker operations cannot be empty")
+	}
+	operations, err := normalizeOperationFilter(config.Operations)
+	if err != nil {
+		return err
+	}
+	config.Operations = operations
+	if config.RecoveryInterval <= 0 {
+		config.RecoveryInterval = config.Lease / 2
+		if config.RecoveryInterval <= 0 {
+			config.RecoveryInterval = time.Millisecond
+		}
+	}
+	if config.RecoveryLimit <= 0 {
+		config.RecoveryLimit = config.Capacity * 4
 	}
 	heartbeatInterval := config.Lease / 3
 	if heartbeatInterval <= 0 {
@@ -81,7 +163,14 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 		}
 	}
 
+	nextRecovery := time.Time{}
 	for ctx.Err() == nil {
+		if !time.Now().Before(nextRecovery) {
+			if _, err := store.RecoverExpiredForOperations(ctx, config.Operations, config.RecoveryLimit); err != nil && ctx.Err() == nil {
+				report(err)
+			}
+			nextRecovery = time.Now().Add(config.RecoveryInterval)
+		}
 		select {
 		case capacity <- struct{}{}:
 		case <-ctx.Done():
@@ -90,7 +179,7 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 		if ctx.Err() != nil {
 			break
 		}
-		claim, err := store.Claim(ctx, config.WorkerID, config.Lease)
+		claim, err := store.ClaimForOperations(ctx, config.WorkerID, config.Lease, config.Operations)
 		if errors.Is(err, ErrNoWork) {
 			<-capacity
 			timer := time.NewTimer(config.PollInterval)
@@ -103,6 +192,9 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 		}
 		if err != nil {
 			<-capacity
+			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+				break
+			}
 			report(err)
 			timer := time.NewTimer(config.PollInterval)
 			select {
@@ -116,18 +208,18 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 		go func() {
 			defer workers.Done()
 			defer func() { <-capacity }()
-			report(store.runClaim(ctx, claim, config.Lease, heartbeatInterval, config.RetryDelay, handler))
+			report(store.runClaim(ctx, claim, config.Lease, heartbeatInterval, config.RetryDelay, config.SettlementTimeout, handler))
 		}()
 	}
 	workers.Wait()
 	return nil
 }
 
-func (store *Store) runClaim(parent context.Context, claim Claim, leaseDuration, heartbeatInterval, retryDelay time.Duration, handler Handler) error {
+func (store *Store) runClaim(parent context.Context, claim Claim, leaseDuration, heartbeatInterval, retryDelay, settlementTimeout time.Duration, handler Handler) error {
 	handlerContext, cancel := context.WithCancel(parent)
 	defer cancel()
 	result := make(chan error, 1)
-	lease := &Lease{store: store, claim: claim}
+	lease := &Lease{store: store, claim: claim, settlementTimeout: settlementTimeout}
 	go func() {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -146,14 +238,24 @@ func (store *Store) runClaim(parent context.Context, claim Claim, leaseDuration,
 		case handlerErr = <-result:
 			goto settled
 		case <-ticker.C:
+			if lease.released.Load() {
+				continue
+			}
 			requested, err := store.Heartbeat(parent, claim, leaseDuration)
 			if errors.Is(err, ErrClaimLost) {
+				if lease.released.Load() {
+					continue
+				}
 				claimLost = true
 				cancel()
 				continue
 			}
 			if err != nil {
 				cancel()
+				handlerErr = <-result
+				if parent.Err() != nil && errors.Is(err, parent.Err()) {
+					goto settled
+				}
 				return err
 			}
 			if requested {
@@ -168,10 +270,18 @@ func (store *Store) runClaim(parent context.Context, claim Claim, leaseDuration,
 	}
 
 settled:
+	if lease.released.Load() {
+		if errors.Is(handlerErr, ErrDeferred) {
+			return nil
+		}
+		return handlerErr
+	}
 	if claimLost {
 		return ErrClaimLost
 	}
-	operation, err := store.Get(context.WithoutCancel(parent), claim.Scope, claim.OperationID)
+	settlement, stopSettlement := settlementContext(parent, settlementTimeout)
+	defer stopSettlement()
+	operation, err := store.Get(settlement, claim.Scope, claim.OperationID)
 	if err != nil {
 		return err
 	}
@@ -182,10 +292,10 @@ settled:
 		if handlerErr == nil {
 			handlerErr = errors.New("job handler returned without a cancellation receipt")
 		}
-		return store.Abandon(context.WithoutCancel(parent), claim, handlerErr, retryDelay)
+		return store.Abandon(settlement, claim, handlerErr, retryDelay)
 	}
 	if handlerErr == nil {
 		handlerErr = errors.New("job handler returned without a terminal receipt")
 	}
-	return store.Abandon(context.WithoutCancel(parent), claim, handlerErr, retryDelay)
+	return store.Abandon(settlement, claim, handlerErr, retryDelay)
 }

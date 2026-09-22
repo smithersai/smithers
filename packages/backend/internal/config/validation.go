@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDepe
 	var errs []string
 
 	validateCommonStartupWithRepository(cfg, &errs, !dependencies.InProcessRepository)
+	validateSingleOwnerBrowserSecurity(cfg, &errs)
 
 	if strings.TrimSpace(cfg.Auth.SessionSecret) == "" {
 		errs = append(errs, "auth.session_secret must not be empty")
@@ -171,6 +173,13 @@ func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRep
 			*errs = append(*errs, "server.public_url must be an origin without path, credentials, query, or fragment")
 		}
 	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Auth.Mode)) {
+	case AuthModeSelfHosted, AuthModeMultitenant:
+	case "":
+		*errs = append(*errs, "auth.mode is required (selfhost or multitenant)")
+	default:
+		*errs = append(*errs, "auth.mode must be one of selfhost, multitenant")
+	}
 	if strings.TrimSpace(cfg.Database.URL) == "" {
 		*errs = append(*errs, "database.url is required")
 	}
@@ -179,6 +188,11 @@ func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRep
 	}
 	if strings.TrimSpace(cfg.RepoHost.AuthToken) == "" {
 		*errs = append(*errs, "repo_host.auth_token is required")
+	}
+	for _, raw := range splitCommaSeparatedList(cfg.Server.AllowedOrigins) {
+		if _, err := CanonicalOrigin(raw); err != nil {
+			*errs = append(*errs, fmt.Sprintf("server.allowed_origins contains invalid origin %q: %v", raw, err))
+		}
 	}
 
 	if cfg.Database.MaxConns <= 0 {
@@ -247,6 +261,46 @@ func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRep
 	if cfg.Sandbox.AgentIdleTimeoutSecs <= 0 {
 		*errs = append(*errs, "sandbox.agent_idle_timeout_seconds must be > 0")
 	}
+}
+
+func validateSingleOwnerBrowserSecurity(cfg *Config, errs *[]string) {
+	if !IsSingleOwner(cfg.Auth) {
+		return
+	}
+
+	rawOrigins := splitCommaSeparatedList(cfg.Server.AllowedOrigins)
+	hasConfiguredOrigins := len(rawOrigins) > 0
+	if !hasConfiguredOrigins {
+		rawOrigins = []string{PublicOrigin(cfg)}
+	}
+
+	for _, raw := range rawOrigins {
+		origin, err := CanonicalOrigin(raw)
+		if err != nil {
+			// Configured entries are already reported by validateCommonStartup;
+			// this branch also covers an invalid derived public API origin.
+			if !hasConfiguredOrigins {
+				*errs = append(*errs, fmt.Sprintf("selfhost public API origin is invalid: %v", err))
+			}
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(parsed.Scheme, "http") || isLoopbackHostname(parsed.Hostname()) {
+			continue
+		}
+		if cfg.Auth.CookieSecure {
+			*errs = append(*errs, fmt.Sprintf("auth.cookie_secure must be false for non-loopback HTTP origin %q, or serve that origin over HTTPS", origin))
+		}
+	}
+}
+
+func isLoopbackHostname(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validateURL(raw string, requireHTTP bool) error {

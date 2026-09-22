@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -59,33 +57,6 @@ func TestCreateAuthSession_StoresSHA256Digest(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, q.DeleteAuthSession(ctx, digest))
 	_, err = q.GetAuthSessionBySessionKey(ctx, digest)
-	require.ErrorIs(t, err, pgx.ErrNoRows)
-}
-
-func TestAuthSessionHashMigrationPreservesExistingSession(t *testing.T) {
-	ctx := context.Background()
-	tx, err := sharedPool.Begin(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback(ctx)
-	// A temporary table shadows the current schema with the pre-fix UUID shape.
-	_, err = tx.Exec(ctx, `CREATE TEMP TABLE auth_sessions
- (LIKE public.auth_sessions INCLUDING ALL) ON COMMIT DROP;
- ALTER TABLE auth_sessions ALTER COLUMN session_key TYPE UUID USING session_key::uuid`)
-	require.NoError(t, err)
-	raw := "550e8400-e29b-41d4-a716-446655440000"
-	_, err = tx.Exec(ctx, `INSERT INTO auth_sessions (session_key,user_id,username,expires_at) VALUES ($1,42,'existing',now()+interval '1 hour')`, raw)
-	require.NoError(t, err)
-	migration, err := os.ReadFile(filepath.Join(filepath.Dir(findSchemaPath()), "migrations", "20260914180000_hash_auth_session_keys.sql"))
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, string(migration))
-	require.NoError(t, err)
-	q := New(tx)
-	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(raw)))
-	session, err := q.GetAuthSessionBySessionKey(ctx, digest)
-	require.NoError(t, err)
-	assert.Equal(t, int64(42), session.UserID)
-	assert.True(t, session.ExpiresAt.After(time.Now()))
-	_, err = q.GetAuthSessionBySessionKey(ctx, raw)
 	require.ErrorIs(t, err, pgx.ErrNoRows)
 }
 

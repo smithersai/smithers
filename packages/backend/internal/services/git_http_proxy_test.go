@@ -29,9 +29,17 @@ type mockGitHTTPProxyQuerier struct {
 	listAllProtectedBookmarksFn     func(ctx context.Context, repositoryID int64) ([]db.ProtectedBookmark, error)
 	getWorkflowRunByRunIDFn         func(ctx context.Context, runID int64) (db.WorkflowRun, error)
 	getWorkflowTaskForRunnerFn      func(ctx context.Context, taskID int64) (db.GetWorkflowTaskForRunnerRow, error)
+	getSelfHostOwnerFn              func(ctx context.Context) (db.User, error)
 	getAuthInfoByTokenHashCall      int
 	updateLastUsedCall              int
 	getRepoByOwnerAndLowerNameCalls int
+}
+
+func (m *mockGitHTTPProxyQuerier) GetSelfHostOwner(ctx context.Context) (db.User, error) {
+	if m.getSelfHostOwnerFn != nil {
+		return m.getSelfHostOwnerFn(ctx)
+	}
+	return db.User{}, pgx.ErrNoRows
 }
 
 func (m *mockGitHTTPProxyQuerier) GetWorkflowRunByRunID(ctx context.Context, runID int64) (db.WorkflowRun, error) {
@@ -188,6 +196,34 @@ func TestGitHTTPProxyService_InfoRefs_PublicReadWithoutToken_Allowed(t *testing.
 	assert.Equal(t, "advertisement", out.String())
 	assert.Equal(t, 0, q.getAuthInfoByTokenHashCall)
 	assert.Equal(t, 0, q.updateLastUsedCall)
+}
+
+func TestGitHTTPProxyService_SelfhostRejectsForeignUserToken(t *testing.T) {
+	t.Parallel()
+
+	q := &mockGitHTTPProxyQuerier{
+		getAuthInfoByTokenHashFn: func(context.Context, string) (db.GetAuthInfoByTokenHashRow, error) {
+			return db.GetAuthInfoByTokenHashRow{
+				ID: 8, Username: "foreign", TokenID: 33, TokenScopes: "read:repository",
+			}, nil
+		},
+		getSelfHostOwnerFn: func(context.Context) (db.User, error) {
+			return db.User{ID: 7, Username: "owner"}, nil
+		},
+	}
+	repoHost := &mockGitHTTPRepoHostClient{}
+	svc := NewGitHTTPProxyService(
+		q,
+		&mockGitHTTPAuthorizer{},
+		repoHost,
+		WithGitHTTPSingleOwnerBoundary(q),
+	)
+
+	_, err := svc.ProxyInfoRefs(context.Background(), "owner", "repo", "git-upload-pack", "foreign-token", &bytes.Buffer{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "installation owner")
+	assert.Zero(t, repoHost.infoRefsCalls)
+	assert.Zero(t, q.updateLastUsedCall, "rejected foreign tokens must not record authenticated use")
 }
 
 func TestGitHTTPProxyService_InfoRefs_TaskTokenAuthorizesOnlyClaimedRepository(t *testing.T) {

@@ -177,8 +177,7 @@ func mustCreateRepoForUser(t *testing.T, tx DBTX, userID int64, name string) int
 	var id int64
 	err := tx.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, storage_set_id)
-		 VALUES ($1, $2, $3, 's1')
+		`INSERT INTO repositories (user_id, name, lower_name) VALUES ($1, $2, $3)
 		 RETURNING id`,
 		userID, name, strings.ToLower(name),
 	).Scan(&id)

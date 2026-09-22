@@ -40,7 +40,7 @@ func startReplica(t *testing.T, env map[string]string) *runHarness {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	errCh := make(chan error, 1)
-	go func() { errCh <- run(ctx, nil, io.Discard, logs) }()
+	go func() { errCh <- RunWithOptions(ctx, nil, io.Discard, logs, Options{Role: RoleHostedAPI}) }()
 
 	select {
 	case ln := <-lnCh:
@@ -149,6 +149,7 @@ func assertSSETicketNotHS256JWT(t *testing.T, path, ticket string) {
 // across both; that holds for the canonical route and the retained alias.
 func TestRun_SSETicketsRedeemAcrossReplicas(t *testing.T) {
 	env := baseRunEnv(t)
+	env["SMITHERS_AUTH_MODE"] = "multitenant"
 	env["SMITHERS_FEATURE_FLAGS_NOTIFICATIONS"] = "true"
 
 	replicaA := startReplica(t, env)

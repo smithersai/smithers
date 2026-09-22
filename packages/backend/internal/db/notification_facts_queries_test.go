@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -113,52 +111,4 @@ func TestNotificationFactsCommittedPositionsAndWakeup(t *testing.T) {
 	require.Len(t, rows, 2)
 	require.Equal(t, n1.ID, rows[0].NotificationID)
 	require.Equal(t, n2.ID, rows[1].NotificationID)
-}
-
-func TestNotificationFactsMigrationCreatesHonestLegacyBaseline(t *testing.T) {
-	ctx := context.Background()
-	tx, err := sharedPool.Begin(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback(ctx)
-	schema := "notification_legacy_" + randSlug(t)
-	_, err = tx.Exec(ctx, `CREATE SCHEMA `+pgx.Identifier{schema}.Sanitize())
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `SET LOCAL search_path TO `+pgx.Identifier{schema}.Sanitize()+`,public`)
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `CREATE TABLE users(id BIGSERIAL PRIMARY KEY); INSERT INTO users DEFAULT VALUES; INSERT INTO users DEFAULT VALUES`)
-	require.NoError(t, err)
-	full, err := os.ReadFile(findSchemaPath())
-	require.NoError(t, err)
-	start := strings.Index(string(full), "CREATE TABLE IF NOT EXISTS notifications (")
-	end := strings.Index(string(full)[start:], "-- Notification lifecycle facts.") + start
-	require.Greater(t, end, start)
-	_, err = tx.Exec(ctx, string(full)[start:end])
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, `INSERT INTO notifications(user_id,source_type,subject,status,read_at,created_at,updated_at) VALUES (1,'issue','legacy read','read','2025-01-02T00:00:00Z','2025-01-01T00:00:00Z','2025-01-02T00:00:00Z'),(1,'issue','legacy unread','unread',NULL,'2025-02-01T00:00:00Z','2025-02-01T00:00:00Z')`)
-	require.NoError(t, err)
-	migration, err := os.ReadFile(filepath.Join(findMigrationsDir(t), "20260914200000_notification_lifecycle_facts.sql"))
-	require.NoError(t, err)
-	_, err = tx.Exec(ctx, string(migration))
-	require.NoError(t, err)
-	q := New(tx)
-	journal, err := q.GetNotificationJournal(ctx, 1)
-	require.NoError(t, err)
-	require.Equal(t, "legacy_snapshot", journal.CoverageKind)
-	require.Equal(t, int64(2), journal.Head)
-	empty, err := q.GetNotificationJournal(ctx, 2)
-	require.NoError(t, err)
-	require.Equal(t, "legacy_snapshot", empty.CoverageKind)
-	require.Zero(t, empty.Head)
-	rows, err := q.ListNotificationFacts(ctx, ListNotificationFactsParams{UserID: 1, ThroughSequence: 2, PageSize: 1000})
-	require.NoError(t, err)
-	require.Len(t, rows, 2)
-	for _, row := range rows {
-		require.Equal(t, "notification.baseline", row.EventType)
-		require.Contains(t, string(row.PostImage), "2025-")
-		require.Equal(t, journal.CoverageStartedAt, row.RecordedAt)
-	}
-	require.NoError(t, q.MarkNotificationRead(ctx, MarkNotificationReadParams{UserID: 1, ID: 2}))
-	journal, err = q.GetNotificationJournal(ctx, 1)
-	require.NoError(t, err)
-	require.Equal(t, int64(3), journal.Head)
 }

@@ -5,17 +5,20 @@ import (
 	"crypto/rand"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 // Set SMITHERS_PRODUCT_TEST_DATABASE_URL to a PostgreSQL URL whose user can
@@ -85,6 +88,16 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	}
 	if !infraMissing || !placementColumnMissing {
 		t.Fatal("product schema retained cluster storage placement")
+	}
+
+	var receiptTable, approvalTable bool
+	if err := pool.QueryRow(ctx, `SELECT
+		to_regclass('public.repository_ci_check_receipts') IS NOT NULL,
+		to_regclass('public.repository_job_approvals') IS NOT NULL`).Scan(&receiptTable, &approvalTable); err != nil {
+		t.Fatal(err)
+	}
+	if !receiptTable || !approvalTable {
+		t.Fatal("incremental repository job product tables were not installed")
 	}
 
 	var alice, bob, repo int64
@@ -185,6 +198,143 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	}
 }
 
+func TestDurableProductJobsMigrationRegistered(t *testing.T) {
+	content, err := migrations.ReadFile("migrations/0006_durable_product_jobs.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != jobs.SchemaSQL() {
+		t.Fatal("canonical product migration and jobs schema fixture diverged")
+	}
+	found := false
+	for _, spec := range migrationRegistry {
+		if spec.version == 6 && spec.path == "migrations/0006_durable_product_jobs.sql" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("durable jobs migration 0006 is not registered")
+	}
+}
+
+func TestDurableProductJobsMigration0006(t *testing.T) {
+	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
+	if raw == "" {
+		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
+	}
+	content, err := migrations.ReadFile("migrations/0006_durable_product_jobs.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	adminURL, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminURL.Path = "/postgres"
+	admin, err := pgx.Connect(ctx, adminURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close(ctx)
+	var random [8]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		t.Fatal(err)
+	}
+	name := "smithers_jobs_migration_" + hex.EncodeToString(random[:])
+	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := admin.Exec(ctx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
+			t.Errorf("drop test database: %v", err)
+		}
+	}()
+	dbURL := *adminURL
+	dbURL.Path = "/" + name
+	pool, err := pgxpool.New(ctx, dbURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := pool.Exec(ctx, string(content), pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatalf("apply migration 0006 attempt %d: %v", attempt+1, err)
+		}
+	}
+
+	store, err := jobs.NewStore(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := jobs.Scope{TenantID: "user:1", PrincipalID: "user:1"}
+	receipt, err := store.Admit(ctx, jobs.Admission{
+		Scope: scope, Operation: "migration.acceptance", RequestID: "request-1",
+		Payload: json.RawMessage(`{"value":1}`), AuthorizationContext: json.RawMessage(`{"owner":true}`),
+		EffectPolicy: jobs.EffectReconcile,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := store.Admit(ctx, jobs.Admission{
+		Scope: scope, Operation: "migration.acceptance", RequestID: "request-1",
+		Payload: json.RawMessage("{\n  \"value\": 1\n}"), AuthorizationContext: json.RawMessage(`{"owner":true}`),
+		EffectPolicy: jobs.EffectReconcile,
+	})
+	if err != nil || !duplicate.Joined || duplicate.OperationID != receipt.OperationID {
+		t.Fatalf("migrated duplicate admission: receipt=%#v err=%v", duplicate, err)
+	}
+	claim, err := store.Claim(ctx, "migration-worker", 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalAttempt, err := store.BeginExternal(ctx, claim, json.RawMessage(`{"runtime":"canonical"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkWaiting(ctx, claim, json.RawMessage(`{"runId":"run-1","cursor":"4"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE product_job_dispatches
+		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, receipt.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if recovered, err := store.RecoverExpired(ctx, 1); err != nil || recovered != 1 {
+		t.Fatalf("recover migrated claim: recovered=%d err=%v", recovered, err)
+	}
+	reconnected, err := store.Claim(ctx, "migration-reconnector", 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconnected.Generation <= claim.Generation || reconnected.ExternalAttempt != externalAttempt || reconnected.DeliveryAttempt() != externalAttempt {
+		t.Fatalf("migrated recovery fence/attempt: first=%#v second=%#v", claim, reconnected)
+	}
+	if err := store.Complete(ctx, reconnected, json.RawMessage(`{"kind":"terminal"}`)); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := store.Get(ctx, scope, receipt.OperationID)
+	if err != nil || operation.State != jobs.StateCompleted {
+		t.Fatalf("migrated store operation: state=%s err=%v", operation.State, err)
+	}
+	page, err := store.Replay(ctx, scope, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Events) < 7 || page.Events[0].Sequence != 1 || page.Events[len(page.Events)-1].State != jobs.StateCompleted {
+		t.Fatalf("migrated store replay: %#v", page)
+	}
+	for index, event := range page.Events {
+		if event.Sequence != int64(index+1) {
+			t.Fatalf("migrated replay gap at %d: %#v", index, page.Events)
+		}
+	}
+	privatePage, err := store.Replay(ctx, jobs.Scope{TenantID: "user:2", PrincipalID: "user:2"}, 0, 10)
+	if err != nil || len(privatePage.Events) != 0 {
+		t.Fatalf("migrated private replay isolation: page=%#v err=%v", privatePage, err)
+	}
+}
+
 func TestBaselineHasNoClusterTableNames(t *testing.T) {
 	baseline, err := migrations.ReadFile("migrations/0001_product_baseline.sql")
 	if err != nil {
@@ -220,5 +370,16 @@ func TestBaselineChecksumPinned(t *testing.T) {
 	}
 	if len(registered) == 0 || registered[0].checksum != expected {
 		t.Fatalf("baseline migration changed; add a new numbered migration instead (got %q)", registered[0].checksum)
+	}
+}
+
+func TestRepositoryJobMigrationChecksumPinned(t *testing.T) {
+	const expected = "ab0492c3ce2bba1297048273f557608e2e1fc381c01b3af739c19e9a4b2b9b16"
+	registered, err := registeredMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registered) < 4 || registered[3].checksum != expected {
+		t.Fatal("product migration 0004 changed; add a new numbered migration instead")
 	}
 }

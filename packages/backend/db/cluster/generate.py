@@ -13,6 +13,8 @@ db_root = backend / "db"
 product_out = backend / "internal" / "db"
 cluster_out = backend / "internal" / "clusterdb"
 
+subprocess.run(["python3", str(db_root / "generate_schema.py")], check=True)
+
 # sqlc does not delete output files for removed query sources.
 for output in (product_out, cluster_out):
     for stale in output.glob("*.sql.go"):

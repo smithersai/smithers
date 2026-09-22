@@ -15,9 +15,9 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type AuthService interface {
@@ -42,7 +42,10 @@ type GitHubRepoListingWarmer interface {
 
 type AuthHandler struct {
 	Service        AuthService
+	LocalService   LocalIdentityService
 	AuthConfig     config.AuthConfig
+	PublicOrigin   string
+	AllowedOrigins []string
 	AuditService   *services.AuditService
 	SSETickets     *sseauth.SSETicketManager
 	IssueSSETicket func(sseauth.SSETicketSubject) (string, time.Time, error)
@@ -406,12 +409,11 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 	}
 
 	redirectURL := result.RedirectURL
-	if redirectURL == "" {
-		// A bare "/" only works when the callback was proxied by the SPA's
-		// worker. Direct hits on api.jjhub.tech (e.g. the desktop app opening
-		// the flow in the system browser) would land on the API's 404 page,
-		// making a successful link look like a failure.
-		redirectURL = "https://code.smithers.sh/"
+	if redirectURL == "" || redirectURL == "/" {
+		redirectURL = strings.TrimRight(strings.TrimSpace(h.PublicOrigin), "/") + "/"
+		if redirectURL == "/" {
+			redirectURL = "/"
+		}
 	}
 
 	// If the user was mid-way through an OAuth2 authorize flow (ticket 0106),
@@ -517,8 +519,11 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	redirectTarget := result.RedirectURL
-	if redirectTarget == "" {
-		redirectTarget = "/"
+	if redirectTarget == "" || redirectTarget == "/" {
+		redirectTarget = strings.TrimRight(strings.TrimSpace(h.PublicOrigin), "/") + "/"
+		if redirectTarget == "/" {
+			redirectTarget = "/"
+		}
 	}
 
 	// If the user was mid-way through an OAuth2 authorize flow (ticket 0106),

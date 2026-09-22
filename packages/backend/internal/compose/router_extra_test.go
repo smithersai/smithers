@@ -150,9 +150,27 @@ func TestServerRouter_AdminScopeEnforcement(t *testing.T) {
 	assert.Equal(t, http.StatusOK, allowRec.Code)
 }
 
-func routerWithAdminUserHandler(adminUserHandler *routes.AdminUserHandler) http.Handler {
+func TestServerRouter_SelfhostDoesNotMountAdminUserProvisioning(t *testing.T) {
+	t.Parallel()
+
+	service := &mockAdminUserRouteService{}
+	router := routerWithAdminUserHandler(&routes.AdminUserHandler{Service: service}, config.AuthModeSelfHosted)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users", bytes.NewBufferString(`{"username":"second-owner"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Zero(t, service.createUserCalls)
+}
+
+func routerWithAdminUserHandler(adminUserHandler *routes.AdminUserHandler, authModes ...string) http.Handler {
+	cfg := &config.Config{}
+	if len(authModes) > 0 {
+		cfg.Auth.Mode = authModes[0]
+	}
 	return buildRouterCompat(
-		&config.Config{},
+		cfg,
 		nil,
 		nil, // pool
 		&routes.RepoHandler{},

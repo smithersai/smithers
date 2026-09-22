@@ -10,7 +10,7 @@ import (
 // ShareQuerier is the minimal database surface AuthorizeRoom needs to resolve a
 // Pair share token. It is satisfied by *db.Queries. The query only yields live
 // (non-revoked, non-expired) links — see
-// GetPairShareLinkByTokenHash in db/queries/pair.sql — so a miss (any error)
+// GetPairShareLinkByTokenHash in db/product/queries/pair.sql — so a miss (any error)
 // means "no valid grant".
 //
 // internal/db does not import internal/pairauth, so depending on db here is

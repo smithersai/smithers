@@ -45,7 +45,7 @@ type RepositoryJobManualResult struct {
 // request. The ordinary worker supplies durable Plan/Run and human node gates.
 func (s *RepositoryJobService) RunManual(ctx context.Context, gatewayID, bearer, job, requestID string, input RepositoryJobManualInput) (RepositoryJobManualResult, error) {
 	var empty RepositoryJobManualResult
-	if !repositoryJobNames[job] || strings.TrimSpace(requestID) == "" || len(requestID) > 200 ||
+	if !isRepositoryJobName(job) || strings.TrimSpace(requestID) == "" || len(requestID) > 200 ||
 		strings.ContainsAny(requestID, "\r\n\x00/") || input.Revision <= 0 || !repositoryJobDigest.MatchString(input.Digest) ||
 		!repositoryJobManualStep.MatchString(input.StepID) || len(input.Prompt) > 16000 || (input.Subject == nil && strings.TrimSpace(input.Prompt) == "") {
 		return empty, pkgerrors.BadRequest("manual run requires an exact candidate, selected step and request")
@@ -117,23 +117,34 @@ func (s *RepositoryJobService) RunManual(ctx context.Context, gatewayID, bearer,
 		return empty, pkgerrors.Conflict("manual run must use the current applied candidate and owning workspace")
 	}
 	var config RegisterRepositoryJobInput
-	var draft struct {
-		Steps []struct {
-			ID   string `json:"id"`
-			Mode string `json:"mode"`
-		} `json:"steps"`
-	}
-	if json.Unmarshal(reg.Configuration, &config) != nil || json.Unmarshal(config.Input, &draft) != nil {
+	if json.Unmarshal(reg.Configuration, &config) != nil {
 		return empty, pkgerrors.Internal("invalid applied repository job")
 	}
-	selected := false
-	for _, step := range draft.Steps {
-		if step.ID == input.StepID && (step.Mode == "manual" || step.Mode == "automatic" || step.Mode == "approved") {
-			selected = true
+	// A registered flow has no setup draft to select a step from; its whole
+	// registration is the one thing a manual request can fire.
+	if repositoryFlowJobKey.MatchString(job) {
+		if input.StepID != "fire" {
+			return empty, pkgerrors.BadRequest("selected step is absent or switched off")
 		}
-	}
-	if !selected {
-		return empty, pkgerrors.BadRequest("selected step is absent or switched off")
+	} else {
+		var draft struct {
+			Steps []struct {
+				ID   string `json:"id"`
+				Mode string `json:"mode"`
+			} `json:"steps"`
+		}
+		if json.Unmarshal(config.Input, &draft) != nil {
+			return empty, pkgerrors.Internal("invalid applied repository job")
+		}
+		selected := false
+		for _, step := range draft.Steps {
+			if step.ID == input.StepID && (step.Mode == "manual" || step.Mode == "automatic" || step.Mode == "approved") {
+				selected = true
+			}
+		}
+		if !selected {
+			return empty, pkgerrors.BadRequest("selected step is absent or switched off")
+		}
 	}
 	payload, source, number, err := repositoryJobManualPayload(ctx, q, repo.ID, input, wire)
 	if err != nil {

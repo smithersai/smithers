@@ -55,7 +55,7 @@ type AdminSystemIncidentListParams struct {
 }
 
 // AdminSystemRemediationJobRow mirrors the sqlc-generated row for the
-// remediation half of the listing in db/queries/admin_system.sql:
+// remediation half of the listing in db/cluster/queries/admin_system.sql:
 //
 //	SELECT id, incident_id, status, attempts, workflow_run_id, created_at, updated_at
 //	FROM alert_remediation_jobs

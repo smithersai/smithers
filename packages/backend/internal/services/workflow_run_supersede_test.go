@@ -15,7 +15,7 @@ import (
 )
 
 // supersedeQuerierMock is a run store whose ListSupersededWorkflowRuns applies
-// the same predicate as db/queries/workflows.sql, so "a different ref is
+// the same predicate as db/product/queries/workflows.sql, so "a different ref is
 // untouched" is a real behavioural assertion rather than a parameter check.
 type supersedeQuerierMock struct {
 	*cancelRunQuerierMock

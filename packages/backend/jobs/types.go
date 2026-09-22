@@ -90,6 +90,7 @@ type Operation struct {
 	EffectPolicy            EffectPolicy
 	EffectKey               string
 	Attempt                 int
+	ExternalAttempt         int
 	Generation              int64
 	NeedsReconciliation     bool
 	CancellationRequested   bool
@@ -103,18 +104,30 @@ type Claim struct {
 	Scope                 Scope
 	Operation             string
 	RequestID             string
+	State                 State
 	Payload               json.RawMessage
 	AuthorizationContext  json.RawMessage
 	ExternalReceipt       json.RawMessage
 	EffectPolicy          EffectPolicy
 	EffectKey             string
 	Attempt               int
+	ExternalAttempt       int
 	Generation            int64
 	Token                 string
 	WorkerID              string
 	LeaseExpiresAt        time.Time
 	NeedsReconciliation   bool
 	CancellationRequested bool
+}
+
+// DeliveryAttempt is the stable attempt identity for an external call. A
+// recovered PostgreSQL claim increments Attempt/Generation for fencing, while
+// an ambiguous external launch keeps the attempt committed before that call.
+func (claim Claim) DeliveryAttempt() int {
+	if claim.ExternalAttempt > 0 {
+		return claim.ExternalAttempt
+	}
+	return 1
 }
 
 type Event struct {
@@ -153,10 +166,15 @@ func (err *CursorExpiredError) Error() string {
 }
 
 var (
-	ErrNoWork                   = errors.New("jobs: no work available")
+	ErrNoWork = errors.New("jobs: no work available")
+	// ErrDeferred is returned by Lease.Defer only after it has durably saved a
+	// checkpoint and released the claim. RunWorker treats it as a successful
+	// park rather than a handler failure.
+	ErrDeferred                 = errors.New("jobs: operation deferred")
 	ErrClaimLost                = errors.New("jobs: claim is stale or expired")
 	ErrNotFound                 = errors.New("jobs: operation not found")
 	ErrPayloadConflict          = errors.New("jobs: idempotency key reused with a different payload")
+	ErrCancellationRequested    = errors.New("jobs: cancellation was requested")
 	ErrCancellationNotRequested = errors.New("jobs: cancellation was not requested")
 	ErrCursorAhead              = errors.New("jobs: cursor is ahead of the committed stream")
 	ErrUncertainResolution      = errors.New("jobs: operation is not uncertain")

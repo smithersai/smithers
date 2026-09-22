@@ -30,6 +30,7 @@ func validStartupConfig() *Config {
 		},
 		Sandbox: SandboxConfig{AgentIdleTimeoutSecs: 300, WorkspaceMemoryMB: 4096, WorkspaceVCPUCount: 2},
 		Auth: AuthConfig{
+			Mode:             AuthModeMultitenant,
 			SessionSecret:    "super-secret",
 			LFSSigningSecret: "lfs-signing-secret",
 		},
@@ -91,6 +92,60 @@ func TestValidateServerStartupWithInjectedLocalDependencies(t *testing.T) {
 	require.ErrorContains(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
 		InProcessRepository: true,
 	}), "sandbox.microsandbox_control_url is required")
+}
+
+func TestValidateServerStartup_RejectsUnknownAuthMode(t *testing.T) {
+	t.Parallel()
+	cfg := validStartupConfig()
+	cfg.Auth.Mode = "shared-but-not-isolated"
+	err := ValidateServerStartup(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.mode must be one of selfhost, multitenant")
+}
+
+func TestValidateServerStartup_RequiresExplicitAuthMode(t *testing.T) {
+	t.Parallel()
+	cfg := validStartupConfig()
+	cfg.Auth.Mode = ""
+	err := ValidateServerStartup(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.mode is required")
+}
+
+func TestValidateServerStartup_SelfhostBrowserOriginsAndCookieSecurity(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin string
+		cookieSecure bool
+		wantError    string
+	}{
+		{"Railway HTTPS", "https://owner.example", true, ""},
+		{"LAN HTTPS", "https://smithers.home.arpa:8443", true, ""},
+		{"localhost HTTP", "http://localhost:4000", true, ""},
+		{"IP loopback HTTP", "http://127.0.0.1:4000", true, ""},
+		{"LAN HTTP explicitly insecure", "http://smithers.home.arpa:4000", false, ""},
+		{"LAN HTTP secure cookie cannot work", "http://smithers.home.arpa:4000", true, "auth.cookie_secure must be false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validStartupConfig()
+			cfg.Auth.Mode = AuthModeSelfHosted
+			cfg.Auth.CookieSecure = tc.cookieSecure
+			cfg.Server.AllowedOrigins = []string{tc.origin}
+			err := ValidateServerStartup(cfg)
+			if tc.wantError == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantError)
+		})
+	}
+}
+
+func TestValidateServerStartup_RejectsAllowedOriginWithPath(t *testing.T) {
+	t.Parallel()
+	cfg := validStartupConfig()
+	cfg.Server.AllowedOrigins = []string{"https://app.example/login"}
+	err := ValidateServerStartup(cfg)
+	require.ErrorContains(t, err, "server.allowed_origins contains invalid origin")
 }
 
 func TestValidateServerStartup_AgentIdleTimeoutMustBePositive(t *testing.T) {

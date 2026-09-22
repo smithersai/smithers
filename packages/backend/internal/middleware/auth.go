@@ -15,6 +15,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
@@ -151,7 +152,7 @@ func RequireAuth(next http.Handler) http.Handler {
 
 // AuthLoader loads session/cookie or token auth information if available.
 // This middleware is a soft gate: anonymous requests continue to next handler.
-func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig) func(http.Handler) http.Handler {
+func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...identity.OwnerAuthorizer) func(http.Handler) http.Handler {
 	sessionCookieName := strings.TrimSpace(cfg.SessionCookieName)
 	if sessionCookieName == "" {
 		sessionCookieName = "smithers_session"
@@ -168,6 +169,16 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig) func(http.Hand
 	}
 
 	cookieSecure := cfg.CookieSecure
+	var ownerBoundary identity.OwnerAuthorizer
+	if config.IsSingleOwner(cfg) {
+		if len(boundaries) > 0 {
+			ownerBoundary = boundaries[0]
+		} else if ownerQueries, ok := queries.(identity.OwnerQuerier); ok {
+			ownerBoundary = identity.NewSingleOwnerBoundary(ownerQueries)
+		} else {
+			ownerBoundary = identity.NewSingleOwnerBoundary(nil)
+		}
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -177,8 +188,14 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig) func(http.Hand
 			token := ExtractToken(r)
 			if token != "" {
 				if authInfo := loadTokenAuth(ctx, queries, token); authInfo != nil {
+					if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
+						return
+					}
 					if !allowWorkspaceRestrictedToken(w, r, authInfo) {
 						return
+					}
+					if authInfo.TokenSource == TokenSourcePersonalAccessToken {
+						_ = queries.UpdateAccessTokenLastUsed(ctx, authInfo.TokenID)
 					}
 					next.ServeHTTP(w, r.WithContext(ContextWithAuthInfo(ctx, authInfo)))
 					return
@@ -188,8 +205,12 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig) func(http.Hand
 			}
 
 			if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
-				authInfo, refreshedSession, sessionExpiresAt := loadSessionAuth(ctx, queries, cookie.Value, now, sessionDuration, sessionRefreshWindow)
+				authInfo, session := loadSessionAuth(ctx, queries, cookie.Value, now)
 				if authInfo != nil {
+					if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
+						return
+					}
+					refreshedSession, sessionExpiresAt := refreshLoadedSession(ctx, queries, session, now, sessionDuration, sessionRefreshWindow)
 					if refreshedSession != nil {
 						http.SetCookie(w, &http.Cookie{
 							Name: sessionCookieName,
@@ -235,14 +256,23 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig) func(http.Hand
 	}
 }
 
+func authorizeInstallationOwner(w http.ResponseWriter, r *http.Request, authInfo *AuthInfo, boundary identity.OwnerAuthorizer) bool {
+	if boundary == nil || authInfo == nil || authInfo.User == nil {
+		return true
+	}
+	if err := boundary.AuthorizeOwner(r.Context(), authInfo.User.ID); err != nil {
+		errors.WriteError(w, err)
+		return false
+	}
+	return true
+}
+
 func loadSessionAuth(
 	ctx context.Context,
 	queries AuthLoaderQuerier,
 	sessionKey string,
 	now time.Time,
-	sessionDuration time.Duration,
-	sessionRefreshWindow time.Duration,
-) (*AuthInfo, *db.AuthSession, time.Time) {
+) (*AuthInfo, *db.AuthSession) {
 	// Sessions minted after keys were hashed at rest are filed under the
 	// key's SHA-256 digest (see services.sessionStorageKey); rows minted
 	// before stay raw-keyed until they expire. Try the digest first so the
@@ -251,51 +281,63 @@ func loadSessionAuth(
 	session, err := queries.GetAuthSessionBySessionKey(ctx, sessionStorageKey(sessionKey))
 	if err != nil {
 		if !stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, time.Time{}
+			return nil, nil
 		}
 		// Never interpret a stored SHA-256 digest as a legacy bearer key.
 		// Legacy keys are UUIDs; allowing the digest here makes hashing at
 		// rest ineffective because a database dump can be used as cookies.
 		if len(sessionKey) == sha256.Size*2 {
 			if _, err := hex.DecodeString(sessionKey); err == nil {
-				return nil, nil, time.Time{}
+				return nil, nil
 			}
 		}
 		session, err = queries.GetAuthSessionBySessionKey(ctx, sessionKey)
 		if err != nil {
-			return nil, nil, time.Time{}
+			return nil, nil
 		}
 	}
 	if !session.ExpiresAt.After(now) {
-		return nil, nil, time.Time{}
+		return nil, nil
 	}
 
 	user, err := queries.GetUserByID(ctx, session.UserID)
 	if err != nil {
-		return nil, nil, time.Time{}
+		return nil, nil
 	}
 	if user.ProhibitLogin {
-		return nil, nil, time.Time{}
-	}
-
-	effectiveExpiresAt := session.ExpiresAt
-	var refreshedSession *db.AuthSession
-	if session.ExpiresAt.Sub(now) <= sessionRefreshWindow {
-		updated, err := queries.RefreshAuthSession(ctx, db.RefreshAuthSessionParams{
-			SessionKey: session.SessionKey,
-			ExpiresAt:  now.Add(sessionDuration),
-		})
-		if err == nil {
-			refreshedSession = &updated
-			effectiveExpiresAt = updated.ExpiresAt
-		}
+		return nil, nil
 	}
 
 	return &AuthInfo{
 		User:        &user,
 		IsTokenAuth: false,
 		Scopes:      ScopeSet{},
-	}, refreshedSession, effectiveExpiresAt
+	}, &session
+}
+
+func refreshLoadedSession(
+	ctx context.Context,
+	queries AuthLoaderQuerier,
+	session *db.AuthSession,
+	now time.Time,
+	sessionDuration time.Duration,
+	sessionRefreshWindow time.Duration,
+) (*db.AuthSession, time.Time) {
+	if session == nil {
+		return nil, time.Time{}
+	}
+	effectiveExpiresAt := session.ExpiresAt
+	if session.ExpiresAt.Sub(now) > sessionRefreshWindow {
+		return nil, effectiveExpiresAt
+	}
+	updated, err := queries.RefreshAuthSession(ctx, db.RefreshAuthSessionParams{
+		SessionKey: session.SessionKey,
+		ExpiresAt:  now.Add(sessionDuration),
+	})
+	if err != nil {
+		return nil, effectiveExpiresAt
+	}
+	return &updated, updated.ExpiresAt
 }
 
 func loadTokenAuth(ctx context.Context, queries AuthLoaderQuerier, token string) *AuthInfo {
@@ -320,8 +362,6 @@ func loadTokenAuthByHash(ctx context.Context, queries AuthLoaderQuerier, tokenHa
 		}
 		return loadOAuth2TokenAuth(ctx, queries, tokenHash)
 	}
-
-	_ = queries.UpdateAccessTokenLastUsed(ctx, authRow.TokenID)
 
 	user := authRowToUser(authRow)
 	if user.ProhibitLogin {

@@ -92,6 +92,8 @@ var allEnvKeys = []string{
 	"SMITHERS_SSH_MAX_TIMEOUT",
 	"SMITHERS_SSH_MAX_SESSIONS_PER_CONN",
 	// Auth
+	"SMITHERS_AUTH_MODE",
+	"SMITHERS_AUTH_BOOTSTRAP_TOKEN",
 	"SMITHERS_AUTH_SESSION_DURATION",
 	"SMITHERS_AUTH_SESSION_REFRESH_WINDOW",
 	"SMITHERS_AUTH_SESSION_COOKIE_NAME",
@@ -180,7 +182,6 @@ var allEnvKeys = []string{
 	"SMITHERS_EMAIL_SES_REGION",
 	"SMITHERS_EMAIL_SES_FROM",
 	"SMITHERS_EMAIL_FROM",
-	"SMITHERS_EMAIL_BASE_URL",
 	"SMITHERS_EMAIL_RATE_LIMIT_PER_SECOND",
 	"SMITHERS_EMAIL_RATE_LIMIT_PER_RECIPIENT_PER_HR",
 	// Feature flags
@@ -677,6 +678,7 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 		{
 			name: "defaults",
 			want: AuthConfig{
+				Mode:                 "",
 				SessionDuration:      "720h",
 				SessionRefreshWindow: "168h",
 				SessionCookieName:    "smithers_session",
@@ -704,6 +706,8 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 		{
 			name: "env overrides",
 			env: map[string]string{
+				"SMITHERS_AUTH_MODE":                   AuthModeMultitenant,
+				"SMITHERS_AUTH_BOOTSTRAP_TOKEN":        "bootstrap-secret",
 				"SMITHERS_AUTH_SESSION_DURATION":       "24h",
 				"SMITHERS_AUTH_SESSION_REFRESH_WINDOW": "6h",
 				"SMITHERS_AUTH_SESSION_COOKIE_NAME":    "smithers_custom",
@@ -722,6 +726,8 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 				"SMITHERS_AUTH_LINEAR_REDIRECT_URL":    "https://smithers.sh/auth/linear/callback",
 			},
 			want: AuthConfig{
+				Mode:                 AuthModeMultitenant,
+				BootstrapToken:       "bootstrap-secret",
 				SessionDuration:      "24h",
 				SessionRefreshWindow: "6h",
 				SessionCookieName:    "smithers_custom",
@@ -759,6 +765,19 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 			cfg, err := Load("")
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, cfg.Auth)
+		})
+	}
+}
+
+func TestLoad_AuthModeIsNeverInferredFromDeploymentEnvironment(t *testing.T) {
+	for _, environment := range []string{"production", "development", "test"} {
+		t.Run(environment, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("SMITHERS_ENV", environment)
+
+			cfg, err := Load("")
+			require.NoError(t, err)
+			assert.Empty(t, cfg.Auth.Mode)
 		})
 	}
 }
@@ -854,6 +873,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			ShutdownDrainTimeout:     "30s",
 		},
 		Auth: AuthConfig{
+			Mode:                 "",
 			SessionDuration:      "720h",
 			SessionRefreshWindow: "168h",
 			SessionCookieName:    "smithers_session",
@@ -943,7 +963,6 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			SESRegion:                  "",
 			SESFrom:                    "noreply@smithers.sh",
 			From:                       "noreply@smithers.sh",
-			BaseURL:                    "http://localhost:4000",
 			RateLimitPerSecond:         10,
 			RateLimitPerRecipientPerHr: 20,
 		},
@@ -1575,12 +1594,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 				assert.Equal(t, "ses@smithers.sh", cfg.Email.SESFrom)
 			},
 		},
-		{
-			envKey: "SMITHERS_EMAIL_BASE_URL", envValue: "https://smithers.sh",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "https://smithers.sh", cfg.Email.BaseURL)
-			},
-		},
 	}
 
 	for _, tc := range tests {
@@ -1788,7 +1801,7 @@ func TestLoad_SpecCompliance_RunnerConfig(t *testing.T) {
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 196,
+	assert.Len(t, allEnvKeys, 197,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1903,7 +1916,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"RepoHostConfig":      3,  // URL, AuthToken, PushHookCallbackToken
 		"SandboxConfig":       37, // provider assertion, Microsandbox transport/accelerator, provider-neutral resource sizing/access, anonymous-sandbox bounds (enabled/allowlist/TTL/global+per-IP caps), repo-gateway provider credentials, agent seat, desktop guest sizing and observe-text switch, health probe, and preview relay token
 		"SSHConfig":           13, // Addr, HostKeyDir, MaxConnections, MaxConnectionsPerIP, MaxReceivePackSize, MaxUploadPackRequestSize, ReceivePackTimeout, UploadPackTimeout, ShutdownDrainTimeout, AuthAttemptsPerMinute, IdleTimeout, MaxTimeout, MaxSessionsPerConn
-		"AuthConfig":          23, // Session*, dedicated LFS signer, Cookie*, ClosedAlphaEnabled, EnableKeyAuth, KeyAuthDomain, GitHub* (5), Auth0* (5), Linear* (3), WorkerExchangeToken
+		"AuthConfig":          25, // Mode/bootstrap, Session*, dedicated LFS signer, Cookie*, OAuth, Linear, WorkerExchangeToken
 		"BillingConfig":       16, // authority mode, Stripe credentials, portal URLs, and plan price ids
 		"WebhookConfig":       2,  // SecretEncryptionKey, GitHubAppSecret
 		"AgentsConfig":        1,
@@ -1911,7 +1924,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"CleanupConfig":       3,  // AuthInterval, WorkflowCacheInterval, SandboxEgressAuditRetentionDays
 		"BlobConfig":          14, // cluster/local adapter settings, shared transfer origin, and workflow cache policy
 		"ObservabilityConfig": 7,  // LogLevel, TraceSampleRate, CloudTraceProjectID, OTelExporter, OTLPEndpoint, MetricsExportTarget, MetricsProjectID
-		"EmailConfig":         12, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, BaseURL, RateLimitPerSecond, RateLimitPerRecipientPerHr
+		"EmailConfig":         11, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, RateLimitPerSecond, RateLimitPerRecipientPerHr
 		"FeatureFlagsConfig":  37, // 11 base + 4 remote-client rollout + 21 ticket-12 MVP flags + Changesets (orgs is not a flag)
 		"RateLimitConfig":     7,  // TerminalOpenPerMin, TerminalActiveMax, ApprovalDecidePerMin, AppTimelineWritePerMin, ShareListingEventPerMin, AnonSandboxCreatePerHour, BuildCachePerMinute
 	}
@@ -1950,7 +1963,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 192, totalSubFields,
+	assert.Equal(t, 193, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 

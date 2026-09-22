@@ -23,13 +23,12 @@ func TestSQLCConfigSchemaSource_RemainsDeterministic(t *testing.T) {
 	_, err = os.Stat(schemaPath)
 	require.NoError(t, err)
 
-	if _, err := exec.LookPath("sqlc"); err != nil {
-		t.Skip("sqlc binary not found in PATH")
-	}
-
-	cmd := exec.Command("sqlc", "generate", "-f", configPath)
+	cmd := exec.Command("python3", filepath.Join(filepath.Dir(configPath), "generate_schema.py"), "--check")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
+	productConfig, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "product", "sqlc.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(productConfig), `schema: "migrations/"`)
 }
 
 func findSQLCConfigPath(t *testing.T) string {

@@ -1,9 +1,6 @@
 version: "2"
-# Source-of-truth policy:
-# - Schema and queries live in db/ in this repo.
-# - This config generates Go from those same files.
-# - Any schema change must be made in db/schema.sql first.
-# - sqlc generates Go here.
+# schema.sql is generated from product migrations and private cluster sources.
+# Run generate_schema.py before sqlc generate; never edit schema.sql directly.
 sql:
   - engine: "postgresql"
     schema: "schema.sql"

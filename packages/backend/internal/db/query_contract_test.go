@@ -25,7 +25,6 @@ func TestQueryContract_ListQueriesUsePagination(t *testing.T) {
 		{file: "landings.sql", queryName: "ListLandingRequestsWithChangeIDsByRepoFiltered"},
 		{file: "landings.sql", queryName: "ListLandingRequestChanges"},
 		{file: "notifications.sql", queryName: "ListNotificationsByUser"},
-		{file: "runner_pool.sql", queryName: "ListRunners"},
 		{file: "workflows.sql", queryName: "ListWorkflowDefinitionsByRepo"},
 		{file: "workflows.sql", queryName: "ListWorkflowRunsByRepo"},
 	}
@@ -114,13 +113,13 @@ func TestQueryContract_JJVcsFilesExist(t *testing.T) {
 func TestQueryContract_NoPullRequestOrDefaultBranchTerms(t *testing.T) {
 	t.Parallel()
 
-	queryFiles, err := filepath.Glob(filepath.Join("..", "..", "db", "queries", "*.sql"))
+	queryFiles, err := filepath.Glob(filepath.Join("..", "..", "db", "product", "queries", "*.sql"))
 	require.NoError(t, err)
 	if len(queryFiles) == 0 {
-		queryFiles, err = filepath.Glob(filepath.Join("db", "queries", "*.sql"))
+		queryFiles, err = filepath.Glob(filepath.Join("db", "product", "queries", "*.sql"))
 		require.NoError(t, err)
 	}
-	require.NotEmpty(t, queryFiles, "expected at least one db/queries/*.sql file")
+	require.NotEmpty(t, queryFiles, "expected at least one product query SQL file")
 
 	prohibitedTerms := []string{
 		"pull_request",
@@ -152,43 +151,12 @@ func TestQueryContract_CreateAgentMessageWithNextSequence_DependsOnLockedSession
 	assert.Regexp(t, regexp.MustCompile(`(?is)\bwhere\s+session_id\s*=\s*ls\.id\b`), section)
 }
 
-func TestQueryContract_RunnerPoolQueriesAreConsolidated(t *testing.T) {
-	t.Parallel()
-
-	sql := readQueryFile(t, "runner_pool.sql")
-	requiredQueries := []string{
-		"UpsertRunner",
-		"TouchRunnerHeartbeat",
-		"ClaimIdleRunner",
-		"ReleaseRunner",
-		"TerminateRunner",
-		"ListStaleRunners",
-		"ClaimAvailableRunner",
-		"ListRunners",
-		"CountRunners",
-		"CleanupStaleRunners",
-	}
-	for _, queryName := range requiredQueries {
-		re := regexp.MustCompile(`(?m)^--\s*name:\s*` + regexp.QuoteMeta(queryName) + `\s*:[a-z]+\s*$`)
-		assert.Regexpf(t, re, sql, "runner_pool.sql missing query %s", queryName)
-	}
-
-	runnersFileCandidates := []string{
-		filepath.Join("..", "..", "db", "queries", "runners.sql"),
-		filepath.Join("db", "queries", "runners.sql"),
-	}
-	for _, candidate := range runnersFileCandidates {
-		_, err := os.Stat(candidate)
-		assert.ErrorIsf(t, err, os.ErrNotExist, "runners.sql should be removed after query consolidation (%s)", candidate)
-	}
-}
-
 func readQueryFile(t *testing.T, file string) string {
 	t.Helper()
 
 	candidates := []string{
-		filepath.Join("..", "..", "db", "queries", file),
-		filepath.Join("db", "queries", file),
+		filepath.Join("..", "..", "db", "product", "queries", file),
+		filepath.Join("db", "product", "queries", file),
 	}
 
 	for _, candidate := range candidates {

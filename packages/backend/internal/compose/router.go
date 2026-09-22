@@ -18,6 +18,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -110,6 +111,15 @@ func buildRouter(
 	// runner handler. Their SQL belongs to the deployment adapter.
 	hosted := adminRunnerHandler != nil
 	clusterQueries := deploymentdb.New(pool)
+	var ownerBoundary identity.OwnerAuthorizer
+	if config.IsSingleOwner(cfg.Auth) {
+		ownerBoundary = identity.NewSingleOwnerBoundary(queries)
+	}
+	allowedOrigins := apiAllowedOrigins(cfg)
+	if authHandler != nil {
+		// Credential endpoints and CORS consume the same exact allowlist.
+		authHandler.AllowedOrigins = append([]string(nil), allowedOrigins...)
+	}
 
 	// Ticket 12: feature-flag gates for non-MVP route families. Each gate is a
 	// closure over cfg.FeatureFlags so flipping the flag at config-load time
@@ -210,6 +220,7 @@ func buildRouter(
 		sseTicketAuth = middleware.SSETicketAuth(
 			middleware.NewSSETicketValidatorChain(sseTicketValidators...),
 			sseTicketMetrics,
+			ownerBoundary,
 		)
 	}
 
@@ -611,6 +622,7 @@ func buildRouter(
 			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/{job}/trials/{requestID}", repoGatewayHandler.PutRepositoryJobTrial)
 			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/{job}/comments/{step}", repoGatewayHandler.PutRepositoryJobComment)
 			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/{job}/manual/{requestID}", repoGatewayHandler.PutRepositoryJobManual)
+			r.With(gateWorkflows).Put("/api/gateways/{gatewayID}/repository-jobs/ci/check-receipts/{requestID}", repoGatewayHandler.PutRepositoryCheckReceipt)
 			r.Handle("/api/gateways/{gatewayID}", http.HandlerFunc(repoGatewayHandler.Relay))
 			r.Handle("/api/gateways/{gatewayID}/*", http.HandlerFunc(repoGatewayHandler.Relay))
 		})
@@ -934,6 +946,9 @@ func buildRouter(
 		// WITHOUT the valid worker bearer, so no protection is lost by the skip.
 		r.Use(lfsauth.HTTPMiddleware(lfsAuthManager))
 		r.Use(authLoader(queries, cfg.Auth))
+		if config.IsSingleOwner(cfg.Auth) {
+			r.Use(middleware.RejectTenantProvisioning)
+		}
 		r.Use(apiCSRFMiddleware)
 		r.Use(middleware.ExcludePaths(middleware.GlobalAPIRateLimit(queries), "/api/search/", "/api/_test/", "/api/telemetry/", "/api/auth/github/token-exchange"))
 
@@ -967,10 +982,20 @@ func buildRouter(
 			r.Get("/feature-flags", featureFlagHandler.GetFeatureFlags)
 		}
 
-		if cfg.Auth.EnableKeyAuth {
+		// Wallet/key auth is an account-provisioning surface. A self-hosted
+		// installation has one persisted owner and must not expose a second
+		// signup path, even when a carried-over config enables key auth.
+		if cfg.Auth.EnableKeyAuth && !config.IsSingleOwner(cfg.Auth) {
 			r.With(middleware.AuthRateLimit(queries)).Get("/auth/key/nonce", authHandler.GetKeyAuthNonce)
 			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/verify", authHandler.PostKeyAuthVerify)
 			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/token", authHandler.PostKeyAuthToken)
+		}
+		if config.IsSingleOwner(cfg.Auth) && authHandler.LocalService != nil {
+			r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/local/status", authHandler.GetLocalIdentityStatus)
+			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/bootstrap", authHandler.PostLocalBootstrap)
+			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/login", authHandler.PostLocalLogin)
+			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/token", authHandler.PostLocalToken)
+			r.With(middleware.AuthRateLimit(queries), middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/auth/local/password", authHandler.PostLocalPassword)
 		}
 		// Direct GitHub App OAuth (browser sign-in / connect + CLI login).
 		// These interactive routes use the looser "auth_interactive" scope
@@ -1320,6 +1345,10 @@ func buildRouter(
 					r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), gateWorkflows)...).Post("/repository-source/retain", repoGatewayHandler.RetainRepositorySource)
 					r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateWorkflows)...).Get("/repository-jobs/{job}/dispatches", repoGatewayHandler.GetRepositoryJobDispatches)
 					r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), gateWorkflows)...).Post("/repository-jobs/{job}/pause", repoGatewayHandler.PauseRepositoryJob)
+					r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), middleware.RequireMatchingRepositoryRestriction, gateWorkflows)...).Get("/repository-jobs/{job}/approvals", repoGatewayHandler.GetRepositoryJobApprovals)
+					// A repository-bound workspace or agent credential must not stamp
+					// the human approval whose authority it later consumes.
+					r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), middleware.RejectRepositoryRestrictedToken, gateWorkflows)...).Post("/repository-jobs/{job}/approvals", repoGatewayHandler.PostRepositoryJobApproval)
 				}
 				workflowWriteRepo := append([]func(http.Handler) http.Handler{}, writeRepo...)
 				workflowWriteRepo = append(workflowWriteRepo, gateWorkflows)
@@ -1849,7 +1878,7 @@ func buildRouter(
 					r.With(readAdmin...).Get("/sandbox/environment-images", workspaceHandler.EnvironmentImages.ListBaseImages)
 					r.With(writeAdmin...).Post("/sandbox/environment-images", workspaceHandler.EnvironmentImages.RegisterBaseImage)
 				}
-				if adminUserHandler != nil {
+				if adminUserHandler != nil && !config.IsSingleOwner(cfg.Auth) {
 					r.With(readAdmin...).Get("/users", adminUserHandler.ListUsers)
 					r.With(writeAdmin...).Post("/users", adminUserHandler.CreateUser)
 					r.With(writeAdmin...).Delete("/users/{username}", adminUserHandler.DeleteUser)

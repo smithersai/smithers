@@ -75,8 +75,7 @@ func TestAddTeamMember_AndTeamRepoMapping(t *testing.T) {
 	var repoID int64
 	err = pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'team-repo', 'team-repo', '', 's1', TRUE, 'main') RETURNING id`,
+		`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'team-repo', 'team-repo', '', TRUE, 'main') RETURNING id`,
 		org.ID,
 	).Scan(&repoID)
 	require.NoError(t, err)
@@ -379,8 +378,7 @@ func TestAddTeamRepoIfOrgRepo_EnforcesOrgOwnership(t *testing.T) {
 	var orgRepoID int64
 	err = pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'org-safe-repo', 'org-safe-repo', '', 's1', TRUE, 'main') RETURNING id`,
+		`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'org-safe-repo', 'org-safe-repo', '', TRUE, 'main') RETURNING id`,
 		org.ID,
 	).Scan(&orgRepoID)
 	require.NoError(t, err)
@@ -503,16 +501,14 @@ func TestCountTeamRepos(t *testing.T) {
 	var repoOneID int64
 	err = pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'repo-one', 'repo-one', '', 's1', TRUE, 'main') RETURNING id`,
+		`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'repo-one', 'repo-one', '', TRUE, 'main') RETURNING id`,
 		org.ID,
 	).Scan(&repoOneID)
 	require.NoError(t, err)
 	var repoTwoID int64
 	err = pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (org_id, name, lower_name, description, storage_set_id, is_public, default_bookmark)
-		 VALUES ($1, 'repo-two', 'repo-two', '', 's1', TRUE, 'main') RETURNING id`,
+		`INSERT INTO repositories (org_id, name, lower_name, description, is_public, default_bookmark) VALUES ($1, 'repo-two', 'repo-two', '', TRUE, 'main') RETURNING id`,
 		org.ID,
 	).Scan(&repoTwoID)
 	require.NoError(t, err)

@@ -18,9 +18,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
-	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type mockAuthService struct {
@@ -407,7 +407,8 @@ func TestAuthHandler_GetGitHubCallback_StaleCLICookieDoesNotHijackBrowserLogin(t
 				return services.CreateTokenResult{}, nil
 			},
 		},
-		AuthConfig: defaultRouteAuthConfig(),
+		AuthConfig:   defaultRouteAuthConfig(),
+		PublicOrigin: "https://code.smithers.sh",
 	}
 
 	// The CLI cookie is bound to a DIFFERENT flow's state verifier (an
@@ -419,8 +420,8 @@ func TestAuthHandler_GetGitHubCallback_StaleCLICookieDoesNotHijackBrowserLogin(t
 	handler.GetGitHubOAuthCallback(rec, req)
 
 	require.Equal(t, http.StatusFound, rec.Code)
-	// No service-provided RedirectURL: the handler falls back to the app host
-	// so direct api.jjhub.tech callbacks don't land on the API's 404 page.
+	// No service-provided RedirectURL: the handler falls back to the composed
+	// public origin so direct API callbacks don't land on the API's 404 page.
 	assert.Equal(t, "https://code.smithers.sh/", rec.Header().Get("Location"))
 	sessionCookie := cookieByName(rec.Result().Cookies(), "smithers_session")
 	require.NotNil(t, sessionCookie)

@@ -268,6 +268,8 @@ type LinearSyncOp = db.LinearSyncOp
 
 type LinearSyncRun = db.LinearSyncRun
 
+type LocalCredential = db.LocalCredential
+
 type MemoryCleanupItem struct {
 	CleanupTaskID int64              `json:"cleanup_task_id"`
 	MemoryID      string             `json:"memory_id"`
@@ -439,6 +441,50 @@ type PairState = db.PairState
 
 type PinnedIssue = db.PinnedIssue
 
+type PlueStorageRepositoryPlacement struct {
+	RepositoryID        int64              `json:"repository_id"`
+	ReservationToken    string             `json:"reservation_token"`
+	StorageSetID        string             `json:"storage_set_id"`
+	State               string             `json:"state"`
+	CapacityBytes       int64              `json:"capacity_bytes"`
+	PlacementGeneration int64              `json:"placement_generation"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+	PublishedAt         pgtype.Timestamptz `json:"published_at"`
+	ReleasedAt          pgtype.Timestamptz `json:"released_at"`
+}
+
+type PlueStorageStorageNode struct {
+	ID                   string             `json:"id"`
+	StorageSetID         string             `json:"storage_set_id"`
+	BaseUrl              string             `json:"base_url"`
+	Zone                 string             `json:"zone"`
+	ActivationGeneration int64              `json:"activation_generation"`
+	State                string             `json:"state"`
+	LastSeenAt           pgtype.Timestamptz `json:"last_seen_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+type PlueStorageStorageSet struct {
+	ID                string      `json:"id"`
+	State             string      `json:"state"`
+	RoutingGeneration int64       `json:"routing_generation"`
+	ActiveNodeID      pgtype.Text `json:"active_node_id"`
+	CapacityBytes     int64       `json:"capacity_bytes"`
+	ReservedBytes     int64       `json:"reserved_bytes"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+}
+
+type ProductJobDispatch = db.ProductJobDispatch
+
+type ProductJobEvent = db.ProductJobEvent
+
+type ProductJobRequest = db.ProductJobRequest
+
+type ProductJobStream = db.ProductJobStream
+
 type ProtectedBookmark = db.ProtectedBookmark
 
 type ProviderConnection = db.ProviderConnection
@@ -533,6 +579,12 @@ type RepositoryAgentEnvironment = db.RepositoryAgentEnvironment
 
 type RepositoryAgentEnvironmentSecret = db.RepositoryAgentEnvironmentSecret
 
+type RepositoryCiCheckReceipt = db.RepositoryCiCheckReceipt
+
+type RepositoryCreationJob = db.RepositoryCreationJob
+
+type RepositoryJobApproval = db.RepositoryJobApproval
+
 type RepositoryJobComment = db.RepositoryJobComment
 
 type RepositoryJobDispatch = db.RepositoryJobDispatch
@@ -581,26 +633,7 @@ type RepositoryProvisioningOperation struct {
 
 type RepositorySecret = db.RepositorySecret
 
-type RepositoryStorageOperation struct {
-	RepositoryID  int64              `json:"repository_id"`
-	OperationType string             `json:"operation_type"`
-	Token         string             `json:"token"`
-	StorageSetID  string             `json:"storage_set_id"`
-	SourceOwner   string             `json:"source_owner"`
-	SourceRepo    string             `json:"source_repo"`
-	SourceUserID  pgtype.Int8        `json:"source_user_id"`
-	SourceOrgID   pgtype.Int8        `json:"source_org_id"`
-	TargetOwner   pgtype.Text        `json:"target_owner"`
-	TargetRepo    pgtype.Text        `json:"target_repo"`
-	TargetUserID  pgtype.Int8        `json:"target_user_id"`
-	TargetOrgID   pgtype.Int8        `json:"target_org_id"`
-	ClaimToken    pgtype.Text        `json:"claim_token"`
-	ClaimedAt     pgtype.Timestamptz `json:"claimed_at"`
-	Attempts      int32              `json:"attempts"`
-	LastError     pgtype.Text        `json:"last_error"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
-}
+type RepositoryStorageOperation = db.RepositoryStorageOperation
 
 type RepositoryVariable = db.RepositoryVariable
 
@@ -826,6 +859,8 @@ type SandboxVolume struct {
 }
 
 type SearchRateLimit = db.SearchRateLimit
+
+type SelfHostOwner = db.SelfHostOwner
 
 type ShareListing = db.ShareListing
 

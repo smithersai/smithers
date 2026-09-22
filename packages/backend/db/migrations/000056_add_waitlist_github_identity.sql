@@ -1,3 +1,0 @@
-ALTER TABLE alpha_waitlist_entries
-    ADD COLUMN IF NOT EXISTS github_username VARCHAR(255) NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS github_avatar_url VARCHAR(2048) NOT NULL DEFAULT '';

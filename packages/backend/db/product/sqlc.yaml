@@ -1,12 +1,9 @@
 version: "2"
-# Source-of-truth policy:
-# - Schema and queries live in db/ in this repo.
-# - This config generates Go from those same files.
-# - Any schema change must be made in db/schema.sql first.
-# - sqlc generates Go here.
+# Product migrations are the only authored product DDL. The combined hosted
+# schema is generated from these migrations and private cluster sources.
 sql:
   - engine: "postgresql"
-    schema: "migrations/0001_product_baseline.sql"
+    schema: "migrations/"
     queries: "queries/"
     strict_function_checks: true
     gen:

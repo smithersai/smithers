@@ -2,79 +2,16 @@ package services
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"net/url"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/smithersai/smithers/packages/backend/db/product"
-	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
-// newProductImportTestPool exercises the public product migration in an
-// isolated database, independent of the hosted integration schema and fences.
-func newProductImportTestPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	if agentTestDB == nil && os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL") == "" {
-		t.Skip("PostgreSQL integration database is unavailable")
-	}
-	raw := os.Getenv("SMITHERS_PRODUCT_TEST_DATABASE_URL")
-	if raw == "" {
-		raw = getTestDatabaseURL()
-	}
-	ctx := context.Background()
-	adminURL, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(ctx, adminURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var suffix [8]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		t.Fatal(err)
-	}
-	name := "smithers_import_" + hex.EncodeToString(suffix[:])
-	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if _, err := admin.Exec(context.Background(), `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
-			t.Errorf("drop product import test database: %v", err)
-		}
-		_ = admin.Close(context.Background())
-	})
-	dbURL := *adminURL
-	dbURL.Path = "/" + name
-	poolConfig, err := pgxpool.ParseConfig(dbURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	poolConfig.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
-		database.ConfigureSQLCTypes(conn.TypeMap())
-		return nil
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	if err := product.Apply(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
-	return pool
-}
-
 func TestProductImportReservationSurvivesRestartAndPublishesOnce(t *testing.T) {
-	pool := newProductImportTestPool(t)
+	pool := newProductTestPool(t)
 	ctx := context.Background()
 	var userID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO users(username, lower_username)

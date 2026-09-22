@@ -126,7 +126,7 @@ func (p githubImportCovWorkspaceProvisioner) CreateWorkspaceAsync(context.Contex
 
 func TestGitHubImport_Cov_StartGetAndDetachedFailure(t *testing.T) {
 	ctx := context.Background()
-	pool := newProductImportTestPool(t)
+	pool := newProductTestPool(t)
 	queries := db.New(pool)
 	username := githubImportCovRepoName(t, "importer") + "-" + uuid.NewString()[:8]
 	var user db.User

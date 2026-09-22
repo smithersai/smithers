@@ -13,19 +13,48 @@ import (
 
 type claimRecord struct {
 	Status            string
+	State             State
 	Policy            EffectPolicy
 	ExternalStartedAt *time.Time
+	ExternalAttempt   int
 	CancelRequested   bool
 }
 
 // Claim takes one ready external operation without blocking other workers.
 // The monotonic generation and random token together fence every later write.
 func (store *Store) Claim(ctx context.Context, workerID string, lease time.Duration) (Claim, error) {
+	return store.ClaimForOperations(ctx, workerID, lease, nil)
+}
+
+// ClaimOperations is the operation-filtered public form used by typed product
+// workers. Nil matches all operations; a non-nil empty list matches none.
+func (store *Store) ClaimOperations(ctx context.Context, workerID string, lease time.Duration, operations []string) (Claim, error) {
 	if workerID == "" {
 		return Claim{}, errors.New("jobs: worker ID is required")
 	}
 	if lease <= 0 {
 		return Claim{}, errors.New("jobs: positive lease is required")
+	}
+	if operations != nil && len(operations) == 0 {
+		return Claim{}, ErrNoWork
+	}
+	return store.ClaimForOperations(ctx, workerID, lease, operations)
+}
+
+// ClaimForOperations limits a worker to exact product-operation names. An
+// empty list retains Claim's catch-all behavior. This lets one shared queue
+// host typed handlers without allowing a Flow worker to consume unrelated
+// product work.
+func (store *Store) ClaimForOperations(ctx context.Context, workerID string, lease time.Duration, operations []string) (Claim, error) {
+	if workerID == "" {
+		return Claim{}, errors.New("jobs: worker ID is required")
+	}
+	if lease <= 0 {
+		return Claim{}, errors.New("jobs: positive lease is required")
+	}
+	operations, err := normalizeOperationFilter(operations)
+	if err != nil {
+		return Claim{}, err
 	}
 	token := uuid.NewString()
 	leaseMilliseconds := lease.Milliseconds()
@@ -36,7 +65,7 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 	if err != nil {
 		return Claim{}, err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 
 	var claim Claim
 	err = tx.QueryRow(ctx, `
@@ -46,7 +75,8 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 			JOIN product_job_requests request ON request.id = dispatch.operation_id
 			WHERE dispatch.status = 'ready'
 			  AND dispatch.next_attempt_at <= clock_timestamp()
-			  AND request.state = 'accepted'
+			  AND request.state IN ('accepted', 'running', 'waiting')
+			  AND (cardinality($4::text[]) = 0 OR request.operation = ANY($4::text[]))
 			ORDER BY dispatch.next_attempt_at, dispatch.operation_id
 			FOR UPDATE OF dispatch SKIP LOCKED
 			LIMIT 1
@@ -64,16 +94,16 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 		SELECT request.id, request.tenant_id, request.principal_id, request.operation,
 		       request.request_id, request.payload, request.authorization_context,
 		       claimed.effect_policy, claimed.effect_key, claimed.external_receipt,
-		       claimed.attempt,
+		       claimed.attempt, claimed.external_attempt,
 		       claimed.generation, claimed.claim_token, claimed.worker_id,
 		       claimed.lease_expires_at, claimed.reconcile_required,
 		       request.cancellation_requested
 		FROM claimed JOIN product_job_requests request ON request.id=claimed.operation_id`,
-		token, workerID, leaseMilliseconds).Scan(
+		token, workerID, leaseMilliseconds, operations).Scan(
 		&claim.OperationID, &claim.Scope.TenantID, &claim.Scope.PrincipalID,
 		&claim.Operation, &claim.RequestID, &claim.Payload, &claim.AuthorizationContext,
 		&claim.EffectPolicy, &claim.EffectKey, &claim.ExternalReceipt,
-		&claim.Attempt, &claim.Generation,
+		&claim.Attempt, &claim.ExternalAttempt, &claim.Generation,
 		&claim.Token, &claim.WorkerID, &claim.LeaseExpiresAt, &claim.NeedsReconciliation,
 		&claim.CancellationRequested,
 	)
@@ -83,16 +113,18 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 	if err != nil {
 		return Claim{}, err
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE product_job_requests SET state='dispatching', updated_at=clock_timestamp()
-		WHERE id=$1`, claim.OperationID); err != nil {
+	if err := tx.QueryRow(ctx, `
+		UPDATE product_job_requests
+		SET state=CASE WHEN state='accepted' THEN 'dispatching' ELSE state END,
+		    updated_at=clock_timestamp()
+		WHERE id=$1 RETURNING state`, claim.OperationID).Scan(&claim.State); err != nil {
 		return Claim{}, err
 	}
 	data, _ := json.Marshal(map[string]any{
 		"attempt": claim.Attempt, "generation": claim.Generation,
-		"reconcile": claim.NeedsReconciliation,
+		"externalAttempt": claim.ExternalAttempt, "reconcile": claim.NeedsReconciliation,
 	})
-	if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.claimed", StateDispatching, data); err != nil {
+	if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.claimed", claim.State, data); err != nil {
 		return Claim{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -101,10 +133,27 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 	return claim, nil
 }
 
+func normalizeOperationFilter(operations []string) ([]string, error) {
+	result := make([]string, 0, len(operations))
+	seen := make(map[string]struct{}, len(operations))
+	for _, operation := range operations {
+		if operation == "" {
+			return nil, errors.New("jobs: operation filter contains an empty name")
+		}
+		if _, exists := seen[operation]; exists {
+			continue
+		}
+		seen[operation] = struct{}{}
+		result = append(result, operation)
+	}
+	return result, nil
+}
+
 func lockClaim(ctx context.Context, tx pgx.Tx, claim Claim) (claimRecord, error) {
 	var record claimRecord
 	err := tx.QueryRow(ctx, `
-		SELECT dispatch.status, dispatch.effect_policy, dispatch.external_started_at,
+		SELECT dispatch.status, request.state, dispatch.effect_policy, dispatch.external_started_at,
+		       dispatch.external_attempt,
 		       request.cancellation_requested
 		FROM product_job_dispatches dispatch
 		JOIN product_job_requests request ON request.id=dispatch.operation_id
@@ -113,7 +162,7 @@ func lockClaim(ctx context.Context, tx pgx.Tx, claim Claim) (claimRecord, error)
 		  AND dispatch.status='claimed'
 		  AND dispatch.lease_expires_at > clock_timestamp()
 		FOR UPDATE OF dispatch, request`, claim.OperationID, claim.Token, claim.Generation, claim.WorkerID).Scan(
-		&record.Status, &record.Policy, &record.ExternalStartedAt, &record.CancelRequested,
+		&record.Status, &record.State, &record.Policy, &record.ExternalStartedAt, &record.ExternalAttempt, &record.CancelRequested,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return claimRecord{}, ErrClaimLost
@@ -152,43 +201,122 @@ func (store *Store) Heartbeat(ctx context.Context, claim Claim, lease time.Durat
 // MarkExternalStarted must be committed immediately before invoking the
 // provider. Recovery uses this marker to avoid repeating ambiguous effects.
 func (store *Store) MarkExternalStarted(ctx context.Context, claim Claim, observation json.RawMessage) error {
+	_, err := store.BeginExternal(ctx, claim, observation)
+	return err
+}
+
+// BeginExternal commits the pre-call marker and returns the stable delivery
+// attempt to send to the external authority. Recovery may replace the
+// PostgreSQL claim, but it must reuse this value for an ambiguous launch.
+func (store *Store) BeginExternal(ctx context.Context, claim Claim, observation json.RawMessage) (int, error) {
 	canonical, err := canonicalJSON(observation, true)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	record, err := lockClaim(ctx, tx, claim)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if record.ExternalStartedAt != nil {
-		return tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return 0, err
+		}
+		return record.ExternalAttempt, nil
+	}
+	if record.CancelRequested {
+		return 0, ErrCancellationRequested
+	}
+	externalAttempt := record.ExternalAttempt
+	if externalAttempt <= 0 {
+		return 0, errors.New("jobs: external attempt must be positive")
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE product_job_dispatches
 		SET external_started_at=clock_timestamp(),
+		    external_attempt=$2, external_receipt=COALESCE(external_receipt, $3),
 		    reconcile_required=false, updated_at=clock_timestamp()
-		WHERE operation_id=$1`, claim.OperationID); err != nil {
-		return err
+		WHERE operation_id=$1`, claim.OperationID, externalAttempt, canonical); err != nil {
+		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE product_job_requests SET state='running', updated_at=clock_timestamp()
 		WHERE id=$1`, claim.OperationID); err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.started", StateRunning, canonical); err != nil {
-		return err
+		return 0, err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return externalAttempt, nil
 }
 
 // MarkWaiting persists the external system's acceptance receipt separately
 // from both the original request receipt and the eventual terminal receipt.
 func (store *Store) MarkWaiting(ctx context.Context, claim Claim, receipt json.RawMessage) error {
+	_, err := store.Checkpoint(ctx, claim, receipt)
+	return err
+}
+
+// Checkpoint atomically advances the external receipt and ordered product
+// journal. An identical receipt is a no-op, so reconnecting the same runtime
+// cursor cannot duplicate a product checkpoint.
+func (store *Store) Checkpoint(ctx context.Context, claim Claim, receipt json.RawMessage) (bool, error) {
+	canonical, err := canonicalJSON(receipt, true)
+	if err != nil {
+		return false, err
+	}
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return false, err
+	}
+	defer rollback(tx)
+	record, err := lockClaim(ctx, tx, claim)
+	if err != nil {
+		return false, err
+	}
+	changed, err := updateExternalReceipt(ctx, tx, claim.OperationID, canonical)
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE product_job_requests
+		SET state='waiting', updated_at=clock_timestamp() WHERE id=$1`, claim.OperationID); err != nil {
+		return false, err
+	}
+	changed = changed || record.State != StateWaiting
+	if changed {
+		if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.waiting", StateWaiting, canonical); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+func updateExternalReceipt(ctx context.Context, tx pgx.Tx, operationID string, receipt json.RawMessage) (bool, error) {
+	var changed bool
+	err := tx.QueryRow(ctx, `UPDATE product_job_dispatches
+		SET external_receipt=$2, updated_at=clock_timestamp()
+		WHERE operation_id=$1 AND external_receipt IS DISTINCT FROM $2::jsonb
+		RETURNING true`, operationID, receipt).Scan(&changed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return changed, err
+}
+
+// Park persists a non-terminal external checkpoint and releases the fenced
+// claim for later reconciliation. No process must stay alive merely because a
+// canonical runtime is parked or still executing.
+func (store *Store) Park(ctx context.Context, claim Claim, receipt json.RawMessage, retryAfter time.Duration) error {
 	canonical, err := canonicalJSON(receipt, true)
 	if err != nil {
 		return err
@@ -197,23 +325,44 @@ func (store *Store) MarkWaiting(ctx context.Context, claim Claim, receipt json.R
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
-	if _, err := lockClaim(ctx, tx, claim); err != nil {
+	defer rollback(tx)
+	record, err := lockClaim(ctx, tx, claim)
+	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
-		SET external_receipt=$2, updated_at=clock_timestamp() WHERE operation_id=$1`,
-		claim.OperationID, canonical); err != nil {
+	if record.ExternalStartedAt == nil {
+		return errors.New("jobs: cannot park before an external effect starts")
+	}
+	if record.CancelRequested {
+		retryAfter = 0
+	}
+	changed, err := updateExternalReceipt(ctx, tx, claim.OperationID, canonical)
+	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE product_job_requests
 		SET state='waiting', updated_at=clock_timestamp() WHERE id=$1`, claim.OperationID); err != nil {
 		return err
 	}
-	if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.waiting", StateWaiting, canonical); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
+		SET status='ready', claim_token=NULL, worker_id=NULL, claimed_at=NULL,
+		    lease_expires_at=NULL, reconcile_required=true,
+		    next_attempt_at=clock_timestamp() + ($2 * interval '1 millisecond'),
+		    updated_at=clock_timestamp()
+		WHERE operation_id=$1`, claim.OperationID, maxMilliseconds(retryAfter)); err != nil {
 		return err
 	}
+	if changed || record.State != StateWaiting {
+		if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.waiting", StateWaiting, canonical); err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
+}
+
+// Defer is the Flow-dispatch spelling of Park.
+func (store *Store) Defer(ctx context.Context, claim Claim, receipt json.RawMessage, retryAfter time.Duration) error {
+	return store.Park(ctx, claim, receipt, retryAfter)
 }
 
 func (store *Store) Complete(ctx context.Context, claim Claim, receipt json.RawMessage) error {
@@ -228,6 +377,18 @@ func (store *Store) AcknowledgeCancellation(ctx context.Context, claim Claim, re
 	return store.settleClaim(ctx, claim, StateCancelled, "operation.cancelled", receipt, true)
 }
 
+// RecordExternalCancellation settles a canonical external cancellation even
+// when the product caller did not initiate it.
+func (store *Store) RecordExternalCancellation(ctx context.Context, claim Claim, receipt json.RawMessage) error {
+	return store.settleClaim(ctx, claim, StateCancelled, "operation.cancelled", receipt, false)
+}
+
+// ExternalCancelled is the canonical-runtime spelling of
+// RecordExternalCancellation.
+func (store *Store) ExternalCancelled(ctx context.Context, claim Claim, receipt json.RawMessage) error {
+	return store.RecordExternalCancellation(ctx, claim, receipt)
+}
+
 func (store *Store) settleClaim(ctx context.Context, claim Claim, state State, eventType string, receipt json.RawMessage, requireCancellation bool) error {
 	canonical, err := canonicalJSON(receipt, true)
 	if err != nil {
@@ -237,7 +398,7 @@ func (store *Store) settleClaim(ctx context.Context, claim Claim, state State, e
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	record, err := lockClaim(ctx, tx, claim)
 	if err != nil {
 		return err
@@ -271,7 +432,7 @@ func (store *Store) Abandon(ctx context.Context, claim Claim, cause error, delay
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	record, err := lockClaim(ctx, tx, claim)
 	if err != nil {
 		return err
@@ -320,8 +481,12 @@ func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID strin
 		return err
 	}
 	reconcile := externalStarted && (policy == EffectReconcile || cancelRequested)
+	nextState := StateAccepted
+	if reconcile {
+		nextState = StateWaiting
+	}
 	if _, err := tx.Exec(ctx, `UPDATE product_job_requests
-		SET state='accepted', updated_at=clock_timestamp() WHERE id=$1`, operationID); err != nil {
+		SET state=$2, updated_at=clock_timestamp() WHERE id=$1`, operationID, nextState); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
@@ -337,7 +502,7 @@ func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID strin
 		eventType = "operation.reconciliation_required"
 	}
 	data, _ := json.Marshal(map[string]any{"reason": message, "reconcile": reconcile})
-	_, err := appendEvent(ctx, tx, scope, operationID, eventType, StateAccepted, data)
+	_, err := appendEvent(ctx, tx, scope, operationID, eventType, nextState, data)
 	return err
 }
 
@@ -354,12 +519,22 @@ func maxMilliseconds(delay time.Duration) int64 {
 // RecoverExpired reclaims up to limit expired leases. Multiple processes can
 // run it concurrently; SKIP LOCKED partitions recovery work.
 func (store *Store) RecoverExpired(ctx context.Context, limit int) (int, error) {
+	return store.RecoverExpiredForOperations(ctx, nil, limit)
+}
+
+// RecoverExpiredForOperations reclaims only leases owned by the named product
+// operation kinds. An empty list retains RecoverExpired's catch-all behavior.
+func (store *Store) RecoverExpiredForOperations(ctx context.Context, operations []string, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, nil
 	}
+	operations, err := normalizeOperationFilter(operations)
+	if err != nil {
+		return 0, err
+	}
 	recovered := 0
 	for recovered < limit {
-		didRecover, err := store.recoverOne(ctx)
+		didRecover, err := store.recoverOne(ctx, operations)
 		if err != nil {
 			return recovered, err
 		}
@@ -371,12 +546,12 @@ func (store *Store) RecoverExpired(ctx context.Context, limit int) (int, error) 
 	return recovered, nil
 }
 
-func (store *Store) recoverOne(ctx context.Context) (bool, error) {
+func (store *Store) recoverOne(ctx context.Context, operations []string) (bool, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	var scope Scope
 	var operationID string
 	var policy EffectPolicy
@@ -388,9 +563,10 @@ func (store *Store) recoverOne(ctx context.Context) (bool, error) {
 		FROM product_job_dispatches dispatch
 		JOIN product_job_requests request ON request.id=dispatch.operation_id
 		WHERE dispatch.status='claimed' AND dispatch.lease_expires_at <= clock_timestamp()
+		  AND (cardinality($1::text[]) = 0 OR request.operation = ANY($1::text[]))
 		ORDER BY dispatch.lease_expires_at, dispatch.operation_id
 		FOR UPDATE OF dispatch, request SKIP LOCKED
-		LIMIT 1`).Scan(&scope.TenantID, &scope.PrincipalID, &operationID, &policy, &externalStarted, &cancelRequested)
+		LIMIT 1`, operations).Scan(&scope.TenantID, &scope.PrincipalID, &operationID, &policy, &externalStarted, &cancelRequested)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -429,7 +605,7 @@ func (store *Store) ResolveUncertain(ctx context.Context, scope Scope, operation
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background()) //nolint:errcheck
+	defer rollback(tx)
 	operation, err := queryOperation(ctx, tx, scope, operationID, true)
 	if err != nil {
 		return err
@@ -444,7 +620,7 @@ func (store *Store) ResolveUncertain(ctx context.Context, scope Scope, operation
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
-			SET status='ready', external_started_at=NULL, external_receipt=NULL,
+			SET status='ready', external_started_at=NULL, external_attempt=external_attempt+1, external_receipt=NULL,
 			    reconcile_required=false, next_attempt_at=clock_timestamp(),
 			    last_error='', updated_at=clock_timestamp()
 			WHERE operation_id=$1`, operationID); err != nil {

@@ -507,7 +507,7 @@ func testConfigAllFlagsOn() *config.Config {
 			SessionSecret:    "router-test-session-secret",
 			LFSSigningSecret: routerTestLFSSigningSecret,
 		},
-		Email: config.EmailConfig{BaseURL: "https://plue.test"},
+		Server: config.ServerConfig{PublicURL: "https://plue.test"},
 		FeatureFlags: config.FeatureFlagsConfig{
 			StackedPRs:           true,
 			Workflows:            true,

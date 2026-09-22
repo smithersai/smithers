@@ -36,6 +36,14 @@ type StorageSetURLResolver interface {
 	ResolveStorageSetURL(ctx context.Context, storageSetID string) (string, error)
 }
 
+// StorageRouteResolver returns the stable, trusted route identifier for a
+// repository while its row is still visible. Durable move/delete intents
+// persist this ID so recovery can resolve the current URL after a restart or
+// routing generation change.
+type StorageRouteResolver interface {
+	ResolveStorageRouteKey(ctx context.Context, owner, repo string) (string, error)
+}
+
 // StaticStorageSetResolver implements StorageSetResolver by always returning a fixed URL.
 // Useful for tests or single-host deployments.
 type StaticStorageSetResolver struct {
@@ -48,6 +56,12 @@ func (s *StaticStorageSetResolver) ResolveURL(ctx context.Context, owner, repo s
 
 func (s *StaticStorageSetResolver) ResolveStorageSetURL(context.Context, string) (string, error) {
 	return s.URL, nil
+}
+
+func (s *StaticStorageSetResolver) ResolveStorageRouteKey(context.Context, string, string) (string, error) {
+	// This is an opaque route key for the configured single service, including
+	// the in-process local handler; it is not a cluster placement identifier.
+	return "static", nil
 }
 
 // Client communicates with the repo-host service.
@@ -97,11 +111,11 @@ type setDefaultBookmarkRequest struct {
 // not need to resolve storage placement after the coordinating DB transaction
 // commits or rolls back.
 type StagedDelete struct {
-	BaseURL      string
-	StorageSetID string
-	Token        string
-	Owner        string
-	Repo         string
+	BaseURL         string
+	StorageRouteKey string
+	Token           string
+	Owner           string
+	Repo            string
 }
 
 // StagedMove identifies a repo-host move journal created before repository
@@ -109,13 +123,13 @@ type StagedDelete struct {
 // token let callers idempotently roll the move back or finalize it even after
 // the repository disappears from the source namespace.
 type StagedMove struct {
-	BaseURL      string
-	StorageSetID string
-	Token        string
-	SrcOwner     string
-	SrcRepo      string
-	DstOwner     string
-	DstRepo      string
+	BaseURL         string
+	StorageRouteKey string
+	Token           string
+	SrcOwner        string
+	SrcRepo         string
+	DstOwner        string
+	DstRepo         string
 }
 
 // StagedProvision is a client-owned, token-bound repository creation journal.
@@ -753,21 +767,22 @@ func (c *Client) PrepareStagedMove(ctx context.Context, srcOwner, srcRepo, dstOw
 	if err != nil {
 		return StagedMove{}, fmt.Errorf("generate staged move token: %w", err)
 	}
-	baseURL, sourceErr := c.resolver.ResolveURL(ctx, srcOwner, srcRepo)
+	routeKey, baseURL, sourceErr := c.resolveStagedRoute(ctx, srcOwner, srcRepo)
 	if sourceErr != nil {
 		var destinationErr error
-		baseURL, destinationErr = c.resolver.ResolveURL(ctx, dstOwner, dstRepo)
+		routeKey, baseURL, destinationErr = c.resolveStagedRoute(ctx, dstOwner, dstRepo)
 		if destinationErr != nil {
 			return StagedMove{Token: token, SrcOwner: srcOwner, SrcRepo: srcRepo, DstOwner: dstOwner, DstRepo: dstRepo}, fmt.Errorf("resolve storage set url for staged move: %w", errors.Join(sourceErr, destinationErr))
 		}
 	}
 	staged := StagedMove{
-		BaseURL:  baseURL,
-		Token:    token,
-		SrcOwner: srcOwner,
-		SrcRepo:  srcRepo,
-		DstOwner: dstOwner,
-		DstRepo:  dstRepo,
+		BaseURL:         baseURL,
+		StorageRouteKey: routeKey,
+		Token:           token,
+		SrcOwner:        srcOwner,
+		SrcRepo:         srcRepo,
+		DstOwner:        dstOwner,
+		DstRepo:         dstRepo,
 	}
 	return staged, nil
 }
@@ -777,7 +792,7 @@ func (c *Client) PrepareStagedMove(ctx context.Context, srcOwner, srcRepo, dstOw
 // idempotent even when the first HTTP response is lost.
 func (c *Client) ExecuteStagedMove(ctx context.Context, staged StagedMove) error {
 	defer c.observeOperationDuration("ExecuteStagedMove", time.Now())
-	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageSetID, staged.BaseURL)
+	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageRouteKey, staged.BaseURL)
 	if resolveErr != nil {
 		return resolveErr
 	}
@@ -836,7 +851,7 @@ func (c *Client) FinalizeStagedMove(ctx context.Context, staged StagedMove) erro
 }
 
 func (c *Client) completeStagedMove(ctx context.Context, staged StagedMove, action string) error {
-	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageSetID, staged.BaseURL)
+	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageRouteKey, staged.BaseURL)
 	if resolveErr != nil {
 		return resolveErr
 	}
@@ -907,18 +922,35 @@ func (c *Client) PrepareStagedDelete(ctx context.Context, owner, repo string) (S
 	if err != nil {
 		return StagedDelete{}, fmt.Errorf("generate staged delete token: %w", err)
 	}
-	baseURL, err := c.resolver.ResolveURL(ctx, owner, repo)
+	routeKey, baseURL, err := c.resolveStagedRoute(ctx, owner, repo)
 	if err != nil {
 		return StagedDelete{Token: token, Owner: owner, Repo: repo}, fmt.Errorf("resolve storage set url: %w", err)
 	}
-	return StagedDelete{BaseURL: baseURL, Token: token, Owner: owner, Repo: repo}, nil
+	return StagedDelete{BaseURL: baseURL, StorageRouteKey: routeKey, Token: token, Owner: owner, Repo: repo}, nil
+}
+
+func (c *Client) resolveStagedRoute(ctx context.Context, owner, repo string) (string, string, error) {
+	if resolver, ok := c.resolver.(StorageRouteResolver); ok {
+		routeKey, err := resolver.ResolveStorageRouteKey(ctx, owner, repo)
+		if err != nil {
+			return "", "", err
+		}
+		if strings.TrimSpace(routeKey) == "" {
+			return "", "", fmt.Errorf("resolved repository route id is empty")
+		}
+		baseURL, err := c.resolveStorageSetURL(ctx, routeKey)
+		return routeKey, baseURL, err
+	}
+	// URL-only resolvers remain usable for ephemeral one-shot operations.
+	baseURL, err := c.resolver.ResolveURL(ctx, owner, repo)
+	return "", baseURL, err
 }
 
 // ExecuteStagedDelete installs/continues the prepared delete journal and
 // atomically moves repository components out of the live namespace.
 func (c *Client) ExecuteStagedDelete(ctx context.Context, staged StagedDelete) error {
 	defer c.observeOperationDuration("ExecuteStagedDelete", time.Now())
-	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageSetID, staged.BaseURL)
+	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageRouteKey, staged.BaseURL)
 	if resolveErr != nil {
 		return resolveErr
 	}
@@ -971,7 +1003,7 @@ func (c *Client) FinalizeStagedDelete(ctx context.Context, staged StagedDelete) 
 }
 
 func (c *Client) completeStagedDelete(ctx context.Context, staged StagedDelete, action string) error {
-	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageSetID, staged.BaseURL)
+	baseURL, resolveErr := c.trustedStagedStorageURL(ctx, staged.StorageRouteKey, staged.BaseURL)
 	if resolveErr != nil {
 		return resolveErr
 	}
@@ -989,12 +1021,12 @@ func (c *Client) completeStagedDelete(ctx context.Context, staged StagedDelete, 
 	)
 }
 
-func (c *Client) trustedStagedStorageURL(ctx context.Context, storageSetID, compatibilityURL string) (string, error) {
-	if strings.TrimSpace(storageSetID) != "" {
-		return c.resolveStorageSetURL(ctx, storageSetID)
+func (c *Client) trustedStagedStorageURL(ctx context.Context, routeKey, compatibilityURL string) (string, error) {
+	if strings.TrimSpace(routeKey) != "" {
+		return c.resolveStorageSetURL(ctx, routeKey)
 	}
 	// Compatibility for one-shot callers that have not persisted an operation.
-	// Durable recovery handles always carry storage_set_id and never trust a URL
+	// Durable recovery handles always carry a storage route key and never trust a URL
 	// read from PostgreSQL.
 	compatibilityURL = strings.TrimRight(strings.TrimSpace(compatibilityURL), "/")
 	if compatibilityURL == "" {

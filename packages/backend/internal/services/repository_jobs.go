@@ -40,6 +40,9 @@ type RepositoryJobStore interface {
 	ListDueRepositoryJobSchedules(context.Context, int32) ([]db.RepositoryJobRegistration, error)
 	AdvanceRepositoryJobSchedule(context.Context, db.AdvanceRepositoryJobScheduleParams) (int64, error)
 	ListRepositoryGitHubSources(context.Context, int64) ([]db.ListRepositoryGitHubSourcesRow, error)
+	UpsertRepositoryJobApproval(context.Context, db.UpsertRepositoryJobApprovalParams) (db.RepositoryJobApproval, error)
+	GetRepositoryJobApproval(context.Context, db.GetRepositoryJobApprovalParams) (db.RepositoryJobApproval, error)
+	ListRepositoryJobApprovals(context.Context, db.ListRepositoryJobApprovalsParams) ([]db.RepositoryJobApproval, error)
 }
 
 // The gateway authenticates a registration and executes through the existing
@@ -92,19 +95,48 @@ type RegisterRepositoryJobInput struct {
 	Label            string                   `json:"label,omitempty"`
 	Schedule         string                   `json:"schedule,omitempty"`
 	Input            json.RawMessage          `json:"input"`
+	// A flow trigger names the plan a person approved; the five built-in jobs
+	// leave both empty and keep their existing wire body.
+	ApprovedPlanID     string `json:"approved_plan_id,omitempty"`
+	ApprovedPlanDigest string `json:"approved_plan_digest,omitempty"`
 }
 
 var repositoryJobNames = map[string]bool{"issues": true, "review": true, "ci": true, "feature": true, "chores": true}
 var repositoryJobFlowName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,199}$`)
 var repositoryJobDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
+// The five built-in names carry no colon, so the namespaces are disjoint and a
+// registered flow can never take a built-in job's row.
+var repositoryFlowJobKey = regexp.MustCompile(`^flow:[a-z0-9][a-z0-9-]{0,63}$`)
+
+func isRepositoryJobName(job string) bool {
+	return repositoryJobNames[job] || repositoryFlowJobKey.MatchString(job)
+}
+
+func validateRepositoryJobEnvelope(raw json.RawMessage) error {
+	var envelope struct {
+		Capabilities []string `json:"capabilities"`
+		Flows        []string `json:"flows"`
+		Budget       struct {
+			Tokens       float64 `json:"tokens"`
+			Milliseconds float64 `json:"milliseconds"`
+		} `json:"budget"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil || envelope.Capabilities == nil || envelope.Flows == nil ||
+		envelope.Budget.Tokens <= 0 || envelope.Budget.Milliseconds <= 0 || envelope.Budget.Milliseconds > float64((2*time.Hour)/time.Millisecond) {
+		return pkgerrors.BadRequest("automatic work needs the reviewed envelope and finite token/time limits")
+	}
+	return nil
+}
+
 func validateRepositoryJob(job string, input RegisterRepositoryJobInput, now time.Time) (pgtype.Timestamptz, error) {
 	bad := func(message string) (pgtype.Timestamptz, error) {
 		return pgtype.Timestamptz{}, pkgerrors.BadRequest(message)
 	}
-	if !repositoryJobNames[job] || !repositoryJobFlowName.MatchString(input.FlowID) || strings.Contains(input.FlowID, "..") {
+	if !isRepositoryJobName(job) || !repositoryJobFlowName.MatchString(input.FlowID) || strings.Contains(input.FlowID, "..") {
 		return bad("invalid repository job or registered flow")
 	}
+	flowTrigger := repositoryFlowJobKey.MatchString(job)
 	if _, err := uuid.Parse(input.WorkspaceID); err != nil {
 		return bad("workspace_id must identify the owning workspace")
 	}
@@ -120,20 +152,20 @@ func validateRepositoryJob(job string, input RegisterRepositoryJobInput, now tim
 	if input.Mode == "enabled" && (input.TrialIssueNumber != 0 || input.TrialSource != "") {
 		return bad("an enabled registration cannot retain trial-only scope")
 	}
-	var envelope struct {
-		Capabilities []string `json:"capabilities"`
-		Flows        []string `json:"flows"`
-		Budget       struct {
-			Tokens       float64 `json:"tokens"`
-			Milliseconds float64 `json:"milliseconds"`
-		} `json:"budget"`
+	if flowTrigger && (input.Mode != "enabled" || len(input.Events) != 0 || input.Label != "" || input.Schedule == "") {
+		return bad("a flow trigger registers one enabled UTC cron schedule and no event rules")
 	}
-	if json.Unmarshal(input.Envelope, &envelope) != nil || envelope.Capabilities == nil || envelope.Flows == nil ||
-		envelope.Budget.Tokens <= 0 || envelope.Budget.Milliseconds <= 0 || envelope.Budget.Milliseconds > float64((2*time.Hour)/time.Millisecond) {
+	if validateRepositoryJobEnvelope(input.Envelope) != nil {
 		return bad("automatic work needs the reviewed envelope and finite token/time limits")
 	}
 	if len(input.Input) == 0 || !json.Valid(input.Input) || string(input.Input) == "null" {
 		return bad("input must contain the reviewed repository configuration")
+	}
+	if flowTrigger && (input.ApprovedPlanID == "" || len(input.ApprovedPlanID) > 200 || !repositoryJobDigest.MatchString(input.ApprovedPlanDigest)) {
+		return bad("a flow trigger must name the plan a person approved")
+	}
+	if !flowTrigger && (input.ApprovedPlanID != "" || input.ApprovedPlanDigest != "") {
+		return bad("a flow trigger must name the plan a person approved")
 	}
 	if len(input.Events) > 16 || len(input.Label) > 100 {
 		return bad("too many event rules or an invalid label")
@@ -156,8 +188,8 @@ func validateRepositoryJob(job string, input RegisterRepositoryJobInput, now tim
 	if input.Schedule == "" {
 		return pgtype.Timestamptz{}, nil
 	}
-	if input.Mode != "enabled" || job != "chores" || len(input.Schedule) > 200 {
-		return bad("only enabled chores may register a schedule")
+	if input.Mode != "enabled" || (job != "chores" && !flowTrigger) || len(input.Schedule) > 200 {
+		return bad("only an enabled chores job or an enabled flow trigger may register a schedule")
 	}
 	if len(strings.Fields(input.Schedule)) != 5 {
 		return bad("schedule must have five cron fields in UTC")
@@ -260,6 +292,11 @@ func (s *RepositoryJobService) Register(ctx context.Context, gatewayID, bearer, 
 			return empty, pkgerrors.Conflict("repository ownership changed")
 		}
 	}
+	if repositoryFlowJobKey.MatchString(job) {
+		if err := s.requireApprovedPlan(ctx, store, repo.ID, job, input); err != nil {
+			return empty, err
+		}
+	}
 	row, err := store.RegisterRepositoryJob(ctx, db.RegisterRepositoryJobParams{
 		RepositoryID: repo.ID, WorkspaceID: target.WorkspaceID, UserID: target.UserID,
 		Job: job, Mode: input.Mode, Revision: input.Revision, Digest: input.Digest,
@@ -281,11 +318,100 @@ func (s *RepositoryJobService) Register(ctx context.Context, gatewayID, bearer, 
 	return row, nil
 }
 
+// A reader may see evaluation-case identity, never held-out answers. Explicit
+// allowlists keep newly added case fields withheld by default.
+var readableRepositoryJobCase = map[string]bool{"id": true, "name": true, "required": true}
+
+func readableRepositoryJobCases(evaluations json.RawMessage) json.RawMessage {
+	empty := json.RawMessage(`[]`)
+	var stored []json.RawMessage
+	if json.Unmarshal(evaluations, &stored) != nil {
+		return empty
+	}
+	readable := make([]json.RawMessage, 0, len(stored))
+	for _, evaluation := range stored {
+		identity, fields := map[string]json.RawMessage{}, map[string]json.RawMessage{}
+		if json.Unmarshal(evaluation, &fields) == nil {
+			for name, value := range fields {
+				if readableRepositoryJobCase[name] {
+					identity[name] = value
+				}
+			}
+		}
+		encoded, err := json.Marshal(identity)
+		if err != nil {
+			return empty
+		}
+		readable = append(readable, encoded)
+	}
+	encoded, err := json.Marshal(readable)
+	if err != nil {
+		return empty
+	}
+	return encoded
+}
+
+var readableRepositoryJobDraft = map[string]bool{"steps": true, "checks": true, "cases": true,
+	"replies": true, "landing": true, "scope": true, "label": true, "schedule": true,
+	"budgetMinutes": true, "connectIssues": true, "choreEvent": true, "trialTitle": true, "trialBody": true}
+
+func readableRepositoryJobConfiguration(job string, configuration json.RawMessage) json.RawMessage {
+	withheld := json.RawMessage(`{}`)
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(configuration, &fields) != nil {
+		return withheld
+	}
+	input, ok := fields["input"]
+	if !ok {
+		return configuration
+	}
+	var stored map[string]json.RawMessage
+	if repositoryFlowJobKey.MatchString(job) || json.Unmarshal(input, &stored) != nil {
+		fields["input"] = withheld
+	} else {
+		draft := map[string]json.RawMessage{}
+		for name, value := range stored {
+			if !readableRepositoryJobDraft[name] {
+				continue
+			}
+			if name == "cases" {
+				value = readableRepositoryJobCases(value)
+			}
+			draft[name] = value
+		}
+		redacted, err := json.Marshal(draft)
+		if err != nil {
+			return withheld
+		}
+		fields["input"] = redacted
+	}
+	result, err := json.Marshal(fields)
+	if err != nil {
+		return withheld
+	}
+	return result
+}
+
 func (s *RepositoryJobService) List(ctx context.Context, repoID, userID int64) ([]db.RepositoryJobRegistration, error) {
-	if _, err := s.authorizedRepo(ctx, repoID, userID, false); err != nil {
+	repo, err := s.authorizedRepo(ctx, repoID, userID, false)
+	if err != nil {
 		return nil, err
 	}
-	return s.q.ListRepositoryJobRegistrations(ctx, repoID)
+	rows, err := s.q.ListRepositoryJobRegistrations(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	writer, err := canWriteRepo(ctx, s.q, repo, userID)
+	if err != nil {
+		return nil, err
+	}
+	if writer {
+		return rows, nil
+	}
+	for i := range rows {
+		rows[i].Configuration = readableRepositoryJobConfiguration(rows[i].Job, rows[i].Configuration)
+	}
+	return rows, nil
 }
 
 type RepositorySource struct {
@@ -311,7 +437,7 @@ func (s *RepositoryJobService) Source(ctx context.Context, repoID, userID int64)
 }
 
 func (s *RepositoryJobService) Pause(ctx context.Context, repoID, userID int64, job string) ([]db.RepositoryJobRegistration, error) {
-	if !repositoryJobNames[job] {
+	if !isRepositoryJobName(job) {
 		return nil, pkgerrors.BadRequest("unknown repository job")
 	}
 	if _, err := s.authorizedRepo(ctx, repoID, userID, true); err != nil {
@@ -337,7 +463,7 @@ type RepositoryJobDispatchReceipt struct {
 }
 
 func (s *RepositoryJobService) Dispatches(ctx context.Context, repoID, userID int64, job string) ([]RepositoryJobDispatchReceipt, error) {
-	if !repositoryJobNames[job] {
+	if !isRepositoryJobName(job) {
 		return nil, pkgerrors.BadRequest("unknown repository job")
 	}
 	if _, err := s.authorizedRepo(ctx, repoID, userID, false); err != nil {

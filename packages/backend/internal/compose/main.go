@@ -153,6 +153,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("failed to load config", "error", err)
 		return err
 	}
+	expectedAuthMode := config.AuthModeSelfHosted
+	if options.Role.hosted() {
+		expectedAuthMode = config.AuthModeMultitenant
+	}
+	if cfg.Auth.Mode != expectedAuthMode {
+		return fmt.Errorf("backend role %q requires auth.mode=%q, got %q", options.Role, expectedAuthMode, cfg.Auth.Mode)
+	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: !options.Role.hosted() && options.Repository != nil,
 	}); err != nil {
@@ -250,14 +257,15 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	database.StartPoolStatsCollector(poolStatsCtx, pool, smithersMetrics, 15*time.Second)
 
 	queries := db.New(pool)
+	if err := services.ValidateLocalIdentityStartup(ctx, queries, cfg.Auth); err != nil {
+		return fmt.Errorf("validate local identity startup: %w", err)
+	}
 	// Hosted infrastructure adds cluster-only SQL without changing the product
 	// query model used by every common service and the local deployment.
 	hostedQueries := deploymentdb.New(pool)
 	var runnerStaleSweeper *runnerpool.RunnerPool
 	runtimeMetricsStore := services.NewRuntimeMetricsStore(hostedQueries, pool)
 	if options.Role.hosted() {
-		// These gauges read runner_pool and other fleet state, which is absent
-		// from the single-owner product schema.
 		services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
 		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(hostedQueries))
 		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(hostedQueries)
@@ -338,12 +346,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		webhookDispatcher = webhooks.NewLinearDispatcher(webhookDispatcher, linearSyncSvc)
 	}
 	sshAuthzService := services.NewSSHAuthorizationService(queries)
-	gitHTTPProxyService := services.NewGitHTTPProxyService(
-		queries,
-		sshAuthzService,
-		repoHostClient,
+	gitHTTPOptions := []services.GitHTTPProxyServiceOption{
 		services.WithGitHTTPRunnerTaskTokenSecret(os.Getenv("SMITHERS_AGENT_TOKEN")),
-	)
+	}
+	if config.IsSingleOwner(cfg.Auth) {
+		gitHTTPOptions = append(gitHTTPOptions, services.WithGitHTTPSingleOwnerBoundary(queries))
+	}
+	gitHTTPProxyService := services.NewGitHTTPProxyService(queries, sshAuthzService, repoHostClient, gitHTTPOptions...)
 	orgService := services.NewOrgServiceWithPool(queries, pool, services.WithOrgWebhookDispatcher(webhookDispatcher))
 	keyAuthVerifier, githubClient, err := buildAuthProviders(cfg.Auth)
 	if err != nil {
@@ -961,10 +970,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	authHandler := &routes.AuthHandler{
 		Service:      authService,
 		AuthConfig:   cfg.Auth,
+		PublicOrigin: publicBaseURL,
 		AuditService: auditService,
 		SSETickets:   sseTicketManager,
 		// Login is a free warm of the per-user GitHub repo listing cache.
 		RepoListingWarmer: gitHubUserReposService,
+	}
+	if config.IsSingleOwner(cfg.Auth) {
+		authHandler.LocalService = authService
 	}
 	userHandler := &routes.UserHandler{
 		TokenService:   authService,
@@ -1513,6 +1526,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// webhooks are hints; this sweep (oldest staleness first, adaptive
 	// interval clamped 45s–8h, 14-strike hard fail) is the truth.
 	if options.Role.workers() {
+		if !options.Role.hosted() {
+			launchWorker(func() { repositoryStorageReconciler.Start(workerCtx) })
+		}
 		launchWorker(func() { gitHubSyncedRepoService.StartReconciler(workerCtx) })
 		launchWorker(func() { pairSessionService.StartStaleSweeper(workerCtx) })
 		agentService.StartSessionReaper(workerCtx, time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs)*time.Second)

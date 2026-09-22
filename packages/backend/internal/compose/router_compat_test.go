@@ -15,29 +15,24 @@ import (
 func testCORSConfig() *config.Config {
 	return &config.Config{
 		FeatureFlags: config.FeatureFlagsConfig{Workflows: true},
-		Email: config.EmailConfig{
-			BaseURL: "https://example.com",
-		},
+		Server:       config.ServerConfig{PublicURL: "https://example.com"},
 	}
 }
 
 func TestAPIAllowedOriginsUsesExplicitServerAllowlist(t *testing.T) {
 	cfg := &config.Config{
 		Server: config.ServerConfig{
+			PublicURL: "https://email.example",
 			AllowedOrigins: []string{
 				" http://127.0.0.1:5173, http://localhost:5173 ",
 				"https://app.example/path",
 			},
-		},
-		Email: config.EmailConfig{
-			BaseURL: "https://email.example",
 		},
 	}
 
 	assert.Equal(t, []string{
 		"http://127.0.0.1:5173",
 		"http://localhost:5173",
-		"https://app.example",
 	}, apiAllowedOrigins(cfg))
 }
 

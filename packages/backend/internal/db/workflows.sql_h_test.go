@@ -112,7 +112,7 @@ func TestWorkflowsSQL_H_DefinitionsRunsTasksAndStatusesRoundTrip(t *testing.T) {
 	assert.Equal(t, "success", canaries[0].Status)
 
 	assigned := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "assigned", `{"task":"assigned"}`)
-	runnerID := mustCreateRunner(t, pool, "workflows-h-runner-"+randSlug(t))
+	runnerID := int64(4242)
 	mustExec(t, pool, `UPDATE workflow_tasks SET runner_id = $1, assigned_at = NOW() WHERE id = $2`, runnerID, assigned.ID)
 	affected, err := q.MarkWorkflowTaskRunning(ctx, MarkWorkflowTaskRunningParams{ID: assigned.ID, RunnerID: pgtype.Int8{Int64: runnerID, Valid: true}})
 	require.NoError(t, err)

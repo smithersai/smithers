@@ -9,7 +9,7 @@ import "context"
 // rate_limit_quotas_ext.go pattern, so it does NOT require `zig build sqlc`.
 //
 // The predicate matches the reaper's live-VM definition (ListStaleActiveSessions
-// in db/queries/agent.sql): a session is counted only while status='active' AND
+// in db/product/queries/agent.sql): a session is counted only while status='active' AND
 // it has been dispatched (started_at IS NOT NULL, stamped by
 // ReserveAgentSessionVMSlot just before VM provisioning begins so provisioning
 // sessions count toward the cap) AND it is not tombstoned (deleted_at IS NULL).

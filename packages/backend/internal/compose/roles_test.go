@@ -1,6 +1,11 @@
 package compose
 
-import "testing"
+import (
+	"context"
+	"io"
+	"strings"
+	"testing"
+)
 
 func TestRoleWorkerAndListenerMatrix(t *testing.T) {
 	cases := []struct {
@@ -20,5 +25,25 @@ func TestRoleWorkerAndListenerMatrix(t *testing.T) {
 	}
 	if Role("unknown").valid() {
 		t.Fatal("unknown role was accepted")
+	}
+}
+
+func TestRoleRequiresMatchingIdentityTopology(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode string
+		role       Role
+		want       string
+	}{
+		{name: "local cannot use multitenant identity", mode: "multitenant", role: RoleLocal, want: `requires auth.mode="selfhost"`},
+		{name: "hosted cannot use single owner identity", mode: "selfhost", role: RoleHostedAPI, want: `requires auth.mode="multitenant"`},
+		{name: "worker cannot use single owner identity", mode: "selfhost", role: RoleHostedWorker, want: `requires auth.mode="multitenant"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SMITHERS_AUTH_MODE", tc.mode)
+			err := RunWithOptions(context.Background(), nil, io.Discard, io.Discard, Options{Role: tc.role})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("role %q with auth.mode=%q returned %v, want %q", tc.role, tc.mode, err, tc.want)
+			}
+		})
 	}
 }

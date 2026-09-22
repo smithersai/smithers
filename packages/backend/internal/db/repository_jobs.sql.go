@@ -129,6 +129,72 @@ func (q *Queries) ClaimRepositoryJobDispatches(ctx context.Context, limit int32)
 	return items, nil
 }
 
+const createRepositoryCiCheckReceipt = `-- name: CreateRepositoryCiCheckReceipt :one
+INSERT INTO repository_ci_check_receipts
+  (repository_id,registration_id,revision,digest,execution_digest,workspace_id,run_id,execution_id,
+   commit_sha,change_id,base_commit_sha,checks,context,commit_status_id,request_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id, repository_id, registration_id, revision, digest, execution_digest, workspace_id, run_id, execution_id, commit_sha, change_id, base_commit_sha, checks, context, commit_status_id, request_id, created_at
+`
+
+type CreateRepositoryCiCheckReceiptParams struct {
+	RepositoryID    int64           `json:"repository_id"`
+	RegistrationID  string          `json:"registration_id"`
+	Revision        int64           `json:"revision"`
+	Digest          string          `json:"digest"`
+	ExecutionDigest string          `json:"execution_digest"`
+	WorkspaceID     string          `json:"workspace_id"`
+	RunID           string          `json:"run_id"`
+	ExecutionID     string          `json:"execution_id"`
+	CommitSha       string          `json:"commit_sha"`
+	ChangeID        string          `json:"change_id"`
+	BaseCommitSha   string          `json:"base_commit_sha"`
+	Checks          json.RawMessage `json:"checks"`
+	Context         string          `json:"context"`
+	CommitStatusID  int64           `json:"commit_status_id"`
+	RequestID       string          `json:"request_id"`
+}
+
+func (q *Queries) CreateRepositoryCiCheckReceipt(ctx context.Context, arg CreateRepositoryCiCheckReceiptParams) (RepositoryCiCheckReceipt, error) {
+	row := q.db.QueryRow(ctx, createRepositoryCiCheckReceipt,
+		arg.RepositoryID,
+		arg.RegistrationID,
+		arg.Revision,
+		arg.Digest,
+		arg.ExecutionDigest,
+		arg.WorkspaceID,
+		arg.RunID,
+		arg.ExecutionID,
+		arg.CommitSha,
+		arg.ChangeID,
+		arg.BaseCommitSha,
+		arg.Checks,
+		arg.Context,
+		arg.CommitStatusID,
+		arg.RequestID,
+	)
+	var i RepositoryCiCheckReceipt
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.RegistrationID,
+		&i.Revision,
+		&i.Digest,
+		&i.ExecutionDigest,
+		&i.WorkspaceID,
+		&i.RunID,
+		&i.ExecutionID,
+		&i.CommitSha,
+		&i.ChangeID,
+		&i.BaseCommitSha,
+		&i.Checks,
+		&i.Context,
+		&i.CommitStatusID,
+		&i.RequestID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createRepositoryJobComment = `-- name: CreateRepositoryJobComment :one
 INSERT INTO repository_job_comments(dispatch_id,step,body,comment_id)
 VALUES ($1,$2,$3,$4) RETURNING dispatch_id, step, body, comment_id, created_at
@@ -280,6 +346,118 @@ func (q *Queries) GetEnabledRepositoryJobForManual(ctx context.Context, arg GetE
 		&i.ActivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRepositoryCiCheckReceipt = `-- name: GetRepositoryCiCheckReceipt :one
+SELECT id, repository_id, registration_id, revision, digest, execution_digest, workspace_id, run_id, execution_id, commit_sha, change_id, base_commit_sha, checks, context, commit_status_id, request_id, created_at FROM repository_ci_check_receipts WHERE registration_id=$1 AND request_id=$2
+`
+
+type GetRepositoryCiCheckReceiptParams struct {
+	RegistrationID string `json:"registration_id"`
+	RequestID      string `json:"request_id"`
+}
+
+func (q *Queries) GetRepositoryCiCheckReceipt(ctx context.Context, arg GetRepositoryCiCheckReceiptParams) (RepositoryCiCheckReceipt, error) {
+	row := q.db.QueryRow(ctx, getRepositoryCiCheckReceipt, arg.RegistrationID, arg.RequestID)
+	var i RepositoryCiCheckReceipt
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.RegistrationID,
+		&i.Revision,
+		&i.Digest,
+		&i.ExecutionDigest,
+		&i.WorkspaceID,
+		&i.RunID,
+		&i.ExecutionID,
+		&i.CommitSha,
+		&i.ChangeID,
+		&i.BaseCommitSha,
+		&i.Checks,
+		&i.Context,
+		&i.CommitStatusID,
+		&i.RequestID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRepositoryCiDispatchRunStatus = `-- name: GetRepositoryCiDispatchRunStatus :one
+SELECT d.status FROM repository_job_dispatches d
+JOIN repository_job_registrations r ON r.id=d.registration_id
+WHERE r.repository_id=$1 AND r.workspace_id=$2 AND d.run_id=$3::text
+ORDER BY (d.status IN ('failed','skipped')), d.created_at DESC, d.id DESC LIMIT 1
+`
+
+type GetRepositoryCiDispatchRunStatusParams struct {
+	RepositoryID int64  `json:"repository_id"`
+	WorkspaceID  string `json:"workspace_id"`
+	RunID        string `json:"run_id"`
+}
+
+// The receipt must name a run retained for this repository and workspace. A
+// usable dispatch is preferred over a retired one for the same run.
+func (q *Queries) GetRepositoryCiDispatchRunStatus(ctx context.Context, arg GetRepositoryCiDispatchRunStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRepositoryCiDispatchRunStatus, arg.RepositoryID, arg.WorkspaceID, arg.RunID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const getRepositoryCiLandingPolicy = `-- name: GetRepositoryCiLandingPolicy :one
+SELECT id, revision, digest, workspace_id, configuration
+FROM repository_job_registrations
+WHERE repository_id = $1 AND job = 'ci' AND mode = 'enabled'
+`
+
+type GetRepositoryCiLandingPolicyRow struct {
+	ID            string          `json:"id"`
+	Revision      int64           `json:"revision"`
+	Digest        string          `json:"digest"`
+	WorkspaceID   string          `json:"workspace_id"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+// Deliberately not filtered on enabled: PauseRepositoryJob keeps the row, so
+// pausing CI keeps the landing protection it registered.
+func (q *Queries) GetRepositoryCiLandingPolicy(ctx context.Context, repositoryID int64) (GetRepositoryCiLandingPolicyRow, error) {
+	row := q.db.QueryRow(ctx, getRepositoryCiLandingPolicy, repositoryID)
+	var i GetRepositoryCiLandingPolicyRow
+	err := row.Scan(
+		&i.ID,
+		&i.Revision,
+		&i.Digest,
+		&i.WorkspaceID,
+		&i.Configuration,
+	)
+	return i, err
+}
+
+const getRepositoryJobApproval = `-- name: GetRepositoryJobApproval :one
+SELECT repository_id, job, plan_digest, plan_id, flow_id, envelope, approved_by, approved_at FROM repository_job_approvals
+WHERE repository_id=$1 AND job=$2 AND plan_digest=$3
+`
+
+type GetRepositoryJobApprovalParams struct {
+	RepositoryID int64  `json:"repository_id"`
+	Job          string `json:"job"`
+	PlanDigest   string `json:"plan_digest"`
+}
+
+func (q *Queries) GetRepositoryJobApproval(ctx context.Context, arg GetRepositoryJobApprovalParams) (RepositoryJobApproval, error) {
+	row := q.db.QueryRow(ctx, getRepositoryJobApproval, arg.RepositoryID, arg.Job, arg.PlanDigest)
+	var i RepositoryJobApproval
+	err := row.Scan(
+		&i.RepositoryID,
+		&i.Job,
+		&i.PlanDigest,
+		&i.PlanID,
+		&i.FlowID,
+		&i.Envelope,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
@@ -775,6 +953,45 @@ func (q *Queries) ListRepositoryJobAdmissions(ctx context.Context, limit int32) 
 	return items, nil
 }
 
+const listRepositoryJobApprovals = `-- name: ListRepositoryJobApprovals :many
+SELECT repository_id, job, plan_digest, plan_id, flow_id, envelope, approved_by, approved_at FROM repository_job_approvals
+WHERE repository_id=$1 AND job=$2 ORDER BY approved_at DESC LIMIT 50
+`
+
+type ListRepositoryJobApprovalsParams struct {
+	RepositoryID int64  `json:"repository_id"`
+	Job          string `json:"job"`
+}
+
+func (q *Queries) ListRepositoryJobApprovals(ctx context.Context, arg ListRepositoryJobApprovalsParams) ([]RepositoryJobApproval, error) {
+	rows, err := q.db.Query(ctx, listRepositoryJobApprovals, arg.RepositoryID, arg.Job)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryJobApproval{}
+	for rows.Next() {
+		var i RepositoryJobApproval
+		if err := rows.Scan(
+			&i.RepositoryID,
+			&i.Job,
+			&i.PlanDigest,
+			&i.PlanID,
+			&i.FlowID,
+			&i.Envelope,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepositoryJobDispatches = `-- name: ListRepositoryJobDispatches :many
 SELECT d.id, d.registration_id, d.revision, d.digest, d.delivery_key, d.source, d.event_type, d.event_action, d.issue_number, d.payload, d.status, d.plan, d.run_id, d.signal_attempt, d.receipt, d.claim_token, d.lease_until, d.attempts, d.next_attempt_at, d.error, d.created_at, d.updated_at FROM repository_job_dispatches d
 JOIN repository_job_registrations r ON r.id=d.registration_id
@@ -872,6 +1089,20 @@ func (q *Queries) ListRepositoryJobRegistrations(ctx context.Context, repository
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockRepositoryCiCheckReceipt = `-- name: LockRepositoryCiCheckReceipt :exec
+SELECT pg_advisory_xact_lock(hashtextextended('repository_ci_check_receipt:' || $1::text || ':' || $2::text,0))
+`
+
+type LockRepositoryCiCheckReceiptParams struct {
+	RegistrationID string `json:"registration_id"`
+	RequestID      string `json:"request_id"`
+}
+
+func (q *Queries) LockRepositoryCiCheckReceipt(ctx context.Context, arg LockRepositoryCiCheckReceiptParams) error {
+	_, err := q.db.Exec(ctx, lockRepositoryCiCheckReceipt, arg.RegistrationID, arg.RequestID)
+	return err
 }
 
 const lockRepositoryJobComment = `-- name: LockRepositoryJobComment :exec
@@ -1171,4 +1402,50 @@ FROM repository_job_registrations r WHERE r.id=d.registration_id
 func (q *Queries) SkipRetiredRepositoryJobDispatches(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, skipRetiredRepositoryJobDispatches)
 	return err
+}
+
+const upsertRepositoryJobApproval = `-- name: UpsertRepositoryJobApproval :one
+INSERT INTO repository_job_approvals
+  (repository_id,job,plan_digest,plan_id,flow_id,envelope,approved_by)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
+ON CONFLICT (repository_id,job,plan_digest) DO UPDATE SET
+  plan_id=EXCLUDED.plan_id, flow_id=EXCLUDED.flow_id, envelope=EXCLUDED.envelope,
+  approved_by=EXCLUDED.approved_by, approved_at=now()
+RETURNING repository_id, job, plan_digest, plan_id, flow_id, envelope, approved_by, approved_at
+`
+
+type UpsertRepositoryJobApprovalParams struct {
+	RepositoryID int64           `json:"repository_id"`
+	Job          string          `json:"job"`
+	PlanDigest   string          `json:"plan_digest"`
+	PlanID       string          `json:"plan_id"`
+	FlowID       string          `json:"flow_id"`
+	Envelope     json.RawMessage `json:"envelope"`
+	ApprovedBy   int64           `json:"approved_by"`
+}
+
+// approved_by and approved_at come from the authenticated session and now();
+// no request field can name either of them.
+func (q *Queries) UpsertRepositoryJobApproval(ctx context.Context, arg UpsertRepositoryJobApprovalParams) (RepositoryJobApproval, error) {
+	row := q.db.QueryRow(ctx, upsertRepositoryJobApproval,
+		arg.RepositoryID,
+		arg.Job,
+		arg.PlanDigest,
+		arg.PlanID,
+		arg.FlowID,
+		arg.Envelope,
+		arg.ApprovedBy,
+	)
+	var i RepositoryJobApproval
+	err := row.Scan(
+		&i.RepositoryID,
+		&i.Job,
+		&i.PlanDigest,
+		&i.PlanID,
+		&i.FlowID,
+		&i.Envelope,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+	)
+	return i, err
 }
