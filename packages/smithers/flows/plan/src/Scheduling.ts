@@ -33,6 +33,13 @@ export interface Usage {
 }
 
 /**
+ * The part of a plan node admission reads. Declared once here so the three
+ * places that name it, {@link Candidate}, {@link Admission} and
+ * {@link Policy.admit}, cannot drift apart.
+ */
+type Schedulable = Pick<Plan.PlanNode, "id" | "kind" | "priority">
+
+/**
  * A ready node's scheduling state. `order` is its position in the compiled
  * plan, not arrival order. `waited` counts capacity-constrained admission
  * passes, not wall-clock time.
@@ -40,7 +47,7 @@ export interface Usage {
  * @since 1.0.0
  * @category models
  */
-export interface Candidate<N extends Pick<Plan.PlanNode, "id" | "kind" | "priority"> = Plan.PlanNode> {
+export interface Candidate<N extends Schedulable = Plan.PlanNode> {
   readonly node: N
   readonly order: number
   readonly waited: number
@@ -54,7 +61,7 @@ export interface Candidate<N extends Pick<Plan.PlanNode, "id" | "kind" | "priori
  * @since 1.0.0
  * @category models
  */
-export interface Admission<N extends Pick<Plan.PlanNode, "id" | "kind" | "priority"> = Plan.PlanNode> {
+export interface Admission<N extends Schedulable = Plan.PlanNode> {
   readonly admitted: ReadonlyArray<Candidate<N>>
   readonly deferred: ReadonlyArray<Candidate<N>>
   readonly agents: number
@@ -68,7 +75,7 @@ export interface Admission<N extends Pick<Plan.PlanNode, "id" | "kind" | "priori
  */
 export interface Policy {
   readonly limits: Usage
-  readonly admit: <N extends Pick<Plan.PlanNode, "id" | "kind" | "priority">>(
+  readonly admit: <N extends Schedulable>(
     ready: ReadonlyArray<Candidate<N>>,
     active: Usage
   ) => Admission<N>

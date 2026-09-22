@@ -140,7 +140,7 @@ describe("adopting a persisted module root", () => {
         } as never,
         catalog: {
           executables: [
-            ({ descriptor: approved, delegate: "coding/RunPlan" }) as unknown as Executable.Executable
+            ({ descriptor: approved, delegate: "coding/CommandCheck" }) as unknown as Executable.Executable
           ],
           refused: []
         }

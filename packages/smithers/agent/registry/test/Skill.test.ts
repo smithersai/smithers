@@ -76,18 +76,17 @@ describe("Skill", () => {
     ])
     expect(descriptor.flows).toEqual(parsed.success.allowedTools)
     expect(parsed.success.body).toBe(body.text)
-    expect(registryFlow.body?.({ args: "" }).ast).toMatchObject({
-      _tag: "Dynamic",
-      prompt: body.text,
-      flows: parsed.success.allowedTools
-    })
-    expect(lowered.success.body?.({ args: "" }).ast).toMatchObject({
-      _tag: "Dynamic",
-      prompt: body.text,
-      flows: parsed.success.allowedTools
-    })
-    expect(lowered.success({ args: "report.pdf" }).ast._tag).toBe("FlowCall")
-    expect(() => CoreGraph.build(lowered.success)).not.toThrow()
+    // A lowered skill declares the prompt and the collaborators it names, and
+    // carries no body: the model that runs it is the implementation a host
+    // supplies for the declared action, so the declaration is where the prompt
+    // and the tool list have to be readable.
+    expect(registryFlow.prompt).toBe(body.text)
+    expect(registryFlow.flows).toEqual(parsed.success.allowedTools)
+    expect(lowered.success.prompt).toBe(body.text)
+    expect(lowered.success.flows).toEqual(parsed.success.allowedTools)
+    expect(lowered.success.action).toBeDefined()
+    expect(lowered.success.call({ args: "report.pdf" }).ast._tag).toBe("FlowCall")
+    expect(() => CoreGraph.build(lowered.success.flow)).not.toThrow()
 
     const loaded = await Effect.runPromise(
       Effect.gen(function*() {

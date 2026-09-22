@@ -208,7 +208,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const ModelEvent = await import("@smthrs/model/ModelEvent")
   const Seat = await import("@smthrs/agent/Seat")
   const SeatResolver = await import("@smthrs/agent/SeatResolver")
-  const { Wiki } = await import("../wiki/workflow.ts")
+  const { default: Wiki } = await import("../wiki/flow.ts")
   const { agentLayers } = await import("../wiki/runtime.ts")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), evidence = await run(f.ops.collect(f.spec))
@@ -244,7 +244,8 @@ test("independent page reviews finish before exact citation assessment can fail"
   const { Action, Interpreter } = await import("@smthrs/flow")
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
-  const { ReviewPage, Wiki } = await import("../wiki/workflow.ts")
+  const { default: Wiki } = await import("../wiki/flow.ts")
+  const { ReviewPage } = await import("../wiki/workflow.ts")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), completed: string[] = []
   const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }), Interpreter.layer(Wiki),
@@ -267,7 +268,8 @@ test("one citation repair receives every bad citation and the same evidence, the
   const { Action, Interpreter } = await import("@smthrs/flow")
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
-  const { ReviewPage, Wiki } = await import("../wiki/workflow.ts")
+  const { default: Wiki } = await import("../wiki/flow.ts")
+  const { ReviewPage } = await import("../wiki/workflow.ts")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), calls: string[] = []
   let initial: ReviewedPage["evidence"] | undefined

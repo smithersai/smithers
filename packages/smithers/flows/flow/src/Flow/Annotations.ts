@@ -108,6 +108,29 @@ export const CaptureDefects = Context.Reference<boolean>(
 )
 
 /**
+ * Whether a catalog may offer this flow to a model, defaulting to yes.
+ *
+ * It answers a different question from {@link Capabilities}: that one says how
+ * much a flow is allowed to touch, this one says whether a model is shown the
+ * flow at all. A flow whose actions only one host implements is discoverable
+ * everywhere its file is, and teaching it to an agent running somewhere else
+ * offers a call that has no implementation to reach.
+ *
+ * `Flow.make`'s `modelInvocable` option writes it, which is what makes it
+ * readable by a catalog that projects a declaration from source text without
+ * importing this module, exactly as `capabilities` and `effects` are.
+ *
+ * @category annotations
+ * @since 0.1.0
+ */
+export const ModelInvocable = Context.Reference<boolean>(
+  "@smthrs/flow/Flow/ModelInvocable",
+  {
+    defaultValue: constTrue
+  }
+)
+
+/**
  * Marks a flow to suspend when it encounters any error.
  *
  * **Details**

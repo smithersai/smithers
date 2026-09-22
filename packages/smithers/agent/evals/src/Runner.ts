@@ -190,23 +190,19 @@ const boundedReason = (reason: string): string =>
 
 const scorerKeyOf = (binding: Binding): string => binding.scorer.scorerKey
 
-// A scorer is a flow, and a flow declared without a name is an anonymous
-// function whose `name` is the empty string. That is an absent name, not a
-// name, so it never reaches an observation.
-const scorerNameOf = (binding: Binding): string | undefined => {
-  const name = binding.scorer.name
-  return name === undefined || name.length === 0 ? undefined : name
-}
+// A scorer is a flow and every flow carries a name, so a run always has one to
+// report. A stored observation may still lack it, which is why `scorerLabel`
+// and the `Observation` field both keep the absent case.
+const scorerNameOf = (binding: Binding): string => binding.scorer.name
 
 const label = (binding: Binding): string =>
   scorerLabel({ scorer: scorerKeyOf(binding), scorerName: scorerNameOf(binding) })
 
 const inconclusive = (request: ScoreRequest, reason: string, at: string): Observation => {
-  const name = scorerNameOf(request.binding)
   return {
     case: request.case,
     scorer: scorerKeyOf(request.binding),
-    ...(name === undefined ? {} : { scorerName: name }),
+    scorerName: scorerNameOf(request.binding),
     stepKey: request.stepKey,
     kind: "inconclusive",
     reason,
@@ -320,12 +316,11 @@ const observationFor = (request: ScoreRequest, result: ScoreObservation, at: str
       at
     )
   }
-  const name = scorerNameOf(request.binding)
   const meta = source.meta
   return {
     case: request.case,
     scorer: scorerKeyOf(request.binding),
-    ...(name === undefined ? {} : { scorerName: name }),
+    scorerName: scorerNameOf(request.binding),
     stepKey: request.stepKey,
     kind: "score",
     score,

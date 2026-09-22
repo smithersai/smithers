@@ -22,15 +22,17 @@ runtime. [`effect`](https://effect.website) supplies `Schema`, `Context`,
 `Result`, and `Data`, which appear in this package's public types. Import it
 directly in your own code.
 
-Four runtime dependencies install with it:
+Five runtime dependencies install with it:
 
 - [`@smthrs/canonical`](/api/canonical) supplies the RFC 8785 canonical JSON
   serialization behind `Digest.canonical`.
 - [`@smthrs/crypto`](/api/crypto) supplies the synchronous SHA-256 behind
   `Digest.digest` and behind captured function identity.
-- [`@smthrs/plan`](/api/plan) owns the effect declaration model `Effects`
-  re-exports, so one declaration shape is narrowed by one rule wherever a flow
-  is built.
+- [`@smthrs/flow`](/api/flow) owns the flow, the action, and the graph builder a
+  signature lowers to, and `Graph` re-exports its builder.
+- [`@smthrs/plan`](/api/plan) owns the node model `Node` re-exports and the
+  effect declaration model `Effects` re-exports, so one node shape and one
+  declaration shape serve every package that plans.
 - [`yaml`](https://eemeli.org/yaml/) parses Agent Skills frontmatter with the
   failsafe schema.
 
@@ -59,9 +61,8 @@ the import specifier where a reader can see it.
 Two subpath families are blocked in the package's export map and are not part
 of the contract:
 
-- `@smthrs/core/internal/*` holds the AST representation, the effect path
-  index, and the frontmatter splitter. Their shapes change without a version
-  bump.
+- `@smthrs/core/internal/*` holds the Agent Skills frontmatter splitter. Its
+  shape changes without a version bump.
 - `@smthrs/core/*/index` is blocked so a deep import cannot reach a module's
   barrel by a second name.
 
@@ -73,6 +74,8 @@ of the contract:
 material. It does not execute anything. A host that runs what the plan
 describes adds the packages above it:
 
+- [`@smthrs/flow`](/api/flow) executes the flow a signature lowers to, and takes
+  the implementation of its action through `action.toLayer`.
 - [`@smthrs/plan`](/api/plan) compiles key material into step keys, performing
   the dependency-digest substitution this package deliberately leaves undone.
 - [`@smthrs/registry`](/api/registry) resolves the flow names a declaration
@@ -82,9 +85,9 @@ describes adds the packages above it:
   at its durable boundary.
 - [`@smthrs/agent`](/api/agent) runs the agent loop those declarations describe.
 
-For unit tests of a package that builds nodes, nothing else is needed:
-`TestRuntime` runs the deferred callbacks in memory. See
-[Test a declaration without a host](./guides/test-a-declaration.md).
+For unit tests of a package that builds signatures, `Graph.build` is enough: it
+plans without executing anything. Running what it planned needs
+[`@smthrs/flow`](/api/flow)'s interpreter and an engine.
 
 ## Next step
 

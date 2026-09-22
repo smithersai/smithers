@@ -15,10 +15,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 
 /**
  * Configuration for {@link make}.
@@ -34,12 +39,12 @@ import * as Compose from "./internal/Compose.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly capture: Flow.Any
-  readonly compare: Flow.Any
-  readonly alert?: Flow.Any | undefined
+  readonly capture: Member<R>
+  readonly compare: Member<R>
+  readonly alert?: Member<R> | undefined
   readonly baseline: unknown
 }
 
@@ -110,18 +115,30 @@ export const drifted = (value: unknown): boolean =>
   (typeof value === "object" && value !== null && "drifted" in value && value.drifted === true)
 
 /**
+ * The declared form of a drift detector.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type DriftDetectorFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * Declares the detection topology: capture, compare, and the alert arm.
  *
- * The alert call is declared whenever an alert flow is supplied. Core plans a
- * body by evaluating builders once against symbolic values, so a declaration
- * cannot branch on the comparison; declaring the alert is the conservative
- * answer, and capability analysis sees the paging authority a run may use.
- * {@link run} performs the real skip.
+ * The alert call is declared whenever an alert flow is supplied. Whether a run
+ * takes it is the comparison's answer, so the declaration carries the paging
+ * authority a run may use and {@link run} performs the real skip.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): DriftDetectorFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again. The baseline is
   // the caller's value: it enters key material as a literal, so an edit
@@ -131,27 +148,38 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const compare = options.compare
   const baseline = options.baseline
   const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: alert === undefined ? [capture, compare] : [capture, compare, alert],
-    body: Node.capture({ baseline, alerts: alert !== undefined }, (input) =>
-      Node.andThen(
-        Compose.call(capture, { input, baseline }),
-        Node.capture({ baseline }, (snapshot) =>
-          Node.andThen(
-            Compose.call(compare, { snapshot, baseline }),
-            Node.capture({ baseline }, (comparison) =>
-              alert === undefined
-                ? Node.succeed({ snapshot, comparison })
-                : Node.map(
-                  Compose.call(alert, { comparison, snapshot, baseline }),
-                  Node.capture({ baseline }, (raised) => ({ snapshot, comparison, alert: raised }))
-                ))
-          ))
-      ))
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
+    Node.bindPlanned(
+      callMember(capture, { input, baseline }),
+      Node.capture({ baseline }, (snapshot: Planned.Planned<unknown>) =>
+        Node.bindPlanned(
+          callMember(compare, { snapshot, baseline }),
+          Node.capture({ baseline }, (comparison: Planned.Planned<unknown>) =>
+            alert === undefined
+              ? Node.succeed({ snapshot, comparison })
+              // The raised alert joins the snapshot and the comparison inside a
+              // `Node.succeed`, which resolves all three planned references.
+              // Computing the record in a `Node.map` would compute on two
+              // planned values a mapper may only pass on.
+              : Node.bindPlanned(
+                callMember(alert, { comparison, snapshot, baseline }),
+                Node.capture(
+                  { baseline },
+                  (raised: Planned.Planned<unknown>) => Node.succeed({ snapshot, comparison, alert: raised })
+                )
+              ))
+        ))
+    )
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a detector fails with
+    // whatever the member it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture({ baseline, alerts: alert !== undefined }, body)
   })
 }
 

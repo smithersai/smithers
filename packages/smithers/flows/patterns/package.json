@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Higher-order flow patterns and decorators for flows. It composes @smthrs/core and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.",
+  "description": "Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -398,14 +398,13 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.0",
+    "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
-    "@smthrs/flow": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -807,6 +807,34 @@
       }
     },
     {
+      "id": "librarian/history",
+      "description": "Create Mythical history and provenance notes atomically, preserving the source branch and tree.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/librarian/history/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.git/**"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
+      "id": "librarian/wiki",
+      "description": "Create a Markdown Wiki from the repository source tree with revision provenance and linked pages.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/librarian/wiki/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "wiki:write"
+      ],
+      "model": null,
+      "modelInvocable": false
+    },
+    {
       "id": "release",
       "description": "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
       "summary": null,
@@ -834,7 +862,7 @@
     },
     {
       "id": "tutorial-change",
-      "description": "Execute the reviewed tutorial plan through coding/RunPlan. Re-read HEAD before any writes; refuse if it differs from plan.base.commitId. Require exactly one change and one atom. Do not push. Return the exact coding result; never invent revision evidence.",
+      "description": "Execute the reviewed tutorial plan through the coding flow. Re-read HEAD before any writes; refuse if it differs from plan.base.commitId. Require exactly one change and one atom. Do not push. Return the exact coding result; never invent revision evidence.",
       "summary": null,
       "featured": false,
       "kind": "ts",
@@ -853,7 +881,8 @@
       "kind": "ts",
       "path": "flows/wiki/flow.ts",
       "capabilities": [
-        "*"
+        "fs:read:**",
+        "fs:write:**"
       ],
       "model": null,
       "modelInvocable": true

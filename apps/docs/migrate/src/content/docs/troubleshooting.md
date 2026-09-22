@@ -235,7 +235,7 @@ rerun it.
 
 Run `smthrs ls`. A flow that discovery will not list is a flow nobody can run.
 The report's Verification section names the discovery warning: usually a
-default export that is not a `Flow.make` or `Flow.agent` call, or a descriptor
+default export that is not a `Flow.make` call, or a declaration
 with no `description` string literal. `Checks.discovery` runs the registry's
 own scan and fails on any warning, so a unit recorded as `migrated` passed it
 at the time; a later hand edit is the usual cause.

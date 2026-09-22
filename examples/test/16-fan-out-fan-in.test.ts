@@ -86,9 +86,11 @@ it.live("runs the same gate when the project declares it on disk", () =>
     const summary = yield* discovered(join(directory, "discovered.sqlite"))
 
     // Nothing in the example names this flow; the directory it was found in
-    // does, and the frontmatter-free module says what it delegates to.
+    // does. The module IS the flow, so it delegates to nothing and the bridge
+    // runs the graph the file declares under its own tag.
     expect(summary.flow).toBe(discoveredFlow)
-    expect(summary.delegate).toBe("examples/GateRunner")
+    expect(summary.delegate).toBeUndefined()
+    expect(summary.tag).toBe("examples/ProjectGate")
 
     // The priority the file declares is lowered onto the delegating node, so it
     // reaches the plan the same way `Node.priority` does inside a body.

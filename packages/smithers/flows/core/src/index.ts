@@ -71,9 +71,3 @@ export * as Node from "./Node.ts"
  * @slop
  */
 export * as Placement from "./Placement.ts"
-
-/**
- * @category testing
- * @since 1.0.0
- */
-export * as TestRuntime from "./TestRuntime.ts"

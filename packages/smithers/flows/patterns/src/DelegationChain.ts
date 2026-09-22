@@ -11,18 +11,25 @@
  * carries the same `Work` a tier is run with, every leaf review carries the
  * tier that produced the output, and settle carries the keys `run` settles
  * with. The one payload that still differs is inside the derisk loop, which
- * `ReviewLoop` owns: it reviews with the produced plan and revises with
- * `{ output, review, round }`, while `run` names the goal and the round in both.
+ * `ReviewLoop` owns: it reviews with `{ output }` carrying the produced plan
+ * and revises with `{ output, review, round }`, while `run` names the goal and
+ * the round in both.
  *
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Escalation from "./Escalation.ts"
 import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 import * as ReviewLoop from "./ReviewLoop.ts"
 import * as Trellis from "./Trellis.ts"
@@ -118,15 +125,15 @@ export interface Bounds {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions extends Bounds {
+export interface MakeOptions<R = never> extends Bounds {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly refine: Flow.Any
-  readonly plan: Flow.Any
-  readonly derisk: Flow.Any
-  readonly execute: Readonly<Record<string, Flow.Any>>
-  readonly review: Flow.Any
-  readonly settle: Flow.Any
+  readonly refine: Member<R>
+  readonly plan: Member<R>
+  readonly derisk: Member<R>
+  readonly execute: Readonly<Record<string, Member<R>>>
+  readonly review: Member<R>
+  readonly settle: Member<R>
   readonly budget?: Budget | undefined
 }
 
@@ -315,6 +322,20 @@ export const bound = (options: Bounds): number =>
   4 + 2 * options.maxDeriskRounds + options.maxDepth * (3 + 2 * options.tierOrder.length)
 
 /**
+ * The declared form of a delegation chain.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type DelegationChainFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * The leaf a slot declares. A declaration cannot know the goals a model has not
  * authored yet, so the authored plan stands in for the goal and the slot names
  * the path, which is the `Trellis.Leaf` shape {@link run} hands every tier.
@@ -326,17 +347,19 @@ const slotLeaf = (slot: number, plan: unknown): { readonly goal: unknown; readon
 
 /**
  * One rung of a declared ladder: the tier call, then the review of what that
- * tier produced, then the next rung. Planning evaluates every continuation
- * against a symbolic decision, so the declaration holds every rung while
- * {@link run} stops at the first accepted one.
+ * tier produced, then the next rung.
+ *
+ * The review's verdict is a `Node.branch`, so the plan carries the settled arm
+ * and the next rung before anything runs and the decision is taken at run time
+ * on the output the tier really produced. {@link run} spends the same rule.
  */
-const rung = (
-  options: MakeOptions,
+const rung = <R>(
+  options: MakeOptions<R>,
   slot: number,
   leaf: { readonly goal: unknown; readonly path: string },
   goal: unknown,
   index: number
-): Node.Node<unknown, unknown> => {
+): Node.Node<unknown, unknown, R> => {
   const tier = options.tierOrder[index]
   if (tier === undefined) return Node.succeed({ accepted: false, exhausted: true })
   const work = {
@@ -345,18 +368,26 @@ const rung = (
     goal,
     ...(options.budget === undefined ? {} : { budget: options.budget })
   }
-  return Node.andThen(
-    Compose.call(options.execute[tier] as Flow.Any, work),
-    Node.capture({ slot, tier }, (output) =>
-      Node.andThen(
-        Compose.call(options.review, { stage: "leaf", leaf, tier, output }),
-        Node.capture(
-          { slot, tier },
-          (decision) => accepted(decision) ? Node.succeed(output) : rung(options, slot, leaf, goal, index + 1)
-        )
-      ))
+  return Node.bindPlanned(
+    callMember(options.execute[tier] as Member<R>, work),
+    Node.capture({ slot, tier }, (output: Planned.Planned<unknown>) => {
+      const approved = Node.capture({ slot, tier }, (decision: unknown) => accepted(decision))
+      return Node.branch(callMember(options.review, { stage: "leaf", leaf, tier, output }), {
+        if: approved,
+        then: () => Node.succeed(output),
+        else: () => rung(options, slot, leaf, goal, index + 1)
+      })
+    })
   )
 }
+
+/**
+ * The payload one declared tier ladder takes: the leaf slot it settles.
+ *
+ * @since 0.1.0
+ * @private
+ */
+const LadderPayload = Schema.Struct({ goal: Schema.Unknown, path: Schema.String })
 
 /**
  * One slot's retried tier ladder.
@@ -366,17 +397,17 @@ const rung = (
  * `run` performs carries the tier that produced the output. The topology is the
  * same: one call per rung, one review per rung, weakest first.
  */
-const ladder = (
-  options: MakeOptions,
+const ladder = <R>(
+  options: MakeOptions<R>,
   slot: number,
   leaf: { readonly goal: unknown; readonly path: string },
   goal: unknown
 ): Flow.Any =>
   WithRetry.withRetry(
-    Flow.make({
-      name: `delegationTiers(${options.tierOrder.join(" -> ")})`,
-      input: Schema.Unknown,
-      output: Schema.Unknown,
+    Flow.make(`delegationTiers(${options.tierOrder.join(" -> ")})`, {
+      payload: LadderPayload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
       body: Node.capture(
         { slot, tierOrder: [...options.tierOrder] },
         () => rung(options, slot, leaf, goal, 0)
@@ -400,11 +431,11 @@ const ladder = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (caller: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(caller: MakeOptions<R>): DelegationChainFlow<R> => {
   // The body runs when the graph builds, later than this call, and the
   // ladders it declares read the options again then, so every stage below
   // reads this snapshot and never the caller's options.
-  const options: MakeOptions = {
+  const options: MakeOptions<R> = {
     ...copiedBounds(caller),
     refine: caller.refine,
     plan: caller.plan,
@@ -416,7 +447,7 @@ export const make = (caller: MakeOptions): Flow.Flow<typeof Schema.Unknown, type
   }
   const refusal = checkBounds(options, Object.keys(options.execute))
   if (refusal !== undefined) throw refusal
-  const derisk = ReviewLoop.make({
+  const derisk = ReviewLoop.make<R>({
     produce: options.plan,
     review: options.derisk,
     revise: options.plan,
@@ -433,45 +464,52 @@ export const make = (caller: MakeOptions): Flow.Flow<typeof Schema.Unknown, type
     tierOrder: captured.tierOrder,
     maxDepth: captured.maxDepth
   }, caller)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: Node.capture(captured, (input) =>
-      Node.andThen(
-        Compose.call(options.refine, { prompt: input }),
-        Node.capture(captured, (goal) =>
-          Node.andThen(
-            Compose.call(derisk, { goal, round: 1 }),
-            Node.capture(captured, (plan) => {
-              const call = (index: number): Node.Node<unknown, unknown> =>
-                Compose.call(ladder(options, index, slotLeaf(index, plan), goal), slotLeaf(index, plan))
-              let slots: Node.Node<unknown, unknown> = call(0)
-              for (let index = 1; index < options.maxDepth; index++) {
-                slots = Node.andThen(slots, Node.capture({ slot: index }, () => call(index)))
-              }
-              return Node.andThen(
-                slots,
-                Node.capture(captured, (leaves) =>
-                  Node.andThen(
-                    Compose.call(options.review, { stage: "chain", goal, plan, leaves }),
-                    Node.capture(captured, (review) =>
-                      Compose.call(options.settle, {
-                        prompt: input,
-                        goal,
-                        plan,
-                        leaves,
-                        review,
-                        // A declaration cannot know whether the derisk loop ran
-                        // out of rounds. `run` settles with the answer it saw.
-                        deriskExhausted: false
-                      }))
-                  ))
-              )
-            })
-          ))
-      ))
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
+    Node.bindPlanned(
+      callMember(options.refine, { prompt: input }),
+      Node.capture(captured, (goal: Planned.Planned<unknown>) =>
+        Node.bindPlanned(
+          // The derisk loop states its own seed as one `input` field, so the
+          // planner it wraps is still handed `{ goal, round }` unchanged.
+          callMember(derisk, { input: { goal, round: 1 } }),
+          Node.capture(captured, (plan: Planned.Planned<unknown>) => {
+            const call = (index: number): Node.Node<unknown, unknown, R> =>
+              Decorate.call<R>(ladder(options, index, slotLeaf(index, plan), goal), slotLeaf(index, plan))
+            let slots: Node.Node<unknown, unknown, R> = call(0)
+            for (let index = 1; index < options.maxDepth; index++) {
+              slots = Node.andThen(slots, call(index))
+            }
+            return Node.bindPlanned(
+              slots,
+              Node.capture(captured, (leaves: Planned.Planned<unknown>) =>
+                Node.bindPlanned(
+                  callMember(options.review, { stage: "chain", goal, plan, leaves }),
+                  Node.capture(captured, (review: Planned.Planned<unknown>) =>
+                    callMember(options.settle, {
+                      prompt: input,
+                      goal,
+                      plan,
+                      leaves,
+                      review,
+                      // A declaration cannot know whether the derisk loop ran
+                      // out of rounds. `run` settles with the answer it saw.
+                      deriskExhausted: false
+                    }))
+                ))
+            )
+          })
+        ))
+    )
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a chain fails with
+    // whatever the stage it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captured, body)
   })
 }
 

@@ -10,6 +10,7 @@
  */
 import * as Effects from "@smthrs/core/Effects"
 import * as Flow from "@smthrs/core/Flow"
+import type * as DurableFlow from "@smthrs/flow/Flow"
 import * as Pattern from "@smthrs/patterns/Pattern"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -169,13 +170,17 @@ export const recall = Flow.make<typeof RecallInput, typeof RecallOutput, never>(
 })
 
 /**
- * Resolves the recall slot to a supplied flow.
+ * Resolves the recall slot to a supplied signature.
+ *
+ * A slot is filled with the `@smthrs/flow` flow a signature carries, because
+ * that is the value a pattern composes into a graph. The signature is what a
+ * caller holds, so it is what this takes.
  *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const bindRecall = (supplied: Flow.Any): Flow.Any => Pattern.bind(Recall.slot, supplied)
+export const bindRecall = (supplied: Flow.Any): DurableFlow.Any => Pattern.bind(Recall.slot, supplied.flow)
 
 /**
  * Runtime binding for the remember declaration, carrying explicit provenance.

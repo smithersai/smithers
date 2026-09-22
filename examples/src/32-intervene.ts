@@ -60,9 +60,9 @@ export const Report = Schema.Struct({
 })
 
 /**
- * Reads the target file. The step names the std read flow and no body, so its
- * body is one dynamic node that has that flow available, and it declares the
- * read flow's capabilities and hermetic read-only envelope as its own.
+ * Reads the target file. The step names the std read flow and declares no body,
+ * so it is a signature a host implements, and it declares the read flow's
+ * capabilities and hermetic read-only envelope as its own.
  */
 export const ReadTarget = Flow.make({
   name: "read-target",
@@ -108,20 +108,28 @@ export const ReportEdit = Flow.make({
  * The approval that gates the write. The only value it may return is the
  * literal `"approved"`, so a denial fails the typed schema decode instead of
  * reaching the edit.
+ *
+ * `WithApproval` calls it with the wrapped step's payload, the reason the
+ * decorator was given, and the scope the answer is remembered under, so that
+ * struct is the input it declares.
  */
 export const ApproveEdit = Flow.make({
   name: "approve-edit",
-  input: Schema.Unknown,
-  output: WithApproval.Approved,
-  body: () => Node.dynamic({ output: WithApproval.Approved })
+  input: Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String }),
+  output: WithApproval.Approved
 })
 
+// `apply` and `approval` are whole flows rather than any member, because the
+// approval decorates the apply step and a decorator re-declares what it wraps.
+// A `@smthrs/core` signature IS a `@smthrs/flow` flow plus its metadata, so
+// `.flow` is the value the decorator takes; the three plain stages are members
+// and the signature itself satisfies that.
 const declaration = {
   read: ReadTarget,
   propose: ProposeEdit,
-  apply: ApplyEdit,
+  apply: ApplyEdit.flow,
   report: ReportEdit,
-  approval: ApproveEdit,
+  approval: ApproveEdit.flow,
   reason: "rewrite the greeting"
 }
 

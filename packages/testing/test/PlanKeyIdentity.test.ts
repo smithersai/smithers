@@ -1,11 +1,10 @@
-import { describe, it } from "@effect/vitest"
-import * as Core from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
-import * as CoreGraph from "@smthrs/core/Graph"
+import { Action, Flow } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
 import * as StepKey from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
-import * as Result from "effect/Result"
-import { expect } from "vitest"
+import * as Schema from "effect/Schema"
+import { describe, expect, it } from "vitest"
 import * as Plan from "../src/Plan.ts"
 
 // `Plan.keys` derives two different identities, and the reference documents
@@ -15,26 +14,23 @@ import * as Plan from "../src/Plan.ts"
 // not reproduce: that one keys a non-sealed tier in the `plan-declaration`
 // namespace, independently of any run.
 
-const graphOf = (tier: "sealed" | "compensable"): CoreGraph.Graph =>
-  CoreGraph.build(
-    Core.Node.withEffects(
-      Core.Node.dynamic({ model: "recorded:reviewer" }),
-      Core.Effects.make({
+const graphOf = (tier: "sealed" | "compensable"): Graph.Graph =>
+  Graph.build(
+    Action.make("recorded:reviewer", { payload: Schema.Struct({}), success: Schema.String, tier })
+      .annotate(Flow.EffectsDeclaration, {
         reads: ["workspace/pr.json"],
         writes: ["workspace/review.json"],
-        mode: "hermetic",
-        onConflict: "serialize",
-        tier
+        boundaryMode: "hard"
       })
-    )
+      .call({})
   )
 
-/** The declaration of the given tier, with the ordinal position `keys` gives it. */
-const declarationOf = (graph: CoreGraph.Graph, kind: string) => {
-  const entries = Result.getOrThrow(CoreGraph.keyMaterial(graph))
-  const ordinal = entries.findIndex((entry) => entry.material.kind === kind)
+/** The draft of the given tier, with the ordinal position `keys` gives it. */
+const declarationOf = (graph: Graph.Graph, kind: string) => {
+  const drafts = Graph.drafts(graph)
+  const ordinal = drafts.findIndex((draft) => draft.material.kind === kind)
   expect(ordinal).toBeGreaterThanOrEqual(0)
-  return { entry: entries[ordinal]!, ordinal }
+  return { draft: drafts[ordinal]!, ordinal }
 }
 
 const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/Crypto").Crypto>): A =>
@@ -43,20 +39,20 @@ const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/Crypto").Crypto
 describe("plan key identity", () => {
   it("keys sealed material the way the persisted plan keys it", () => {
     const graph = graphOf("sealed")
-    const { entry } = declarationOf(graph, "sealed")
-    expect(Plan.keys(graph)[entry.nodeId]).toBe(runKey(StepKey.planIdentity(entry.material, {})))
+    const { draft } = declarationOf(graph, "sealed")
+    expect(Plan.keys(graph)[draft.id]).toBe(runKey(StepKey.planIdentity(draft.material, {})))
   })
 
   it("keys non-sealed material as a run-local ordinal, not a plan fingerprint", () => {
     const graph = graphOf("compensable")
-    const { entry, ordinal } = declarationOf(graph, "compensable")
-    const key = Plan.keys(graph, { runId: "identity-test" })[entry.nodeId]
+    const { draft, ordinal } = declarationOf(graph, "compensable")
+    const key = Plan.keys(graph, { runId: "identity-test" })[draft.id]
     expect(key).toBe(runKey(StepKey.ordinal({
       runId: "identity-test",
-      parentScope: entry.nodeId,
+      parentScope: draft.id,
       ordinal,
       tier: "compensable"
     })))
-    expect(key).not.toBe(runKey(StepKey.planIdentity(entry.material, {})))
+    expect(key).not.toBe(runKey(StepKey.planIdentity(draft.material, {})))
   })
 })

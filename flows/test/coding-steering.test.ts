@@ -28,7 +28,7 @@ import { appendFeedback, feedbackBoundary, feedbackLayer, FeedbackReceipt, Recei
 
 const controlLayer = ControlRuntime.layerMemory({ flows: ["coding/request", "other"].map(flowId => ({
   flowId, description: "Steering fixture", deployClass: false, executionDigest: "sha256:fixture",
-  envelope: { capabilities: [], flows: ["coding/RunRequest"], budget: {} }
+  envelope: { capabilities: [], flows: [], budget: {} }
 })) }).pipe(Layer.provide(NodeCrypto.layer))
 
 const launch = (control: ControlRuntime.Service, flowId = "coding/request") => Effect.gen(function*() {
@@ -151,7 +151,9 @@ test("routing refuses absent, stale or unapproved coding owners and preserves th
       { ...control, getRun: (id: string) => control.getRun(id).pipe(Effect.map(run => ({ ...run, status: "completed" as const }))) },
       { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, decision: "pending" as const }))) },
       { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, card: { ...plan.card, digest: "stale" } }))) },
-      { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, card: { ...plan.card, envelope: { ...plan.card.envelope, flows: [] } } }))) }
+      // An approved envelope that names a delegate belongs to a descriptor
+      // that hands the work elsewhere, so the coordinator refuses it.
+      { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, card: { ...plan.card, envelope: { ...plan.card.envelope, flows: ["coding/CommandCheck"] } } }))) }
     ]) {
       const refused = yield* routeMessages(native, altered, journal).admit(owner.runId, message("refused", owner.runId)).pipe(Effect.flip)
       assert.equal(refused._tag, "/notifications/NotificationError")

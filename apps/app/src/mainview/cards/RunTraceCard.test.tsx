@@ -241,7 +241,7 @@ describe("the run card as a trace", () => {
         eventType: "flows.engine.run-decision", meta: { lineageId: "native" },
         payload: {
           decision: terminal ? "transitioned" : "created", ...(terminal ? { status: "completed" } : {}),
-          state: { version: 1, flowName: "coding/RunPlan", payload: {}, ...(terminal ? {
+          state: { version: 1, flowName: "coding/ImplementPlan", payload: {}, ...(terminal ? {
             result: { _tag: "Complete", exit: { _tag: "Success", value: { checks: ["typecheck"] } } }
           } : {}) }
         }
@@ -253,7 +253,7 @@ describe("the run card as a trace", () => {
     expect(row.tagName).toBe("BUTTON")
     row.focus()
     expect(document.activeElement).toBe(row)
-    expect(row.textContent).toContain("coding/RunPlan · completed")
+    expect(row.textContent).toContain("coding/ImplementPlan · completed")
     expect(compact.host.querySelector("[data-testid='run-trace-pane-run-1']")).toBeNull()
     click(row)
     expect(compact.dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 engine:native:0" }])

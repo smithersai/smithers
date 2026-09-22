@@ -17,10 +17,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import * as Loop from "./Loop.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -75,11 +80,11 @@ export interface Evaluation {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly generate: Flow.Any
-  readonly evaluate: Flow.Any
+  readonly generate: Member<R>
+  readonly evaluate: Member<R>
   readonly targetScore?: number | undefined
   readonly maxIterations: number
   readonly onMaxReached?: OnMaxReached | undefined
@@ -157,6 +162,20 @@ interface Generation<C> {
 }
 
 /**
+ * The declared form of a bounded search.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type OptimizerFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * Declares the bounded search as its conservative topology.
  *
  * Every iteration the bound allows is declared as a `generate` call followed
@@ -175,7 +194,7 @@ interface Generation<C> {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
   const invalid = validate(options)
   if (invalid !== undefined) throw invalid
   // The body runs when the graph builds, later than this call, so it reads
@@ -193,38 +212,47 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     targetScore: options.targetScore,
     onMaxReached
   }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [stages.generate, stages.evaluate],
-    body: Node.capture(captures, (input) => {
-      const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown> =>
-        Node.andThen(
-          Compose.call(stages.generate, { input, previous, iteration }),
-          Node.capture({ ...captures, iteration }, (candidate) =>
-            Node.andThen(
-              Compose.call(stages.evaluate, { value: candidate, iteration }),
-              Node.capture({ ...captures, iteration }, (evaluation) => {
-                const scored = evaluation as { readonly score: number; readonly feedback: unknown }
-                const attempt = {
-                  candidate,
-                  score: scored.score,
-                  feedback: scored.feedback,
-                  iteration
-                }
-                // A declaration cannot compare a score it does not have, so the
-                // declared terminal is the exhausted one; `run` reports the
-                // convergent case.
-                return iteration >= maxIterations
-                  ? Node.succeed({ best: attempt, iterations: iteration, converged: false })
-                  : visit(attempt, iteration + 1)
-              })
-            ))
-        )
-      return visit(undefined, 1)
-    })
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown, R> =>
+      Node.bindPlanned(
+        callMember(stages.generate, { input, previous, iteration }),
+        Node.capture({ ...captures, iteration }, (candidate: Planned.Planned<unknown>) =>
+          Node.bindPlanned(
+            callMember(stages.evaluate, { value: candidate, iteration }),
+            Node.capture({ ...captures, iteration }, (evaluation: Planned.Planned<unknown>) => {
+              // `score` and `feedback` are read off the evaluation as planned
+              // FIELD references, which is a reference path rather than a
+              // computation, so the next generation is handed the same attempt
+              // record the run produces. The cast names the shape an evaluator
+              // answers with; `run` refuses a non-finite score at run time.
+              const scored = evaluation as Planned.Planned<Evaluation>
+              const attempt = {
+                candidate,
+                score: scored.score,
+                feedback: scored.feedback,
+                iteration
+              }
+              // Comparing a score against the target is a run-time decision
+              // `run` makes; reaching the declared bound is not, so the
+              // declared terminal is the exhausted one.
+              return iteration >= maxIterations
+                ? Node.succeed({ best: attempt, iterations: iteration, converged: false })
+                : visit(attempt, iteration + 1)
+            })
+          ))
+      )
+    return visit(undefined, 1)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a search fails with
+    // whatever the member it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

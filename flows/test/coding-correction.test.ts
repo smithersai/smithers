@@ -18,13 +18,15 @@ import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { Rule } from "../../packages/smithers/flows/capability/src/Permission.ts"
 import { CapabilityPattern } from "../../packages/smithers/flows/capability/src/Capability.ts"
 import { Effect, FileSystem, Layer, ManagedRuntime, Option, Schema } from "effect"
-import { atomDelegate, atomFlows, atomOperations, EditAtom } from "../coding/atoms.ts"
+import { atomError, atomOperations, EditAtom } from "../coding/atoms.ts"
+import ImplementAtoms, { atomFlows } from "../coding/implementation/flow.ts"
 import { catalogLayers } from "../coding/catalog.ts"
 import { CheckCommand, checkDelegate, checkLayers } from "../coding/checks.ts"
 import { CorrectPlan, correctionLayers, SelectRepair } from "../coding/correction.ts"
 import { NativeCoding, nativeActions, nativeLayer } from "../coding/native.ts"
-import { CodingError, Receipt, type Implementation, type Plan, type Revision, sameRevision } from "../coding/schema.ts"
-import { ImplementPlan, policyLayers } from "../coding/workflow.ts"
+import { CodingError, Implementation, Receipt, type Plan, type Revision, sameRevision } from "../coding/schema.ts"
+import ImplementPlan from "../coding/flow.ts"
+import { policyLayers } from "../coding/workflow.ts"
 
 // The checker supplies actual exit evidence; this fixture's reviewer assigns a
 // downstream discovery to its earlier owner, as a real review delegate would.
@@ -32,6 +34,15 @@ const Review = Flow.make("fixture/OwnerReview", {
   payload: Executable.Invocation, success: Receipt, error: CodingError,
   body: invocation => CheckCommand.call(invocation).pipe(Node.map(receipt => ({ ...receipt,
     findings: receipt.findings.map(finding => ({ ...finding, owner: "owner" })) })))
+})
+// `coding/implementation` IS its own flow, so the host registers nothing under
+// a delegate name for it. A Markdown fixture entry has to name one, so this
+// fixture registers the invocation-decoding step the catalog performs for a
+// module flow: decode the invocation's input into the implementation's payload
+// and call it.
+const Implement = Flow.make("fixture/Implement", {
+  payload: Executable.Invocation, success: Implementation, error: atomError,
+  body: invocation => ImplementAtoms.call(Schema.decodeUnknownSync(ImplementAtoms.payloadSchema)(invocation.input))
 })
 const { EngineEvent, Journal, JournalEvent } = JournalModules
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
@@ -61,7 +72,7 @@ if(tier==='slow'&&stage==='prefix'&&existsSync(log+'.early')&&!existsSync(log+'.
 process.exit(tier==='fast'&&existsSync(log+'.fastfail')?9:tier==='slow'&&stage==='server'&&readFileSync('owner.txt','utf8')!=='fixed'?7:0);
 `)
   for (const [name, delegate, body] of [
-    ["implementation", "coding/Implement", "Implement one Change"],
+    ["implementation", "fixture/Implement", "Implement one Change"],
     ["checks/fast", "coding/CommandCheck", JSON.stringify({ argv: [process.execPath, "verify.mjs", log, "fast"], cwd: ".", timeoutMs: 30_000 })],
     ["checks/slow", "fixture/OwnerReview", JSON.stringify({ argv: [process.execPath, "verify.mjs", log, "slow"], cwd: ".", timeoutMs: 300_000 })]
   ]) {
@@ -80,7 +91,7 @@ process.exit(tier==='fast'&&existsSync(log+'.fastfail')?9:tier==='slow'&&stage==
   assert.equal(initial.head.kind, "resolved")
   const executable = await Effect.runPromise(Effect.gen(function*() {
     const found = yield* (yield* Discovery.Discovery).scan({ source: "project", root: join(root, "flows"), naming: "path" })
-    return yield* Effect.forEach(found.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [atomDelegate, checkDelegate, Review] }))
+    return yield* Effect.forEach(found.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [checkDelegate, Implement, Review] }))
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const digest = (name: string) => Descriptor.executionDigest(executable.find(entry => entry.descriptor.name === name)!.descriptor)!
   const plan: Plan = { prompt: "Fix an earlier owner discovered by its descendant", memoryRevision: "fixture", base: initial.head as Revision,
@@ -96,7 +107,7 @@ process.exit(tier==='fast'&&existsSync(log+'.fastfail')?9:tier==='slow'&&stage==
   const runtime = () => HostRuntime.layerHost({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root, owner: { hostId: "correction-test" }, signals: [],
     rules: [[new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" }) })]] },
     Layer.mergeAll(correctionLayers, atomFlows, atomOperations, nativeActions, catalogLayers, policyLayers,
-      Interpreter.layer(ImplementPlan), Interpreter.layer(Review), ...executable.map(entry => entry.layer),
+      Interpreter.layer(ImplementPlan), Interpreter.layer(Implement), Interpreter.layer(Review), ...executable.map(entry => entry.layer),
       checkLayers({ repositoryPath: root, exporterPath: exporter, fs }),
       SelectRepair.toLayer(context => Effect.gen(function*() {
         if (earlyFeedback) {

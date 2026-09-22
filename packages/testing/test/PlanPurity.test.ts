@@ -1,5 +1,7 @@
 import { describe, it } from "@effect/vitest"
-import * as Core from "@smthrs/core"
+import { Action, Flow } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -20,24 +22,30 @@ import * as TestLayers from "../src/TestLayers.ts"
 const defect = (exit: Exit.Exit<unknown, unknown>): unknown =>
   Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
 
-const review = Core.Flow.make({
-  name: "review",
-  input: Schema.Struct({
+const reviewer = Action.make("recorded:reviewer", {
+  payload: Schema.Struct({ pr: Schema.Number, reviewer: Schema.String }),
+  success: Schema.String,
+  tier: "sealed"
+}).annotate(Flow.EffectsDeclaration, {
+  reads: ["workspace/pr.json"],
+  writes: ["workspace/review.json"],
+  boundaryMode: "hard"
+})
+
+const review = Flow.make("review", {
+  payload: Schema.Struct({
     pr: Schema.Number,
     reviewer: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed("recorded:reviewer")))
   }),
-  output: Schema.String,
-  body: (input) =>
-    Core.Node.dynamic({
-      model: input.reviewer,
-      effects: Core.Effects.make({
-        reads: [`workspace/pr-${input.pr}.json`],
-        writes: ["workspace/review.json"],
-        mode: "hermetic",
-        onConflict: "serialize",
-        tier: "sealed"
-      })
-    }) as Core.Node.Node<string>
+  success: Schema.String,
+  effects: {
+    reads: ["workspace/pr.json"],
+    writes: ["workspace/review.json"],
+    mode: "hermetic",
+    onConflict: "serialize",
+    tier: "sealed"
+  },
+  body: (payload) => reviewer.call({ pr: payload.pr, reviewer: payload.reviewer })
 })
 
 describe("plan purity", () => {
@@ -69,7 +77,7 @@ describe("plan purity", () => {
       const impure = Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         return yield* fs.readFileString("/workspace/pr.json")
-      }).pipe(Effect.map(() => Plan.fromGraph(Core.Graph.build(Core.Node.succeed("ok")))))
+      }).pipe(Effect.map(() => Plan.fromGraph(Graph.build(Node.succeed("ok")))))
       const raised = defect(yield* Effect.exit(impure))
       expect(raised).toBeInstanceOf(CapabilityContractError)
       expect((raised as CapabilityContractError).capability).toBe("filesystem")

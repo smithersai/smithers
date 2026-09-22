@@ -8,9 +8,9 @@
  * the digest the row is addressed by, so a sibling run simply never finds it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Digest, Effects, Flow as CoreFlow, Graph as CoreGraph, Node as CoreNode } from "@smthrs/core"
+import { Digest, Effects } from "@smthrs/core"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
@@ -85,18 +85,25 @@ const activate = (runId: string) =>
     if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
   })
 
+/** The one opaque step the inner flow performs. */
+const readStep = Action.make("cache-ttl/read-step", {
+  payload: { path: Schema.String },
+  success: Schema.String,
+  error: Schema.Never
+})
+
 /**
  * The inner flow every `WithCache` declaration in this suite wraps: hermetic,
  * sealed, and otherwise featureless, so the only thing that varies between two
  * declarations is the policy the test declares.
  */
-const inner = CoreFlow.make({
-  name: "cache-ttl/read",
-  input: Schema.String,
-  output: Schema.String,
+const inner = Flow.make("cache-ttl/read", {
+  payload: { path: Schema.String },
+  success: Schema.String,
+  error: Schema.Never,
   effects: Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize" }),
-  body: () => CoreNode.dynamic({ output: Schema.String })
-})
+  body: Node.capture({}, ({ path }: { readonly path: string }) => readStep.call({ path }))
+}) as unknown as Flow.Any
 
 /**
  * A real `WithCache` declaration's annotation bag, in the shape the dispatch
@@ -109,17 +116,19 @@ const inner = CoreFlow.make({
  * makes a declared policy reach the engine.
  */
 const declaredBy = (options: WithCache.Options) => ({
-  annotations: (WithCache.withCache(inner, options) as unknown as {
-    readonly annotations: Context.Context<never>
-  }).annotations
+  annotations: WithCache.withCache(inner, options).annotations
 })
 
-/** The canonical digest of everything `/keys` hashes for a declaration. */
-const declaredKey = (options: WithCache.Options): string => {
-  const material = CoreGraph.keyMaterial(CoreGraph.build(WithCache.withCache(inner, options), "file"))
-  if (Result.isFailure(material)) throw material.failure
-  return Digest.canonical(material.success.map((entry) => entry.material))
-}
+/**
+ * The canonical digest of everything `/keys` hashes for a declaration.
+ *
+ * `@smthrs/flow` publishes the material one node at a time rather than as an
+ * aggregate, so the digest is taken over the built graph's nodes in order.
+ */
+const declaredKey = (options: WithCache.Options): string =>
+  Digest.canonical(
+    Graph.nodes(Graph.build(WithCache.withCache(inner, options), { path: "file" })).map((node) => node.draft.material)
+  )
 
 /**
  * Dispatches under a NAMED journal source.

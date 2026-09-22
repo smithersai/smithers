@@ -23,6 +23,7 @@ test("source reviewer identity reads the running recipe, changes with its policy
   } }
   const original = await Effect.runPromise(runningWikiPolicy.pipe(Effect.provideService(FileSystem.FileSystem, captured)))
   assert.match(original, /^source:[a-f0-9]{64}$/)
+  assert(inputs.includes(fileURLToPath(new URL("../wiki/flow.ts", import.meta.url))))
   assert(inputs.includes(fileURLToPath(new URL("../wiki/workflow.ts", import.meta.url))))
   assert(inputs.includes(fileURLToPath(new URL("../wiki/operations.ts", import.meta.url))))
   const changed = await Effect.runPromise(runningWikiPolicy.pipe(Effect.provideService(FileSystem.FileSystem, {

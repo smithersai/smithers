@@ -31,13 +31,22 @@ export interface Metadata {
   readonly placement: Option.Option<Placement>
   readonly modelInvocable: boolean
   readonly declaresName: boolean
+  /**
+   * The name the module declares, when it is a readable string literal.
+   *
+   * `None` covers both a module that declares none and one whose name is an
+   * expression this reader cannot evaluate, which is why {@link declaresName}
+   * is a separate answer: a name that is present but unreadable cannot be
+   * checked against the path, and a caller that must decide treats it as a
+   * name it has to warn about rather than as no name at all.
+   */
+  readonly declaredName: Option.Option<string>
   readonly warnings: ReadonlyArray<MetadataWarning>
 }
 
 interface FlowObject {
   readonly start: number
   readonly end: number
-  readonly constructor: "agent" | "make"
 }
 
 /**
@@ -226,13 +235,12 @@ export const tokenize = (source: string): ReadonlyArray<Token> => {
 const findFlowObject = (source: string): FlowObject | undefined => {
   const tokens = tokenize(source)
   for (let index = 0; index <= tokens.length - 6; index++) {
-    const constructor = tokens[index + 4]?.value
     if (
       tokens[index]?.value !== "export" ||
       tokens[index + 1]?.value !== "default" ||
       tokens[index + 2]?.value !== "Flow" ||
       tokens[index + 3]?.value !== "." ||
-      (constructor !== "agent" && constructor !== "make") ||
+      tokens[index + 4]?.value !== "make" ||
       tokens[index + 5]?.value !== "("
     ) {
       continue
@@ -264,11 +272,7 @@ const findFlowObject = (source: string): FlowObject | undefined => {
         } else if (objectToken?.value === "}") {
           braces--
           if (braces === 0) {
-            return {
-              start: token.start,
-              end: objectToken.start,
-              constructor
-            }
+            return { start: token.start, end: objectToken.start }
           }
         }
       }
@@ -601,8 +605,8 @@ const effectDeclaration = (
 }
 
 /**
- * Statically reads the metadata carried by the default `Flow.make` or
- * `Flow.agent` value without evaluating the module.
+ * Statically reads the metadata carried by the default `Flow.make` value
+ * without evaluating the module.
  * @category parsing
  *
  * @since 0.1.0
@@ -623,7 +627,8 @@ export const parse = (source: string): Metadata => {
       placement: placementFromSource(source),
       modelInvocable: true,
       declaresName: false,
-      warnings: [{ message: "Could not statically read the default Flow.make or Flow.agent declaration" }]
+      declaredName: Option.none(),
+      warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
     }
   }
 
@@ -686,6 +691,7 @@ export const parse = (source: string): Metadata => {
     placement: placementFromSource(source),
     modelInvocable,
     declaresName: properties.has("name"),
+    declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
     warnings
   }
 }

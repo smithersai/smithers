@@ -40,7 +40,14 @@ const output = Schema.String
  * @slop
  */
 export interface MarkdownFrontmatter {
-  readonly name?: string | undefined
+  /**
+   * The flow's name, which becomes its tag.
+   *
+   * It is required because the tag is what a host binds an implementation to
+   * and what a plan records; a registry derives it from the frontmatter or
+   * from the document's path before lowering.
+   */
+  readonly name: string
   readonly description?: string | undefined
   readonly model?: string | undefined
   readonly flows?: ReadonlyArray<string> | undefined
@@ -130,9 +137,10 @@ export class MarkdownError extends Schema.TaggedError<MarkdownError>()("flows/co
  *
  * The prompt is the markdown body. Harnesses append non-empty runtime `args`
  * when rendering that prompt, preserving the markdown-flow calling convention.
- * Flow names remain declarations at this layer; no flow implementation is
- * resolved while lowering. The `smart` model seat is the explicit fallback
- * when frontmatter declares no `model`.
+ * The lowered flow declares no body, so it carries the action a host supplies
+ * the implementation for; the collaborators it names stay declarations, and no
+ * flow implementation is resolved while lowering. The `smart` model seat is
+ * the explicit fallback when frontmatter declares no `model`.
  *
  * @category constructors
  * @since 0.0.0
@@ -141,7 +149,7 @@ export class MarkdownError extends Schema.TaggedError<MarkdownError>()("flows/co
 export const lowerMarkdown = (
   frontmatter: MarkdownFrontmatter,
   body: string
-): Flow.Flow<typeof input, typeof output, never> => {
+): Flow.Flow<typeof input, typeof output> => {
   const flow = Flow.make({
     name: frontmatter.name,
     description: frontmatter.description,
@@ -318,7 +326,7 @@ export const parseSkill = (text: string): Result.Result<SkillDocument, MarkdownE
  */
 export const lowerSkill = (
   text: string
-): Result.Result<Flow.Flow<typeof input, typeof output, never>, MarkdownError> =>
+): Result.Result<Flow.Flow<typeof input, typeof output>, MarkdownError> =>
   Result.map(parseSkill(text), (skill) =>
     lowerMarkdown({
       name: skill.name,

@@ -1,0 +1,29 @@
+{
+  "producer": {
+    "source": {
+      "sha": "508edee14d53e36ab27a9ea5c78ebc04d99d5dcf",
+      "tag": null,
+      "dirty": true
+    },
+    "effect": "4.0.0-rc.112",
+    "package": {
+      "name": "@smthrs/core",
+      "version": "1.0.0-rc.0",
+      "filename": "smthrs-core-1.0.0-rc.0.tgz",
+      "integrity": "sha512-6LrAPTbrSOqz/OBlF+VSV26ToMUQk711O5alrAvRk7IrbZcVVZ6hHVgQHXPPGn0WAB1nTV4KDWsog8IycA6pkw=="
+    },
+    "note": "The JSON Schema documents extracted from the pre-upgrade capture named above. The capture recorded whole `@smthrs/core` key material; each entry here is the `document` that material folded for one schema, canonicalized with @smthrs/canonical. Nothing was regenerated under a newer effect."
+  },
+  "documents": {
+    "string": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"}}",
+    "struct": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"count\":{\"anyOf\":[{\"type\":\"number\"},{\"enum\":[\"Infinity\",\"-Infinity\",\"NaN\"],\"type\":\"string\"}]},\"name\":{\"type\":\"string\"}},\"required\":[\"name\",\"count\"],\"type\":\"object\"}}",
+    "union": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"value\":{\"anyOf\":[{\"type\":\"string\"},{\"anyOf\":[{\"type\":\"number\"},{\"enum\":[\"Infinity\",\"-Infinity\",\"NaN\"],\"type\":\"string\"}]}]}},\"required\":[\"value\"],\"type\":\"object\"}}",
+    "optional": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"items\":{\"items\":{\"type\":\"boolean\"},\"type\":\"array\"},\"name\":{\"type\":\"string\"}},\"required\":[\"items\"],\"type\":\"object\"}}",
+    "record": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"additionalProperties\":{\"type\":\"string\"},\"type\":\"object\"}}",
+    "tuple": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"maxItems\":2,\"minItems\":2,\"prefixItems\":[{\"type\":\"string\"},{\"anyOf\":[{\"type\":\"number\"},{\"enum\":[\"Infinity\",\"-Infinity\",\"NaN\"],\"type\":\"string\"}]}],\"type\":\"array\"}}",
+    "literals": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"enum\":[\"ready\",\"failed\"],\"type\":\"string\"}}",
+    "tagged": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"anyOf\":[{\"additionalProperties\":false,\"properties\":{\"_tag\":{\"enum\":[\"Ready\"],\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"_tag\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"_tag\":{\"enum\":[\"Failed\"],\"type\":\"string\"},\"code\":{\"type\":\"integer\"}},\"required\":[\"_tag\",\"code\"],\"type\":\"object\"}]}}",
+    "checked": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"minLength\":2,\"type\":\"string\"}}",
+    "annotated": "{\"definitions\":{},\"dialect\":\"draft-2020-12\",\"schema\":{\"additionalProperties\":false,\"properties\":{\"name\":{\"description\":\"User name\",\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}}"
+  }
+}

@@ -15,12 +15,12 @@ They all answer it the same way.
 Every pattern here exports `make` and `run`.
 
 `make` returns a `Flow` whose body is the **conservative topology**: every
-iteration the bound allows is declared, whether or not a run reaches it. Core
-plans a body by evaluating `Node.bindPlanned` builders once against symbolic values
-(`@smthrs/core/Graph.build`), so a declaration cannot branch on a value it does
-not have yet. Declaring the worst case is the honest answer: capability
-analysis, write-conflict analysis, and cost estimation all see every call a run
-could make.
+iteration the bound allows is declared, whether or not a run reaches it.
+`@smthrs/flow/Graph.build` plans a body by evaluating each builder once against
+a planned placeholder, so a builder cannot read a value it does not have yet.
+Declaring the worst case is the honest answer: capability analysis,
+write-conflict analysis, and cost estimation all see every call a run could
+make.
 
 `run` is the Effect that performs the value-dependent stop. It short-circuits
 the moment the predicate is satisfied, so the work actually performed is the
@@ -29,11 +29,15 @@ none of these patterns carry a cancellation flag.
 
 One consequence follows from core's node vocabulary, and it is deliberate:
 
-- **A declaration cannot branch on a value.** Graph planning evaluates a
-  builder once against a symbolic value, so `onMaxReached: "fail"` is applied
-  by `run` and `make` declares the exhausted value instead. Recovery is
-  different: `Node.catch` declares a static arm, which is how `Sidecar`
-  declares its shadow's quarantine.
+- **A builder cannot READ a value; a declaration can still DECIDE on one.**
+  Graph planning evaluates a builder once against a planned placeholder, so
+  `onMaxReached: "fail"` is applied by `run` and `make` declares the exhausted
+  value instead. What a declaration does carry is both continuations:
+  `Node.branch` states the exit condition and the two arms before anything
+  runs, and the predicate is evaluated at run time on the value the body really
+  produced, which is how `Loop` stops. Recovery is the same idea for failure:
+  `Node.catch` declares a static arm, which is how `Sidecar` declares its
+  shadow's quarantine.
 
 ## Loop
 

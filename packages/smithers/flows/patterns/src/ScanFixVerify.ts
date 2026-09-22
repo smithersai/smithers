@@ -16,10 +16,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import * as Loop from "./Loop.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -35,12 +40,12 @@ import { PatternError } from "./PatternError.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly scan: Flow.Any
-  readonly fix: Flow.Any
-  readonly verify: Flow.Any
+  readonly scan: Member<R>
+  readonly fix: Member<R>
+  readonly verify: Member<R>
   readonly maxRetries: number
   readonly maxIssues: number
   readonly concurrency: number
@@ -116,6 +121,20 @@ export const resolved = (value: unknown): boolean =>
   value === true ||
   (typeof value === "object" && value !== null && "resolved" in value && value.resolved === true)
 
+/**
+ * The declared form of a scan-fix-verify loop.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ScanFixVerifyFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
 const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 const validate = (options: {
@@ -143,7 +162,7 @@ const validate = (options: {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> => {
   const invalid = validate(options)
   if (invalid !== undefined) throw invalid
   // The body runs when the graph builds, later than this call, so it reads
@@ -154,59 +173,78 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const concurrency = options.concurrency
   const captures = { maxRetries, maxIssues, concurrency }
   const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [stages.scan, stages.fix, stages.verify],
-    body: Node.capture(captures, (input) => {
-      const visit = (iteration: number): Node.Node<unknown, unknown> =>
-        Node.andThen(
-          Compose.call(stages.scan, { input, iteration }),
-          Node.capture({ ...captures, iteration }, (issues) => {
-            const found = issues as ReadonlyArray<unknown>
-            let fixes: Node.Node<ReadonlyArray<unknown>, unknown> = Node.succeed([])
-            for (let offset = 0; offset < maxIssues; offset += concurrency) {
-              const members: Record<string, Node.Node<unknown, unknown>> = {}
-              const last = Math.min(offset + concurrency, maxIssues)
-              for (let index = offset; index < last; index++) {
-                members[`fix-${index}`] = Compose.call(stages.fix, { issue: found[index], index, iteration })
-              }
-              fixes = Node.andThen(
-                fixes,
-                Node.capture({ ...captures, iteration, offset }, (previous) =>
-                  Node.map(
-                    Node.all(members),
-                    Node.capture({ ...captures, iteration, offset }, (values) => [
-                      ...previous,
-                      ...Object.keys(values)
-                        .sort((left, right) => Number(left.slice(4)) - Number(right.slice(4)))
-                        .map((key) => values[key])
-                    ])
-                  ))
-              )
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (iteration: number): Node.Node<unknown, unknown, R> =>
+      Node.bindPlanned(
+        callMember(stages.scan, { input, iteration }),
+        Node.capture({ ...captures, iteration }, (issues) => {
+          const found = issues as unknown as Readonly<Record<number, unknown>>
+          const batches: Array<{
+            readonly names: ReadonlyArray<string>
+            readonly members: Readonly<Record<string, Node.Node<unknown, unknown, R>>>
+          }> = []
+          for (let offset = 0; offset < maxIssues; offset += concurrency) {
+            const members: Record<string, Node.Node<unknown, unknown, R>> = {}
+            const names: Array<string> = []
+            const last = Math.min(offset + concurrency, maxIssues)
+            for (let index = offset; index < last; index++) {
+              names.push(`fix-${index}`)
+              members[`fix-${index}`] = callMember(stages.fix, { issue: found[index], index, iteration })
             }
-            return Node.andThen(
-              fixes,
-              Node.capture({ ...captures, iteration }, (fixed) =>
+            batches.push({ names, members })
+          }
+          const verified = (fixes: ReadonlyArray<Planned.Planned<unknown>>): Node.Node<unknown, unknown, R> =>
+            Node.bindPlanned(
+              callMember(stages.verify, { input, issues, fixes, iteration }),
+              Node.capture({ ...captures, iteration }, (verification) =>
+                iteration >= maxRetries
+                  ? Node.succeed({
+                    iterations: iteration,
+                    remaining: issues,
+                    resolved: false,
+                    verifications: [verification]
+                  })
+                  : visit(iteration + 1))
+            )
+          // Each batch gates the next one, so the plan carries the width bound
+          // as dependency edges, and the fix list is assembled from every
+          // member's planned reference: a planned result may be read by field
+          // and passed into a payload, never spread into a new array.
+          const fanOut = (
+            batch: number,
+            fixed: ReadonlyArray<Planned.Planned<unknown>>
+          ): Node.Node<unknown, unknown, R> => {
+            const declared = batches[batch]
+            if (declared === undefined) return verified(fixed)
+            return Node.bindPlanned(
+              Node.all(declared.members),
+              Node.capture({ ...captures, iteration, batch }, (reference) =>
                 Node.andThen(
-                  Compose.call(stages.verify, { input, issues, fixes: fixed, iteration }),
-                  Node.capture({ ...captures, iteration }, (verification) =>
-                    iteration >= maxRetries
-                      ? Node.succeed({
-                        iterations: iteration,
-                        remaining: issues,
-                        resolved: false,
-                        verifications: [verification]
-                      })
-                      : visit(iteration + 1))
+                  Node.succeed(reference),
+                  fanOut(batch + 1, [
+                    ...fixed,
+                    ...declared.names.map((member) =>
+                      (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[member]!
+                    )
+                  ])
                 ))
             )
-          })
-        )
-      return visit(1)
-    })
+          }
+          return fanOut(0, [])
+        })
+      )
+    return visit(1)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and declared
+    // no error schema. `@smthrs/flow` needs a real one, because the engine
+    // encodes a typed failure through it, and this pattern fails with whatever
+    // the stage it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

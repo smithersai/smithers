@@ -27,7 +27,7 @@ Every pattern here answers both halves, and exports one function for each:
 
 - `make` returns a flow whose body declares the conservative topology: every
   round the bound allows, every rung of a ladder, every compensation, whether
-  or not a given run reaches it. [`@smthrs/core`](https://core.smithers.sh/reference/api/) builds that into a
+  or not a given run reaches it. [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) builds that into a
   graph you can count, cost, and review before anything happens.
 - `run` returns an Effect that performs the branch a declaration cannot. It
   stops at the round the reviewer approved and skips what the topology
@@ -41,7 +41,7 @@ pnpm add @smthrs/patterns@next
 
 The Smithers 1.0 release candidates publish under the `next` tag. The package
 needs Node.js 22.19.0 or later. It shares its `effect` peer with the host,
-depends on [`@smthrs/core`](https://core.smithers.sh/reference/api/) and [`@smthrs/plan`](https://plan.smithers.sh/reference/api/), and
+depends on [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) and [`@smthrs/plan`](https://plan.smithers.sh/reference/api/), and
 imports no Node built-ins.
 
 ## Revise a draft until a reviewer approves it
@@ -91,7 +91,7 @@ acceptance shapes every pattern in the package accepts: `true`, `"approved"`,
 The same loop, declared instead of executed, is a graph:
 
 ```ts
-import { Flow, Graph } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
 import { ReviewLoop } from "@smthrs/patterns"
 
 declare const draftFlow: Flow.Any
@@ -105,7 +105,7 @@ const loop = ReviewLoop.make({
   maxRounds: 3
 })
 
-const graph = Graph.build(loop, "Write the release notes for 1.0.")
+const graph = Graph.build(loop, { input: "Write the release notes for 1.0." })
 console.log(Graph.nodes(graph).filter((node) => node.kind === "FlowCall").length)
 ```
 
@@ -137,7 +137,7 @@ specifiers.
 
 ## How this fits with @smthrs/flows
 
-What `make` returns is an [`@smthrs/core`](https://core.smithers.sh/reference/api/) flow: inert data that
+What `make` returns is an [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) flow: inert data that
 describes work. [`@smthrs/flows`](https://flows.smithers.sh/reference/api/) is the package that runs work for
 real, one barrel over the durable flow engine, its journal, its run store, its
 step cache, and its sandboxing. Reach for this package to say what the shape of
@@ -151,9 +151,8 @@ from [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) instead of unroll
 execution: [the durable round recipe](/loops/#the-durable-round-recipe)
 shows both forms side by side.
 
-`@smthrs/patterns` is not re-exported by `@smthrs/flows`, and neither is
-`@smthrs/core`. Install it directly, even when you already depend on the
-barrel. The patterns compose the plan-time data model alone, which is what lets
+`@smthrs/patterns` is not re-exported by `@smthrs/flows`. Install it directly,
+even when you already depend on the barrel. The patterns compose the plan-time data model alone, which is what lets
 a linter, a catalog server, a browser tab, or a unit test declare one and read
 it back with no engine anywhere in the tree.
 

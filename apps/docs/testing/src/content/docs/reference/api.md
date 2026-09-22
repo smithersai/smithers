@@ -180,20 +180,22 @@ interface PlanNodeLike {
   readonly placement?: PlanPlacementLike
   readonly effects: ReadonlyArray<string>
   readonly mode?: string
-  readonly tier?: string
-  readonly onConflict?: string
+  readonly tier: string
   readonly sealed: boolean
-  readonly envelope?: Record<string, unknown>
 }
 ```
 
-`mode` is the node's declared effect mode (`hermetic` or `expected`), `tier` is
-its declared effect tier (`sealed`, `compensable`, or `irreversible`), and
-`onConflict` is its declared conflict strategy (`serialize`, `lane`, or `fail`).
-`Plan.fromGraph` and `Plan.planOf` source all three fields from the node's own
-declaration and omit them when it has none. Their `effects` entries are declared
-`read:<path>` and `write:<path>` strings, or an empty list when undeclared.
-The node's `envelope` contains effective effects, including inherited admission.
+The fields mirror what [`@smthrs/flow`](https://flow.smithers.sh/reference/api/)'s `Graph.GraphNode` carries.
+`mode` is the boundary mode of the node's own effect declaration (`hard` or
+`expected`), omitted when the node declared none. `tier` is the tier the node
+is keyed under (`sealed`, `compensable`, or `irreversible`), and every node has
+one. `effects` entries are declared `read:<path>`, `write:<path>`, and
+`remove:<path>` strings, or an empty list when the node declared none.
+
+There is no per-node conflict strategy or envelope: write overlap is
+`Plan.compile`'s verdict, and an effect envelope is a build-time ceiling
+`Graph.build` checks a declaration against rather than a fact it records on a
+node.
 
 ### PlanLike.PlanPlacementLike
 
@@ -220,39 +222,41 @@ const planOf: <F extends Flow.Any>(
   flow: F,
   input: unknown,
   options?: PlanOfOptions
-) => Effect.Effect<PlanLike, Schema.SchemaError, F["input"]["DecodingServices"]>
+) => Effect.Effect<PlanLike, Schema.SchemaError, F["payloadSchema"]["DecodingServices"]>
 ```
 
-Decodes flow input through the flow's declared input schema, then builds and
-projects the plan. Un-defaulted input cannot reach a plan: the schema's
-defaults are applied by construction before planning sees the value. Building
-and projecting are pure, so this fails only on schema decoding.
+Decodes the flow payload through the flow's declared payload schema, then
+builds and projects the plan. Un-defaulted input cannot reach a plan: the
+schema's defaults are applied by construction before planning sees the value.
+Building and projecting are pure, so this fails only on schema decoding.
 
 ### Plan.fromGraph
 
 ```ts
-const fromGraph: (graph: CoreGraph.Graph, options?: FromGraphOptions) => PlanLike
+const fromGraph: (graph: Graph.Graph, options?: FromGraphOptions) => PlanLike
 ```
 
-Projects the public [`@smthrs/core`](https://core.smithers.sh/reference/api/) graph introspection API into a
-`PlanLike`. Keys come from each node's key material by default; the `key`
+Projects [`@smthrs/flow`](https://flow.smithers.sh/reference/api/)'s graph introspection API into a
+`PlanLike`. Keys come from each node's draft material by default; the `key`
 resolver in the options is a test-only override for fixtures that need
 synthetic keys.
 
 ### Plan.keys
 
 ```ts
-const keys: (graph: CoreGraph.Graph, options?: KeysOptions) => Record<string, string>
+const keys: (graph: Graph.Graph, options?: KeysOptions) => Record<string, string>
 ```
 
-Derives every node's step key from the graph's digest-free key material.
-Sealed material becomes a content key through `StepKey.fromKeyMaterial`, with
-dependency references resolved to previously derived keys in topological order.
-Non-sealed material becomes a run-local ordinal key, scoped to
-`options.runId`, which defaults to `"plan"`.
+Derives every node's step key from the graph's draft key material. Sealed
+material becomes a content key through `StepKey.fromKeyMaterial`, with
+dependency references resolved to previously derived keys in the graph's own
+dependency order. Every other tier becomes a run-local ordinal key, scoped to
+`options.runId`, which defaults to `"plan"`. A graph holding a fatal build
+refusal has no drafts and therefore no keys: `Graph.drafts` raises that refusal
+rather than keying a truncated topology.
 
-The compiler is [`@smthrs/plan`](https://plan.smithers.sh/reference/api/)'s, so a sealed node's key here is
-the key the persisted plan records. A non-sealed node's is not: `Plan.compile`
+The material is handed over verbatim, so a sealed node's key here is the key
+the persisted plan records. A non-sealed node's is not: `Plan.compile`
 fingerprints every declaration with `StepKey.planIdentity`, which keys a
 non-sealed tier in the `plan-declaration` namespace, while this helper keys it
 as the run-local `ordinal` the engine dispatches under.
@@ -307,14 +311,14 @@ interface KeysOptions {
 }
 
 interface FromGraphOptions {
-  readonly key?: ((node: CoreGraph.GraphNode) => string) | undefined
+  readonly key?: ((node: Graph.GraphNode) => string) | undefined
   readonly runId?: string | undefined
   readonly envelope?: Record<string, unknown> | undefined
   readonly digest?: string | undefined
 }
 
 interface PlanOfOptions extends FromGraphOptions {
-  readonly build?: CoreGraph.BuildOptions | undefined
+  readonly build?: Graph.BuildOptions | undefined
 }
 ```
 
@@ -361,14 +365,14 @@ interface NodeAssertions {
   readonly key: (expected: string) => Effect.Effect<void, PlanAssertionError>
   readonly placement: (expected: PlacementExpectation) => Effect.Effect<void, PlanAssertionError>
   readonly mode: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
-  readonly tier: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
-  readonly onConflict: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
+  readonly tier: (expected: string) => Effect.Effect<void, PlanAssertionError>
   readonly declaresEffects: (expected: ReadonlyArray<string>) => Effect.Effect<void, PlanAssertionError>
-  readonly envelope: (expected: Record<string, unknown> | undefined) => Effect.Effect<void, PlanAssertionError>
 }
 ```
 
 Assertions scoped to a single built node, returned by `expectPlan(plan).node(id)`.
+A conflict strategy and an envelope are not among them: the graph carries
+neither on a node.
 
 ### PlanAssertions.expectKeyGoldens
 

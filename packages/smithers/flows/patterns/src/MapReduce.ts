@@ -6,11 +6,14 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Bounded from "./Bounded.ts"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -34,11 +37,11 @@ export type OnEmpty = "reduce" | "succeed" | "fail"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly map: Flow.Any
-  readonly reduce: Flow.Any
+  readonly map: Member<R>
+  readonly reduce: Member<R>
   readonly concurrency: number
   readonly onEmpty: OnEmpty
 }
@@ -64,6 +67,31 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
 }
 
 /**
+ * The payload a declared map-reduce takes.
+ *
+ * `@smthrs/flow` requires a struct payload, and this pattern has always read
+ * one field off its input, so the struct states it.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Payload = Schema.Struct({ shards: Schema.Unknown })
+
+/**
+ * The declared form of a map-reduce flow.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type MapReduceFlow<R = never> = Flow.Flow<
+  string,
+  typeof Payload,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * Makes a map-reduce flow.
  *
  * The flow input must be a literal `{ shards }` available while planning.
@@ -74,7 +102,7 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const stages = { map: options.map, reduce: options.reduce }
@@ -87,53 +115,54 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     })
   }
   const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [stages.map, stages.reduce],
-    body: Node.capture({ concurrency, onEmpty }, (input) => {
-      if (
-        typeof input !== "object" ||
-        input === null ||
-        !("shards" in input) ||
-        !Array.isArray(input.shards)
-      ) {
-        throw new PatternError({
-          code: "invalid_input",
-          message: "MapReduce input must contain a shards array"
-        })
+  const body = (input: { readonly shards: unknown }): Node.Node<unknown, unknown, R> => {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      !("shards" in input) ||
+      !Array.isArray(input.shards)
+    ) {
+      throw new PatternError({
+        code: "invalid_input",
+        message: "MapReduce input must contain a shards array"
+      })
+    }
+    const shards = input.shards as ReadonlyArray<unknown>
+    if (shards.length === 0) {
+      if (onEmpty === "fail") {
+        throw new PatternError({ code: "exhausted", message: "MapReduce received no shards" })
       }
-      const shards = input.shards as ReadonlyArray<unknown>
-      if (shards.length === 0) {
-        if (onEmpty === "fail") {
-          throw new PatternError({ code: "exhausted", message: "MapReduce received no shards" })
-        }
-        return onEmpty === "succeed"
-          ? Node.succeed([])
-          : Compose.call(stages.reduce, { input, mapped: [] })
-      }
-      const shardCount = shards.length
-      const mapped = Bounded.all(
-        Object.fromEntries(shards.map((shard, index) => [
-          `shard-${index}`,
-          Compose.call(stages.map, { shard, index, input })
-        ])),
-        { concurrency }
-      )
-      return Node.andThen(
-        mapped,
-        Node.capture(
-          { concurrency, onEmpty, shardCount },
-          (values) =>
-            Compose.call(stages.reduce, {
-              input,
-              mapped: Array.from({ length: shardCount }, (_, index) => values[`shard-${index}`])
-            })
-        )
-      )
-    })
+      return onEmpty === "succeed"
+        ? Node.succeed([])
+        : callMember(stages.reduce, { input, mapped: [] })
+    }
+    const shardCount = shards.length
+    const mapped = Bounded.all(
+      Object.fromEntries(shards.map((shard, index) => [
+        `shard-${index}`,
+        callMember(stages.map, { shard, index, input })
+      ])),
+      { concurrency }
+    )
+    // The joined record is a planned reference until the run produces it. A
+    // planned value may be read by field and passed into a payload, which is
+    // what keeps the reducer's `mapped` in shard order rather than completion
+    // order without computing on anything.
+    return Node.bindPlanned(
+      mapped,
+      Node.capture({ concurrency, onEmpty, shardCount }, (values) =>
+        callMember(stages.reduce, {
+          input,
+          mapped: Array.from({ length: shardCount }, (_, index) => values[`shard-${index}`])
+        }))
+    )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: Payload,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ concurrency, onEmpty }, body)
   })
 }
 

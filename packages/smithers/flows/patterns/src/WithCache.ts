@@ -6,10 +6,10 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
 import * as CachePolicy from "@smthrs/plan/CachePolicy"
-import type * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
+import * as Node from "@smthrs/plan/Node"
+import * as Decorate from "./internal/Decorate.ts"
 import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -160,19 +160,9 @@ const validate = (options: Options): void => {
   }
 }
 
-/**
- * Attaches a policy to a flow without disturbing its declaration.
- *
- * @since 0.1.0
- * @private
- */
-const annotated = (flow: Flow.Any, policy: Policy): Flow.Any =>
-  Flow.annotate(flow as unknown as Flow.Flow<Schema.Top, Schema.Top, unknown>, CachePolicyAnnotation, policy)
-
 const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
   validate(options)
-  const details = Compose.details(inner)
-  const effects = details.effects
+  const effects = Decorate.envelopeOf(inner)
   if (
     effects === undefined ||
     effects.mode !== "hermetic" ||
@@ -184,20 +174,22 @@ const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
     })
   }
   const fields = declaredFields(options)
-  const wrapper = Flow.make({
-    name: `withCache(${Compose.displayName(inner)}${fields.length === 0 ? "" : `, ${fields.join(", ")}`})`,
-    description: details.description,
-    input: details.input,
-    output: details.output,
-    capabilities: details.capabilities,
-    effects,
-    flows: [inner],
-    body: Node.capture(captured(options), (input) => Compose.call(inner, input))
-  })
+  const wrapper = Flow.make(
+    `withCache(${Decorate.displayName(inner)}${fields.length === 0 ? "" : `, ${fields.join(", ")}`})`,
+    {
+      ...(inner.description === undefined ? {} : { description: inner.description }),
+      payload: inner.payloadSchema,
+      success: inner.successSchema,
+      error: inner.errorSchema,
+      capabilities: Decorate.capabilitiesOf(inner),
+      effects,
+      body: Node.capture(captured(options), (payload: unknown) => Decorate.call(inner, payload))
+    }
+  ) as unknown as Flow.Any
   const policy = durable(options)
   // Captured fields establish declaration identity. The flow annotation is
   // metadata for a host to lower onto an action, as the registry bridge does.
-  return policy === undefined ? wrapper : annotated(wrapper, policy)
+  return policy === undefined ? wrapper : Decorate.annotate(wrapper, CachePolicyAnnotation, policy)
 }
 
 /**
@@ -247,18 +239,18 @@ export const make = (options: Options = {}): Pattern.Decorator => {
  *
  * @example
  * ```ts
- * import { Effects, Flow, Node } from "@smthrs/core"
+ * import * as Flow from "@smthrs/flow/Flow"
  * import { WithCache } from "@smthrs/patterns"
+ * import * as Node from "@smthrs/plan/Node"
  * import * as Schema from "effect/Schema"
  *
- * const echo = Flow.make({
- *   name: "echo",
- *   input: Schema.String,
- *   output: Schema.String,
- *   effects: Effects.make({
+ * const echo = Flow.make("echo", {
+ *   payload: { input: Schema.String },
+ *   success: Schema.String,
+ *   effects: {
  *     reads: [], writes: [], mode: "hermetic", onConflict: "serialize"
- *   }),
- *   body: (input) => Node.succeed(input)
+ *   },
+ *   body: ({ input }) => Node.succeed(input)
  * })
  *
  * // The registry bridge lowers this default export's policy onto an action.
@@ -269,4 +261,4 @@ export const make = (options: Options = {}): Pattern.Decorator => {
  * @since 0.1.0
  */
 export const withCache = (inner: Flow.Any, options?: Options | undefined): Flow.Any =>
-  Compose.seal(Pattern.decorate(inner, make(options)))
+  Decorate.seal(Pattern.decorate(inner, make(options)))

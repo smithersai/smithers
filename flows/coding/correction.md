@@ -2,7 +2,7 @@
 
 `correction.ts` is an opt-in repository recipe. It exports `CorrectPlan`,
 `correctionLayers`, `SelectRepair`, and its private `CorrectionResult` schema.
-It does not change `coding/RunPlan`, register a gateway capability, or create a
+It does not change `coding/ImplementPlan`, register a gateway capability, or create a
 coding ledger. A host must explicitly compose it with the existing coding,
 agent, native JJ, executable catalog and check layers before advertising it.
 

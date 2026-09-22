@@ -15,7 +15,8 @@ import {
 import { operations } from "../wiki/operations.ts"
 import { actionLayers } from "../wiki/runtime.ts"
 import type { Evidence, PageSpec, Review } from "../wiki/schema.ts"
-import { ReviewPage, Wiki } from "../wiki/workflow.ts"
+import Wiki from "../wiki/flow.ts"
+import { ReviewPage } from "../wiki/workflow.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto>) =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))

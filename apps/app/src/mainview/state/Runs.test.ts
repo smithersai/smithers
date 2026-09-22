@@ -1872,7 +1872,7 @@ describe("workspace-bound run cards", () => {
           { kind: "control.engine.event", sequence: 3, occurredAt: 3, payload: {
             version: 1, executionId: "native-1", generation: 0, sequence: 1, eventId: "native-1/1",
             sourceId: "engine", sourceSequence: 1, emittedAtMs: 3, eventType: "flows.engine.run-decision",
-            meta: { lineageId: "native-1" }, payload: { decision: "created", state: { version: 1, flowName: "coding/RunPlan", payload: {} } }
+            meta: { lineageId: "native-1" }, payload: { decision: "created", state: { version: 1, flowName: "coding/ImplementPlan", payload: {} } }
           } }
         ] }
     }

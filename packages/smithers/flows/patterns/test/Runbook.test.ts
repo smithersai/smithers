@@ -1,24 +1,53 @@
+/**
+ * `Runbook` on `@smthrs/flow`'s `Graph.build`.
+ *
+ * Every assertion is the one it was: which steps are gated, what each approval
+ * request carries, and which declarations are refused. One reading moved: an
+ * approval call's declared payload is `node.payload` rather than the first
+ * `Literal` of `keyMaterial.inputs`.
+ */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as Runbook from "../src/Runbook.ts"
 import * as WithApproval from "../src/WithApproval.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const step = Flow.make({
+/** The envelope every declared step is handed. */
+const Envelope = Schema.Struct({
+  step: Schema.String,
+  risk: Schema.String,
+  elevated: Schema.Boolean,
   input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+  previous: Schema.Unknown
 })
 
-const approval = Flow.make({
-  name: "human-approval",
-  input: Schema.Unknown,
-  output: WithApproval.Approved,
-  body: () => Node.dynamic({ output: WithApproval.Approved })
-})
+const step = Flow.make("runbook/step", {
+  payload: Envelope,
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: Node.capture({}, (payload: typeof Envelope.Type) => Node.succeed(payload))
+}) as unknown as Flow.Any
+
+const approval = Flow.make("human-approval", {
+  payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+  success: WithApproval.Approved,
+  error: Schema.Unknown,
+  body: Node.capture({}, () => Node.succeed("approved" as const))
+}) as unknown as Flow.Any
+
+/** A declaration carrying exactly the schema pair a refusal case needs. */
+const declaring = (input: Schema.Top, output: Schema.Top): Flow.Any =>
+  Flow.make("runbook/probe", {
+    payload: input as Flow.AnyStructSchema,
+    success: output,
+    error: Schema.Never,
+    body: (value: unknown) => Node.succeed(value)
+  }) as unknown as Flow.Any
 
 const steps = [
   { id: "backup", flow: step, risk: "safe" as const },
@@ -26,29 +55,27 @@ const steps = [
   { id: "migrate", flow: step, risk: "critical" as const }
 ]
 
-const literal = (node: Graph.GraphNode): Record<string, unknown> => {
-  const first = node.keyMaterial.inputs[0]
-  return first !== undefined && first._tag === "Literal" ? first.value as Record<string, unknown> : {}
-}
+/** Every member call a graph carries, in order, named by the flow it calls. */
+const memberTags = (graph: Graph.Graph): ReadonlyArray<string> =>
+  Graph.nodes(graph)
+    .filter((node) => node.kind === "FlowCall" && node.id !== "root")
+    .map((node) => (node.ast as { readonly flow: string }).flow)
 
 const approvalCalls = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown>> =>
-  Graph.nodes(graph)
-    .filter((node) => node.kind === "FlowCall")
-    .map(literal)
-    .filter((value) => value.scope === "run")
-    .map((value) => value.input as Record<string, unknown>)
+  callsTo(graph, "human-approval")
+    .map((node) => payloadOf(node).input as Record<string, unknown>)
     .sort((left, right) => String(left.step).localeCompare(String(right.step)))
 
 describe("Runbook", () => {
   it("declares an approval call only for a non-safe step", () => {
-    const graph = Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), "release")
+    const graph = Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), { input: "release" })
 
     expect(Graph.diagnostics(graph)).toEqual([])
     expect(approvalCalls(graph).map((value) => value.step)).toEqual(["deploy", "migrate"])
   })
 
   it("marks a critical step's approval elevated and a risky one not", () => {
-    const graph = Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), "release")
+    const graph = Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), { input: "release" })
 
     expect(approvalCalls(graph).map((value) => value.elevated)).toEqual([false, true])
     expect(approvalCalls(graph).map((value) => value.risk)).toEqual(["risky", "critical"])
@@ -57,11 +84,11 @@ describe("Runbook", () => {
   it("declares no approval call when every step is safe", () => {
     const graph = Graph.build(
       Runbook.make({ steps: [{ id: "backup", flow: step, risk: "safe" }], approval, onDeny: "fail" }),
-      "release"
+      { input: "release" }
     )
 
     expect(approvalCalls(graph)).toEqual([])
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(1)
+    expect(memberTags(graph)).toEqual(["runbook/step"])
   })
 
   it("rejects an empty runbook, a duplicate step id, and an approval that permits denial", () => {
@@ -71,17 +98,27 @@ describe("Runbook", () => {
     expect(() => Runbook.make({ steps: [steps[0]!, steps[0]!], approval, onDeny: "fail" })).toThrow(
       expect.objectContaining({ code: "invalid_decorator", message: "Runbook step ids must be unique" })
     )
-    const permissive = Flow.make({
-      input: Schema.Unknown,
-      output: Schema.String,
-      body: () => Node.succeed("approved")
-    })
+    const permissive = declaring(Schema.Unknown, Schema.String)
     expect(() => Runbook.make({ steps, approval: permissive, onDeny: "fail" })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "The bound flow has an incompatible output schema: expected Literal, received String"
       })
     )
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const named = Runbook.make({
+      steps,
+      approval,
+      onDeny: "fail",
+      name: "release-runbook",
+      description: "Walk the release steps, gating the risky ones."
+    })
+
+    expect(named._tag).toBe("release-runbook")
+    expect(named.description).toBe("Walk the release steps, gating the risky ones.")
+    expect(Runbook.make({ steps, approval, onDeny: "fail" }).description).toBeUndefined()
   })
 
   it.effect("never asks for approval of a safe step", () =>
@@ -319,7 +356,7 @@ describe("Runbook", () => {
         "call Runbook.run with onDeny: \"skip\" to skip a denied step at run time."
     )
     // The supported declaration is unaffected.
-    expect(Graph.diagnostics(Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), "release")))
+    expect(Graph.diagnostics(Graph.build(Runbook.make({ steps, approval, onDeny: "fail" }), { input: "release" })))
       .toEqual([])
   })
 })

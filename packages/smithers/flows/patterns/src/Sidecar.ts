@@ -13,13 +13,31 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
+
+/**
+ * The declared form of a sidecar.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type SidecarFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * Configuration for {@link make}.
@@ -30,12 +48,12 @@ import { PatternError } from "./PatternError.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly primary: Flow.Any
-  readonly shadow: Flow.Any
-  readonly score?: Flow.Any | undefined
+  readonly primary: Member<R>
+  readonly shadow: Member<R>
+  readonly score?: Member<R> | undefined
 }
 
 /**
@@ -191,49 +209,57 @@ export const delta = (primary: number, shadow: number): Delta => {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const declared = { primary: options.primary, shadow: options.shadow }
   const score = options.score
   const { name, description } = Compose.label("sidecar", { scores: score !== undefined }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: score === undefined
-      ? [declared.primary, declared.shadow]
-      : [declared.primary, declared.shadow, score],
-    body: Node.capture({ scores: score !== undefined }, (input) => {
-      const shadow: Node.Node<unknown, unknown> = Node.catch(
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const shadow: Node.Node<unknown, unknown, R> = Node.catch(
+      Node.map(
+        callMember(declared.shadow, input),
+        Node.capture({ shadow: "settled" }, (value: unknown) => ({ quarantined: false, value }))
+      ),
+      {
+        onFailure: Node.capture(
+          { shadow: "quarantined" },
+          (error: unknown) => Node.succeed({ quarantined: true, error })
+        )
+      }
+    )
+    // The delta is computed on the REAL scores, and the pair beside it is
+    // carried as planned references: a mapper that closed over the pair would
+    // hand back the placeholder instead of the values the run produced.
+    const scored = (both: unknown): Node.Node<unknown, unknown, R> =>
+      score === undefined ? Node.succeed(both) : Node.bindPlanned(
         Node.map(
-          Compose.call(declared.shadow, input),
-          Node.capture({ shadow: "settled" }, (value: unknown) => ({ quarantined: false, value }))
-        ),
-        {
-          onFailure: Node.capture(
-            { shadow: "quarantined" },
-            (error: unknown) => Node.succeed({ quarantined: true, error })
-          )
-        }
-      )
-      const scored = (both: unknown): Node.Node<unknown, unknown> =>
-        score === undefined ? Node.succeed(both) : Node.map(
           // The scorer sees the same pair `run` hands it: the primary's value
           // and the shadow's, not the shadow's quarantine wrapper.
-          Compose.call(score, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
-          Node.capture({ scores: true }, (scores: unknown) => ({
+          callMember(score, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
+          Node.capture(
+            { scores: true },
+            (scores: unknown) => measuredDelta(field(scores, "primary") as number, field(scores, "shadow") as number)
+          )
+        ),
+        Node.capture({ scores: true }, (delta) =>
+          Node.succeed({
             primary: field(both, "primary"),
             shadow: field(both, "shadow"),
-            delta: measuredDelta(field(scores, "primary") as number, field(scores, "shadow") as number)
+            delta
           }))
-        )
-      return Node.andThen(
-        Node.all({ primary: Compose.call(declared.primary, input), shadow }),
-        Node.capture({ scores: score !== undefined }, scored)
       )
-    })
+    return Node.bindPlanned(
+      Node.all({ primary: callMember(declared.primary, input), shadow }),
+      Node.capture({ scores: score !== undefined }, scored)
+    )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ scores: score !== undefined }, body)
   })
 }
 

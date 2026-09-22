@@ -9,7 +9,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, Layer, Schema } from "effect"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import { Poc, type PocResult } from "../coding/poc.ts"
-import { Request, RunRequest } from "../coding/request.ts"
+import { Request } from "../coding/request.ts"
 import { CodingError, RequestResult, checkInputDigest, type Revision, type Plan, type Implementation } from "../coding/schema.ts"
 import { PrepareRequest } from "../coding/preparation.ts"
 import { readVibeRequest } from "../coding/vibe-evidence.ts"
@@ -112,7 +112,7 @@ for (const mode of modes) test(`vibe evidence: ${mode}`, async () => {
       Effect.provide(RunStore.layerNoop({ get: id => rows.has(id) && !(mode === "collected" && id === "delegate")
         ? Effect.succeed(rows.get(id)!) : Effect.fail(new RunStore.RunStoreError({ code: "not_found_row", method: "get", message: "collected", cause: null })) })))
   }).pipe(Effect.provide(Layer.mergeAll(DurableEngineState.layerMemory, ControlRuntime.layerMemory({ flows: ["coding/request", "other"].map(flowId => ({
-    flowId, description: "fixture", deployClass: false, envelope: { capabilities: [], flows: [RunRequest._tag], budget: {} }
+    flowId, description: "fixture", deployClass: false, envelope: { capabilities: [], flows: [], budget: {} }
   })) }).pipe(Layer.provide(NodeServices.layer)))))
   if (mode === "valid" || mode === "prepared" || mode === "forked-root" || mode === "trampoline-parent") {
     const result = await Effect.runPromise(program)

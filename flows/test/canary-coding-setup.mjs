@@ -9,21 +9,76 @@ if (!process.argv[2]) throw Error('Pass the directory for the canary setup artif
 const output = resolve(process.argv[2])
 const { build } = createRequire(source + '/package.json')('esbuild')
 await mkdir(output, { recursive: true })
-const bundled = await build({ stdin: { contents: 'export {Flow} from "@smthrs/core"; export {Schema} from "effect"; export * from "./coding/schema.ts"; export * from "./coding/vibe-schema.ts";', resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node22.19' })
+// Each `flows/coding/<name>/flow.ts` IS the flow it declares: one
+// `export default Flow.make("<tag>", { ..., body })` over the actions its
+// siblings export, and no delegate. The canary ships those modules verbatim, so
+// the bundled API is derived from what they import rather than fixed here: the
+// named imports of each authored file, resolved against `flows/`, re-exported
+// once per module and read back through the hoisted factory below.
+const entries = ['flow.ts', 'implementation/flow.ts', 'request/flow.ts', 'vibe/flow.ts']
+const authored = new Map()
+const clausePattern = /^import \{([^}]+)\} from "([^"]+)"$/gm
+/** The module id a specifier names, as `flows/` sees it. */
+const moduleIdOf = (relative, specifier) => specifier.startsWith('.')
+  ? './' + join('coding', relative, '..', specifier)
+  : specifier
+const members = new Map()
+const owner = new Map()
+for (const relative of entries) {
+  const text = await readFile(join(source, 'flows/coding', relative), 'utf8')
+  authored.set(relative, text)
+  for (const match of text.matchAll(clausePattern)) {
+    const moduleId = moduleIdOf(relative, match[2])
+    for (const clause of match[1].split(',').map(value => value.trim()).filter(Boolean)) {
+      const origin = clause.split(/\s+as\s+/)[0]
+      const claimed = owner.get(origin)
+      if (claimed !== undefined && claimed !== moduleId) throw Error(`Two modules export ${origin}: ${claimed} and ${moduleId}`)
+      owner.set(origin, moduleId)
+      members.set(moduleId, (members.get(moduleId) ?? new Set()).add(origin))
+    }
+  }
+}
+const contents = [...members].map(([moduleId, names]) => `export {${[...names].sort().join(',')}} from ${JSON.stringify(moduleId)};`).join('')
+const bundled = await build({ stdin: { contents, resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node22.19' })
 if (Object.values(bundled.metafile.outputs).some(file => file.imports.length > 0)) throw Error('Coding declarations must bundle every dependency')
 const api = bundled.outputFiles[0].text
 const exports = api.match(/export\{([^}]+)\};?\s*$/)
 if (!exports) throw Error('Expected static bundled exports')
 const names = exports[1].split(',').map(value => value.trim().split(/\s+as\s+/)).map(([local, exported]) => JSON.stringify(exported ?? local) + ':' + local)
-const factory = 'function createCodingApi(){' + api.slice(0, exports.index) + 'return {' + names.join(',') + '}}\n'
+if (new Set(names.map(entry => entry.split(':')[0].slice(1, -1))).size !== owner.size) {
+  throw Error('The bundled API must export every name the coding declarations import')
+}
+const body = api.slice(0, exports.index)
 const files = {}
-for (const relative of ['flow.ts', 'implementation/flow.ts', 'request/flow.ts', 'vibe/flow.ts']) {
-  const authored = await readFile(join(source, 'flows/coding', relative), 'utf8')
-  const imports = [...authored.matchAll(/^import \{([^}]+)\} from [^\n]+$/gm)].flatMap(match => match[1].split(',').map(s => s.trim()))
+for (const relative of entries) {
+  const text = authored.get(relative)
+  const bindings = [...text.matchAll(clausePattern)].flatMap(match =>
+    match[1].split(',').map(value => value.trim()).filter(Boolean).map(clause => {
+      const [origin, alias] = clause.split(/\s+as\s+/)
+      return alias === undefined ? origin : origin + ':' + alias
+    })
+  )
+  // A module's own default export reaches its registration through a
+  // self-import, which resolves to this same file wherever it is installed, so
+  // that one line stays and every other binding comes from the factory.
+  const selfImport = ' from "./' + relative.split('/').at(-1) + '"'
+  const stripped = text.split('\n')
+    .filter(line => !line.startsWith('import ') || (!line.startsWith('import {') && line.endsWith(selfImport)))
+    .join('\n')
+  // A declaration that binds a name the host already defines (`atomError as
+  // Error`) shadows it for the whole module, including inside the factory, and
+  // the factory runs while that binding is still uninitialised. The factory
+  // therefore opens by taking each such name from `globalThis`, so the bundled
+  // code keeps reading the global it was written against.
+  const shadowed = bindings.map(binding => binding.split(':').at(-1)).filter(name => name in globalThis)
   // A hoisted factory keeps metadata first and every dependency in this
   // source-hashed entry, without package installation or URL imports.
-  const entry = 'const {' + imports.join(',') + '} = createCodingApi()\n' + authored.replace(/^import [^\n]+\n/gm, '').trim() + '\n' + factory
+  const factory = 'function createCodingApi(){' +
+    shadowed.map(name => `const ${name}=globalThis.${name};`).join('') +
+    body + 'return {' + names.join(',') + '}}\n'
+  const entry = 'const {' + bindings.join(',') + '} = createCodingApi()\n' + stripped.trim() + '\n' + factory
   if (Buffer.byteLength(entry) > 4 * 1024 * 1024) throw Error('Declaration exceeds discovery limit')
+  if (!/^export default Flow\.make\("[^"]+", \{/m.test(entry)) throw Error(`${relative} must default-export one tagged flow`)
   files['flows/coding/' + relative] = entry
 }
 const fast = `from pathlib import Path

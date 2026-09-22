@@ -17,7 +17,8 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { Node } from "@smthrs/plan"
 import { IncrementalWiki, Load, Select, policySources, reuseLayers } from "../wiki/reuse.ts"
 import { actionLayers, agentLayers } from "../wiki/runtime.ts"
-import { Collect, Wiki } from "../wiki/workflow.ts"
+import Wiki from "../wiki/flow.ts"
+import { Collect } from "../wiki/workflow.ts"
 import { type Input, PageSpec, WikiError } from "../wiki/schema.ts"
 
 /** One evidence judge dispatches citation and completion questions for this host. */

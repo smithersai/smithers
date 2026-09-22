@@ -112,7 +112,8 @@ describe("Transform.approvedPackages", () => {
   it("approves every package the target model tells the agent to import", () => {
     // The prompt names each module a migrated unit reaches for. Every one of
     // them has to be installable, or the contract forbids the import it
-    // requires: `@smthrs/core` is the descriptor every flow module exports.
+    // requires: `@smthrs/core` declares the body-less signature a bound tool
+    // flow is.
     const named = [...new Set(Contract.targetModel.match(/@smthrs\/[a-z-]+/g) ?? [])].sort()
     expect(named.length).toBeGreaterThan(0)
     for (const name of named) expect(Transform.approvedPackages).toContain(name)

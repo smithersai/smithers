@@ -1,30 +1,36 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
+import { callsTo } from "./Graphs.ts"
 
-const flowNamed = (capability: string): Flow.Any =>
-  Flow.make({
-    name: capability,
-    capabilities: [capability],
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: (input) => Node.succeed(input)
+// One stage flow per role, tagged with its own name. Core named a stage by the
+// single capability it declared and counted calls by reading that capability
+// back off key material; `@smthrs/flow` names a call by the callee's tag, so
+// the shared `callsTo` counts exactly the same calls by that tag.
+const flowNamed = (tag: string) =>
+  Flow.make(tag, {
+    payload: {
+      input: Schema.optional(Schema.Unknown),
+      iteration: Schema.optional(Schema.Unknown),
+      issue: Schema.optional(Schema.Unknown),
+      index: Schema.optional(Schema.Unknown),
+      issues: Schema.optional(Schema.Unknown),
+      fixes: Schema.optional(Schema.Unknown)
+    },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    capabilities: [tag],
+    body: Node.capture({ tag }, (payload) => Node.succeed(payload))
   })
 
 const scan = flowNamed("sfv/scan")
 const fix = flowNamed("sfv/fix")
 const verify = flowNamed("sfv/verify")
-
-const callsTo = (graph: Graph.Graph, capability: string): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) =>
-    node.kind === "FlowCall" &&
-    (node.keyMaterial.body as { readonly capabilities?: ReadonlyArray<string> }).capabilities?.includes(capability) ===
-      true
-  )
 
 interface Issue {
   readonly id: string
@@ -45,13 +51,22 @@ describe("ScanFixVerify", () => {
       maxIssues: 3,
       concurrency: 2
     })
-    const graph = Graph.build(pattern, { path: "src" })
+    const graph = Graph.build(pattern, { input: { path: "src" } })
 
     expect(Flow.isFlow(pattern)).toBe(true)
     expect(callsTo(graph, "sfv/scan")).toHaveLength(2)
     expect(callsTo(graph, "sfv/fix")).toHaveLength(6)
     expect(callsTo(graph, "sfv/verify")).toHaveLength(2)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(4)
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const options = { scan, fix, verify, maxRetries: 1, maxIssues: 1, concurrency: 1 }
+    const pattern = ScanFixVerify.make({ ...options, name: "lint-fix", description: "Fix what the linter found." })
+
+    expect(pattern._tag).toBe("lint-fix")
+    expect(pattern.description).toBe("Fix what the linter found.")
+    expect(ScanFixVerify.make(options).description).toBeUndefined()
   })
 
   it("rejects bounds below one", () => {

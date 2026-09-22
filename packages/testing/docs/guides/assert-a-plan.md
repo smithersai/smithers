@@ -41,7 +41,7 @@ can separate "the plan called `FileSystem.readFile`" from "the plan called
 `Jj.status`" from "the input schema failed to decode".
 
 Building on its own is available too: `Plan.fromGraph` projects a
-[`@smthrs/core`](/api/core) graph, and `Plan.keys` derives just the step keys.
+[`@smthrs/flow`](/api/flow) graph, and `Plan.keys` derives just the step keys.
 
 ## Assert on the graph
 
@@ -63,20 +63,19 @@ yield * planned.envelope({ deny: ["proc:spawn"], may: ["fs:read ./"] })
 The effect assertion assumes the `test` node declares these paths:
 
 ```ts
-import * as Effects from "@smthrs/core/Effects"
+import * as Flow from "@smthrs/flow/Flow"
 
-const testEffects = Effects.make({
+const Test = Action.make("review/test", { payload, success }).annotate(Flow.EffectsDeclaration, {
   reads: ["workspace/input"],
   writes: ["workspace/output"],
-  mode: "hermetic",
-  onConflict: "serialize"
+  boundaryMode: "expected"
 })
 ```
 
-Attach `testEffects` with `Node.withEffects`. `Plan.planOf` and `Plan.fromGraph`
-project declared paths as `read:<path>` and `write:<path>`, not kernel capability
-names such as `fs:read` or `proc:spawn`. An undeclared node has an empty effect
-list; inherited admission remains in its `envelope`.
+`Plan.planOf` and `Plan.fromGraph` project declared paths as `read:<path>`,
+`write:<path>`, and `remove:<path>`, not kernel capability names such as
+`fs:read` or `proc:spawn`. A node that declares no effects has an empty effect
+list.
 
 Three of those have behavior worth knowing:
 
@@ -88,9 +87,15 @@ Three of those have behavior worth knowing:
 - `declaresEffects` sorts both sides, so declaration order in the flow never
   breaks a test.
 
-`planned.node(id)` narrows the same vocabulary to one node, adding `mode`,
-`tier`, and `onConflict`. These fields come from the node's own declaration
-and are absent on an undeclared node.
+`planned.node(id)` narrows the same vocabulary to one node, adding `mode` and
+`tier`. `mode` is the boundary mode of the node's own effect declaration and is
+absent when it declared none. `tier` is the tier the node is keyed under, and
+every node has one.
+
+There is no per-node conflict strategy or envelope to assert. Write overlap is
+`Plan.compile`'s verdict, and an effect envelope is a ceiling `Graph.build`
+checks a declaration against: a declaration outside it fails the build with
+`effect_outside_envelope`, which is what a test asserts instead.
 
 ## Snapshot the whole plan
 

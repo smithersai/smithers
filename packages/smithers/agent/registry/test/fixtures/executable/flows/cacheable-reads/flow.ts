@@ -15,6 +15,7 @@ import { Schema } from "effect"
  * are a best effort, which is not the hard boundary a shared result needs.
  */
 export default Flow.make({
+  name: "cacheable-reads",
   description: "Declares file inputs and a soft boundary beside a cache policy.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

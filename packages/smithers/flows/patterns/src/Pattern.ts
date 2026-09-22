@@ -1,18 +1,22 @@
 /**
  * Flow-valued slots and authority-narrowing decorators.
  *
- * These combinators are a forward-compatible bridge for the future
- * `Schema.Flow` and `Flow.decorate` core surfaces.
+ * A slot is a schema-constrained hole a caller fills with a flow; a decorator
+ * wraps one flow in another and re-declares the result under the wrapped
+ * flow's schemas and authority ceiling. Both read a `@smthrs/flow` declaration
+ * through `internal/Decorate.ts`, which is where the capability ceiling and the
+ * effect envelope are read off the annotation bag `Graph.build` consults.
  *
  * @see https://smithers.sh/docs/reference/api/patterns
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0
  */
-import { Flow } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
 import { dual } from "effect/Function"
 import type * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -27,9 +31,7 @@ export interface Slot<I extends Schema.Top, O extends Schema.Top> {
   readonly default?: Flow.Any | undefined
 }
 
-type SchemaCompatibilityIssue = Exclude<ReturnType<typeof Compose.schemasCompatible>, undefined>
-
-const schemaRefusalMessage = (subject: string, issue: SchemaCompatibilityIssue): string => {
+const schemaRefusalMessage = (subject: string, issue: Decorate.SchemaCompatibilityIssue): string => {
   if (issue._tag === "SchemaConversionFailed") {
     return `${subject} ${issue.side} schemas cannot be compared because the ${issue.schema} ${issue.side} schema ` +
       `(${issue.tag}) has no JSON Schema form`
@@ -45,8 +47,7 @@ const schemaRefusalMessage = (subject: string, issue: SchemaCompatibilityIssue):
  *
  * Defaults are checked immediately so an invalid declaration cannot enter a
  * plan. The returned slot is a frozen copy of the options, so a later edit to
- * the caller's object does not reach {@link bind}. Replace this bridge with
- * `Schema.Flow` when core provides it.
+ * the caller's object does not reach {@link bind}.
  *
  * @category constructors
  * @since 0.1.0
@@ -56,7 +57,7 @@ export const slot = <I extends Schema.Top, O extends Schema.Top>(
 ): Slot<I, O> => {
   const issue = options.default === undefined
     ? undefined
-    : Compose.schemasCompatible(options.input, options.output, options.default)
+    : Decorate.schemasCompatible(options.input, options.output, options.default)
   if (issue !== undefined) {
     throw new PatternError({
       code: "invalid_decorator",
@@ -72,9 +73,8 @@ export const slot = <I extends Schema.Top, O extends Schema.Top>(
 /**
  * Resolves a slot to a supplied flow or its default.
  *
- * The failure is raised during pure plan construction, matching core's typed
- * `FlowError` construction failures. Replace this bridge with flow-schema
- * decoding when core provides `Schema.Flow`.
+ * The failure is raised during pure plan construction, so a declaration that
+ * does not fit its slot never reaches a graph.
  *
  * @category constructors
  * @since 0.1.0
@@ -90,7 +90,7 @@ export const bind = <I extends Schema.Top, O extends Schema.Top>(
       message: "A required flow slot was not bound and has no default"
     })
   }
-  const issue = Compose.schemasCompatible(declaration.input, declaration.output, flow)
+  const issue = Decorate.schemasCompatible(declaration.input, declaration.output, flow)
   if (issue !== undefined) {
     throw new PatternError({
       code: "invalid_decorator",
@@ -130,11 +130,11 @@ export interface Clipped {
  * @since 0.1.0
  */
 export const clipped = (template: Flow.Any, supplied: Flow.Any): Clipped => {
-  const expected = Compose.details(template)
-  const actual = Compose.details(supplied)
-  const effects = Compose.intersectEffects(expected.effects, actual.effects)
-  const capabilities = actual.capabilities.filter(
-    (capability) => !Compose.intersectCapabilities(expected.capabilities, actual.capabilities).includes(capability)
+  const expected = Decorate.capabilitiesOf(template)
+  const actual = Decorate.capabilitiesOf(supplied)
+  const effects = Compose.intersectEffects(Decorate.envelopeOf(template), Decorate.envelopeOf(supplied))
+  const capabilities = actual.filter(
+    (capability) => !Compose.intersectCapabilities(expected, actual).includes(capability)
   )
   return {
     capabilities: [...new Set(capabilities)].sort(),
@@ -151,8 +151,7 @@ export const clipped = (template: Flow.Any, supplied: Flow.Any): Clipped => {
  *
  * The returned name derives from the decorator result (or the decorator
  * function name), and the extra flow call makes the decorator chain part of
- * declaration identity. Replace this bridge with `Flow.decorate` when core
- * provides it.
+ * declaration identity.
  *
  * @category combinators
  * @since 0.1.0
@@ -168,23 +167,23 @@ export const decorate: {
       message: "A flow decorator must return a Flow"
     })
   }
-  const issue = Compose.schemasCompatible(self.input, self.output, supplied)
+  const issue = Decorate.schemasCompatible(self.payloadSchema, self.successSchema, supplied)
   if (issue !== undefined) {
     throw new PatternError({
       code: "invalid_decorator",
       message: schemaRefusalMessage("The flow decorator result", issue)
     })
   }
-  const innerName = Compose.displayName(self)
-  const suppliedName = Compose.details(supplied).name
+  const innerName = Decorate.displayName(self)
+  const suppliedName = supplied._tag
   const decoratorName = decorator.name.length === 0 ? "decorate" : decorator.name
-  // An unnamed decorator result carries the empty string, not `undefined`, so
-  // it must not be adopted as the composed name: a flow called "" is worse than
+  // A decorator result that named itself nothing carries the empty tag, which
+  // must not be adopted as the composed name: a flow called "" is worse than
   // the derived `decorate(anonymous)`.
-  const name = suppliedName !== undefined && suppliedName.length > 0 && suppliedName !== innerName
+  const name = suppliedName.length > 0 && suppliedName !== innerName
     ? suppliedName
     : `${decoratorName}(${innerName})`
-  return Compose.redeclare(self, supplied, name)
+  return Decorate.redeclare(self, supplied, name)
 })
 
 /**

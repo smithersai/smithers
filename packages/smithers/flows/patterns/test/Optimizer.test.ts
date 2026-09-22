@@ -1,38 +1,66 @@
+/**
+ * `Optimizer` on `@smthrs/flow`'s `Graph.build`.
+ *
+ * The declaration assertions are the same observable facts as before: one
+ * generate and one evaluate call per declared iteration, and the next
+ * generation reading the previous attempt by field. Comparing a score against
+ * the target is a decision {@link Optimizer.run} makes on a real value; the
+ * declaration's one test, reaching the bound, reads the declared bound and so
+ * stays at plan time.
+ */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Optimizer from "../src/Optimizer.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo } from "./Graphs.ts"
 
-const generate = Flow.make({
-  name: "generate",
-  capabilities: ["optimizer/generate"],
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+/** The generate member: it is handed `{ input, previous, iteration }`. */
+const generate = Flow.make("optimizer/generate", {
+  payload: { input: Schema.Unknown, previous: Schema.Unknown, iteration: Schema.Number },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: Node.capture({}, ({ iteration }: { readonly iteration: number }) => Node.succeed({ candidate: iteration }))
 })
 
-const evaluate = Flow.make({
-  name: "evaluate",
-  capabilities: ["optimizer/evaluate"],
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
-})
-
-const literalInput = (node: Graph.GraphNode): Record<string, unknown> => {
-  const literal = node.keyMaterial.inputs.find((input) => input._tag === "Literal")
-  return (literal as { readonly value: Record<string, unknown> }).value
-}
-
-const callsTo = (graph: Graph.Graph, capability: string): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) =>
-    node.kind === "FlowCall" &&
-    (node.keyMaterial.body as { readonly capabilities?: ReadonlyArray<string> }).capabilities?.includes(capability) ===
-      true
+/** The evaluate member: it is handed `{ value, iteration }`. */
+const evaluate = Flow.make("optimizer/evaluate", {
+  payload: { value: Schema.Unknown, iteration: Schema.Number },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: Node.capture(
+    {},
+    ({ iteration }: { readonly iteration: number }) =>
+      Node.succeed({ score: iteration, feedback: `feedback-${iteration}` })
   )
+})
+
+/**
+ * What a node's key material states.
+ *
+ * `@smthrs/core`'s `keyMaterial` is `@smthrs/flow`'s `draft.material`, with the
+ * same `Literal` and `Ref` input vocabulary, so these assertions translate name
+ * for name.
+ */
+const material = (node: Graph.GraphNode): {
+  readonly body: unknown
+  readonly inputs: ReadonlyArray<{ readonly _tag: string }>
+} => node.draft.material as never
+
+const literalInput = (node: Graph.GraphNode): Record<string, unknown> =>
+  (material(node).inputs.find((input) => input._tag === "Literal") as unknown as {
+    readonly value: Record<string, unknown>
+  }).value
+
+const refInputs = (node: Graph.GraphNode): ReadonlyArray<unknown> =>
+  material(node).inputs.filter((input) => input._tag === "Ref")
+
+/** The node the optimizer itself is entered as, which carries its captures. */
+const entry = (graph: Graph.Graph): Graph.GraphNode =>
+  Graph.nodes(graph).find((node) => node.id === "root") as Graph.GraphNode
 
 const scripted = (scores: ReadonlyArray<number>) => ({
   generate: ({ iteration }: { readonly iteration: number }) => Effect.succeed(`candidate-${iteration}`),
@@ -68,7 +96,7 @@ describe("Optimizer", () => {
       maxIterations: 3,
       onMaxReached: "return-last"
     })
-    const graph = Graph.build(optimizer, "prompt")
+    const graph = Graph.build(optimizer, { input: "prompt" })
 
     expect(Flow.isFlow(optimizer)).toBe(true)
     expect(callsTo(graph, "optimizer/generate")).toHaveLength(3)
@@ -83,10 +111,10 @@ describe("Optimizer", () => {
       maxIterations: 2,
       onMaxReached: "return-last"
     })
-    const graph = Graph.build(optimizer, "prompt")
+    const graph = Graph.build(optimizer, { input: "prompt" })
     const generates = callsTo(graph, "optimizer/generate")
     const evaluates = callsTo(graph, "optimizer/evaluate")
-    const refs = generates[1]!.keyMaterial.inputs.filter((input) => input._tag === "Ref")
+    const refs = refInputs(generates[1]!)
 
     expect(refs).toContainEqual({ _tag: "Ref", from: evaluates[0]!.id, path: ["score"] })
     expect(refs).toContainEqual({ _tag: "Ref", from: evaluates[0]!.id, path: ["feedback"] })
@@ -111,12 +139,14 @@ describe("Optimizer", () => {
 
   it("makes the target score part of declaration identity", () => {
     const body = (targetScore: number): unknown =>
-      Graph.nodes(
-        Graph.build(
-          Optimizer.make({ generate, evaluate, targetScore, maxIterations: 2, onMaxReached: "return-last" }),
-          "prompt"
+      material(
+        entry(
+          Graph.build(
+            Optimizer.make({ generate, evaluate, targetScore, maxIterations: 2, onMaxReached: "return-last" }),
+            { input: "prompt" }
+          )
         )
-      )[0]?.keyMaterial.body
+      ).body
 
     expect(body(0.8)).not.toEqual(body(0.9))
   })
@@ -147,7 +177,23 @@ describe("Optimizer", () => {
     )
 
     const targetFree = Optimizer.make({ generate, evaluate, maxIterations: 2, onMaxReached: "return-last" })
-    expect(callsTo(Graph.build(targetFree, "prompt"), "optimizer/generate")).toHaveLength(2)
+    expect(callsTo(Graph.build(targetFree, { input: "prompt" }), "optimizer/generate")).toHaveLength(2)
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const named = Optimizer.make({
+      name: "tune-prompt",
+      description: "Generate a prompt, score it, try again.",
+      generate,
+      evaluate,
+      maxIterations: 2
+    })
+
+    expect(named._tag).toBe("tune-prompt")
+    expect(named.description).toBe("Generate a prompt, score it, try again.")
+    const derived = Optimizer.make({ generate, evaluate, maxIterations: 2 })
+    expect(derived._tag).toBe("optimizer(maxIterations=2, onMaxReached=return-last)")
+    expect(derived.description).toBeUndefined()
   })
 
   it.effect("stops at the first candidate that reaches the target", () =>
@@ -370,9 +416,9 @@ describe("Optimizer", () => {
       onMaxReached: "return-last"
     })
 
-    const material = (flow: typeof optimizer) =>
-      Graph.nodes(Graph.build(flow, "prompt")).map((node) => node.keyMaterial)
-    expect(material(optimizer)).toEqual(material(explicit))
+    const shape = (flow: typeof optimizer) =>
+      Graph.nodes(Graph.build(flow, { input: "prompt" })).map((node) => node.draft.material)
+    expect(shape(optimizer)).toEqual(shape(explicit))
   })
 
   it.effect("defaults onMaxReached to return-last in run, as Loop does", () =>

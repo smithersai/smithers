@@ -46,7 +46,7 @@ await controller.runWorkflow("coding", "will/repo", { plan })
 This is an extension to an existing app controller method, not a public package
 API. Provisioning, launch capability checks, gateway Plan/Run procedures,
 idempotency, and the run card all use their established paths. The registered
-repository descriptor is `coding`; its internal delegate tag `coding/RunPlan`
+repository descriptor is `coding`; its internal flow tag `coding/ImplementPlan`
 is not the name to pass to `flow.run`.
 
 ## New app flow and internal state

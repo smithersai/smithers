@@ -141,8 +141,9 @@ export type UnitOutline = typeof UnitOutline.Type
  */
 const basePackages: ReadonlyArray<string> = [
   "@smthrs/agent",
-  // The discovery descriptor every flow module exports is a `@smthrs/core`
-  // `Flow.make`; a list without it forbids the one import the layout needs.
+  // A bound tool flow is a body-less `@smthrs/core` `Flow.make` signature,
+  // which is what `FlowBinding.make({ flow, handler })` takes; a list without
+  // it forbids the import a migrated `workflowTool` needs.
   "@smthrs/core",
   "@smthrs/engine",
   "@smthrs/flow",

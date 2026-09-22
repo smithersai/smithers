@@ -5,7 +5,7 @@ description: "The public API of @smthrs/patterns: the two halves every pattern e
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
-[`@smthrs/core`](/api/core) plus the one effect model,
+[`@smthrs/flow`](/api/flow) and the one effect model,
 [`@smthrs/plan/Effects`](/api/plan#effects), and imports no Node built-ins.
 Nothing in it reaches the engine, the journal, or a host capability.
 
@@ -281,21 +281,21 @@ See [`@smthrs/step-cache`](/api/step-cache) for enforcement. `WithCache` itself
 allocates no cache and performs no expiry checks.
 
 ```ts
-import { Effects, Flow, Node } from "@smthrs/core"
+import { Flow } from "@smthrs/flow"
 import { WithCache } from "@smthrs/patterns"
+import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 
-const echo = Flow.make({
-  name: "echo",
-  input: Schema.String,
-  output: Schema.String,
-  effects: Effects.make({
+const echo = Flow.make("echo", {
+  payload: { input: Schema.String },
+  success: Schema.String,
+  effects: {
     reads: [],
     writes: [],
     mode: "hermetic",
     onConflict: "serialize"
-  }),
-  body: (input) => Node.succeed(input)
+  },
+  body: ({ input }) => Node.succeed(input)
 })
 
 // The registry bridge lowers this default export's policy onto an action.
@@ -518,7 +518,8 @@ importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
 `*/index` subpaths are private. The [module index](./modules.md) lists all 28
 modules with their specifiers.
 
-`@smthrs/core` supplies `Flow`, `Node`, and `Graph`. See
+[`@smthrs/flow`](/api/flow) supplies `Flow` and `Graph`, and
+[`@smthrs/plan`](/api/plan) supplies `Node`. See
 [Flows, actions, and plans](/docs/concepts/flows-actions-plans/) for what a built
 graph means, and [`@smthrs/plan`](/api/plan) for the persisted form a graph
 compiles into.

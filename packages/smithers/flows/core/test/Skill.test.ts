@@ -342,15 +342,14 @@ describe("Skill", () => {
     const flow = Result.getOrThrow(Markdown.lowerSkill(
       "---\nname: pdf\ndescription: Extract files\nallowed-tools: Read Write\n---\nPrompt"
     ))
-    const node = flow.body?.({ args: "" })
 
     expect(flow.name).toBe("pdf")
     expect(flow.description).toBe("Extract files")
-    expect(node?.ast).toMatchObject({
-      _tag: "Dynamic",
-      model: "smart",
-      flows: ["Read", "Write"],
-      prompt: "Prompt"
-    })
+    expect(flow.model).toBe("smart")
+    expect(flow.flows).toEqual(["Read", "Write"])
+    expect(flow.prompt).toBe("Prompt")
+    // The allowed tools are declarations the harness resolves, so lowering
+    // leaves them as names and attaches no implementation.
+    expect(flow.action?.name).toBe("pdf")
   })
 })

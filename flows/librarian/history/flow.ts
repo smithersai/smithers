@@ -1,10 +1,13 @@
-import { Flow as Declaration } from "@smthrs/core"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Schema } from "effect"
+// The flow below is this module's own default export. Discovery reads the
+// literal `export default Flow.make(` without importing the file, so the flow
+// cannot also be a named const; the registration beside it reads the value
+// back through this self-import, which resolves after this module evaluates.
+import History from "./flow.ts"
 import { git, GitError, sourceRevision, commitEnvironment } from "../tutorial2-background_flows-git.ts"
 
-const Input = Schema.Struct({ repo: Schema.NonEmptyString })
+export const Input = Schema.Struct({ repo: Schema.NonEmptyString })
 export const HistoryReceipt = Schema.Struct({ repo: Schema.String, sourceHead: Schema.String, sourceTree: Schema.String,
   mythicalHead: Schema.String, notesHead: Schema.String, treeEqual: Schema.Boolean })
 export type HistoryReceipt = typeof HistoryReceipt.Type
@@ -59,20 +62,27 @@ export const generateHistory = async (root: string, repo: string): Promise<Histo
   if (actual !== tree) throw new Error("The mythical history tree differs from the captured source tree.")
   return { repo, sourceHead: head, sourceTree: tree, mythicalHead, notesHead, treeEqual: true }
 }
-export const CreateHistory = Action.make("librarian/create-history", { payload: Executable.Invocation, success: HistoryReceipt, error: HistoryError })
-export const History = Flow.make("librarian/CreateHistory", { payload: Executable.Invocation, success: HistoryReceipt, error: HistoryError,
-  body: input => CreateHistory.call(input) })
+export const CreateHistory = Action.make("librarian/create-history", { payload: Input, success: HistoryReceipt, error: HistoryError })
+
+/**
+ * `modelInvocable: false` because `librarian/create-history` is implemented by
+ * the product host alone. This file sits in a repository any host may scan, and
+ * a catalog elsewhere would otherwise teach an agent a call with no
+ * implementation to reach.
+ */
+export default Flow.make("librarian/CreateHistory", {
+  description: "Create Mythical history and provenance notes atomically, preserving the source branch and tree.",
+  capabilities: ["fs:read:**", "fs:write:.git/**"],
+  effects: { reads: ["**"], writes: [".git/refs/heads/mythical", ".git/refs/notes/mythical", ".git/objects/**"], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: false,
+  payload: Input, success: HistoryReceipt, error: HistoryError,
+  body: input => CreateHistory.call(input)
+})
+
 export const registration = (root: string, owningRepo?: string) => Layer.mergeAll(
-  CreateHistory.toLayer(({ input }) => Effect.tryPromise({ try: async () => {
-      const { repo } = Schema.decodeUnknownSync(Input)(input)
+  CreateHistory.toLayer(({ repo }) => Effect.tryPromise({ try: async () => {
       if (owningRepo !== undefined && repo !== owningRepo) throw new Error("The requested repository does not own this workspace.")
       return generateHistory(root, repo)
     }, catch: cause => cause instanceof MissingSourceBookmark ? cause : String(cause) })),
   Interpreter.layer(History)
 ).pipe(Layer.provideMerge(Action.layerImplementations))
-
-export default Declaration.make({
-  description: "Create Mythical history and provenance notes atomically, preserving the source branch and tree.",
-  input: Input, output: HistoryReceipt, capabilities: ["fs:read:**", "fs:write:.git/**"], flows: ["librarian/CreateHistory"],
-  effects: { reads: ["**"], writes: [".git/refs/heads/mythical", ".git/refs/notes/mythical", ".git/objects/**"], mode: "expected", onConflict: "serialize", tier: "sealed" }
-})

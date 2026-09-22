@@ -1,10 +1,10 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/core: the Flow and Node builders, the Graph planner, effect declarations, placement, annotations, key material, Markdown lowering, Digest, and the TestRuntime evaluator."
+description: "Every public export of @smthrs/core: the Flow signature builder, the metadata modules, Markdown lowering, Digest, and the Node and Graph re-exports."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/core/docs/api.md"
 ---
 
-`@smthrs/core` exports ten modules from its root entry point, and each is also
+`@smthrs/core` exports nine modules from its root entry point, and each is also
 importable from `@smthrs/core/<Module>`:
 
 ```ts
@@ -16,163 +16,170 @@ import * as Flow from "@smthrs/core/Flow"
 `@smthrs/core/internal/*` and `@smthrs/core/*/index` are not public.
 `@smthrs/core/package.json` is exported.
 
-Flow and Node construction records declarations without executing planned
-steps. JavaScript and TypeScript declarations and all planning callbacks must
-be trusted: `Graph.build` executes them in the caller process with ambient
-process authority. Purity is a caller obligation; placement, capability, and
-effect metadata does not sandbox planning. Use a constrained data-only
-ingestion boundary or an externally isolated planner for untrusted declarations.
-`TestRuntime` also executes deferred callbacks and requires trusted code.
+Constructing a signature records a declaration without executing planned steps.
+JavaScript and TypeScript declarations and all planning callbacks must be
+trusted: `Graph.build` executes them in the caller process with ambient process
+authority. Purity is a caller obligation; placement, capability, and effect
+metadata does not sandbox planning. Use a constrained data-only ingestion
+boundary or an externally isolated planner for untrusted declarations.
 For the trust boundary and the model behind these signatures, see [Plan time](/concepts/plan-time/),
 [Identity and key material](/concepts/identity/), and
 [Effect envelopes](/concepts/effects/).
 
 ## Flow
 
-Callable, schema-described flow declarations and their immutable combinators.
-Calling a flow constructs a `FlowCall` node; it never evaluates the body.
-
-### Flow.Flow
-
-```ts
-interface Flow<in out I extends Schema.Top, out O extends Schema.Top, out E = never> extends Pipeable {
-  (input: I["Type"]): Node.Node<O["Type"], E>
-  readonly input: I
-  readonly output: O
-  readonly name?: string | undefined
-  readonly description?: string | undefined
-  readonly capabilities: ReadonlyArray<string>
-  readonly effects: Effects.Declaration | undefined
-  readonly model?: Seat | undefined
-  readonly flows?: ReadonlyArray<Reference> | undefined
-  readonly prompt?: string | undefined
-  readonly annotations: Context.Context<never>
-  readonly body: ((input: I["Type"]) => Node.Node<O["Type"], E>) | undefined
-  readonly implementation: Implementation | undefined
-}
-```
-
-The input schema is invariant because it participates in both decoding and
-encoding. Output schemas and errors are covariant. `model`, `flows`, and
-`prompt` are advisory metadata a host reads; they also form the declaration
-recorded beside the flow's implementation identity.
-
-### Flow.Any
-
-```ts
-interface Any {
-  readonly [TypeId]: object
-  readonly input: Schema.Top
-  readonly output: Schema.Top
-}
-```
-
-The marker-only existential type, for a heterogeneous collection of flows.
-
-### Flow.Reference
-
-```ts
-type Reference = Any | string
-```
-
-A callable flow reference accepted by a dynamic flow. Module-authored flows
-pass callable flow values; markdown loaders pass unresolved registry names,
-which the harness resolves before execution.
-
-### Flow.Seat
-
-```ts
-type Seat = string & {}
-```
-
-The name of a model seat a flow may run on. A seat is referred to by name,
-never by provider model id, and never by credential.
-
-### Flow.BodyDeclaration
-
-```ts
-interface BodyDeclaration {
-  readonly model?: Seat | undefined
-  readonly flows?: ReadonlyArray<Reference> | undefined
-  readonly prompt?: string | undefined
-}
-```
-
-The seat, collaborator, and prompt declaration a body-backed flow records
-beside its body digest, so a decorator that changes the declared seat changes
-the flow's key material instead of disappearing from it. A flow declaring none
-of the three records no declaration.
-
-### Flow.Implementation
-
-```ts
-type Implementation =
-  | {
-    readonly _tag: "Body"
-    readonly algorithm: "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
-    readonly digest: string
-    readonly declaration?: BodyDeclaration | undefined
-  }
-  | {
-    readonly _tag: "Dynamic"
-    readonly model: Seat | undefined
-    readonly flows: ReadonlyArray<Reference>
-    readonly prompt: string | undefined
-  }
-```
-
-Implementation identity. An unannotated body receives process-local
-`sha256-source-ephemeral/v4` identity because JavaScript cannot inspect closure
-state; [`Node.capture`](#nodecapture) produces the cross-process-stable
-`sha256-source-captures/v4` identity.
-
-### Flow.MakeOptions
-
-```ts
-interface MakeOptions<Input extends Schema.Top, Output extends Schema.Top, E> {
-  readonly name?: string | undefined
-  readonly description?: string | undefined
-  readonly input?: Input | undefined
-  readonly output?: Output | undefined
-  readonly capabilities?: ReadonlyArray<string> | undefined
-  readonly effects?: Effects.Declaration | undefined
-  readonly model?: Seat | undefined
-  readonly flows?: ReadonlyArray<Reference> | undefined
-  readonly prompt?: string | undefined
-  readonly body?: ((input: Input["Type"]) => Node.Node<Output["Type"], E>) | undefined
-}
-```
-
-`input` defaults to `Schema.Void` and `output` to `Schema.Unknown`.
-`capabilities` is deduplicated and sorted.
+Schema-described signatures, and the combinators that decorate one. `Flow.make`
+lowers what an author declares onto the values [`@smthrs/flow`](https://flow.smithers.sh/reference/api/)
+executes: a declared action, which is what a host supplies an implementation
+for, and a flow whose body is one call to that action. A signature that
+declares its own `body` keeps the body and needs no action.
 
 ### Flow.make
 
 ```ts
 const make: <
-  Input extends Schema.Top = typeof Schema.Void,
-  Output extends Schema.Top = typeof Schema.Unknown,
-  E = never
->(
-  config: MakeOptions<Input, Output, E>
-) => Flow<Input, Output, E>
+  I extends Schema.Top = typeof Schema.Void,
+  O extends Schema.Top = typeof Schema.Unknown,
+  Err extends Schema.Top = typeof Schema.Never,
+  Requires = Action.Requirement<string>
+>(config: MakeOptions<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
 ```
 
-Creates a callable flow. With a `body`, the flow's implementation is `Body` and
-`model`, `flows`, and `prompt` form its `BodyDeclaration`. With no body but a
-`model` or `flows`, the same fields form a `Dynamic` implementation and the
-body defaults to one dynamic node. With none of the three, the flow is
-declaration-only and throws [`FlowError`](#flowflowerror) with code
-`missing_body` when called or built.
-
-### Flow.agent
+Builds one signature. `name` is required and is the tag the flow, the action,
+and every plan that records a call carry; `Flow.make` throws `TypeError`
+without one rather than minting an empty tag. A declaration loaded from a file
+takes the name its loader derives from the path.
 
 ```ts
-const agent: typeof make
+import { Flow } from "@smthrs/core"
+import { Effect, Schema } from "effect"
+
+const read = Flow.make({
+  name: "std/read",
+  description: "Reads one file.",
+  input: Schema.Struct({ path: Schema.String }),
+  output: Schema.String,
+  capabilities: ["fs"]
+})
+
+const layer = read.action!.toLayer(({ path }) => Effect.succeed(path))
 ```
 
-An alias for `make`. An agent flow is an ordinary flow whose omitted body is
-filled by its model or collaborator declaration.
+### Flow.MakeOptions
+
+```ts
+interface MakeOptions<I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires> {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
+  readonly input?: I | undefined
+  readonly output?: O | undefined
+  readonly error?: Err | undefined
+  readonly capabilities?: ReadonlyArray<string> | undefined
+  readonly effects?: Effects.Declaration | undefined
+  readonly model?: Seat | undefined
+  readonly flows?: ReadonlyArray<Reference> | undefined
+  readonly prompt?: string | undefined
+  readonly body?: ((input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>) | undefined
+}
+```
+
+`input` defaults to `Schema.Void`, `output` to `Schema.Unknown`, and `error` to
+`Schema.Never`. `capabilities` is sorted and deduplicated. `model`, `flows`,
+and `prompt` are advisory metadata a catalog and a decorator read back; the
+collaborator array is copied.
+
+### Flow.Flow
+
+```ts
+interface Flow<
+  I extends Schema.Top,
+  O extends Schema.Top,
+  Err extends Schema.Top = typeof Schema.Never,
+  Requires = Action.Requirement<string>
+> extends Pipeable {
+  readonly name: string
+  readonly description: string | undefined
+  readonly input: I
+  readonly output: O
+  readonly error: Err
+  readonly capabilities: ReadonlyArray<string>
+  readonly effects: Effects.Declaration | undefined
+  readonly model: Seat | undefined
+  readonly flows: ReadonlyArray<Reference> | undefined
+  readonly prompt: string | undefined
+  readonly annotations: Context.Context<never>
+  readonly flow: DurableFlow.Flow<string, Payload<I>, O, Err, Requires>
+  readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
+  readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+}
+```
+
+`flow` is the `@smthrs/flow` flow the signature IS: hand it to `Graph.build`,
+to an `Interpreter`, or to a registry that checks that package's type id.
+`action` is the declaration a host implements with `toLayer`, and it is
+`undefined` exactly when the signature declared a `body`. `annotations` is the
+bag both carry, with the declared `capabilities` and `effects` already lowered
+into it.
+
+A signature that declared no effect envelope dispatches as `irreversible`: a
+declaration that never stated its tier must not content-share another run's
+result. `Flow.sealed` states the opposite.
+
+The requirement channel is `Action.Requirement<string>` for every body-less
+signature, because a signature's tag is typed `string`. The compiler therefore
+does not tell one missing implementation from another; the runtime context key
+is per tag and still refuses.
+
+### Flow.Payload
+
+```ts
+type Payload<I extends Schema.Top> =
+  & (I extends DurableFlow.AnyStructSchema ? I : Schema.Struct<{ readonly input: I }>)
+  & DurableFlow.AnyStructSchema
+```
+
+The struct payload a declared `input` becomes. `@smthrs/flow` requires a struct
+payload, so a non-struct input travels as the one field `input`. `call` takes
+the declared shape and wraps it, so an author never writes the wrapper.
+
+### Flow.call
+
+```ts
+readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+```
+
+Records a call in the shape the signature declares. It never runs the body:
+`Graph.build` evaluates pure bodies at plan time.
+
+### Flow.Any
+
+```ts
+interface Any {
+  readonly name: string
+  readonly description: string | undefined
+  readonly input: Schema.Top
+  readonly output: Schema.Top
+  readonly capabilities: ReadonlyArray<string>
+  readonly effects: Effects.Declaration | undefined
+  readonly flows: ReadonlyArray<Reference> | undefined
+  readonly annotations: Context.Context<never>
+  readonly flow: DurableFlow.Any
+  readonly call: (input: never) => Node.Node<unknown, unknown, unknown>
+}
+```
+
+The existential a decorator holds. It names every property a consumer outside
+this package reads off a signature.
+
+### Flow.Reference and Flow.Seat
+
+```ts
+type Reference = Any | string
+type Seat = string & {}
+```
+
+A collaborator is a signature or a registry name the harness resolves. A seat
+is a model seat name, never a provider model id.
 
 ### Flow.isFlow
 
@@ -180,735 +187,158 @@ filled by its model or collaborator declaration.
 const isFlow: (value: unknown) => value is Any
 ```
 
-Returns `true` when a value is a flow.
+The runtime type-id check, not a shape check.
 
 ### Flow.withCapabilities
 
 ```ts
 const withCapabilities: {
-  (capabilities: ReadonlyArray<string>): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>, capabilities: ReadonlyArray<string>): Flow<I, O, E>
+  (
+    capabilities: ReadonlyArray<string>
+  ): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>, capabilities: ReadonlyArray<string>): Flow<I, O, Err, Requires>
 }
 ```
 
-Adds capabilities, returning a fresh flow whose capabilities are sorted and
-duplicate-free.
+Returns a fresh signature whose capabilities are the union, sorted and
+deduplicated.
 
 ### Flow.within
 
 ```ts
 const within: {
-  (placement: Placement.Placement): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>, placement: Placement.Placement): Flow<I, O, E>
+  (placement: Placement.Placement): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>, placement: Placement.Placement): Flow<I, O, Err, Requires>
 }
 ```
 
-Places a flow within a host directive, returning a fresh flow. The
-placement-shaped special case of [`annotate`](#flowannotate).
+The placement-shaped special case of `annotate`.
 
-### Flow.annotate
+### Flow.annotate and Flow.annotateMerge
 
 ```ts
 const annotate: {
-  <I2, S>(key: Context.Key<I2, S>, value: S): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E, I2, S>(self: Flow<I, O, E>, key: Context.Key<I2, S>, value: S): Flow<I, O, E>
+  <Key, S>(
+    key: Context.Key<Key, S>,
+    value: S
+  ): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires, Key, S>(
+    self: Flow<I, O, Err, Requires>,
+    key: Context.Key<Key, S>,
+    value: S
+  ): Flow<I, O, Err, Requires>
 }
-```
 
-Attaches one typed annotation, returning a fresh flow. Annotations are metadata
-a host or a decorator reads; they do not change the flow's implementation
-digest.
-
-### Flow.annotateMerge
-
-```ts
 const annotateMerge: {
-  (annotations: Context.Context<never>): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>, annotations: Context.Context<never>): Flow<I, O, E>
+  (
+    annotations: Context.Context<never>
+  ): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>, annotations: Context.Context<never>): Flow<I, O, Err, Requires>
 }
 ```
 
-Merges an annotation bag onto a fresh flow. Supplied values override existing
-values for matching keys. The original flow, its body, and its implementation
-identity are unchanged. Decorators use this to retain metadata read by hosts.
+A custom key is advisory, so a signature annotated with one plans the same
+graph. `Annotations.Placement` and `Annotations.Effects` are not advisory:
+`Graph.build` projects both into node key material. Merged values override
+existing values for matching keys.
 
 ### Flow.withFlows
 
 ```ts
 const withFlows: {
-  (flows: ReadonlyArray<Reference>): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>, flows: ReadonlyArray<Reference>): Flow<I, O, E>
+  (flows: ReadonlyArray<Reference>): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>, flows: ReadonlyArray<Reference>): Flow<I, O, Err, Requires>
 }
 ```
 
-Replaces the collaborators a flow declares, returning a fresh flow that keeps
-its name, schemas, capabilities, effects, and annotations. For a body-backed
-flow the body is untouched and the new collaborators replace the `Body`
-implementation's declaration. For a body-less dynamic flow, both the default
-body and the `Dynamic` implementation are rebuilt.
-
-### Flow.withEffects
-
-```ts
-const withEffects: {
-  (declaration: Effects.Declaration): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>, declaration: Effects.Declaration): Flow<I, O, E>
-}
-```
-
-Replaces a flow's effect declaration, returning a fresh flow.
+Replaces the collaborators a signature declares. Everything else comes across
+unchanged, which is what lets a decorator rewrite a flow tree without dropping
+the metadata a host reads back. The replacement array is copied.
 
 ### Flow.sealed
 
 ```ts
 const sealed: {
-  (): <I, O, E>(self: Flow<I, O, E>) => Flow<I, O, E>
-  <I, O, E>(self: Flow<I, O, E>): Flow<I, O, E>
+  (): <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>) => Flow<I, O, Err, Requires>
+  <I, O, Err, Requires>(self: Flow<I, O, Err, Requires>): Flow<I, O, Err, Requires>
 }
 ```
 
-Returns a fresh flow whose declaration is `hermetic` and `sealed`. A flow with
-no declaration gets an empty one with those two values.
-
-### Flow.FlowError
-
-```ts
-class FlowError extends Schema.TaggedError<FlowError>()("flows/core/FlowError", {
-  code: FlowErrorCode,
-  message: Schema.String
-}) {}
-```
-
-Thrown by a flow call and by `Graph.build`. `FlowErrorCode` is the literal
-schema of its one code, `"missing_body"`.
+A signature that declared no envelope gains the hermetic, sealed one; a
+signature that declared one keeps its reads and writes and seals the tier.
 
 ### Flow.Input, Flow.Output, Flow.Error
 
 ```ts
 type Input<F> = F extends { readonly input: infer I extends Schema.Top } ? I["Type"] : never
 type Output<F> = F extends { readonly output: infer O extends Schema.Top } ? O["Type"] : never
-type Error<F> = F extends Flow<infer _I, infer _O, infer E> ? E : never
+type Error<F> = F extends { readonly error: infer Err extends Schema.Top } ? Err["Type"] : never
 ```
 
-Extract a flow's decoded input type, decoded output type, and error type.
+The decoded types a signature declares.
 
 ### Flow.TypeId
 
 ```ts
-const TypeId: TypeId = "~flows/core/Flow"
+const TypeId: "~flows/core/Flow"
 type TypeId = "~flows/core/Flow"
 ```
 
-The runtime type identifier carried by flow values.
+The runtime brand `isFlow` checks.
 
 ## Node
 
-Pipeable, pure-data nodes describing a flow graph. Constructing and combining
-them records an inspectable AST.
-
-### Node.Node
-
-```ts
-interface Node<out A, out E = never> extends Pipeable.Pipeable {
-  readonly ast: Ast
-}
-```
-
-`Ast` is the recorded AST type. Its shape is internal; read a plan through
-[`Graph`](#graph) rather than through the AST.
-
-### Node.Any, Node.Success, Node.Error
+`@smthrs/plan`'s node model, re-exported. `@smthrs/core/Node` is the name this
+package's consumers reach it through and adds nothing: one AST, one set of
+combinators, and one function-identity rule wherever a plan is built.
 
 ```ts
-type Any = Node<unknown, unknown>
-type Success<N> = N extends Node<infer A, infer _E> ? A : never
-type Error<N> = N extends Node<infer _A, infer E> ? E : never
+import { Node } from "@smthrs/core"
+
+const plan = Node.andThen(Node.succeed(1), (value) => Node.succeed(value + 1))
 ```
 
-### Node.isNode
-
-```ts
-const isNode: (value: unknown) => value is Any
-```
-
-### Node.succeed
-
-```ts
-const succeed: <A>(value: A) => Node<A>
-```
-
-A node that succeeds with a constant value. The value is retained by reference
-and read when `Graph.build` runs, so mutating it in between changes the
-recorded identity.
-
-### Node.fail
-
-```ts
-const fail: <E>(error: E) => Node<never, E>
-```
-
-A node that always fails with the given typed error, for re-raising inside a
-recovery arm. The error enters key material, so two failures carrying different
-data are two declarations. It is retained by reference, like a success value.
-
-### Node.all
-
-```ts
-const all: <const R extends Readonly<Record<string, Any>>>(
-  nodes: R
-) => Node<Simplify<{ readonly [K in keyof R]: Success<R[K]> }>, Error<R[keyof R]>>
-```
-
-Combines a record of independent child nodes. A member that is not a node
-raises [`NodeBuildError`](#nodenodebuilderror) with code `invalid_all_member`,
-naming the member.
-
-### Node.dynamic
-
-```ts
-function dynamic<A>(options: DynamicOptions & { readonly output?: { readonly Type: A } }): Node<A>
-function dynamic(options: DynamicOptions): Node<unknown>
-```
-
-An unelaborated dynamic model node. Passing an `output` schema types the
-node's success channel. `Dynamic` is the only node kind that participates in
-write-conflict analysis.
-
-### Node.DynamicOptions
-
-```ts
-interface DynamicOptions {
-  readonly model?: string | undefined
-  readonly flows?: ReadonlyArray<string | { readonly "~flows/core/Flow": object }> | undefined
-  readonly output?: unknown
-  readonly prompt?: string | undefined
-  readonly effects?: Effects.Declaration | undefined
-}
-```
-
-### Node.map
-
-```ts
-const map: {
-  <A, B>(f: (a: A) => B): <E>(self: Node<A, E>) => Node<B, E>
-  <A, E, B>(self: Node<A, E>, f: (a: A) => B): Node<B, E>
-}
-```
-
-Records a deferred pure function to apply to the eventual success value.
-`Graph.build` never calls it; only its identity enters the plan.
-
-### Node.andThen
-
-```ts
-const andThen: {
-  <A, B, E2>(f: (a: A) => Node<B, E2>): <E>(self: Node<A, E>) => Node<B, E | E2>
-  <B, E2>(next: Node<B, E2>): <A, E>(self: Node<A, E>) => Node<B, E | E2>
-  <A, E, B, E2>(self: Node<A, E>, f: (a: A) => Node<B, E2>): Node<B, E | E2>
-  <A, E, B, E2>(self: Node<A, E>, next: Node<B, E2>): Node<B, E | E2>
-}
-```
-
-Sequences a pure node-producing builder after a node, or a node directly when
-the first success value is not needed. `Graph.build` evaluates the builder once
-against a symbolic placeholder, so the downstream topology and its input
-references are known before execution.
-
-The placeholder is a name, not a value. Reading a member records an input
-reference and is the intended use. Arithmetic and string interpolation coerce
-it to the literal text `[planned:<path>]`, a conditional on it always takes the
-truthy branch, and neither produces a diagnostic. Its `then` member is reserved
-and reads as `undefined`, so the placeholder is never mistaken for a thenable.
-
-### Node.catch
-
-```ts
-const catch: {
-  <Handled, B, E2>(
-    options: CatchOptions<unknown, B, E2, Handled> & { readonly error: Schema.Schema<Handled> }
-  ): <A, E>(self: Node<A, E>) => Node<A | B, Exclude<E, Handled> | E2>
-  <E, B, E2>(
-    options: CatchOptions<E, B, E2> & { readonly error?: undefined }
-  ): <A>(self: Node<A, E>) => Node<A | B, E2>
-  <A, E, Handled, B, E2>(
-    self: Node<A, E>,
-    options: CatchOptions<E, B, E2, Handled> & { readonly error: Schema.Schema<Handled> }
-  ): Node<A | B, Exclude<E, Handled> | E2>
-  <A, E, B, E2>(
-    self: Node<A, E>,
-    options: CatchOptions<E, B, E2> & { readonly error?: undefined }
-  ): Node<A | B, E2>
-}
-```
-
-Recovers a node's typed failures with a statically planned arm, built once at
-plan time against a symbolic error naming the protected node. With no schema
-the whole typed error channel is handled; with one, the remainder stays in the
-error type. The symbolic error carries the same placeholder rules as
-[`andThen`](#nodeandthen).
-
-### Node.CatchOptions
-
-```ts
-interface CatchOptions<E, B, E2, Handled = E> {
-  readonly error?: Schema.Schema<Handled> | undefined
-  readonly onFailure: (error: Handled) => Node<B, E2>
-}
-```
-
-### Node.capture
-
-```ts
-const capture: <C extends Readonly<Record<string, unknown>>, Args extends ReadonlyArray<unknown>, A>(
-  captures: C,
-  operation: (this: Readonly<C>, ...args: Args) => A
-) => (...args: Args) => A
-```
-
-Binds a deeply frozen plain copy of declared data as the callback's `this`
-receiver. The returned function keeps its ordinary arguments. Use a function
-expression when reading captured data; arrow functions retain their lexical
-`this`. Caller objects are never changed or retained by the capture wrapper.
-
-```ts
-const config = { increment: 2 }
-const increment = Node.capture(config, function(value: number) {
-  return value + this.increment
-})
-config.increment = 99
-increment(3) // 5
-```
-
-Admission uses one sequence:
-
-1. Walk the original graph depth first, refusing cycles and nesting beyond 256
-   levels. Side-effect-free intrinsic brand checks reject Map, Set, WeakMap,
-   WeakSet, Date, RegExp, ArrayBuffer, SharedArrayBuffer, views, boxed primitives,
-   WeakRef and FinalizationRegistry even after prototype replacement. These
-   checks never iterate collections, coerce values or read Symbol.toStringTag.
-   Each object must have Object.prototype or null as its prototype; arrays must
-   have Array.prototype. Other prototypes, including Promise.prototype, are
-   refused. Enumerate every own key and read each own descriptor once, including
-   shared references and array length. Refuse accessors without evaluating them.
-   Records support only enumerable string-keyed data; arrays support dense
-   enumerable indices and their standard length. Symbols, functions, bigint,
-   undefined, non-finite numbers and extra array keys are refused. Frozen,
-   sealed and non-extensible states are ignored, so shallow-frozen records,
-   null-prototype records and Immer trees all follow the same path.
-2. Only after that pass succeeds, structured-clone the original objects in
-   reverse discovery order. This refuses every Proxy with a path-bearing
-   TypeError before cloning a parent or earlier object its traps could have
-   changed. Uncloneable built-ins, including a prototype-swapped Promise, are
-   also refused. A built-in revealed by the host clone, such as Error, is
-   refused; the host's clone is discarded. No input getter or collection
-   iterator is called. Proxy reflection traps can run during the structural
-   pass and can have side effects; admission is not a sandbox for those traps.
-   The host clone function is selected before visiting caller data. Like the
-   intrinsic brand checks, it relies on trusted host built-ins.
-   Hosts without structuredClone refuse object capture, including an empty
-   capture record, because they cannot prove the graph Proxy-free.
-3. Build plain objects and arrays solely from the descriptors saved in step 1,
-   preserving shared references and inserting record keys in canonical order.
-   Deep-freeze those copies, encode identity from the copy, and give only the
-   copy to the callback. Drop the admission maps and all original references.
-   No original is re-read or locked after the clone probe.
-
-The digest folds callback source with canonical copy data. Freezing or sealing
-caller data does not change identity. Comparison is structural, so aliasing is
-not identity; callbacks must not use reference equality as semantic input.
-Capturing an already-captured function nests identities and retains the inner
-function's receiver.
-
-Migration from original-object locking: read captured records through `this`
-in a function expression. An existing lexical alias still names the original
-and is outside the snapshot contract, even if that object was declared.
-JavaScript cannot rebind free variables. Callbacks must depend only on the
-snapshot's own data, ordinary arguments and explicitly versioned implementation
-behavior, not mutable aliases, ambient state or inherited behavior. The
-callback itself can retain its lexical aliases; capture neither rewrites its
-source nor claims to erase those bindings. The wrapper's dynamic call receiver
-is ignored in favor of the frozen capture receiver. Raw functions retain
-process-local identity.
-
-### Node.functionIdentity
-
-```ts
-const functionIdentity: (operation: unknown) => {
-  readonly _tag: "FunctionIdentity"
-  readonly algorithm: "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
-  readonly digest: string
-}
-```
-
-Returns the same identity recorded by node combinators. Captured operations
-use their original source and all nested capture sets. Uncaptured operations
-receive process-local, per-function entropy. Non-functions throw a `TypeError`.
-`@smthrs/plan/Node` shares this implementation and recognizes the same captured
-wrappers.
-
-### Node.within
-
-```ts
-const within: {
-  (placement: Placement.Placement): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, placement: Placement.Placement): Node<A, E>
-}
-```
-
-Adds a placement annotation without changing the original node.
-
-### Node.priority
-
-```ts
-const priority: {
-  (value: number): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, value: number): Node<A, E>
-}
-```
-
-Adds a scheduling priority annotation. A scheduler runs ready work with a
-higher number first, and children inherit the value lexically. Priority never
-enters key material. A value that is not a safe integer raises
-`NodeBuildError` with code `invalid_priority`.
-
-### Node.withEffects
-
-```ts
-const withEffects: {
-  (declaration: Effects.Declaration): <A, E>(self: Node<A, E>) => Node<A, E>
-  <A, E>(self: Node<A, E>, declaration: Effects.Declaration): Node<A, E>
-}
-```
-
-Adds an effect declaration annotation. On a non-work node the declaration
-narrows the envelope its children inherit and enters that container's identity;
-containers are not counted a second time against their own children.
-
-### Node.NodeBuildError
-
-```ts
-class NodeBuildError extends Schema.TaggedError<NodeBuildError>()("flows/core/NodeBuildError", {
-  code: NodeBuildErrorCode,
-  member: Schema.String,
-  message: Schema.String
-}) {}
-```
-
-`NodeBuildErrorCode` is the literal schema of its four codes:
-`invalid_all_member`, `invalid_continuation`, `invalid_priority`, and
-`unrepresentable_value`.
-
-### Node.TypeId
-
-```ts
-const TypeId: TypeId
-type TypeId = "~flows/core/Node"
-```
+`succeed`, `fail`, `all`, `map`, `andThen`, `branch`, `catch`, `capture`,
+`priority`, and the call constructors are documented in the
+[`@smthrs/plan` reference](https://plan.smithers.sh/reference/api/#node). A continuation that decides on a
+real value is `Node.branch`: a continuation runs once at build time, on a
+strict placeholder.
 
 ## Graph
 
-Pure graph introspection for flow declarations.
-
-### Graph.build
-
-```ts
-const build: (flowOrNode: Flow.Any | Node.Any, input?: unknown, options?: BuildOptions) => Graph
-```
-
-Builds a graph by evaluating flow bodies against their inputs and
-`Node.andThen` builders and `Node.catch` recovery callbacks against symbolic
-predecessor values. It does not execute planned steps, a `Node.map` value
-transformation, or a dynamic elaboration. `input` is the flow's input and is
-ignored for a node.
-
-All declarations and planning callbacks must be trusted and pure. They run
-with ambient process authority; purity is not enforced, and placement,
-capability, and effect metadata does not sandbox planning. See
-[Planning requires trusted declarations](/concepts/plan-time/#planning-requires-trusted-declarations).
-
-Values supplied to `Node.succeed`, `Node.fail`, and flow calls are retained by
-reference and read here.
-
-Throws [`Flow.FlowError`](#flowflowerror) for a body-less flow,
-[`Node.NodeBuildError`](#nodenodebuilderror) for a malformed continuation, and
-[`GraphBuildError`](#graphgraphbuilderror) with a limit code for an oversized
-plan. Declaration problems are recorded in [`diagnostics`](#graphdiagnostics)
-instead.
-
-### Graph.BuildOptions
+`@smthrs/flow`'s plan-time graph builder, re-exported. `Graph.build` takes a
+flow or a node, splices every call it can reach, and answers the topology,
+the drafts a plan is compiled from, and the refusals it recorded rather than
+threw.
 
 ```ts
-interface BuildOptions {
-  readonly resolveLayers?: ((request: LayerRequest) => Iterable<string>) | undefined
-}
+import { Flow, Graph, Node } from "@smthrs/core"
+import { Schema } from "effect"
+
+const greeting = Flow.make({
+  name: "greeting",
+  input: Schema.Struct({ name: Schema.String }),
+  output: Schema.String,
+  body: ({ name }) => Node.succeed(`Hello, ${name}`)
+})
+
+const graph = Graph.build(greeting.flow, { name: "world" })
 ```
 
-`resolveLayers` is invoked independently for each node and must be trusted
-and pure under the same
-[planning obligation](/concepts/plan-time/#planning-requires-trusted-declarations).
-It returns resolved host, model, and permission implementation identities as
-strings, not Effect layers or runtime handles, and the result becomes the
-node's `layers` key material.
+`build`, `nodes`, `edges`, `drafts`, `diagnostics`, `maximumGraphDepth`, and
+the `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, and
+`BuildOptions` types are documented in the
+[`@smthrs/flow` reference](https://flow.smithers.sh/reference/api/#graph), including every build refusal and
+which of them are fatal.
 
-### Graph.LayerRequest
-
-```ts
-interface LayerRequest {
-  readonly nodeId: string
-  readonly kind: NodeAst["_tag"] | "LaneMerge"
-  readonly model: string | undefined
-  readonly capabilities: ReadonlyArray<string>
-  readonly effects: Effects.Declaration | undefined
-  readonly placement: Placement.Placement | undefined
-}
-```
-
-### Graph.Graph
-
-```ts
-interface Graph
-```
-
-An immutable, observation-only flow graph. `build` deep-freezes everything it
-constructs, so the getters hand back the graph's own values rather than copies.
-Read a graph through [`nodes`](#graphnodes), [`edges`](#graphedges),
-[`effects`](#grapheffects), [`placements`](#graphplacements),
-[`conflicts`](#graphconflicts), [`diagnostics`](#graphdiagnostics), and
-[`keyMaterial`](#graphkeymaterial). The type is opaque and names no storage
-field, so a getter is the only way to read a graph and no write to a frozen
-node can typecheck.
-
-### Graph.nodes
-
-```ts
-const nodes: (graph: Graph) => ReadonlyArray<GraphNode>
-```
-
-Returns the graph's nodes in structural preorder.
-
-### Graph.GraphNode
-
-```ts
-interface GraphNode {
-  readonly id: string
-  readonly kind: NodeAst["_tag"] | "LaneMerge"
-  readonly dependencies: ReadonlyArray<string>
-  readonly declaredEffects: Effects.Declaration | undefined
-  readonly effectiveEffects: Effects.Declaration | undefined
-  readonly placement: Placement.Placement | undefined
-  readonly lane: Graph.Lane | undefined
-  readonly priority: number | undefined
-  readonly capabilities: ReadonlyArray<string>
-  readonly annotations: AnnotationsProjection
-  readonly keyMaterial: KeyMaterial.KeyMaterial
-}
-```
-
-`id` is the node's structural position, such as `root.andThen.all.api`. It is
-traversal data and never reaches a step key. `kind` is the AST tag, or
-`LaneMerge` for a merge node this package synthesized. `effectiveEffects` is
-populated for work nodes only.
-
-### Graph.Lane
-
-```ts
-interface Lane {
-  readonly id: string
-}
-```
-
-The worktree lane the write-conflict pass assigns to a laned writer, named
-after the node it belongs to. Nothing declares one: this is the only thing that
-produces a lane.
-
-### Graph.AnnotationsProjection
-
-```ts
-interface AnnotationsProjection {
-  readonly placement: Placement.Placement | undefined
-  readonly effects: Effects.Declaration | undefined
-  readonly lane: Graph.Lane | undefined
-  readonly priority: number | undefined
-}
-```
-
-A serializable projection of the four annotations this package resolves.
-
-### Graph.edges
-
-```ts
-const edges: (graph: Graph) => ReadonlyArray<Edge>
-```
-
-Returns dependency edges in structural preorder.
-
-### Graph.Edge and Graph.EdgeReason
-
-```ts
-interface Edge {
-  readonly from: string
-  readonly to: string
-  readonly reason: EdgeReason
-}
-
-type EdgeReason = "value" | "continuation" | "conflict" | "lane-merge"
-```
-
-`value` is a structural dependency, `continuation` is a statically planned
-`andThen` or `catch` arm, `conflict` is an ordering edge the write-conflict
-pass added, and `lane-merge` orders laned writers, their merges, and consumers.
-Continuation prerequisites reach the executable entries inside `All`, `Map`,
-`FlowCall`, `AndThen`, and `Catch`. Recovery entries retain a conditional
-prerequisite on the protected node, represented by a `Pending` key input.
-
-### Graph.effects
-
-```ts
-const effects: (graph: Graph) => ReadonlyArray<EffectEntry>
-```
-
-Returns declared and inherited effect data for the nodes that carry either.
-
-### Graph.EffectEntry
-
-```ts
-interface EffectEntry {
-  readonly nodeId: string
-  readonly declared: Effects.Declaration | undefined
-  readonly effective: Effects.Declaration | undefined
-}
-```
-
-### Graph.placements
-
-```ts
-const placements: (graph: Graph) => ReadonlyArray<PlacementEntry>
-```
-
-Returns resolved placement data in structural preorder, skipping nodes that
-resolved none.
-
-### Graph.PlacementEntry
-
-```ts
-interface PlacementEntry {
-  readonly nodeId: string
-  readonly placement: Placement.Placement
-}
-```
-
-### Graph.conflicts
-
-```ts
-const conflicts: (graph: Graph) => ReadonlyArray<Conflict>
-```
-
-Returns overlapping-write conflict data.
-
-### Graph.Conflict
-
-```ts
-interface Conflict {
-  readonly nodes: readonly [string, string]
-  readonly paths: ReadonlyArray<string>
-  readonly strategy: "serialize" | "lane" | "fail"
-  readonly mergeNodeId?: string | undefined
-}
-```
-
-`strategy` is the stricter of the two declarations' `onConflict` values: `fail`
-beats `lane`, and `lane` beats `serialize`. `mergeNodeId` is set only for a
-`lane` conflict. Merges sharing a writer run in conflict order. Consumer
-dependencies exclude serialization edges and prerequisites of either writer.
-The completed graph is checked for dependency cycles.
-
-### Graph.diagnostics
-
-```ts
-const diagnostics: (graph: Graph) => ReadonlyArray<GraphBuildError>
-```
-
-Returns build diagnostics without throwing.
-
-### Graph.GraphBuildError
-
-```ts
-class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/plan/GraphBuildError", {
-  code: GraphBuildErrorCode,
-  node: Schema.String,
-  path: Schema.Array(Schema.String),
-  message: Schema.String
-}) {}
-```
-
-This is [`@smthrs/plan`](https://plan.smithers.sh/reference/api/#graphbuilderror)'s `GraphBuildError`, the one build refusal,
-which [`@smthrs/flow`](https://flow.smithers.sh/reference/api/)'s graph builder raises too. `Graph` re-exports the class, its
-code union, and `isFatalDiagnostic`.
-
-`node` names the site. `path` carries the escaping effect paths, the dropped
-capabilities, or an oversized plan value's path, and is empty for every other
-code. `message` states the fix.
-
-`Graph.build` raises thirteen of the codes the union carries:
-
-| Code                       | Meaning                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `effect_outside_envelope`  | A step declared a path its envelope does not cover. `path` names them.                                   |
-| `effect_mode_widening`     | A `hermetic` envelope with an `expected` step.                                                           |
-| `effect_tier_widening`     | A step whose tier is less reversible than its envelope's.                                                |
-| `write_conflict`           | Two work nodes overlap under `onConflict: "fail"`. `node` names the first, `Graph.conflicts` names both. |
-| `capability_outside_grant` | A called flow declares a capability the grant excludes. Advisory.                                        |
-| `duplicate_node`           | Two nodes claim one structural id.                                                                       |
-| `dependency_cycle`         | Dependencies cannot be ordered. `node` names a node in the cycle.                                        |
-| `missing_key_material`     | A node reached `keyMaterial` without any.                                                                |
-| `invalid_node`             | A malformed node AST. Thrown, not recorded.                                                              |
-| `graph_too_deep`           | Nesting past `maximumGraphDepth`. Thrown.                                                                |
-| `plan_too_large`           | A node, edge, conflict, or effect-path limit crossed. Thrown.                                            |
-| `payload_too_deep`         | Nesting past `maximumPayloadDepth` inside one plan value. Thrown.                                        |
-| `payload_too_large`        | Members past `maximumPayloadMembers` inside one plan value. Thrown.                                      |
-
-For `plan_too_large`, `node` names the node whose admission crossed the limit.
-`path` carries the offending value path for `payload_too_large`.
-
-### Graph.isFatalDiagnostic
-
-```ts
-const isFatalDiagnostic: (diagnostic: GraphBuildError) => boolean
-```
-
-Reports whether a diagnostic blocks [`keyMaterial`](#graphkeymaterial). Every
-code except `capability_outside_grant` is fatal. The five thrown codes are
-listed as fatal so a future caller that records one cannot compile it.
-
-### Graph.keyMaterial
-
-```ts
-const keyMaterial: (graph: Graph) => Result.Result<ReadonlyArray<KeyMaterial.Entry>, GraphBuildError>
-```
-
-Returns node-associated, digest-free key material in topological dependency
-order, or fails with the first fatal diagnostic the graph carries, unchanged.
-A cyclic graph fails with `dependency_cycle`, including a graph supplied
-directly by a caller. The graph-local node id is outside the material
-`@smthrs/plan` hashes.
-
-### Graph limits
-
-Every bound is exported so a test can assert on it and a generator can stay
-inside it. See [Build limits](/concepts/limits/) for the reasoning.
-
-| Constant                  | Value   | Bounds                                                        |
-| ------------------------- | ------- | ------------------------------------------------------------- |
-| `maximumGraphDepth`       | 512     | Nested node structure.                                        |
-| `maximumPayloadDepth`     | 128     | Nesting inside one reflected plan value.                      |
-| `maximumGraphNodes`       | 4,096   | Nodes, synthesized lane merges included.                      |
-| `maximumGraphEdges`       | 65,536  | Edges, conflict and lane-merge edges included.                |
-| `maximumGraphConflicts`   | 65,536  | Recorded write conflicts.                                     |
-| `maximumPayloadMembers`   | 100,000 | Members one plan value expands to, summed across every level. |
-| `maximumEffectPaths`      | 1,024   | Read and write paths, summed, in one declaration.             |
-| `maximumPlanEffectPaths`  | 65,536  | Effect paths admitted across the plan.                        |
-| `maximumEffectPathLength` | 4,096   | UTF-16 code units in one effect path.                         |
-| `maximumEffectGlobs`      | 128     | Patterns, entries ending in `*`, in one read or write list.   |
+`Graph.evaluatedFrom(evaluated, entry)` is re-exported with them. It states
+that a file this runtime is about to evaluate holds bytes read from another,
+so every declaration made while that file is evaluated reports the entry an
+author can open rather than the scratch path the bytes were written to. A host
+that verifies a flow's source has to evaluate the bytes it measured, and the
+only way to evaluate bytes is to write them somewhere and import that path;
+call this before the import, because a declaration captures its site while its
+module is evaluated and never rewrites it afterwards.
 
 ## Effects
 
@@ -1036,10 +466,9 @@ interface KeyMaterial {
 }
 ```
 
-`kind` is the effective declaration's tier, defaulting to `sealed`. `body` is
-the node's own declaration projected into inert data: a `FlowCall` records the
-called flow's schema identity, capabilities, effects, and implementation, never
-its name.
+`kind` is the effective declaration's tier. `body` is the node's own
+declaration projected into inert data: a call records the callee's schema
+identity, capabilities, and effects.
 
 ### KeyMaterial.InputRef
 
@@ -1069,7 +498,7 @@ compiler.
 
 ## Markdown
 
-Parses Agent Skills documents and lowers markdown prompts into ordinary flows.
+Parses Agent Skills documents and lowers markdown prompts into ordinary signatures.
 General markdown discovery, and the one specification rule that needs the file
 system, belong to [`@smthrs/registry`](https://registry.smithers.sh/reference/api/).
 
@@ -1122,10 +551,10 @@ reports its own `invalid` code without echoing the offending value.
 ### Markdown.lowerSkill
 
 ```ts
-const lowerSkill: (text: string) => Result.Result<Flow.Flow<typeof input, typeof output, never>, MarkdownError>
+const lowerSkill: (text: string) => Result.Result<Flow.Flow<typeof input, typeof output>, MarkdownError>
 ```
 
-Parses and lowers an Agent Skills document to an ordinary flow whose input is
+Parses and lowers an Agent Skills document to an ordinary signature whose input is
 `{ args: string }` and whose output is `string`. Only `name`, `description`,
 and `allowed-tools` are lowered; every other field stays in `parseSkill`'s
 `extra` record.
@@ -1136,20 +565,21 @@ and `allowed-tools` are lowered; every other field stays in `parseSkill`'s
 const lowerMarkdown: (
   frontmatter: MarkdownFrontmatter,
   body: string
-) => Flow.Flow<typeof input, typeof output, never>
+) => Flow.Flow<typeof input, typeof output>
 ```
 
-Lowers already-typed markdown metadata and a body to an ordinary flow. The
+Lowers already-typed markdown metadata and a body to an ordinary signature. The
 prompt is the markdown body; harnesses append non-empty runtime `args` when
-rendering it. Flow names remain declarations at this layer, and no
-implementation is resolved. The `smart` seat is the explicit fallback when the
-frontmatter declares no `model`.
+rendering it. The lowered signature declares no body, so it carries the action a
+host supplies the implementation for, and the collaborators it names stay
+declarations. The `smart` seat is the explicit fallback when the frontmatter
+declares no `model`.
 
 ### Markdown.MarkdownFrontmatter
 
 ```ts
 interface MarkdownFrontmatter {
-  readonly name?: string | undefined
+  readonly name: string
   readonly description?: string | undefined
   readonly model?: string | undefined
   readonly flows?: ReadonlyArray<string> | undefined
@@ -1165,7 +595,9 @@ interface MarkdownFrontmatter {
 }
 ```
 
-An omitted `effects.reads` or `effects.writes` becomes empty, an omitted `mode`
+`name` is required: it is the tag the lowered signature carries, and a registry
+derives it from the frontmatter or from the document's path before lowering. An
+omitted `effects.reads` or `effects.writes` becomes empty, an omitted `mode`
 becomes `hermetic`, and an omitted `onConflict` becomes `serialize`.
 
 ### Markdown.MarkdownError
@@ -1218,87 +650,3 @@ const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.
 
 Provides the synchronous SHA-256 service to an Effect-shaped derivation, so a
 pure constructor can run one without a platform layer.
-
-## TestRuntime
-
-Pure, synchronous execution support for tests of node-building libraries. It
-evaluates the deferred callbacks an in-memory node AST stores. It models no
-capabilities, persistence, scheduling, retries, cache, concurrency, or
-output-schema enforcement, and it is not a substitute for the durable engine.
-
-### TestRuntime.evaluate
-
-```ts
-const evaluate: <A, E, E2 = EvaluationError>(
-  node: Node.Node<A, E>,
-  resolver?: Resolver<E2>
-) => Result.Result<A, E | E2 | EvaluationError>
-```
-
-Evaluates a node's in-memory declaration with a deterministic leaf resolver. A
-declaration nested more than 1,024 levels is refused before unbounded
-recursion. With no resolver, reaching a leaf fails with code
-`unresolved_node`.
-
-### TestRuntime.evaluateInline
-
-```ts
-const evaluateInline: <A, E, E2 = EvaluationError>(
-  node: Node.Node<A, E>,
-  resolver?: Resolver<E2>
-) => Result.Result<A, E | E2 | EvaluationError>
-```
-
-Evaluates a node while recursively entering every called flow that carries an
-in-memory body. Body-less model or adapter flows still cross the resolver.
-
-### TestRuntime.Resolver
-
-```ts
-type Resolver<E = never> = (request: Request) => Result.Result<unknown, E>
-
-type Request = DynamicRequest | FlowCallRequest
-
-interface DynamicRequest {
-  readonly _tag: "Dynamic"
-  readonly model?: string | undefined
-  readonly flows: ReadonlyArray<unknown>
-  readonly output?: unknown
-  readonly prompt?: string | undefined
-  readonly effects?: unknown
-}
-
-interface FlowCallRequest {
-  readonly _tag: "FlowCall"
-  readonly flow: unknown
-  readonly target: unknown
-  readonly input: unknown
-}
-```
-
-Supplies deterministic values or typed failures for the execution leaves a pure
-evaluator cannot invent. The resolver's error type flows into the result's
-error channel.
-
-### TestRuntime.EvaluationError
-
-```ts
-class EvaluationError extends Error {
-  readonly code: EvaluationErrorCode
-  override readonly cause: unknown
-}
-
-type EvaluationErrorCode =
-  | "callback_threw"
-  | "depth_exceeded"
-  | "invalid_continuation"
-  | "invalid_schema"
-  | "missing_flow"
-  | "missing_operation"
-  | "resolver_threw"
-  | "unresolved_node"
-```
-
-A malformed or unresolved declaration encountered by the evaluator. `cause`
-carries the original thrown value where one exists. For what each code means,
-see [Test a declaration without a host](/guides/test-a-declaration/).

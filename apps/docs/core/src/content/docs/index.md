@@ -1,15 +1,17 @@
 ---
 title: "@smthrs/core"
-description: "The plan-time data model for agent flows: inert Flow and Node declarations that build into an inspectable graph of steps, dependencies, effect envelopes, and step-key material, without executing planned steps."
+description: "Schema-first signatures over @smthrs/flow: one options object that lowers to the action a host implements and the flow an engine drives, plus the metadata projections a catalog, a decorator, and a harness read."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/core/docs/README.md"
 ---
 
-`@smthrs/core` describes agent work without running it. You declare a flow, which
-is an input schema, an output schema, and a body that composes nodes. Calling
-that flow executes nothing: it constructs a value. `Graph.build` turns the value
-into a graph you can read, listing the steps, the dependencies between them,
-what each step reads and writes, where it should run, and the material that
-gives it a stable identity.
+`@smthrs/core` describes agent work without running it. You declare a signature,
+which is a name, an input schema, an output schema, and optionally a body that
+composes nodes. `Flow.make` lowers that declaration onto the two values
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) executes: an action a host supplies an
+implementation for, and the flow that calls it. Recording a call executes
+nothing: it constructs a node. `Graph.build` turns the declaration into a graph
+you can read, listing the steps, the dependencies between them, what each step
+reads and writes, and where it should run.
 
 JavaScript and TypeScript declarations and all planning callbacks must be
 trusted. `Graph.build` executes flow bodies, continuation builders, recovery
@@ -22,8 +24,7 @@ Accept agent-generated declarations through a constrained data-only format
 that trusted code validates and translates into nodes. If untrusted code must
 be planned, load and plan it in an externally isolated environment with
 restricted permissions and resources. See [Plan time](/concepts/plan-time/#planning-requires-trusted-declarations)
-for the trust boundary. `TestRuntime` executes deferred callbacks for tests
-and also requires trusted code.
+for the trust boundary.
 
 ## The problem it solves
 
@@ -53,82 +54,58 @@ pnpm add @smthrs/core@next
 The package needs Node.js 22.19.0 or later. It has no platform bindings, so the
 same build runs in Node, in Bun, in a browser, and in a Cloudflare Worker.
 
-## Order two steps before either one runs
+## Declare a step before it runs
 
-Two review steps write the same report file. Neither has run, and neither knows
-the other exists, but each declares what it writes:
-
-```ts
-import { Effects, Graph, Node } from "@smthrs/core"
-
-const report = Effects.make({
-  reads: ["src/api.ts", "src/cli.ts"],
-  writes: ["out/report.md"],
-  mode: "hermetic",
-  onConflict: "serialize"
-})
-
-const plan = Node.all({
-  api: Node.dynamic({ model: "smart", prompt: "Review src/api.ts.", effects: report }),
-  cli: Node.dynamic({ model: "smart", prompt: "Review src/cli.ts.", effects: report })
-})
-
-const graph = Graph.build(plan)
-
-for (const edge of Graph.edges(graph)) {
-  console.log(`${edge.from} -> ${edge.to} [${edge.reason}]`)
-}
-```
-
-```text
-root.all.api -> root [value]
-root.all.cli -> root [value]
-root.all.api -> root.all.cli [conflict]
-```
-
-The two `value` edges are the data flow: the join consumes both results. The
-third edge is the one neither step asked for. The declarations overlap on
-`out/report.md` and both chose `onConflict: "serialize"`, so the planner ordered
-the writers. `Graph.conflicts` reports the same fact with the paths attached:
+A signature carries one `name`, and that name is the tag of everything it
+lowers to:
 
 ```ts
-console.log(Graph.conflicts(graph))
+import { Effects, Flow, Graph } from "@smthrs/core"
+import { Effect, Schema } from "effect"
+
+const review = Flow.make({
+  name: "review/file",
+  description: "Reviews one file.",
+  input: Schema.Struct({ path: Schema.String }),
+  output: Schema.String,
+  capabilities: ["fs"],
+  effects: Effects.make({
+    reads: ["src/**"],
+    writes: ["out/report.md"],
+    mode: "hermetic",
+    onConflict: "serialize"
+  })
+})
+
+// What a host attaches the implementation to.
+const layer = review.action!.toLayer(({ path }) => Effect.succeed(`reviewed ${path}`))
+
+// What a caller records, and what a planner reads.
+const graph = Graph.build(review.call({ path: "src/api.ts" }))
 ```
 
-```text
-[
-  {
-    nodes: [ 'root.all.api', 'root.all.cli' ],
-    paths: [ 'out/report.md' ],
-    strategy: 'serialize'
-  }
-]
-```
-
-A scheduler that honors `conflict` edges gets that serialization for free, and a
-reviewer reading the graph sees the overlap before a model is called. Six more
-getters answer the rest of the questions about a built graph: `Graph.nodes` and
-`Graph.edges` for topology, `Graph.effects` and `Graph.placements` for what each
-step touches and where it belongs, `Graph.diagnostics` for the problems the
-build recorded instead of throwing, and `Graph.keyMaterial` for the identity of
-every step.
+The graph holds the call the author wrote and, beneath it, the action dispatch
+it splices to. The capability ceiling, the effect envelope, and the placement
+travel as annotations on both, which is how a planner orders two writers of one
+path and how a reviewer sees what a step will touch before a model is called.
+`@smthrs/flow` owns that analysis and documents its refusals.
 
 ## How this fits with @smthrs/flows
 
-`@smthrs/core` says what the work is. [`@smthrs/flows`](https://flows.smithers.sh/reference/api/) is what runs
-it: one barrel package over the durable flow engine, including the journal, the
-run store, the step cache, the plan store, and sandboxing. The two meet at
-`Graph.keyMaterial`. `@smthrs/plan`, one of the packages that barrel re-exports,
-compiles each entry into a step key, substituting each dependency's digest for
-the graph-local reference recorded here. That key is how a resumed run
-recognizes a step it already finished.
+`@smthrs/core` is the authoring surface. [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) owns the
+flow, the action, the node calls, and the graph builder a signature lowers to,
+and [`@smthrs/flows`](https://flows.smithers.sh/reference/api/) is the barrel over the durable engine that
+runs them: the journal, the run store, the step cache, the plan store, and
+sandboxing. `@smthrs/plan` compiles a graph's key material into step keys,
+substituting each dependency's digest for the graph-local reference. That key is
+how a resumed run recognizes a step it already finished.
 
-The split is a dependency direction rather than a diagram. This package depends
-on `effect` and two small hashing packages and nothing else, so a catalog
-server, a linter, a browser tab, or a unit test can plan and inspect a
-declaration with no database anywhere in the tree. Unlike the engine packages,
-`@smthrs/core` is not re-exported by `@smthrs/flows`: install it directly, even
-when you already depend on the barrel.
+The split is a dependency direction rather than a diagram. This package adds one
+options object, the metadata projections above, and Markdown lowering; it holds
+no second node model, no second graph builder, and no evaluator of its own.
+Unlike the engine packages, `@smthrs/core` is not re-exported by
+`@smthrs/flows`: install it directly, even when you already depend on the
+barrel.
 
 Both sit under the `smithers` command line tool, [`@smthrs/cli`](https://cli.smithers.sh/reference/api/),
 which runs, resumes, and inspects flows from a terminal. If you arrived at this
@@ -139,19 +116,18 @@ its data model, start there.
 
 - [Installation](/installation/): runtime requirements, the two import forms,
   what the export map keeps private, and the packages that sit above this one.
-- [Quickstart](/quickstart/): declare two flows, plan them, and read back the
-  topology, the dependency references, and the key material.
+- [Quickstart](/quickstart/): declare two signatures, plan them, and read
+  back the topology and the dependency references.
 - [Plan time](/concepts/plan-time/): which declarations must be trusted,
   what `Graph.build` evaluates, and the placeholder rules that come with it.
 - [Identity and key material](/concepts/identity/): what makes two
   declarations the same step, and what `Node.capture` fixes.
 - [Effect envelopes](/concepts/effects/): how a step declares its reads and
   writes, and what the planner does with two writers of one path.
-- [Build limits](/concepts/limits/): the ten exported bounds that keep a
-  plan structure within supported sizes. They do not bound callback execution.
-- [Declare a flow](/guides/declare-a-flow/) and
-  [Compose nodes into a plan](/guides/compose-nodes/): the two builders,
-  option by option.
-- [API reference](/reference/api/): every export of all ten modules.
+- [Declare a flow](/guides/declare-a-flow/): the constructor and its
+  combinators, option by option.
+- [Declare reads and writes](/guides/declare-reads-and-writes/): the envelope
+  a step runs under, and what two writers of one path cost.
+- [API reference](/reference/api/): every export of all nine modules.
 - [Troubleshooting](/troubleshooting/): every failure this package throws or
   records, with its cause and its fix.

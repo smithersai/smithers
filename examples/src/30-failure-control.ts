@@ -10,7 +10,8 @@
  * escalating fixer, a saga that unwinds a half-finished deploy, and a lock the
  * finalizer always releases.
  */
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Node } from "@smthrs/core"
+import { Graph } from "@smthrs/flow"
 import { Bounded, Escalation, PatternError, Quarantine, Saga, TryCatchFinally } from "@smthrs/patterns"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -23,6 +24,7 @@ export class Rejected extends Schema.TaggedError<Rejected>()("examples/Rejected"
 /** A declared call that echoes its own name, so a built graph can name it. */
 const call = (name: string) =>
   Flow.make({
+    name,
     input: Schema.Unknown,
     output: Schema.Unknown,
     body: Node.capture({ name }, () => Node.succeed({ from: name }))
@@ -40,8 +42,8 @@ export const deployment = Saga.make({
 
 /** Every call the declaration reaches, forward steps then compensations. */
 export const declaredCalls: ReadonlyArray<string> = Graph.nodes(Graph.build(deployment, { release: "v1" }))
-  .filter((node) => node.kind === "Succeed" && node.id.endsWith(".flow"))
-  .map((node) => (node.keyMaterial.body as { readonly value: { readonly from: string } }).value.from)
+  .filter((node) => node.kind === "FlowCall" && node.id !== "root")
+  .map((node) => (node.draft.material.body as { readonly flow: string }).flow)
 
 /** What the release did, in the order it did it. */
 export interface Summary {

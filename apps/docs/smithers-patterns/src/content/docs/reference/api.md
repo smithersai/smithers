@@ -6,7 +6,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
-[`@smthrs/core`](https://core.smithers.sh/reference/api/) plus the one effect model,
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) and the one effect model,
 [`@smthrs/plan/Effects`](https://plan.smithers.sh/reference/api/#effects), and imports no Node built-ins.
 Nothing in it reaches the engine, the journal, or a host capability.
 
@@ -282,21 +282,21 @@ See [`@smthrs/step-cache`](https://step-cache.smithers.sh/reference/api/) for en
 allocates no cache and performs no expiry checks.
 
 ```ts
-import { Effects, Flow, Node } from "@smthrs/core"
+import { Flow } from "@smthrs/flow"
 import { WithCache } from "@smthrs/patterns"
+import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 
-const echo = Flow.make({
-  name: "echo",
-  input: Schema.String,
-  output: Schema.String,
-  effects: Effects.make({
+const echo = Flow.make("echo", {
+  payload: { input: Schema.String },
+  success: Schema.String,
+  effects: {
     reads: [],
     writes: [],
     mode: "hermetic",
     onConflict: "serialize"
-  }),
-  body: (input) => Node.succeed(input)
+  },
+  body: ({ input }) => Node.succeed(input)
 })
 
 // The registry bridge lowers this default export's policy onto an action.
@@ -519,7 +519,8 @@ importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
 `*/index` subpaths are private. The [module index](/modules/) lists all 28
 modules with their specifiers.
 
-`@smthrs/core` supplies `Flow`, `Node`, and `Graph`. See
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) supplies `Flow` and `Graph`, and
+[`@smthrs/plan`](https://plan.smithers.sh/reference/api/) supplies `Node`. See
 [Flows, actions, and plans](https://smithers.sh/docs/concepts/flows-actions-plans/) for what a built
 graph means, and [`@smthrs/plan`](https://plan.smithers.sh/reference/api/) for the persisted form a graph
 compiles into.

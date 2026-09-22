@@ -347,7 +347,18 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           for (const item of metadata.warnings) {
             warnings.push(warning("unsupported_module_metadata", location, item.message, name))
           }
-          if (metadata.declaresName && source.naming === "path") {
+          // `Flow.make` requires a name, because the name is the tag the flow,
+          // its action, and every plan that records a call carry. In a
+          // path-named source the registry name is the path, so a module that
+          // declares the same string is saying one thing twice and nothing is
+          // ignored. A module that declares a different one is: the path still
+          // wins, and the author has to be told which name the registry
+          // answers to. A name this reader cannot evaluate is warned about for
+          // the same reason, because it cannot be shown to agree.
+          if (
+            source.naming === "path" && metadata.declaresName &&
+            !Option.contains(metadata.declaredName, name)
+          ) {
             warnings.push(
               warning(
                 "name_field_ignored",
@@ -362,7 +373,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               warning(
                 "missing_description",
                 location,
-                "Module flows require a literal description in the default Flow.make or Flow.agent value",
+                "Module flows require a literal description in the default Flow.make value",
                 name
               )
             )

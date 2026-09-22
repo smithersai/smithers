@@ -65,6 +65,7 @@ import { Flow } from "@smthrs/core"
 import * as Schema from "effect/Schema"
 
 export default Flow.make({
+  name: "<the flow id, the same as its directory name>",
   description: "<one line naming what this flow produces>",
   input: Schema.Struct({ /* every value this script read from the conversation */ }),
   output: Schema.Struct({ /* typed fields, no prose blobs */ }),

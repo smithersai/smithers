@@ -12,7 +12,11 @@ honored takes two more things, and both are stated in the descriptor.
 ## Declare the policy on the body
 
 The policy is `CacheEnvironment.CachePolicyAnnotation`, the annotation
-`@smthrs/patterns`' `withCache` writes. A module flow declares it directly:
+`@smthrs/patterns`' `withCache` writes. A module that delegates to an agent
+declares it on the `@smthrs/core` signature, which is the body-less form of a
+declaration. The `name` is the tag, and it is required: it is what the plan
+records and what a host binds to, so a file flow declares the name its path
+derives.
 
 ```ts
 "use server"
@@ -22,6 +26,7 @@ import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Schema } from "effect"
 
 export default Flow.make({
+  name: "cacheable",
   description: "Delegates to the agent and declares a reusable result.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

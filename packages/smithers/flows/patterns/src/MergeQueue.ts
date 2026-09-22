@@ -7,10 +7,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member as Callable } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -33,6 +38,20 @@ export const DefaultPriority = 1000
 export type FailurePolicy = "halt" | "quarantine"
 
 /**
+ * The declared form of a merge queue.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type MergeQueueFlow = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  any
+>
+
+/**
  * One declared member of the queue.
  *
  * @category models
@@ -40,7 +59,7 @@ export type FailurePolicy = "halt" | "quarantine"
  */
 export interface Member {
   readonly id: string
-  readonly flow: Flow.Any
+  readonly flow: Callable<any>
   readonly priority?: number | undefined
 }
 
@@ -146,11 +165,6 @@ export interface Position<M> {
   readonly position: number
   readonly member: M
 }
-
-const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
-  ...(left as Record<string, unknown>),
-  ...(right as Record<string, unknown>)
-})
 
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
@@ -263,7 +277,7 @@ const validate = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = (options: MakeOptions): MergeQueueFlow => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's members or options again.
   const snapshot: ReadonlyArray<Member> = options.members.map((member) => ({
@@ -290,67 +304,79 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     { members: captures.members, concurrency, failurePolicy },
     options
   )
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: queue.map((entry) => entry.member.flow),
-    body: Node.capture(captures, (input) => {
-      const landing = (entry: Position<Member>): Node.Node<unknown, unknown> => {
-        const declared = Node.priority(
-          Compose.call(entry.member.flow, {
-            id: entry.id,
-            position: entry.position,
-            input
-          }),
-          entry.priority
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, any> => {
+    const landing = (entry: Position<Member>): Node.Node<unknown, unknown, any> => {
+      const declared = Node.priority(
+        callMember(entry.member.flow, {
+          id: entry.id,
+          position: entry.position,
+          input
+        }),
+        entry.priority
+      )
+      if (failurePolicy === "halt") return declared
+      // The arm goes on the member rather than on the join because a serial
+      // queue has no join to put it on. Runtime results keep successful and
+      // quarantined members in separate arrays, so this marker never
+      // classifies an arbitrary successful value.
+      return Node.catch(declared, {
+        onFailure: Node.capture(
+          { id: entry.id },
+          (error: unknown) => Node.succeed({ _tag: "Quarantined", id: entry.id, error })
         )
-        if (failurePolicy === "halt") return declared
-        // The arm goes on the member rather than on the join because a serial
-        // queue has no join to put it on. Runtime results keep successful and
-        // quarantined members in separate arrays, so this marker never
-        // classifies an arbitrary successful value.
-        return Node.catch(declared, {
-          onFailure: Node.capture(
-            { id: entry.id },
-            (error: unknown) => Node.succeed({ _tag: "Quarantined", id: entry.id, error })
-          )
-        })
+      })
+    }
+    if (concurrency === 1) {
+      const walk = (index: number): Node.Node<unknown, unknown, any> => {
+        const current = landing(queue[index]!)
+        if (index + 1 >= queue.length) return current
+        // Nothing reads the landing's value, so the next member is sequenced
+        // with a node-taking `andThen` rather than a continuation.
+        return Node.andThen(current, walk(index + 1))
       }
-      if (concurrency === 1) {
-        const walk = (index: number): Node.Node<unknown, unknown> => {
-          const current = landing(queue[index]!)
-          if (index + 1 >= queue.length) return current
-          return Node.andThen(
-            current,
-            Node.capture({ ...captures, member: queue[index + 1]!.id }, () => walk(index + 1))
-          )
-        }
-        return walk(0)
-      }
-      const batchAt = (offset: number): Node.Node<unknown, unknown> => {
-        const group = Object.fromEntries(
-          queue.slice(offset, offset + concurrency).map((entry) => [entry.id, landing(entry)])
-        ) as Record<string, Node.Any>
-        // A plain join: only a quarantining queue reaches a batch, and every
-        // member of one already carries its own recovery arm, so no member
-        // can fail this join on the batch's behalf.
-        return Node.all(group)
-      }
-      let batches = batchAt(0)
-      for (let offset = concurrency; offset < queue.length; offset += concurrency) {
-        const batch = batchAt(offset)
-        batches = Node.andThen(
-          batches,
-          Node.capture(
-            { ...captures, offset },
-            (soFar) => Node.map(batch, Node.capture({ ...captures, offset }, (values) => merge(soFar, values)))
-          )
-        )
-      }
-      return batches
-    })
+      return walk(0)
+    }
+    const batchAt = (offset: number): Node.Node<unknown, unknown, any> => {
+      const group = Object.fromEntries(
+        queue.slice(offset, offset + concurrency).map((entry) => [entry.id, landing(entry)])
+      ) as Record<string, Node.Any>
+      // A plain join: only a quarantining queue reaches a batch, and every
+      // member of one already carries its own recovery arm, so no member
+      // can fail this join on the batch's behalf.
+      return Node.all(group)
+    }
+    // Each batch gates the next, and the landings a batch produced are carried
+    // on as planned field references: a batch's result does not exist while
+    // the graph builds, so the queue assembles the record rather than merging
+    // two symbols.
+    const visit = (
+      offset: number,
+      carried: Readonly<Record<string, Planned.Planned<unknown>>>
+    ): Node.Node<unknown, unknown, any> => {
+      if (offset >= queue.length) return Node.succeed(carried)
+      const batched = queue.slice(offset, offset + concurrency).map((entry) => entry.id)
+      return Node.bindPlanned(
+        batchAt(offset),
+        Node.capture({ ...captures, offset, batched }, (reference) =>
+          Node.andThen(
+            Node.succeed(reference),
+            visit(offset + concurrency, {
+              ...carried,
+              ...Object.fromEntries(
+                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
+              )
+            })
+          ))
+      )
+    }
+    return visit(0, {})
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

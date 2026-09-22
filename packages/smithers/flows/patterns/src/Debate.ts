@@ -5,10 +5,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -70,14 +75,28 @@ export interface RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3,
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly proponent: Flow.Any
-  readonly opponent: Flow.Any
-  readonly judge: Flow.Any
+  readonly proponent: Member<R>
+  readonly opponent: Member<R>
+  readonly judge: Member<R>
   readonly rounds: number
 }
+
+/**
+ * The declared form of a debate.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type DebateFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 const invalidRounds = (rounds: number): never => {
   throw new PatternError({
@@ -94,41 +113,42 @@ const invalidRounds = (rounds: number): never => {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
   const rounds = options.rounds
   if (!Number.isSafeInteger(rounds) || rounds < 1) invalidRounds(rounds)
   const { name, description } = Compose.label("debate", { rounds }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [participants.proponent, participants.opponent, participants.judge],
-    body: Node.capture({ rounds }, (input) => {
-      let current: Node.Node<{ readonly input: unknown; readonly transcript: ReadonlyArray<Turn> }, unknown> = Node
-        .succeed({ input, transcript: [] })
-      for (let round = 0; round < rounds; round++) {
-        current = Node.andThen(
-          current,
-          Node.capture({ round }, (state) =>
-            Node.andThen(
-              Compose.call(participants.proponent, state),
-              Node.capture({ round }, (proponent) =>
-                Node.map(
-                  Compose.call(participants.opponent, { ...state, proponent }),
-                  Node.capture({ round }, (opponent) => ({
-                    input: state.input,
-                    transcript: [...state.transcript, { proponent, opponent }]
-                  }))
-                ))
-            ))
-        )
-      }
-      return Node.andThen(current, Node.capture({ rounds }, (state) => Compose.call(participants.judge, state)))
-    })
+  // The transcript is a real array of planned references, assembled while the
+  // graph builds. A planned value may be read by field and passed into a
+  // payload but never computed on, so a round appends to the array the builder
+  // holds instead of spreading the symbol a previous round produced.
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (
+      round: number,
+      transcript: ReadonlyArray<
+        { readonly proponent: Planned.Planned<unknown>; readonly opponent: Planned.Planned<unknown> }
+      >
+    ): Node.Node<unknown, unknown, R> => {
+      if (round === rounds) return callMember(participants.judge, { input, transcript })
+      return Node.bindPlanned(
+        callMember(participants.proponent, { input, transcript }),
+        Node.capture({ round }, (proponent) =>
+          Node.bindPlanned(
+            callMember(participants.opponent, { input, transcript, proponent }),
+            Node.capture({ round }, (opponent) => visit(round + 1, [...transcript, { proponent, opponent }]))
+          ))
+      )
+    }
+    return visit(0, [])
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ rounds }, body)
   })
 }
 

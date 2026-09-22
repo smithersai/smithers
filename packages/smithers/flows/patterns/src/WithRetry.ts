@@ -3,9 +3,9 @@
  *
  * Retry is an execution concern, so the declaration side records the policy
  * (attempt count, backoff ladder, non-retryable tags) as identity while
- * {@link retryEffect} performs it. The option names mirror
- * `@smthrs/flow` `RetryPolicy`, so a pattern policy and an engine policy
- * translate one to one.
+ * {@link retryEffect} performs it. The ladder IS `@smthrs/flow`
+ * `RetryPolicy`'s, so a pattern policy and an engine policy are the same three
+ * numbers rather than two spellings of them.
  *
  * @see https://smithers.sh/docs/concepts/retries
  * @see https://smithers.sh/docs/reference/api/patterns
@@ -13,11 +13,13 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import type * as RetryPolicy from "@smthrs/flow/RetryPolicy"
+import * as Node from "@smthrs/plan/Node"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
-import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
 import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -28,20 +30,21 @@ import { PatternError } from "./PatternError.ts"
  * `min(initialMs * factor^(n - 1), maxMs)`. There is no jitter: a plan built
  * twice must describe the same waits.
  *
+ * These are the three ladder fields of `@smthrs/flow` `RetryPolicy`, not a
+ * copy of them, so a pattern ladder and the ladder the engine spends are one
+ * declaration.
+ *
  * @category models
  * @since 0.1.0
  */
-export interface Backoff {
-  readonly initialMs: number
-  readonly factor: number
-  readonly maxMs: number
-}
+export type Backoff = Pick<RetryPolicy.RetryPolicy, "initialMs" | "factor" | "maxMs">
 
 /**
  * Retry declaration options.
  *
- * `nonRetryable` lists error `_tag` values that end the sequence on their
- * first occurrence, whatever the attempt budget says.
+ * `attempts` is the TOTAL attempt count, which is `RetryPolicy`'s
+ * `maxAttempts`. `nonRetryable` lists error `_tag` values that end the sequence
+ * on their first occurrence, whatever the attempt budget says.
  *
  * @category models
  * @since 0.1.0
@@ -49,7 +52,7 @@ export interface Backoff {
 export interface Options {
   readonly attempts: number
   readonly backoff?: Backoff | undefined
-  readonly nonRetryable?: ReadonlyArray<string> | undefined
+  readonly nonRetryable?: RetryPolicy.RetryPolicy["nonRetryable"]
 }
 
 const validate = (options: Options): void => {
@@ -122,16 +125,15 @@ const label = (options: Options): string => {
 
 const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
   validate(options)
-  const details = Compose.details(inner)
-  return Flow.make({
-    name: `withRetry(${Compose.displayName(inner)}, ${label(options)})`,
-    description: details.description,
-    input: details.input,
-    output: details.output,
-    capabilities: details.capabilities,
-    effects: details.effects,
-    flows: [inner],
-    body: Node.capture(captures(options), (input) => Compose.call(inner, input))
+  const envelope = Decorate.envelopeOf(inner)
+  return Flow.make(`withRetry(${Decorate.displayName(inner)}, ${label(options)})`, {
+    ...(inner.description === undefined ? {} : { description: inner.description }),
+    payload: inner.payloadSchema,
+    success: inner.successSchema,
+    error: inner.errorSchema,
+    capabilities: Decorate.capabilitiesOf(inner),
+    ...(envelope === undefined ? {} : { effects: envelope }),
+    body: Node.capture(captures(options), (payload: unknown) => Decorate.call(inner, payload))
   })
 }
 

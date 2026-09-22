@@ -6,28 +6,36 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
  * Configuration for {@link make}.
  *
- * `produce` receives the pattern input. `review` receives the produced value;
- * `revise` receives `{ output, review }`. Rounds are expanded at declaration
- * time so cancellation remains ordinary structured fiber interruption.
+ * `produce` receives `{ input }`, `review` receives `{ output }` carrying the
+ * produced value, and `revise` receives `{ output, review, round }`. Every
+ * round the bound allows is declared, and each round's approval decision is a
+ * `Node.branch` whose predicate runs at run time on the review the reviewer
+ * really returned, so cancellation remains ordinary structured fiber
+ * interruption.
  *
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly produce: Flow.Any
-  readonly review: Flow.Any
-  readonly revise: Flow.Any
+  readonly produce: Member<R>
+  readonly review: Member<R>
+  readonly revise: Member<R>
   readonly maxRounds: number
 }
 
@@ -98,14 +106,35 @@ export type Settled<A, Review> = Approved<A> | Exhausted<A, Review>
 export const accepted = Compose.accepted
 
 /**
- * Builds the conservative topology for every declared review round. Use
- * {@link run} for runtime approval and short-circuiting.
- * A very large `maxRounds` builds a very large graph before anything runs.
+ * The declared form of a bounded review loop.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type ReviewLoopFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
+ * Builds the conservative topology for every declared review round, with a
+ * real run-time approval decision at each one. Use {@link run} for the
+ * operational form.
+ *
+ * Each round is a `Node.branch`: the plan carries the approved arm and the
+ * revise arm before anything runs, and the predicate is evaluated at run time
+ * on the review the reviewer really returned. Reaching the round bound reads
+ * the declared bound rather than a run value, so that one test stays at plan
+ * time. A very large `maxRounds` builds a very large graph before anything
+ * runs.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const stages = { produce: options.produce, review: options.review, revise: options.revise }
@@ -117,36 +146,39 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     })
   }
   const { name, description } = Compose.label("reviewLoop", { maxRounds }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [stages.produce, stages.review, stages.revise],
-    body: Node.capture(
-      { maxRounds },
-      (input) =>
-        Node.andThen(
-          Compose.call(stages.produce, input),
-          Node.capture({ maxRounds }, (initial) => {
-            const visit = (output: unknown, round: number): Node.Node<unknown, unknown> =>
-              Node.andThen(
-                Compose.call(stages.review, output),
-                Node.capture({ maxRounds, round }, (review) => {
-                  if (accepted(review)) return Node.succeed({ _tag: "Approved", output })
-                  if (round >= maxRounds) {
-                    return Node.succeed({ _tag: "Exhausted", output, review })
-                  }
-                  return Node.andThen(
-                    Compose.call(stages.revise, { output, review, round }),
-                    Node.capture({ maxRounds, round }, (revised) => visit(revised, round + 1))
-                  )
-                })
-              )
-            return visit(initial, 1)
-          })
-        )
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (output: unknown, round: number): Node.Node<unknown, unknown, R> => {
+      // The predicate is DIGESTED and run later, on the review the reviewer
+      // really returned. It is captured so two loops that differ only in their
+      // declared bound are two declarations rather than one shared callback.
+      const approved = Node.capture({ maxRounds, round }, (verdict: unknown) => accepted(verdict))
+      return Node.branch(callMember(stages.review, { output }), {
+        if: approved,
+        then: () => Node.succeed({ _tag: "Approved", output }),
+        else: (review: Planned.Planned<unknown>) =>
+          round >= maxRounds
+            ? Node.succeed({ _tag: "Exhausted", output, review })
+            : Node.bindPlanned(
+              callMember(stages.revise, { output, review, round }),
+              Node.capture({ maxRounds, round }, (revised: Planned.Planned<unknown>) => visit(revised, round + 1))
+            )
+      })
+    }
+    return Node.bindPlanned(
+      callMember(stages.produce, { input }),
+      Node.capture({ maxRounds }, (initial: Planned.Planned<unknown>) => visit(initial, 1))
     )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a review loop fails with
+    // whatever the member it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture({ maxRounds }, body)
   })
 }
 
@@ -156,9 +188,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
  * Both outcomes are tagged: an accepted review returns {@link Approved} and a
  * spent round bound returns {@link Exhausted} with the review that refused it.
  *
- * This Effect is the operational value-dependent branch; the flow declaration
- * remains a conservative topology because core plans continuations against
- * symbolic values. Fiber interruption propagates normally.
+ * This Effect is the operational form of the same decision {@link make}
+ * declares as a `Node.branch`: it stops at the first approved round instead of
+ * carrying every round the bound allows. Fiber interruption propagates
+ * normally.
  *
  * @category combinators
  * @since 0.1.0

@@ -24,6 +24,9 @@ import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const definition = {
+  // The registry name this module's path derives, which `Flow.make` requires
+  // as the tag its flow, its action and every recorded call carry.
+  name: "native",
   description: "A native module with durable children.",
   input: Schema.Struct({ value: Schema.String }),
   output: Schema.Unknown,
@@ -50,6 +53,7 @@ describe("NodeControl native modules", () => {
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"
 export default Flow.make({
+  name: "native",
   description: "A native module with durable children.",
   input: Schema.Struct({ value: Schema.String }), output: Schema.Unknown,
   capabilities: ["fs:read:**"], flows: ["test/Module"],

@@ -637,26 +637,24 @@ const workflowHit = (source: string, headers?: ReadonlyMap<string, string>): Inv
 }
 
 describe("Mapping writes a flow module the registry can discover", () => {
-  it("emits the durable flow and the default descriptor that delegates to it", () => {
+  it("emits one default-exported flow, the declaration the registry reads and the engine runs", () => {
     const text = Mapping.snippet(workflowHit(greeting)) ?? ""
 
-    // The durable flow the engine runs: tag, payload, and the success schema
-    // the last step declares.
-    expect(text).toContain("export const Greeting = DurableFlow.make(\"greeting\", {")
+    // The flow the engine runs is the module's default export: the tag the
+    // `name` prop carries, the payload, the success schema the last step
+    // declares, and the body.
+    expect(text).toContain("export default Flow.make(\"greeting\", {")
     expect(text).toContain("payload: Schema.Struct({\n    name: Schema.String\n  })")
     expect(text).toContain("success: Schema.Struct({\n    message: Schema.String\n  })")
-    // The descriptor the registry reads, admitting that flow's own contract
-    // rather than standing beside it as an unrelated declaration.
-    expect(text).toContain("export default Flow.make({")
+    expect(text).toContain("body: (payload) => Greet.call({})")
+    // The declaration data discovery reads out of the options object without
+    // evaluating the module.
     expect(text).toContain("description: \"greeting\"")
-    expect(text).toContain("input: Schema.Struct({\n    name: Schema.String\n  })")
-    expect(text).toContain("output: Schema.Struct({\n    message: Schema.String\n  })")
+    expect(text).toContain("capabilities: []")
     expect(text).toContain("effects: { reads: [], writes: [], mode: \"hermetic\"")
-    // No `body`: core's `body` returns a `@smthrs/core/Node` and the durable
-    // flow's `.call` returns a `@smthrs/plan/Node`, so the delegating line is a
-    // type error until the core-runtime bridge lands, and migrated output
-    // carries no cast.
-    expect(text).not.toContain("body: (input) =>")
+    // One declaration, so there is no second one for the two to drift apart.
+    expect(text.match(/Flow\.make\(/g)).toHaveLength(1)
+    expect(text).not.toContain("DurableFlow")
     expect(transpilesModule(text), text).toBe(true)
   })
 

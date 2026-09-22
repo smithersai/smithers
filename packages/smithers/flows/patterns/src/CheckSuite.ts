@@ -7,10 +7,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 import * as Quarantine from "./Quarantine.ts"
 
@@ -21,6 +26,20 @@ import * as Quarantine from "./Quarantine.ts"
  * @since 0.1.0
  */
 export type Strategy = "all-pass" | "majority" | "any-pass"
+
+/**
+ * The declared form of a check suite.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type CheckSuiteFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * Configuration for {@link make}.
@@ -37,10 +56,10 @@ export type Strategy = "all-pass" | "majority" | "any-pass"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly checks: Readonly<Record<string, Flow.Any>>
+  readonly checks: Readonly<Record<string, Member<R>>>
   readonly strategy: Strategy
   readonly concurrency: number
   readonly continueOnFail: boolean
@@ -89,11 +108,6 @@ export interface RuntimeOptions<I, Out, E, R> {
   readonly concurrency: number
   readonly continueOnFail: boolean
 }
-
-const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
-  ...(left as Record<string, unknown>),
-  ...(right as Record<string, unknown>)
-})
 
 /**
  * Classifies one check's row as a pass.
@@ -199,7 +213,7 @@ const bound = (value: number): boolean => Number.isSafeInteger(value) && value >
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const declared = Object.entries(options.checks)
@@ -226,40 +240,55 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     continueOnFail
   }
   const { name, description } = Compose.label("checkSuite", { checks: ids, strategy, concurrency }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: declared.map(([, flow]) => flow),
-    body: Node.capture(captures, (input) => {
-      const batchAt = (offset: number): Node.Node<unknown, unknown> => {
-        const members = Object.fromEntries(
-          declared.slice(offset, offset + concurrency).map(([id, flow]) => [
-            id,
-            Compose.call(flow, { check: id, input })
-          ])
-        ) as Record<string, Node.Any>
-        return continueOnFail
-          ? Quarantine.all(members, { policy: "quarantine" })
-          : Quarantine.all(members, { policy: "halt" })
-      }
-      let batches = batchAt(0)
-      for (let offset = concurrency; offset < declared.length; offset += concurrency) {
-        const batch = batchAt(offset)
-        batches = Node.andThen(
-          batches,
-          Node.capture(
-            { offset },
-            (soFar) => Node.map(batch, Node.capture({ offset }, (values) => merge(soFar, values)))
-          )
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
+      const members = Object.fromEntries(
+        declared.slice(offset, offset + concurrency).map(([id, check]) => [
+          id,
+          callMember(check, { check: id, input })
+        ])
+      ) as Record<string, Node.Any>
+      return continueOnFail
+        ? Quarantine.all(members, { policy: "quarantine" })
+        : Quarantine.all(members, { policy: "halt" })
+    }
+    // Each batch gates the next, and the rows a batch produced are carried on
+    // as planned field references: a batch's result does not exist while the
+    // graph builds, so the suite assembles the record the verdict reads rather
+    // than merging two symbols.
+    const visit = (
+      offset: number,
+      carried: Readonly<Record<string, Planned.Planned<unknown>>>
+    ): Node.Node<unknown, unknown, R> => {
+      if (offset >= declared.length) {
+        return Node.map(
+          Node.succeed(carried),
+          Node.capture(captures, (values) => verdict(rows(values, ids, continueOnFail), strategy))
         )
       }
-      return Node.map(
-        batches,
-        Node.capture(captures, (values) => verdict(rows(values, ids, continueOnFail), strategy))
+      const batched = ids.slice(offset, offset + concurrency)
+      return Node.bindPlanned(
+        batchAt(offset),
+        Node.capture({ offset, batched }, (reference) =>
+          Node.andThen(
+            Node.succeed(reference),
+            visit(offset + concurrency, {
+              ...carried,
+              ...Object.fromEntries(
+                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
+              )
+            })
+          ))
       )
-    })
+    }
+    return visit(0, {})
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

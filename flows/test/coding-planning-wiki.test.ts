@@ -7,15 +7,15 @@ import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
-import { Action, HumanTask, Interpreter } from "@smthrs/flow"
+import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import { Ownership } from "@smthrs/run-store"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { atomDelegate } from "../coding/atoms.ts"
 import { checkDelegate } from "../coding/checks.ts"
 import { nativeLayer } from "../coding/native.ts"
 import { memoryLayer } from "../coding/planning-memory.ts"
@@ -26,6 +26,15 @@ import { policySources } from "../wiki/reuse.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 
+// The coding host's `coding/implementation` module IS its own flow, so the host
+// registers nothing under a delegate name for it. A Markdown fixture entry has
+// to name a delegate that the catalog can resolve, and this plan records that
+// entry's digest without ever calling it, so a stand-in is the whole of what
+// this fixture needs.
+const Implement = Flow.make("fixture/Implement", {
+  payload: Executable.Invocation, success: Schema.Unknown, error: Schema.Never,
+  body: (invocation): Node.Node<unknown, never> => Node.succeed(invocation.input)
+})
 const source = process.env.PLUE_CODING_ADAPTER_SOURCE
 const input = { prompt: "Add the next feature from verified current documentation.", feedback: "" }
 /** One evidence judge dispatches citation and completion questions for this host. */
@@ -48,7 +57,7 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
     await writeFile(join(root, `${id}.md`), `# ${id}\n\nThe ${id} is ${value}.\n`)
     await writeFile(join(root, `src/${id}.ts`), `export const ${id} = ${value}\n`)
   }
-  for (const [name, delegate, body] of [["coding/atoms", "coding/Implement", "Implement the supplied atom."],
+  for (const [name, delegate, body] of [["coding/atoms", "fixture/Implement", "Implement the supplied atom."],
     ["checks/fast", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })],
     ["checks/slow", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })]]) {
     const directory = join(root, "flows", name!)
@@ -68,7 +77,7 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
   const runtime = "Bun" in globalThis ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
   const executables = await Effect.runPromise(Effect.gen(function*() {
     const catalog = yield* (yield* Discovery.Discovery).scan({ source: "project", root: join(root, "flows"), naming: "path" })
-    return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [atomDelegate, checkDelegate] }))
+    return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [checkDelegate, Implement] }))
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const pages: PageSpec[] = ["answer", "stable"].map(id => ({ id, title: id, purpose: `Understand ${id}.`, kind: "current", document: `${id}.md`,
     inputs: [`src/${id}.ts`], related: [] }))

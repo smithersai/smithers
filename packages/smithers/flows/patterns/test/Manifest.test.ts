@@ -38,12 +38,13 @@ const importedPackages = (): ReadonlySet<string> => {
 // dependency none of them mentions contradicts every one of them at once, so
 // the manifest is pinned here rather than in prose.
 //
-// `@smthrs/plan` is here for ONE module, `@smthrs/plan/Effects`: the single
-// effect envelope model, which `@smthrs/core` re-exports and `@smthrs/flow`
-// enforces. Reading it through core's alias would hide which package owns it,
-// and the import is already in the install graph through core either way.
-// `@smthrs/plan` brings no database: its store lives in `@smthrs/plan-store`.
-const declared = ["@smthrs/core", "@smthrs/plan"]
+// `@smthrs/flow` is the library every pattern declares onto: a pattern IS a
+// flow, and it calls the members a caller hands it through their own `.call`.
+// `@smthrs/plan` carries the shared vocabularies the case below pins, starting
+// with `@smthrs/plan/Effects`, the single effect envelope model `@smthrs/flow`
+// enforces. `@smthrs/plan` brings no database: its store lives in
+// `@smthrs/plan-store`.
+const declared = ["@smthrs/flow", "@smthrs/plan"]
 
 describe("package manifest", () => {
   it("declares exactly the workspace packages it composes", () => {
@@ -51,7 +52,7 @@ describe("package manifest", () => {
   })
 
   it("says what it composes", () => {
-    expect(manifest.description).toContain("composes @smthrs/core and the one effect model in @smthrs/plan/Effects")
+    expect(manifest.description).toContain("composes @smthrs/flow and the one effect model")
   })
 
   it("imports no workspace package it did not declare", () => {
@@ -64,13 +65,15 @@ describe("package manifest", () => {
     expect(workspaceImports).toEqual(declared)
   })
 
-  // `@smthrs/plan` no longer HAS a SQL surface: `PlanStore` and `Migrations`
-  // moved to `@smthrs/plan-store`, which is why neither this package nor
-  // `@smthrs/core` carries `@smthrs/database` in its dependency closure any
-  // more. This case keeps the import narrow anyway, so a future plan module
-  // cannot arrive here unnoticed. Three are named: the effect model, the cache
-  // policy `WithCache` declares and the engine reads, and the ceiling
-  // vocabulary `Loop` shares with `@smthrs/flow`'s `Poll`.
+  // `@smthrs/plan` has no SQL surface: `PlanStore` and `Migrations` live in
+  // `@smthrs/plan-store`, which is why neither this package nor `@smthrs/core`
+  // carries `@smthrs/database` in its dependency closure. This case keeps the
+  // import narrow anyway, so a future plan module
+  // cannot arrive here unnoticed. Five are named: the authoring vocabulary the
+  // ported patterns build their bodies from, the planned reference those
+  // bodies thread, the effect model, the cache policy `WithCache` declares and
+  // the engine reads, and the ceiling vocabulary `Loop` shares with
+  // `@smthrs/flow`'s `Poll`.
   it("takes only shared vocabularies from @smthrs/plan", () => {
     const specifiers = new Set<string>()
     for (const file of sourceFiles(sourceDirectory)) {
@@ -82,6 +85,8 @@ describe("package manifest", () => {
     expect([...specifiers].sort()).toEqual([
       "@smthrs/plan/CachePolicy",
       "@smthrs/plan/Effects",
+      "@smthrs/plan/Node",
+      "@smthrs/plan/Planned",
       "@smthrs/plan/Repetition"
     ])
   })

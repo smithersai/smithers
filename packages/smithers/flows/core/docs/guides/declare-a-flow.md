@@ -1,12 +1,14 @@
 ---
 title: "Declare a flow"
-description: "Build a callable, schema-described flow with Flow.make: the options it accepts, the three kinds of flow you can declare, and the combinators that copy one."
+description: "Build a schema-described signature with Flow.make: the options it accepts, what a body-less declaration lowers to, and the combinators that copy one."
 sidebar:
   order: 1
 ---
 
-A flow is one options object. `Flow.make` returns a callable value: calling it
-does not run the body, it constructs a `FlowCall` node that records the call.
+A signature is one options object. `Flow.make` returns a value that carries the
+declaration, the `@smthrs/flow` flow it lowered to, and, when it declared no
+body, the action a host implements. `signature.call(input)` does not run
+anything: it records a call node.
 
 ```ts
 import { Flow, Node } from "@smthrs/core"
@@ -20,84 +22,98 @@ const Review = Flow.make({
   body: ({ path }) => Node.succeed({ approved: true, notes: `reviewed ${path}` })
 })
 
-const call = Review({ path: "src/api.ts" })
+const call = Review.call({ path: "src/api.ts" })
 ```
 
 ## The options
 
-| Option         | Default          | What it does                                                                |
-| -------------- | ---------------- | --------------------------------------------------------------------------- |
-| `name`         | none             | The flow's declared name. A registry resolves it; identity never hashes it. |
-| `description`  | none             | Prose a catalog shows.                                                      |
-| `input`        | `Schema.Void`    | The input schema. Invariant, because it both decodes and encodes.           |
-| `output`       | `Schema.Unknown` | The output schema.                                                          |
-| `capabilities` | `[]`             | Capability names this flow needs. Deduplicated and sorted.                  |
-| `effects`      | none             | The read and write envelope for everything in the body.                     |
-| `model`        | none             | An advisory seat name.                                                      |
-| `flows`        | none             | Advisory collaborators: flow values or unresolved registry names.           |
-| `prompt`       | none             | An advisory prompt.                                                         |
-| `body`         | none             | The function returning the node this flow is.                               |
+| Option         | Default          | What it does                                                            |
+| -------------- | ---------------- | ----------------------------------------------------------------------- |
+| `name`         | required         | The tag the flow, the action, and every plan that records a call carry. |
+| `description`  | none             | Prose a catalog shows.                                                  |
+| `input`        | `Schema.Void`    | The input schema. Invariant, because it both decodes and encodes.       |
+| `output`       | `Schema.Unknown` | The output schema.                                                      |
+| `error`        | `Schema.Never`   | The failure schema.                                                     |
+| `capabilities` | `[]`             | Capability names this declaration runs under. Deduplicated and sorted.  |
+| `effects`      | none             | The read and write envelope, and the tier, for everything beneath it.   |
+| `model`        | none             | An advisory seat name.                                                  |
+| `flows`        | none             | Advisory collaborators: signatures or unresolved registry names.        |
+| `prompt`       | none             | An advisory prompt.                                                     |
+| `body`         | none             | The function returning the node this signature is.                      |
+
+`name` is required. It is what a host binds an implementation to and what a plan
+records, so `Flow.make` throws `TypeError` without one rather than minting an
+empty tag. A declaration loaded from a file takes the name its loader derives
+from the path.
 
 `Seat` is a name, never a provider model id, and never a credential. Resolving
 it into something that can answer is a host's job.
 
-## Three kinds of flow
+## Two kinds of declaration
 
-The combination of `body`, `model`, and `flows` decides what you declared.
+**A signature with a body** is code this package planned. Its `flow` has that
+body, `Graph.build` splices the nodes it returns into the caller's plan, and
+`action` is `undefined`.
 
-**A flow with a body** is the ordinary case. `model`, `flows`, and `prompt` are
-still recorded, and they also form the `Body` implementation's declaration, so
-two flows sharing one body but declaring different seats are different steps.
-The body digest still identifies the code that runs.
-
-**A flow with no body but a `model` or `flows`** is a dynamic flow. The same
-three fields form its `Dynamic` implementation identity, and its body defaults
-to one dynamic node:
+**A signature without a body** is work someone else implements. Its `action` is
+the declaration a host attaches the implementation to, and its `flow`'s whole
+body is one call to that action, which is the shape a declared capability
+ceiling is read off:
 
 ```ts
-const Summarize = Flow.agent({
+import { Effect } from "effect"
+
+const Summarize = Flow.make({
   name: "summarize",
   input: Schema.Struct({ text: Schema.String }),
   output: Schema.String,
   model: "smart",
   prompt: "Summarize the input."
 })
+
+const layer = Summarize.action!.toLayer(({ text }) => Effect.succeed(text.slice(0, 80)))
 ```
 
-`Flow.agent` is an alias for `Flow.make`. An agent flow is an ordinary flow
-whose omitted body is filled by its model or collaborator declaration; the
-alias exists so the declaration reads as what it is.
+`model`, `flows`, and `prompt` are recorded either way, for a catalog to list
+and for a host filling in that implementation to read.
 
-**A flow with none of the three** is declaration-only. It carries schemas and
-metadata for a catalog to show, and calling it or building it raises
-`FlowError` with code `missing_body`:
+A signature that declares no effect envelope dispatches as `irreversible`: a
+declaration that never stated its tier must not content-share another run's
+result. `Flow.sealed` states the opposite.
 
-```text
-flows/core/FlowError: Cannot call flow "bodyless" without a body
+## A non-struct input travels as one field
+
+`@smthrs/flow` requires a struct payload. A signature may declare any schema, so
+a non-struct input is wrapped as the one field `input`:
+
+```ts
+const Length = Flow.make({
+  name: "length",
+  input: Schema.String,
+  output: Schema.Number
+})
+
+Length.call("four") // the declared shape
+Length.action!.toLayer(({ input }) => Effect.succeed(input.length))
 ```
 
-That is a useful shape when the implementation lives somewhere else, and a bug
-when you meant to write a body. The message names the flow.
+`signature.input` is the schema as declared, and `Flow.Payload<I>` names the
+wrapped one. `call` wraps for you; an implementation sees the payload.
 
-## Combinators return a fresh flow
+## Combinators return a fresh signature
 
-Every combinator copies. The original is never modified, and everything it
+Every combinator rebuilds. The original is never modified, and everything it
 carried comes across unchanged, which is what lets a decorator rewrite a flow
 tree without dropping the metadata a host reads back.
 
 ```ts
-import { Annotations, Effects, Placement } from "@smthrs/core"
+import { Annotations, Placement } from "@smthrs/core"
 
 const Hardened = Review.pipe(
   Flow.withCapabilities(["fs:read"]),
   Flow.within(Placement.sandbox({ image: "node:22" })),
   Flow.annotate(Annotations.Priority, 5),
-  Flow.withEffects(Effects.make({
-    reads: ["src/**"],
-    writes: [],
-    mode: "hermetic",
-    onConflict: "serialize"
-  }))
+  Flow.sealed()
 )
 ```
 
@@ -106,33 +122,31 @@ const Hardened = Review.pipe(
 | `Flow.withCapabilities` | Adds capabilities. The result is sorted and duplicate-free.                           |
 | `Flow.within`           | Sets the placement annotation.                                                        |
 | `Flow.annotate`         | Sets any typed annotation. `within` is its placement-shaped special case.             |
-| `Flow.withFlows`        | Replaces the declared collaborators.                                                  |
-| `Flow.withEffects`      | Replaces the effect declaration.                                                      |
+| `Flow.annotateMerge`    | Merges a bag of annotations, supplied values winning.                                 |
+| `Flow.withFlows`        | Replaces the declared collaborators. The array is copied.                             |
 | `Flow.sealed`           | Makes the declaration `hermetic` and `sealed`, adding an empty one if there was none. |
 
-`Flow.withFlows` is the one with a branch worth knowing. On a body-backed flow
-the body is untouched, so the body digest still identifies the code that runs,
-and the new collaborators replace the implementation's declaration, so the
-change is visible in key material. On a body-less dynamic flow the
-collaborators are the identity, so both the default body and the implementation
-are rebuilt.
+The declared `capabilities` and `effects` are lowered into the annotation bag
+the flow and the action carry, and `signature.annotations` is that bag. A custom
+annotation is advisory, so a signature annotated with one plans the same graph;
+`Annotations.Placement` and `Annotations.Effects` are not, because `Graph.build`
+projects both into node key material.
 
-## Guarding a flow value
+## Guarding a signature
 
-`Flow.isFlow` narrows an unknown value to `Flow.Any`, the marker-only
-existential type for heterogeneous collections:
+`Flow.isFlow` narrows an unknown value to `Flow.Any`, the existential that names
+every property a consumer outside this package reads:
 
 ```ts
 const declared = (values: ReadonlyArray<unknown>): ReadonlyArray<Flow.Any> => values.filter(Flow.isFlow)
 ```
 
-Use `Flow.Any` for a collection of flows with different schemas, and
-`Flow.Input`, `Flow.Output`, and `Flow.Error` to extract one flow's types.
+Use `Flow.Any` for a collection of signatures with different schemas, and
+`Flow.Input`, `Flow.Output`, and `Flow.Error` to extract one signature's types.
 
 ## Where to go next
 
-- [Compose nodes into a plan](./compose-nodes.md): what goes inside a body.
-- [Annotate a node](./annotate-a-node.md): placement, priority, and lanes on
-  the node rather than the flow.
 - [Declare what a step reads and writes](./declare-reads-and-writes.md):
   envelopes and the diagnostics they produce.
+- [Load an Agent Skill](./load-an-agent-skill.md): the same declaration, lowered
+  from a Markdown document.

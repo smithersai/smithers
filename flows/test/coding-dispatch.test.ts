@@ -17,7 +17,8 @@ import { ModelEvent } from "@smthrs/model/ModelEvent"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Effect, Layer, Schema, Stream } from "effect"
 import { NodeServices } from "@effect/platform-node"
-import { conversation, Dispatch, DispatchInput, dispatchLayers, dispatchModels, seatFor } from "../coding/dispatch.ts"
+import { conversation, DispatchInput, dispatchModels, seatFor } from "../coding/dispatch.ts"
+import Dispatch, { dispatchRegistration } from "../coding/dispatch/flow.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { roleResolver } from "../coding/host.ts"
 
@@ -129,7 +130,7 @@ const runTurn = async (
   const prompts: Array<string> = []
   const reads: Array<number> = []
   const registration = Layer.mergeAll(
-    dispatchLayers({ repositoryPath: options.repositoryPath ?? input.workspaceRoot }),
+    dispatchRegistration({ repositoryPath: options.repositoryPath ?? input.workspaceRoot }),
     dispatchModels
   ).pipe(
     Layer.provideMerge(nativeStub(reads)),

@@ -36,6 +36,23 @@ const flowOf = (action: { readonly call: (payload: { readonly value: number }) =
     body: () => action.call({ value: 1 })
   })
 
+/*
+ * A flow declared where every engine agrees it was written: the top level of
+ * this file.
+ *
+ * `flowOf` above cannot carry that case. The frame a helper that RETURNS a
+ * declaration occupies is not one every engine keeps — V8 reports the helper,
+ * and JavaScriptCore reports the helper's caller — so a site captured through
+ * one names a different line under `vitest` on node and under the same suite's
+ * bun run, and no capture can reconstruct a frame an engine did not record.
+ * What is under test is the declaration, so it is written as declarations are.
+ */
+const Entry = Flow.make("provenance/entry", {
+  payload: {},
+  success: Schema.Number,
+  body: () => Declared.call({ value: 1 })
+})
+
 const compile = (built: Parameters<typeof Graph.build>[0], payload?: unknown) =>
   withCrypto(
     Plan.compile({
@@ -55,12 +72,15 @@ describe("declaration provenance", () => {
   })
 
   it("carries a flow's own declaration site", () => {
-    const flow = flowOf(Declared)
-    const entry = Graph.nodes(Graph.build(flow, {})).find((node) => node.ast._tag === "FlowCall")
+    const entry = Graph.nodes(Graph.build(Entry, {})).find((node) => node.ast._tag === "FlowCall")
 
     expect(entry?.declaredAt?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
-    // The flow is constructed at this call, rather than at flowOf's definition.
-    expect(entry?.declaredAt?.line).toBe(58)
+    // The line `Entry` is declared on, above: a flow's site is its own, and an
+    // action called from its body has a different one.
+    expect(entry?.declaredAt?.line).toBe(50)
+    expect(
+      Graph.nodes(Graph.build(Entry, {})).find((node) => node.ast._tag === "ActionCall")?.declaredAt?.line
+    ).toBe(21)
   })
 
   it.effect("keys the same declaration identically wherever it was written", () =>

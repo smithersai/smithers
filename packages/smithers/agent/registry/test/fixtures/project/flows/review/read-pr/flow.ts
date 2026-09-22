@@ -4,6 +4,7 @@ import { Flow } from "@smthrs/core"
 import { Schema } from "effect"
 
 const helper = Flow.make({
+  name: "review/read-pr/helper",
   description: "Private helper metadata must not be discovered.",
   input: Schema.String,
   output: Schema.String,
@@ -18,6 +19,7 @@ const helper = Flow.make({
 })
 
 export default Flow.make({
+  name: "review/read-pr",
   description: "Reads a PR and summarizes it.",
   input: Schema.Struct({
     owner: Schema.String,

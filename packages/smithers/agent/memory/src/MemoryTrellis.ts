@@ -23,10 +23,18 @@ import { withMemory } from "./WithMemory.ts"
  * Configuration for {@link make}: everything `Trellis.make` accepts plus the
  * memory policy the authored plan runs under.
  *
+ * `Trellis.make` takes its author and its leaf as `Member`, which states only
+ * a name and a way to record a call. A policy is an annotation, so a memory
+ * trellis asks for the wider thing a `@smthrs/core` signature is: the author
+ * and the leaf here are declarations that carry an annotation bag and the
+ * collaborator list the policy is inherited through.
+ *
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions extends Trellis.MakeOptions {
+export interface MakeOptions extends Omit<Trellis.MakeOptions, "author" | "leaf"> {
+  readonly author: Flow.Any
+  readonly leaf: Flow.Any
   readonly memory: WithMemoryModule.Policy
 }
 
@@ -60,8 +68,22 @@ export const parts = (options: MakeOptions): Parts => ({
  * Declares a trellis whose author, leaves, and the memory flows those declare
  * all run under one memory policy.
  *
+ * The answer is the `@smthrs/flow` flow `Trellis.make` states, carrying the
+ * policy annotation. Its requirement channel is `unknown` because the author
+ * and the leaf arrive as the existential {@link Flow.Any}, which states an
+ * obligation it cannot name; run the plan a model authors with `Trellis.run`
+ * over {@link parts}, which holds both flows with their own types.
+ *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Any =>
-  withMemory(Trellis.make({ ...parts(options), envelope: options.envelope }), options.memory)
+export const make = (options: MakeOptions): Trellis.TrellisFlow<unknown> =>
+  withMemory(
+    Trellis.make({
+      ...(options.name === undefined ? {} : { name: options.name }),
+      ...(options.description === undefined ? {} : { description: options.description }),
+      ...parts(options),
+      envelope: options.envelope
+    }),
+    options.memory
+  )

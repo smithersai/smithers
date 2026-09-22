@@ -18,11 +18,16 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import type * as Recursion from "./Recursion.ts"
 
 /**
@@ -358,55 +363,61 @@ export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<Trell
  * @category models
  * @since 0.1.0
  */
-export interface CompileOptions {
-  readonly leaf: Flow.Any
+export interface CompileOptions<R = never> {
+  readonly leaf: Member<R>
 }
 
 const ordinal = (key: string): number => Number(key.slice(key.lastIndexOf("-") + 1))
 
 /**
  * Compiles a validated plan into one static node: an agent becomes a leaf
- * call, a sequence becomes an `andThen` chain of member results, and a
- * parallel becomes a `Node.all` join returned in plan order.
+ * call, a sequence becomes an ordered chain of member results, and a parallel
+ * becomes a `Node.all` join returned in plan order.
+ *
+ * A sequence carries its members' planned references and hands them over as one
+ * array when the chain settles, because a planned result may be read by field
+ * and passed on but never spread into a new array while the graph builds.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const compile = (plan: Plan, options: CompileOptions): Node.Node<unknown, unknown> => {
-  const visit = (node: Plan, path: string): Node.Node<unknown, unknown> => {
+export const compile = <R = never>(plan: Plan, options: CompileOptions<R>): Node.Node<unknown, unknown, R> => {
+  const visit = (node: Plan, path: string): Node.Node<unknown, unknown, R> => {
     const members = container(node)
     if (members === undefined) {
       const agent = (node as { readonly agent: { readonly goal: string; readonly seat?: string | undefined } }).agent
       const leaf: Leaf = agent.seat === undefined
         ? { goal: agent.goal, path }
         : { goal: agent.goal, seat: agent.seat, path }
-      return Compose.call(options.leaf, leaf)
+      return callMember(options.leaf, leaf)
     }
     if ("parallel" in node) {
-      const joined: Record<string, Node.Node<unknown, unknown>> = {}
+      const joined: Record<string, Node.Node<unknown, unknown, R>> = {}
       members.forEach((member, index) => {
         joined[`member-${index}`] = visit(member, childPath(path, node, index))
       })
       return Node.map(
         Node.all(joined),
-        Node.capture({ members: members.length }, (values) =>
+        Node.capture({ members: members.length }, (values: Readonly<Record<string, unknown>>) =>
           Object.keys(values)
             .sort((left, right) => ordinal(left) - ordinal(right))
             .map((key) => values[key]))
       )
     }
-    let chained: Node.Node<ReadonlyArray<unknown>, unknown> = Node.succeed([])
-    members.forEach((member, index) => {
-      chained = Node.andThen(
-        chained,
-        Node.capture({ index }, (previous) =>
-          Node.map(
-            visit(member, childPath(path, node, index)),
-            Node.capture({ index }, (value) => [...previous, value])
-          ))
+    // Each member gates the next, so the chain runs in plan order, and the
+    // settled array is built from the references the chain collected.
+    const chain = (
+      index: number,
+      carried: ReadonlyArray<Planned.Planned<unknown>>
+    ): Node.Node<unknown, unknown, R> => {
+      const member = members[index]
+      if (member === undefined) return Node.succeed(carried)
+      return Node.bindPlanned(
+        visit(member, childPath(path, node, index)),
+        Node.capture({ index }, (value) => Node.andThen(Node.succeed(value), chain(index + 1, [...carried, value])))
       )
-    })
-    return chained
+    }
+    return chain(0, [])
   }
   return visit(plan, "root")
 }
@@ -417,13 +428,27 @@ export const compile = (plan: Plan, options: CompileOptions): Node.Node<unknown,
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly author: Flow.Any
-  readonly leaf: Flow.Any
+  readonly author: Member<R>
+  readonly leaf: Member<R>
   readonly envelope: Envelope
 }
+
+/**
+ * The declared form of a trellis.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type TrellisFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * Declares the conservative topology every authored plan fits inside: one
@@ -437,7 +462,7 @@ export interface MakeOptions {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): TrellisFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const envelope = copiedEnvelope(options.envelope)
@@ -451,32 +476,36 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     depth: envelope.depth,
     fanout: envelope.fanout
   }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: Node.capture(captured, (input) =>
-      Node.andThen(
-        Compose.call(author, input),
-        Node.capture(captured, (plan) => {
-          // A declaration cannot know the goals a plan will name, so the
-          // authored plan stands in for the goal and the slot names the path.
-          // The shape is the `Leaf` that `run` and `execute` hand a leaf flow.
-          const slotLeaf = (slot: number): { readonly goal: unknown; readonly path: string } => ({
-            goal: plan,
-            path: `slot-${slot}`
-          })
-          let slots: Node.Node<unknown, unknown> = Compose.call(leaf, slotLeaf(0))
-          for (let slot = 1; slot < envelope.fuel; slot++) {
-            slots = Node.andThen(
-              slots,
-              Node.capture({ slot }, () => Compose.call(leaf, slotLeaf(slot)))
-            )
-          }
-          return slots
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
+    Node.bindPlanned(
+      callMember(author, input),
+      Node.capture(captured, (plan) => {
+        // A declaration cannot know the goals a plan will name, so the
+        // authored plan stands in for the goal and the slot names the path.
+        // The shape is the `Leaf` that `run` and `execute` hand a leaf flow.
+        const slotLeaf = (slot: number): { readonly goal: unknown; readonly path: string } => ({
+          goal: plan,
+          path: `slot-${slot}`
         })
-      ))
+        let slots: Node.Node<unknown, unknown, R> = callMember(leaf, slotLeaf(0))
+        for (let slot = 1; slot < envelope.fuel; slot++) {
+          // Nothing reads the preceding slot's value; the slots are sequenced
+          // so the declared topology spends its fuel one call at a time.
+          slots = Node.andThen(slots, callMember(leaf, slotLeaf(slot)))
+        }
+        return slots
+      })
+    )
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and declared
+    // no error schema. `@smthrs/flow` needs a real one, because the engine
+    // encodes a typed failure through it, and a trellis fails with whatever the
+    // author or leaf it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captured, body)
   })
 }
 

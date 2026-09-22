@@ -1,12 +1,12 @@
 # Smithers
 
 
-> Smithers instruments and automates a code repository so changes get cheaper, faster, and smarter. Agents plan, run, and review changes through flows declared beside the code.
+> Smithers is an orchestration agent, primarily used to orchestrate maintaining a codebase, but it can be used for orchestration in general. Agents plan, run, and review changes through flows declared beside the code.
 
 
 ## Start here
 
-- [Welcome to Smithers](https://smithers.sh/docs/): Smithers instruments and automates a code repository so changes get cheaper, faster, and smarter. Agents plan, run, and review changes through flows declared beside the code.
+- [Welcome to Smithers](https://smithers.sh/docs/): Smithers is an orchestration agent, primarily used to orchestrate maintaining a codebase, but it can be used for orchestration in general. Agents plan, run, and review changes through flows declared beside the code.
 - [Quickstart](https://smithers.sh/docs/quickstart/): Open Smithers, explore a repository, find a flow, and make your first contribution through the app.
 - [Pricing](https://smithers.sh/docs/pricing/): Free, Pro, and Max plans with sandbox capacity for your work. Model tokens are bring-your-own-key.
 - [CLI and libraries](https://smithers.sh/docs/developers/): Use Smithers from your terminal, define flows beside your code, and build on the TypeScript libraries.
@@ -113,7 +113,7 @@
 - [@smthrs/chain](https://smithers.sh/docs/reference/api/chain/): The Agent Chain spine: an append-only journal, keyed replayable calls, and the trampoline that runs model-authored flow scripts
 - [@smthrs/cli](https://smithers.sh/docs/reference/api/cli/): Node command-line interface for Smithers control
 - [@smthrs/control](https://smithers.sh/docs/reference/api/control/): Control services and RPC projections for flows
-- [@smthrs/core](https://smithers.sh/docs/reference/api/core/): Flow and Node builders: the pure plan-time data model of the Smithers harness
+- [@smthrs/core](https://smithers.sh/docs/reference/api/core/): Schema-first flow signatures and metadata over @smthrs/flow: one options object that lowers to a declared action and the flow that calls it
 - [@smthrs/create-app](https://smithers.sh/docs/reference/api/create-app/): Declare a Smithers app in one PACKAGE.ts: file-routed flows, panes, and Cloudflare targets
 - [@smthrs/crypto](https://smithers.sh/docs/reference/api/crypto/): Strict SHA-256 hashing with injected and synchronous Effect entry points
 - [@smthrs/database](https://smithers.sh/docs/reference/api/database/): A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder
@@ -135,7 +135,7 @@
 - [@smthrs/model](https://smithers.sh/docs/reference/api/model/): Schema-first Effect model protocols, routes, and streaming events for flows
 - [@smthrs/notifications](https://smithers.sh/docs/reference/api/notifications/): Durable notification queue, admission policy, and journal projection for flows
 - [@smthrs/observability](https://smithers.sh/docs/reference/api/observability/): Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers
-- [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/core and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
+- [@smthrs/patterns](https://smithers.sh/docs/reference/api/patterns/): Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.
 - [@smthrs/plan](https://smithers.sh/docs/reference/api/plan/): The persisted flows plan: a keyed action graph, its append-only store, and its diff
 - [@smthrs/plan-store](https://smithers.sh/docs/reference/api/plan-store/): The persisted plan's append-only SQLite store and the migrations that own its tables
 - [@smthrs/platform-browser](https://smithers.sh/docs/reference/api/platform-browser/): Browser implementations of Effect platform services backed by ZenFS and just-bash
@@ -222,6 +222,7 @@
 - [Agent live smoke gemini](https://smithers.sh/docs/examples/14-agent-live-smoke-gemini/): Run a model-backed action against Gemini's OpenAI-compatible endpoint.
 - [Model layer smoke](https://smithers.sh/docs/examples/15-model-layer-smoke/): Stream a response directly through the model package.
 - [Fan out fan in](https://smithers.sh/docs/examples/16-fan-out-fan-in/): Run checks in batches of two and join their verdicts into a report.
+- [Gate topology](https://smithers.sh/docs/examples/16-gate-topology/): The release gate's checks and the topology that batches them.
 - [Review loop](https://smithers.sh/docs/examples/17-review-loop/): Draft, review, and revise until approval or the round limit.
 - [Approval and signal](https://smithers.sh/docs/examples/18-approval-and-signal/): Compare plan approval, an in-run approval, and a signal wait.
 - [Cancel and child cleanup](https://smithers.sh/docs/examples/19-cancel-and-child-cleanup/): Cancel a run and observe attached child and process cleanup.

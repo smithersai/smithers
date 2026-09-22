@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-`Graph.keyMaterial` is the projection [`@smthrs/plan`](/api/plan) compiles into
+A built graph's key material is the projection [`@smthrs/plan`](/api/plan) compiles into
 step keys. Two declarations that produce equal key material are the same step,
 so a resumed run replays one instead of repeating it, and two runs share the
 cached result. What enters that projection is this package's most consequential
@@ -77,7 +77,7 @@ across two different states. Declare everything the function depends on, or
 leave it unannotated.
 
 For the procedure and its failure cases, see
-[Keep a step key stable across processes](../guides/keep-a-step-key-stable.md).
+[Declare a flow](../guides/declare-a-flow.md).
 
 ## Capture data must be inert
 
@@ -146,7 +146,7 @@ each other's cached results.
 
 ## Where to go next
 
-- [Keep a step key stable across processes](../guides/keep-a-step-key-stable.md):
+- [Declare a flow](../guides/declare-a-flow.md):
   the procedure, with the failures spelled out.
 - [Plan time](./plan-time.md): what `Graph.build` evaluates to produce all of
   this.

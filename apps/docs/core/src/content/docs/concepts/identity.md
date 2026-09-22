@@ -6,7 +6,7 @@ sidebar:
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/core/docs/concepts/identity.md"
 ---
 
-`Graph.keyMaterial` is the projection [`@smthrs/plan`](https://plan.smithers.sh/reference/api/) compiles into
+A built graph's key material is the projection [`@smthrs/plan`](https://plan.smithers.sh/reference/api/) compiles into
 step keys. Two declarations that produce equal key material are the same step,
 so a resumed run replays one instead of repeating it, and two runs share the
 cached result. What enters that projection is this package's most consequential
@@ -78,7 +78,7 @@ across two different states. Declare everything the function depends on, or
 leave it unannotated.
 
 For the procedure and its failure cases, see
-[Keep a step key stable across processes](/guides/keep-a-step-key-stable/).
+[Declare a flow](/guides/declare-a-flow/).
 
 ## Capture data must be inert
 
@@ -147,7 +147,7 @@ each other's cached results.
 
 ## Where to go next
 
-- [Keep a step key stable across processes](/guides/keep-a-step-key-stable/):
+- [Declare a flow](/guides/declare-a-flow/):
   the procedure, with the failures spelled out.
 - [Plan time](/concepts/plan-time/): what `Graph.build` evaluates to produce all of
   this.

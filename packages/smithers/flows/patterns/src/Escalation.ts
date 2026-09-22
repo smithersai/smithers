@@ -12,24 +12,29 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
  * One declared rung and the flow that decides whether it escalates.
  *
  * `escalateIf` receives `{ result, level }` and replaces the shared `accept`
- * flow for this rung alone. It escalates when it yields `true`.
+ * flow for this rung alone. It escalates with anything but `false`.
  *
  * @category models
  * @since 0.1.0
  */
-export interface Rung {
-  readonly flow: Flow.Any
-  readonly escalateIf?: Flow.Any | undefined
+export interface Rung<R = never> {
+  readonly flow: Member<R>
+  readonly escalateIf?: Member<R> | undefined
 }
 
 /**
@@ -40,19 +45,19 @@ export interface Rung {
  *
  * `accept` decides every rung that declares no `escalateIf`. `fallback` is the
  * last rung: it runs only after every declared rung escalated.
- * With no `accept` and no `escalateIf`, `make` reserves every rung because a
- * declaration cannot branch on a value it does not have; {@link defaultEscalate}
+ * With no `accept` and no `escalateIf` there is nothing to decide with, so
+ * `make` declares the whole ladder as one chain; {@link defaultEscalate}
  * applies to {@link run} alone.
  *
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly rungs: ReadonlyArray<Flow.Any | Rung>
-  readonly accept?: Flow.Any | undefined
-  readonly fallback?: Flow.Any | undefined
+  readonly rungs: ReadonlyArray<Member<R> | Rung<R>>
+  readonly accept?: Member<R> | undefined
+  readonly fallback?: Member<R> | undefined
 }
 
 /**
@@ -159,7 +164,7 @@ export const defaultEscalate = (result: unknown): boolean => {
 
 // Copies, never the caller's records: the declaration reads a rung again
 // when the graph builds, and `run` reads one again when the effect runs.
-const declared = (rung: Flow.Any | Rung): Rung =>
+const declared = <R>(rung: Member<R> | Rung<R>): Rung<R> =>
   "flow" in rung ? { flow: rung.flow, escalateIf: rung.escalateIf } : { flow: rung }
 
 const operational = <I, A, E, R, E2, R2>(
@@ -168,14 +173,33 @@ const operational = <I, A, E, R, E2, R2>(
   typeof rung === "function" ? { run: rung } : { run: rung.run, escalateIf: rung.escalateIf }
 
 /**
- * Builds the conservative bounded ladder topology, including every rung, every
- * decider, and the fallback. Use {@link run} for runtime acceptance and
- * short-circuiting.
+ * The declared form of an escalation ladder.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type EscalationFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
+ * Builds the bounded ladder topology, including every rung, every decider, and
+ * the fallback, with a real run-time decision at each rung that has one. Use
+ * {@link run} for the operational form.
+ *
+ * A rung with a decider is a `Node.branch`: the plan carries both the settled
+ * arm and the next rung before anything runs, and the decider's answer is read
+ * at run time off the result the rung really produced. A ladder with no
+ * decider at all has nothing to decide with, so it declares one chain.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
   if (options.rungs.length === 0) {
     throw new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" })
   }
@@ -184,59 +208,59 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const rungs = options.rungs.map(declared)
   const accept = options.accept
   const fallback = options.fallback
-  const flows = [
-    ...rungs.flatMap((rung) => rung.escalateIf === undefined ? [rung.flow] : [rung.flow, rung.escalateIf]),
-    ...(accept === undefined ? [] : [accept]),
-    ...(fallback === undefined ? [] : [fallback])
-  ]
   const { name, description } = Compose.label(
     "escalation",
     { rungs: rungs.length, fallback: fallback !== undefined },
     options
   )
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows,
-    body: Node.capture({ rungs: rungs.length, fallback: fallback !== undefined }, (input) => {
-      const exhausted = (last: unknown, level: number): Node.Node<unknown, unknown> =>
-        fallback === undefined
-          ? Node.succeed({ level, result: last, accepted: false, exhausted: true })
-          : Node.andThen(
-            Compose.call(fallback, input),
-            Node.capture(
-              { level: rungs.length },
-              (result) => Node.succeed({ level: rungs.length, result, exhausted: false })
-            )
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const exhausted = (last: unknown, level: number): Node.Node<unknown, unknown, R> =>
+      fallback === undefined
+        ? Node.succeed({ level, result: last, accepted: false, exhausted: true })
+        : Node.bindPlanned(
+          callMember(fallback, { input }),
+          Node.capture(
+            { level: rungs.length },
+            (result: Planned.Planned<unknown>) => Node.succeed({ level: rungs.length, result, exhausted: false })
           )
-      const visit = (index: number, last: unknown): Node.Node<unknown, unknown> => {
-        const rung = rungs[index]
-        if (rung === undefined) return exhausted(last, index - 1)
-        return Node.andThen(
-          Compose.call(rung.flow, input),
-          Node.capture({ rung: index }, (result) => {
-            const settle = Node.succeed({ level: index, result, exhausted: false })
-            if (rung.escalateIf !== undefined) {
-              return Node.andThen(
-                Compose.call(rung.escalateIf, { result, level: index }),
-                Node.capture(
-                  { rung: index },
-                  (decision) => decision === false ? settle : visit(index + 1, result)
-                )
-              )
-            }
-            if (accept === undefined) return visit(index + 1, result)
-            return Node.andThen(
-              Compose.call(accept, result),
-              Node.capture({ rung: index }, (decision) => accepted(decision) ? settle : visit(index + 1, result))
-            )
-          })
         )
-      }
-      return visit(0, undefined)
-    })
+    const visit = (index: number, last: unknown): Node.Node<unknown, unknown, R> => {
+      const rung = rungs[index]
+      if (rung === undefined) return exhausted(last, index - 1)
+      return Node.bindPlanned(
+        callMember(rung.flow, { input }),
+        Node.capture({ rung: index }, (result: Planned.Planned<unknown>) => {
+          const settle = (): Node.Node<unknown, unknown, R> => Node.succeed({ level: index, result, exhausted: false })
+          const escalated = (): Node.Node<unknown, unknown, R> => visit(index + 1, result)
+          const escalateIf = rung.escalateIf
+          if (escalateIf !== undefined) {
+            // The per-rung decider settles on `false` alone, which is the rule
+            // `run` spends: it escalates on anything else.
+            const settles = Node.capture({ rung: index }, (decision: unknown) => decision === false)
+            return Node.branch(callMember(escalateIf, { result, level: index }), {
+              if: settles,
+              then: settle,
+              else: escalated
+            })
+          }
+          if (accept === undefined) return escalated()
+          const approved = Node.capture({ rung: index }, (decision: unknown) => accepted(decision))
+          return Node.branch(callMember(accept, { result }), { if: approved, then: settle, else: escalated })
+        })
+      )
+    }
+    return visit(0, undefined)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a ladder fails with
+    // whatever the rung it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture({ rungs: rungs.length, fallback: fallback !== undefined }, body)
   })
 }
 
@@ -258,10 +282,10 @@ const escalates = <I, A, E, R, E2, R2>(
  * Every outcome carries `exhausted`: `false` on a rung that settled and on a
  * fallback result, `true` on the last rung's result when every rung escalated.
  *
- * This is the operational boundary for value-dependent branching. Core graph
- * planning intentionally evaluates `Node.andThen` builders with symbolic
- * values, so the flow declaration remains a conservative topology while this
- * Effect performs the runtime branch. Fiber interruption propagates normally.
+ * This is the operational form of the same decision {@link make} declares as a
+ * `Node.branch` per rung: it stops at the first settled rung instead of
+ * carrying every rung the ladder declares. Fiber interruption propagates
+ * normally.
  *
  * @category combinators
  * @since 0.1.0

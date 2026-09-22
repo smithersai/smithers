@@ -1,6 +1,7 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
+import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -10,27 +11,45 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as Supervisor from "../src/Supervisor.ts"
+import { execute } from "./Execute.ts"
+import { payloadOf } from "./Graphs.ts"
 
-const step = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
-})
-
-const literal = (node: Graph.GraphNode): Record<string, unknown> => {
-  const first = node.keyMaterial.inputs[0]
-  if (first === undefined || first._tag !== "Literal") return {}
-  const value = first.value
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
+// The payload a supervisor hands its members: one struct covers the plan,
+// work, review, and finalize phases, because a `@smthrs/flow` flow states the
+// payload it takes.
+const StepPayload = {
+  phase: Schema.optional(Schema.Unknown),
+  input: Schema.optional(Schema.Unknown),
+  task: Schema.optional(Schema.Unknown),
+  round: Schema.optional(Schema.Unknown),
+  rounds: Schema.optional(Schema.Unknown),
+  plan: Schema.optional(Schema.Unknown),
+  review: Schema.optional(Schema.Unknown),
+  retriable: Schema.optional(Schema.Unknown),
+  results: Schema.optional(Schema.Unknown)
 }
 
-const phase = (node: Graph.GraphNode): unknown => literal(node).phase
+const member = (tag: string, answer: (payload: any) => Node.Node<unknown, unknown, any>) =>
+  Flow.make(tag, {
+    payload: StepPayload,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: answer
+  })
 
+const step = member("step", (payload) => Node.succeed(payload))
+
+const phase = (node: Graph.GraphNode): unknown => payloadOf(node).phase
+
+// The builder enters the declaration as a call of its own, so `root` is the
+// supervisor itself rather than a member call.
 const calls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) => node.kind === "FlowCall")
+  Graph.nodes(graph).filter((node) => node.kind === "FlowCall" && node.id !== "root")
 
 const inPhase = (graph: Graph.Graph, name: string): ReadonlyArray<Graph.GraphNode> =>
   calls(graph).filter((node) => phase(node) === name)
+
+const flowOf = (node: Graph.GraphNode): string => (node.ast as { readonly flow?: string }).flow!
 
 const plan = {
   tasks: [
@@ -40,10 +59,65 @@ const plan = {
   ]
 }
 
-const goal = { goal: "ship the feature", tasks: plan.tasks }
+const goal = { input: { goal: "ship the feature", tasks: plan.tasks } }
+
+// Recording actions, because which ARM of the review decision a run takes is a
+// run-time fact: a branch declares both arms, and only an execution says which
+// one ran.
+const recorded: Array<string> = []
+let scriptedReviews: ReadonlyArray<unknown> = []
+
+const workerAction = Action.make("supervisor/worker", {
+  payload: Schema.Struct({ round: Schema.Number, task: Schema.String }),
+  success: Schema.Unknown,
+  error: Schema.Never,
+  tier: "irreversible"
+})
+
+const reviewAction = Action.make("supervisor/review", {
+  payload: Schema.Struct({ round: Schema.Number }),
+  success: Schema.Unknown,
+  error: Schema.Never,
+  tier: "irreversible"
+})
+
+const finalizeAction = Action.make("supervisor/finalize", {
+  payload: Schema.Struct({ rounds: Schema.Number }),
+  success: Schema.Unknown,
+  error: Schema.Never,
+  tier: "irreversible"
+})
+
+const recordingLayers = [
+  workerAction.toLayer(({ round, task }) =>
+    Effect.sync(() => {
+      recorded.push(`work:${round}:${task}`)
+      return `${task}-done`
+    })
+  ),
+  reviewAction.toLayer(({ round }) =>
+    Effect.sync(() => {
+      recorded.push(`review:${round}`)
+      return scriptedReviews[round - 1]
+    })
+  ),
+  finalizeAction.toLayer(({ rounds }) =>
+    Effect.sync(() => {
+      recorded.push(`finalize:${rounds}`)
+      return "final"
+    })
+  )
+]
+
+const recordingWorker = member(
+  "recording-worker",
+  (payload) => workerAction.call({ round: payload.round, task: payload.task.id })
+)
+const recordingReview = member("recording-review", (payload) => reviewAction.call({ round: payload.round }))
+const recordingFinalize = member("recording-finalize", (payload) => finalizeAction.call({ rounds: payload.rounds }))
 
 describe("Supervisor", () => {
-  it("declares one worker call per plan task per round and a single finalize", () => {
+  it("declares one worker call per plan task per round and one finalize per decided round", () => {
     const supervisor = Supervisor.make({
       plan: step,
       workers: { coder: step, tester: step },
@@ -55,17 +129,21 @@ describe("Supervisor", () => {
 
     expect(Flow.isFlow(supervisor)).toBe(true)
     const graph = Graph.build(supervisor, goal)
-    expect(calls(graph)).toHaveLength(14)
+    // Core picked one continuation while the graph was built, so it declared a
+    // single finalize. The review decision is now a `Node.branch`, so the plan
+    // carries BOTH arms: every round declares the finalize its accepted arm
+    // would call, and the last round declares it on the exhausted arm too.
+    expect(calls(graph)).toHaveLength(17)
     expect(inPhase(graph, "plan")).toHaveLength(1)
     expect(inPhase(graph, "work")).toHaveLength(9)
     expect(inPhase(graph, "review")).toHaveLength(3)
-    expect(inPhase(graph, "finalize")).toHaveLength(1)
+    expect(inPhase(graph, "finalize")).toHaveLength(4)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("routes each declared worker call to the task's workerType", () => {
-    const coder = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: (input) => Node.succeed(input) })
-    const tester = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("tested") })
+    const coder = member("coder", (payload) => Node.succeed(payload))
+    const tester = member("tester", () => Node.succeed("tested"))
     const workers = { coder, tester }
     const tasks = [
       { id: "a", workerType: "coder" },
@@ -82,14 +160,17 @@ describe("Supervisor", () => {
         maxRounds: 1,
         concurrency: 3
       }),
-      { ...goal, tasks }
+      { input: { ...goal.input, tasks } }
     )
-    const routed = inPhase(graph, "work").map((node) => literal(node).task)
+    const routed = inPhase(graph, "work").map((node) => payloadOf(node).task)
 
     expect(routed).toEqual(tasks)
+    // Core compared the callee's echoed body against a graph built from calling
+    // the worker directly, because it had no tag to read. `@smthrs/flow` names
+    // a call by the callee's tag, and each worker is tagged with its own
+    // workerType, so the routing is read straight off the node.
     for (const [index, node] of inPhase(graph, "work").entries()) {
-      const expected = calls(Graph.build(workers[tasks[index]!.workerType](literal(node))))[0]!
-      expect(node.keyMaterial.body).toEqual(expected.keyMaterial.body)
+      expect(flowOf(node)).toBe(tasks[index]!.workerType)
     }
   })
 
@@ -104,27 +185,25 @@ describe("Supervisor", () => {
         maxRounds: 1,
         concurrency
       }),
-      { tasks }
+      { input: { tasks } }
     )
 
-    expect(inPhase(graph, "work").map((node) => literal(node).task)).toEqual(tasks)
-    expect(calls(graph)).toHaveLength(tasks.length + 3)
+    expect(inPhase(graph, "work").map((node) => payloadOf(node).task)).toEqual(tasks)
+    // One plan call, one review call, and the two finalize arms of the single
+    // round's decision.
+    expect(calls(graph)).toHaveLength(tasks.length + 4)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
-  it.each([1, 2, 3])("evaluates each task with its selected worker at concurrency %i", (concurrency) => {
+  it.each([1, 2, 3])("executes each task with its selected worker at concurrency %i", async (concurrency) => {
     const tasks = [
       { id: "__proto__", workerType: "tester" },
       { id: "constructor", workerType: "coder" },
       { id: "toString", workerType: "tester" }
     ]
-    const coder = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("coded") })
-    const tester = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("tested") })
-    const finalize = Flow.make({
-      input: Schema.Unknown,
-      output: Schema.Unknown,
-      body: (input) => Node.succeed((input as { readonly results: unknown }).results)
-    })
+    const coder = member("coder", () => Node.succeed("coded"))
+    const tester = member("tester", () => Node.succeed("tested"))
+    const finalize = member("finalize", (payload) => Node.succeed(payload.results))
     const supervisor = Supervisor.make({
       plan: step,
       workers: { coder, tester },
@@ -133,11 +212,10 @@ describe("Supervisor", () => {
       maxRounds: 1,
       concurrency
     })
-    const result = TestRuntime.evaluateInline(supervisor({ tasks }))
-    if (Result.isFailure(result)) throw result.failure
+    const result = await execute(supervisor, { input: { tasks } }, `supervisor-routing-${concurrency}`)
 
-    expect(Object.keys(result.success as object)).toEqual(tasks.map((task) => task.id))
-    expect(result.success).toEqual({ ["__proto__"]: "tested", constructor: "coded", toString: "tested" })
+    expect(Object.keys(result as object)).toEqual(tasks.map((task) => task.id))
+    expect(result).toEqual({ ["__proto__"]: "tested", constructor: "coded", toString: "tested" })
   })
 
   it("threads the previous round's review into the next round's worker calls", () => {
@@ -152,17 +230,23 @@ describe("Supervisor", () => {
       }),
       goal
     )
-    const firstReview = inPhase(graph, "review").find((node) => literal(node).round === 1)
-    const second = inPhase(graph, "work").filter((node) => literal(node).round === 2)
+    const firstReview = inPhase(graph, "review").find((node) => payloadOf(node).round === 1)
+    const second = inPhase(graph, "work").filter((node) => payloadOf(node).round === 2)
 
     expect(firstReview).toBeDefined()
     expect(second).toHaveLength(3)
+    // Core recorded the dependency as `keyMaterial.inputs` entries tagged `Ref`
+    // with a path. `@smthrs/flow` keeps the planned reference itself on the call
+    // payload, so the same two references are read off the payload: the whole
+    // review, and its `retriable` field.
     for (const node of second) {
-      const refs = node.keyMaterial.inputs.filter((ref) => ref._tag === "Ref" && ref.from === firstReview!.id)
-      expect(refs.map((ref) => ref._tag === "Ref" ? ref.path.join(".") : "").sort()).toEqual(["", "retriable"])
+      const payload = payloadOf(node)
+      expect(Planned.reference(payload.review)).toEqual({ node: firstReview!.id, path: [] })
+      expect(Planned.reference(payload.retriable)).toEqual({ node: firstReview!.id, path: ["retriable"] })
     }
-    for (const node of inPhase(graph, "work").filter((node) => literal(node).round === 1)) {
-      expect(node.keyMaterial.inputs.some((ref) => ref._tag === "Ref" && ref.from === firstReview!.id)).toBe(false)
+    for (const node of inPhase(graph, "work").filter((node) => payloadOf(node).round === 1)) {
+      expect(Object.keys(payloadOf(node))).not.toContain("review")
+      expect(Object.keys(payloadOf(node))).not.toContain("retriable")
     }
   })
 
@@ -182,6 +266,55 @@ describe("Supervisor", () => {
     expect(calls(wide)).toHaveLength(calls(narrow).length)
   })
 
+  // The review decision reads the REAL review value, so the declaration carries
+  // both arms and an execution takes one. These two cases pin which one, by the
+  // members the run called and the arguments it called them with.
+  it("takes the accepted arm: an allDone review finalizes without another round", async () => {
+    recorded.length = 0
+    scriptedReviews = [{ allDone: true, retriable: [] }]
+    const supervisor = Supervisor.make({
+      plan: step,
+      workers: { coder: recordingWorker },
+      review: recordingReview,
+      finalize: recordingFinalize,
+      maxRounds: 2,
+      concurrency: 1
+    })
+
+    const result = await execute(
+      supervisor,
+      { input: { tasks: [{ id: "a", workerType: "coder" }] } },
+      "supervisor-true-arm",
+      ...recordingLayers
+    )
+
+    expect(recorded).toEqual(["work:1:a", "review:1", "finalize:1"])
+    expect(result).toBe("final")
+  })
+
+  it("takes the unfinished arm: a review that is not done delegates another round", async () => {
+    recorded.length = 0
+    scriptedReviews = [{ allDone: false, retriable: ["a"] }, { allDone: true, retriable: [] }]
+    const supervisor = Supervisor.make({
+      plan: step,
+      workers: { coder: recordingWorker },
+      review: recordingReview,
+      finalize: recordingFinalize,
+      maxRounds: 2,
+      concurrency: 1
+    })
+
+    const result = await execute(
+      supervisor,
+      { input: { tasks: [{ id: "a", workerType: "coder" }] } },
+      "supervisor-false-arm",
+      ...recordingLayers
+    )
+
+    expect(recorded).toEqual(["work:1:a", "review:1", "work:2:a", "review:2", "finalize:2"])
+    expect(result).toBe("final")
+  })
+
   it("refuses to declare a plan it cannot route", () => {
     const supervisor = Supervisor.make({
       plan: step,
@@ -192,37 +325,55 @@ describe("Supervisor", () => {
       concurrency: 1
     })
 
-    expect(() => Graph.build(supervisor, "ship the feature")).toThrow(
+    expect(() => Graph.build(supervisor, { input: "ship the feature" })).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "Supervisor input must contain a tasks array"
       })
     )
-    expect(() => Graph.build(supervisor, { tasks: [] })).toThrow(
+    expect(() => Graph.build(supervisor, { input: { tasks: [] } })).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "Supervisor input must contain at least one task"
       })
     )
-    expect(() => Graph.build(supervisor, { tasks: [{ id: "a" }] })).toThrow(
+    expect(() => Graph.build(supervisor, { input: { tasks: [{ id: "a" }] } })).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "Supervisor tasks must each carry a string id and a string workerType"
       })
     )
     expect(() =>
-      Graph.build(supervisor, { tasks: [{ id: "a", workerType: "coder" }, { id: "a", workerType: "coder" }] })
+      Graph.build(supervisor, {
+        input: { tasks: [{ id: "a", workerType: "coder" }, { id: "a", workerType: "coder" }] }
+      })
     )
       .toThrow(expect.objectContaining({
         code: "invalid_input",
         message: "Supervisor task ids must be unique"
       }))
-    expect(() => Graph.build(supervisor, { tasks: [{ id: "a", workerType: "painter" }] })).toThrow(
+    expect(() => Graph.build(supervisor, { input: { tasks: [{ id: "a", workerType: "painter" }] } })).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "Supervisor has no worker named \"painter\""
       })
     )
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const options = {
+      plan: step,
+      workers: { coder: step },
+      review: step,
+      finalize: step,
+      maxRounds: 1,
+      concurrency: 1
+    }
+    const supervisor = Supervisor.make({ ...options, name: "ship-it", description: "Plan, delegate, review." })
+
+    expect(supervisor._tag).toBe("ship-it")
+    expect(supervisor.description).toBe("Plan, delegate, review.")
+    expect(Supervisor.make(options).description).toBeUndefined()
   })
 
   it("rejects invalid bounds", () => {
@@ -522,22 +673,22 @@ describe("Supervisor", () => {
           maxRounds: 1,
           concurrency
         }),
-        { goal: "ship the feature", tasks: [{ id: "a", workerType: "coder" }] }
+        { input: { goal: "ship the feature", tasks: [{ id: "a", workerType: "coder" }] } }
       ))
 
     const one = material(1)
     const two = material(2)
 
     expect(one.map((node) => node.kind)).toEqual(two.map((node) => node.kind))
-    expect(one.map((node) => node.keyMaterial.body)).not.toEqual(two.map((node) => node.keyMaterial.body))
+    expect(one.map((node) => node.draft.material.body)).not.toEqual(two.map((node) => node.draft.material.body))
   })
 
   it("declares from the snapshot make took of its options", () => {
-    const other = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("other") })
-    const workers: Record<string, Flow.Any> = { coder: step, tester: step }
+    const other = member("other", () => Node.succeed("other"))
+    const workers: Record<string, typeof step> = { coder: step, tester: step }
     const options = { plan: step, workers, review: step, finalize: step, maxRounds: 2, concurrency: 2 }
     const supervisor = Supervisor.make(options)
-    const before = Graph.nodes(Graph.build(supervisor, goal)).map((node) => node.keyMaterial.body)
+    const before = Graph.nodes(Graph.build(supervisor, goal)).map((node) => node.draft.material.body)
 
     // Every edit a caller can make after the call: a swapped worker, a removed
     // worker the plan still routes to, swapped boss flows, and tighter bounds.
@@ -550,7 +701,7 @@ describe("Supervisor", () => {
     options.concurrency = 1
 
     const after = Graph.nodes(Graph.build(supervisor, goal))
-    expect(after.map((node) => node.keyMaterial.body)).toEqual(before)
+    expect(after.map((node) => node.draft.material.body)).toEqual(before)
     expect(inPhase(Graph.build(supervisor, goal), "work")).toHaveLength(6)
   })
 

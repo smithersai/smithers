@@ -78,7 +78,7 @@ Bare handlers, direct `runRecall` / `runRemember` calls, recall services, and st
 
 `MemoryTrellis.make` is the delegation case. `Trellis.make` from [`@smthrs/patterns`](/api/smithers-patterns) declares the topology a model-authored plan fits inside and fills its leaf slots at run time, so a leaf cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, and to the memory flows those declare, then annotates the trellis itself.
 
-It takes everything `Trellis.make` takes, plus `memory`. The `envelope` bounds the plan the author is allowed to produce: `fuel` is the total number of leaf calls, `depth` the nesting the plan may reach, and `fanout` the members any one group may hold.
+It takes what `Trellis.make` takes, plus `memory`. `Trellis.make` accepts any member it can record a call to; a memory trellis needs more of its author and its leaf, because a policy is an annotation and a member states no annotation bag, so both are declarations here. The `envelope` bounds the plan the author is allowed to produce: `fuel` is the total number of leaf calls, `depth` the nesting the plan may reach, and `fanout` the members any one group may hold.
 
 ```ts
 import * as MemoryTrellis from "@smthrs/memory/MemoryTrellis"

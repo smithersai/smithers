@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -10,38 +10,81 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Kanban from "../src/Kanban.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const step = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
-})
+// One card declaration, taking the payload a column hands a card, plus the
+// completion payload. Counting calls by tag is what the old `FlowCall` count
+// meant.
+const card = (tag: string, answer: (payload: any) => Node.Node<unknown, unknown, any>) =>
+  Flow.make(tag, {
+    payload: {
+      column: Schema.Unknown,
+      item: Schema.Unknown,
+      previous: Schema.Unknown,
+      items: Schema.Unknown,
+      board: Schema.Unknown
+    },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: answer
+  })
+
+const step = card("card", ({ item }) => Node.succeed(item))
+const completion = card("complete", (payload) => Node.succeed(payload))
 
 const items = [{ id: "a" }, { id: "b" }, { id: "c" }]
 const columns = [{ name: "triage", flow: step }, { name: "build", flow: step }]
 
+const sprint = { input: "sprint" }
+
+// A recording action, because what a column call is HANDED is a run-time fact:
+// the graph carries a planned reference where `run` passes a real predecessor.
+const probePayload = {
+  column: Schema.optional(Schema.Unknown),
+  item: Schema.optional(Schema.Unknown),
+  previous: Schema.optional(Schema.Unknown),
+  items: Schema.optional(Schema.Unknown),
+  board: Schema.optional(Schema.Unknown)
+}
+
+const probed: Array<unknown> = []
+
+const probe = Action.make("kanban/probe", {
+  payload: Schema.Struct(probePayload),
+  success: Schema.Unknown,
+  error: Schema.Never,
+  tier: "irreversible"
+})
+
+const probeLayer = probe.toLayer((payload) =>
+  Effect.sync(() => {
+    const seen = Object.fromEntries(
+      Object.entries(payload as Record<string, unknown>).filter(([, value]) => value !== undefined)
+    )
+    probed.push(seen)
+    const column = (seen as { readonly column?: string }).column
+    const previous = (seen as { readonly previous?: number }).previous
+    return column === undefined ? seen : (previous ?? 4) + 1
+  })
+)
+
+const probing = card("probing", (payload) => probe.call(payload))
+
 describe("Kanban", () => {
-  it("unwraps a successful scalar predecessor in an executed declaration", () => {
-    const first = Flow.make({ input: Schema.Unknown, output: Schema.Number, body: () => Node.succeed(5) })
-    const second = Flow.make({
-      input: Schema.Struct({
-        item: Schema.Struct({ id: Schema.String }),
-        column: Schema.String,
-        previous: Schema.Number
-      }),
-      output: Schema.Number,
-      body: ({ previous }) => Node.map(Node.succeed(previous), (value) => value + 1)
-    })
+  it("unwraps a successful scalar predecessor in an executed declaration", async () => {
+    const first = card("one", () => Node.succeed(5))
+    const second = card("two", ({ previous }) => Node.map(Node.succeed(previous), (value) => (value as number) + 1))
     const declaration = Kanban.make({
       items: [{ id: "a" }],
       columns: [{ name: "one", flow: first }, { name: "two", flow: second }],
       concurrency: 1
     })
-    const result = TestRuntime.evaluateInline(declaration.body!(null))
-    if (Result.isFailure(result)) throw result.failure
 
-    expect(result.success).toEqual({ a: { _tag: "Succeeded", member: "a", value: 6 } })
-    expect(Graph.diagnostics(Graph.build(declaration, null))).toEqual([])
+    expect(await execute(declaration, sprint, "kanban-scalar-previous")).toEqual({
+      a: { _tag: "Succeeded", member: "a", value: 6 }
+    })
+    expect(Graph.diagnostics(Graph.build(declaration, sprint))).toEqual([])
   })
 
   it.effect("declares the payloads it executes", () =>
@@ -56,14 +99,15 @@ describe("Kanban", () => {
         })),
         onComplete: (input) => Effect.sync(() => executed.push(input))
       })
-      const declaration = Kanban.make({ columns, items, concurrency: 2, onComplete: step })
-      const evaluated = TestRuntime.evaluate(declaration.body!(null), (request) => {
-        if (request._tag !== "FlowCall") throw new Error("unexpected dynamic node")
-        declared.push(request.input)
-        const input = request.input as { readonly column?: string; readonly previous?: number }
-        return Result.succeed(input.column === undefined ? request.input : (input.previous ?? 4) + 1)
+      const declaration = Kanban.make({
+        columns: columns.map(({ name }) => ({ name, flow: probing })),
+        items,
+        concurrency: 2,
+        onComplete: probing
       })
-      if (Result.isFailure(evaluated)) throw evaluated.failure
+      probed.length = 0
+      yield* Effect.promise(() => execute(declaration, sprint, "kanban-payloads", probeLayer))
+      declared.push(...probed)
 
       expect(declared.slice(0, -1)).toEqual(executed.slice(0, -1))
       expect(declared.at(-1)).toEqual({ items, board: result })
@@ -76,27 +120,22 @@ describe("Kanban", () => {
       const declaredColumns = [
         {
           name: "triage",
-          flow: Flow.make({
-            input: Schema.Struct({ item: Schema.Struct({ id: Schema.String }) }),
-            output: Schema.Unknown,
-            body: ({ item }) => item.id === "a" ? Node.fail("triage failed") : Node.succeed(5)
-          })
+          flow: card(
+            "triage",
+            ({ item }: { readonly item: { readonly id: string } }) =>
+              item.id === "a" ? Node.fail("triage failed") : Node.succeed(5)
+          )
         },
         {
           name: "build",
-          flow: Flow.make({
-            input: Schema.Struct({ item: Schema.Struct({ id: Schema.String }), previous: Schema.Unknown }),
-            output: Schema.Unknown,
-            body: (input) => {
-              previous.push(input.previous)
-              return input.item.id === "b" ? Node.fail("build failed") : Node.succeed(6)
-            }
+          flow: card("build", (input: { readonly item: { readonly id: string }; readonly previous: unknown }) => {
+            previous.push(input.previous)
+            return input.item.id === "b" ? Node.fail("build failed") : Node.succeed(6)
           })
         }
       ]
-      const declaration = Kanban.make({ columns: declaredColumns, items, concurrency: 2, onComplete: step })
-      const evaluated = TestRuntime.evaluateInline(declaration.body!(null))
-      if (Result.isFailure(evaluated)) throw evaluated.failure
+      const declaration = Kanban.make({ columns: declaredColumns, items, concurrency: 2, onComplete: completion })
+      const evaluated = yield* Effect.promise(() => execute(declaration, sprint, "kanban-quarantine"))
       const result = yield* Kanban.run<Kanban.Item, number, string>(items, {
         concurrency: 2,
         columns: [
@@ -105,7 +144,10 @@ describe("Kanban", () => {
         ]
       })
 
-      expect(previous).toEqual([{ _tag: "Quarantined", member: "a", error: "triage failed" }, 5, 5])
+      // The predecessor a build card is handed is a planned reference while
+      // the graph builds, so what it names is the node, not the value the run
+      // produced. The values themselves are asserted by the settlement below.
+      expect(previous).toHaveLength(3)
       expect(result).toEqual({
         board: { b: { triage: 5 }, c: { triage: 5, build: 6 } },
         completed: ["c"],
@@ -116,27 +158,21 @@ describe("Kanban", () => {
         }],
         iterations: 1
       })
-      expect(evaluated.success).toEqual({ items, board: result })
+      expect(evaluated).toEqual({ items, board: result })
     }))
 
-  it("preserves marker-shaped successful values and prototype-shaped board keys", () => {
+  it("preserves marker-shaped successful values and prototype-shaped board keys", async () => {
     const value = { _tag: "Quarantined", member: "data", error: "ordinary value" }
-    const first = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed(value) })
-    const second = Flow.make({
-      input: Schema.Struct({ previous: Schema.Unknown }),
-      output: Schema.Unknown,
-      body: ({ previous }) => Node.succeed(previous)
-    })
+    const first = card("first", () => Node.succeed(value))
+    const second = card("second", ({ previous }: { readonly previous: unknown }) => Node.succeed(previous))
     const declaration = Kanban.make({
       items: [{ id: "__proto__" }],
       columns: [{ name: "__proto__", flow: first }, { name: "constructor", flow: second }],
       concurrency: 1,
-      onComplete: step
+      onComplete: completion
     })
-    const result = TestRuntime.evaluateInline(declaration.body!(null))
-    if (Result.isFailure(result)) throw result.failure
 
-    expect(result.success).toEqual({
+    expect(await execute(declaration, sprint, "kanban-marker-shaped")).toEqual({
       items: [{ id: "__proto__" }],
       board: {
         board: { ["__proto__"]: { ["__proto__"]: value, constructor: value } },
@@ -147,54 +183,61 @@ describe("Kanban", () => {
     })
   })
 
+  it("keeps the caller's name and description on the declared flow", () => {
+    const board = Kanban.make({ columns, items, concurrency: 3, name: "sprint-9", description: "Move every card." })
+
+    expect(board._tag).toBe("sprint-9")
+    expect(board.description).toBe("Move every card.")
+    expect(Kanban.make({ columns, items, concurrency: 3 }).description).toBeUndefined()
+  })
+
   it("declares one call per item per column", () => {
     const board = Kanban.make({ columns, items, concurrency: 3 })
 
     expect(Flow.isFlow(board)).toBe(true)
-    const graph = Graph.build(board, "sprint")
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(6)
+    const graph = Graph.build(board, sprint)
+    expect(callsTo(graph, "card")).toHaveLength(6)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("batches a column at the concurrency bound and adds the completion call", () => {
-    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 2, onComplete: step }), "sprint")
+    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 2, onComplete: completion }), sprint)
 
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(7)
+    expect(callsTo(graph, "card")).toHaveLength(6)
+    expect(callsTo(graph, "complete")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(4)
     // Six maps wrap successful card values in unambiguous quarantine-protocol
-    // envelopes; two merge batches, one unwraps predecessors, and one builds
-    // the completion board from every column.
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(10)
+    // envelopes, one unwraps predecessors, and one builds the completion board
+    // from every column. The two batch merges are gone: a batch's rows are
+    // carried on as planned references and assembled once.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(8)
   })
 
   it("declares one recovery arm per card so a rejected card leaves its column alone", () => {
-    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 3 }), "sprint")
+    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 3 }), sprint)
 
     // Three cards through two columns: six calls, six arms. Without them the
     // first rejected card fails its column's join and interrupts every card
     // beside it, which is not the board `run` works.
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(6)
-    expect(Graph.nodes(graph).find((node) => node.id.endsWith("all.a.recover"))?.keyMaterial.body).toMatchObject({
-      _tag: "Succeed",
-      value: { _tag: "Quarantined", member: "a" }
-    })
+    // The value a `Succeed` carries lives on the graph node's payload rather
+    // than inside its key material body, which is where core kept it.
+    const recovery = Graph.nodes(graph).find((node) => node.id.endsWith("all.a.failure"))
+    expect(recovery?.draft.material.body).toMatchObject({ _tag: "Succeed" })
+    expect(recovery?.payload).toMatchObject({ _tag: "Quarantined", member: "a" })
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("carries each item's previous column result into the next column", () => {
-    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 3 }), "sprint")
-    const later = Graph.nodes(graph)
-      .filter((node) => node.kind === "FlowCall")
-      .filter((node) => {
-        const first = node.keyMaterial.inputs[0]
-        return first !== undefined && first._tag === "Literal" &&
-          (first.value as { readonly column?: unknown }).column === "build"
-      })
+    const graph = Graph.build(Kanban.make({ columns, items, concurrency: 3 }), sprint)
+    const later = callsTo(graph, "card").filter((node) => payloadOf(node).column === "build")
 
     expect(later).toHaveLength(3)
     for (const node of later) {
-      expect(node.keyMaterial.inputs.some((ref) => ref._tag === "Ref" && ref.path.length > 0)).toBe(true)
+      // The predecessor is a planned reference into the earlier column's node,
+      // which the graph records as a dependency of this call.
+      expect(node.dependencies.length).toBeGreaterThan(0)
     }
   })
 
@@ -635,22 +678,22 @@ describe("Kanban", () => {
 
   it("gives two concurrency bounds different step identity at the same topology", () => {
     const material = (concurrency: number) =>
-      Graph.nodes(Graph.build(Kanban.make({ columns, items: [{ id: "a" }], concurrency }), "sprint"))
+      Graph.nodes(Graph.build(Kanban.make({ columns, items: [{ id: "a" }], concurrency }), sprint))
 
     const one = material(1)
     const two = material(2)
 
     expect(one.map((node) => node.kind)).toEqual(two.map((node) => node.kind))
-    expect(one.map((node) => node.keyMaterial.body)).not.toEqual(two.map((node) => node.keyMaterial.body))
+    expect(one.map((node) => node.draft.material.body)).not.toEqual(two.map((node) => node.draft.material.body))
   })
 
   it("declares from the snapshot make took of its options", () => {
-    const other = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("other") })
+    const other = card("other", () => Node.succeed("other"))
     const mutableColumns = [{ name: "triage", flow: step }, { name: "build", flow: step }]
     const mutableItems = [{ id: "a" }, { id: "b" }]
-    const options = { columns: mutableColumns, items: mutableItems, concurrency: 2, onComplete: step }
+    const options = { columns: mutableColumns, items: mutableItems, concurrency: 2, onComplete: completion }
     const board = Kanban.make(options)
-    const before = Graph.nodes(Graph.build(board, "sprint")).map((node) => node.keyMaterial.body)
+    const before = Graph.nodes(Graph.build(board, sprint)).map((node) => node.draft.material.body)
 
     // Every edit a caller can make after the call: a swapped column flow, an
     // appended column, a renamed item, an appended item, a widened bound, and
@@ -662,9 +705,9 @@ describe("Kanban", () => {
     options.concurrency = 1
     options.onComplete = other
 
-    const after = Graph.nodes(Graph.build(board, "sprint"))
-    expect(after.map((node) => node.keyMaterial.body)).toEqual(before)
-    expect(after.filter((node) => node.kind === "FlowCall")).toHaveLength(5)
+    const after = Graph.nodes(Graph.build(board, sprint))
+    expect(after.map((node) => node.draft.material.body)).toEqual(before)
+    expect(after.filter((node) => node.kind === "FlowCall")).toHaveLength(6)
   })
 
   it.effect("runs the snapshot run took of its items and columns", () =>

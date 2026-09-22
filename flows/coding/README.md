@@ -104,11 +104,11 @@ native review evidence. See [planning-wiki.md](planning-wiki.md). Mythical histo
 is not required; ordinary native JJ history remains part of every coding plan.
 
 `registration.ts` is private repository configuration, not a new package API.
-Register `RunPlan` as a delegate when constructing the host's existing executable
-catalog, provide that catalog to `registration`, and pass the registration to the
-host runtime. The discovered `flow.ts` declares `coding/RunPlan`; its invocation
-uses the registry's existing envelope containing `input: { plan }`. The native
-flow is also directly callable from another registered flow:
+Provide the host's existing executable catalog to `registration` and pass the
+registration to the host runtime. The discovered `flow.ts` IS the flow: it
+default-exports `coding/ImplementPlan`, which takes `{ plan }` and needs no
+delegate registration. The native flow is also directly callable from another
+registered flow:
 
 ```ts
 import { ImplementPlan } from "./workflow.ts"
@@ -124,10 +124,10 @@ Do not introduce a Node sidecar as a requirement for a Bun desktop host.
 
 ## Current boundary
 
-`atoms.ts` now supplies the concrete native implementation delegate discovered as
-`coding/implementation`. Register `atomDelegate` in the existing executable
-catalog and merge `atomFlows`, `atomOperations`, `nativeActions`, and
-`EditAtom.layer` into the host's existing action table. The host supplies its
+`implementation/flow.ts` supplies the concrete native implementation, discovered
+as `coding/implementation` and default-exporting `coding/ImplementAtoms`. Merge
+`atomFlows`, `atomOperations`, `nativeActions`, and `EditAtom.layer` into the
+host's existing action table; `atoms.ts` holds the actions they carry. The host supplies its
 ordinary `AgentAction.Host`, guarded filesystem tools, seat resolver (the
 `coding/implement` role), budget and native adapter. No model transport or
 runtime is constructed in this recipe.

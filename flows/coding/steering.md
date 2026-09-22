@@ -35,7 +35,7 @@ existing journal transaction; it opens no second database or transaction system.
 
 For a root-addressed Message, the decorator reads the existing control run and
 approved plan. Only an active `coding/request` run whose recorded digest and
-`coding/RunRequest` delegate match receives the private coordinator lineage.
+`coding/Request` flow match receives the private coordinator lineage.
 Lookup failures and invalid coding ownership refuse admission. Other flow roots,
 explicit leaf addresses, Seat, Thinking and Tools retain their existing routes.
 This is an all-Message coding policy: a provenance string is not proof that the

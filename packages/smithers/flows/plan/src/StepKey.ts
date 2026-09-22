@@ -60,6 +60,13 @@ export type StepKey = StoredKey
 const DigestInputTypeId: unique symbol = Symbol.for("@smthrs/plan/StepKey/DigestInput")
 
 /**
+ * Which kind of graph reference a {@link DigestInput} stands for. Declared
+ * once here so the field on `DigestInput` and the parameter of
+ * {@link digestInput} name one set and cannot drift apart.
+ */
+type GraphReference = "ref" | "pending" | "ref-projected"
+
+/**
  * A precomputed digest supplied as a step input rather than a literal value.
  *
  * @since 0.1.0
@@ -72,15 +79,12 @@ export interface DigestInput {
   /**
    * Which kind of graph reference resolved to this digest.
    *
-   * `fromKeyMaterial` used to hand-build `{kind: "ref" | "pending" |
-   * "ref-projected", ...}` objects that `normalizeInputs` then wrapped a second
-   * time as `{kind: "literal", value: <the object just built>}`. Injectivity
-   * survived — both sides get the outer wrap — but the module's own
-   * `DigestInputTypeId` argument read as if it applied on that path, and it did
-   * not. Carrying the discriminator here lets `normalizeInputs` be the single
-   * normalizer while keeping the variants mutually distinct.
+   * Carrying the discriminator on the digest input keeps `normalizeInputs` the
+   * single normalizer: it wraps every variant once, and the variants stay
+   * mutually distinct because they differ in this field rather than in a
+   * hand-built object a second wrap would hide.
    */
-  readonly reference?: "ref" | "pending" | "ref-projected"
+  readonly reference?: GraphReference
   /** The projection applied to the referenced result, for `ref-projected`. */
   readonly path?: ReadonlyArray<string>
 }
@@ -96,7 +100,7 @@ export interface DigestInput {
 export const digestInput = (
   digest: string,
   reference?: {
-    readonly reference: "ref" | "pending" | "ref-projected"
+    readonly reference: GraphReference
     readonly path?: ReadonlyArray<string>
   }
 ): DigestInput => ({

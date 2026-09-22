@@ -6,10 +6,13 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
-import type { Node as FlowNode } from "@smthrs/core/Node"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -33,12 +36,26 @@ export interface Envelope {
  * @category models
  * @since 0.1.0
  */
-export interface RecurseOptions extends Envelope {
+export interface RecurseOptions<R = never> extends Envelope {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly child: Flow.Any
+  readonly child: Member<R>
   readonly parent?: Envelope | undefined
 }
+
+/**
+ * The declared form of a bounded recursion.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RecursionFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * A recursively expanded input branch.
@@ -68,7 +85,7 @@ const boundError = (message: string): never => {
  * @category constructors
  * @since 0.1.0
  */
-export const recurse = (options: RecurseOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const recurse = <R = never>(options: RecurseOptions<R>): RecursionFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const envelope = { fuel: options.fuel, depth: options.depth, fanout: options.fanout }
@@ -98,65 +115,61 @@ export const recurse = (options: RecurseOptions): Flow.Flow<typeof Schema.Unknow
     depth: envelope.depth,
     fanout: envelope.fanout
   }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [child],
-    body: Node.capture({ depth: envelope.depth, fanout: envelope.fanout, fuel: envelope.fuel }, (input) => {
-      if (typeof input === "function") {
-        return boundError("Recursion input must be a literal tree available while planning")
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    if (typeof input === "function") {
+      return boundError("Recursion input must be a literal tree available while planning")
+    }
+    const ledger = { remaining: envelope.fuel }
+    const visit = (
+      value: unknown,
+      depth: number
+    ): Node.Node<unknown, unknown, R> => {
+      if (ledger.remaining < 1) return boundError("Recursion fuel is exhausted")
+      const branch: Branch = typeof value === "object" && value !== null && Object.hasOwn(value, "input")
+        ? value as unknown as Branch
+        : { input: value }
+      let children: ReadonlyArray<Branch> = []
+      if (Object.hasOwn(branch, "children")) {
+        const declaredChildren = (branch as { readonly children?: unknown }).children
+        if (!Array.isArray(declaredChildren)) {
+          return boundError(
+            `Recursive branch children must be an array when present, received ${typeof declaredChildren}`
+          )
+        }
+        children = declaredChildren as ReadonlyArray<Branch>
       }
-      const ledger = { remaining: envelope.fuel }
-      const visit = (
-        value: unknown,
-        depth: number
-      ): FlowNode<unknown, unknown> => {
-        if (ledger.remaining < 1) return boundError("Recursion fuel is exhausted")
-        const branch: Branch = typeof value === "object" && value !== null && Object.hasOwn(value, "input")
-          ? value as unknown as Branch
-          : { input: value }
-        let children: ReadonlyArray<Branch> = []
-        if (Object.hasOwn(branch, "children")) {
-          const declaredChildren = (branch as { readonly children?: unknown }).children
-          if (!Array.isArray(declaredChildren)) {
-            return boundError(
-              `Recursive branch children must be an array when present, received ${typeof declaredChildren}`
-            )
-          }
-          children = declaredChildren as ReadonlyArray<Branch>
-        }
-        if (children.length > envelope.fanout) {
-          return boundError("Recursive child fan-out exceeds the envelope")
-        }
-        if (children.length > 0 && depth <= 1) {
-          return boundError("Recursive child depth exceeds the envelope")
-        }
-        ledger.remaining--
-        const current = (child as unknown as (
-          input: unknown
-        ) => FlowNode<unknown, unknown>)({
-          input: branch.input,
-          envelope: {
-            fuel: ledger.remaining,
-            depth: depth - 1,
-            fanout: envelope.fanout
-          }
-        })
-        if (children.length === 0) return current
-        return Node.andThen(
-          current,
-          Node.capture({ depth }, () => {
-            const members: Record<string, FlowNode<unknown, unknown>> = {}
-            children.forEach((child, index) => {
-              members[`child-${index}`] = visit(child, depth - 1)
-            })
-            return Node.all(members)
-          })
-        )
+      if (children.length > envelope.fanout) {
+        return boundError("Recursive child fan-out exceeds the envelope")
       }
-      return visit(input, envelope.depth)
-    })
+      if (children.length > 0 && depth <= 1) {
+        return boundError("Recursive child depth exceeds the envelope")
+      }
+      ledger.remaining--
+      const current = callMember(child, {
+        input: branch.input,
+        envelope: {
+          fuel: ledger.remaining,
+          depth: depth - 1,
+          fanout: envelope.fanout
+        }
+      })
+      if (children.length === 0) return current
+      // The children start only after the parent succeeds, and nothing reads
+      // the parent's value, so this is a node-taking `andThen` rather than a
+      // continuation over a planned reference.
+      const members: Record<string, Node.Node<unknown, unknown, R>> = {}
+      children.forEach((child, index) => {
+        members[`child-${index}`] = visit(child, depth - 1)
+      })
+      return Node.andThen(current, Node.all(members))
+    }
+    return visit(input, envelope.depth)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ depth: envelope.depth, fanout: envelope.fanout, fuel: envelope.fuel }, body)
   })
 }

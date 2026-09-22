@@ -1,6 +1,6 @@
 /**
  * Higher-order flow patterns and decorators for flows. It composes
- * `@smthrs/core` and the one effect model in `@smthrs/plan/Effects`, and
+ * `@smthrs/flow` and the one effect model in `@smthrs/plan/Effects`, and
  * imports no Node built-ins.
  *
  * @since 0.1.0

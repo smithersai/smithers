@@ -1,5 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Effects, Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as PlanNode from "@smthrs/plan/Node"
 import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -29,46 +30,113 @@ import * as WithApproval from "../src/WithApproval.ts"
 import * as WithCache from "../src/WithCache.ts"
 import * as WithRetry from "../src/WithRetry.ts"
 
-// Two flows a plan can tell apart: a flow's name and capabilities enter the
-// key material of every call to it, so a swapped collaborator is a changed
-// graph whenever the swap reaches the declaration.
-const flowNamed = (name: string): Flow.Any =>
-  Flow.make({
-    name,
+// Every field any pattern here hands a member, as the one struct a
+// `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag
+// and capabilities enter the key material of every call to it, so a swapped
+// collaborator is a changed graph whenever the swap reaches the declaration.
+const memberFields = {
+  input: Schema.optional(Schema.Unknown),
+  previous: Schema.optional(Schema.Unknown),
+  iteration: Schema.optional(Schema.Unknown),
+  value: Schema.optional(Schema.Unknown),
+  result: Schema.optional(Schema.Unknown),
+  level: Schema.optional(Schema.Unknown),
+  output: Schema.optional(Schema.Unknown),
+  review: Schema.optional(Schema.Unknown),
+  round: Schema.optional(Schema.Unknown),
+  issue: Schema.optional(Schema.Unknown),
+  index: Schema.optional(Schema.Unknown),
+  issues: Schema.optional(Schema.Unknown),
+  fixes: Schema.optional(Schema.Unknown),
+  baseline: Schema.optional(Schema.Unknown),
+  snapshot: Schema.optional(Schema.Unknown),
+  comparison: Schema.optional(Schema.Unknown),
+  phase: Schema.optional(Schema.Unknown),
+  context: Schema.optional(Schema.Unknown),
+  proposal: Schema.optional(Schema.Unknown),
+  applied: Schema.optional(Schema.Unknown),
+  dryRun: Schema.optional(Schema.Unknown),
+  step: Schema.optional(Schema.Unknown),
+  risk: Schema.optional(Schema.Unknown),
+  elevated: Schema.optional(Schema.Unknown),
+  goal: Schema.optional(Schema.Unknown),
+  seat: Schema.optional(Schema.Unknown),
+  path: Schema.optional(Schema.Unknown),
+  prompt: Schema.optional(Schema.Unknown),
+  plan: Schema.optional(Schema.Unknown),
+  leaves: Schema.optional(Schema.Unknown),
+  leaf: Schema.optional(Schema.Unknown),
+  stage: Schema.optional(Schema.Unknown),
+  tier: Schema.optional(Schema.Unknown),
+  budget: Schema.optional(Schema.Unknown),
+  deriskExhausted: Schema.optional(Schema.Unknown),
+  shard: Schema.optional(Schema.Unknown),
+  mapped: Schema.optional(Schema.Unknown),
+  check: Schema.optional(Schema.Unknown),
+  id: Schema.optional(Schema.Unknown),
+  position: Schema.optional(Schema.Unknown),
+  transcript: Schema.optional(Schema.Unknown),
+  proponent: Schema.optional(Schema.Unknown),
+  opinions: Schema.optional(Schema.Unknown),
+  role: Schema.optional(Schema.Unknown),
+  column: Schema.optional(Schema.Unknown),
+  item: Schema.optional(Schema.Unknown),
+  items: Schema.optional(Schema.Unknown),
+  board: Schema.optional(Schema.Unknown),
+  primary: Schema.optional(Schema.Unknown),
+  shadow: Schema.optional(Schema.Unknown),
+  children: Schema.optional(Schema.Unknown),
+  reason: Schema.optional(Schema.Unknown),
+  scope: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.Unknown)
+}
+
+const flowNamed = (name: string) =>
+  Flow.make(name, {
+    payload: memberFields,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
     capabilities: [name],
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: (input) => Node.succeed(input)
+    // Captured, so two fixtures built from the same name key the same way: a
+    // bare arrow takes process-local `sha256-source-ephemeral/v4` identity and
+    // a declaration rebuilt from fresh options would never match the first.
+    body: PlanNode.capture({ name }, ({ input }: { readonly input?: unknown }) => PlanNode.succeed(input))
   })
 
 const step = flowNamed("step")
 const other = flowNamed("other")
 
-const approving = (name: string): Flow.Any =>
-  Flow.make({
-    name,
-    input: Schema.Unknown,
-    output: WithApproval.Approved,
-    body: () => Node.dynamic({ output: WithApproval.Approved })
+const runtimeStep = step
+const runtimeOther = other
+
+// An approval member answers the one literal `WithApproval` admits, and states
+// exactly the payload the approval slot declares, because `Pattern.bind`
+// compares the two schemas.
+const approving = (name: string) =>
+  Flow.make(name, {
+    payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+    success: WithApproval.Approved,
+    error: Schema.Unknown,
+    body: PlanNode.capture({ name }, () => PlanNode.succeed("approved" as const))
   })
 
-const sealed = (name: string): Flow.Any =>
-  Flow.make({
-    name,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    effects: Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }),
-    body: () => Node.dynamic({ output: Schema.Unknown })
+const sealed = (name: string) =>
+  Flow.make(name, {
+    payload: memberFields,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+    body: PlanNode.capture({ name }, ({ input }: { readonly input?: unknown }) => PlanNode.succeed(input))
   })
 
-// Every node's kind and key material except a body's `implementation`: core
-// still digests a body per instance (see WithRetry.test.ts), so a wrapper a
-// pattern builds inside `make`, such as a gated Runbook step, can never match
-// that one field across two calls.
+// Every node's kind and key material body, which is where a changed option has
+// to show up. `implementation` is dropped because a decorator a pattern builds
+// inside `make` can carry a per-instance body digest that never matches across
+// two calls.
 const shape = (flow: Flow.Any, input: unknown): unknown =>
   JSON.parse(
     JSON.stringify(
-      Graph.nodes(Graph.build(flow, input)).map((node) => [node.kind, node.keyMaterial.body]),
+      Graph.nodes(Graph.build(flow, input)).map((node) => [node.kind, node.draft.material.body]),
       (key, value: unknown) => key === "implementation" ? undefined : value
     )
   )
@@ -78,35 +146,44 @@ const annotationsOf = (flow: Flow.Any): Context.Context<never> =>
 
 interface Declaration {
   readonly name: string
-  readonly input: unknown
   /** Builds the declaration from fresh options and hands back the edit to make afterwards. */
-  readonly declare: () => { readonly flow: Flow.Any; readonly mutate: () => void }
-  /** The declaration built from fresh options. */
-  readonly fresh: () => Flow.Any
-  /** The declaration built from options that already carry the edit. */
-  readonly edited: () => Flow.Any
+  readonly declare: () => { readonly shape: () => unknown; readonly mutate: () => void }
+  /** The shape of the declaration built from fresh options. */
+  readonly fresh: () => unknown
+  /** The shape of the declaration built from options that already carry the edit. */
+  readonly edited: () => unknown
 }
 
-const declared = <O>(
+const snapshotted = <O, F>(
   name: string,
   input: unknown,
   options: () => O,
-  make: (options: O) => Flow.Any,
-  mutate: (options: O) => void
+  make: (options: O) => F,
+  mutate: (options: O) => void,
+  shape: (flow: F, input: unknown) => unknown
 ): Declaration => ({
   name,
-  input,
   declare: () => {
     const live = options()
-    return { flow: make(live), mutate: () => mutate(live) }
+    const flow = make(live)
+    return { shape: () => shape(flow, input), mutate: () => mutate(live) }
   },
-  fresh: () => make(options()),
+  fresh: () => shape(make(options()), input),
   edited: () => {
     const live = options()
     mutate(live)
-    return make(live)
+    return shape(make(live), input)
   }
 })
+
+/** A pattern declaration, read off `@smthrs/flow`'s graph. */
+const ported = <O, F extends Flow.Any>(
+  name: string,
+  input: unknown,
+  options: () => O,
+  make: (options: O) => F,
+  mutate: (options: O) => void
+): Declaration => snapshotted(name, input, options, make, mutate, shape)
 
 const tree = { input: "root", children: [{ input: "left" }, { input: "right" }] }
 
@@ -115,48 +192,50 @@ const tree = { input: "root", children: [{ input: "left" }, { input: "right" }] 
 // policies. Each case's edit is one the declaration reacts to, which the test
 // proves by building the edited options fresh.
 const declarations: ReadonlyArray<Declaration> = [
-  declared(
+  ported(
     "Debate.make",
-    "topic",
-    () => ({ proponent: step, opponent: step, judge: step, rounds: 1 }),
+    { input: "topic" },
+    () => ({ proponent: runtimeStep, opponent: runtimeStep, judge: runtimeStep, rounds: 1 }),
     (options) => Debate.make(options),
     (options) => {
-      options.proponent = other
-      options.opponent = other
-      options.judge = other
+      options.proponent = runtimeOther
+      options.opponent = runtimeOther
+      options.judge = runtimeOther
       options.rounds = 2
     }
   ),
-  declared(
+  ported(
     "Panel.make",
-    "question",
+    { input: "question" },
     () => ({
-      panelists: { a: step, b: step } as Record<string, Flow.Any>,
-      moderator: step,
+      panelists: { a: runtimeStep, b: runtimeStep } as Record<string, typeof runtimeStep>,
+      moderator: runtimeStep,
       roles: { a: "critic" } as Record<string, string>,
       concurrency: 1
     }),
     (options) => Panel.make(options),
     (options) => {
-      options.panelists.a = other
-      options.panelists.c = other
-      options.moderator = other
+      options.panelists.a = runtimeOther
+      options.panelists.c = runtimeOther
+      options.moderator = runtimeOther
       options.roles.a = "fan"
       options.roles.b = "judge"
       options.concurrency = 2
     }
   ),
-  declared(
+  ported(
     "Escalation.make",
-    "request",
+    { input: "request" },
     () => ({
-      rungs: [{ flow: step, escalateIf: step }, step] as Array<{ flow: Flow.Any; escalateIf: Flow.Any } | Flow.Any>,
+      rungs: [{ flow: step, escalateIf: step }, step] as Array<
+        { flow: typeof step; escalateIf: typeof step } | typeof step
+      >,
       accept: step,
       fallback: step
     }),
     (options) => Escalation.make(options),
     (options) => {
-      const first = options.rungs[0] as { flow: Flow.Any; escalateIf: Flow.Any }
+      const first = options.rungs[0] as { flow: typeof step; escalateIf: typeof step }
       first.flow = other
       first.escalateIf = other
       options.rungs.push(other)
@@ -164,9 +243,9 @@ const declarations: ReadonlyArray<Declaration> = [
       options.fallback = other
     }
   ),
-  declared(
+  ported(
     "ReviewLoop.make",
-    "draft",
+    { input: "draft" },
     () => ({ produce: step, review: step, revise: step, maxRounds: 1 }),
     (options) => ReviewLoop.make(options),
     (options) => {
@@ -176,63 +255,66 @@ const declarations: ReadonlyArray<Declaration> = [
       options.maxRounds = 2
     }
   ),
-  declared(
+  ported(
     "MapReduce.make",
     { shards: ["a", "b"] },
-    () => ({ map: step, reduce: step, concurrency: 1, onEmpty: "reduce" as MapReduce.OnEmpty }),
+    () => ({
+      map: runtimeStep,
+      reduce: runtimeStep,
+      concurrency: 1,
+      onEmpty: "reduce" as MapReduce.OnEmpty
+    }),
     (options) => MapReduce.make(options),
     (options) => {
-      options.map = other
-      options.reduce = other
+      options.map = runtimeOther
+      options.reduce = runtimeOther
       options.concurrency = 2
       options.onEmpty = "succeed"
     }
   ),
-  declared(
+  ported(
     "Recursion.recurse",
-    tree,
-    () => ({ child: step, fuel: 4, depth: 2, fanout: 2 }),
+    { input: tree },
+    () => ({ child: runtimeStep, fuel: 4, depth: 2, fanout: 2 }),
     (options) => Recursion.recurse(options),
     (options) => {
-      options.child = other
+      options.child = runtimeOther
       options.fuel = 8
       options.depth = 3
       options.fanout = 3
     }
   ),
-  declared(
+  ported(
     "TryCatchFinally.make",
-    "job",
-    () => ({ try: step, catch: step, finally: step }),
+    { input: "job" },
+    () => ({ try: runtimeStep, catch: runtimeStep, finally: runtimeStep }),
     (options) => TryCatchFinally.make(options),
     (options) => {
-      options.try = other
-      options.catch = other
-      options.finally = other
+      options.try = runtimeOther
+      options.catch = runtimeOther
+      options.finally = runtimeOther
     }
   ),
-  declared(
+  ported(
     "Loop.make",
-    "seed",
+    { input: "seed" },
     () => ({
-      body: step,
-      until: step,
+      body: runtimeStep,
+      until: runtimeStep,
       maxIterations: 1,
-      onMaxReached: "return-last" as Loop.OnMaxReached,
-      captures: { threshold: 1 } as Record<string, unknown>
+      onMaxReached: "return-last" as Loop.OnMaxReached
     }),
     (options) => Loop.make(options),
     (options) => {
-      options.body = other
-      options.until = other
+      options.body = runtimeOther
+      options.until = runtimeOther
       options.maxIterations = 2
       options.onMaxReached = "fail"
-      options.captures.threshold = 2
     }
   ),
-  declared(
+  ported(
     "Optimizer.make",
-    "seed",
+    { input: "seed" },
     () => ({
       generate: step,
       evaluate: step,
@@ -248,9 +330,9 @@ const declarations: ReadonlyArray<Declaration> = [
       options.maxIterations = 2
     }
   ),
-  declared(
+  ported(
     "ScanFixVerify.make",
-    "tree",
+    { input: "tree" },
     () => ({ scan: step, fix: step, verify: step, maxRetries: 1, maxIssues: 1, concurrency: 1 }),
     (options) => ScanFixVerify.make(options),
     (options) => {
@@ -262,9 +344,9 @@ const declarations: ReadonlyArray<Declaration> = [
       options.concurrency = 2
     }
   ),
-  declared(
+  ported(
     "DriftDetector.make",
-    { target: "config" },
+    { input: { target: "config" } },
     () => ({ capture: step, compare: step, alert: step, baseline: { checksum: "a" } as unknown }),
     (options) => DriftDetector.make(options),
     (options) => {
@@ -274,20 +356,20 @@ const declarations: ReadonlyArray<Declaration> = [
       options.baseline = { checksum: "b" }
     }
   ),
-  declared(
+  ported(
     "Sidecar.make",
-    "question",
-    () => ({ primary: step, shadow: step, score: step }),
+    { input: "question" },
+    () => ({ primary: runtimeStep, shadow: runtimeStep, score: runtimeStep }),
     (options) => Sidecar.make(options),
     (options) => {
-      options.primary = other
-      options.shadow = other
-      options.score = other
+      options.primary = runtimeOther
+      options.shadow = runtimeOther
+      options.score = runtimeOther
     }
   ),
-  declared(
+  ported(
     "Intervene.make",
-    "target",
+    { input: "target" },
     () => ({
       read: step,
       propose: step,
@@ -308,27 +390,27 @@ const declarations: ReadonlyArray<Declaration> = [
       options.reason = "apply something else"
     }
   ),
-  declared(
+  ported(
     "CheckSuite.make",
-    "tree",
+    { input: "tree" },
     () => ({
-      checks: { lint: step } as Record<string, Flow.Any>,
+      checks: { lint: runtimeStep } as Record<string, typeof runtimeStep>,
       strategy: "all-pass" as CheckSuite.Strategy,
       concurrency: 1,
       continueOnFail: false
     }),
     (options) => CheckSuite.make(options),
     (options) => {
-      options.checks.lint = other
-      options.checks.test = other
+      options.checks.lint = runtimeOther
+      options.checks.test = runtimeOther
       options.strategy = "any-pass"
       options.concurrency = 2
       options.continueOnFail = true
     }
   ),
-  declared(
+  ported(
     "Runbook.make",
-    "target",
+    { input: "target" },
     () => ({
       steps: [
         { id: "backup", flow: step, risk: "safe" as Runbook.Risk },
@@ -348,9 +430,9 @@ const declarations: ReadonlyArray<Declaration> = [
       options.reason = "run something else"
     }
   ),
-  declared(
+  ported(
     "Trellis.make",
-    "prompt",
+    { input: "prompt" },
     () => ({ author: step, leaf: step, envelope: { fuel: 2, depth: 2, fanout: 2 } }),
     (options) => Trellis.make(options),
     (options) => {
@@ -359,14 +441,14 @@ const declarations: ReadonlyArray<Declaration> = [
       options.envelope.fuel = 3
     }
   ),
-  declared(
+  ported(
     "DelegationChain.make",
-    "prompt",
+    { input: "prompt" },
     () => ({
       refine: step,
       plan: step,
       derisk: step,
-      execute: { weak: step, strong: step } as Record<string, Flow.Any>,
+      execute: { weak: step, strong: step } as Record<string, typeof step>,
       review: step,
       settle: step,
       tierOrder: ["weak", "strong"],
@@ -405,15 +487,15 @@ const recorder = () => {
 describe("options are snapshotted at the call", () => {
   for (const entry of declarations) {
     it(`${entry.name} declares from the snapshot it took of its options`, () => {
-      const { flow, mutate } = entry.declare()
-      const before = shape(flow, entry.input)
+      const { mutate, shape } = entry.declare()
+      const before = shape()
       mutate()
 
-      expect(shape(flow, entry.input)).toEqual(before)
-      expect(before).toEqual(shape(entry.fresh(), entry.input))
+      expect(shape()).toEqual(before)
+      expect(before).toEqual(entry.fresh())
       // The edit is one the declaration reacts to, so the equality above is
       // not vacuous.
-      expect(shape(entry.edited(), entry.input)).not.toEqual(before)
+      expect(entry.edited()).not.toEqual(before)
     })
   }
 
@@ -431,13 +513,13 @@ describe("options are snapshotted at the call", () => {
       backoff: { initialMs: 10, factor: 2, maxMs: 100 },
       nonRetryable: ["Boom"]
     })(inner)
-    expect((decorated as { readonly name?: string }).name).toBe(
+    expect((decorated as { readonly _tag?: string })._tag).toBe(
       "withRetry(search, attempts=2, backoff=10x2<=100, nonRetryable=Boom)"
     )
-    expect(shape(decorated, "query")).toEqual(shape(reference, "query"))
+    expect(shape(decorated, { input: "query" })).toEqual(shape(reference, { input: "query" }))
     // The edit is one the decorator reacts to, so the label above is not
     // vacuous.
-    expect((WithRetry.make(options)(inner) as { readonly name?: string }).name).toBe(
+    expect((WithRetry.make(options)(inner) as { readonly _tag?: string })._tag).toBe(
       "withRetry(search, attempts=5, backoff=10x2<=1000, nonRetryable=Boom|Other)"
     )
   })
@@ -481,7 +563,7 @@ describe("options are snapshotted at the call", () => {
     options.version = "v2"
 
     const decorated = decorator(sealed("read"))
-    expect((decorated as { readonly name?: string }).name).toBe("withCache(read, ttlMs=1000, scope=run, version=v1)")
+    expect((decorated as { readonly _tag?: string })._tag).toBe("withCache(read, ttlMs=1000, scope=run, version=v1)")
     expect(WithCache.policyOf(annotationsOf(decorated))).toEqual({ ttlMs: 1000, scope: "run" })
   })
 
@@ -494,8 +576,10 @@ describe("options are snapshotted at the call", () => {
     const inner = flowNamed("publish")
     const decorated = decorator(inner)
     const reference = WithApproval.make({ reason: "publish", approval: approving("gate") })(inner)
-    expect(shape(decorated, "release")).toEqual(shape(reference, "release"))
-    expect(shape(decorated, "release")).not.toEqual(shape(WithApproval.make(options)(inner), "release"))
+    expect(shape(decorated, { input: "release" })).toEqual(shape(reference, { input: "release" }))
+    expect(shape(decorated, { input: "release" })).not.toEqual(
+      shape(WithApproval.make(options)(inner), { input: "release" })
+    )
   })
 
   it.effect("Bounded.run runs the members and options it was called with", () =>

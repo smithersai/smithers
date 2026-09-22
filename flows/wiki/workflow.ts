@@ -1,6 +1,6 @@
 /** One independently keyed source/review pair per page, using ordinary flows. */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { Action, Flow } from "@smthrs/flow"
+import { Action } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { Evidence, Input, PageSpec, Receipt, Review, ReviewedPage, WikiError } from "./schema.ts"
@@ -58,20 +58,4 @@ export const Assess = Action.make("wiki/assess-review", {
 export const Write = Action.make("wiki/write-snapshot", {
   payload: { pages: Schema.Record(Schema.String, ReviewedPage), mode: Input.fields.mode },
   success: Receipt, error: WikiError, nondeterministic: true
-})
-
-export const Wiki = Flow.make("smithers/Wiki", {
-  payload: Input, success: Receipt, error: Schema.Union([WikiError, AgentAction.AgentFailure]),
-  body: (input) => Node.bindPlanned(
-    Node.all(Object.fromEntries(input.pages.map((spec, index) => [`page-${index}`, Collect.call({ spec })]))),
-    (evidence) => Node.bindPlanned(
-      Node.all(Object.fromEntries(input.pages.map((_, index) => [`page-${index}`, input.mode === "preview"
-        ? Node.succeed(null) : ReviewPage.call({ evidence: evidence[`page-${index}`]! })]))),
-      (reviews) => Node.bindPlanned(
-        Node.all(Object.fromEntries(input.pages.map((_, index) => [`page-${index}`,
-          input.mode === "preview" ? Assess.call({ evidence: evidence[`page-${index}`]!, review: null, reviewer: null })
-            : validateOrRepairReview(evidence[`page-${index}`]!, reviews[`page-${index}`]!).pipe(
-              Node.bindPlanned(review => Assess.call({ evidence: evidence[`page-${index}`]!, review, reviewer: input.reviewer })))
-        ]))),
-        (pages) => Write.call({ pages, mode: input.mode }))))
 })

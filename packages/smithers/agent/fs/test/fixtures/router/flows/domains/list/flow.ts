@@ -1,3 +1,3 @@
 import { Flow } from "@smthrs/core"
 
-export default Flow.make({ description: "List domains." })
+export default Flow.make({ name: "domains/list", description: "List domains." })

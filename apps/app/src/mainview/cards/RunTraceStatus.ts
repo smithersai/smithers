@@ -341,7 +341,7 @@ export const traceGoals = (model: TraceModel, plan: Plan | undefined, cursor?: n
           }
         }
         for (const execution of native.completed.filter(entry => entry.result!.sequence === seq)) {
-          if (![change.implementation, "coding/Implement", "coding/ImplementAtoms"].includes(execution.flowName ?? "")) continue
+          if (![change.implementation, "coding/ImplementAtoms"].includes(execution.flowName ?? "")) continue
           const implemented = decodeImplementation(execution.result!.value)
           if (Option.isSome(implemented) && implemented.value.change === change.id &&
             checkedTree !== undefined && checkedTree !== implemented.value.head.treeId) invalidate(seq, implemented.value.writes)

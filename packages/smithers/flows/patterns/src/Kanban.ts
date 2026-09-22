@@ -7,10 +7,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 import * as Quarantine from "./Quarantine.ts"
 
@@ -33,10 +38,24 @@ export interface Item {
  * @category models
  * @since 0.1.0
  */
-export interface Column {
+export interface Column<R = never> {
   readonly name: string
-  readonly flow: Flow.Any
+  readonly flow: Member<R>
 }
+
+/**
+ * The declared form of a board.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type KanbanFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * Configuration for {@link make}.
@@ -44,13 +63,13 @@ export interface Column {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly columns: ReadonlyArray<Column>
+  readonly columns: ReadonlyArray<Column<R>>
   readonly items: ReadonlyArray<Item>
   readonly concurrency: number
-  readonly onComplete?: Flow.Any | undefined
+  readonly onComplete?: Member<R> | undefined
 }
 
 /**
@@ -134,11 +153,6 @@ export interface RuntimeOptions<It extends Item, Out, E, R, E2 = never, R2 = nev
   readonly maxIterations?: number | undefined
 }
 
-const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
-  ...(left as Record<string, unknown>),
-  ...(right as Record<string, unknown>)
-})
-
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 const completionBoard = (
@@ -211,11 +225,14 @@ const completionBoard = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again. An item record is
   // copied because it enters key material as a literal.
-  const columns: ReadonlyArray<Column> = options.columns.map((column) => ({ name: column.name, flow: column.flow }))
+  const columns: ReadonlyArray<Column<R>> = options.columns.map((column) => ({
+    name: column.name,
+    flow: column.flow
+  }))
   const items: ReadonlyArray<Item> = options.items.map((item) => ({ ...item }))
   const concurrency = options.concurrency
   const onComplete = options.onComplete
@@ -240,13 +257,17 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     throw new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" })
   }
   const captures = { columns: names, items: ids, concurrency }
-  const column = (index: number, previous: unknown): Node.Node<unknown, unknown> => {
+  // Each batch gates the next, and the outcomes a batch produced are carried
+  // on as planned field references: a batch's result does not exist while the
+  // graph builds, so the column assembles the record rather than merging two
+  // symbols.
+  const column = (index: number, previous: unknown): Node.Node<unknown, unknown, R> => {
     const declared = columns[index]!
-    const batchAt = (offset: number): Node.Node<unknown, unknown> => {
+    const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
       const members = Object.fromEntries(
         items.slice(offset, offset + concurrency).map((item) => [
           item.id,
-          Compose.call(declared.flow, {
+          callMember(declared.flow, {
             column: declared.name,
             item,
             previous: previous === undefined ? undefined : (previous as Record<string, unknown>)[item.id]
@@ -255,67 +276,87 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       ) as Record<string, Node.Any>
       return Quarantine.all(members, { policy: "quarantine" })
     }
-    let batches = batchAt(0)
-    for (let offset = concurrency; offset < items.length; offset += concurrency) {
-      const batch = batchAt(offset)
-      batches = Node.andThen(
-        batches,
-        Node.capture({ column: declared.name, offset }, (soFar) =>
-          Node.map(
-            batch,
-            Node.capture({ column: declared.name, offset }, (values) => merge(soFar, values))
+    const visit = (
+      offset: number,
+      carried: Readonly<Record<string, Planned.Planned<unknown>>>
+    ): Node.Node<unknown, unknown, R> => {
+      if (offset >= items.length) return Node.succeed(carried)
+      const batched = ids.slice(offset, offset + concurrency)
+      return Node.bindPlanned(
+        batchAt(offset),
+        Node.capture({ column: declared.name, offset, batched }, (reference) =>
+          Node.andThen(
+            Node.succeed(reference),
+            visit(offset + concurrency, {
+              ...carried,
+              ...Object.fromEntries(
+                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
+              )
+            })
           ))
       )
     }
-    return batches
+    return visit(0, {})
   }
   const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: onComplete === undefined
-      ? columns.map((declared) => declared.flow)
-      : [...columns.map((declared) => declared.flow), onComplete],
-    body: Node.capture(captures, () => {
-      const walk = (
-        index: number,
-        previous: unknown,
-        history: ReadonlyArray<unknown>
-      ): Node.Node<unknown, unknown> => {
-        const current = column(index, previous)
-        if (index + 1 < columns.length) {
-          // Unwrap inside a map, where outcomes are real values. A builder
-          // continuation sees symbolic references while the graph is planned.
-          const settled = Node.map(
-            current,
-            Node.capture(captures, (values) => ({
-              outcomes: values,
-              previous: Object.fromEntries(
-                Object.entries(values as Record<string, Quarantine.Settled<unknown, unknown>>).map(([id, outcome]) => [
-                  id,
-                  outcome._tag === "Succeeded" ? outcome.value : outcome
-                ])
-              )
-            }))
-          )
-          return Node.andThen(
-            settled,
-            Node.capture(
-              { ...captures, column: names[index + 1] },
-              (state) => walk(index + 1, state.previous, [...history, state.outcomes])
+  const body = (): Node.Node<unknown, unknown, R> => {
+    const walk = (
+      index: number,
+      previous: unknown,
+      history: ReadonlyArray<unknown>
+    ): Node.Node<unknown, unknown, R> => {
+      const current = column(index, previous)
+      if (index + 1 < columns.length) {
+        // Unwrap inside a map, where outcomes are real values. A builder
+        // continuation sees symbolic references while the graph is planned.
+        const settled = Node.map(
+          current,
+          Node.capture(captures, (values) => ({
+            outcomes: values,
+            previous: Object.fromEntries(
+              Object.entries(values as Record<string, Quarantine.Settled<unknown, unknown>>).map(([id, outcome]) => [
+                id,
+                outcome._tag === "Succeeded" ? outcome.value : outcome
+              ])
             )
+          }))
+        )
+        return Node.bindPlanned(
+          settled,
+          Node.capture(
+            { ...captures, column: names[index + 1] },
+            (state) => walk(index + 1, state.previous, [...history, state.outcomes])
           )
-        }
-        if (onComplete === undefined) return current
-        return Node.andThen(
-          Node.map(current, Node.capture(captures, (values) => completionBoard([...history, values], ids, names))),
-          Node.capture(captures, (board) => Compose.call(onComplete, { items, board }))
         )
       }
-      return walk(0, undefined, [])
-    })
+      if (onComplete === undefined) return current
+      // Every earlier column's outcomes is a planned reference, so the board is
+      // assembled from a node that carries them all and hydrates them, not from
+      // a mapper closing over symbols it would compute on.
+      const board = Node.bindPlanned(
+        current,
+        Node.capture(captures, (values) =>
+          Node.map(
+            Node.succeed([...history, values]),
+            Node.capture(
+              captures,
+              (columnsSoFar) => completionBoard(columnsSoFar as ReadonlyArray<unknown>, ids, names)
+            )
+          ))
+      )
+      return Node.bindPlanned(
+        board,
+        Node.capture(captures, (settled) => callMember(onComplete, { items, board: settled }))
+      )
+    }
+    return walk(0, undefined, [])
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

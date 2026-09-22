@@ -98,12 +98,15 @@ A workflow is a \`Flow\`. A step is an \`Action\`. A model-backed step is an
 
 ## Layout
 
-One flow per directory: \`flows/<name>/flow.ts\`. The registry discovers a
-directory by tokenizing \`export default Flow.make(\` — it never evaluates the
-module — so the default export is a \`@smthrs/core\` \`Flow.make\` descriptor
-carrying a \`description\` string literal, an \`input\`, and an \`output\`, and
-it delegates to the named durable flow the file also exports. A directory with
-no \`description\` is discovered with a warning and is not runnable.`
+One flow per directory: \`flows/<name>/flow.ts\`. The default export is the
+\`@smthrs/flow\` flow itself, tag and \`body\` included, so one declaration
+carries both the contract the control plane admits and the graph the engine
+runs. Write no second declaration for the registry to read: there is one. The
+registry discovers a directory by tokenizing \`export default Flow.make(\` and
+reads the \`description\` string literal, the \`capabilities\` and the
+\`effects\` out of the options object without evaluating the module. A
+directory with no \`description\` is discovered with a warning and is not
+runnable.`
 
 /**
  * One verified old-to-new pair used to teach the transform agent.

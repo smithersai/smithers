@@ -12,12 +12,30 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
+
+/**
+ * The declared form of an error boundary.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type TryCatchFinallyFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 /**
  * Configuration for {@link make}.
@@ -29,13 +47,13 @@ import { PatternError } from "./PatternError.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly try: Flow.Any
-  readonly catch?: Flow.Any | undefined
+  readonly try: Member<R>
+  readonly catch?: Member<R> | undefined
   readonly catchSchema?: Schema.Top | undefined
-  readonly finally?: Flow.Any | undefined
+  readonly finally?: Member<R> | undefined
 }
 
 /**
@@ -75,7 +93,7 @@ export interface RuntimeOptions<I, A, E, R, B = A, E2 = never, R2 = never, E3 = 
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): TryCatchFinallyFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const arms = { try: options.try, catch: options.catch, catchSchema: options.catchSchema, finally: options.finally }
@@ -89,61 +107,60 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     catch: arms.catch !== undefined,
     finally: arms.finally !== undefined
   }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [
-      arms.try,
-      ...(arms.catch === undefined ? [] : [arms.catch]),
-      ...(arms.finally === undefined ? [] : [arms.finally])
-    ],
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const finalize = arms.finally
+    // The body's value is a planned reference until the run produces it, so
+    // the finalizer is SEQUENCED ahead of a node that hands that reference
+    // back. A mapper closing over the reference would return the placeholder.
+    const settle = (value: unknown): Node.Node<unknown, unknown, R> =>
+      finalize === undefined
+        ? Node.succeed(value)
+        : Node.andThen(callMember(finalize, { input }), Node.succeed(value))
+    const attempt = callMember(arms.try, input)
+    const handler = arms.catch
+    const recover = (handled: Member<R>) => {
+      const onFailure = Node.capture(
+        { handled: true },
+        (error: unknown): Node.Node<unknown, unknown, R> => callMember(handled, { error, input })
+      )
+      const filter = arms.catchSchema as Schema.Schema<unknown> | undefined
+      return filter === undefined
+        ? Node.catch(attempt, { onFailure })
+        : Node.catch(attempt, { error: filter, onFailure })
+    }
+    const recovered = handler === undefined ? attempt : recover(handler)
+    // The unhandled-failure boundary wraps the BODY alone. Sequencing the
+    // success-arm finalizer after it, rather than inside it, keeps the
+    // declaration honest: a finalizer that fails on the success path is
+    // not caught here and re-run, which is exactly what `run` does.
+    const guarded = finalize === undefined ? recovered : Node.catch(recovered, {
+      onFailure: Node.capture(
+        { rethrow: true },
+        (error: unknown) =>
+          Node.andThen(
+            // The body failure is what this arm re-raises, so a finalizer
+            // that fails here must not take its place: without this catch
+            // the re-raise never runs and the boundary reports the cleanup
+            // error instead, which is the opposite of what `run` does. The
+            // finalizer call is its own step, so the absorbed failure still
+            // stands in the journal.
+            Node.catch(callMember(finalize, { input }), {
+              onFailure: Node.capture({ cleanupFailed: true }, () => Node.succeed(null))
+            }),
+            Node.fail(error)
+          )
+      )
+    })
+    return Node.bindPlanned(guarded, Node.capture({ settled: true }, (value) => settle(value)))
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
     body: Node.capture(
       { catch: arms.catch !== undefined, finally: arms.finally !== undefined },
-      (input) => {
-        const finalize = arms.finally
-        const settle = (value: unknown): Node.Node<unknown, unknown> =>
-          finalize === undefined
-            ? Node.succeed(value)
-            : Node.map(Compose.call(finalize, { input }), Node.capture({ settled: true }, () => value))
-        const attempt = Compose.call(arms.try, input)
-        const handler = arms.catch
-        const recover = (handled: Flow.Any) => {
-          const onFailure = Node.capture(
-            { handled: true },
-            (error: unknown): Node.Node<unknown, unknown> => Compose.call(handled, { error, input })
-          )
-          const filter = arms.catchSchema as Schema.Schema<unknown> | undefined
-          return filter === undefined
-            ? Node.catch(attempt, { onFailure })
-            : Node.catch(attempt, { error: filter, onFailure })
-        }
-        const recovered = handler === undefined ? attempt : recover(handler)
-        // The unhandled-failure boundary wraps the BODY alone. Sequencing the
-        // success-arm finalizer after it, rather than inside it, keeps the
-        // declaration honest: a finalizer that fails on the success path is
-        // not caught here and re-run, which is exactly what `run` does.
-        const guarded = finalize === undefined ? recovered : Node.catch(recovered, {
-          onFailure: Node.capture(
-            { rethrow: true },
-            (error: unknown) =>
-              Node.andThen(
-                // The body failure is what this arm re-raises, so a finalizer
-                // that fails here must not take its place: without this catch
-                // the re-raise never runs and the boundary reports the cleanup
-                // error instead, which is the opposite of what `run` does. The
-                // finalizer call is its own step, so the absorbed failure still
-                // stands in the journal.
-                Node.catch(Compose.call(finalize, { input }), {
-                  onFailure: Node.capture({ cleanupFailed: true }, () => Node.succeed(null))
-                }),
-                Node.capture({ rethrow: true }, () => Node.fail(error))
-              )
-          )
-        })
-        return Node.andThen(guarded, Node.capture({ settled: true }, (value) => settle(value)))
-      }
+      body
     )
   })
 }

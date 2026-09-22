@@ -15,7 +15,7 @@ const { EngineEvent, Journal, JournalEvent } = JournalModules
 // These exact captured files define the model's task, output, evidence view and
 // host envelope. Orchestration/receipt validation can change without changing
 // that task; every reused receipt still passes today's deterministic assessment.
-export const policySources = ["flows/wiki/workflow.ts", "flows/wiki/schema.ts", "flows/wiki/evidence.ts", "flows/wiki/runtime.ts", "flows/wiki/jev-citations.ts"] as const
+export const policySources = ["flows/wiki/flow.ts", "flows/wiki/workflow.ts", "flows/wiki/schema.ts", "flows/wiki/evidence.ts", "flows/wiki/runtime.ts", "flows/wiki/jev-citations.ts"] as const
 const PolicySource = Schema.Struct({ path: Schema.String, digest: Schema.String })
 export const Provenance = Schema.Struct({
   originRunId: Schema.String, policyDigest: Schema.String, policySources: Schema.Array(PolicySource),

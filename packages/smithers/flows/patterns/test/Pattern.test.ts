@@ -1,7 +1,21 @@
+/**
+ * `Pattern` on `@smthrs/flow` declarations.
+ *
+ * Every assertion is the one it was: which slot bindings are accepted, the
+ * exact refusal each incompatible pair produces, what a decorator chain is
+ * named, and what authority it clips. What moved is where the four facts a
+ * decorator reads live: `@smthrs/core` carried `name`, `capabilities`,
+ * `effects`, `input` and `output` as fields, and `@smthrs/flow` carries the tag
+ * and the two schemas as fields and the ceiling and the envelope in the
+ * annotation bag `Graph.build` consults.
+ */
 import { describe, it } from "@effect/vitest"
-import { Effects, Flow, Node } from "@smthrs/core"
+import { Flow } from "@smthrs/flow"
+import * as Effects from "@smthrs/plan/Effects"
+import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
+import * as Decorate from "../src/internal/Decorate.ts"
 import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
 
@@ -17,24 +31,47 @@ const effect = (
     tier: "sealed"
   })
 
-const details = (flow: Flow.Any) =>
-  flow as Flow.Any & {
-    readonly name?: string | undefined
-    readonly capabilities: ReadonlyArray<string>
-    readonly effects: Effects.Declaration | undefined
-  }
+/**
+ * A declaration carrying exactly the pair of schemas a case needs.
+ *
+ * `Pattern.bind` and `Pattern.decorate` compare a slot's declared pair against
+ * the pair a flow states, and that comparison is schema-shape agnostic: it
+ * walks two JSON Schema documents. `@smthrs/flow`'s TYPE requires a payload to
+ * be a struct, so the cast is what lets this suite keep comparing scalar
+ * schemas and keep every refusal message it asserted before. No case here
+ * builds a graph from one of these.
+ */
+const declaring = (input: Schema.Top, output: Schema.Top): Flow.Any =>
+  Flow.make("pattern/probe", {
+    payload: input as Flow.AnyStructSchema,
+    success: output,
+    error: Schema.Never,
+    body: (value: unknown) => Node.succeed(value)
+  }) as unknown as Flow.Any
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
+/** The same, with a tag, a ceiling and an envelope the decorator cases read. */
+const declaringAs = (
+  tag: string,
+  options: {
+    readonly input: Schema.Top
+    readonly output: Schema.Top
+    readonly capabilities?: ReadonlyArray<string> | undefined
+    readonly effects?: Effects.Declaration | undefined
+  }
+): Flow.Any =>
+  Flow.make(tag, {
+    payload: options.input as Flow.AnyStructSchema,
+    success: options.output,
+    error: Schema.Never,
+    ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
+    ...(options.effects === undefined ? {} : { effects: options.effects }),
+    body: (value: unknown) => Node.succeed(value)
+  }) as unknown as Flow.Any
 
 const bindInput = (expected: Schema.Top, actual: Schema.Top): Flow.Any =>
   Pattern.bind(
     Pattern.slot({ input: expected, output: Schema.Unknown }),
-    Flow.make({
-      input: actual,
-      output: Schema.Unknown,
-      body: (input) => Node.succeed(input)
-    })
+    declaring(actual, Schema.Unknown)
   )
 
 describe("Pattern", () => {
@@ -54,12 +91,7 @@ describe("Pattern", () => {
   })
 
   it("uses a compatible default and rejects incompatible bindings", () => {
-    const fallback = Flow.make({
-      name: "fallback",
-      input: Schema.String,
-      output: Schema.String,
-      body: (input) => Node.succeed(input)
-    })
+    const fallback = declaringAs("fallback", { input: Schema.String, output: Schema.String })
     const declaration = Pattern.slot({
       input: Schema.String,
       output: Schema.String,
@@ -67,16 +99,7 @@ describe("Pattern", () => {
     })
 
     expect(Pattern.bind(declaration)).toBe(fallback)
-    expect(() =>
-      Pattern.bind(
-        declaration,
-        Flow.make({
-          input: Schema.Number,
-          output: Schema.String,
-          body: (input) => Node.succeed(String(input))
-        })
-      )
-    ).toThrow(
+    expect(() => Pattern.bind(declaration, declaring(Schema.Number, Schema.String))).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "The bound flow has an incompatible input schema: expected String, received Number"
@@ -85,12 +108,7 @@ describe("Pattern", () => {
   })
 
   it("returns a frozen snapshot of the slot declaration", () => {
-    const fallback = Flow.make({
-      name: "fallback",
-      input: Schema.String,
-      output: Schema.String,
-      body: (input) => Node.succeed(input)
-    })
+    const fallback = declaringAs("fallback", { input: Schema.String, output: Schema.String })
     const options: { input: typeof Schema.String; output: typeof Schema.String; default: Flow.Any | undefined } = {
       input: Schema.String,
       output: Schema.String,
@@ -107,11 +125,7 @@ describe("Pattern", () => {
   })
 
   it("refuses a slot default that violates its own schemas", () => {
-    const incompatible = Flow.make({
-      input: Schema.Number,
-      output: Schema.Number,
-      body: (input) => Node.succeed(input)
-    })
+    const incompatible = declaring(Schema.Number, Schema.Number)
 
     expect(() => Pattern.slot({ input: Schema.String, output: Schema.String, default: incompatible })).toThrow(
       expect.objectContaining({
@@ -132,13 +146,8 @@ describe("Pattern", () => {
       )
     )
     const declaration = Pattern.slot({ input: Schema.String, output: Schema.String })
-    const supplied = Flow.make({
-      input: NonProjectable,
-      output: Schema.String,
-      body: (input) => Node.succeed(input)
-    })
 
-    expect(() => Pattern.bind(declaration, supplied)).toThrow(
+    expect(() => Pattern.bind(declaration, declaring(NonProjectable, Schema.String))).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message:
@@ -150,11 +159,7 @@ describe("Pattern", () => {
       Pattern.slot({
         input: NonProjectable,
         output: Schema.String,
-        default: Flow.make({
-          input: Schema.String,
-          output: Schema.String,
-          body: (input) => Node.succeed(input)
-        })
+        default: declaring(Schema.String, Schema.String)
       })
     ).toThrow(
       expect.objectContaining({
@@ -242,6 +247,24 @@ describe("Pattern", () => {
     expect(() => bindInput(expected, actual)).not.toThrow()
   })
 
+  it("binds the struct payload a real @smthrs/flow declaration states", () => {
+    // Every flow this package composes states a STRUCT payload, so the slot a
+    // caller writes over one is the case the port has to keep working.
+    const Request = Schema.Struct({ query: Schema.String })
+    const supplied = Flow.make("pattern/search", {
+      payload: Request,
+      success: Schema.String,
+      error: Schema.Never,
+      body: ({ query }) => Node.succeed(query)
+    })
+    const slot = Pattern.slot({ input: Request, output: Schema.String })
+
+    expect(Pattern.bind(slot, supplied as unknown as Flow.Any)).toBe(supplied)
+    expect(() => Pattern.bind(slot, declaring(Schema.Struct({ query: Schema.Number }), Schema.String))).toThrow(
+      expect.objectContaining({ code: "invalid_decorator" })
+    )
+  })
+
   it("checks input contravariance and output covariance against an independent seeded oracle", () => {
     type Kind = "never" | "top" | "string" | "number"
     interface SchemaCase {
@@ -279,11 +302,7 @@ describe("Pattern", () => {
     const generated = Array.from({ length: 128 }, () => [pick(), pick()] as const)
 
     for (const [expected, actual] of generated) {
-      const inputFlow = Flow.make({
-        input: actual.schema,
-        output: Schema.Unknown,
-        body: (input) => Node.succeed(input)
-      })
+      const inputFlow = declaring(actual.schema, Schema.Unknown)
       const inputSlot = Pattern.slot({ input: expected.schema, output: Schema.Unknown })
       if (acceptedInputs[expected.kind].includes(actual.kind)) {
         expect(Pattern.bind(inputSlot, inputFlow)).toBe(inputFlow)
@@ -297,11 +316,7 @@ describe("Pattern", () => {
         )
       }
 
-      const outputFlow = Flow.make({
-        input: Schema.Never,
-        output: actual.schema,
-        body: (input) => Node.succeed(input)
-      })
+      const outputFlow = declaring(Schema.Never, actual.schema)
       const outputSlot = Pattern.slot({ input: Schema.Never, output: expected.schema })
       if (acceptedOutputs[expected.kind].includes(actual.kind)) {
         expect(Pattern.bind(outputSlot, outputFlow)).toBe(outputFlow)
@@ -318,49 +333,42 @@ describe("Pattern", () => {
   })
 
   it("derives decorator-chain names and clips capabilities at every layer", () => {
-    const search = Flow.make({
-      name: "search",
+    const search = declaringAs("search", {
       input: Schema.String,
       output: Schema.String,
       capabilities: ["fs:read", "net:get"],
-      effects: effect(["workspace/**"]),
-      body: (input) => Node.succeed(input)
+      effects: effect(["workspace/**"])
     })
     const withAudit: Pattern.Decorator = (inner) =>
-      Flow.make({
-        name: `withAudit(${details(inner).name})`,
-        input: inner.input,
-        output: inner.output,
+      declaringAs(`withAudit(${inner._tag})`, {
+        input: inner.payloadSchema,
+        output: inner.successSchema,
         capabilities: ["fs:read", "audit:write"],
-        effects: effect(["workspace/file"]),
-        body: (input) => call(inner, input)
+        effects: effect(["workspace/file"])
       })
     const withTrace: Pattern.Decorator = (inner) =>
-      Flow.make({
-        name: `withTrace(${details(inner).name})`,
-        input: inner.input,
-        output: inner.output,
+      declaringAs(`withTrace(${inner._tag})`, {
+        input: inner.payloadSchema,
+        output: inner.successSchema,
         capabilities: ["fs:read", "trace:write"],
-        effects: effect(["workspace/file"]),
-        body: (input) => call(inner, input)
+        effects: effect(["workspace/file"])
       })
 
     const decorated = Pattern.decorateAll(search, [withAudit, withTrace])
 
-    expect(details(decorated).name).toBe("withTrace(withAudit(search))")
-    expect(details(decorated).capabilities).toEqual(["fs:read"])
-    expect(details(decorated).effects?.reads).toEqual(["workspace/file"])
+    expect(decorated._tag).toBe("withTrace(withAudit(search))")
+    expect(Decorate.capabilitiesOf(decorated)).toEqual(["fs:read"])
+    expect(Decorate.envelopeOf(decorated)?.reads).toEqual(["workspace/file"])
   })
 
   it("reports clipping and refuses to launder a wider effect envelope", () => {
-    const template = Flow.make({
+    const template = declaringAs("", {
       input: Schema.String,
       output: Schema.String,
       capabilities: ["fs:read"],
-      effects: effect(["workspace/**"]),
-      body: (input) => Node.succeed(input)
+      effects: effect(["workspace/**"])
     })
-    const supplied = Flow.make({
+    const supplied = declaringAs("", {
       input: Schema.String,
       output: Schema.String,
       capabilities: ["fs:read", "net:admin"],
@@ -370,8 +378,7 @@ describe("Pattern", () => {
         mode: "expected",
         onConflict: "fail",
         tier: "irreversible"
-      }),
-      body: (input) => Node.succeed(input)
+      })
     })
     const report = Pattern.clipped(template, supplied)
 
@@ -382,6 +389,8 @@ describe("Pattern", () => {
       mode: true,
       tier: true
     })
+    // An untagged declaration reads as `anonymous`, which is what keeps a
+    // composed name from becoming `decorate()`.
     expect(() => Pattern.decorate(template, () => supplied)).toThrow(
       expect.objectContaining({
         code: "envelope_conflict",
@@ -391,29 +400,23 @@ describe("Pattern", () => {
   })
 
   it("reports clipping when only the supplied declaration covers a path", () => {
-    const template = Flow.make({
+    const template = declaringAs("template", {
       input: Schema.String,
       output: Schema.String,
-      effects: effect(["workspace/item"]),
-      body: (input) => Node.succeed(input)
+      effects: effect(["workspace/item"])
     })
-    const supplied = Flow.make({
+    const supplied = declaringAs("supplied", {
       input: Schema.String,
       output: Schema.String,
-      effects: effect(["workspace/**"]),
-      body: (input) => Node.succeed(input)
+      effects: effect(["workspace/**"])
     })
 
     expect(Pattern.clipped(template, supplied).reads).toEqual(["workspace/**"])
   })
 
   it("reports every supplied effect when the template declares no envelope", () => {
-    const template = Flow.make({
-      input: Schema.String,
-      output: Schema.String,
-      body: (input) => Node.succeed(input)
-    })
-    const supplied = Flow.make({
+    const template = declaringAs("template", { input: Schema.String, output: Schema.String })
+    const supplied = declaringAs("supplied", {
       input: Schema.String,
       output: Schema.String,
       effects: Effects.make({
@@ -422,8 +425,7 @@ describe("Pattern", () => {
         mode: "expected",
         onConflict: "serialize",
         tier: "compensable"
-      }),
-      body: (input) => Node.succeed(input)
+      })
     })
 
     expect(Pattern.clipped(template, supplied)).toMatchObject({
@@ -436,12 +438,7 @@ describe("Pattern", () => {
 
   it("intersects omitted and narrowed tiers under both effect modes", () => {
     const flow = (declaration: Effects.Declaration) =>
-      Flow.make({
-        input: Schema.String,
-        output: Schema.String,
-        effects: declaration,
-        body: (input) => Node.succeed(input)
-      })
+      declaringAs("tiered", { input: Schema.String, output: Schema.String, effects: declaration })
     const withoutTier = (reads: ReadonlyArray<string>, mode: "expected" | "hermetic") =>
       Effects.make({ reads, writes: [], mode, onConflict: "serialize" })
     const tiered = (
@@ -464,37 +461,38 @@ describe("Pattern", () => {
     )).toMatchObject({ reads: ["workspace/outside"], mode: false, tier: false })
   })
 
-  it("refuses decorators that return a non-flow or change either schema", () => {
-    const template = Flow.make({
+  it("drops an envelope the wrapper narrowed away rather than inheriting the wrapped one", () => {
+    // Capabilities and the envelope are annotations in `@smthrs/flow`, so a
+    // wrapper that merged the inner bags unchanged would hand itself back the
+    // authority it just narrowed.
+    const template = declaringAs("template", {
       input: Schema.String,
       output: Schema.String,
-      body: (input) => Node.succeed(input)
+      capabilities: ["fs:read", "net:get"],
+      effects: effect(["workspace/**"])
     })
+    const decorated = Pattern.decorate(
+      template,
+      (inner) => declaringAs("plain", { input: inner.payloadSchema, output: inner.successSchema })
+    )
+
+    expect(Decorate.capabilitiesOf(decorated)).toEqual([])
+    expect(Decorate.envelopeOf(decorated)).toBeUndefined()
+  })
+
+  it("refuses decorators that return a non-flow or change either schema", () => {
+    const template = declaringAs("template", { input: Schema.String, output: Schema.String })
 
     expect(() => Pattern.decorate(template, () => "not-a-flow" as unknown as Flow.Any)).toThrow(
       expect.objectContaining({ code: "invalid_decorator", message: "A flow decorator must return a Flow" })
     )
-    expect(() =>
-      Pattern.decorate(template, () =>
-        Flow.make({
-          input: Schema.Number,
-          output: Schema.String,
-          body: (input) => Node.succeed(String(input))
-        }))
-    ).toThrow(
+    expect(() => Pattern.decorate(template, () => declaring(Schema.Number, Schema.String))).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "The flow decorator result has an incompatible input schema: expected String, received Number"
       })
     )
-    expect(() =>
-      Pattern.decorate(template, () =>
-        Flow.make({
-          input: Schema.String,
-          output: Schema.Number,
-          body: () => Node.succeed(1)
-        }))
-    ).toThrow(
+    expect(() => Pattern.decorate(template, () => declaring(Schema.String, Schema.Number))).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "The flow decorator result has an incompatible output schema: expected String, received Number"

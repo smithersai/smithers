@@ -13,10 +13,7 @@ const hasAction = (capability: string, action: string): boolean =>
 
 describe("Explore", () => {
   it("exposes exactly the four read-only reconnaissance flows", () => {
-    const implementation = Explore.flow.implementation
-
-    expect(implementation?._tag).toBe("Dynamic")
-    expect(implementation?._tag === "Dynamic" ? implementation.flows : undefined).toEqual([
+    expect(Explore.flow.flows).toEqual([
       Read.flow,
       Ls.flow,
       Glob.flow,

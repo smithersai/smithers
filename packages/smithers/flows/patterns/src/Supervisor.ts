@@ -7,10 +7,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -50,13 +55,13 @@ export interface Plan {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly plan: Flow.Any
-  readonly workers: Readonly<Record<string, Flow.Any>>
-  readonly review: Flow.Any
-  readonly finalize: Flow.Any
+  readonly plan: Member<R>
+  readonly workers: Readonly<Record<string, Member<R>>>
+  readonly review: Member<R>
+  readonly finalize: Member<R>
   readonly maxRounds: number
   readonly concurrency: number
 }
@@ -142,10 +147,19 @@ export interface Exhausted<Review> {
   readonly review: Review
 }
 
-const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
-  ...(left as Record<string, unknown>),
-  ...(right as Record<string, unknown>)
-})
+/**
+ * The declared form of a supervision.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type SupervisorFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
 
 const done = (value: unknown): boolean =>
   value === true ||
@@ -189,8 +203,10 @@ const planned = (input: unknown): ReadonlyArray<Task> => {
   return result
 }
 
-const retriableOf = (review: unknown): unknown =>
-  review === null || review === undefined ? undefined : (review as { readonly retriable?: unknown }).retriable
+// Only a round after the first reads this, and what it reads is the planned
+// reference to the preceding review, so the read always lands on a reference
+// and records the path `retriable`.
+const retriableOf = (review: unknown): unknown => (review as { readonly retriable?: unknown }).retriable
 
 /**
  * Builds the conservative supervision topology: one plan call, then per round
@@ -220,7 +236,7 @@ const retriableOf = (review: unknown): unknown =>
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
   const workers = Object.entries(options.workers)
   if (workers.length === 0) {
     throw new PatternError({ code: "invalid_decorator", message: "Supervisor requires at least one worker" })
@@ -242,80 +258,108 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   // is copied as own data properties, so a prototype-shaped worker type still
   // routes.
   const boss = { plan: options.plan, review: options.review, finalize: options.finalize }
-  const routes: Readonly<Record<string, Flow.Any>> = Object.fromEntries(workers)
+  const routes: Readonly<Record<string, Member<R>>> = Object.fromEntries(workers)
   const maxRounds = options.maxRounds
   const concurrency = options.concurrency
   const names = workers.map(([name]) => name)
   const captures = { maxRounds, concurrency, workers: names }
   const { name, description } = Compose.label("supervisor", { workers: names, maxRounds, concurrency }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [boss.plan, ...workers.map(([, flow]) => flow), boss.review, boss.finalize],
-    body: Node.capture(captures, (input) => {
-      const tasks = planned(input)
-      const ids = tasks.map((task) => task.id)
-      if (new Set(ids).size !== ids.length) throw invalid("Supervisor task ids must be unique")
-      for (const task of tasks) {
-        if (!Object.hasOwn(routes, task.workerType)) {
-          throw invalid(`Supervisor has no worker named "${task.workerType}"`)
-        }
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const tasks = planned(input)
+    const ids = tasks.map((task) => task.id)
+    if (new Set(ids).size !== ids.length) throw invalid("Supervisor task ids must be unique")
+    for (const task of tasks) {
+      if (!Object.hasOwn(routes, task.workerType)) {
+        throw invalid(`Supervisor has no worker named "${task.workerType}"`)
       }
-      return Node.andThen(
-        Compose.call(boss.plan, { phase: "plan", input }),
-        Node.capture({ ...captures, tasks: ids }, (plan) => {
-          const work = (task: Task, round: number, review: unknown): Record<string, unknown> =>
-            round === 1
-              ? { phase: "work", task, round, plan, input }
-              : { phase: "work", task, round, plan, input, review, retriable: retriableOf(review) }
-          const batchAt = (offset: number, round: number, review: unknown): Node.Node<unknown, unknown> => {
-            const members = Object.fromEntries(
-              tasks.slice(offset, offset + concurrency).map((task) => [
-                task.id,
-                Compose.call(routes[task.workerType]!, work(task, round, review))
-              ])
-            )
-            return Node.all(members)
-          }
-          const delegate = (round: number, review: unknown): Node.Node<unknown, unknown> => {
-            let batched = batchAt(0, round, review)
-            for (let offset = concurrency; offset < tasks.length; offset += concurrency) {
-              const batch = batchAt(offset, round, review)
-              batched = Node.andThen(
-                batched,
+    }
+    return Node.bindPlanned(
+      callMember(boss.plan, { phase: "plan", input }),
+      Node.capture({ ...captures, tasks: ids }, (plan) => {
+        const work = (task: Task, round: number, review: unknown): Record<string, unknown> =>
+          round === 1
+            ? { phase: "work", task, round, plan, input }
+            : { phase: "work", task, round, plan, input, review, retriable: retriableOf(review) }
+        const batches: Array<ReadonlyArray<Task>> = []
+        for (let offset = 0; offset < tasks.length; offset += concurrency) {
+          batches.push(tasks.slice(offset, offset + concurrency))
+        }
+        // Each batch gates the next one, so the plan carries the width bound as
+        // dependency edges, and the batches are joined into one outcome record
+        // at RUN time. The join cannot happen while the graph builds: a task id
+        // is any string a plan names, including `toString`, and reading that
+        // field off a planned batch result is a computation a plan refuses.
+        const delegate = (round: number, review: unknown): Node.Node<unknown, unknown, R> => {
+          const visitBatch = (
+            index: number,
+            carried: ReadonlyArray<Planned.Planned<Readonly<Record<string, unknown>>>>
+          ): Node.Node<unknown, unknown, R> => {
+            const batch = batches[index]
+            if (batch === undefined) {
+              return Node.map(
+                Node.succeed(carried),
                 Node.capture(
-                  { round, offset },
-                  (soFar) => Node.map(batch, Node.capture({ round, offset }, (values) => merge(soFar, values)))
+                  { round, batches: batches.length },
+                  (values: ReadonlyArray<Readonly<Record<string, unknown>>>) =>
+                    // Spread, never `Object.assign`: a task named `__proto__`
+                    // must stay an own data property of the outcome record.
+                    values.reduce<Record<string, unknown>>((all, outcomes) => ({ ...all, ...outcomes }), {})
                 )
               )
             }
-            return batched
-          }
-          const visit = (round: number, previous: unknown): Node.Node<unknown, unknown> =>
-            Node.andThen(
-              delegate(round, previous),
-              Node.capture({ ...captures, round }, (results) =>
+            const members = Object.fromEntries(
+              batch.map((task) => [task.id, callMember(routes[task.workerType]!, work(task, round, review))])
+            ) as Record<string, Node.Node<unknown, unknown, R>>
+            return Node.bindPlanned(
+              Node.all(members),
+              Node.capture({ round, batch: index }, (reference) =>
                 Node.andThen(
-                  Compose.call(boss.review, { phase: "review", round, plan, results, input }),
-                  Node.capture({ ...captures, round }, (review) =>
-                    done(review) || round >= maxRounds
-                      ? Compose.call(boss.finalize, {
-                        phase: "finalize",
-                        rounds: round,
-                        plan,
-                        results,
-                        review,
-                        input
-                      })
-                      : visit(round + 1, review))
+                  Node.succeed(reference),
+                  visitBatch(index + 1, [...carried, reference])
                 ))
             )
-          return visit(1, undefined)
-        })
-      )
-    })
+          }
+          return visitBatch(0, [])
+        }
+        const finalize = (
+          round: number,
+          results: unknown,
+          review: unknown
+        ): Node.Node<unknown, unknown, R> =>
+          callMember(boss.finalize, { phase: "finalize", rounds: round, plan, results, review, input })
+        // The supervision's one run-time decision: whether the review the boss
+        // returned says the work is done. It reads the REAL review value, so it
+        // is a `Node.branch` rather than a continuation that picks a node while
+        // the graph builds. Both arms are declared topology. The round bound is
+        // a declared option, not a run value, so it stays at plan time inside
+        // the FALSE arm, which is where a run that is not done ends up.
+        const visit = (round: number, previous: unknown): Node.Node<unknown, unknown, R> =>
+          Node.bindPlanned(
+            delegate(round, previous),
+            Node.capture({ ...captures, round }, (results) =>
+              Node.branch(
+                callMember(boss.review, { phase: "review", round, plan, results, input }),
+                {
+                  if: Node.capture({ ...captures, round }, (review: unknown) => done(review)),
+                  then: (review) => finalize(round, results, review),
+                  else: (review) => round >= maxRounds ? finalize(round, results, review) : visit(round + 1, review)
+                }
+              ))
+          )
+        return visit(1, undefined)
+      })
+    )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and declared
+    // no error schema. `@smthrs/flow` needs a real one, because the engine
+    // encodes a typed failure through it, and a supervision fails with whatever
+    // the boss or worker it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

@@ -1,8 +1,8 @@
 /**
  * One dispatched agent turn.
  *
- * Every other door in this package runs a *programme*: `coding/RunPlan`
- * implements a validated plan, `coding/RunRequest` plans then implements with
+ * Every other door in this package runs a *programme*: `coding/ImplementPlan`
+ * implements a validated plan, `coding/Request` plans then implements with
  * required checks, `repository/Job` investigates an event. Each is registered
  * only when its owning configuration exists, and each answers with receipts
  * rather than with what the agent said. A cloud caller that wants exactly one
@@ -29,10 +29,8 @@
  * ends.
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
-import * as Executable from "@smthrs/registry/Executable"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Action, FlowRuntime } from "@smthrs/flow"
+import { Effect, Layer, Schema } from "effect"
 import { NativeCoding } from "./native.ts"
 import { CodingError, Revision } from "./schema.ts"
 
@@ -174,47 +172,6 @@ export const ObserveDispatch = Action.make("coding/observe-dispatch", {
 
 export const DispatchError = Schema.Union([CodingError, AgentAction.AgentFailure])
 
-/**
- * The dispatched turn, end to end.
- *
- * Registered unconditionally by the host: unlike `coding/RunRequest` it needs
- * no project configuration, no memory and no check table, because it makes no
- * plan and produces no receipts.
- */
-export const Dispatch = Flow.make("coding/Dispatch", {
-  payload: DispatchInput,
-  success: DispatchResult,
-  error: DispatchError,
-  body: (input) =>
-    AdmitDispatch.call(input).pipe(
-      Node.andThen(DispatchTurn.call(input)),
-      Node.bindPlanned((answer) => ObserveDispatch.call({ input, answer }))
-    )
-})
-
-/** Refuses an invocation whose input is not a dispatched turn. */
-export const RefuseDispatch = Action.make("coding/refuse-dispatch", {
-  payload: {},
-  success: DispatchResult,
-  error: CodingError
-})
-
-/**
- * The registry delegate, which receives the existing `Invocation` envelope.
- *
- * Same shape as `coding/RunPlan` and `coding/RunRequest`: decode the envelope's
- * input into this door's own schema, or refuse it by name.
- */
-export const RunDispatch = Flow.make("coding/RunDispatch", {
-  payload: Executable.Invocation,
-  success: DispatchResult,
-  error: Dispatch.errorSchema,
-  body: (invocation) => {
-    const decoded = Schema.decodeUnknownOption(DispatchInput)(invocation.input)
-    return Option.isSome(decoded) ? Dispatch.child(decoded.value) : RefuseDispatch.call({})
-  }
-})
-
 export interface DispatchOptions {
   /** The root this host serves. A request naming another one is refused. */
   readonly repositoryPath: string
@@ -229,16 +186,6 @@ export interface DispatchOptions {
  */
 export const dispatchLayers = (options: DispatchOptions) =>
   Layer.mergeAll(
-    Interpreter.layer(Dispatch),
-    Interpreter.layer(RunDispatch),
-    RefuseDispatch.toLayer(() =>
-      Effect.fail(
-        new CodingError({
-          code: "invalid_request",
-          message: "A dispatched turn needs turnId, prompt, role, workspaceRoot and a bounded history window"
-        })
-      )
-    ),
     AdmitDispatch.toLayer((input) =>
       input.workspaceRoot === options.repositoryPath ? Effect.void : Effect.fail(
         new CodingError({

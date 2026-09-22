@@ -10,11 +10,15 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Bounded from "./Bounded.ts"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -32,11 +36,11 @@ import { PatternError } from "./PatternError.ts"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly panelists: Readonly<Record<string, Flow.Any>>
-  readonly moderator: Flow.Any
+  readonly panelists: Readonly<Record<string, Member<R>>>
+  readonly moderator: Member<R>
   readonly roles?: Readonly<Record<string, string>> | undefined
   readonly concurrency?: number | undefined
 }
@@ -57,16 +61,29 @@ export interface RuntimeOptions<I, A, E, R, B, E2, R2> {
 
 const payload = (input: unknown, role: string | undefined): unknown => role === undefined ? input : { input, role }
 
+/**
+ * The declared form of a panel.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type PanelFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
 // The refusal is minted once, as a value. `make` throws it, because a
 // declaration is built eagerly and a broken one is a programming error. `run`
 // FAILS with it, because `PatternError` is in its declared error channel and a
 // caller composing it must be able to claim the refusal with `Effect.catchTag`.
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
+// An absent concurrency is no bound at all, which is what `Node.all` already
+// gives, so only a declared one is checked.
 const widthRefusal = (concurrency: number | undefined): PatternError | undefined =>
-  concurrency === undefined || (Number.isSafeInteger(concurrency) && concurrency >= 1) ? undefined : new PatternError({
-    code: "invalid_decorator",
-    message: `Panel concurrency must be a positive safe integer, received ${concurrency}`
-  })
+  concurrency === undefined ? undefined : Compose.concurrencyRefusal("Panel", concurrency)
 
 /**
  * Fans out every independent panelist call and then invokes the moderator.
@@ -80,7 +97,7 @@ const widthRefusal = (concurrency: number | undefined): PatternError | undefined
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): PanelFlow<R> => {
   const panelists = Object.entries(options.panelists)
   if (panelists.length === 0) {
     throw new PatternError({
@@ -112,24 +129,23 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     ...(concurrency === undefined ? {} : { concurrency })
   }
   const { name, description } = Compose.label("panel", { panelists: names }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [...panelists.map(([, flow]) => flow), moderator],
-    body: Node.capture(material, (input) => {
-      const nodes = Object.fromEntries(
-        panelists.map(([name, panelist]) => [name, Compose.call(panelist, payload(input, roles?.get(name)))])
-      ) as Record<string, Node.Any>
-      return Node.andThen(
-        concurrency === undefined ? Node.all(nodes) : Bounded.all(nodes, { concurrency }),
-        Node.capture(
-          { panelists: names },
-          (opinions) => Compose.call(moderator, { input, opinions })
-        )
-      )
-    })
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const nodes = Object.fromEntries(
+      panelists.map(([name, panelist]) => [name, callMember(panelist, payload(input, roles?.get(name)))])
+    ) as Record<string, Node.Any>
+    // The opinions record is a planned reference until the run produces it, so
+    // the moderator is handed the reference rather than a spread of symbols.
+    return Node.bindPlanned(
+      concurrency === undefined ? Node.all(nodes) : Bounded.all(nodes, { concurrency }),
+      Node.capture({ panelists: names }, (opinions) => callMember(moderator, { input, opinions }))
+    )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture(material, body)
   })
 }
 

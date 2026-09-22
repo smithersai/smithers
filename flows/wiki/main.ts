@@ -23,8 +23,8 @@ if (values.help) {
   if (!destination || destination === ".." || destination.startsWith(`..${sep}`) || isAbsolute(destination)) {
     throw new Error("Generation output must be a dedicated directory inside --root. Publish the resulting immutable snapshot separately; --check can inspect an exported snapshot.")
   }
-  const [{ Action, Interpreter }, { Capability }, { Wiki }, { actionLayers, agentLayers, hostEvaluator }] = await Promise.all([
-    import("@smthrs/flow"), import("@smthrs/flows"), import("./workflow.ts"), import("./runtime.ts")
+  const [{ Action, Interpreter }, { Capability }, { default: Wiki }, { actionLayers, agentLayers, hostEvaluator }] = await Promise.all([
+    import("@smthrs/flow"), import("@smthrs/flows"), import("./flow.ts"), import("./runtime.ts")
   ])
   const incremental = values["reuse-run"] ? await import("./reuse.ts") : undefined
   if (incremental && !values.verified) throw new Error("--reuse-run requires --verified and the existing database containing that terminal run")

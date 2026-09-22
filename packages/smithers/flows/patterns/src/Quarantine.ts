@@ -12,8 +12,9 @@
  *
  * @since 0.1.0
  */
-import { Node } from "@smthrs/core"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
+import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -144,17 +145,12 @@ const quarantined = <E>(member: string, error: E): Quarantined<E> =>
 // caller composing it must be able to claim the refusal with `Effect.catchTag`.
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
 const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
-  names.length === 0
-    ? new PatternError({ code: "invalid_decorator", message: "Quarantine requires at least one member" })
-    : undefined
+  Compose.nonEmptyMembersRefusal("Quarantine", names)
 
+// `"unbounded"` is the declared way to ask for no bound, so only a numeric one
+// is checked.
 const widthRefusal = (concurrency: number | "unbounded"): PatternError | undefined =>
-  concurrency === "unbounded" || (Number.isSafeInteger(concurrency) && concurrency >= 1)
-    ? undefined
-    : new PatternError({
-      code: "invalid_decorator",
-      message: `Quarantine concurrency must be a positive safe integer, received ${concurrency}`
-    })
+  concurrency === "unbounded" ? undefined : Compose.concurrencyRefusal("Quarantine", concurrency)
 
 const nonEmpty = (names: ReadonlyArray<string>): void => {
   const refusal = nonEmptyRefusal(names)
@@ -176,15 +172,15 @@ const nonEmpty = (names: ReadonlyArray<string>): void => {
 export function all(
   members: Readonly<Record<string, Node.Any>>,
   options: AllOptions & { readonly policy: "quarantine" }
-): Node.Node<Readonly<Record<string, Settled<unknown, unknown>>>>
+): Node.Node<Readonly<Record<string, Settled<unknown, unknown>>>, never, any>
 export function all(
   members: Readonly<Record<string, Node.Any>>,
   options: AllOptions & { readonly policy: "halt" }
-): Node.Node<Readonly<Record<string, unknown>>, unknown>
+): Node.Node<Readonly<Record<string, unknown>>, unknown, any>
 export function all(
   members: Readonly<Record<string, Node.Any>>,
   options: AllOptions
-): Node.Node<Readonly<Record<string, unknown | Settled<unknown, unknown>>>, unknown> {
+): Node.Node<Readonly<Record<string, unknown | Settled<unknown, unknown>>>, unknown, any> {
   const names = Object.keys(members)
   nonEmpty(names)
   if (options.policy === "halt") return Node.all(members)

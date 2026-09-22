@@ -2,7 +2,8 @@
 import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Flow } from "@smthrs/flow"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
@@ -12,8 +13,8 @@ import { agentRuntime } from "./runtime.ts"
 import { configured, roleResolver, type Options as SeatOptions } from "./seats.ts"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
-import wiki, { Wiki, registration as wikiRegistration, type WikiReceipt } from "./wiki/flow.ts"
-import history, { History, registration as historyRegistration } from "./history/flow.ts"
+import wiki, { registration as wikiRegistration, type WikiReceipt } from "./wiki/flow.ts"
+import history, { registration as historyRegistration } from "./history/flow.ts"
 
 export { roleResolver } from "./seats.ts"
 
@@ -43,10 +44,15 @@ export const catalog = async (options: Options) => {
     const descriptor = new Descriptor.FlowDescriptor({
       name: `librarian/${kind}`, description: declaration.description ?? "", path,
       body: new Descriptor.BodyRefModule({ path, contentDigest: sha(source) }),
-      input: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.input!))) }),
-      output: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.output!))) }),
-      model: Option.some(configured(options)), flows: Schema.decodeUnknownSync(Schema.Array(Schema.String))(declaration.flows), capabilities: declaration.capabilities,
-      effects: Schema.decodeUnknownSync(Descriptor.EffectDeclaration)(declaration.effects), placement: Option.none(), modelInvocable: true, frontmatter: {},
+      input: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.payloadSchema))) }),
+      output: new Descriptor.SchemaRefInline({ document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(declaration.successSchema))) }),
+      // The module IS the flow, so it names no delegate.
+      model: Option.some(configured(options)), flows: [], capabilities: Context.get(declaration.annotations, Flow.Capabilities),
+      effects: Schema.decodeUnknownSync(Descriptor.EffectDeclaration)(Option.getOrThrow(Context.getOption(declaration.annotations, Flow.EffectEnvelope))),
+      // The declaration says `modelInvocable: false` so a coding host scanning
+      // this repository does not teach an agent a call it cannot serve. THIS
+      // host implements both actions, so its own catalog offers them.
+      placement: Option.none(), modelInvocable: true, frontmatter: {},
       provenance: new Descriptor.Provenance({ source: "product", root: directory })
     })
     return { descriptor, declaration }
@@ -66,7 +72,9 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
   ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))))
   return Layer.unwrap(Effect.promise(() => catalog(options)).pipe(Effect.map(entries => {
     const registry = Registry.layerFromDescriptors(entries.map(entry => entry.descriptor)).pipe(Layer.provide(platform.host))
-    const modules = Executable.layer({ delegates: [Wiki, History], load: path => {
+    // Both product flows are their own delegate: each module default-exports
+    // the `@smthrs/flow` flow it declares, so nothing is registered by name.
+    const modules = Executable.layer({ delegates: [], load: path => {
       const entry = entries.find(entry => entry.descriptor.path === path)
       return entry ? Effect.succeed({ default: entry.declaration }) : Effect.fail(new Error("Unknown product flow"))
     } }).pipe(

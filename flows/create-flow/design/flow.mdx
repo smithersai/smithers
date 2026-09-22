@@ -29,9 +29,11 @@ project's `flows/` directory.
   would otherwise write twice.
 - **One flow directory.** The flow lives at `flows/<name>/flow.ts`, is
   discovered by its path, and is the `export default` of one `@smthrs/flow`
-  flow. Its entry file must state its description, `payload`, `success`, and
-  capabilities literally, where the registry can read them without importing
-  the module.
+  `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?,
+  payload, success, error?, body })`. The tag is the first argument and is
+  required: name the flow after the path the registry derives. The entry file
+  states its description, `payload`, `success`, `effects` and capabilities
+  literally, where the registry can read them without importing the module.
 - **Typed outputs.** Every model-backed action declares an `output` schema. Keep
   it minimal: a `summary` plus the few fields a later step actually reads. The
   runtime renders the schema into the system teaching and decodes the answer

@@ -14,6 +14,7 @@ import { Schema } from "effect"
  * the policy and nothing else.
  */
 export default Flow.make({
+  name: "cacheable-plain",
   description: "Delegates to the agent and declares no cache policy.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

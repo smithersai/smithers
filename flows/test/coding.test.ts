@@ -12,9 +12,9 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Effect, Layer, Schema } from "effect"
-import { Implement, ImplementPlan, RunCheck, policyLayers } from "../coding/workflow.ts"
+import ImplementPlan from "../coding/flow.ts"
+import { Implement, RunCheck, policyLayers } from "../coding/workflow.ts"
 import { catalogLayers } from "../coding/catalog.ts"
-import { RunPlan, invalidInputLayer } from "../coding/registration.ts"
 import { Implementation as ImplementationSchema, Receipt as ReceiptSchema, checkInputDigest } from "../coding/schema.ts"
 import type { Check, CodingError, Implementation, Plan, Receipt, Revision } from "../coding/schema.ts"
 
@@ -172,13 +172,11 @@ test("registered project flows persist native child lineage and replay without r
     return Schema.encodeSync(Schema.toCodecJson(ReceiptSchema))(receipt(payload.implementation, payload.check))
   }))
   const runtime = NodeRuntime.layerHost({ filename: repo.filename, workspaceRoot: repo.root, owner: { hostId: "coding-catalog-test" }, signals: [] },
-    Layer.mergeAll(policyLayers, invalidInputLayer, catalogLayers, delegates, Interpreter.layer(ImplementPlan), Interpreter.layer(RunPlan), Interpreter.layer(Delegate), ...executables.map(executable => executable.layer))
+    Layer.mergeAll(policyLayers, catalogLayers, delegates, Interpreter.layer(ImplementPlan), Interpreter.layer(Delegate), ...executables.map(executable => executable.layer))
       .pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(Layer.succeed(Executable.Catalog, { executables, refused: [] }))))
   const run = Effect.gen(function*() {
-    const result = yield* RunPlan.execute({
-      flow: "coding", input: { plan: pinnedPlan }, prompt: "", model: null, placement: null,
-      placementOptions: null, capabilities: [], flows: ["coding/RunPlan"]
-    }, { executionId: "coding-catalog-parent-" + "p".repeat(150) })
+    const result = yield* ImplementPlan.execute({ plan: pinnedPlan },
+      { executionId: "coding-catalog-parent-" + "p".repeat(150) })
     const store = yield* RunStore
     for (const call of called) {
       const row = yield* store.get(call.runId)
@@ -195,10 +193,10 @@ test("registered project flows persist native child lineage and replay without r
   assert.equal(new Set(called.map(call => call.runId)).size, 6)
   assert.equal((await Effect.runPromise(run)).status, "validated")
   assert.equal(called.length, 6, "settled native executions must replay after the host is reopened")
-  await assert.rejects(Effect.runPromise(RunPlan.execute({
-    flow: "coding", input: { plan: "malformed" }, prompt: "", model: null,
-    placement: null, placementOptions: null, capabilities: [], flows: ["coding/RunPlan"]
-  }, { executionId: "coding-invalid-envelope" }).pipe(Effect.provide(runtime), Effect.scoped)), /must contain a valid predicted/)
+  // `coding` IS this flow, so input the plan schema refuses is refused by the
+  // declaration rather than by a delegate that decoded an envelope by hand.
+  await assert.rejects(Effect.runPromise(ImplementPlan.execute({ plan: "malformed" } as never,
+    { executionId: "coding-invalid-envelope" }).pipe(Effect.provide(runtime), Effect.scoped)), /plan/)
   assert.equal(called.length, 6)
   const stalePlan = { ...pinnedPlan, changes: pinnedPlan.changes.map(change => ({ ...change, implementationDigest: "f".repeat(64) })) }
   await assert.rejects(Effect.runPromise(ImplementPlan.execute({ plan: stalePlan }, { executionId: "coding-stale-definition" })

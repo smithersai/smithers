@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { generateWiki, Wiki, registration as wikiRegistration } from "./wiki/flow.ts"
+import Wiki, { generateWiki, registration as wikiRegistration } from "./wiki/flow.ts"
 import { Effect, Layer, Schema } from "effect"
 import * as NodeRuntime from "@smthrs/flows/BunRuntime"
-import { generateHistory, History, registration as historyRegistration } from "./history/flow.ts"
+import History, { generateHistory, registration as historyRegistration } from "./history/flow.ts"
 import { commitEnvironment, git } from "./tutorial2-background_flows-git.ts"
 
 const repository = async () => {
@@ -85,8 +85,7 @@ describe("Librarian generation against real Git", () => {
       checkFailure(failure)
       const host = NodeRuntime.layerHost({ filename: join(root, "engine.db"), workspaceRoot: root,
         owner: { hostId: "unborn-history" }, signals: [] }, historyRegistration(root))
-      const result = await Effect.runPromise(Effect.scoped(History.execute({ flow: "librarian/history", input: { repo: "will/demo" },
-        prompt: "", model: null, placement: null, placementOptions: null, capabilities: [], flows: [] },
+      const result = await Effect.runPromise(Effect.scoped(History.execute({ repo: "will/demo" },
         { executionId: crypto.randomUUID() }).pipe(Effect.catch(cause => Effect.succeed(cause)), Effect.provide(host))))
       checkFailure(result)
       expect(await git(root, ["for-each-ref", "--format=%(refname)", "refs/heads/mythical", "refs/notes/mythical"])).toBe("")
@@ -139,11 +138,10 @@ test("two durable engine executions replay their recorded outputs after the host
       owner: { hostId: "tutorial2-background_flows" }, signals: [] }, Layer.mergeAll(
         wikiRegistration(root, async receipt => { saved.push(receipt) }), historyRegistration(root)))
     const wikiId = crypto.randomUUID(), historyId = crypto.randomUUID()
-    const invocation = { flow: "librarian/wiki", input: { repo: "will/demo" }, prompt: "", model: null,
-      placement: null, placementOptions: null, capabilities: [], flows: [] }
-    const wiki = () => Effect.runPromise(Effect.scoped(Wiki.execute(invocation, { executionId: wikiId }).pipe(Effect.provide(host()))))
+    const input = { repo: "will/demo" }
+    const wiki = () => Effect.runPromise(Effect.scoped(Wiki.execute(input, { executionId: wikiId }).pipe(Effect.provide(host()))))
     const first = await wiki()
-    const history = await Effect.runPromise(Effect.scoped(History.execute({ ...invocation, flow: "librarian/history" }, { executionId: historyId }).pipe(Effect.provide(host()))))
+    const history = await Effect.runPromise(Effect.scoped(History.execute(input, { executionId: historyId }).pipe(Effect.provide(host()))))
     expect(wikiId).not.toBe(historyId)
     expect(history.sourceHead).toBe(first.sourceHead)
     expect(await wiki()).toEqual(first)

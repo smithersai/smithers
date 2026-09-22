@@ -8,10 +8,14 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 import * as WithApproval from "./WithApproval.ts"
 
@@ -153,6 +157,20 @@ export const elevated = (risk: Risk): boolean => risk === "critical"
 const identities = (ids: ReadonlyArray<string>): boolean => new Set(ids).size === ids.length
 
 /**
+ * The declared form of a runbook.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RunbookFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * Builds the runbook topology: the steps chained in declaration order, with
  * every non-safe step wrapped by {@link WithApproval.withApproval}.
  *
@@ -176,7 +194,7 @@ const identities = (ids: ReadonlyArray<string>): boolean => new Set(ids).size ==
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these copies and never the caller's step records again.
   const steps: ReadonlyArray<Step> = options.steps.map((step) => ({ id: step.id, flow: step.flow, risk: step.risk }))
@@ -210,30 +228,37 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       : { step, flow: step.flow }
   )
   const { name, description } = Compose.label("runbook", { steps: ids }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: declared.map((entry) => entry.flow),
-    body: Node.capture(captures, (input) => {
-      const envelope = (index: number, previous: unknown): unknown => ({
-        step: declared[index]!.step.id,
-        risk: declared[index]!.step.risk,
-        elevated: elevated(declared[index]!.step.risk),
-        input,
-        previous
-      })
-      const walk = (index: number, previous: unknown): Node.Node<unknown, unknown> => {
-        const current = Compose.call(declared[index]!.flow, envelope(index, previous))
-        if (index + 1 >= declared.length) return current
-        return Node.andThen(
-          current,
-          Node.capture({ ...captures, step: declared[index + 1]!.step.id }, (value) => walk(index + 1, value))
-        )
-      }
-      return walk(0, undefined)
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const envelope = (index: number, previous: unknown): unknown => ({
+      step: declared[index]!.step.id,
+      risk: declared[index]!.step.risk,
+      elevated: elevated(declared[index]!.step.risk),
+      input,
+      previous
     })
+    const walk = (index: number, previous: unknown): Node.Node<unknown, unknown, R> => {
+      const current = Decorate.call<R>(declared[index]!.flow, envelope(index, previous))
+      if (index + 1 >= declared.length) return current
+      return Node.bindPlanned(
+        current,
+        Node.capture(
+          { ...captures, step: declared[index + 1]!.step.id },
+          (value: Planned.Planned<unknown>) => walk(index + 1, value)
+        )
+      )
+    }
+    return walk(0, undefined)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a runbook fails with
+    // whatever the step it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

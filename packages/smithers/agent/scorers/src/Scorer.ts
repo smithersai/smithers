@@ -72,7 +72,7 @@ export type Result = typeof Result.Type
  * @category models
  * @since 0.1.0
  */
-export interface Scorer<E = never> extends Flow.Flow<typeof Input, typeof Result, E | ScorerError> {
+export interface Scorer<E = never> extends Flow.Flow<typeof Input, typeof Result> {
   readonly scorerKey: string
   readonly score: (input: Input) => Effect.Effect<Result, E | ScorerError>
 }
@@ -88,7 +88,7 @@ export interface Scorer<E = never> extends Flow.Flow<typeof Input, typeof Result
  */
 export type MakeOptions<E = never> =
   & Omit<
-    Parameters<typeof Flow.make<typeof Input, typeof Result, E | ScorerError>>[0],
+    Parameters<typeof Flow.make<typeof Input, typeof Result>>[0],
     "input" | "output" | "body" | "model" | "flows"
   >
   & {
@@ -152,7 +152,11 @@ export const make = <E = never>(options: MakeOptions<E>): Scorer<E> => {
   } catch (cause) {
     throw declaration("A scorer configuration could not be canonicalized", cause)
   }
-  const flow = Flow.make({ ...rest, input: Input, output: Result })
+  // A scorer that named nothing is declared under its own `id`. A flow needs a
+  // name to be addressed by, `id` is already the stable module-owned identity
+  // this scorer is known by, and an anonymous declaration would otherwise have
+  // to be given one somewhere that does not know what the scorer is.
+  const flow = Flow.make({ ...rest, name: rest.name ?? id, input: Input, output: Result })
   return Object.assign(flow, { scorerKey, score })
 }
 

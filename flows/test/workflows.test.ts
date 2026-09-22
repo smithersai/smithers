@@ -9,7 +9,9 @@ import { Action, Graph, HumanTask, Interpreter } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
+import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.ts"
+import ReleaseFlow from "../release/flow.ts"
 import * as Release from "../release/workflow.ts"
 import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
@@ -41,7 +43,7 @@ const waiting = (id: string) => Effect.gen(function*() {
 
 test("planning contains the bounded revision loop and no disabled drafting stages", () => {
   const input = contentInput({ channels: { blog: false, thread: false }, maxRevisions: 2 }, evidence.version)
-  const calls = [...Graph.nodes(Graph.build(Content.ReleaseContent, input))]
+  const calls = [...Graph.nodes(Graph.build(ReleaseContent, input))]
     .filter((node) => node.kind === "ActionCall")
     .map((node) => (node.ast as { action: string }).action)
   assert.equal(calls.filter((name) => name === "release-content/revise").length, 2)
@@ -65,12 +67,12 @@ test("real agents draft, revise, and park; a fresh SQLite host resumes without r
       return commandRunner(fixture.root)(command, args, opts)
     } }),
     agentLayers(scriptedSeats(counts, { failReviews: 1 }), 250_000, scriptedTemplate),
-    HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
+    HumanTask.layer, Interpreter.layer(ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
 
   const token = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-    yield* Content.ReleaseContent.execute(input, { executionId: "content-resume", discard: true })
-    const polled = yield* Content.ReleaseContent.poll("content-resume")
+    yield* ReleaseContent.execute(input, { executionId: "content-resume", discard: true })
+    const polled = yield* ReleaseContent.poll("content-resume")
     if (Option.isSome(polled) && polled.value._tag === "Complete" && Exit.isFailure(polled.value.exit)) return yield* Effect.failCause(polled.value.exit.cause)
     return yield* waiting("content-resume")
   }).pipe(Effect.provide(engine()))))
@@ -79,7 +81,7 @@ test("real agents draft, revise, and park; a fresh SQLite host resumes without r
   const before = { ...counts }
   const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     yield* HumanTask.answer({ token, value: true })
-    return yield* Content.ReleaseContent.execute(input, { executionId: "content-resume" })
+    return yield* ReleaseContent.execute(input, { executionId: "content-resume" })
   }).pipe(Effect.provide(engine()))))
   assert.equal(result.status, "approved")
   assert.deepEqual(counts, before)
@@ -96,9 +98,9 @@ test("exhausted quality reviews fail before preview or publication", { timeout: 
   }, Layer.mergeAll(
     actionLayers({ root: fixture.root, evaluator: scriptedTemplate }),
     agentLayers(scriptedSeats(counts, { failReviews: 99 }), 250_000, scriptedTemplate),
-    HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
+    HumanTask.layer, Interpreter.layer(ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
-  await assert.rejects(Effect.runPromise(Effect.scoped(Content.ReleaseContent.execute(input, { executionId: "quality" }).pipe(Effect.provide(engine)))), /score|Explain restart behavior/)
+  await assert.rejects(Effect.runPromise(Effect.scoped(ReleaseContent.execute(input, { executionId: "quality" }).pipe(Effect.provide(engine)))), /score|Explain restart behavior/)
   assert.equal(counts.score, 2)
   assert.equal(counts.revise, 1)
 })
@@ -118,16 +120,16 @@ for (const decision of [true, false] as const) {
         commands.push([command, ...args].join(" "))
         return ""
       } }),
-      agentLayers(scriptedSeats(counts), 250_000, scriptedTemplate), HumanTask.layer, Interpreter.layer(Release.Release)
+      agentLayers(scriptedSeats(counts), 250_000, scriptedTemplate), HumanTask.layer, Interpreter.layer(ReleaseFlow)
     ).pipe(Layer.provideMerge(Action.layerImplementations)))
     const token = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      yield* Release.Release.execute(input, { executionId: "prepare", discard: true })
+      yield* ReleaseFlow.execute(input, { executionId: "prepare", discard: true })
       return yield* waiting("prepare")
     }).pipe(Effect.provide(engine()))))
     assert.equal(commands.length, 0)
     const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       yield* HumanTask.answer({ token, value: decision })
-      return yield* Release.Release.execute(input, { executionId: "prepare" })
+      return yield* ReleaseFlow.execute(input, { executionId: "prepare" })
     }).pipe(Effect.provide(engine()))))
     assert.equal(result.status, decision ? "prepared" : "declined")
     assert.equal(counts.audit, 1)
@@ -163,20 +165,20 @@ for (const decision of [true, false, "dry-run"] as const) {
       Release.Smoke.toLayer(({ runtime }) => note(`smoke-${runtime}`, candidate)),
       Release.VerifyCandidate.toLayer(() => note("verify", candidate)),
       Release.Publish.toLayer(() => note("publish", { status: "published" as const, version: input.version, artifact: candidate.directory, published: ["smthrs"] })),
-      Release.Outcome.toLayer(Effect.succeed), HumanTask.layer, Interpreter.layer(Release.Release)
+      Release.Outcome.toLayer(Effect.succeed), HumanTask.layer, Interpreter.layer(ReleaseFlow)
     ).pipe(Layer.provideMerge(Action.layerImplementations)))
     if (decision === "dry-run") {
-      const result = await Effect.runPromise(Effect.scoped(Release.Release.execute(input, { executionId: "release" }).pipe(Effect.provide(engine()))))
+      const result = await Effect.runPromise(Effect.scoped(ReleaseFlow.execute(input, { executionId: "release" }).pipe(Effect.provide(engine()))))
       assert.equal(result.status, "preview")
     } else {
       const token = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        yield* Release.Release.execute(input, { executionId: "release", discard: true })
+        yield* ReleaseFlow.execute(input, { executionId: "release", discard: true })
         return yield* waiting("release")
       }).pipe(Effect.provide(engine()))))
       assert.equal(calls.includes("publish"), false)
       const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         yield* HumanTask.answer({ token, value: decision })
-        return yield* Release.Release.execute(input, { executionId: "release" })
+        return yield* ReleaseFlow.execute(input, { executionId: "release" })
       }).pipe(Effect.provide(engine()))))
       assert.equal(result.status, decision ? "published" : "declined")
     }
@@ -205,9 +207,9 @@ test("a failed release gate prevents packing and publication", { timeout: 60_000
     Release.Publish.toLayer(() => Effect.die("must not publish")),
     Release.Outcome.toLayer(Effect.succeed),
     HumanTask.layer,
-    Interpreter.layer(Release.Release)
+    Interpreter.layer(ReleaseFlow)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
-  const result = await Effect.runPromise(Effect.scoped(Effect.exit(Release.Release.execute(input, { executionId: "fail" })).pipe(Effect.provide(engine))))
+  const result = await Effect.runPromise(Effect.scoped(Effect.exit(ReleaseFlow.execute(input, { executionId: "fail" })).pipe(Effect.provide(engine))))
   assert.equal(Exit.isFailure(result), true)
   if (Exit.isFailure(result)) assert.match(JSON.stringify(result.cause), /tests failed/)
   assert.equal(packed, false)

@@ -1,5 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
@@ -7,31 +8,60 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as MapReduce from "../src/MapReduce.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo } from "./Graphs.ts"
 
-const step = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+// One member per phase, because a `@smthrs/flow` flow declares the payload it
+// takes and the two phases take different ones. Counting calls by tag is also
+// what the old `FlowCall` count meant: five map calls and one reduce call.
+const step = Flow.make("map", {
+  payload: { shard: Schema.Unknown, index: Schema.Unknown, input: Schema.Unknown },
+  success: Schema.Unknown,
+  body: ({ shard }) => Node.succeed(shard)
 })
+
+const reducer = Flow.make("reduce", {
+  payload: { input: Schema.Unknown, mapped: Schema.Unknown },
+  success: Schema.Unknown,
+  body: ({ mapped }) => Node.succeed(mapped)
+})
+
+const declaration = (shards: unknown): { readonly shards: unknown } => ({ shards })
 
 describe("MapReduce", () => {
   it("declares deterministic map and reduce phases", () => {
     const mapReduce = MapReduce.make({
       map: step,
-      reduce: step,
+      reduce: reducer,
       concurrency: 4,
       onEmpty: "reduce"
     })
 
     expect(Flow.isFlow(mapReduce)).toBe(true)
-    expect(mapReduce.body?.({ shards: ["a", "b"] }).ast._tag).toBe("AndThen")
+    expect(mapReduce.body(declaration(["a", "b"])).ast._tag).toBe("AndThen")
     const graph = Graph.build(mapReduce, { shards: ["a", "b", "c", "d", "e"] })
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(6)
+    expect(callsTo(graph, "map")).toHaveLength(5)
+    expect(callsTo(graph, "reduce")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
   })
 
+  it("keeps the caller's name and description on the declared flow", () => {
+    const mapReduce = MapReduce.make({
+      name: "shard-the-tree",
+      description: "Map every shard and reduce the answers.",
+      map: step,
+      reduce: reducer,
+      concurrency: 1,
+      onEmpty: "reduce"
+    })
+
+    expect(mapReduce._tag).toBe("shard-the-tree")
+    expect(mapReduce.description).toBe("Map every shard and reduce the answers.")
+    expect(MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "reduce" }).description)
+      .toBeUndefined()
+  })
+
   it("rejects invalid concurrency", () => {
-    expect(() => MapReduce.make({ map: step, reduce: step, concurrency: 0, onEmpty: "fail" })).toThrow(
+    expect(() => MapReduce.make({ map: step, reduce: reducer, concurrency: 0, onEmpty: "fail" })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "MapReduce concurrency must be a positive safe integer"
@@ -40,23 +70,23 @@ describe("MapReduce", () => {
   })
 
   it("declares every empty-shard policy", () => {
-    const reduce = MapReduce.make({ map: step, reduce: step, concurrency: 1, onEmpty: "reduce" })
-    const succeed = MapReduce.make({ map: step, reduce: step, concurrency: 1, onEmpty: "succeed" })
-    const fail = MapReduce.make({ map: step, reduce: step, concurrency: 1, onEmpty: "fail" })
+    const reduce = MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "reduce" })
+    const succeed = MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "succeed" })
+    const fail = MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "fail" })
 
-    expect(reduce.body?.({ shards: [] }).ast._tag).toBe("FlowCall")
-    expect(Graph.nodes(Graph.build(reduce, { shards: [] })).filter((node) => node.kind === "FlowCall")).toHaveLength(1)
-    expect(succeed.body?.({ shards: [] }).ast).toMatchObject({ _tag: "Succeed", value: [] })
-    expect(Graph.nodes(Graph.build(succeed, { shards: [] })).filter((node) => node.kind === "FlowCall")).toHaveLength(0)
-    expect(() => fail.body?.({ shards: [] })).toThrow(
+    expect(reduce.body(declaration([])).ast._tag).toBe("FlowCall")
+    expect(callsTo(Graph.build(reduce, { shards: [] }), "reduce")).toHaveLength(1)
+    expect(succeed.body(declaration([])).ast).toMatchObject({ _tag: "Succeed", value: [] })
+    expect(callsTo(Graph.build(succeed, { shards: [] }), "reduce")).toHaveLength(0)
+    expect(() => fail.body(declaration([]))).toThrow(
       expect.objectContaining({ code: "exhausted", message: "MapReduce received no shards" })
     )
   })
 
   it("refuses a declaration input without a shards array", () => {
-    const mapReduce = MapReduce.make({ map: step, reduce: step, concurrency: 1, onEmpty: "reduce" })
+    const mapReduce = MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "reduce" })
 
-    expect(() => mapReduce.body?.({ shard: [] })).toThrow(
+    expect(() => mapReduce.body({ shard: [] } as unknown as { readonly shards: unknown })).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "MapReduce input must contain a shards array"

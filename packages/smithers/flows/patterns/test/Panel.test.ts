@@ -1,5 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
@@ -7,45 +8,70 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Panel from "../src/Panel.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const participant = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+// A panelist and the moderator are separate declarations, because a
+// `@smthrs/flow` flow states the payload it takes and the two take different
+// ones. Counting calls by tag is what the old `FlowCall` count meant.
+// A panelist with no declared role is still handed the bare input, exactly as
+// before, which is what the payload cases below assert.
+const participant = Flow.make("panelist", {
+  payload: { input: Schema.Unknown, role: Schema.Unknown },
+  success: Schema.Unknown,
+  body: ({ input }) => Node.succeed(input)
+})
+
+const moderator = Flow.make("moderator", {
+  payload: { input: Schema.Unknown, opinions: Schema.Unknown },
+  success: Schema.Unknown,
+  body: ({ opinions }) => Node.succeed(opinions)
 })
 
 describe("Panel", () => {
   it("declares keyed fail-fast fan-out", () => {
     const panel = Panel.make({
       panelists: { one: participant, two: participant },
-      moderator: participant
+      moderator
     })
 
     expect(Flow.isFlow(panel)).toBe(true)
-    expect(panel.body?.("topic").ast._tag).toBe("AndThen")
-    const graph = Graph.build(panel, "topic")
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
-    expect(Graph.nodes(graph).find((node) => node.id === "root.then")?.keyMaterial.inputs).toContainEqual({
-      _tag: "Ref",
-      from: "root.andThen",
-      path: []
+    expect(panel.body({ input: "topic" }).ast._tag).toBe("AndThen")
+    const graph = Graph.build(panel, { input: "topic" })
+    const joined = Graph.nodes(graph).filter((node) => node.kind === "All")
+    expect(callsTo(graph, "panelist")).toHaveLength(2)
+    expect(callsTo(graph, "moderator")).toHaveLength(1)
+    expect(joined).toHaveLength(1)
+    // The moderator waits for the fan-out: its `opinions` is the join's result,
+    // which the graph records as a dependency edge on the join node.
+    expect(callsTo(graph, "moderator")[0]!.dependencies).toContain(joined[0]!.id)
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const panel = Panel.make({
+      name: "pricing-panel",
+      description: "Ask three panelists about the pricing page.",
+      panelists: { one: participant },
+      moderator
     })
+
+    expect(panel._tag).toBe("pricing-panel")
+    expect(panel.description).toBe("Ask three panelists about the pricing page.")
+    expect(Panel.make({ panelists: { one: participant }, moderator }).description).toBeUndefined()
   })
 
   it("rejects an empty panel", () => {
-    expect(() => Panel.make({ panelists: {}, moderator: participant })).toThrow(
+    expect(() => Panel.make({ panelists: {}, moderator })).toThrow(
       expect.objectContaining({ code: "invalid_decorator", message: "Panel requires at least one panelist" })
     )
   })
 
   it("rejects a role named for a panelist the panel does not have", () => {
-    expect(() =>
-      Panel.make({ panelists: { critic: participant }, moderator: participant, roles: { absent: "nobody" } })
-    ).toThrow(expect.objectContaining({
-      code: "invalid_decorator",
-      message: "Panel declares a role for the unknown panelist \"absent\""
-    }))
+    expect(() => Panel.make({ panelists: { critic: participant }, moderator, roles: { absent: "nobody" } })).toThrow(
+      expect.objectContaining({
+        code: "invalid_decorator",
+        message: "Panel declares a role for the unknown panelist \"absent\""
+      })
+    )
   })
 
   it("rejects prototype-shaped roles that are not own panelist names", () => {
@@ -53,7 +79,7 @@ describe("Panel", () => {
       expect(() =>
         Panel.make({
           panelists: { critic: participant },
-          moderator: participant,
+          moderator,
           roles: Object.fromEntries([[name, "unknown role"]])
         })
       ).toThrow(expect.objectContaining({
@@ -67,7 +93,7 @@ describe("Panel", () => {
     // `make` is the declaration half, so a width the panel can never honour is
     // refused here rather than by whatever container the body later builds.
     for (const concurrency of [0, 1.5, -2]) {
-      expect(() => Panel.make({ panelists: { a: participant }, moderator: participant, concurrency })).toThrow(
+      expect(() => Panel.make({ panelists: { a: participant }, moderator, concurrency })).toThrow(
         expect.objectContaining({
           code: "invalid_decorator",
           message: `Panel concurrency must be a positive safe integer, received ${concurrency}`
@@ -96,26 +122,25 @@ describe("Panel", () => {
   it("puts each declared role in that panelist's call payload", () => {
     const panel = Panel.make({
       panelists: { critic: participant, builder: participant, quiet: participant },
-      moderator: participant,
+      moderator,
       roles: { critic: "find the flaw", builder: "find the fix" }
     })
-    const graph = Graph.build(panel, "topic")
-    const literal = (name: string) =>
-      Graph.nodes(graph).find((node) => node.id.endsWith(`.all.${name}`))?.keyMaterial.inputs[0]
+    const graph = Graph.build(panel, { input: "topic" })
+    const called = (name: string) => payloadOf(Graph.nodes(graph).find((node) => node.id.endsWith(`.all.${name}`))!)
 
-    expect(literal("critic")).toEqual({ _tag: "Literal", value: { input: "topic", role: "find the flaw" } })
-    expect(literal("builder")).toEqual({ _tag: "Literal", value: { input: "topic", role: "find the fix" } })
-    expect(literal("quiet")).toEqual({ _tag: "Literal", value: "topic" })
+    expect(called("critic")).toEqual({ input: "topic", role: "find the flaw" })
+    expect(called("builder")).toEqual({ input: "topic", role: "find the fix" })
+    expect(called("quiet")).toEqual("topic")
   })
 
   it("changes declaration identity when a role changes", () => {
     const identity = (role: string) =>
       Graph.nodes(
         Graph.build(
-          Panel.make({ panelists: { critic: participant }, moderator: participant, roles: { critic: role } }),
-          "topic"
+          Panel.make({ panelists: { critic: participant }, moderator, roles: { critic: role } }),
+          { input: "topic" }
         )
-      ).find((node) => node.id.endsWith(".all.critic"))?.keyMaterial
+      ).find((node) => node.id.endsWith(".all.critic"))?.draft.material
 
     expect(identity("find the flaw")).not.toEqual(identity("find the fix"))
   })
@@ -123,13 +148,14 @@ describe("Panel", () => {
   it("bounds the declared fan-out when a concurrency is given", () => {
     const panel = Panel.make({
       panelists: { one: participant, two: participant, three: participant },
-      moderator: participant,
+      moderator,
       concurrency: 2
     })
-    const graph = Graph.build(panel, "topic")
+    const graph = Graph.build(panel, { input: "topic" })
 
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(4)
+    expect(callsTo(graph, "panelist")).toHaveLength(3)
+    expect(callsTo(graph, "moderator")).toHaveLength(1)
   })
 
   // Each panelist parks on a shared gate the test holds shut, so what the

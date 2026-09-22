@@ -36,7 +36,7 @@ try {
     `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"
-export default Flow.make({ description: "Portable native delegate", input: Schema.Struct({ value: Schema.String }), output: Schema.String,
+export default Flow.make({ name: "native", description: "Portable native delegate", input: Schema.Struct({ value: Schema.String }), output: Schema.String,
   capabilities: [], flows: ["portable/Delegate"], effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" } })
 `
   )
@@ -83,6 +83,8 @@ export default Flow.make({ description: "Portable native delegate", input: Schem
     load: () =>
       Effect.succeed({
         default: CoreFlow.make({
+          // The registry name the module's path derives.
+          name: "native",
           description: "Portable native delegate",
           input: Schema.Struct({ value: Schema.String }),
           output: Schema.String,

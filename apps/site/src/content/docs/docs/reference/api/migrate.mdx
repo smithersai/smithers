@@ -286,7 +286,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `SmithersDb`                             | none                                                                                         | none                                                                            | unsafe    |
 | `SmithersErrorInstance`                  | `The tagged errors each package declares`                                                    | `@smthrs/kernel`                                                                | guided    |
 | `SmithersObservability`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
-| `SmithersRenderer`                       | `Graph.build(node)`                                                                          | `@smthrs/core/Graph`                                                            | automatic |
+| `SmithersRenderer`                       | `Graph.build(node)`                                                                          | `@smthrs/flow/Graph`                                                            | automatic |
 | `Subflow`                                | `flow.child(payload) or flow.call(payload)`                                                  | `@smthrs/flow/Flow`                                                             | guided    |
 | `Summarizer`                             | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `SuperSmithers`                          | none                                                                                         | none                                                                            | unsafe    |
@@ -302,7 +302,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `UI`                                     | none                                                                                         | none                                                                            | unsafe    |
 | `VibeAgent`                              | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `WaitForEvent`                           | `WaitFor.action over DurableDeferred`                                                        | `@smthrs/flow/WaitFor`                                                          | automatic |
-| `Workflow`                               | `Flow.make(tag, { payload, success, error, body }) plus the default descriptor`              | `@smthrs/flow/Flow, @smthrs/core/Flow`                                          | automatic |
+| `Workflow`                               | `Flow.make(tag, { description, capabilities, effects, payload, success, error, body })`      | `@smthrs/flow/Flow`                                                             | automatic |
 | `Worktree`                               | none                                                                                         | none                                                                            | unsafe    |
 | `activeNodes`                            | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `activeRuns`                             | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -486,7 +486,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `read`                                   | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
 | `readFileTool`                           | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
 | `relevancyScorer`                        | `@smthrs/scorers, @smthrs/evals`                                                             | `@smthrs/scorers, @smthrs/evals`                                                | guided    |
-| `renderFrame`                            | `Graph.build(node)`                                                                          | `@smthrs/core/Graph`                                                            | automatic |
+| `renderFrame`                            | `Graph.build(node)`                                                                          | `@smthrs/flow/Graph`                                                            | automatic |
 | `renderMdx`                              | none                                                                                         | none                                                                            | automatic |
 | `renderPrometheusMetrics`                | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
 | `renderPrompt`                           | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
@@ -996,19 +996,19 @@ the command it spawns.
 enforcement half of the migration contract. The prompt asks; these checks
 decide, and a failed check fails the round exactly as a failed test does:
 
-| Check                                                         | What it refuses                                                                                                                                                                  |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| no old import remains                                         | a migrated file still reaching the 0.x facade through any import, `export ... from`, `require(...)`, or dynamic `import(...)`                                                    |
-| no JSX pragma remains                                         | `@jsxImportSource` with no runtime to point at                                                                                                                                   |
-| no react import under the flows directory                     | React inside a flow                                                                                                                                                              |
-| no escape hatch introduced                                    | an `as any`, `as unknown as`, `@ts-ignore`, or `@ts-expect-error` this unit added                                                                                                |
-| no scheduler loop under the flows directory                   | `setInterval` or `while (true)` polling; the engine owns scheduling                                                                                                              |
-| no direct database access under the flows directory           | `new Database(`, `bun:sqlite`, `node:sqlite`                                                                                                                                     |
-| every flow module declares a description                      | a `flow.ts` whose default export is not `Flow.make({ description: "..." })` or `Flow.agent({ description: "..." })` with a string literal                                        |
-| every flow module's descriptor describes the flow it declares | a default descriptor that admits an `input`/`output` no durable flow in the module declares, one whose `body` calls something else, or a lone descriptor with no behavior at all |
-| every TODO marker is reported                                 | a `TODO(migrate-smithers-v1)` with no `unresolved` or `unsupported` entry                                                                                                        |
-| every seat comes from the source or from a decision           | a seat naming a model that appears as a string literal in neither the unit's old source nor a recorded decision                                                                  |
-| run state is byte-identical                                   | any change, addition, or removal under a 0.x database, log, or state directory                                                                                                   |
+| Check                                                         | What it refuses                                                                                                                                                               |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no old import remains                                         | a migrated file still reaching the 0.x facade through any import, `export ... from`, `require(...)`, or dynamic `import(...)`                                                 |
+| no JSX pragma remains                                         | `@jsxImportSource` with no runtime to point at                                                                                                                                |
+| no react import under the flows directory                     | React inside a flow                                                                                                                                                           |
+| no escape hatch introduced                                    | an `as any`, `as unknown as`, `@ts-ignore`, or `@ts-expect-error` this unit added                                                                                             |
+| no scheduler loop under the flows directory                   | `setInterval` or `while (true)` polling; the engine owns scheduling                                                                                                           |
+| no direct database access under the flows directory           | `new Database(`, `bun:sqlite`, `node:sqlite`                                                                                                                                  |
+| every flow module declares a description                      | a `flow.ts` whose default export is not a `Flow.make` call carrying a `description` string literal                                                                            |
+| every flow module's descriptor describes the flow it declares | a default export that admits an `input`/`output` no durable flow in the module declares, one whose `body` calls something else, or a lone declaration with no behavior at all |
+| every TODO marker is reported                                 | a `TODO(migrate-smithers-v1)` with no `unresolved` or `unsupported` entry                                                                                                     |
+| every seat comes from the source or from a decision           | a seat naming a model that appears as a string literal in neither the unit's old source nor a recorded decision                                                               |
+| run state is byte-identical                                   | any change, addition, or removal under a 0.x database, log, or state directory                                                                                                |
 
 Every one of these is parsed rather than matched where a match would be a lie.
 The old-import check reads the module specifiers out of the syntax tree and
@@ -1016,23 +1016,22 @@ judges each with `Detect.isOldSpecifier`, so a side-effect import, a `require`,
 a dynamic `import`, and an `export ... from` are all caught, and so is
 `@smthrs/components`. The description check reads the default export rather than
 looking for the word, because `// description: "x"` satisfies a regular
-expression and declares nothing. It accepts only `Flow.make` and `Flow.agent`,
-the two constructors the registry's own tokenizer looks for: a description on a
+expression and declares nothing. It accepts only `Flow.make`, the one
+constructor the registry's own tokenizer looks for: a description on a
 `Widget.make`, on a bare `make`, or on a namespace alias is a description no
 registry ever reads.
 
-The descriptor check is the other half of that. Discovery reads the default
-export and never the named one, so a module whose descriptor declares a
-different contract from its durable flow admits one thing and runs another. What
-"the same" can mean is bounded by flows itself: `@smthrs/core`'s `body` returns a
-`@smthrs/core/Node` while a durable flow's `.call` returns a `@smthrs/plan/Node`,
-so a descriptor cannot delegate to a durable flow by body until the core-runtime
-bridge lands, and the binding that can be written today is the contract: the
-descriptor's `input` and `output` are the flow's `payload` and `success`, with
-`{ ... }` fields and `Schema.Struct({ ... })` read as the same thing. A `body`
-that does delegate is accepted, so the check does not have to change when the
-bridge does. A module with no durable flow of its own has to carry its own
-`body`, `model`, or `flows` instead, or calling it fails with `missing_body`.
+The descriptor check is the other half of that. A migrated module default-exports
+the flow itself, tag and `body` included, which is what the tool emits: one
+declaration, so the contract the control plane admits is the one that runs.
+Discovery reads the default export and never a named one, so the two ways a
+module can still admit one thing and run another are both refused. A default
+export that names a durable flow the module declares beside it has to reach it by
+`body`; the contract is accepted as the binding instead, meaning the default
+export's `input` and `output` are that flow's `payload` and `success`, with
+`{ ... }` fields and `Schema.Struct({ ... })` read as the same thing. A module
+with no durable flow of its own has to carry its own `body`, `model`, or `flows`,
+or calling it fails with `missing_body`.
 
 The escape-hatch check counts each kind separately against
 `checkpointFiles.sources`, so a project that already had an `as any` in a

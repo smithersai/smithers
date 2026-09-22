@@ -131,13 +131,25 @@ test("a remote caller plans, runs and then reads one dispatched turn over the se
     const transcript: any = yield* read["Projection.Snapshot"]({ selector: { _tag: "transcript", runId: launched.runId } })
     assert.ok(Array.isArray(transcript.rows), JSON.stringify(transcript).slice(0, 400))
 
-    const output = (runs.items as ReadonlyArray<any>)[0]?.output
-    if (output !== undefined && output !== null) {
-      const result = Schema.decodeUnknownSync(DispatchResult)(output)
-      assert.equal(result.turnId, "turn-remote")
-      assert.equal(result.runId, launched.runId)
-      assert.deepEqual(result.messages.map(message => message.content), answer)
-    }
+    const summary = yield* Effect.gen(function*() {
+      while (true) {
+        const projection: any = yield* read["Projection.Snapshot"]({ selector: { _tag: "run-summary", runId: launched.runId } })
+        assert.deepEqual(projection.selector, { _tag: "run-summary", runId: launched.runId })
+        assert.equal(projection.rows.length, 1)
+        const row = projection.rows[0]
+        assert.equal(row.runId, launched.runId)
+        assert.equal(row.flowId, "coding/dispatch")
+        if (["completed", "failed", "cancelled"].includes(row.status)) return row
+        yield* Effect.sleep("100 millis")
+      }
+    }).pipe(Effect.timeout("120 seconds"))
+    assert.equal(summary.status, "completed", JSON.stringify(summary))
+    assert.equal(typeof summary.finalOutput, "string", "completed dispatch must retain its final output")
+    const result = Schema.decodeUnknownSync(DispatchResult)(JSON.parse(summary.finalOutput))
+    assert.equal(result.turnId, "turn-remote")
+    assert.equal(result.runId, launched.runId)
+    assert.deepEqual(result.messages.map(message => message.content), answer)
+
   }).pipe(Effect.provide(hostLayer), Effect.scoped))
   passed = true
 })

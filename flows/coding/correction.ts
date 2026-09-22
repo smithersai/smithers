@@ -161,7 +161,7 @@ const Round: RoundFlow = Flow.make("coding/CorrectionRound", {
   }))
 })
 
-/** Private opt-in composition; existing coding/RunPlan keeps its current contract. */
+/** Private opt-in composition; existing coding/ImplementPlan keeps its current contract. */
 export const CorrectPlan = Flow.make("coding/CorrectPlan", {
   payload: Input, success: CorrectionResult, error: CodingError,
   body: input => Begin.call(input).pipe(Node.bindPlanned(cursor => Round.child(cursor)))

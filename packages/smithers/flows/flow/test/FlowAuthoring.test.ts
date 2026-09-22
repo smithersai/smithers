@@ -108,6 +108,42 @@ describe("Flow body and calls", () => {
     )).toEqual([])
   })
 
+  it("declares model visibility a catalog can read without importing the module", () => {
+    // The literal and the annotation are one statement, the same way the
+    // capability ceiling is. A registry reads the literal from source text; a
+    // host that imported the module reads the annotation off the value.
+    const hidden = Flow.make("Authoring/hidden", {
+      modelInvocable: false,
+      payload: {},
+      body: () => Node.succeed(undefined)
+    })
+    const beside = Flow.make("Authoring/hidden-beside", {
+      modelInvocable: false,
+      annotations: Context.make(Flow.SuspendOnFailure, true),
+      payload: {},
+      body: () => Node.succeed(undefined)
+    })
+
+    expect(Context.get(hidden.annotations, Flow.ModelInvocable)).toBe(false)
+    expect(Context.get(beside.annotations, Flow.ModelInvocable)).toBe(false)
+    expect(Context.get(beside.annotations, Flow.SuspendOnFailure)).toBe(true)
+    // A flow that declares nothing is offered, which is the answer a registry
+    // records for a declaration that names no visibility either.
+    expect(Context.get(
+      Flow.make("Authoring/shown", { payload: {}, body: () => Node.succeed(undefined) }).annotations,
+      Flow.ModelInvocable
+    )).toBe(true)
+    // Declaring it explicitly says the same thing as declaring nothing.
+    expect(Context.get(
+      Flow.make("Authoring/shown-explicitly", {
+        modelInvocable: true,
+        payload: {},
+        body: () => Node.succeed(undefined)
+      }).annotations,
+      Flow.ModelInvocable
+    )).toBe(true)
+  })
+
   it("recognizes its own flows and nothing else", () => {
     const flow = Flow.make("Authoring/recognized", { payload: {}, body: () => Node.succeed(undefined) })
 

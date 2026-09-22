@@ -1,7 +1,11 @@
-import * as Core from "@smthrs/core"
+import { Action, Flow } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
 import * as JournalPackage from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import * as Node from "@smthrs/plan/Node"
+import * as Placement from "@smthrs/plan/Placement"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import type { JournalEntryLike } from "../../src/EngineSubject.ts"
 import { expectJournal } from "../../src/JournalAssertions.ts"
@@ -19,29 +23,21 @@ const asStoredStepEvent = (payload: unknown): StoredStepEvent => payload as Stor
 
 const stepKeyPattern = /^key1_[0-9a-f]{64}$/
 
-const buildGraph = (reviewerModel: string): Core.Graph.Graph => {
-  const read = Core.Node.dynamic({
-    model: "recorded:reader",
-    effects: Core.Effects.make({
-      reads: ["workspace/pr.json"],
-      writes: [],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: "sealed"
-    })
-  }).pipe(Core.Node.within(Core.Placement.local()))
-  const review = Core.Node.dynamic({
-    model: reviewerModel,
-    effects: Core.Effects.make({
-      reads: [],
-      writes: ["workspace/review.json"],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: "sealed"
-    })
-  }).pipe(Core.Node.within(Core.Placement.remote({ profile: "reviewer" })))
-  return Core.Graph.build(Core.Node.all({ read, review }))
-}
+const reader = Action.make("recorded:reader", {
+  payload: Schema.Struct({}),
+  success: Schema.String,
+  tier: "sealed"
+})
+  .annotate(Flow.EffectsDeclaration, { reads: ["workspace/pr.json"], writes: [], boundaryMode: "hard" })
+  .annotate(Placement.Annotation, Placement.local())
+
+const reviewerAction = (name: string) =>
+  Action.make(name, { payload: Schema.Struct({}), success: Schema.String, tier: "sealed" })
+    .annotate(Flow.EffectsDeclaration, { reads: [], writes: ["workspace/review.json"], boundaryMode: "hard" })
+    .annotate(Placement.Annotation, Placement.remote({ profile: "reviewer" }))
+
+const buildGraph = (reviewerName: string): Graph.Graph =>
+  Graph.build(Node.all({ read: reader.call({}), review: reviewerAction(reviewerName).call({}) }))
 
 describe("journal store plan assertions", () => {
   it("asserts a plan against entries committed by the production TestJournal store", async () => {
@@ -101,16 +97,17 @@ describe("journal store plan assertions", () => {
       })
     )
 
-    const envelope = Core.Effects.make({
+    const envelope = {
       reads: ["workspace/pr.json"],
       writes: ["workspace/review.json"],
       mode: "hermetic",
       onConflict: "serialize",
       tier: "sealed"
-    })
+    }
     const graph = buildGraph("recorded:reviewer")
-    // Real key material: keys are derived from each node's keyMaterial through
-    // /keys — no caller-supplied resolver, no hardcoded fake keys.
+    // Real key material: keys are derived from each node's draft material
+    // through @smthrs/plan's step-key compiler — no caller-supplied resolver,
+    // no hardcoded fake keys.
     const keys = Plan.keys(graph)
     const plan = Plan.fromGraph(graph, {
       envelope: { ...envelope },
@@ -122,7 +119,8 @@ describe("journal store plan assertions", () => {
     expect(new Set(Object.values(keys)).size).toBe(Object.keys(keys).length)
 
     // Deterministic: rebuilding the same declaration yields byte-identical
-    // keys; changing identity-bearing material (the model) changes the key.
+    // keys; changing identity-bearing material (the action called) changes the
+    // key.
     expect(Plan.keys(buildGraph("recorded:reviewer"))).toEqual(keys)
     const changed = Plan.keys(buildGraph("recorded:reviewer-v2"))
     expect(changed["root.all.review"]).not.toBe(keys["root.all.review"])
@@ -142,11 +140,10 @@ describe("journal store plan assertions", () => {
           tag: "flows/core/Placement/Remote",
           options: { profile: "reviewer" }
         })
-        yield* assertions.node("root.all.read").mode("hermetic")
+        yield* assertions.node("root.all.read").mode("hard")
         yield* assertions.node("root.all.read").tier("sealed")
-        yield* assertions.node("root.all.read").onConflict("serialize")
-        yield* assertions.node("root.all.review").mode("hermetic")
-        yield* assertions.node("root.all.review").onConflict("serialize")
+        yield* assertions.node("root.all.review").mode("hard")
+        yield* assertions.node("root.all.review").tier("sealed")
         yield* assertions.declaresEffects("root.all.read", ["read:workspace/pr.json"])
         yield* assertions.declaresEffects("root.all.review", ["write:workspace/review.json"])
         yield* assertions.envelope({ ...envelope })
@@ -155,6 +152,6 @@ describe("journal store plan assertions", () => {
     )
 
     expect(journalEntries).toHaveLength(2)
-    expect(Core.Graph.nodes(graph)).toHaveLength(3)
+    expect(Graph.nodes(graph)).toHaveLength(3)
   })
 })

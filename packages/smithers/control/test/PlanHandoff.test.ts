@@ -1,11 +1,18 @@
 /**
- * The core graph is compiled by the persisted plan package before it reaches
+ * The flow graph is compiled by the persisted plan package before it reaches
  * the control card. The card carries that exact value plus cache verdicts.
+ *
+ * `@smthrs/flow` publishes one draft per graph node, in the shape
+ * `Plan.compile` takes, so the host hands the drafts over as they are. What a
+ * node writes is its `Flow.EffectsDeclaration` annotation, which is the
+ * per-node file effects the plan carries, not the `EffectEnvelope` ceiling the
+ * builder checks a declaration against.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as Core from "@smthrs/core"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as PersistedPlan from "@smthrs/plan/Plan"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput } from "../src/ControlError.ts"
@@ -13,54 +20,28 @@ import type { MemoryFlow } from "../src/ControlRuntime.ts"
 import { PlanCard, PlanGraph, type PlanNodeStatus } from "../src/ControlSchema.ts"
 import * as TestControl from "../src/test/TestControl.ts"
 
-const declaration = (writes: ReadonlyArray<string> = []) =>
-  Core.Effects.make({
-    reads: [],
-    writes,
-    mode: "hermetic",
-    onConflict: "serialize",
-    tier: "sealed"
-  })
+const step = (tag: string, writes: ReadonlyArray<string>) =>
+  Action.make(tag, { payload: {}, success: Schema.String, tier: "sealed" })
+    .annotate(Flow.EffectsDeclaration, { reads: [], writes, boundaryMode: "hard" })
 
-const graph = (reviewWrites: ReadonlyArray<string> = ["review.json"]): Core.Graph.Graph =>
-  Core.Graph.build(Core.Node.all({
-    read: Core.Node.dynamic({ model: "recorded:reader", effects: declaration() }),
-    review: Core.Node.dynamic({ model: "recorded:reviewer", effects: declaration(reviewWrites) })
+const graph = (reviewWrites: ReadonlyArray<string> = ["review.json"]): Graph.Graph =>
+  Graph.build(Node.all({
+    read: step("handoff/read", []).call({}),
+    review: step("handoff/review", reviewWrites).call({})
   }))
 
-const compile = (
-  value: Core.Graph.Graph,
-  planId: string
-) => {
-  const nodes = new Map(Core.Graph.nodes(value).map((node) => [node.id, node]))
-  const material = Result.getOrThrow(Core.Graph.keyMaterial(value))
-  return PersistedPlan.compile({
+const compile = (value: Graph.Graph, planId: string) =>
+  PersistedPlan.compile({
     planId,
     flow: "review/pull-request",
-    nodes: material.map((entry): PersistedPlan.NodeDraft => {
-      const effects = nodes.get(entry.nodeId)?.declaredEffects ?? nodes.get(entry.nodeId)?.effectiveEffects
-      return {
-        id: entry.nodeId,
-        material: entry.material,
-        effects: {
-          reads: effects?.reads ?? [],
-          writes: effects?.writes ?? [],
-          boundaryMode: effects?.mode === "expected" ? "expected" : "hard"
-        },
-        kind: entry.material.body !== null && typeof entry.material.body === "object" &&
-            (entry.material.body as { readonly _tag?: unknown })._tag === "Dynamic"
-          ? "agent"
-          : "step"
-      }
-    })
+    nodes: Graph.drafts(value)
   }).pipe(
     Effect.mapError((cause) => new InvalidInput({ issue: String(cause) })),
     Effect.provide(NodeCrypto.layer)
   )
-}
 
 const flow = (
-  value: Core.Graph.Graph,
+  value: Graph.Graph,
   statuses: Readonly<Record<string, PlanNodeStatus>> = {}
 ): MemoryFlow => ({
   flowId: "review/pull-request",
@@ -71,7 +52,7 @@ const flow = (
 })
 
 const planned = (
-  value: Core.Graph.Graph,
+  value: Graph.Graph,
   statuses?: Readonly<Record<string, PlanNodeStatus>>
 ) =>
   Effect.gen(function*() {
@@ -147,12 +128,12 @@ describe("the persisted plan handoff", () => {
  * outside the digest an approval binds to. A host that gains them re-plans to
  * the digest it planned to before, so every parked approval still validates.
  */
-const withGraph = (value: Core.Graph.Graph): MemoryFlow => ({
+const withGraph = (value: Graph.Graph): MemoryFlow => ({
   ...flow(value),
   plan: (_input, planId) =>
     compile(value, planId).pipe(Effect.map((plan) => ({
       plan,
-      graph: { edges: Core.Graph.edges(value) }
+      graph: { edges: Graph.edges(value) }
     })))
 })
 
@@ -170,7 +151,7 @@ describe("the typed edges beside the plan", () => {
   it("reports each edge's reason from the built graph", async () => {
     const card = await plannedBy(withGraph(graph()))
 
-    expect(card.graph?.edges).toEqual(Core.Graph.edges(graph()))
+    expect(card.graph?.edges).toEqual(Graph.edges(graph()))
     expect(new Set(card.graph?.edges.map((edge) => edge.reason))).toEqual(new Set(["value"]))
     expect(card.graph?.edges.map((edge) => edge.to)).toEqual(
       card.graph?.edges.map((edge) => edge.to).filter((id) => card.nodes.some((node) => node.id === id))
@@ -225,14 +206,14 @@ describe("the typed edges beside the plan", () => {
  */
 const declaredAt = { path: "flows/review/pull-request.ts", line: 12 } as const
 
-const withDeclarations = (value: Core.Graph.Graph): MemoryFlow => ({
+const withDeclarations = (value: Graph.Graph): MemoryFlow => ({
   ...flow(value),
   plan: (_input, planId) =>
     compile(value, planId).pipe(Effect.map((plan) => ({
       plan,
       graph: {
-        edges: Core.Graph.edges(value),
-        nodes: Core.Graph.nodes(value).map((node) => ({ id: node.id, declaredAt }))
+        edges: Graph.edges(value),
+        nodes: Graph.nodes(value).map((node) => ({ id: node.id, declaredAt }))
       }
     })))
 })
@@ -285,14 +266,14 @@ describe("the declaration sites beside the plan", () => {
  */
 const REVISION = "9".repeat(40)
 
-const withRevision = (value: Core.Graph.Graph): MemoryFlow => ({
+const withRevision = (value: Graph.Graph): MemoryFlow => ({
   ...flow(value),
   plan: (_input, planId) =>
     compile(value, planId).pipe(Effect.map((plan) => ({
       plan,
       graph: {
-        edges: Core.Graph.edges(value),
-        nodes: Core.Graph.nodes(value).map((node) => ({ id: node.id, declaredAt })),
+        edges: Graph.edges(value),
+        nodes: Graph.nodes(value).map((node) => ({ id: node.id, declaredAt })),
         sourceRevision: REVISION
       }
     })))

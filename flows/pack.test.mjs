@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob, relative } from "node:path";
 import { after, describe, it } from "node:test";
@@ -29,6 +29,7 @@ import * as Path from "effect/Path";
 import * as Capability from "@smthrs/capability/Capability";
 import * as Detect from "@smthrs/migrate/Detect";
 import * as Discovery from "@smthrs/registry/Discovery";
+import * as Executable from "@smthrs/registry/Executable";
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow";
 
 const flowsRoot = dirname(fileURLToPath(import.meta.url));
@@ -526,6 +527,11 @@ describe("the home pane", () => {
 });
 
 describe("discovery over the project flows directory", () => {
+  const scratch = [];
+  after(() => {
+    for (const directory of scratch) rmSync(directory, { recursive: true, force: true });
+  });
+
   it("finds the prompt bodies and conservatively projects the release delegates", async () => {
     const scan = await run(
       Effect.gen(function* () {
@@ -534,26 +540,113 @@ describe("discovery over the project flows directory", () => {
       }),
     );
 
-    // Every module declaration under flows/. `coding/dispatch` is the
-    // single-turn door; `coding/prototype` is the disposable POC entry, which
-    // this list had never carried even though discovery has always found it.
-    const modules = ["checks/wiki", "coding", "coding/dispatch", "coding/implementation", "coding/prototype", "coding/request", "coding/vibe", "release", "release-content", "tutorial-change", "wiki"];
-    // The librarian host registers these declarations explicitly. Their
-    // aliased Declaration.make defaults are outside static discovery's
-    // Flow.make syntax, so discovery reports them without inventing entries.
-    const registeredModules = ["librarian/history", "librarian/wiki"];
+    // Every module declaration under flows/. Each one but `checks/wiki` IS its
+    // own `@smthrs/flow` flow: one file, no `flows:` list, and no delegate name
+    // registered on a host to join a second declaration to it.
+    const modules = ["coding", "coding/dispatch", "coding/implementation", "coding/prototype", "coding/request", "coding/vibe", "librarian/history", "librarian/wiki", "release", "release-content", "tutorial-change", "wiki"];
+    // `checks/wiki` still delegates, and its own file says why: the host binds
+    // its reviewer policy to a descriptor by the `flows:` list, and the capture
+    // action requires that descriptor's delegate to be the flow this host
+    // registered. Both statements are about the delegation, so a module that is
+    // its own flow has nothing for either to name.
+    const delegatingModules = ["checks/wiki"];
+    // The two product flows are discoverable like every other module flow and
+    // declare `modelInvocable: false`, because only the librarian product host
+    // implements `librarian/create-wiki` and `librarian/create-history`.
+    const hiddenModules = ["librarian/history", "librarian/wiki"];
     const [code, message] = DELEGATED.split(": ");
     assert.deepEqual(
       scan.warnings.map((warning) => `${warning.code} at ${relative(flowsRoot, warning.path).split("\\").join("/")}: ${warning.message}`).sort(),
       [
         ...EXPECTED_FLOWS.filter((name) => name.startsWith("checks/")).map((name) => `${code} at ${name}/flow.mdx: ${message}`),
-        ...modules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`),
-        ...["checks/wiki", "coding/prototype", "tutorial-change", "wiki"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
-        ...registeredModules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Could not statically read the default Flow.make or Flow.agent declaration`),
-        ...registeredModules.map((name) => `missing_description at ${name}/flow.ts: Module flows require a literal description in the default Flow.make or Flow.agent value`),
+        ...delegatingModules.map((name) => `unsupported_module_metadata at ${name}/flow.ts: Flow authority cannot be projected statically; using the conservative wildcard`),
+        ...["checks/wiki", "tutorial-change"].map((name) => `unsupported_module_metadata at ${name}/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible`),
+        // `wiki` declares its own paths rather than inheriting the delegating
+        // wildcard, so its sealed tier is raised only as far as those allow.
+        "unsupported_module_metadata at wiki/flow.ts: Effect tier sealed under-classifies declared authority; using compensable",
+        // The two product flows declare their own paths, so their sealed tier
+        // is raised only as far as the authority each one names allows.
+        "unsupported_module_metadata at librarian/history/flow.ts: Effect tier sealed under-classifies declared authority; using compensable",
+        "unsupported_module_metadata at librarian/wiki/flow.ts: Effect tier sealed under-classifies declared authority; using irreversible",
       ].sort(),
     );
-    assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules].sort());
+    assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules, ...delegatingModules].sort());
+    // Visibility is a declaration, so it survives the scan. Every other flow
+    // under `flows/` is offered to a model; these two are not.
+    assert.deepEqual(
+      [...scan.entries].filter((entry) => !entry.modelInvocable).map((entry) => entry.name).sort(),
+      hiddenModules,
+    );
+    // A collapsed module flow names no delegate, so it loads and plans on a
+    // host that registers none. `checks/wiki` still asks for one by name.
+    const loaded = await run(
+      Effect.forEach(
+        [...scan.entries].filter((entry) => entry.body._tag === "Module").sort((left, right) => left.name < right.name ? -1 : 1),
+        (descriptor) =>
+          Executable.fromDescriptor(descriptor, { delegates: [] }).pipe(
+            Effect.map((executable) => `${descriptor.name}: ${executable.delegate ?? "self"}`),
+            Effect.catch((error) => Effect.succeed(`${descriptor.name}: ${error.code} ${error.delegate ?? ""}`.trim())),
+          ),
+      ),
+    );
+    assert.deepEqual(loaded, [...modules.map((name) => [name, "self"]), ["checks/wiki", "missing_delegate coding/WikiCheck"]]
+      .sort(([left], [right]) => left < right ? -1 : 1)
+      .map(([name, outcome]) => `${name}: ${outcome}`));
+  });
+
+  it("reads model visibility off a @smthrs/flow declaration, in the vocabulary the other two entry kinds speak", async () => {
+    // Discovery reads a module's metadata from its source text, so the literal
+    // is the whole statement. A markdown body could already say "not for a
+    // model" and a `@smthrs/core` declaration could not; `@smthrs/flow`'s
+    // `Flow.make` now takes the option, so a collapsed module flow can say it
+    // and still be discovered exactly like every other entry.
+    const root = mkdtempSync(join(tmpdir(), "smithers-visibility-"));
+    scratch.push(root);
+    const write = (name, entry, source) => {
+      mkdirSync(join(root, name), { recursive: true });
+      writeFileSync(join(root, name, entry), source);
+    };
+    const flowModule = (visibility) =>
+      `import { Flow } from "@smthrs/flow";\n` +
+      `import { Node } from "@smthrs/plan";\n` +
+      `import { Schema } from "effect";\n\n` +
+      `export default Flow.make("visibility/Answer", {\n` +
+      `  description: "Answers what it was asked.",\n` +
+      visibility +
+      `  payload: { question: Schema.String }, success: Schema.String,\n` +
+      `  body: ({ question }) => Node.succeed(question)\n` +
+      `});\n`;
+    write("flow-hidden", "flow.ts", flowModule(`  modelInvocable: false,\n`));
+    write("flow-shown", "flow.ts", flowModule(``));
+    write(
+      "core-shown",
+      "flow.ts",
+      `import { Flow } from "@smthrs/core";\n` +
+        `import { Schema } from "effect";\n\n` +
+        `export default Flow.make({\n` +
+        `  name: "core-shown",\n` +
+        `  description: "Answers what it was asked.",\n` +
+        `  input: Schema.Struct({ question: Schema.String }), output: Schema.String,\n` +
+        `  flows: ["visibility/Answer"]\n` +
+        `});\n`,
+    );
+    write(
+      "markdown-hidden",
+      "flow.mdx",
+      `---\ndescription: Answers what it was asked.\ndisable-model-invocation: true\n---\nAnswer the question.\n`,
+    );
+
+    const scan = await run(
+      Effect.gen(function* () {
+        const discovery = Discovery.make(yield* FileSystem.FileSystem, yield* Path.Path);
+        return yield* discovery.scan({ source: "project", root, naming: "path" });
+      }),
+    );
+
+    assert.deepEqual(
+      Object.fromEntries([...scan.entries].map((entry) => [entry.name, entry.modelInvocable])),
+      { "flow-hidden": false, "flow-shown": true, "core-shown": true, "markdown-hidden": false },
+    );
   });
 
   it("finds no flow inside the 0.x fixture, which is data and not a flow", async () => {

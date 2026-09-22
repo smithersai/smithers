@@ -1,6 +1,5 @@
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { Flow } from "@smthrs/core"
-import { Flow as DurableFlow } from "@smthrs/flow"
+import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
@@ -36,42 +35,22 @@ export const WriteStep = AgentAction.make("simple-workflow/Write", {
     `Write a short article based on this research:\n\nSummary: ${summary}\nKey Points: ${JSON.stringify(keyPoints)}`
 })
 
-/** The durable flow: the old `<Sequence>` is one `Node.bindPlanned`. */
-export const SimpleExample = DurableFlow.make("simple-workflow/SimpleExample", {
-  payload: { topic: Schema.String },
+/**
+ * The flow the registry discovers and the engine runs. Discovery tokenizes
+ * `export default Flow.make(` and reads the `description`, `capabilities` and
+ * `effects` literals without evaluating the module; the loader hands this same
+ * value to the engine, so the contract the control plane admits is the one
+ * that executes. The old `<Sequence>` is one `Node.bindPlanned`.
+ */
+export default Flow.make("simple-workflow", {
+  description: "Researches a topic and writes a short article about it.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+  payload: Schema.Struct({ topic: Schema.String }),
   success: Article,
   error: AgentAction.AgentFailure,
   body: ({ topic }) =>
     ResearchStep.call({ topic }).pipe(
       Node.bindPlanned((research) => WriteStep.call({ summary: research.summary, keyPoints: research.keyPoints }))
     )
-})
-
-/**
- * The descriptor the registry reads, describing the flow the engine runs.
- *
- * Discovery tokenizes `export default Flow.make(` and never evaluates it, so
- * the default export is what the control plane admits. It admits `SimpleExample`
- * and nothing else: its `input` and `output` are that flow's `payload` and
- * `success`, which is the whole binding flows can express today.
- *
- * The descriptor carries no `body`, and cannot. `@smthrs/core`'s `body` returns
- * a `@smthrs/core/Node`; `SimpleExample.call` returns a `@smthrs/plan/Node`, a
- * different type in a different package, so `body: (input) =>
- * SimpleExample.call(input)` is `TS2322` and no cast belongs in migrated
- * output. Binding the two by body is the core-runtime bridge, and this golden
- * gains the `body` line the day that bridge lands.
- */
-export default Flow.make({
-  description: "Researches a topic and writes a short article about it.",
-  input: Schema.Struct({ topic: Schema.String }),
-  output: Article,
-  capabilities: [],
-  effects: {
-    reads: [],
-    writes: [],
-    mode: "hermetic",
-    onConflict: "serialize",
-    tier: "sealed"
-  }
 })

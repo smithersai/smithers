@@ -12,6 +12,7 @@ import { Schema } from "effect"
  * first one recorded and never starts the delegate.
  */
 export default Flow.make({
+  name: "cacheable",
   description: "Delegates to the agent and declares a reusable result.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

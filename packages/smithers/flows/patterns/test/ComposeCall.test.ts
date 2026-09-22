@@ -13,18 +13,19 @@ const sourceFiles = (directory: string): ReadonlyArray<string> =>
     return entry.isFile() && entry.name.endsWith(".ts") ? [path] : []
   })
 
-const adapter = /\(flow as unknown as \(input: unknown\) => Node\.Node<unknown, unknown>\)\(input\)/
+const adapter = /member\.call\(payload as never\)/
 
-// `internal/Compose.ts` owns the one cast from the public `Flow.Any` type to its
-// callable representation. A pattern module that repeats the cast locally forks
-// that unsafe boundary, so ownership is pinned here rather than in prose.
-describe("Flow.Any call adapter", () => {
-  it("is cast in internal/Compose.ts alone", () => {
+// `internal/Member.ts` owns the one cast from a pattern's composed payload to
+// the payload the member it calls declares. A pattern module that repeats the
+// cast locally forks that unsafe boundary, so ownership is pinned here rather
+// than in prose: one file holds the cast, and this case names it.
+describe("member call adapter", () => {
+  it("is cast in internal/Member.ts alone", () => {
     const owners = sourceFiles(sourceDirectory)
       .filter((path) => adapter.test(readFileSync(path, "utf8")))
       .map((path) => path.slice(sourceDirectory.length + 1))
       .sort()
 
-    expect(owners).toEqual([join("internal", "Compose.ts")])
+    expect(owners).toEqual([join("internal", "Member.ts")])
   })
 })

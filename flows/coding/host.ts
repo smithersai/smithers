@@ -10,18 +10,20 @@ import * as NativeControl from "../../packages/smithers/src/internal/NativeContr
 import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
 import type * as Application from "../../packages/smithers/src/Application.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
-import { atomDelegate, atomFlows, atomOperations, EditAtom } from "./atoms.ts"
+import { atomOperations, EditAtom } from "./atoms.ts"
+import { atomFlows } from "./implementation/flow.ts"
 import { checkDelegate, checkLayers } from "./checks.ts"
 import { NativeCoding, nativeActions, nativeLayer, type NativeOptions } from "./native.ts"
-import { registration, RunPlan } from "./registration.ts"
-import { dispatchLayers, dispatchModels, RunDispatch } from "./dispatch.ts"
+import { registration } from "./registration.ts"
+import { dispatchModels } from "./dispatch.ts"
+import { dispatchRegistration } from "./dispatch/flow.ts"
 import * as Snapshots from "./snapshots.ts"
 import * as CodingFileSystem from "./filesystem.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
 import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
 import { DraftPlan, planningPolicy, PreparePlan, ReviewRequest } from "./planning.ts"
 import { evidenceOnly } from "./planning-authority.ts"
-import { requestRegistration, RunRequest } from "./request.ts"
+import { requestRegistration } from "./request.ts"
 import { sourceAdmission } from "./source-admission.ts"
 import { planningWikiLayers } from "./planning-wiki.ts"
 import { preparationLayers } from "./preparation.ts"
@@ -36,7 +38,7 @@ import { wikiCheckDelegate, wikiCheckLayers, wikiCheckPolicy } from "./wiki-chec
 import { bindWikiRegistry } from "./wiki-registry.ts"
 import type { Landing } from "./landing.ts"
 import { cleanupModels } from "./vibe-cleanup.ts"
-import { RunVibe, vibeRegistration } from "./vibe.ts"
+import { vibeRegistration } from "./vibe.ts"
 import * as CodingState from "./state.ts"
 import { inspectionLayers } from "../repository/inspection.ts"
 import { jobFlows, failureLayer, modelLayers, modelNames } from "../repository/jobs.ts"
@@ -198,7 +200,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const leaves = Layer.mergeAll(atomFlows, atomOperations, EditAtom.layer, nativeActions, request, repository,
       // A dispatched turn keeps the host's registry and capability envelope:
       // it is expected to edit the workspace, so it is not evidence-only.
-      dispatchLayers({ repositoryPath: options.repositoryPath }), dispatchModels,
+      dispatchRegistration({ repositoryPath: options.repositoryPath }), dispatchModels,
       checkLayers({ repositoryPath: options.repositoryPath, fs, concurrency: 1,
         exporterPath: options.exporterPath, environment: options.checkEnvironment }))
       .pipe(Layer.provideMerge(nativeLayer(options)),
@@ -207,9 +209,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // Loading verified declaration bytes reserves a sibling temporary module.
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
-    const executableOptions = { delegates: [RunPlan, RunDispatch, atomDelegate, checkDelegate, RunSetup, RunJob, RunTrigger,
-      ...(options.planning === undefined ? [] : [RunRequest]), ...(wikiEnabled ? [wikiCheckDelegate] : []),
-      ...(options.landing === undefined || options.planning === undefined ? [] : [RunVibe])] }
+    const executableOptions = { delegates: [checkDelegate, RunSetup, RunJob, RunTrigger,
+      ...(wikiEnabled ? [wikiCheckDelegate] : [])] }
     const catalog = Layer.unwrap(repositoryCatalog(executableOptions, builtins.load).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       // The catalog this host serves is rebuildable one entry at a time, which
@@ -222,10 +223,14 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     )).pipe(Layer.orDie)
     const modules = registration.pipe(Layer.provideMerge(catalog), Layer.tap(context => Effect.gen(function*() {
       const built = Context.get(context, Executable.Catalog)
-      for (const [name, delegate] of [["coding", RunPlan._tag], ["coding/dispatch", RunDispatch._tag], ["coding/implementation", atomDelegate._tag],
-        ...(options.planning === undefined ? [] : [["coding/request", RunRequest._tag]]),
-        ...(options.landing === undefined || options.planning === undefined ? [] : [["coding/vibe", RunVibe._tag]]),
-        ["repository/setup", RunSetup._tag], ["repository/trigger", RunTrigger._tag], ["repository-jobs/issues", RunJob._tag]]) {
+      // A module that IS its own flow reports no delegate, so `undefined` is
+      // the whole of what this host requires of it. A flow that regressed into
+      // delegating reports a name here and fails the same check.
+      const required: ReadonlyArray<readonly [string, string | undefined]> = [["coding", undefined], ["coding/dispatch", undefined], ["coding/implementation", undefined],
+        ...(options.planning === undefined ? [] : [["coding/request", undefined] as const]),
+        ...(options.landing === undefined || options.planning === undefined ? [] : [["coding/vibe", undefined] as const]),
+        ["repository/setup", RunSetup._tag], ["repository/trigger", RunTrigger._tag], ["repository-jobs/issues", RunJob._tag]]
+      for (const [name, delegate] of required) {
         if (!built.executables.some(entry => entry.descriptor.name === name && entry.delegate === delegate)) {
           return yield* Effect.die(new Error(`Required coding executable ${name} is unavailable; inspect the catalog refusal`))
         }

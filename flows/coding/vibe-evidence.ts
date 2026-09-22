@@ -10,7 +10,7 @@ import { Effect, Exit, Option, Schema } from "effect"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import { Poc, PocInput } from "./poc.ts"
 import { PrepareRequest } from "./preparation.ts"
-import { Request, RunRequest } from "./request.ts"
+import { Request } from "./request.ts"
 import { CodingError, RequestInput, sameRevision } from "./schema.ts"
 import { VibeEvidence, VibeInput } from "./vibe-schema.ts"
 export { VibeEvidence, VibeInput } from "./vibe-schema.ts"
@@ -74,7 +74,7 @@ export const readVibeRequest = (input: typeof VibeInput.Type) => Effect.gen(func
     visited.add(id)
     const entry = id === input.requestExecutionId ? requestRow : yield* read(id)
     // Executable.fromDescriptor persists the descriptor's name and inlines
-    // delegate.call. There need not be a separate coding/RunRequest row.
+    // delegate.call. There need not be a separate coding/Request row.
     if (entry.state.flowName === "coding/request") {
       const invocation = entry.state.payload as { readonly input?: unknown } | null
       const bridgeInput = Schema.decodeUnknownOption(RequestInput)(invocation?.input)
@@ -97,7 +97,10 @@ export const readVibeRequest = (input: typeof VibeInput.Type) => Effect.gen(func
       const approvedInput = Schema.decodeUnknownOption(RequestInput)(plan.decodedInput)
       if (plan.decision !== "approved" || run.value.planDigest !== plan.card.digest ||
           run.value.flowId !== "coding/request" || plan.card.flowId !== "coding/request" ||
-          !plan.card.envelope.flows.includes(RunRequest._tag) ||
+          // `coding/request` IS its own flow, so its approved envelope names no
+          // delegate. An envelope that names one was approved for a descriptor
+          // that handed this work to code the descriptor does not measure.
+          plan.card.envelope.flows.length !== 0 ||
           Option.isNone(approvedInput) || Digest.canonical(approvedInput.value) !== Digest.canonical(payload.value)) {
         return yield* invalid("The native request does not match its retained approved input and delegate")
       }

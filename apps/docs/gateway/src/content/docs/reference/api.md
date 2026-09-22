@@ -30,28 +30,32 @@ The whole HTTP surface as one application layer a host serves.
 
 ### Mounts
 
-`GatewayServer.layer` mounts seven routes, and `NodeGateway.layer` binds them
-to a socket.
+`GatewayServer.layer` mounts seven base routes, and `NodeGateway.layer` binds
+them to a socket. A host that supplies `runtimeBridge` adds two authenticated
+JSON routes.
 
-| Path                | Protocol           | Serves                                          |
-| ------------------- | ------------------ | ----------------------------------------------- |
-| `POST /rpc`         | RPC over HTTP      | `@smthrs/control` `ControlRpcs`                 |
-| `/rpc/ws`           | RPC over WebSocket | `ControlRpcs`, including a kept-alive `Watch`   |
-| `POST /projections` | RPC over HTTP      | `GatewayRpcs`                                   |
-| `/projections/ws`   | RPC over WebSocket | `GatewayRpcs`, including `Projection.Subscribe` |
-| `POST /sync`        | RPC over HTTP      | `@smthrs/sync` `SyncRpcs`                       |
-| `/sync/ws`          | RPC over WebSocket | `SyncRpcs`                                      |
-| `GET /health`       | JSON               | `GatewayServer.Health`                          |
+| Path                       | Protocol           | Serves                                               |
+| -------------------------- | ------------------ | ---------------------------------------------------- |
+| `POST /rpc`                | RPC over HTTP      | `@smthrs/control` `ControlRpcs`                      |
+| `/rpc/ws`                  | RPC over WebSocket | `ControlRpcs`, including a kept-alive `Watch`        |
+| `POST /projections`        | RPC over HTTP      | `GatewayRpcs`                                        |
+| `/projections/ws`          | RPC over WebSocket | `GatewayRpcs`, including `Projection.Subscribe`      |
+| `POST /sync`               | RPC over HTTP      | `@smthrs/sync` `SyncRpcs`                            |
+| `/sync/ws`                 | RPC over WebSocket | `SyncRpcs`                                           |
+| `GET /health`              | JSON               | `GatewayServer.Health`                               |
+| `POST /runtime/v1/command` | JSON               | Versioned launch and Control mutations (optional)    |
+| `POST /runtime/v1/observe` | JSON               | Bounded journal replay and run projection (optional) |
 
 ### Types and constants
 
 | Export                       | Signature                                                                                            | Meaning                                                                                                         |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: `GatewaySchema.GatewayHealth` plus the `version` of the package serving it.         |
-| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured. `heartbeatMillis` re-times both the `Watch` and projection keepalives.  |
+| `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: gateway identity, package version, and optional non-secret runtime bridge identity. |
+| `LayerOptions`               | `{ heartbeatMillis?; ingress?; runtimeBridge? }`                                                     | How an assembled gateway is configured. `runtimeBridge` opts into the versioned Go adapter.                     |
 | `IngressOptions`             | `{ maxRequestBodyBytes?: number; loopbackOnly?: boolean; authorize?: (headers) => Effect<boolean> }` | The ingress policy the RPC mounts run behind.                                                                   |
 | `rpcPaths`                   | `ReadonlyArray<string>`                                                                              | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                         |
-| `protectedPaths`             | `ReadonlyArray<string>`                                                                              | `["/projections", "/sync", "/rpc/ws", "/projections/ws", "/sync/ws"]`: paths that pass edge authentication.     |
+| `boundedPostPaths`           | `ReadonlyArray<string>`                                                                              | RPC mounts plus both runtime bridge routes; every body is bounded before a handler reads it.                    |
+| `protectedPaths`             | `ReadonlyArray<string>`                                                                              | Projection, sync, WebSocket, and runtime bridge paths that pass edge authentication.                            |
 | `defaultMaxRequestBodyBytes` | `number`                                                                                             | 1,048,576. The default maximum request body accepted by an RPC mount.                                           |
 | `loopbackHostNames`          | `ReadonlyArray<string>`                                                                              | `["127.0.0.1", "localhost", "::1"]`: the names that mean this machine only, as a bind address is spelled.       |
 | `loopbackHostHeaderNames`    | `ReadonlyArray<string>`                                                                              | `["127.0.0.1", "localhost", "[::1]"]`: the same names as a Host header spells them; the default `allowedHosts`. |

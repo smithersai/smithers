@@ -12,6 +12,7 @@ import { Schema } from "effect"
  * runs the delegate again.
  */
 export default Flow.make({
+  name: "cacheable-scoped",
   description: "Delegates to the agent and keeps its result inside one run.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

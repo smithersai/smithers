@@ -11,6 +11,7 @@ import {
   chooseTemplate, MAX_STATE_BYTES, ReleaseTemplate, templateClassifier, templates, templateState,
   TEMPLATE_CONFIDENCE
 } from "../release-content/jev-template.ts"
+import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.ts"
 import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
@@ -131,10 +132,10 @@ const runContent = async (t: TestContext, evaluator: Layer.Layer<Evaluator.Evalu
     // here, so a scripted Jev that only answers `template` cannot be mistaken
     // for a gateway outage at the seat.
     agentLayers(scriptedSeats(counts, { prompts }), 250_000, scriptedCompletion),
-    HumanTask.layer, Interpreter.layer(Content.ReleaseContent)
+    HumanTask.layer, Interpreter.layer(ReleaseContent)
   ).pipe(Layer.provideMerge(Action.layerImplementations)))
   const exit = await Effect.runPromise(Effect.scoped(Effect.exit(
-    Content.ReleaseContent.execute(input, { executionId }).pipe(Effect.provide(host)))))
+    ReleaseContent.execute(input, { executionId }).pipe(Effect.provide(host)))))
   const brief = Exit.isSuccess(exit)
     ? (JSON.parse(await readFile(join(fixture.root, exit.value.artifact.directory, "bundle.json"), "utf8")) as
       { brief: { template: string; angle: string } }).brief

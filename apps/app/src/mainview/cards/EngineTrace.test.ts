@@ -22,7 +22,7 @@ const decision = (sequence: number, executionId: string, status?: string, value?
     decision: status === undefined ? "created" : "transitioned",
     ...(status === undefined ? {} : { status }),
     state: {
-      version: 1, flowName: executionId === "native" ? "coding/RunPlan" : "coding/Check", payload: { target: "typecheck" },
+      version: 1, flowName: executionId === "native" ? "coding/ImplementPlan" : "coding/Check", payload: { target: "typecheck" },
       ...(parentExecutionId === undefined ? {} : { parentExecutionId }),
       ...(status === "completed" ? { result: { _tag: "Complete", exit: { _tag: "Success", value } } } : {})
     }
@@ -100,7 +100,7 @@ describe("recorded engine evidence in the run trace", () => {
     ]
     const model = traceFromJournal(run, records)
     const native = model.root.children[0]!
-    expect(native).toMatchObject({ kind: "execution", label: "coding/RunPlan", status: "pending", startedAt: 101 })
+    expect(native).toMatchObject({ kind: "execution", label: "coding/ImplementPlan", status: "pending", startedAt: 101 })
     expect(native.children[0]).toMatchObject({ kind: "execution", label: "coding/Check", status: "completed", detail: { output: '{"passed":false,"target":"typecheck"}' } })
     const attempt = native.children[0]!.children[0]!
     expect(attempt).toMatchObject({ kind: "attempt", status: "completed", startedAt: 103, endedAt: 104 })
@@ -164,7 +164,7 @@ export { decision, wrap }
 test("a native resumed decision preserves subsequent blocked coding results", () => {
   const resumed = JournalRecords.runDecision({ runId: "native", sourceId: "engine", lineageId: "native" }, {
     decision: "resumed", status: "running",
-    state: { version: 1, flowName: "coding/RunPlan", payload: { target: "typecheck" } }
+    state: { version: 1, flowName: "coding/ImplementPlan", payload: { target: "typecheck" } }
   })
   const blocked = { outcome: { status: "blocked", blocked: { message: "README check failed" } } }
   const evidence = engineExecutionEvidence([

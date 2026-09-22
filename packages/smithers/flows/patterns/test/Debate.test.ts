@@ -1,38 +1,47 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Debate from "../src/Debate.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo } from "./Graphs.ts"
 
-const participant = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
-})
+// One declaration per role, because a `@smthrs/flow` flow states the payload it
+// takes and the three roles take different ones. Counting calls by tag is what
+// the old `FlowCall` count meant.
+const participant = (tag: string) =>
+  Flow.make(tag, {
+    payload: { input: Schema.Unknown, transcript: Schema.Unknown, proponent: Schema.Unknown },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: ({ input }) => Node.succeed(input)
+  })
+
+const proponent = participant("proponent")
+const opponent = participant("opponent")
+const judge = participant("judge")
 
 describe("Debate", () => {
   it("declares bounded participant and judge calls", () => {
-    const debate = Debate.make({
-      proponent: participant,
-      opponent: participant,
-      judge: participant,
-      rounds: 2
-    })
+    const debate = Debate.make({ proponent, opponent, judge, rounds: 2 })
 
     expect(Flow.isFlow(debate)).toBe(true)
-    expect(debate.body?.("topic").ast._tag).toBe("AndThen")
-    const graph = Graph.build(debate, "topic")
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(5)
-    expect(debate.implementation?._tag).toBe("Body")
-    if (debate.implementation?._tag === "Body") {
-      expect(debate.implementation.algorithm).toBe("sha256-source-captures/v4")
-    }
+    expect(debate.body({ input: "topic" }).ast._tag).toBe("AndThen")
+    const graph = Graph.build(debate, { input: "topic" })
+    expect(callsTo(graph, "proponent")).toHaveLength(2)
+    expect(callsTo(graph, "opponent")).toHaveLength(2)
+    expect(callsTo(graph, "judge")).toHaveLength(1)
+    // Core carried the declaration's digest on `flow.implementation`.
+    // `@smthrs/flow` has no such field: a flow's body IS the declaration, and
+    // the same fact, that it is digested from its captures rather than minted
+    // per instance, is read off the body's function identity.
+    expect(Node.functionIdentity(debate.body).algorithm).toBe("sha256-source-captures/v4")
   })
 
   it("rejects an unbounded round count", () => {
-    expect(() => Debate.make({ proponent: participant, opponent: participant, judge: participant, rounds: 0 })).toThrow(
+    expect(() => Debate.make({ proponent, opponent, judge, rounds: 0 })).toThrow(
       expect.objectContaining({
         code: "invalid_decorator",
         message: "Debate rounds must be a positive safe integer, received 0"

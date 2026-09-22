@@ -1,6 +1,10 @@
 /** Bundled declarations are available before a repository has written any flows. */
 import * as Digest from "@smthrs/core/Digest"
 import * as CoreFlow from "@smthrs/core/Flow"
+import type * as RuntimeFlow from "@smthrs/flow/Flow"
+import ImplementPlan from "../coding/flow.ts"
+import Dispatch from "../coding/dispatch/flow.ts"
+import ImplementAtoms from "../coding/implementation/flow.ts"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
@@ -28,7 +32,7 @@ declare const __SMITHERS_CREATE_FLOW_PACK__: Readonly<Record<string, string>> | 
 /** Where each pack body lives, relative to this module, in source and in the bundler. */
 const authoringSource = (name: string) => `../${name}/flow.mdx`
 const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "intake.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
-  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml",
+  "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/flow.ts", "../coding/dispatch/flow.ts", "../coding/implementation/flow.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml",
   // A prompt a workspace runs is policy: editing one changes what every
   // built-in authoring body tells a model to do.
   ...FLOW_AUTHORING_PACK.map(authoringSource)]
@@ -75,28 +79,45 @@ export const authoringBodies: Effect.Effect<ReadonlyMap<string, string>, Error, 
 export const provisionBuiltins = (stateRoot: string, policy: string) => Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
   const root = path.join(stateRoot, "builtin-flows", policy)
-  const entries = [
+  /*
+   * The bundled flows a workspace has before its repository writes any.
+   *
+   * `flow` is the `@smthrs/flow` flow this entry IS: one file, no delegate
+   * name, and the value the bundle hands the loader. `delegate` is the older
+   * shape, still used by the repository doors whose work is chosen per
+   * invocation from the registry envelope rather than declared by the entry.
+   */
+  const entries: ReadonlyArray<
+    & { readonly name: string; readonly description: string }
+    & ({ readonly delegate: string; readonly flow?: undefined } | { readonly delegate?: undefined; readonly flow: RuntimeFlow.Any })
+  > = [
     { name: "repository/setup", delegate: "repository/RunSetup", description: "Configure, evaluate and activate one repository responsibility." },
     { name: "repository/trigger", delegate: "repository/RunTrigger", description: "Register one repository flow to run on a reviewed schedule." },
     ...(["issues", "review", "ci", "feature", "chores"] as const).map(job => ({ name: `repository-jobs/${job}`,
       delegate: "repository/RunJob", description: `Run the reviewed ${job} responsibility with recorded evidence.` })),
-    { name: "coding", delegate: "coding/RunPlan", description: "Execute a native coding plan with its required checks." },
-    { name: "coding/dispatch", delegate: "coding/RunDispatch", description: "Run one dispatched agent turn in this workspace." },
-    { name: "coding/implementation", delegate: "coding/Implement", description: "Implement one native coding atom." }
+    { name: "coding", flow: ImplementPlan, description: "Execute a native coding plan with its required checks." },
+    { name: "coding/dispatch", flow: Dispatch, description: "Run one dispatched agent turn in this workspace." },
+    { name: "coding/implementation", flow: ImplementAtoms, description: "Implement one native coding atom." }
   ]
   const modules = new Map<string, { body: string; declaration: unknown }>()
   for (const entry of entries) {
     const directory = path.join(root, entry.name)
     yield* fs.makeDirectory(directory, { recursive: true })
-    const config = { description: entry.description, capabilities: ["*"], flows: [entry.delegate],
-      budget: { tokens: deploymentTokens, milliseconds: deploymentMinutes * 60000 } }
-    const body = `import { Flow } from "@smthrs/core"\nimport { Schema } from "effect"\n// Bundled repository policy ${policy}.\nexport default Flow.make({ description: ${JSON.stringify(entry.description)}, capabilities: ["*"], flows: [${JSON.stringify(entry.delegate)}], budget: { tokens: ${deploymentTokens}, milliseconds: ${deploymentMinutes * 60000} }, input: Schema.Unknown, output: Schema.Unknown })\n`
+    const header = `// Bundled repository policy ${policy}.`
+    const body = entry.flow === undefined
+      ? `import { Flow } from "@smthrs/core"\nimport { Schema } from "effect"\n${header}\nexport default Flow.make({ name: ${JSON.stringify(entry.name)}, description: ${JSON.stringify(entry.description)}, capabilities: ["*"], flows: [${JSON.stringify(entry.delegate)}], budget: { tokens: ${deploymentTokens}, milliseconds: ${deploymentMinutes * 60000} }, input: Schema.Unknown, output: Schema.Unknown })\n`
+      : `import { Flow } from "@smthrs/flow"\nimport { Schema } from "effect"\n${header}\nexport default Flow.make(${JSON.stringify(entry.flow._tag)}, { description: ${JSON.stringify(entry.description)}, capabilities: ["*"], budget: { tokens: ${deploymentTokens}, milliseconds: ${deploymentMinutes * 60000} }, payload: Schema.Unknown, success: Schema.Unknown })\n`
     const file = path.join(directory, "flow.ts")
     const previous = yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => ""))
     if (previous !== body) yield* fs.writeFileString(file, body)
     // Discovery reads ordinary modern declaration bytes. The deployed bundle
     // supplies their exact Flow value; target repos need no package imports.
-    modules.set(path.resolve(file), { body, declaration: CoreFlow.make({ ...config, input: Schema.Unknown, output: Schema.Unknown }) })
+    // The budget rides the written bytes, which is where a catalog reads it.
+    // `Flow.make` has no `budget` option, so the value carries none either.
+    modules.set(path.resolve(file), { body, declaration: entry.flow ?? CoreFlow.make({
+      name: entry.name, description: entry.description, capabilities: ["*"], flows: [entry.delegate],
+      input: Schema.Unknown, output: Schema.Unknown
+    }) })
   }
   /*
    * The authoring pack, written beside the module built-ins as ordinary

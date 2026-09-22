@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Flow and Node builders: the pure plan-time data model of the Smithers harness",
+  "description": "Schema-first flow signatures and metadata over @smthrs/flow: one options object that lowers to a declared action and the flow that calls it",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -46,7 +46,6 @@
     "./Markdown": "./src/Markdown.ts",
     "./Node": "./src/Node.ts",
     "./Placement": "./src/Placement.ts",
-    "./TestRuntime": "./src/TestRuntime.ts",
     "./index": "./src/index.ts"
   },
   "files": [
@@ -168,16 +167,6 @@
           "default": "./dist/cjs/Placement.js"
         }
       },
-      "./TestRuntime": {
-        "import": {
-          "types": "./dist/esm/TestRuntime.d.ts",
-          "default": "./dist/esm/TestRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/TestRuntime.d.ts",
-          "default": "./dist/cjs/TestRuntime.js"
-        }
-      },
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",
@@ -202,6 +191,7 @@
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.0",
     "@smthrs/crypto": "1.0.0-rc.0",
+    "@smthrs/flow": "1.0.0-rc.0",
     "@smthrs/plan": "1.0.0-rc.0",
     "yaml": "2.9.0"
   },
@@ -210,6 +200,7 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
+    "@smthrs/engine": "1.0.0-rc.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

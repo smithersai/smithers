@@ -12,6 +12,13 @@
  * entry, register its body with the runtime, and swap the snapshot the
  * `Catalog` service answers with — without restarting the host and without
  * replacing the service object readers captured at startup.
+ *
+ * Both kinds of entry are exercised, because a rebuild means a different thing
+ * to each. A `flows/<id>/flow.ts` is one `@smthrs/flow` declaration and IS its
+ * own delegate, so what an edit changes is the BODY the host runs, and the
+ * proof is that the new bytes are imported rather than the module cache's
+ * answer. A markdown entry names a delegate the host registered, so what an
+ * edit changes is WHICH registered flow it reaches.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
@@ -36,7 +43,7 @@ const Probe = Action.make("refresh/Probe", { payload: { step: Schema.String }, s
 const drafts = (flow: Executable.Executable["flow"]) =>
   Graph.drafts(Graph.build(flow, { input: {} })).map((draft) => draft.id)
 
-/** The delegate the authored declarations name. Its body is the plan's graph. */
+/** The delegate a markdown declaration names. Its body is the plan's graph. */
 const Delegate = Flow.make("refresh/Delegate", {
   payload: Executable.Invocation,
   success: Schema.Unknown,
@@ -52,16 +59,61 @@ const Other = Flow.make("refresh/Other", {
   body: () => Probe.call({ step: "only" })
 })
 
-const declaration = (delegate: string) =>
-  `import { Flow } from "@smthrs/core"
-import { Schema } from "effect"
-export default Flow.make({
+/** The two-step body, as source text: the topology an edit can take away. */
+const chained = `Node.andThen(Probe.call({ step: "first" }), Probe.call({ step: "second" }))`
+
+/** The one-step body, as source text. */
+const single = `Probe.call({ step: "only" })`
+
+/**
+ * A flow file in the one shape every `flows/<id>/flow.ts` takes: one
+ * `@smthrs/flow` declaration, named, whose body is the whole of what the entry
+ * runs. It names no collaborator, so it is its own delegate.
+ */
+const declaration = (name: string, body: string) =>
+  `import { Action, Flow } from "@smthrs/flow"
+${body.includes("Node.") ? `import { Node } from "@smthrs/plan"\n` : ""}import { Schema } from "effect"
+
+const Probe = Action.make("refresh/Probe", { payload: { step: Schema.String }, success: Schema.String })
+
+export default Flow.make(${JSON.stringify(`refresh/${name}`)}, {
   description: "Written after the catalog was built",
-  input: Schema.Struct({}),
-  output: Schema.Unknown,
-  flows: [${JSON.stringify(delegate)}],
-  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+  payload: {},
+  success: Schema.Unknown,
+  body: () => ${body}
 })
+`
+
+/**
+ * The half-finished edit an agent leaves behind: discovery parses it, and the
+ * sibling it imports is not there, so the host cannot pin what it would run.
+ */
+const halfWritten = (name: string) =>
+  `import { Flow } from "@smthrs/flow"
+import { Schema } from "effect"
+import { body } from "./body.ts"
+
+export default Flow.make(${JSON.stringify(`refresh/${name}`)}, {
+  description: "Written after the catalog was built",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+  payload: {},
+  success: Schema.Unknown,
+  body
+})
+`
+
+/** A markdown entry, which declares WHAT to run and leaves HOW to a delegate. */
+const markdown = (delegate: string) =>
+  `---
+description: Written after the catalog was built
+flows: [${delegate}]
+capabilities: []
+---
+
+Hand this to the flow the frontmatter names.
 `
 
 /** Every registration the runtime was asked for, in order. */
@@ -84,7 +136,7 @@ const withProject = <A, E>(
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".refresh-" })
     yield* fs.makeDirectory(`${root}/flows/early`, { recursive: true })
-    yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Delegate"))
+    yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
     return yield* use(root).pipe(
       Effect.provide(
         Executable.layer({ delegates: [Delegate, Other] }).pipe(
@@ -107,10 +159,10 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
-        expect(registered).toEqual(["early"])
+        expect(registered).toEqual(["early", "refresh/early"])
 
         yield* fs.makeDirectory(`${root}/flows/late`, { recursive: true })
-        yield* fs.writeFileString(`${root}/flows/late/flow.ts`, declaration("refresh/Delegate"))
+        yield* fs.writeFileString(`${root}/flows/late/flow.ts`, declaration("late", chained))
         // Nothing has looked at the disk yet, so the snapshot is unchanged.
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
 
@@ -119,13 +171,42 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         // The SAME service object a reader captured at startup answers with
         // the new entry: a swapped snapshot, not a swapped service.
         expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["early", "late"])
-        expect(registered).toEqual(["early", "late"])
+        // The bridged flow the registry name resolves to, and the flow it
+        // calls: a module that is its own flow registers both.
+        expect(registered).toEqual(["early", "refresh/early", "late", "refresh/late"])
 
-        // The plan this host would now draw for `late` is its delegate's own
+        // The plan this host would now draw for `late` is the declaration's own
         // topology, keyed nodes and all, rather than the empty one a missing
         // executable leaves behind.
         const late = catalog.executables.find((entry) => entry.descriptor.name === "late")!
+        expect(late.delegate).toBeUndefined()
         expect(drafts(late.flow)).toContain("root.flow.flow.andThen")
+      }))
+  }, 60_000)
+
+  it.effect("runs the body the edited bytes declare, past the module cache", () => {
+    const registered: Array<string> = []
+    return withProject(registered, (root) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const catalog = yield* Executable.Catalog
+        const refresh = yield* Executable.Refresh
+        const before = catalog.executables.find((entry) => entry.descriptor.name === "early")!
+        // The module IS the flow, so there is no delegate to name: what an
+        // edit moves is the body, and only new bytes can show it moved.
+        expect(before.delegate).toBeUndefined()
+
+        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
+        expect((yield* refresh.flow("early"))._tag).toBe("Registered")
+
+        const after = catalog.executables.find((entry) => entry.descriptor.name === "early")!
+        // The import cache cannot answer this: the second build reads the new
+        // bytes under a new content address and imports those.
+        expect(after.delegate).toBeUndefined()
+        expect(after.descriptor.body.contentDigest).not.toBe(before.descriptor.body.contentDigest)
+        expect(drafts(before.flow)).toContain("root.flow.flow.andThen")
+        expect(drafts(after.flow)).not.toContain("root.flow.flow.andThen")
+        expect(catalog.executables.filter((entry) => entry.descriptor.name === "early")).toHaveLength(1)
       }))
   }, 60_000)
 
@@ -136,20 +217,23 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const fs = yield* FileSystem.FileSystem
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
-        const before = catalog.executables.find((entry) => entry.descriptor.name === "early")!
+        yield* fs.makeDirectory(`${root}/flows/moved`, { recursive: true })
+        yield* fs.writeFileString(`${root}/flows/moved/flow.mdx`, markdown("refresh/Delegate"))
+        expect((yield* refresh.flow("moved"))._tag).toBe("Registered")
+        const before = catalog.executables.find((entry) => entry.descriptor.name === "moved")!
         expect(before.delegate).toBe("refresh/Delegate")
 
-        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Other"))
-        expect((yield* refresh.flow("early"))._tag).toBe("Registered")
+        yield* fs.writeFileString(`${root}/flows/moved/flow.mdx`, markdown("refresh/Other"))
+        expect((yield* refresh.flow("moved"))._tag).toBe("Registered")
 
-        const after = catalog.executables.find((entry) => entry.descriptor.name === "early")!
-        // The import cache cannot answer this: the second build reads the new
-        // bytes under a new content address and imports those.
+        const after = catalog.executables.find((entry) => entry.descriptor.name === "moved")!
+        // A cached descriptor cannot answer this: the second build reads the
+        // frontmatter now on disk.
         expect(after.delegate).toBe("refresh/Other")
         expect(after.descriptor.body.contentDigest).not.toBe(before.descriptor.body.contentDigest)
         expect(drafts(before.flow)).toContain("root.flow.flow.andThen")
         expect(drafts(after.flow)).not.toContain("root.flow.flow.andThen")
-        expect(catalog.executables.filter((entry) => entry.descriptor.name === "early")).toHaveLength(1)
+        expect(catalog.executables.filter((entry) => entry.descriptor.name === "moved")).toHaveLength(1)
       }))
   }, 60_000)
 
@@ -161,7 +245,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         yield* fs.makeDirectory(`${root}/flows/orphan`, { recursive: true })
-        yield* fs.writeFileString(`${root}/flows/orphan/flow.ts`, declaration("refresh/Nobody"))
+        yield* fs.writeFileString(`${root}/flows/orphan/flow.mdx`, markdown("refresh/Nobody"))
 
         const outcome = yield* refresh.flow("orphan")
         expect(outcome._tag).toBe("Refused")
@@ -170,7 +254,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         expect(outcome.error.delegate).toBe("refresh/Nobody")
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
         expect(catalog.refused.map((failure) => failure.flow)).toEqual(["orphan"])
-        expect(registered).toEqual(["early"])
+        expect(registered).toEqual(["early", "refresh/early"])
       }))
   }, 60_000)
 
@@ -180,19 +264,19 @@ describe("rebuilding one catalog entry without restarting the host", () => {
       const fs = yield* FileSystem.FileSystem
       const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".refresh-" })
       yield* fs.makeDirectory(`${root}/flows/early`, { recursive: true })
-      yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Delegate"))
+      yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         const before = catalog.executables.find((entry) => entry.descriptor.name === "early")!
-        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Other"))
+        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
 
         // A host serving part of its catalog out of its own measured bundle
         // answers `false` for those entries: the working tree is not where
         // their bytes come from.
         expect((yield* refresh.flow("early"))._tag).toBe("Fixed")
         expect(catalog.executables.find((entry) => entry.descriptor.name === "early")).toBe(before)
-        expect(registered).toEqual(["early"])
+        expect(registered).toEqual(["early", "refresh/early"])
       }).pipe(
         Effect.provide(
           Executable.layer({ delegates: [Delegate, Other], refreshable: () => false }).pipe(
@@ -216,29 +300,32 @@ describe("rebuilding one catalog entry without restarting the host", () => {
           const catalog = yield* Executable.Catalog
           const refresh = yield* Executable.Refresh
           yield* fs.makeDirectory(`${root}/flows/other`, { recursive: true })
-          yield* fs.writeFileString(`${root}/flows/other/flow.ts`, declaration("refresh/Other"))
+          yield* fs.writeFileString(`${root}/flows/other/flow.ts`, declaration("other", single))
           expect((yield* refresh.flow("other"))._tag).toBe("Registered")
           const other = catalog.executables.find((entry) => entry.descriptor.name === "other")!
 
           // A refusal takes the entry out and records why.
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Nobody"))
-          expect((yield* refresh.flow("early"))._tag).toBe("Refused")
+          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, halfWritten("early"))
+          const refusal = yield* refresh.flow("early")
+          expect(refusal._tag).toBe("Refused")
+          if (refusal._tag !== "Refused") return
+          expect(refusal.error.code).toBe("body_unavailable")
           expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["other"])
           expect(catalog.refused.map((failure) => failure.flow)).toEqual(["early"])
 
           // Repairing the file puts it back and drops the refusal with it.
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Delegate"))
+          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
           expect((yield* refresh.flow("early"))._tag).toBe("Registered")
           expect(catalog.refused).toEqual([])
           expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["early", "other"])
 
           // And rebuilding it again replaces only itself: every other entry is
           // the same object the host was already serving.
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("refresh/Other"))
+          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
           expect((yield* refresh.flow("early"))._tag).toBe("Registered")
           expect(catalog.executables.find((entry) => entry.descriptor.name === "other")).toBe(other)
-          expect(catalog.executables.find((entry) => entry.descriptor.name === "early")!.delegate)
-            .toBe("refresh/Other")
+          expect(drafts(catalog.executables.find((entry) => entry.descriptor.name === "early")!.flow))
+            .not.toContain("root.flow.flow.andThen")
         })),
     60_000
   )

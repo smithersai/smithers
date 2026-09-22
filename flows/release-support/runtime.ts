@@ -16,7 +16,9 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import { hostname } from "node:os"
 import { dirname } from "node:path"
+import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.ts"
+import ReleaseFlow from "../release/flow.ts"
 import * as Release from "../release/workflow.ts"
 import { actionLayers } from "./operations.ts"
 import { relativePath } from "./io.ts"
@@ -87,8 +89,8 @@ export const runtime = (options: {
     actionLayers({ root: options.root, evaluator, reviewDirectory: relativePath(options.root, dirname(options.filename)) }),
     agentLayers(liveSeats(options.model), options.maxTokens, evaluator),
     HumanTask.layer,
-    Interpreter.layer(Content.ReleaseContent),
-    Interpreter.layer(Release.Release)
+    Interpreter.layer(ReleaseContent),
+    Interpreter.layer(ReleaseFlow)
   ).pipe(Layer.provideMerge(Action.layerImplementations))
   return NodeRuntime.layerHost({
     filename: options.filename,

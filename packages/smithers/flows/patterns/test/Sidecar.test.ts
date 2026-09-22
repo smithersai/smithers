@@ -1,5 +1,7 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
+import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Latch from "effect/Latch"
@@ -7,15 +9,22 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as Sidecar from "../src/Sidecar.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const flowNamed = (capability: string): Flow.Any =>
-  Flow.make({
-    name: capability,
+const flowNamed = (capability: string) =>
+  Flow.make(capability, {
     capabilities: [capability],
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: (input) => Node.succeed(input)
+    payload: {
+      input: Schema.Unknown,
+      primary: Schema.optional(Schema.Unknown),
+      shadow: Schema.optional(Schema.Unknown)
+    },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: ({ input }) => Node.succeed(input)
   })
+
+const prompt = { input: "prompt" }
 
 const primary = flowNamed("sidecar/primary")
 const shadow = flowNamed("sidecar/shadow")
@@ -51,17 +60,10 @@ const invalidScores = [
   }
 ] as const
 
-const callsTo = (graph: Graph.Graph, capability: string): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) =>
-    node.kind === "FlowCall" &&
-    (node.keyMaterial.body as { readonly capabilities?: ReadonlyArray<string> }).capabilities?.includes(capability) ===
-      true
-  )
-
 describe("Sidecar", () => {
   it("declares the primary and the shadow as one concurrent All", () => {
     const pattern = Sidecar.make({ primary, shadow })
-    const graph = Graph.build(pattern, "prompt")
+    const graph = Graph.build(pattern, prompt)
 
     expect(Flow.isFlow(pattern)).toBe(true)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
@@ -70,16 +72,25 @@ describe("Sidecar", () => {
     expect(callsTo(graph, "sidecar/score")).toHaveLength(0)
   })
 
+  it("keeps the caller's name and description on the declared flow", () => {
+    const pattern = Sidecar.make({ primary, shadow, name: "cheap-check", description: "Compare the two models." })
+
+    expect(pattern._tag).toBe("cheap-check")
+    expect(pattern.description).toBe("Compare the two models.")
+    expect(Sidecar.make({ primary, shadow }).description).toBeUndefined()
+  })
+
   it("puts the shadow behind a catch and leaves the primary bare", () => {
-    const graph = Graph.build(Sidecar.make({ primary, shadow }), "prompt")
+    const graph = Graph.build(Sidecar.make({ primary, shadow }), prompt)
 
     // One arm, on the shadow. A sidecar is not a fallback ladder: a failed
     // primary is a failed run, so the primary must not gain an arm of its own.
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(1)
-    expect(Graph.nodes(graph).find((node) => node.id.endsWith("all.shadow.recover"))?.keyMaterial.body).toEqual({
-      _tag: "Succeed",
-      value: { error: { _tag: "PlannedInput", path: [] }, quarantined: true }
-    })
+    // The marker the arm produces lives on the node's payload, and the error
+    // inside it is the planned reference to the shadow it recovers.
+    const recovery = Graph.nodes(graph).find((node) => node.id.endsWith("all.shadow.failure"))
+    expect(recovery?.draft.material.body).toEqual({ _tag: "Succeed" })
+    expect(recovery?.payload).toMatchObject({ quarantined: true })
     expect(Graph.diagnostics(graph).map(({ code, path }) => ({ code, path }))).toEqual([
       { code: "capability_outside_grant", path: ["sidecar/primary"] },
       { code: "capability_outside_grant", path: ["sidecar/shadow"] }
@@ -87,21 +98,21 @@ describe("Sidecar", () => {
   })
 
   it("hands the scorer the pair run hands it", () => {
-    const graph = Graph.build(Sidecar.make({ primary, shadow, score }), "prompt")
+    const graph = Graph.build(Sidecar.make({ primary, shadow, score }), prompt)
 
     // The scorer reads the shadow's VALUE, not its quarantine wrapper, so the
-    // declared scorer input is the same object `run` builds.
-    expect(Graph.nodes(graph).find((node) => node.id.endsWith("then.map.flow"))?.keyMaterial.body).toEqual({
-      _tag: "Succeed",
-      value: {
-        primary: { _tag: "PlannedInput", path: ["primary"] },
-        shadow: { _tag: "PlannedInput", path: ["shadow", "value"] }
-      }
-    })
+    // declared scorer payload names those two planned paths. Core recorded the
+    // same two paths as `PlannedInput` entries in the node's key material;
+    // `@smthrs/flow` keeps them as planned references on the payload.
+    const scorer = callsTo(graph, "sidecar/score")[0]!
+    const path = (value: unknown) => Planned.reference(value)?.path
+
+    expect(path(payloadOf(scorer).primary)).toEqual(["primary"])
+    expect(path(payloadOf(scorer).shadow)).toEqual(["shadow", "value"])
   })
 
   it("declares the scorer call when one is configured", () => {
-    const graph = Graph.build(Sidecar.make({ primary, shadow, score }), "prompt")
+    const graph = Graph.build(Sidecar.make({ primary, shadow, score }), prompt)
 
     expect(callsTo(graph, "sidecar/score")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)

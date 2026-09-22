@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -10,14 +10,22 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as CheckSuite from "../src/CheckSuite.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const step = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
-})
+const checkFlow = (tag: string, answer: () => Node.Node<unknown, unknown, never>) =>
+  Flow.make(tag, {
+    payload: { check: Schema.Unknown, input: Schema.Unknown },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: answer
+  })
+
+const step = checkFlow("check", () => Node.succeed({ ok: true }))
 
 const checks = { lint: step, typecheck: step, test: step }
+
+const head = { input: "head" }
 
 const results = [
   { id: "lint", passed: true },
@@ -53,22 +61,17 @@ describe("CheckSuite", () => {
           const options = { strategy: "majority" as const, concurrency: 2, continueOnFail }
           const suite = CheckSuite.make({
             ...options,
-            checks: Object.fromEntries(classified.map(({ id, passed }) => [
-              id,
-              Flow.make({
-                input: Schema.Unknown,
-                output: Schema.Unknown,
-                body: () => Node.succeed({ passed })
-              })
-            ]))
+            checks: Object.fromEntries(
+              classified.map(({ id, passed }) => [id, checkFlow(`check-${id}`, () => Node.succeed({ passed }))])
+            )
           })
-          if (suite.body === undefined) throw new Error("suite has no body")
-          const declared = TestRuntime.evaluateInline(suite.body("head"))
-          if (Result.isFailure(declared)) throw declared.failure
+          const declared = yield* Effect.promise(() =>
+            execute(suite, head, `majority-${passing}-${total}-${continueOnFail}`)
+          )
 
           // Compare complete outcomes for the reducer and both execution paths.
           expect(CheckSuite.verdict(classified, "majority")).toEqual(expected)
-          expect(declared.success).toEqual(expected)
+          expect(declared).toEqual(expected)
           expect(
             yield* CheckSuite.run("head", {
               ...options,
@@ -78,6 +81,15 @@ describe("CheckSuite", () => {
         }))
     }
   }
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const options = { checks, strategy: "all-pass" as const, concurrency: 1, continueOnFail: false }
+    const suite = CheckSuite.make({ ...options, name: "ci", description: "Run every gate." })
+
+    expect(suite._tag).toBe("ci")
+    expect(suite.description).toBe("Run every gate.")
+    expect(CheckSuite.make(options).description).toBeUndefined()
+  })
 
   it("decodes quarantine envelopes only with the documented third argument", () => {
     const values = { test: { _tag: "Succeeded", member: "test", value: { passed: false } } }
@@ -120,15 +132,29 @@ describe("CheckSuite", () => {
         const suite = CheckSuite.make({
           ...options,
           checks: {
-            lint: step,
-            [id]: Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.fail(error) })
+            lint: checkFlow("lint", () => Node.succeed({ ok: true })),
+            [id]: checkFlow("boom", () => Node.fail(error))
           }
         })
-        if (suite.body === undefined) throw new Error("suite has no body")
-        const declared = TestRuntime.evaluateInline(suite.body("head"))
-        if (Result.isFailure(declared)) throw declared.failure
-        expect(declared.success).toStrictEqual(expected)
-        expect((declared.success as CheckSuite.Verdict).errors[id]).toBe(error)
+        if (error instanceof Error) {
+          // A plan stores a failure as data. `@smthrs/plan` refuses an `Error`
+          // instance outright rather than storing `{}` for it, which is what
+          // `@smthrs/core` did. The tolerated-error contract is asserted for
+          // every data-valued failure below and by `run` for this one.
+          yield* Effect.promise(() =>
+            execute(suite, head, `tolerated-${String(error)}`).then(
+              () => expect.fail("a plan must refuse an Error instance as a declared failure"),
+              (refusal: unknown) =>
+                expect(String((refusal as { readonly message?: unknown }).message)).toContain(
+                  "unsupported prototype"
+                )
+            )
+          )
+        } else {
+          const declared = yield* Effect.promise(() => execute(suite, head, `tolerated-${String(error)}`))
+          expect(declared).toStrictEqual(expected)
+          expect((declared as CheckSuite.Verdict).errors[id]).toStrictEqual(error)
+        }
 
         const executed = yield* CheckSuite.run("head", {
           ...options,
@@ -226,8 +252,8 @@ describe("CheckSuite", () => {
     const suite = CheckSuite.make({ checks, strategy: "all-pass", concurrency: 3, continueOnFail: false })
 
     expect(Flow.isFlow(suite)).toBe(true)
-    const graph = Graph.build(suite, "head")
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
+    const graph = Graph.build(suite, head)
+    expect(callsTo(graph, "check")).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(1)
     expect(Graph.diagnostics(graph)).toEqual([])
@@ -236,13 +262,13 @@ describe("CheckSuite", () => {
   it("declares one recovery arm per check when continueOnFail is true", () => {
     const suite = CheckSuite.make({ checks, strategy: "all-pass", concurrency: 3, continueOnFail: true })
 
-    const graph = Graph.build(suite, "head")
+    const graph = Graph.build(suite, head)
     // One Catch per check is what makes the tolerant suite tolerant in the
     // PLAN and not only at run time: the join can no longer fail on a check's
     // behalf, so a failing check does not interrupt its siblings.
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
+    expect(callsTo(graph, "check")).toHaveLength(3)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
@@ -264,13 +290,15 @@ describe("CheckSuite", () => {
   it("batches declared check calls at the concurrency bound", () => {
     const graph = Graph.build(
       CheckSuite.make({ checks, strategy: "all-pass", concurrency: 2, continueOnFail: false }),
-      "head"
+      head
     )
 
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
+    expect(callsTo(graph, "check")).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
-    // one merge between the two batches, plus the verdict
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(2)
+    // The batches no longer merge through a `Map`: the rows a batch produced
+    // are carried on as planned references and assembled once, so the only
+    // `Map` left is the verdict.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(1)
   })
 
   it("rejects an empty suite, an empty id, and an invalid concurrency", () => {
@@ -294,16 +322,9 @@ describe("CheckSuite", () => {
   it("names one graph member per check id", () => {
     const graph = Graph.build(
       CheckSuite.make({ checks, strategy: "all-pass", concurrency: 3, continueOnFail: false }),
-      "head"
+      head
     )
-    const named = Graph.nodes(graph)
-      .filter((node) => node.kind === "FlowCall")
-      .map((node) => {
-        const first = node.keyMaterial.inputs[0]
-        return first !== undefined && first._tag === "Literal"
-          ? (first.value as { readonly check?: unknown }).check
-          : undefined
-      })
+    const named = callsTo(graph, "check").map((node) => payloadOf(node).check)
 
     expect(named.sort()).toEqual(["lint", "test", "typecheck"])
   })
@@ -496,7 +517,7 @@ describe("CheckSuite", () => {
   it("gives a tolerant suite and a fail-fast suite different topology and different identity", () => {
     const material = (continueOnFail: boolean) =>
       Graph.nodes(
-        Graph.build(CheckSuite.make({ checks, strategy: "all-pass", concurrency: 3, continueOnFail }), "head")
+        Graph.build(CheckSuite.make({ checks, strategy: "all-pass", concurrency: 3, continueOnFail }), head)
       )
 
     const tolerant = material(true)
@@ -506,6 +527,8 @@ describe("CheckSuite", () => {
     // plain All that interrupts the siblings of a failing check.
     expect(tolerant.filter((node) => node.kind === "Catch")).toHaveLength(3)
     expect(failFast.filter((node) => node.kind === "Catch")).toHaveLength(0)
-    expect(tolerant.map((node) => node.keyMaterial.body)).not.toEqual(failFast.map((node) => node.keyMaterial.body))
+    expect(tolerant.map((node) => node.draft.material.body)).not.toEqual(
+      failFast.map((node) => node.draft.material.body)
+    )
   })
 })

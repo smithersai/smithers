@@ -84,7 +84,8 @@ describe("FileRouter", () => {
     if (sep !== "/") return
     const temporary = await mkdtemp(`${tmpdir()}/smithers-fs-router-`)
     try {
-      const source = `import { Flow } from "@smthrs/core"\nexport default Flow.make({ description: "fixture" })\n`
+      const source =
+        `import { Flow } from "@smthrs/core"\nexport default Flow.make({ name: "fixture", description: "fixture" })\n`
       await mkdir(`${temporary}/a\\b`, { recursive: true })
       await mkdir(`${temporary}/a/b`, { recursive: true })
       await writeFile(`${temporary}/a\\b/flow.ts`, source)

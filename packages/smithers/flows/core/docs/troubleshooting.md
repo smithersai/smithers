@@ -89,8 +89,9 @@ node or the value path that crossed a limit. These are not recorded
 diagnostics: a plan that crosses a limit is not something to inspect, it is
 something the package declined to materialize.
 
-Each limit is exported, so a test can assert on the boundary and a generator
-can stay inside it. See [Build limits](./concepts/limits.md) for the table.
+`Graph.maximumGraphDepth` is exported, so a test can assert on the boundary and
+a generator can stay inside it. [`@smthrs/flow`](/api/flow) documents every
+bound it enforces.
 
 The usual cause is a generated declaration, or a loop that composes nodes
 without a bound. `graph_too_deep` after a recursive builder means the recursion
@@ -99,9 +100,8 @@ has no base case that stops at 512.
 ## Failures that are recorded
 
 Read them with `Graph.diagnostics`. Every code except
-`capability_outside_grant` is fatal, which means `Graph.keyMaterial` returns
-`Result.fail` carrying that diagnostic unchanged. `Graph.isFatalDiagnostic`
-reports which is which.
+`capability_outside_grant` is fatal, which means `Graph.drafts` refuses the
+graph rather than compiling a plan the builder called invalid.
 
 ### effect_outside_envelope
 
@@ -151,8 +151,7 @@ Raise the enclosing flow's tier to cover the step, or lower the step's.
 
 Two work nodes declared overlapping writes and at least one of them declared
 `onConflict: "fail"`. This is fatal by design: it is what `fail` is for. `node`
-names the first of the pair and the message names both; `Graph.conflicts`
-carries the pair as data.
+names the first of the pair and the message names both.
 
 Fix the declarations so only one node writes the path, or change the strategy.
 `serialize` orders the two writers with a `conflict` edge; `lane` gives each a
@@ -192,15 +191,15 @@ const graph = Graph.build(Node.all({
 ```
 
 Both leaves have id `root.all.a.all.b`. `Graph.diagnostics(graph)` records
-`duplicate_node`, and `Graph.keyMaterial(graph)` refuses the graph.
+`duplicate_node`, and `Graph.drafts(graph)` refuses the graph.
 Rename the colliding member, for example from `"a.all.b"` to `"other"`.
 Dotted member names are allowed when their structural ids are unambiguous.
 
 ### missing_key_material
 
-A node reached `Graph.keyMaterial` without key material. This does not arise
-from ordinary declarations. If you see it from a graph `Graph.build` produced,
-report a package defect.
+A node reached draft compilation without key material. This does not arise from
+ordinary declarations. If you see it from a graph `Graph.build` produced, report
+a package defect.
 
 ## Behavior that is not an error
 
@@ -208,9 +207,8 @@ report a package defect.
 
 The step's mapper, continuation, or flow body has process-local identity, which
 is what an unannotated function gets. Declare what the function closes over
-with `Node.capture` and the algorithm becomes
-`sha256-source-captures/v4`. See
-[Keep a step key stable across processes](./guides/keep-a-step-key-stable.md).
+with `Node.capture` and the algorithm becomes `sha256-source-captures/v4`. See
+[Identity and key material](./concepts/identity.md).
 
 ### A plan contains the text `[planned:...]`
 
@@ -238,10 +236,9 @@ produces it.
 
 ### No conflicts, despite overlapping writes
 
-Only `Dynamic` nodes are writers for conflict analysis. A plan built from
-`Node.succeed` and flow calls records no conflicts however its declarations
-overlap. Reach the conflict through `Node.dynamic` nodes, or through flows
-whose bodies contain them.
+A container node is not a second writer for the children it encloses, and a
+plan built from `Node.succeed` alone contains no work to conflict.
+[`@smthrs/flow`](/api/flow) states which node kinds count as writers.
 
 ### A graph will not accept a mutation
 
@@ -249,21 +246,21 @@ whose bodies contain them.
 the graph's own values rather than copies. Copy what you need before you edit
 it.
 
-### TestRuntime reports missing_operation or missing_flow
+### A declaration that crossed a process boundary will not plan
 
-Node ASTs and their side tables are process-local. Deferred callbacks and flow
-references live in weak maps beside the AST; losing them can produce these
-evaluation errors. `Graph.build` also needs live Effect `Context` annotations
-and in-memory continuation associations. A JSON round trip loses the `Context`
-identity, so even a constant declaration fails planning with `invalid_node`.
+Node ASTs and their side tables are process-local. Deferred callbacks and call
+declarations live in weak maps beside the AST, and `Graph.build` needs live
+Effect `Context` annotations and in-memory continuation associations. A JSON
+round trip loses the `Context` identity, so even a constant declaration fails
+planning with `invalid_node`.
 
-There is no Node AST serialization contract. Evaluate the declaration in the
-process that built it, or rebuild it in the receiving process before planning
-or evaluating. For later inspection, persist the built graph or the
-projections you need from its getters.
+There is no Node AST serialization contract. Plan the declaration in the process
+that built it, or rebuild it in the receiving process first. For later
+inspection, persist the built graph or the projections you need from its
+getters.
 
 ## Where to go next
 
 - [Plan time](./concepts/plan-time.md): why the failures split the way they do.
-- [Inspect a built graph](./guides/inspect-a-graph.md): reading diagnostics
-  alongside everything else the graph reports.
+- [Declare a flow](./guides/declare-a-flow.md): the constructor and the
+  combinators these failures come from.

@@ -1,5 +1,19 @@
+/**
+ * `DelegationChain` on `@smthrs/flow`'s `Graph.build`.
+ *
+ * Every assertion is the one it was: how many calls a chain declares, what
+ * each declared call is handed, which retry decorator the tier ladder carries,
+ * and every refusal. Three readings moved: a call's declared payload is
+ * `node.payload` rather than the first `Literal` of `keyMaterial.inputs`, a
+ * `Succeed` node's value is its payload too, and a member call is found by the
+ * flow tag it names rather than by a capability planted on it.
+ *
+ * What is NEW is the arm pair at the end: a leaf review is a `Node.branch`,
+ * so the plan carries the settled arm and the next tier before anything runs.
+ */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
@@ -8,14 +22,34 @@ import { expect } from "vitest"
 import * as DelegationChain from "../src/DelegationChain.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as Trellis from "../src/Trellis.ts"
+import { execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const stub = (name: string): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, never> =>
-  Flow.make({
-    name,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: (input) => Node.succeed(input)
-  })
+/**
+ * One stub member, named by its role.
+ *
+ * `Graph.build` records a call's payload and the callee's schema IDENTITY; it
+ * decodes nothing, and no case here executes the declaration. So one opaque
+ * payload stands for every role the chain calls, and what each member is
+ * HANDED is asserted from `node.payload`.
+ */
+/**
+ * A scripted member: a real `@smthrs/flow` flow, type-erased.
+ *
+ * `Flow.Any` states a declaration's schemas and annotations but not `.call`,
+ * which is what a pattern member is called through, and a flow's `Requires`
+ * names the actions its body reaches. Erasing both is what lets one
+ * declaration compose members backed by different actions.
+ */
+type Scripted = Flow.Any & { readonly call: (payload: never) => Node.Node<unknown, unknown, never> }
+
+const stub = (name: string): Scripted =>
+  Flow.make(name, {
+    payload: { input: Schema.Unknown },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ name }, (payload: unknown) => Node.succeed(payload))
+  }) as unknown as Scripted
 
 const makeOptions: DelegationChain.MakeOptions = {
   refine: stub("refine"),
@@ -41,38 +75,20 @@ const bounds = { tierOrder: ["weak", "strong"], maxDepth: 3, maxDeriskRounds: 2,
 
 const budget: DelegationChain.Budget = { maxUsd: 5 }
 
-const tagged = (name: string, capability: string): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, never> =>
-  Flow.make({
-    name,
-    capabilities: [capability],
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: (input) => Node.succeed(input)
-  })
-
-const payload = (node: Graph.GraphNode): Record<string, unknown> =>
-  (node.keyMaterial.inputs as ReadonlyArray<{ readonly _tag: string; readonly value?: unknown }>)
-    .find((input) => input._tag === "Literal")?.value as Record<string, unknown>
-
-const callsTagged = (graph: Graph.Graph, capability: string): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) =>
-    node.kind === "FlowCall" &&
-    ((node.keyMaterial.body as { readonly capabilities?: ReadonlyArray<string> }).capabilities ?? []).includes(
-      capability
-    )
-  )
-
 const keys = (value: Record<string, unknown>): ReadonlyArray<string> => Object.keys(value).sort()
 
 class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", { tier: Schema.String }) {}
 
+/** Every member call a chain declares, which excludes the entry call itself. */
+const memberCalls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
+  Graph.nodes(graph).filter((node) => node.kind === "FlowCall" && node.id !== "root")
+
 // The declared retry decorator names the policy it carries, so the declaration
-// says what a run spends.
+// says what a run spends. `@smthrs/flow` keeps a `Succeed`'s value on the
+// node's payload, where `@smthrs/core` kept it inside `keyMaterial.body`.
 const decorators = (graph: Graph.Graph): ReadonlyArray<string> =>
   Graph.nodes(graph).flatMap((node) => {
-    const value = (node.keyMaterial.body as {
-      readonly value?: { readonly _tag?: string; readonly name?: string }
-    }).value
+    const value = node.payload as { readonly _tag?: string; readonly name?: string } | undefined
     return value?._tag === "Decorator" && typeof value.name === "string" ? [value.name] : []
   })
 
@@ -377,11 +393,9 @@ describe("DelegationChain", () => {
 
   it("declares the documented number of flow calls", () => {
     const chain = DelegationChain.make(makeOptions)
-    const graph = Graph.build(chain, "ship it")
-    const calls = Graph.nodes(graph).filter((node) => node.kind === "FlowCall")
-
+    const graph = Graph.build(chain, { input: "ship it" })
     expect(Flow.isFlow(chain)).toBe(true)
-    expect(calls).toHaveLength(DelegationChain.bound(makeOptions))
+    expect(memberCalls(graph)).toHaveLength(DelegationChain.bound(makeOptions))
     // 4 fixed calls + 2 per derisk round + one escalation ladder per depth slot.
     expect(DelegationChain.bound(makeOptions)).toBe(22)
   })
@@ -424,19 +438,10 @@ describe("DelegationChain", () => {
         settle: (request) => Effect.sync(() => (settlement = keys(request as never), request.leaves))
       })
 
-      const graph = Graph.build(
-        DelegationChain.make({
-          ...makeOptions,
-          budget,
-          execute: { weak: tagged("weak", "tier/weak"), strong: tagged("strong", "tier/strong") },
-          review: tagged("review", "chain/review"),
-          settle: tagged("settle", "chain/settle")
-        }),
-        "ship it"
-      )
-      const declaredWork = callsTagged(graph, "tier/weak").map(payload)
-      const declaredReviews = callsTagged(graph, "chain/review").map(payload)
-      const declaredSettle = payload(callsTagged(graph, "chain/settle")[0] as Graph.GraphNode)
+      const graph = Graph.build(DelegationChain.make({ ...makeOptions, budget }), { input: "ship it" })
+      const declaredWork = callsTo(graph, "weak").map(payloadOf)
+      const declaredReviews = callsTo(graph, "review").map(payloadOf)
+      const declaredSettle = payloadOf(callsTo(graph, "settle")[0] as Graph.GraphNode)
 
       // One tier call per slot, each carrying the tier it is and the run budget.
       expect(declaredWork).toHaveLength(makeOptions.maxDepth)
@@ -544,15 +549,16 @@ describe("DelegationChain", () => {
       backoff: { initialMs: 100, factor: 2, maxMs: 400 },
       nonRetryable: ["Unauthorized", "Invalid"]
     }
-    const graph = Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1, ...policy }), "ship it")
+    const graph = Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1, ...policy }), { input: "ship it" })
 
     expect(decorators(graph)).toEqual([
       "withRetry(delegationTiers(weak -> strong), attempts=3, backoff=100x2<=400, nonRetryable=Invalid|Unauthorized)"
     ])
     // A chain that declares no policy still declares the plain attempt budget.
-    expect(decorators(Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1 }), "ship it"))).toEqual([
-      "withRetry(delegationTiers(weak -> strong), attempts=3)"
-    ])
+    expect(decorators(Graph.build(DelegationChain.make({ ...makeOptions, maxDepth: 1 }), { input: "ship it" })))
+      .toEqual([
+        "withRetry(delegationTiers(weak -> strong), attempts=3)"
+      ])
   })
 
   it.effect("refuses an invalid backoff before any callback runs", () =>
@@ -618,5 +624,150 @@ describe("DelegationChain", () => {
         message: "execute has no flow for tier absent"
       })
     )
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const named = DelegationChain.make({
+      ...makeOptions,
+      name: "ship-release",
+      description: "Delegate a release down the tier ladder."
+    })
+
+    expect(named._tag).toBe("ship-release")
+    expect(named.description).toBe("Delegate a release down the tier ladder.")
+    expect(DelegationChain.make(makeOptions).description).toBeUndefined()
+  })
+})
+/** Every payload a declared chain stage was handed while the plan ran. */
+const chainCalls: Array<{ readonly role: string; readonly payload: unknown }> = []
+/** The tier whose output the scripted reviewer approves, set per case. */
+let approvesTier = "weak"
+
+const chainStep = Action.make("delegation/step", {
+  payload: { role: Schema.String, payload: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Never
+})
+
+const chainLayer = chainStep.toLayer(({ payload, role }) =>
+  Effect.sync(() => {
+    chainCalls.push({ role, payload })
+    switch (role) {
+      case "refine":
+        return "goal"
+      case "plan":
+        return { agent: { goal: "a" } }
+      case "derisk":
+        return { approved: true }
+      case "review": {
+        const request = payload as { readonly stage?: string; readonly tier?: string }
+        return { approved: request.stage === "chain" || request.tier === approvesTier }
+      }
+      case "settle":
+        return "settled"
+      default:
+        return `${role} result`
+    }
+  })
+)
+
+const opaque = Schema.optionalKey(Schema.Unknown)
+
+/** One scripted chain stage, forwarding whatever payload it is handed. */
+const roleFlow = (role: string, fields: Schema.Struct.Fields): Scripted =>
+  Flow.make(`delegation/${role}`, {
+    payload: fields,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ role }, function(this: { readonly role: string }, payload: unknown) {
+      return chainStep.call({ role: this.role, payload })
+    })
+  }) as unknown as Scripted
+
+const scriptedChain = (): DelegationChain.DelegationChainFlow =>
+  DelegationChain.make({
+    refine: roleFlow("refine", { prompt: opaque }),
+    plan: roleFlow("plan", { input: opaque, output: opaque, review: opaque, round: opaque }),
+    derisk: roleFlow("derisk", { output: opaque }),
+    execute: {
+      weak: roleFlow("weak", { leaf: opaque, tier: opaque, goal: opaque, budget: opaque }),
+      strong: roleFlow("strong", { leaf: opaque, tier: opaque, goal: opaque, budget: opaque })
+    },
+    review: roleFlow("review", {
+      stage: opaque,
+      leaf: opaque,
+      tier: opaque,
+      output: opaque,
+      goal: opaque,
+      plan: opaque,
+      leaves: opaque
+    }),
+    settle: roleFlow("settle", {
+      prompt: opaque,
+      goal: opaque,
+      plan: opaque,
+      leaves: opaque,
+      review: opaque,
+      deriskExhausted: opaque
+    }),
+    tierOrder: ["weak", "strong"],
+    maxDepth: 1,
+    maxDeriskRounds: 1,
+    maxAttempts: 1
+  })
+
+/** Runs one declared chain to settlement against the scripted stages. */
+const settle = (approves: string, executionId: string): Promise<unknown> => {
+  chainCalls.length = 0
+  approvesTier = approves
+  return execute(scriptedChain() as never, { input: "ship it" }, executionId, chainLayer)
+}
+
+describe("DelegationChain declaration execution", () => {
+  it("takes the TRUE arm when the real review approves the weakest tier", async () => {
+    const settled = await settle("weak", "delegation-tier-true-arm")
+
+    expect(settled).toBe("settled")
+    // The strong tier is declared topology the run did not take.
+    expect(chainCalls.map((call) => call.role)).toEqual([
+      "refine",
+      "plan",
+      "derisk",
+      "weak",
+      "review",
+      "review",
+      "settle"
+    ])
+    expect(chainCalls.filter((call) => call.role === "review").map((call) => (call.payload as { tier?: string }).tier))
+      .toEqual(["weak", undefined])
+  })
+
+  it("takes the FALSE arm when the real review refuses the weakest tier", async () => {
+    const settled = await settle("strong", "delegation-tier-false-arm")
+
+    expect(settled).toBe("settled")
+    // The weak tier's output was refused on the real review, so the next rung
+    // ran. A build-time evaluation of the same predicate cannot produce both.
+    expect(chainCalls.map((call) => call.role)).toEqual([
+      "refine",
+      "plan",
+      "derisk",
+      "weak",
+      "review",
+      "strong",
+      "review",
+      "review",
+      "settle"
+    ])
+    expect(chainCalls.filter((call) => call.role === "review").map((call) => (call.payload as { tier?: string }).tier))
+      .toEqual(["weak", "strong", undefined])
+  })
+
+  it("declares both arms of every rung, so a plan carries the topology a run may take", () => {
+    const graph = Graph.build(scriptedChain(), { input: "ship it" })
+
+    // Three decisions: the derisk loop's one approval round, and one rung
+    // decision per tier for the single depth slot.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Branch")).toHaveLength(3)
   })
 })

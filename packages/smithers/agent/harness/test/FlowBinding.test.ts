@@ -31,6 +31,22 @@ const echo = Flow.make({
   effects: { reads: ["/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
 })
 
+/**
+ * A declaration that names nothing.
+ *
+ * Written structurally rather than through a flow constructor, because the
+ * property under test belongs to {@link FlowBinding.catalogResult}: every
+ * constructor the repository ships refuses an anonymous declaration itself, so
+ * building the case through one would assert the constructor's refusal instead
+ * of the catalog's.
+ */
+const nameless = {
+  input: Schema.Struct({}),
+  output: Schema.Struct({}),
+  capabilities: [],
+  effects: undefined
+} as const satisfies FlowBinding.Declared & { readonly input: Schema.Top; readonly output: Schema.Top }
+
 const call = (
   flowName: string,
   input: unknown,
@@ -765,7 +781,7 @@ describe("FlowBinding.catalog", () => {
 
   it("reports the missing name before the duplicate when a binding has neither", () => {
     const anonymous = FlowBinding.make({
-      flow: Flow.make({ input: Schema.Struct({}), output: Schema.Struct({}) }),
+      flow: nameless,
       handler: () => Effect.succeed({})
     })
 
@@ -778,7 +794,7 @@ describe("FlowBinding.catalog", () => {
 
   it("refuses a binding whose declaration has no name", () => {
     const anonymous = FlowBinding.make({
-      flow: Flow.make({ input: Schema.Struct({}), output: Schema.Struct({}) }),
+      flow: nameless,
       handler: () => Effect.succeed({})
     })
 

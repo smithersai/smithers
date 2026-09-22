@@ -7,10 +7,16 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import * as WithApproval from "./WithApproval.ts"
 
 const DEFAULT_REASON = "apply the proposed intervention"
@@ -26,13 +32,17 @@ const DEFAULT_REASON = "apply the proposed intervention"
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly read: Flow.Any
-  readonly propose: Flow.Any
+  readonly read: Member<R>
+  readonly propose: Member<R>
+  /**
+   * The writing stage. It is a whole flow rather than any member, because
+   * `approval` decorates it and a decorator re-declares what it wraps.
+   */
   readonly apply: Flow.Any
-  readonly report: Flow.Any
+  readonly report: Member<R>
   readonly dryRun: boolean
   /**
    * Called with `{ input, reason, scope }`; its declared input must be that
@@ -84,6 +94,20 @@ export interface RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2,
 const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
 
 /**
+ * The declared form of an intervention.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type InterveneFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
  * Builds the intervention topology: read, propose, then either report the
  * proposal alone (dry run) or apply it and report what was written.
  *
@@ -95,7 +119,7 @@ const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const stages = { read: options.read, propose: options.propose, report: options.report }
@@ -106,40 +130,44 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     : WithApproval.withApproval(options.apply, { reason, approval: options.approval })
   const captures = { dryRun, gated: options.approval !== undefined, reason }
   const { name, description } = Compose.label("intervene", { dryRun }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: [stages.read, stages.propose, apply, stages.report],
-    body: Node.capture(captures, (input) =>
-      Node.andThen(
-        Compose.call(stages.read, { phase: "read", input }),
-        Node.capture(captures, (context) =>
-          Node.andThen(
-            Compose.call(stages.propose, { phase: "propose", input, context }),
-            Node.capture(captures, (proposal) =>
-              dryRun
-                ? Compose.call(stages.report, {
-                  phase: "report",
-                  input,
-                  proposal,
-                  applied: undefined,
-                  dryRun: true
-                })
-                : Node.andThen(
-                  Compose.call(apply, { phase: "apply", input, proposal }),
-                  Node.capture(captures, (applied) =>
-                    Compose.call(stages.report, {
-                      phase: "report",
-                      input,
-                      proposal,
-                      applied,
-                      dryRun: false
-                    }))
-                ))
-          ))
-      ))
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
+    Node.bindPlanned(
+      callMember(stages.read, { phase: "read", input }),
+      Node.capture(captures, (context: Planned.Planned<unknown>) =>
+        Node.bindPlanned(
+          callMember(stages.propose, { phase: "propose", input, context }),
+          Node.capture(captures, (proposal: Planned.Planned<unknown>) =>
+            dryRun
+              ? callMember(stages.report, {
+                phase: "report",
+                input,
+                proposal,
+                applied: undefined,
+                dryRun: true
+              })
+              : Node.bindPlanned(
+                Decorate.call<R>(apply, { phase: "apply", input, proposal }),
+                Node.capture(captures, (applied: Planned.Planned<unknown>) =>
+                  callMember(stages.report, {
+                    phase: "report",
+                    input,
+                    proposal,
+                    applied,
+                    dryRun: false
+                  }))
+              ))
+        ))
+    )
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and an intervention fails
+    // with whatever the stage it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 

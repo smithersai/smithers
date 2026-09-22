@@ -2,4 +2,4 @@
 
 import { Flow } from "@smthrs/core"
 
-export default Flow.make({ description: "Runs in a sandbox." })
+export default Flow.make({ name: "directives/sandboxed", description: "Runs in a sandbox." })

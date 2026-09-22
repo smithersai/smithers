@@ -1,5 +1,16 @@
+/**
+ * `Escalation` on `@smthrs/flow`'s `Graph.build` and `Interpreter`.
+ *
+ * The declaration assertions are the same observable facts as before: which
+ * rungs, deciders and fallback a ladder declares, and in what order. What is
+ * NEW is the two arm pairs at the end: a rung's `escalateIf` and the shared
+ * `accept` are both `Node.branch` predicates that run at run time on the result
+ * the rung really produced, so each has a TRUE-arm and a FALSE-arm case
+ * asserted by what the scripted members were CALLED with.
+ */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
+import type * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
@@ -7,50 +18,151 @@ import * as DelegationChain from "../src/DelegationChain.ts"
 import * as Escalation from "../src/Escalation.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
+import { execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const rung = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+/** The tiers the scripted work action was asked for, in order. */
+const attempted: Array<string> = []
+/** The results the scripted decider judged, in order. */
+const judged: Array<unknown> = []
+/** The rung levels the scripted per-rung gate saw, in order. */
+const gated: Array<number> = []
+/** The tier whose result the scripted members call good, set per case. */
+let settleTier = "cheap"
+
+const work = Action.make("escalation/work", {
+  payload: { tier: Schema.String, input: Schema.Unknown },
+  success: Schema.Struct({ tier: Schema.String, ok: Schema.Boolean }),
+  error: Schema.Never
 })
 
-// Each flow echoes its own name, so a built graph can name the flow behind
-// every `FlowCall` node.
-const named = (name: string) =>
-  Flow.make({
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    body: Node.capture({ name }, (input) => Node.succeed({ from: name, input }))
+const workLayer = work.toLayer(({ tier }) =>
+  Effect.sync(() => {
+    attempted.push(tier)
+    return { tier, ok: tier === settleTier }
   })
+)
 
-const calledFlows = (graph: Graph.Graph): ReadonlyArray<unknown> =>
-  Graph.nodes(graph)
-    .filter((node) => node.kind === "FlowCall")
-    .map((call) => {
-      const body = Graph.nodes(graph).find((node) => node.id === `${call.id}.flow`)?.keyMaterial.body
-      return (body as { readonly value: { readonly from: string } }).value.from
-    })
+const verdict = Action.make("escalation/verdict", {
+  payload: { result: Schema.Unknown },
+  success: Schema.Struct({ approved: Schema.Boolean }),
+  error: Schema.Never
+})
+
+const verdictLayer = verdict.toLayer(({ result }) =>
+  Effect.sync(() => {
+    judged.push(result)
+    return { approved: (result as { readonly ok: boolean }).ok }
+  })
+)
+
+const gate = Action.make("escalation/gate", {
+  payload: { result: Schema.Unknown, level: Schema.Number },
+  success: Schema.Boolean,
+  error: Schema.Never
+})
+
+// A per-rung decider SETTLES on `false` and escalates on anything else.
+const gateLayer = gate.toLayer(({ level, result }) =>
+  Effect.sync(() => {
+    gated.push(level)
+    return !(result as { readonly ok: boolean }).ok
+  })
+)
+
+/**
+ * A scripted member: a real `@smthrs/flow` flow, type-erased.
+ *
+ * `Flow.Any` states a declaration's schemas and annotations but not `.call`,
+ * which is what a pattern member is called through, and a flow's `Requires`
+ * names the actions its body reaches. Erasing both is what lets one
+ * declaration compose members backed by different actions.
+ */
+type Scripted = Flow.Any & { readonly call: (payload: never) => Node.Node<unknown, unknown, never> }
+
+/** A rung member: it is handed `{ input }` and produces one tier's result. */
+const tier = (name: string): Scripted =>
+  Flow.make(`escalation/${name}`, {
+    payload: { input: Schema.Unknown },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: ({ input }) => work.call({ tier: name, input })
+  }) as unknown as Scripted
+
+const cheap = tier("cheap")
+const strong = tier("strong")
+const human = tier("human")
+
+/** The shared decider: it is handed `{ result }`. */
+const accept: Scripted = Flow.make("escalation/accept", {
+  payload: { result: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ result }) => verdict.call({ result })
+}) as unknown as Scripted
+
+/** A per-rung decider: it is handed `{ result, level }`. */
+const escalateIf: Scripted = Flow.make("escalation/check", {
+  payload: { result: Schema.Unknown, level: Schema.Number },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ level, result }) => gate.call({ level, result })
+}) as unknown as Scripted
+
+/** Runs one declared ladder to settlement against the scripted members. */
+const settle = (
+  ladder: Escalation.EscalationFlow<any>,
+  input: unknown,
+  executionId: string,
+  good: string
+): Promise<unknown> => {
+  attempted.length = 0
+  judged.length = 0
+  gated.length = 0
+  settleTier = good
+  return execute(
+    ladder as never,
+    { input },
+    executionId,
+    workLayer,
+    verdictLayer,
+    gateLayer,
+    Interpreter.layer(cheap as never) as never
+  )
+}
 
 describe("Escalation", () => {
   it("declares every bounded escalation rung", () => {
-    const escalation = Escalation.make({ rungs: [rung, rung], accept: rung })
+    const ladder = Escalation.make({ rungs: [cheap, strong], accept })
 
-    expect(Flow.isFlow(escalation)).toBe(true)
-    expect(escalation.body?.("request").ast._tag).toBe("AndThen")
-    const graph = Graph.build(escalation, "request")
-    const calls = Graph.nodes(graph).filter((node) => node.kind === "FlowCall")
-    expect(calls).toHaveLength(4)
-    expect(calls[1]?.keyMaterial.inputs).toContainEqual({
-      _tag: "Ref",
-      from: "root.andThen",
-      path: []
-    })
+    expect(Flow.isFlow(ladder)).toBe(true)
+    expect(ladder.body({ input: "request" }).ast._tag).toBe("AndThen")
+    const graph = Graph.build(ladder, { input: "request" })
+    // Four member calls, as before: one per rung and one decider per rung.
+    expect(callsTo(graph, "escalation/cheap")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/strong")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/accept")).toHaveLength(2)
+  })
+
+  it("makes the first decider wait for the rung it judges", () => {
+    // The old assertion read `keyMaterial.inputs` for a `Ref` naming core's
+    // `root.andThen`. `@smthrs/flow` states the same fact as a dependency edge
+    // on the node that consumes the decision.
+    const graph = Graph.build(Escalation.make({ rungs: [cheap, strong], accept }), { input: "request" })
+    const rung = callsTo(graph, "escalation/cheap")[0]
+    const decider = callsTo(graph, "escalation/accept")[0]
+    const decision = Graph.nodes(graph).find(
+      (node) => node.kind === "Branch" && node.dependencies.includes(decider!.id)
+    )
+
+    expect(decision).toBeDefined()
+    expect(decision!.dependencies).toContain(rung!.id)
   })
 
   it("rejects an empty ladder", () => {
     let refusal: unknown
     try {
-      Escalation.make({ rungs: [], accept: rung })
+      Escalation.make({ rungs: [], accept })
     } catch (error) {
       refusal = error
     }
@@ -59,65 +171,149 @@ describe("Escalation", () => {
     expect((refusal as PatternError).code).toBe("invalid_decorator")
   })
 
-  it("declares every rung and the exhausted terminal when no accept flow is available", () => {
-    const graph = Graph.build(Escalation.make({ rungs: [named("cheap"), named("strong")] }), "request")
-
-    expect(calledFlows(graph)).toEqual(["cheap", "strong"])
-    expect(Graph.nodes(graph).at(-1)?.keyMaterial.body).toEqual({
-      _tag: "Succeed",
-      value: {
-        level: 1,
-        result: { _tag: "PlannedInput", path: [] },
-        accepted: false,
-        exhausted: true
-      }
+  it("keeps the caller's name and description on the declared flow", () => {
+    const named = Escalation.make({
+      rungs: [cheap, strong],
+      accept,
+      name: "answer-it",
+      description: "Try the cheap tier, then the strong one."
     })
+
+    expect(named._tag).toBe("answer-it")
+    expect(named.description).toBe("Try the cheap tier, then the strong one.")
+    expect(Escalation.make({ rungs: [cheap, strong], accept }).description).toBeUndefined()
+  })
+
+  it("declares every rung and the exhausted terminal when no accept flow is available", () => {
+    const graph = Graph.build(Escalation.make({ rungs: [cheap, strong] }), { input: "request" })
+    const terminal = Graph.nodes(graph).filter((node) => node.kind === "Succeed").at(-1)
+
+    expect(callsTo(graph, "escalation/cheap")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/strong")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/accept")).toHaveLength(0)
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Branch")).toHaveLength(0)
+    // The terminal is the exhausted arm, and the last rung's result reaches it
+    // as a planned reference rather than a value. `@smthrs/flow` keeps a
+    // `Succeed`'s value on the node's payload, where core kept it inside
+    // `keyMaterial.body`.
+    expect(terminal).toBeDefined()
+    expect(payloadOf(terminal!).level).toBe(1)
+    expect(payloadOf(terminal!).accepted).toBe(false)
+    expect(payloadOf(terminal!).exhausted).toBe(true)
   })
 
   it("declares the fallback as the last flow call", () => {
     const graph = Graph.build(
-      Escalation.make({
-        rungs: [named("cheap"), named("strong")],
-        accept: named("accept"),
-        fallback: named("human")
-      }),
-      "request"
+      Escalation.make({ rungs: [cheap, strong], accept, fallback: human }),
+      { input: "request" }
     )
-    const calls = calledFlows(graph)
+    const fallback = callsTo(graph, "escalation/human")[0]
+    const last = callsTo(graph, "escalation/strong")[0]
 
-    expect(calls).toHaveLength(5)
-    expect(calls.at(-1)).toBe("human")
+    // Five member calls, as before, and the fallback is declared beneath the
+    // last rung's escalated arm, which is what "last" meant.
+    expect(
+      ["cheap", "strong", "accept", "human"].map((name) => callsTo(graph, `escalation/${name}`).length)
+    ).toEqual([1, 1, 2, 1])
+    expect(fallback).toBeDefined()
+    expect(fallback!.id.startsWith(`${last!.id.slice(0, last!.id.lastIndexOf("."))}.`)).toBe(true)
   })
 
   it("declares a per-rung escalateIf instead of the shared accept", () => {
     const graph = Graph.build(
-      Escalation.make({
-        rungs: [{ flow: named("cheap"), escalateIf: named("cheap-check") }, named("strong")],
-        accept: named("accept")
-      }),
-      "request"
+      Escalation.make({ rungs: [{ flow: cheap, escalateIf }, strong], accept }),
+      { input: "request" }
     )
-    expect(calledFlows(graph)).toEqual(["cheap", "cheap-check", "strong", "accept"])
+
+    expect(callsTo(graph, "escalation/cheap")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/check")).toHaveLength(1)
+    expect(callsTo(graph, "escalation/strong")).toHaveLength(1)
+    // The shared decider judges the second rung alone, because the first rung
+    // brought its own.
+    expect(callsTo(graph, "escalation/accept")).toHaveLength(1)
+    expect(payloadOf(callsTo(graph, "escalation/check")[0]!).level).toBe(0)
+  })
+
+  it("takes the TRUE arm when the real result satisfies the shared decider", async () => {
+    const ladder = Escalation.make({ rungs: [cheap, strong], accept })
+    const settled = await settle(ladder, "request", "escalation-accept-true", "cheap")
+
+    expect(settled).toEqual({ level: 0, result: { tier: "cheap", ok: true }, exhausted: false })
+    // The second rung is declared topology the run did not take.
+    expect(attempted).toEqual(["cheap"])
+    expect(judged).toEqual([{ tier: "cheap", ok: true }])
+  })
+
+  it("takes the FALSE arm when the real result does not satisfy the shared decider", async () => {
+    const ladder = Escalation.make({ rungs: [cheap, strong], accept })
+    const settled = await settle(ladder, "request", "escalation-accept-false", "strong")
+
+    expect(settled).toEqual({ level: 1, result: { tier: "strong", ok: true }, exhausted: false })
+    expect(attempted).toEqual(["cheap", "strong"])
+    expect(judged).toEqual([{ tier: "cheap", ok: false }, { tier: "strong", ok: true }])
+  })
+
+  it("settles exhausted when every rung's real result is refused and no fallback is declared", async () => {
+    const ladder = Escalation.make({ rungs: [cheap, strong], accept })
+    const settled = await settle(ladder, "request", "escalation-exhausted", "nothing")
+
+    expect(settled).toEqual({
+      level: 1,
+      result: { tier: "strong", ok: false },
+      accepted: false,
+      exhausted: true
+    })
+    expect(attempted).toEqual(["cheap", "strong"])
+  })
+
+  it("runs the declared fallback only after every rung's real result is refused", async () => {
+    const ladder = Escalation.make({ rungs: [cheap, strong], accept, fallback: human })
+    const settled = await settle(ladder, "request", "escalation-fallback", "nothing")
+
+    expect(settled).toEqual({ level: 2, result: { tier: "human", ok: false }, exhausted: false })
+    expect(attempted).toEqual(["cheap", "strong", "human"])
+  })
+
+  it("takes the TRUE arm of a per-rung escalateIf on the real result", async () => {
+    const ladder = Escalation.make({ rungs: [{ flow: cheap, escalateIf }, strong], accept })
+    const settled = await settle(ladder, "request", "escalation-gate-true", "cheap")
+
+    // The gate answered `false`, which is the one value that settles, so the
+    // second rung and the shared decider were never reached.
+    expect(settled).toEqual({ level: 0, result: { tier: "cheap", ok: true }, exhausted: false })
+    expect(attempted).toEqual(["cheap"])
+    expect(gated).toEqual([0])
+    expect(judged).toEqual([])
+  })
+
+  it("takes the FALSE arm of a per-rung escalateIf on the real result", async () => {
+    const ladder = Escalation.make({ rungs: [{ flow: cheap, escalateIf }, strong], accept })
+    const settled = await settle(ladder, "request", "escalation-gate-false", "strong")
+
+    expect(settled).toEqual({ level: 1, result: { tier: "strong", ok: true }, exhausted: false })
+    expect(attempted).toEqual(["cheap", "strong"])
+    expect(gated).toEqual([0])
+    expect(judged).toEqual([{ tier: "strong", ok: true }])
   })
 
   it.effect("stops operational escalation after acceptance", () =>
     Effect.gen(function*() {
-      const attempted: Array<string> = []
+      const attempts: Array<string> = []
       const reached = yield* Escalation.run("request", {
         rungs: [
           () =>
             Effect.sync(() => {
-              attempted.push("first")
+              attempts.push("first")
               return "draft"
             }),
           () =>
             Effect.sync(() => {
-              attempted.push("second")
+              attempts.push("second")
               return "accepted"
             }),
           () =>
             Effect.sync(() => {
-              attempted.push("third")
+              attempts.push("third")
               return "unreachable"
             })
         ],
@@ -125,7 +321,7 @@ describe("Escalation", () => {
       })
 
       expect(reached).toEqual({ level: 1, result: "accepted", exhausted: false })
-      expect(attempted).toEqual(["first", "second"])
+      expect(attempts).toEqual(["first", "second"])
     }))
 
   it.effect("uses one own-property acceptance vocabulary across escalation, review, and delegation", () =>
@@ -195,24 +391,24 @@ describe("Escalation", () => {
 
   it.effect("escalates on the default predicate when no accept flow is supplied", () =>
     Effect.gen(function*() {
-      const attempted: Array<number> = []
+      const attempts: Array<number> = []
       const reached = yield* Escalation.run("request", {
         rungs: [
           () =>
             Effect.sync(() => {
-              attempted.push(0)
+              attempts.push(0)
               return { ok: false }
             }),
           () =>
             Effect.sync(() => {
-              attempted.push(1)
+              attempts.push(1)
               return { ok: true }
             })
         ]
       })
 
       expect(reached).toEqual({ level: 1, result: { ok: true }, exhausted: false })
-      expect(attempted).toEqual([0, 1])
+      expect(attempts).toEqual([0, 1])
     }))
 
   it("escalates on a failure marker and settles on anything else", () => {
@@ -227,20 +423,20 @@ describe("Escalation", () => {
 
   it.effect("stops at a rung whose escalateIf refuses even when accept would escalate", () =>
     Effect.gen(function*() {
-      const attempted: Array<number> = []
+      const attempts: Array<number> = []
       const reached = yield* Escalation.run("request", {
         rungs: [
           {
             run: () =>
               Effect.sync(() => {
-                attempted.push(0)
+                attempts.push(0)
                 return "cheap"
               }),
             escalateIf: () => Effect.succeed(false)
           },
           () =>
             Effect.sync(() => {
-              attempted.push(1)
+              attempts.push(1)
               return "strong"
             })
         ],
@@ -248,7 +444,7 @@ describe("Escalation", () => {
       })
 
       expect(reached).toEqual({ level: 0, result: "cheap", exhausted: false })
-      expect(attempted).toEqual([0])
+      expect(attempts).toEqual([0])
     }))
 
   it.effect("hands each escalateIf its own rung level", () =>
@@ -304,12 +500,12 @@ describe("Escalation", () => {
 
   it.effect("does not admit a rung appended while the run is in flight", () =>
     Effect.gen(function*() {
-      const attempted: Array<string> = []
+      const attempts: Array<string> = []
       const rungs: Array<(input: string) => Effect.Effect<{ readonly ok: boolean }>> = []
-      const late = () => Effect.sync(() => (attempted.push("late"), { ok: true }))
+      const late = () => Effect.sync(() => (attempts.push("late"), { ok: true }))
       rungs.push(() =>
         Effect.sync(() => {
-          attempted.push("first")
+          attempts.push("first")
           rungs.push(late)
           return { ok: false }
         })
@@ -317,7 +513,7 @@ describe("Escalation", () => {
 
       const result = yield* Escalation.run("request", { rungs })
 
-      expect(attempted).toEqual(["first"])
+      expect(attempts).toEqual(["first"])
       expect(result).toEqual({
         level: 0,
         result: { ok: false },

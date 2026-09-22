@@ -6,9 +6,10 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
+import * as Decorate from "./internal/Decorate.ts"
 import * as Pattern from "./Pattern.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -66,23 +67,18 @@ const declaration = (inner: Flow.Any, options: Options): Flow.Any => {
     Pattern.slot({ input: ApprovalInput, output: Approved }),
     options.approval
   )
-  const details = Compose.details(inner)
-  return Flow.make({
-    name: `withApproval(${Compose.displayName(inner)})`,
-    description: details.description,
-    input: details.input,
-    output: details.output,
-    capabilities: details.capabilities,
-    effects: details.effects,
-    flows: [approval, inner],
-    body: Node.capture({ reason }, (input) =>
+  const envelope = Decorate.envelopeOf(inner)
+  return Flow.make(`withApproval(${Decorate.displayName(inner)})`, {
+    ...(inner.description === undefined ? {} : { description: inner.description }),
+    payload: inner.payloadSchema,
+    success: inner.successSchema,
+    error: inner.errorSchema,
+    capabilities: Decorate.capabilitiesOf(inner),
+    ...(envelope === undefined ? {} : { effects: envelope }),
+    body: Node.capture({ reason }, (payload: unknown) =>
       Node.andThen(
-        Compose.call(approval, {
-          input,
-          reason,
-          scope: "run"
-        }),
-        Node.capture({ reason }, () => Compose.call(inner, input))
+        Decorate.call(approval, { input: payload, reason, scope: "run" }),
+        Decorate.call(inner, payload)
       ))
   })
 }

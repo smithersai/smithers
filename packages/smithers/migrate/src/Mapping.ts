@@ -94,9 +94,9 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "Workflow",
-    "Flow.make(tag, { payload, success, error, body }) plus the default descriptor",
-    "@smthrs/flow/Flow, @smthrs/core/Flow",
-    "The `name` prop becomes the flow tag and the directory name under `flows/`, the last step's output schema becomes `success`, and an agent step gives the flow `AgentAction.AgentFailure` as its `error`. The module also default-exports the `@smthrs/core` descriptor registry discovery reads, whose `input` and `output` are that flow's `payload` and `success`, so the contract the control plane admits is the one the engine runs. Its `description` comes from the `// smithers-description:` or `// smithers-display-name:` header, or from the workflow name.",
+    "Flow.make(tag, { description, capabilities, effects, payload, success, error, body })",
+    "@smthrs/flow/Flow",
+    "The `name` prop becomes the flow tag and the directory name under `flows/`, the last step's output schema becomes `success`, and an agent step gives the flow `AgentAction.AgentFailure` as its `error`. The flow is the module's default export, which is what registry discovery reads and what the engine runs, so the contract the control plane admits is the one that executes. Its `description` comes from the `// smithers-description:` or `// smithers-display-name:` header, or from the workflow name.",
     "automatic"
   ),
   row(
@@ -391,11 +391,11 @@ const table: ReadonlyArray<MappingRow> = [
     "The workflow wrapper becomes the flow declaration itself.",
     "automatic"
   ),
-  row("renderFrame", "Graph.build(node)", "@smthrs/core/Graph", "Plan inspection reads the built graph.", "automatic"),
+  row("renderFrame", "Graph.build(node)", "@smthrs/flow/Graph", "Plan inspection reads the built graph.", "automatic"),
   row(
     "SmithersRenderer",
     "Graph.build(node)",
-    "@smthrs/core/Graph",
+    "@smthrs/flow/Graph",
     "There is no reconciler; delete the renderer and inspect the plan.",
     "automatic"
   ),
@@ -1338,14 +1338,23 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
       const declared = last === undefined ? undefined : childOutputs(hit)?.[last]
       const success = declared === undefined || declared === null ? undefined : ZodSchemaHints.print(declared, parse)
       if (success === undefined) return undefined
-      const flow = identifier(name, "Flow")
       const agents = (detail["childAgents"] ?? "").split(",").filter((id) => id !== "")
+      // One declaration: the flow the engine runs IS what the registry admits.
+      // Discovery tokenizes the literal `export default Flow.make(` and reads
+      // the `description`, `capabilities` and `effects` literals out of the
+      // options object without evaluating the module, and the loader hands the
+      // default export to the engine, so there is one contract and one body.
       const lines = [
-        // `Flow` is the `@smthrs/core` namespace here, because registry
-        // discovery tokenizes the literal `export default Flow.make(`. The
-        // durable flow therefore takes the alias, exactly as the migrated
-        // fixture writes it.
-        `export const ${flow} = DurableFlow.make(${JSON.stringify(name)}, {`,
+        `export default Flow.make(${JSON.stringify(name)}, {`,
+        // The `description` a catalog lists the flow by. It comes from the
+        // `// smithers-description:` or `// smithers-display-name:` header the
+        // 0.x pack files carry, or from the workflow's own name.
+        `  description: ${JSON.stringify(detail["description"] ?? name)},`,
+        "  capabilities: [],",
+        // The tightest envelope flows has: a step may narrow `hermetic`/`sealed`
+        // but never widen it, so a migrated flow that really reads or writes
+        // fails the envelope check instead of silently claiming the right.
+        "  effects: { reads: [], writes: [], mode: \"hermetic\", onConflict: \"serialize\", tier: \"sealed\" },",
         `  payload: ${indented(payload, "  ")},`,
         `  success: ${indented(success, "  ")},`
       ]
@@ -1353,29 +1362,6 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
       // failure, so it does not declare one.
       if (agents.length > 0) lines.push("  error: AgentAction.AgentFailure,")
       lines.push(`  body: (payload) => ${indented(body, "  ")}`)
-      lines.push("})")
-      lines.push("")
-      // The descriptor the control plane admits. Discovery reads the default
-      // export and never the named one, so a module without this is a flow the
-      // registry cannot list and nobody can run, and its `input` and `output`
-      // are the durable flow's `payload` and `success` so the admitted contract
-      // is the executed one.
-      //
-      // It carries no `body`, because at this version it cannot: core's `body`
-      // returns a `@smthrs/core/Node` and `${flow}.call` returns a
-      // `@smthrs/plan/Node`. Delegating by body is the core-runtime bridge, and
-      // a cast in migrated output would hide the gap instead of naming it.
-      lines.push("export default Flow.make({")
-      lines.push(`  description: ${JSON.stringify(detail["description"] ?? name)},`)
-      lines.push(`  input: ${indented(payload, "  ")},`)
-      lines.push(`  output: ${indented(success, "  ")},`)
-      lines.push("  capabilities: [],")
-      // The tightest envelope flows has: a step may narrow `hermetic`/`sealed`
-      // but never widen it, so a migrated flow that really reads or writes
-      // fails the envelope check instead of silently claiming the right.
-      lines.push(
-        "  effects: { reads: [], writes: [], mode: \"hermetic\", onConflict: \"serialize\", tier: \"sealed\" }"
-      )
       lines.push("})")
       return lines.join("\n")
     }

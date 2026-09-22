@@ -26,11 +26,12 @@ describe("Scorer", () => {
   it("keeps score as the only implementation", async () => {
     expectTypeOf<Extract<keyof Scorer.MakeOptions, "body" | "model" | "flows">>().toEqualTypeOf<never>()
     const scorer = quality()
-    expect(scorer.body).toBeUndefined()
-    expect(scorer.implementation).toBeUndefined()
-    expect(() => scorer({ input: "question", output: "answer" })).toThrowError(
-      expect.objectContaining({ code: "missing_body" })
-    )
+    // A declaration carrying no body of its own is exactly a declaration that
+    // has an action for a host to implement. `score` is what this module
+    // implements it with, so the action stays unregistered and a scorer can
+    // never hold two implementations that disagree.
+    expect(scorer.action).toBeDefined()
+    expect(scorer.action?.name).toBe("quality")
     await expect(Effect.runPromise(scorer.score({ input: "question", output: "answer" }))).resolves.toEqual({
       score: 1
     })
@@ -48,6 +49,26 @@ describe("Scorer", () => {
     const failure = declarationFailure(() => quality({ [key]: value }))
     expect(failure.code).toBe("invalid_declaration")
     expect(failure.message).toBe(`A scorer must not declare ${key}; use score as its only implementation`)
+  })
+
+  it("names a scorer that named nothing after its own id, and keeps a declared name", () => {
+    const anonymous = Scorer.make({
+      id: "packages/smithers/agent/scorers/test/Scorer/anonymous",
+      version: "1",
+      score: () => Effect.succeed({ score: 1 })
+    })
+    expect(anonymous.name).toBe("packages/smithers/agent/scorers/test/Scorer/anonymous")
+    expect(quality().name).toBe("quality")
+    // The name is not part of the scorer's identity, so adopting the id as a
+    // name cannot move a stored observation to a second key.
+    expect(anonymous.scorerKey).toBe(
+      Scorer.make({
+        id: "packages/smithers/agent/scorers/test/Scorer/anonymous",
+        version: "1",
+        name: "named-differently",
+        score: () => Effect.succeed({ score: 1 })
+      }).scorerKey
+    )
   })
 
   it("has an independent declaration key and validates scores", async () => {

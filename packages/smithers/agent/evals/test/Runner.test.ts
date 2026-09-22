@@ -496,7 +496,7 @@ describe("Runner", () => {
     expect(observation?.kind === "inconclusive" && observation.reason).toContain("scorerKey is not a function")
   })
 
-  it("identifies an unnamed scorer by its key alone", async () => {
+  it("identifies a scorer that named nothing by its key, and reports its id as the name", async () => {
     const anonymous = Scorer.make({
       id: "packages/smithers/agent/evals/test/Runner/anonymous",
       version: "1",
@@ -504,8 +504,11 @@ describe("Runner", () => {
     })
     const suite = await suiteOf("anonymous", [Binding.make({ scorer: anonymous, appliesTo: target })])
     const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(succeeding)))
+    // The key is the identity a baseline matches on, and it is derived from
+    // `id`, `version` and `config` alone. Adopting `id` as the display name
+    // therefore leaves the identity where it was.
     expect(result.observations[0]?.scorer).toBe(anonymous.scorerKey)
-    expect(result.observations[0]?.scorerName).toBeUndefined()
+    expect(result.observations[0]?.scorerName).toBe("packages/smithers/agent/evals/test/Runner/anonymous")
   })
 
   it("retains a typed target failure with its own code and message, without re-running the target", async () => {
@@ -658,7 +661,7 @@ describe("Runner", () => {
     }])
   })
 
-  it("names an unnamed scorer generically when it misbehaves", async () => {
+  it("names a scorer that named nothing by its id when it misbehaves", async () => {
     const anonymous = Scorer.make({
       id: "packages/smithers/agent/evals/test/Runner/anonymous-liar",
       version: "1",
@@ -675,9 +678,11 @@ describe("Runner", () => {
       }).pipe(Effect.provide(succeeding))
     )
     const observation = result.observations[0]
-    expect(observation?.scorerName).toBeUndefined()
+    expect(observation?.scorerName).toBe("packages/smithers/agent/evals/test/Runner/anonymous-liar")
     expect(observation?.kind === "inconclusive" && observation.reason).toBe(
-      `Scorer ${anonymous.scorerKey} returned a score outside [0, 1]: 7`
+      `Scorer packages/smithers/agent/evals/test/Runner/anonymous-liar (${
+        anonymous.scorerKey.slice(0, 8)
+      }) returned a score outside [0, 1]: 7`
     )
   })
 

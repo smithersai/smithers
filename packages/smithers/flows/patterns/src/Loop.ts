@@ -18,11 +18,16 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import type * as Repetition from "@smthrs/plan/Repetition"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -54,11 +59,11 @@ export type OnMaxReached = Repetition.AtCeiling
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly body: Flow.Any
-  readonly until?: Flow.Any | undefined
+  readonly body: Member<R>
+  readonly until?: Member<R> | undefined
   readonly maxIterations: number
   readonly onMaxReached?: OnMaxReached | undefined
   readonly captures?: Readonly<Record<string, unknown>> | undefined
@@ -70,7 +75,7 @@ export interface MakeOptions {
  * @category models
  * @since 0.1.0
  */
-export type RalphOptions = Omit<MakeOptions, "until">
+export type RalphOptions<R = never> = Omit<MakeOptions<R>, "until">
 
 /**
  * Operational callbacks for {@link run}.
@@ -145,28 +150,47 @@ const bound = (maxIterations: number): PatternError | undefined =>
   })
 
 /**
- * Declares a bounded loop as its fully unrolled conservative topology.
+ * The declared form of a bounded loop.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type LoopFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
+ * Declares a bounded loop as its fully unrolled conservative topology, with a
+ * real run-time decision at every iteration.
  *
  * Every iteration up to `maxIterations` is declared, because a plan cannot
- * know which iteration a run stops at. Reaching the bound is a value, not a
- * declared failure: core node declarations have no failure arm, so the
- * `"fail"` policy is applied by {@link run}.
+ * know which iteration a run stops at. Both continuations of each iteration,
+ * settle now or go round again, are `Node.branch` arms, so the plan carries
+ * the exit condition and both arms before anything runs and the predicate is
+ * evaluated at run time on the value the body really produced. Reaching the
+ * bound is a value, not a declared failure, so the `"fail"` policy is applied
+ * by {@link run}.
+ *
  * A very large `maxIterations` builds a very large graph before anything runs,
- * and a bound whose chain nests past core's plan depth limit is refused here
- * rather than at `Graph.build`: 511 iterations without an `until` flow, 255
- * with one. {@link run} takes the same bounds without unrolling them, so an
- * unbounded loop belongs there.
+ * and a bound whose chain nests past the plan depth limit is refused here
+ * rather than at `Graph.build`.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const declared = { body: options.body, until: options.until }
   const maxIterations = options.maxIterations
-  // One node per declared call, chained, so the plan nests one level per call:
-  // a body alone spends one level an iteration, a body plus `until` two.
+  // One `Node.branch` per iteration, and one more level for the `until` form's
+  // `Node.bindPlanned`: that is how many levels one iteration nests. The calls
+  // an iteration makes are the branch's own subject and the bind's, so they
+  // cost no level of their own.
   const invalid = bound(maxIterations) ??
     Compose.sequencedBoundRefusal("Loop", "maxIterations", maxIterations, declared.until === undefined ? 1 : 2)
   if (invalid !== undefined) throw invalid
@@ -178,31 +202,57 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     predicate: declared.until === undefined ? "body" : "flow"
   }
   const { name, description } = Compose.label("loop", { maxIterations, onMaxReached }, options)
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows: declared.until === undefined ? [declared.body] : [declared.body, declared.until],
-    body: Node.capture(captures, (input) => {
-      const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown> =>
-        Node.andThen(
-          Compose.call(declared.body, { input, previous, iteration }),
-          Node.capture({ ...captures, iteration }, (produced) => {
-            const settle = (verdict: unknown): Node.Node<unknown, unknown> =>
-              done(verdict)
-                ? Node.succeed({ value: produced, iterations: iteration, exhausted: false })
-                : iteration >= maxIterations
-                ? Node.succeed({ value: produced, iterations: iteration, exhausted: true })
-                : visit(produced, iteration + 1)
-            return declared.until === undefined ? settle(produced) : Node.andThen(
-              Compose.call(declared.until, { value: produced, iteration }),
-              Node.capture({ ...captures, iteration }, settle)
-            )
-          })
-        )
-      return visit(undefined, 1)
-    })
+  const settled = (
+    value: unknown,
+    iteration: number,
+    exhausted: boolean
+  ): Node.Node<unknown, never, never> => Node.succeed({ value, iterations: iteration, exhausted })
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown, R> => {
+      // The predicate is DIGESTED and run later, on the real value. It is
+      // captured so two loops that differ only in their declared bound are
+      // two declarations rather than one shared process-local callback.
+      const satisfied = Node.capture({ ...captures, iteration }, (verdict: unknown) => done(verdict))
+      const produced = callMember(declared.body, { input, previous, iteration })
+      // The FALSE arm: the bound decides whether going round again is still
+      // declared topology or whether this iteration is where the loop settles
+      // exhausted. That test reads the declared bound, not a run value, so it
+      // is the one decision that stays at plan time.
+      const continued = (value: Planned.Planned<unknown>): Node.Node<unknown, unknown, R> =>
+        iteration >= maxIterations ? settled(value, iteration, true) : visit(value, iteration + 1)
+      const predicate = declared.until
+      if (predicate === undefined) {
+        return Node.branch(produced, {
+          if: satisfied,
+          then: (value) => settled(value, iteration, false),
+          else: continued
+        })
+      }
+      // The builder is CAPTURED, like every other converted continuation here:
+      // a bare arrow takes process-local `sha256-source-ephemeral/v4` identity,
+      // so the same declaration built twice would key two different plans.
+      return Node.bindPlanned(
+        produced,
+        Node.capture({ ...captures, iteration }, (value) =>
+          Node.branch(callMember(predicate, { value, iteration }), {
+            if: satisfied,
+            then: () => settled(value, iteration, false),
+            else: () => continued(value)
+          }))
+      )
+    }
+    return visit(undefined, 1)
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and
+    // declared no error schema. `@smthrs/flow` needs a real one, because the
+    // engine encodes a typed failure through it, and a loop fails with
+    // whatever the member it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
   })
 }
 
@@ -218,8 +268,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
  * @category constructors
  * @since 0.1.0
  */
-export const ralph = (options: RalphOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> =>
-  make(options)
+export const ralph = <R = never>(options: RalphOptions<R>): LoopFlow<R> => make(options)
 
 /**
  * Runs a bounded loop, stopping at the first satisfied predicate.

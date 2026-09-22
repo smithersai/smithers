@@ -103,9 +103,9 @@ describe("ModuleMetadata", () => {
     })
   })
 
-  it("projects agent flow authority conservatively", () => {
+  it("projects a flow list of identifiers conservatively", () => {
     const metadata = ModuleMetadata.parse([
-      "export default Flow.agent({",
+      "export default Flow.make({",
       "  description: \"Reviews a change.\",",
       "  flows: [readFile, writeFile]",
       "})"
@@ -116,6 +116,22 @@ describe("ModuleMetadata", () => {
     expect(metadata.warnings).toContainEqual({
       message: "Flow authority cannot be projected statically; using the conservative wildcard"
     })
+  })
+
+  // `Flow.make` is the one constructor discovery reads. A module reaching for
+  // any other name, including the `Flow.agent` the 0.x core exported, is read
+  // as a module with no default declaration at all, which is what refuses it.
+  it.each([
+    ["Flow.agent", "export default Flow.agent({ description: \"Reviews a change.\" })"],
+    ["Widget.make", "export default Widget.make({ description: \"Reviews a change.\" })"]
+  ])("reads no declaration from a default export built by %s", (_label, source) => {
+    const metadata = ModuleMetadata.parse(source)
+
+    expect(ModuleMetadata.isComplete(source)).toBe(false)
+    expect(metadata.description).toBeUndefined()
+    expect(metadata.warnings).toEqual([
+      { message: "Could not statically read the default Flow.make declaration" }
+    ])
   })
 
   it.each([
@@ -210,7 +226,8 @@ describe("ModuleMetadata", () => {
       placement: Option.none(),
       modelInvocable: true,
       declaresName: false,
-      warnings: [{ message: "Could not statically read the default Flow.make or Flow.agent declaration" }]
+      declaredName: Option.none(),
+      warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
     })
   })
 

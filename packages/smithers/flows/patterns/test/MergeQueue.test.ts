@@ -1,5 +1,7 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
+import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -9,14 +11,18 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const land = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+const land = Flow.make("land", {
+  payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ input }) => Node.succeed(input)
 })
 
-const members = [
+const target = { input: "land" }
+
+const members: ReadonlyArray<MergeQueue.Member> = [
   { id: "docs", flow: land },
   { id: "hotfix", flow: land, priority: 5000 },
   { id: "feature", flow: land }
@@ -24,13 +30,10 @@ const members = [
 
 const invalidPriorities = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5, 2 ** 53]
 
+// `@smthrs/flow` hydrates a call payload onto the graph node, where core kept
+// it as the node's first key-material input.
 const literals = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown>> =>
-  Graph.nodes(graph)
-    .filter((node) => node.kind === "FlowCall")
-    .map((node) => {
-      const first = node.keyMaterial.inputs[0]
-      return first !== undefined && first._tag === "Literal" ? first.value as Record<string, unknown> : {}
-    })
+  callsTo(graph, "land").map((node) => payloadOf(node))
 
 describe("MergeQueue", () => {
   it("sorts members by descending priority then declaration order", () => {
@@ -46,8 +49,21 @@ describe("MergeQueue", () => {
     ])
   })
 
+  it("keeps the caller's name and description on the declared flow", () => {
+    const queue = MergeQueue.make({
+      members: members,
+      failurePolicy: "halt",
+      name: "landing-queue",
+      description: "Land every branch in priority order."
+    })
+
+    expect(queue._tag).toBe("landing-queue")
+    expect(queue.description).toBe("Land every branch in priority order.")
+    expect(MergeQueue.make({ members: members, failurePolicy: "halt" }).description).toBeUndefined()
+  })
+
   it("declares a serial chain at concurrency 1 in priority order", () => {
-    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
 
     expect(Graph.diagnostics(graph)).toEqual([])
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(0)
@@ -55,13 +71,12 @@ describe("MergeQueue", () => {
   })
 
   it("gives every member the default priority unless it sets its own, as an annotation", () => {
-    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
 
     // The scheduler reads the annotation. A priority carried as call input
     // would instead be key material, and re-prioritizing a queue that lands in
     // the same order would re-land every member.
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall").map((node) => node.priority))
-      .toEqual([5000, 1000, 1000])
+    expect(callsTo(graph, "land").map((node) => node.draft.priority)).toEqual([5000, 1000, 1000])
     expect(literals(graph).map((value) => value.priority)).toEqual([undefined, undefined, undefined])
   })
 
@@ -73,20 +88,20 @@ describe("MergeQueue", () => {
             members: [{ id: "docs", flow: land }, { id: "hotfix", flow: land, priority }],
             failurePolicy: "halt"
           }),
-          "land"
+          target
         )
-      ).map((node) => node.keyMaterial.body)
+      ).map((node) => node.draft.material.body)
 
     expect(body(5000)).toEqual(body(7000))
   })
 
   it("declares one recovery arm per member under the quarantine policy", () => {
-    const serial = Graph.build(MergeQueue.make({ members: members, failurePolicy: "quarantine" }), "land")
+    const serial = Graph.build(MergeQueue.make({ members: members, failurePolicy: "quarantine" }), target)
     const batched = Graph.build(
       MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
-      "land"
+      target
     )
-    const halting = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), "land")
+    const halting = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
 
     expect(Graph.nodes(serial).filter((node) => node.kind === "Catch")).toHaveLength(3)
     expect(Graph.nodes(serial).filter((node) => node.kind === "All")).toHaveLength(0)
@@ -99,34 +114,35 @@ describe("MergeQueue", () => {
   it("settles a declared quarantine with a tagged wire marker", () => {
     const graph = Graph.build(
       MergeQueue.make({ members: [{ id: "docs", flow: land }], failurePolicy: "quarantine" }),
-      "land"
+      target
     )
+    // The marker a `Succeed` carries is the node's payload under
+    // `@smthrs/flow`, and the error inside it is the planned reference to the
+    // member the arm recovers.
     const marker = Graph.nodes(graph)
       .filter((node) => node.kind === "Succeed")
-      .map((node) => (node.keyMaterial.body as { readonly _tag: "Succeed"; readonly value: unknown }).value)
+      .map((node) => node.payload)
       .find(
         (value) =>
           typeof value === "object" &&
           value !== null &&
           "_tag" in value &&
           value._tag === "Quarantined"
-      )
+      ) as { readonly _tag: string; readonly id: string; readonly error: unknown }
 
-    expect(marker).toEqual({
-      _tag: "Quarantined",
-      id: "docs",
-      error: { _tag: "PlannedInput", path: [] }
-    })
+    expect(marker._tag).toBe("Quarantined")
+    expect(marker.id).toBe("docs")
+    expect(Planned.reference(marker.error)?.path).toEqual([])
   })
 
   it("batches by two at concurrency 2", () => {
     const graph = Graph.build(
       MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
-      "land"
+      target
     )
 
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(3)
+    expect(callsTo(graph, "land")).toHaveLength(3)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
@@ -163,11 +179,16 @@ describe("MergeQueue", () => {
   })
 
   it("declares from the snapshot make took of its members and options", () => {
-    const other = Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => Node.succeed("other") })
+    const other = Flow.make("other", {
+      payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => Node.succeed("other")
+    })
     const mutableMembers = members.map((member) => ({ ...member }))
     const options: MergeQueue.MakeOptions = { members: mutableMembers, failurePolicy: "quarantine" }
     const queue = MergeQueue.make(options)
-    const before = Graph.nodes(Graph.build(queue, "land")).map((node) => node.keyMaterial.body)
+    const before = Graph.nodes(Graph.build(queue, target)).map((node) => node.draft.material.body)
 
     // A swapped flow, a re-prioritized member, an appended member, and a
     // changed policy, all after the call.
@@ -176,10 +197,10 @@ describe("MergeQueue", () => {
     mutableMembers.push({ id: "late", flow: other })
     ;(options as { failurePolicy: MergeQueue.FailurePolicy }).failurePolicy = "halt"
 
-    const after = Graph.nodes(Graph.build(queue, "land"))
-    expect(after.map((node) => node.keyMaterial.body)).toEqual(before)
+    const after = Graph.nodes(Graph.build(queue, target))
+    expect(after.map((node) => node.draft.material.body)).toEqual(before)
     expect(after.filter((node) => node.kind === "Catch")).toHaveLength(3)
-    expect(literals(Graph.build(queue, "land")).map((value) => value.id)).toEqual(["hotfix", "docs", "feature"])
+    expect(literals(Graph.build(queue, target)).map((value) => value.id)).toEqual(["hotfix", "docs", "feature"])
   })
 
   it("refuses every unsafe member priority at declaration time", () => {
@@ -457,14 +478,14 @@ describe("MergeQueue", () => {
 
   it("gives a halting queue and a quarantining queue different topology and identity", () => {
     const material = (failurePolicy: MergeQueue.FailurePolicy) =>
-      Graph.nodes(Graph.build(MergeQueue.make({ members: members, failurePolicy }), "land"))
+      Graph.nodes(Graph.build(MergeQueue.make({ members: members, failurePolicy }), target))
 
     const halting = material("halt")
     const quarantining = material("quarantine")
 
     expect(halting.map((node) => node.kind)).not.toEqual(quarantining.map((node) => node.kind))
-    expect(halting.map((node) => node.keyMaterial.body)).not.toEqual(
-      quarantining.map((node) => node.keyMaterial.body)
+    expect(halting.map((node) => node.draft.material.body)).not.toEqual(
+      quarantining.map((node) => node.draft.material.body)
     )
   })
 })

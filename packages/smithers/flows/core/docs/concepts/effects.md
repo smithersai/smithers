@@ -81,77 +81,33 @@ never claim more. `Effects.narrow(envelope, step)` checks the three rules and
 | `expected` may tighten to `hermetic`; `hermetic` may not loosen to `expected`. | `effect_mode_widening`.                              |
 | The tier may narrow: `irreversible`, then `compensable`, then `sealed`.        | `effect_tier_widening`.                              |
 
-For a flow call, a `Node.withEffects` annotation must narrow the caller's
-envelope. The callee's own declaration must then narrow that call envelope.
-The body inherits the resulting restriction, including reads, writes, mode
-and tier. Missing declarations inherit the preceding envelope; an annotation
-cannot hide a broader callee declaration.
+For a call, the callee's own declaration must narrow the envelope the caller
+granted. The body inherits the resulting restriction, including reads, writes,
+mode and tier. A declaration that is absent inherits the preceding envelope.
 
-All three are fatal diagnostics: a graph carrying one has no key material,
-because a step that claimed more than it was granted is not a step this package
-will let a host key and cache.
+All three are fatal: a step that claimed more than it was granted is not a step
+a host will be allowed to key and cache.
 
 `Flow.sealed()` is the shorthand at the strict end. It returns a copy of the
-flow whose declaration is `hermetic` and `sealed`, and a flow with no
-declaration gets an empty one with those two values.
-
-## Only work nodes conflict
-
-Just one node kind is a writer for conflict purposes: `Dynamic`, the
-model-backed step. A container such as `All` or a flow call carries a
-declaration that narrows the envelope for its children and enters that
-container's own identity, but it is not counted a second time against the
-children it encloses.
-
-The practical consequence is worth stating plainly: a plan built entirely from
-`Node.succeed` records no conflicts, however its declarations overlap, because
-it contains no work. Conflict analysis needs `Node.dynamic` nodes, or flows
-whose bodies reach them.
+signature whose declaration is `hermetic` and `sealed`, and a signature with no
+declaration gets an empty one with those two values. A signature that declares
+no envelope at all dispatches as `irreversible`, so it never content-shares
+another run's result by accident.
 
 ## Two writers of the same path
 
-When two work nodes' effective write declarations overlap, the planner records
-a `Conflict` naming both nodes and the overlapping paths, and picks one
-strategy from the two declarations. The stricter one wins: `fail` beats `lane`,
-and `lane` beats `serialize`.
+The comparison is [`@smthrs/flow`](/api/flow)'s: it holds the graph builder that
+walks a plan, and it records a conflict when two writers' effective write
+declarations overlap. The strategy comes from the two declarations, and the
+stricter one wins: `fail` beats `lane`, and `lane` beats `serialize`. Its
+reference documents what each strategy produces and which refusals are fatal.
 
-**`serialize`** adds a `conflict` edge from the first writer to the second, so
-a scheduler runs them in a fixed order instead of at the same time. The graph
-stays valid and keys fine.
-
-```text
-{ nodes: [ 'root.all.a', 'root.all.b' ], paths: [ 'out/report.json' ], strategy: 'serialize' }
-```
-
-**`lane`** gives each writer its own lane and synthesizes one `LaneMerge` node
-downstream of both. Each writer gets an implicit lane id derived from its node
-id when it declared none, `lane-merge` edges join both to the merge, and the
-conflict records the merge node's id:
-
-```text
-{
-  nodes: [ 'root.all.a', 'root.all.b' ],
-  paths: [ 'out/report.json' ],
-  strategy: 'lane',
-  mergeNodeId: 'lane.merge.0'
-}
-```
-
-**`fail`** records a `write_conflict` diagnostic. It is fatal, so
-`Graph.keyMaterial` refuses the graph. This is the right choice when two
-writers of one path is a bug in the declaration, not a scheduling problem.
-
-## Lanes are vocabulary, not a scheduler
-
-`Node.lane`, `Annotations.Lane`, and the synthesized `LaneMerge` node are
-plan-time vocabulary. No runtime in this release executes a lane, and the
-elaboration deliberately stops at this package's boundary. Treat a lane as a
-declaration a future scheduler may honor, not as a guarantee that two writers
-will be isolated.
+What belongs here is the declaration: `Effects.overlaps` answers whether two
+declarations touch the same path, on data, without a graph.
 
 ## Where to go next
 
 - [Declare what a step reads and writes](../guides/declare-reads-and-writes.md):
   the procedure, with each diagnostic and its fix.
-- [Build limits](./limits.md): what bounds a declaration's paths and patterns,
-  and why.
+- [Declare a flow](../guides/declare-a-flow.md): where a signature states its
+  envelope and its tier.

@@ -1,38 +1,60 @@
 import { describe, it } from "@effect/vitest"
-import { Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as Quarantine from "../src/Quarantine.ts"
+import { execute } from "./Execute.ts"
 
 class Boom extends Schema.TaggedError<Boom>()("Boom", { member: Schema.String }) {}
 
+// A member is any node, so the join's declared shape is read off three
+// ordinary calls.
+const model = (tag: string) =>
+  Flow.make(tag, {
+    payload: { model: Schema.String },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: ({ model }) => Node.succeed(model)
+  })
+
 const members = {
-  alpha: Node.dynamic({ model: "a" }),
-  beta: Node.dynamic({ model: "b" }),
-  gamma: Node.dynamic({ model: "c" })
+  alpha: model("alpha").call({ model: "a" }) as Node.Any,
+  beta: model("beta").call({ model: "b" }) as Node.Any,
+  gamma: model("gamma").call({ model: "c" }) as Node.Any
 }
+
+const joined = (node: Node.Node<unknown, unknown, any>) =>
+  Graph.build(
+    Flow.make("quarantine/host", {
+      payload: { input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => node
+    }),
+    { input: undefined }
+  )
 
 describe("Quarantine", () => {
   it("declares one catch per member", () => {
-    const graph = Graph.build(Quarantine.all(members, { policy: "quarantine" }))
+    const graph = joined(Quarantine.all(members, { policy: "quarantine" }))
 
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "Map")).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
-    expect(Graph.nodes(graph).find((node) => node.id === "root.all.alpha.recover")?.keyMaterial.body).toEqual({
-      _tag: "Succeed",
-      value: { _tag: "Quarantined", member: "alpha", error: { _tag: "PlannedInput", path: [] } }
-    })
+    // The marker a recovery arm produces lives on the node's payload; the
+    // error inside it is the planned reference to the member it recovers.
+    const recovery = Graph.nodes(graph).find((node) => node.id.endsWith(".all.alpha.failure"))
+    expect(recovery?.draft.material.body).toEqual({ _tag: "Succeed" })
+    expect(recovery?.payload).toMatchObject({ _tag: "Quarantined", member: "alpha" })
   })
 
   it("declares a plain join under the halt policy", () => {
-    const graph = Graph.build(Quarantine.all(members, { policy: "halt" }))
+    const graph = joined(Quarantine.all(members, { policy: "halt" }))
 
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(0)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
@@ -222,14 +244,16 @@ describe("Quarantine", () => {
       expect(settled).toEqual({ a: value })
     }))
 
-  it("executes declaration envelopes through the core test runtime", () => {
+  it("executes declaration envelopes through the flow interpreter", async () => {
     const value = { _tag: "Quarantined", member: "legitimate", error: "ordinary data" } as const
-    const result = TestRuntime.evaluate(
-      Quarantine.all({ a: Node.succeed(value), b: Node.fail("failed") }, { policy: "quarantine" })
-    )
-    if (Result.isFailure(result)) throw result.failure
+    const host = Flow.make("quarantine/envelopes", {
+      payload: { input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => Quarantine.all({ a: Node.succeed(value), b: Node.fail("failed") }, { policy: "quarantine" })
+    })
 
-    expect(result.success).toEqual({
+    expect(await execute(host, { input: undefined }, "quarantine-envelopes")).toEqual({
       a: { _tag: "Succeeded", member: "a", value },
       b: { _tag: "Quarantined", member: "b", error: "failed" }
     })

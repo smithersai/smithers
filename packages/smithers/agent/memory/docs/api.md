@@ -85,7 +85,7 @@ Binding `Flows.recall` with `Flows.runRecall` reaches the store with no namespac
 
 `MemoryTrellis.make` is the delegation case. `Trellis.make` declares the topology a model-authored plan fits inside, and fills its leaf slots at run time, so a leaf cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, and to the memory flows those declare, then annotates the trellis itself.
 
-It takes everything `Trellis.make` takes, plus `memory`. The `envelope` is the bound the authored plan is admitted under: `fuel` is the total number of leaf calls the plan may make, `depth` the nesting it may reach, and `fanout` the members any one group may hold.
+It takes what `Trellis.make` takes, plus `memory`. `Trellis.make` accepts any member it can record a call to; a memory trellis needs more of its author and its leaf, because a policy is an annotation and a member states no annotation bag, so both are declarations here. The `envelope` is the bound the authored plan is admitted under: `fuel` is the total number of leaf calls the plan may make, `depth` the nesting it may reach, and `fanout` the members any one group may hold.
 
 ```ts
 import { MemoryTrellis } from "@smthrs/memory"
@@ -333,12 +333,12 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 
 ### `@smthrs/memory/MemoryTrellis`
 
-| Export        | Signature               | Behavior                                                                                                    |
-| ------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `MakeOptions` | interface               | Everything `Trellis.make` accepts plus `memory`, the policy the authored plan runs under.                   |
-| `Parts`       | interface               | `{ author, leaf }`: the scoped flows to hold when you drive the plan yourself with `Trellis.run`.           |
-| `parts`       | `(options) => Parts`    | Applies the policy to the author and the leaf without composing them.                                       |
-| `make`        | `(options) => Flow.Any` | Declares a trellis whose author, leaves, and memory flows all run under one policy. The graph is unchanged. |
+| Export        | Signature                                   | Behavior                                                                                                                     |
+| ------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `MakeOptions` | interface                                   | What `Trellis.make` accepts, with `author` and `leaf` narrowed to `Flow.Any` so each can carry an annotation, plus `memory`. |
+| `Parts`       | interface                                   | `{ author, leaf }`: the scoped flows to hold when you drive the plan yourself with `Trellis.run`.                            |
+| `parts`       | `(options) => Parts`                        | Applies the policy to the author and the leaf without composing them.                                                        |
+| `make`        | `(options) => Trellis.TrellisFlow<unknown>` | Declares a trellis whose author, leaves, and memory flows all run under one policy. The graph is unchanged.                  |
 
 ### `@smthrs/memory/Migrations`
 
@@ -454,14 +454,15 @@ When memory shares a database with the engine or control plane, compose all requ
 
 ### `@smthrs/memory/WithMemory`
 
-| Export         | Signature                                                                                                 | Behavior                                                                                                                                       |
-| -------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Policy`       | schema and type                                                                                           | `{ namespace, recall: "auto" \| "none", maxTokens, retain: "on-complete" \| "never" }`, with `maxTokens` capped at `Recall.MAX_RECALL_TOKENS`. |
-| `MemoryPolicy` | annotation key `flows/memory/Annotations/MemoryPolicy`                                                    | The annotation key carrying the policy on a flow.                                                                                              |
-| `references`   | `(flow: Flow.Any) => ReadonlyArray<Flow.Reference>`                                                       | The collaborators a dynamic flow declares, callable flows and unresolved registry names alike.                                                 |
-| `children`     | `(flow: Flow.Any) => ReadonlyArray<Flow.Any>`                                                             | The callable flows a dynamic flow declares.                                                                                                    |
-| `policyOf`     | `(flow: Flow.Any) => Policy \| undefined`                                                                 | Reads the policy a flow carries.                                                                                                               |
-| `withMemory`   | `(flow: Flow<Input, Output, E>, policy: Policy) => Flow<Input, Output, E>`; also `(Flow.Any) => Flow.Any` | Returns a copy carrying the policy, with every declared flow carrying the same policy. Invalid policies throw `MemoryError` at the call.       |
+| Export         | Signature                                                                                                                                                    | Behavior                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Policy`       | schema and type                                                                                                                                              | `{ namespace, recall: "auto" \| "none", maxTokens, retain: "on-complete" \| "never" }`, with `maxTokens` capped at `Recall.MAX_RECALL_TOKENS`. |
+| `MemoryPolicy` | annotation key `flows/memory/Annotations/MemoryPolicy`                                                                                                       | The annotation key carrying the policy on a flow.                                                                                              |
+| `Declared`     | `Flow.Any \| DurableDeclaration`                                                                                                                             | A declaration a policy attaches to: a `@smthrs/core` signature, or the `@smthrs/flow` flow a pattern composes.                                 |
+| `references`   | `(flow: Declared) => ReadonlyArray<Flow.Reference>`                                                                                                          | The collaborators a flow declares, callable flows and unresolved registry names alike. A `@smthrs/flow` flow declares none.                    |
+| `children`     | `(flow: Declared) => ReadonlyArray<Flow.Any>`                                                                                                                | The callable flows a flow declares.                                                                                                            |
+| `policyOf`     | `(flow: Declared) => Policy \| undefined`                                                                                                                    | Reads the policy a flow carries.                                                                                                               |
+| `withMemory`   | `(flow: Flow<Input, Output, E>, policy: Policy) => Flow<Input, Output, E>`; also `(Flow.Any) => Flow.Any` and `(DurableFlow.Flow<…>) => DurableFlow.Flow<…>` | Returns a copy carrying the policy, with every declared flow carrying the same policy. Invalid policies throw `MemoryError` at the call.       |
 
 ### `@smthrs/memory/test/TestMemory`
 

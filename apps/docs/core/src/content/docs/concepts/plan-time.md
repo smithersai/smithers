@@ -36,11 +36,6 @@ importing or evaluating supplied JavaScript or TypeScript. If planning requires
 untrusted code, load and plan it inside an externally isolated environment
 whose permissions and resource limits are enforced outside `@smthrs/core`.
 
-`TestRuntime` also executes deferred callbacks, including `Node.map` mappers,
-and requires trusted code. It is a test helper with no persistence or
-scheduling, and provides no sandbox. See
-[Test a declaration without a host](/guides/test-a-declaration/).
-
 ## What Graph.build evaluates
 
 `Graph.build` walks the declaration once. It evaluates:
@@ -50,14 +45,13 @@ scheduling, and provides no sandbox. See
   symbolic placeholder standing for the value the arm will receive.
 - The optional `resolveLayers` callback, independently for each node.
 
-It does not evaluate a `Node.map` mapper or elaborate a dynamic node.
+It does not evaluate a `Node.map` mapper.
 Host step execution is separate from these planning callbacks. Evaluating the builders is what makes
 the downstream topology visible: the plan contains the report step and its
 dependency on the review step before either has run.
 
-The result is frozen. `Graph.nodes`, `Graph.edges`, `Graph.conflicts`, and
-`Graph.diagnostics` hand back the graph's own values, so a reader cannot edit
-the plan it is reading.
+The result is frozen. `Graph.nodes`, `Graph.edges`, and `Graph.diagnostics` hand
+back the graph's own values, so a reader cannot edit the plan it is reading.
 
 ## Node ids are structural
 
@@ -139,10 +133,9 @@ there is nothing to inspect: `Flow.make` and a flow call raise `FlowError`,
 Declaration failures are recorded. `Graph.build` returns a graph even when the
 declaration is invalid and lists the problems in `Graph.diagnostics`, so a
 reviewer can see the whole plan and its objections at once.
-`Graph.keyMaterial` is where the two meet: it refuses a graph carrying a fatal
-diagnostic, returning that diagnostic unchanged, so a declaration the builder
-called invalid can never become a durable step key. `Graph.isFatalDiagnostic`
-reports which codes block it.
+`Graph.drafts` is where the two meet: it refuses a graph carrying a fatal
+diagnostic, so a declaration the builder called invalid can never become a
+durable step key. `@smthrs/flow` documents which codes block it.
 
 For each code and its fix, see [Troubleshooting](/troubleshooting/).
 
@@ -150,5 +143,5 @@ For each code and its fix, see [Troubleshooting](/troubleshooting/).
 
 - [Identity and key material](/concepts/identity/): what makes two declarations the
   same step.
-- [Inspect a built graph](/guides/inspect-a-graph/): the getters and what
-  each one answers.
+- [Declare a flow](/guides/declare-a-flow/): the constructor whose body
+  `Graph.build` evaluates.

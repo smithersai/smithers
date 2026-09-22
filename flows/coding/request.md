@@ -1,7 +1,7 @@
 # A prompt through the existing native host
 
-`coding/request` is a private repository declaration, backed by the existing
-registered `coding/RunRequest` delegate and `coding/Request` flow. It accepts
+`coding/request` is a private repository declaration whose module IS the
+`coding/Request` flow, so it names no delegate. It accepts
 `{ prompt, feedback?, maxRounds? }`; the correction limit defaults to three and
 admits one through eight passes. The first implementation counts as a pass.
 
@@ -32,7 +32,8 @@ repository without generated knowledge can run the same implementation and
 validation path. Queued messages cause fresh planning at the boundaries below.
 Material planning questions use the existing durable HumanTask.
 
-`coding/prototype` is a separate opt-in declaration backed by `RunPrototype`.
+`coding/prototype` is a separate opt-in declaration whose module IS the
+`coding/Prototype` flow.
 It prepares and admits source, runs the disposable file-level POC, then checks
 source again. It does not enter correction or landing. A real fix does not need
 a prototype first. Both entries use ordinary native execution records. The

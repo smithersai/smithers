@@ -15,8 +15,10 @@ describe("Flows", () => {
   it("declares remember and recall as unsealed flows without bodies", () => {
     expect(Flows.remember.name).toBe("remember")
     expect(Flows.recall.name).toBe("recall")
-    expect(Flows.remember.body).toBeUndefined()
-    expect(Flows.recall.body).toBeUndefined()
+    // A declaration with no body of its own carries the action a host
+    // implements, which is what `handlersFor` supplies.
+    expect(Flows.remember.action).toBeDefined()
+    expect(Flows.recall.action).toBeDefined()
     expect(Flows.remember.effects?.tier).not.toBe("sealed")
     expect(Flows.recall.effects?.tier).toBe("sealed")
   })
@@ -31,27 +33,30 @@ describe("Flows", () => {
     expect(Effects.narrow(envelope, Flows.recallEffects)).toEqual({ ok: true })
 
     const boundRecall = Flow.make({
+      name: "bound-recall",
       input: Flows.RecallInput,
       output: Flows.RecallOutput,
       effects: Flows.recallEffects,
       body: () => Node.succeed([])
     })
     const sealed = Flow.make({
+      name: "sealed-caller",
       input: Flows.RecallInput,
       output: Flows.RecallOutput,
       effects: envelope,
-      body: (input) => boundRecall(input)
+      body: (input) => boundRecall.call(input)
     })
-    const diagnostics = Graph.diagnostics(Graph.build(sealed({ banks: ["bank"], query: "q" })))
+    const diagnostics = Graph.diagnostics(Graph.build(sealed.flow))
     expect(diagnostics.filter((diagnostic) => diagnostic.code === "effect_tier_widening")).toEqual([])
   })
 
   it("exposes a bindable recall slot and concrete runtime handlers", () => {
     const binding = Flow.make({
+      name: "recall-slot",
       input: Flows.RecallInput,
       output: Flows.RecallOutput
     })
-    expect(Flows.bindRecall(binding)).toBe(binding)
+    expect(Flows.bindRecall(binding)).toBe(binding.flow)
     expect(Flows.handlersFor(Flows.recall)).toMatchObject({
       remember: expect.any(Function),
       recall: expect.any(Function)

@@ -455,6 +455,44 @@ describe("Discovery module entries", () => {
     ])
   })
 
+  it.each([
+    ["tools/report", []],
+    ["report", ["name_field_ignored"]]
+  ])("accepts the declared name %s in silence only when it is the path name", async (declared, codes) => {
+    // `Flow.make` requires a name, so declaring the path name is what every
+    // module in a path-named source does. Warning about that would put a line
+    // beside every flow a scan finds and say nothing.
+    const result = await scan(tree({
+      [root]: { kind: "directory", entries: ["tools"] },
+      [`${root}/tools`]: { kind: "directory", entries: ["report"] },
+      [`${root}/tools/report`]: { kind: "directory", entries: ["flow.ts"] },
+      [`${root}/tools/report/flow.ts`]: flowModule(
+        `  name: "${declared}",\n  description: "Reports a result.",\n  capabilities: []`
+      )
+    }))
+
+    expect(result.entries[0]?.name).toBe("tools/report")
+    expect(result.warnings.map((item) => item.code)).toEqual(codes)
+  })
+
+  it("warns about a declared name it cannot read, because it cannot be shown to agree", async () => {
+    const result = await scan(tree({
+      [root]: { kind: "directory", entries: ["tools"] },
+      [`${root}/tools`]: { kind: "directory", entries: ["report"] },
+      [`${root}/tools/report`]: { kind: "directory", entries: ["flow.ts"] },
+      [`${root}/tools/report/flow.ts`]: flowModule(
+        "  name: prefix + \"report\",\n  description: \"Reports a result.\",\n  capabilities: []"
+      )
+    }))
+
+    expect(result.entries[0]?.name).toBe("tools/report")
+    expect(result.warnings).toEqual([expect.objectContaining({
+      code: "name_field_ignored",
+      name: "tools/report",
+      message: "Ignoring Flow.make name because this source uses path-derived names"
+    })])
+  })
+
   it("drops a module flow that declares no description", async () => {
     const result = await scan(tree({
       [root]: { kind: "directory", entries: ["report"] },
@@ -466,8 +504,37 @@ describe("Discovery module entries", () => {
     expect(result.warnings).toEqual([expect.objectContaining({
       code: "missing_description",
       name: "report",
-      message: "Module flows require a literal description in the default Flow.make or Flow.agent value"
+      message: "Module flows require a literal description in the default Flow.make value"
     })])
+  })
+
+  it("drops a module whose default export is built by Flow.agent", async () => {
+    // `Flow.make` is the one constructor discovery reads. `Flow.agent` is read
+    // as no declaration at all, which is what every unrecognised default
+    // export gets: the umbrella warning, then the refusal for the description
+    // that cannot be there.
+    const result = await scan(tree({
+      [root]: { kind: "directory", entries: ["report"] },
+      [`${root}/report`]: { kind: "directory", entries: ["flow.ts"] },
+      [`${root}/report/flow.ts`]: {
+        kind: "file",
+        contents: "export default Flow.agent({\n  description: \"Reports a result.\",\n  capabilities: []\n})\n"
+      }
+    }))
+
+    expect(result.entries).toEqual([])
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: "missing_description",
+        name: "report",
+        message: "Module flows require a literal description in the default Flow.make value"
+      }),
+      expect.objectContaining({
+        code: "unsupported_module_metadata",
+        name: "report",
+        message: "Could not statically read the default Flow.make declaration"
+      })
+    ])
   })
 
   it("names a module flow after its directory when names come from frontmatter", async () => {

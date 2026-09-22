@@ -237,6 +237,23 @@ interface MakeOptions<
    * duplicate-free arrays, so two spellings of one envelope are one envelope.
    */
   readonly effects?: Effects.MakeOptions | undefined
+  /**
+   * Whether a catalog may offer this flow to a model, as a literal. Defaults
+   * to `true`.
+   *
+   * It is the same statement {@link Annotations.ModelInvocable} carries, and
+   * declaring it here is what makes it READABLE without importing the module,
+   * exactly as `capabilities` and `effects` are: a registry projects a
+   * discovered flow's visibility from the source text of this literal onto the
+   * descriptor it lists, and an annotation built at run time is invisible to
+   * that projection.
+   *
+   * Declare `false` when the actions this flow's body calls are implemented by
+   * one host only. The file is discoverable wherever it sits, so a catalog
+   * elsewhere would otherwise teach an agent a call with no implementation to
+   * reach.
+   */
+  readonly modelInvocable?: boolean | undefined
   readonly idempotencyKey?:
     | ((
       payload: Payload extends Schema.Struct.Fields ? Schema.Struct.Type<Payload>

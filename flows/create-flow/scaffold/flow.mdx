@@ -20,9 +20,13 @@ The appended arguments carry the design and the project's `flows/` directory.
 that flow is the whole entry: its body is what runs, so nothing else has to be
 registered for `smthrs up <flowName>` to work.
 
-It must state its metadata literally, because discovery parses the file without
-importing it: a `description`, its `payload` and `success` schemas, and the
-`capabilities` it needs.
+The whole shape is
+`Flow.make("<tag>", { description, capabilities, effects, modelInvocable?,
+payload, success, error?, body })`. It must state its metadata literally,
+because discovery parses the file without importing it. The tag is the first
+argument and is required: `Flow.make` takes it positionally, so a flow can
+never be anonymous, and the tag a `flows/<name>/flow.ts` declares is the name
+its path derives.
 
 ```ts
 import { Action, Flow } from "@smthrs/flow"
@@ -43,6 +47,7 @@ class ReviewFailure extends Schema.TaggedError<ReviewFailure>()(
 export default Flow.make("example/Review", {
   description: "Reviews one change and reports what it found.",
   capabilities: ["fs:read:**"],
+  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
   payload: { change: Schema.String },
   success: Schema.String,
   error: ReviewFailure,

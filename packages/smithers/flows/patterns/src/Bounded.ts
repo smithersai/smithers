@@ -13,9 +13,9 @@
  *
  * @since 0.1.0
  */
-import { Annotations, Node } from "@smthrs/core"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
 import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -61,15 +61,10 @@ interface Ranked<Member> {
 // caller composing it must be able to claim the refusal with `Effect.catchTag`.
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
 const widthRefusal = (concurrency: number): PatternError | undefined =>
-  Number.isSafeInteger(concurrency) && concurrency >= 1 ? undefined : new PatternError({
-    code: "invalid_decorator",
-    message: `Bounded concurrency must be a positive safe integer, received ${concurrency}`
-  })
+  Compose.concurrencyRefusal("Bounded", concurrency)
 
 const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
-  names.length === 0
-    ? new PatternError({ code: "invalid_decorator", message: "Bounded requires at least one member" })
-    : undefined
+  Compose.nonEmptyMembersRefusal("Bounded", names)
 
 const width = (concurrency: number): void => {
   const refusal = widthRefusal(concurrency)
@@ -81,8 +76,7 @@ const nonEmpty = (names: ReadonlyArray<string>): void => {
   if (refusal !== undefined) throw refusal
 }
 
-const declaredPriority = (node: Node.Any): number | undefined =>
-  Option.getOrUndefined(Annotations.getOption(node.ast.annotations, Annotations.Priority))
+const declaredPriority = (node: Node.Any): number | undefined => Node.declaredPriority(node.ast)
 
 // Descending priority, declaration order among equals, so a plan built twice
 // from the same record is identical.
@@ -108,7 +102,7 @@ const ranked = <Member>(
 export const all = (
   members: Readonly<Record<string, Node.Any>>,
   options: AllOptions
-): Node.Node<Readonly<Record<string, unknown>>, unknown> => {
+): Node.Node<Readonly<Record<string, unknown>>, unknown, any> => {
   width(options.concurrency)
   const names = Object.keys(members)
   nonEmpty(names)
@@ -120,26 +114,48 @@ export const all = (
     priorities.set(name, value)
   }
   const order = ranked(members, (name) => priorities.get(name)!)
-  let joined: Node.Node<Readonly<Record<string, unknown>>, unknown> = Node.succeed({})
+  const batches: Array<Record<string, Node.Any>> = []
   for (let offset = 0; offset < order.length; offset += options.concurrency) {
-    const batch = Object.fromEntries(
-      order.slice(offset, offset + options.concurrency).map((entry) => [
-        entry.name,
-        options.priority === undefined || declaredPriority(entry.member) !== undefined
-          ? entry.member
-          : Node.priority(entry.member, options.priority)
-      ])
-    ) as Record<string, Node.Any>
-    joined = Node.andThen(
-      joined,
-      Node.capture({ offset }, (previous) =>
-        Node.map(
-          Node.all(batch),
-          Node.capture({ offset }, (values) => ({ ...previous, ...values }))
+    batches.push(
+      Object.fromEntries(
+        order.slice(offset, offset + options.concurrency).map((entry) => [
+          entry.name,
+          options.priority === undefined || declaredPriority(entry.member) !== undefined
+            ? entry.member
+            : Node.priority(entry.member, options.priority)
+        ])
+      ) as Record<string, Node.Any>
+    )
+  }
+  // Each batch gates the next one, so the plan carries the width bound as
+  // dependency edges rather than as a note a scheduler has to honour, and the
+  // joined record is every member's planned reference under its declared name.
+  // A planned result may be read by field and passed on, never computed on, so
+  // the record is assembled from references instead of spread from values.
+  const visit = (
+    batch: number,
+    carried: Readonly<Record<string, Planned.Planned<unknown>>>
+  ): Node.Node<Readonly<Record<string, unknown>>, unknown, any> => {
+    const members = batches[batch]
+    if (members === undefined) return Node.succeed(carried)
+    return Node.bindPlanned(
+      Node.all(members),
+      Node.capture({ batch, members: Object.keys(members) }, (reference) =>
+        Node.andThen(
+          Node.succeed(reference),
+          visit(batch + 1, {
+            ...carried,
+            ...Object.fromEntries(
+              Object.keys(members).map((name) => [
+                name,
+                (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[name]!
+              ])
+            )
+          })
         ))
     )
   }
-  return joined
+  return visit(0, {})
 }
 
 /**

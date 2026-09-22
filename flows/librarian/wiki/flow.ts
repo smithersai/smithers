@@ -1,7 +1,10 @@
-import { Flow as Declaration } from "@smthrs/core"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Schema } from "effect"
+// The flow below is this module's own default export. Discovery reads the
+// literal `export default Flow.make(` without importing the file, so the flow
+// cannot also be a named const; the registration beside it reads the value
+// back through this self-import, which resolves after this module evaluates.
+import Wiki from "./flow.ts"
 import { git, sourceRevision } from "../tutorial2-background_flows-git.ts"
 
 export const WikiPage = Schema.Struct({ id: Schema.String, path: Schema.String, title: Schema.String,
@@ -11,7 +14,7 @@ export const PublishedWikiPage = Schema.Struct({ id: Schema.String, slug: Schema
 export const WikiReceipt = Schema.Struct({ repo: Schema.String, sourceHead: Schema.String, pages: Schema.Array(WikiPage),
   publishedPages: Schema.optional(Schema.Array(PublishedWikiPage)) })
 export type WikiReceipt = typeof WikiReceipt.Type
-const Input = Schema.Struct({ repo: Schema.NonEmptyString })
+export const Input = Schema.Struct({ repo: Schema.NonEmptyString })
 
 /** A bounded, factual source index. No model inference is presented as codebase knowledge. */
 export const generateWiki = async (root: string, repo: string): Promise<WikiReceipt> => {
@@ -37,22 +40,29 @@ export const generateWiki = async (root: string, repo: string): Promise<WikiRece
   }
   return { repo, sourceHead: head, pages }
 }
-export const CreateWiki = Action.make("librarian/create-wiki", { payload: Executable.Invocation, success: WikiReceipt, error: Schema.String })
-export const Wiki = Flow.make("librarian/CreateWiki", { payload: Executable.Invocation, success: WikiReceipt, error: Schema.String,
-  body: input => CreateWiki.call(input) })
+export const CreateWiki = Action.make("librarian/create-wiki", { payload: Input, success: WikiReceipt, error: Schema.String })
+
+/**
+ * `modelInvocable: false` because `librarian/create-wiki` is implemented by the
+ * product host alone. This file sits in a repository any host may scan, and a
+ * catalog elsewhere would otherwise teach an agent a call with no
+ * implementation to reach.
+ */
+export default Flow.make("librarian/CreateWiki", {
+  description: "Create a Markdown Wiki from the repository source tree with revision provenance and linked pages.",
+  capabilities: ["fs:read:**", "wiki:write"],
+  effects: { reads: ["**"], writes: ["wiki/**"], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: false,
+  payload: Input, success: WikiReceipt, error: Schema.String,
+  body: input => CreateWiki.call(input)
+})
+
 /** The host resolves the authorized workspace; persistence upserts immutable revision-scoped pages into its Wiki collection. */
 export const registration = (root: string, persist: (receipt: WikiReceipt) => Promise<void | ReadonlyArray<typeof PublishedWikiPage.Type>>, owningRepo?: string) => Layer.mergeAll(
-  CreateWiki.toLayer(({ input }) => Effect.tryPromise({ try: async () => {
-    const { repo } = Schema.decodeUnknownSync(Input)(input)
+  CreateWiki.toLayer(({ repo }) => Effect.tryPromise({ try: async () => {
     if (owningRepo !== undefined && repo !== owningRepo) throw new Error("The requested repository does not own this workspace.")
     const receipt = await generateWiki(root, repo)
     const publishedPages = await persist(receipt)
     return publishedPages === undefined ? receipt : { ...receipt, publishedPages }
   }, catch: cause => String(cause) })), Interpreter.layer(Wiki)
 ).pipe(Layer.provideMerge(Action.layerImplementations))
-
-export default Declaration.make({
-  description: "Create a Markdown Wiki from the repository source tree with revision provenance and linked pages.",
-  input: Input, output: WikiReceipt, capabilities: ["fs:read:**", "wiki:write"], flows: ["librarian/CreateWiki"],
-  effects: { reads: ["**"], writes: ["wiki/**"], mode: "expected", onConflict: "serialize", tier: "sealed" }
-})

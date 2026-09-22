@@ -1,14 +1,24 @@
+/**
+ * `WithRetry` on `@smthrs/flow` declarations.
+ *
+ * Every assertion is the one it was: the composed name, what the declaration
+ * does NOT add to the graph, which bounds are refused, and what
+ * {@link WithRetry.retryEffect} spends at run time. Two readings moved:
+ * `@smthrs/core`'s `flow.name` is `@smthrs/flow`'s `flow._tag`, and its
+ * `flow.implementation` is the body's `Node.functionIdentity`, because a
+ * `@smthrs/flow` flow's body IS its declaration.
+ */
 import { describe, it } from "@effect/vitest"
-import { Digest, Effects, Flow, Graph, Node } from "@smthrs/core"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import * as Effects from "@smthrs/plan/Effects"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
 import { expect, expectTypeOf } from "vitest"
 import type * as Pattern from "../src/Pattern.ts"
-import { PatternError } from "../src/PatternError.ts"
 import * as WithRetry from "../src/WithRetry.ts"
 
 const sealed = Effects.make({
@@ -19,56 +29,65 @@ const sealed = Effects.make({
   tier: "sealed"
 })
 
-/** The canonical digest of everything `/keys` hashes for a built graph. */
-const keyDigest = (flow: Flow.Any): string => {
-  const material = Graph.keyMaterial(Graph.build(flow, "file"))
-  if (Result.isFailure(material)) throw material.failure
-  return Digest.canonical(material.success.map((entry) => entry.material))
-}
+/** The one step a retried flow wraps: an action, which is opaque work. */
+const search = Action.make("withRetry/search", {
+  payload: { query: Schema.String },
+  success: Schema.String,
+  error: Schema.Never
+})
+
+const flowOf = (
+  tag: string,
+  options?: {
+    readonly effects?: Effects.Declaration | undefined
+    readonly description?: string | undefined
+  }
+): Flow.Any =>
+  Flow.make(tag, {
+    ...(options?.description === undefined ? {} : { description: options.description }),
+    payload: { query: Schema.String },
+    success: Schema.String,
+    error: Schema.Never,
+    ...(options?.effects === undefined ? {} : { effects: options.effects }),
+    body: Node.capture({ tag }, ({ query }: { readonly query: string }) => search.call({ query }))
+  }) as unknown as Flow.Any
+
+/** Everything a built graph keys on, which is what `/keys` hashes. */
+const keyMaterial = (flow: Flow.Any): ReadonlyArray<unknown> =>
+  Graph.nodes(Graph.build(flow, { query: "file" })).map((node) => node.draft.material)
+
+/** The body digest `@smthrs/core` published as `flow.implementation`. */
+const identity = (flow: Flow.Any): unknown => Node.functionIdentity(flow.body)
 
 describe("WithRetry", () => {
   it("does not encode retries as success continuations", () => {
-    const inner = Flow.make({
-      name: "search",
-      input: Schema.String,
-      output: Schema.String,
-      effects: sealed,
-      body: () => Node.dynamic({ output: Schema.String })
-    })
+    const inner = flowOf("search", { effects: sealed })
     const retried = WithRetry.withRetry(inner, { attempts: 3 })
-    const graph = Graph.build(retried, "query")
+    const graph = Graph.build(retried, { query: "query" })
 
-    expect((retried as typeof inner).name).toBe("withRetry(search, attempts=3)")
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Dynamic")).toHaveLength(1)
+    expect(retried._tag).toBe("withRetry(search, attempts=3)")
+    // One step, whatever the attempt count says, and exactly one `AndThen`:
+    // the decorator marker `Pattern.decorate` records. A retry encoded as a
+    // success chain would add one node per attempt.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "ActionCall")).toHaveLength(1)
     expect(Graph.nodes(graph).filter((node) => node.kind === "AndThen")).toHaveLength(1)
+    expect(Graph.nodes(Graph.build(WithRetry.withRetry(inner, { attempts: 9 }), { query: "query" })))
+      .toHaveLength(Graph.nodes(graph).length)
   })
 
   it("folds attempts into stable declaration identity", () => {
-    const inner = Flow.make({
-      name: "search",
-      input: Schema.String,
-      output: Schema.String,
-      effects: sealed,
-      body: () => Node.dynamic({ output: Schema.String })
-    })
-    const twice = WithRetry.withRetry(inner, { attempts: 2 }) as typeof inner
-    const twiceAgain = WithRetry.withRetry(inner, { attempts: 2 }) as typeof inner
-    const three = WithRetry.withRetry(inner, { attempts: 3 }) as typeof inner
+    const inner = flowOf("search", { effects: sealed })
+    const twice = WithRetry.withRetry(inner, { attempts: 2 })
+    const twiceAgain = WithRetry.withRetry(inner, { attempts: 2 })
+    const three = WithRetry.withRetry(inner, { attempts: 3 })
 
-    // Core commit d54180b9fe embeds callable references in BodyDeclaration. Restore whole-implementation
-    // equality once core records stable flow identities there.
-    expect(keyDigest(twice)).toBe(keyDigest(twiceAgain))
-    expect(twice.implementation).not.toEqual(three.implementation)
-    expect(keyDigest(twice)).not.toBe(keyDigest(three))
+    expect(keyMaterial(twice)).toEqual(keyMaterial(twiceAgain))
+    expect(identity(twice)).not.toEqual(identity(three))
+    expect(keyMaterial(twice)).not.toEqual(keyMaterial(three))
   })
 
   it("rejects invalid attempt bounds", () => {
-    const inner = Flow.make({
-      input: Schema.Void,
-      output: Schema.Void,
-      effects: sealed,
-      body: () => Node.succeed(undefined)
-    })
+    const inner = flowOf("bounded", { effects: sealed })
 
     expect(() => WithRetry.withRetry(inner, { attempts: 0 })).toThrow(
       expect.objectContaining({
@@ -111,50 +130,40 @@ describe("WithRetry", () => {
     }))
 
   it("folds backoff and non-retryable tags into the name and identity", () => {
-    const inner = Flow.make({
-      name: "search",
-      input: Schema.String,
-      output: Schema.String,
-      effects: sealed,
-      body: () => Node.dynamic({ output: Schema.String })
-    })
-    const plain = WithRetry.withRetry(inner, { attempts: 4 }) as typeof inner
+    const inner = flowOf("search", { effects: sealed })
+    const plain = WithRetry.withRetry(inner, { attempts: 4 })
     const backoff = WithRetry.withRetry(inner, {
       attempts: 4,
       backoff: { initialMs: 100, factor: 2, maxMs: 250 }
-    }) as typeof inner
+    })
     const slower = WithRetry.withRetry(inner, {
       attempts: 4,
       backoff: { initialMs: 100, factor: 3, maxMs: 250 }
-    }) as typeof inner
-    const guarded = WithRetry.withRetry(inner, { attempts: 4, nonRetryable: ["patterns/Fatal"] }) as typeof inner
+    })
+    const guarded = WithRetry.withRetry(inner, { attempts: 4, nonRetryable: ["patterns/Fatal"] })
 
-    expect(backoff.name).toBe("withRetry(search, attempts=4, backoff=100x2<=250)")
-    expect(guarded.name).toBe("withRetry(search, attempts=4, nonRetryable=patterns/Fatal)")
-    expect(backoff.implementation).not.toEqual(plain.implementation)
-    expect(backoff.implementation).not.toEqual(slower.implementation)
-    expect(guarded.implementation).not.toEqual(plain.implementation)
+    expect(backoff._tag).toBe("withRetry(search, attempts=4, backoff=100x2<=250)")
+    expect(guarded._tag).toBe("withRetry(search, attempts=4, nonRetryable=patterns/Fatal)")
+    expect(keyMaterial(backoff)).not.toEqual(keyMaterial(plain))
+    expect(keyMaterial(backoff)).not.toEqual(keyMaterial(slower))
+    expect(keyMaterial(guarded)).not.toEqual(keyMaterial(plain))
   })
 
   it("names an unnamed inner flow anonymous", () => {
-    const inner = Flow.make({
-      input: Schema.String,
-      output: Schema.String,
-      body: () => Node.dynamic({ output: Schema.String })
-    })
+    const retried = WithRetry.withRetry(flowOf(""), { attempts: 2 })
 
-    const retried = WithRetry.withRetry(inner, { attempts: 2 }) as typeof inner
+    expect(retried._tag).toBe("withRetry(anonymous, attempts=2)")
+  })
 
-    expect(retried.name).toBe("withRetry(anonymous, attempts=2)")
+  it("carries the wrapped flow's description, and states none when it has none", () => {
+    const described = WithRetry.withRetry(flowOf("search", { description: "Search the index." }), { attempts: 2 })
+
+    expect(described.description).toBe("Search the index.")
+    expect(WithRetry.withRetry(flowOf("search"), { attempts: 2 }).description).toBeUndefined()
   })
 
   it("rejects an invalid backoff", () => {
-    const inner = Flow.make({
-      input: Schema.Void,
-      output: Schema.Void,
-      effects: sealed,
-      body: () => Node.succeed(undefined)
-    })
+    const inner = flowOf("bounded", { effects: sealed })
 
     expect(() => WithRetry.withRetry(inner, { attempts: 2, backoff: { initialMs: 0, factor: 2, maxMs: 10 } }))
       .toThrow(expect.objectContaining({
@@ -197,20 +206,12 @@ describe("WithRetry", () => {
   // millisecond": the ladder is a `Duration`, which carries sub-millisecond
   // waits, and a fast test schedule is a legitimate declaration.
   it("accepts a sub-millisecond initial delay and folds it into the name", () => {
-    const inner = Flow.make({
-      name: "search",
-      input: Schema.String,
-      output: Schema.String,
-      effects: sealed,
-      body: () => Node.dynamic({ output: Schema.String })
-    })
-
-    const fast = WithRetry.withRetry(inner, {
+    const fast = WithRetry.withRetry(flowOf("search", { effects: sealed }), {
       attempts: 2,
       backoff: { initialMs: 0.5, factor: 2, maxMs: 10 }
-    }) as typeof inner
+    })
 
-    expect(fast.name).toBe("withRetry(search, attempts=2, backoff=0.5x2<=10)")
+    expect(fast._tag).toBe("withRetry(search, attempts=2, backoff=0.5x2<=10)")
   })
 
   it("spaces attempts by a capped exponential backoff", () =>

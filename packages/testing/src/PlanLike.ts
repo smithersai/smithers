@@ -19,6 +19,12 @@ export interface PlanPlacementLike {
 /**
  * One plan node, in the shape the plan assertions read.
  *
+ * The fields mirror what `@smthrs/flow`'s `Graph.GraphNode` carries. A
+ * conflict strategy and an inherited envelope are not among them: write
+ * overlap is `Plan.compile`'s verdict, and an effect envelope is a build-time
+ * ceiling `Graph.build` checks a declaration against rather than a fact it
+ * records on a node.
+ *
  * @category models
  * @since 0.0.0
  */
@@ -27,17 +33,13 @@ export interface PlanNodeLike {
   readonly key: string
   readonly kind: string
   readonly placement?: PlanPlacementLike
-  /** Declared `read:<path>` / `write:<path>` entries from fromGraph; empty when undeclared. */
+  /** Declared `read:` / `write:` / `remove:` entries from fromGraph; empty when undeclared. */
   readonly effects: ReadonlyArray<string>
-  /** Effect mode from the node's own declaration, absent when undeclared (`hermetic` | `expected`). */
+  /** Boundary mode from the node's own effect declaration, absent when undeclared (`hard` | `expected`). */
   readonly mode?: string
-  /** Effect tier from the node's own declaration, absent when undeclared (`sealed` | `compensable` | `irreversible`). */
-  readonly tier?: string
-  /** Conflict strategy from the node's own declaration, absent when undeclared (`serialize` | `lane` | `fail`). */
-  readonly onConflict?: string
+  /** The tier the node is keyed under (`sealed` | `compensable` | `irreversible`). */
+  readonly tier: string
   readonly sealed: boolean
-  /** Effective effects, including inherited admission, when projected by fromGraph. */
-  readonly envelope?: Record<string, unknown>
 }
 
 /**

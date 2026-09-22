@@ -1,14 +1,20 @@
 /**
- * Callable, schema-described flow declarations and their immutable combinators.
+ * Schema-described flow signatures, and the combinators that decorate one.
  *
- * Calling a flow constructs a `FlowCall` node. It never evaluates the flow
- * body; graph construction evaluates pure bodies at plan time.
+ * A signature is sugar over `@smthrs/flow`. `Flow.make` lowers what an author
+ * declares onto the two values that package executes: an `Action.Declared`,
+ * which is what a host supplies an implementation for through `toLayer`, and a
+ * `Flow` whose body is one call to that action. A signature that declares its
+ * own `body` keeps the body and needs no action. Either way the value carries
+ * the metadata a catalog, a decorator, or a harness reads back, and
+ * {@link Flow.call} records a node in `@smthrs/plan`'s one node model.
  *
  * Governing contract: `packages/smithers/flows/core/docs/api.md`, published as
  * https://smithers.sh/docs/reference/api/core.
  *
  * @since 0.0.0
  */
+import { Action, Flow as Durable } from "@smthrs/flow"
 import type * as Context from "effect/Context"
 import { dual, identity } from "effect/Function"
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
@@ -17,8 +23,7 @@ import * as Schema from "effect/Schema"
 import type * as Types from "effect/Types"
 import * as Annotations from "./Annotations.ts"
 import * as Effects from "./Effects.ts"
-import { flowCall, functionIdentity, makeNode } from "./internal/node.ts"
-import * as Node from "./Node.ts"
+import type * as Node from "./Node.ts"
 import type * as Placement from "./Placement.ts"
 
 /**
@@ -40,91 +45,9 @@ export const TypeId: TypeId = "~flows/core/Flow"
 export type TypeId = "~flows/core/Flow"
 
 /**
- * A callable flow declaration.
- *
- * The input schema is invariant because it participates in both decoding and
- * encoding. Output schemas and errors are covariant.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export interface Flow<
-  in out I extends Schema.Top,
-  out O extends Schema.Top,
-  out E = never
-> extends Pipeable {
-  (input: I["Type"]): Node.Node<O["Type"], E>
-  readonly [TypeId]: {
-    readonly _Input: Types.Invariant<I>
-    readonly _Output: Types.Covariant<O>
-    readonly _Error: Types.Covariant<E>
-  }
-  readonly input: I
-  readonly output: O
-  readonly name?: string | undefined
-  readonly description?: string | undefined
-  readonly capabilities: ReadonlyArray<string>
-  readonly effects: Effects.Declaration | undefined
-  /**
-   * Advisory model seat metadata recorded on the flow.
-   *
-   * @since 0.1.0
-   */
-  readonly model?: Seat | undefined
-  /**
-   * Advisory collaborator metadata recorded on the flow.
-   *
-   * @since 0.1.0
-   */
-  readonly flows?: ReadonlyArray<Reference> | undefined
-  /**
-   * Advisory prompt metadata recorded on the flow.
-   *
-   * @since 0.1.0
-   */
-  readonly prompt?: string | undefined
-  readonly annotations: Context.Context<never>
-  readonly body: ((input: I["Type"]) => Node.Node<O["Type"], E>) | undefined
-  readonly implementation: Implementation | undefined
-}
-
-/**
- * Marker-only existential type for heterogeneous collections of flows.
- *
- * @category utility types
- * @since 0.0.0
- * @slop
- */
-export interface Any {
-  readonly [TypeId]: object
-  readonly input: Schema.Top
-  readonly output: Schema.Top
-}
-
-/**
- * A callable flow reference accepted by a dynamic flow.
- *
- * Module-authored flows pass callable flow values. Markdown loaders may pass
- * unresolved registry names, which the harness resolves before execution.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export type Reference = Any | string
-
-/**
  * The name of a model seat a flow may run on.
  *
- * Seats are referred to by name, never by provider model id. The literal seat
- * names will be narrowed by the generated `flows.gen.ts` registry once that
- * codegen ships; until then this alias accepts any string while signalling
- * that the value is a seat name and not a model id.
- *
- * // TODO(flows.gen.ts): narrow to the generated seat-name union emitted by
- * // the `/fs` registry codegen, keeping `string & {}` as the escape
- * // hatch for seats declared outside the generated set.
+ * Seats are referred to by name, never by provider model id.
  *
  * @category models
  * @since 0.0.0
@@ -133,51 +56,129 @@ export type Reference = Any | string
 export type Seat = string & {}
 
 /**
- * The seat, collaborator, and prompt declaration a body-backed flow records.
- *
- * A body-less flow turns the same three fields into its `Dynamic`
- * implementation. A flow with a body keeps its body digest as identity and
- * carries the declaration alongside it, so a decorator that changes the
- * declared seat or collaborators changes the flow's key material instead of
- * disappearing from it. Fields the author omitted are absent, so a flow that
- * declares none of them records no declaration and keys exactly as it did
- * before the field existed.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export interface BodyDeclaration {
-  readonly model?: Seat | undefined
-  readonly flows?: ReadonlyArray<Reference> | undefined
-  readonly prompt?: string | undefined
-}
-
-/**
- * Implementation identity included when a flow is used as a dynamic flow.
- *
- * The exact source is hashed with SHA-256. Unannotated bodies receive
- * process-local identity because JavaScript cannot inspect closure state.
- * Authors declare inert configuration with {@link Node.capture}, which folds
- * canonical capture data into deterministic identity.
+ * A collaborator a flow declares: a flow value, or a registry name the harness
+ * resolves before execution.
  *
  * @category models
  * @since 0.0.0
  * @slop
  */
-export type Implementation =
-  | {
-    readonly _tag: "Body"
-    readonly algorithm: "sha256-source-ephemeral/v4" | "sha256-source-captures/v4"
-    readonly digest: string
-    readonly declaration?: BodyDeclaration | undefined
+export type Reference = Any | string
+
+/**
+ * The struct payload a declared `input` schema becomes.
+ *
+ * `@smthrs/flow` requires a struct payload, and a signature may declare any
+ * schema, so a non-struct input travels as the one field `input`.
+ * {@link Flow.call} takes the declared shape and wraps it, so an author never
+ * writes the wrapper.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Payload<I extends Schema.Top> =
+  & (I extends Durable.AnyStructSchema ? I : Schema.Struct<{ readonly input: I }>)
+  & Durable.AnyStructSchema
+
+/**
+ * A schema-described flow signature.
+ *
+ * The input schema is invariant because it participates in both decoding and
+ * encoding. Output and error schemas are covariant.
+ *
+ * @category models
+ * @since 0.0.0
+ * @slop
+ */
+export interface Flow<
+  I extends Schema.Top,
+  O extends Schema.Top,
+  Err extends Schema.Top = typeof Schema.Never,
+  Requires = Action.Requirement<string>
+> extends Pipeable {
+  readonly [TypeId]: {
+    readonly _Input: Types.Invariant<I>
+    readonly _Output: Types.Covariant<O>
+    readonly _Error: Types.Covariant<Err>
   }
-  | {
-    readonly _tag: "Dynamic"
-    readonly model: Seat | undefined
-    readonly flows: ReadonlyArray<Reference>
-    readonly prompt: string | undefined
-  }
+  /** The declared name, which is the tag of the flow and of the action. */
+  readonly name: string
+  readonly description: string | undefined
+  /** The input schema as DECLARED, before {@link Payload} wraps a non-struct. */
+  readonly input: I
+  readonly output: O
+  readonly error: Err
+  readonly capabilities: ReadonlyArray<string>
+  readonly effects: Effects.Declaration | undefined
+  /**
+   * Advisory model seat metadata recorded on the flow.
+   *
+   * @since 0.1.0
+   */
+  readonly model: Seat | undefined
+  /**
+   * Advisory collaborator metadata recorded on the flow.
+   *
+   * @since 0.1.0
+   */
+  readonly flows: ReadonlyArray<Reference> | undefined
+  /**
+   * Advisory prompt metadata recorded on the flow.
+   *
+   * @since 0.1.0
+   */
+  readonly prompt: string | undefined
+  /**
+   * The annotation bag the lowered flow and action carry, with the declared
+   * `capabilities` and `effects` already in it.
+   */
+  readonly annotations: Context.Context<never>
+  /**
+   * The `@smthrs/flow` flow this signature IS, tagged with {@link Flow.name}.
+   *
+   * It is what `Graph.build`, an `Interpreter`, and a registry that checks
+   * `@smthrs/flow`'s own type id are handed.
+   */
+  readonly flow: Durable.Flow<string, Payload<I>, O, Err, Requires>
+  /**
+   * The declared action a host implements with `toLayer`, on a signature that
+   * declared no body. A signature with a body carries `undefined`: its body IS
+   * the implementation.
+   */
+  readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
+  /**
+   * Records a call to this signature, in the shape its `input` declares.
+   *
+   * It never runs the body: graph construction evaluates pure bodies at plan
+   * time.
+   */
+  readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+}
+
+/**
+ * Marker-only existential type for heterogeneous collections of flows.
+ *
+ * It names every property a consumer outside this package reads off a
+ * signature, so a decorator that holds one erased can still read what it
+ * declares.
+ *
+ * @category utility types
+ * @since 0.0.0
+ * @slop
+ */
+export interface Any {
+  readonly [TypeId]: object
+  readonly name: string
+  readonly description: string | undefined
+  readonly input: Schema.Top
+  readonly output: Schema.Top
+  readonly capabilities: ReadonlyArray<string>
+  readonly effects: Effects.Declaration | undefined
+  readonly flows: ReadonlyArray<Reference> | undefined
+  readonly annotations: Context.Context<never>
+  readonly flow: Durable.Any
+  readonly call: (input: never) => Node.Node<unknown, unknown, unknown>
+}
 
 /**
  * Extracts the decoded input type of a flow.
@@ -198,174 +199,164 @@ export type Input<F> = F extends { readonly input: infer I extends Schema.Top } 
 export type Output<F> = F extends { readonly output: infer O extends Schema.Top } ? O["Type"] : never
 
 /**
- * Extracts the error type of a flow.
+ * Extracts the decoded error type of a flow.
  *
  * @category utility types
  * @since 0.0.0
  * @slop
  */
-export type Error<F> = F extends Flow<infer _I, infer _O, infer E> ? E : never
+export type Error<F> = F extends { readonly error: infer Err extends Schema.Top } ? Err["Type"] : never
 
 /**
- * Stable code emitted by flow construction failures.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export const FlowErrorCode = Schema.Literals(["missing_body"])
-
-/**
- * Stable code emitted by flow construction failures.
- *
- * @category models
- * @since 0.0.0
- * @slop
- */
-export type FlowErrorCode = typeof FlowErrorCode.Type
-
-/**
- * A typed flow construction failure.
- *
- * @category errors
- * @since 0.0.0
- * @slop
- */
-export class FlowError extends Schema.TaggedError<FlowError>()("flows/core/FlowError", {
-  code: FlowErrorCode,
-  message: Schema.String
-}) {}
-
-/**
- * Configures schemas, metadata, effects, and implementation for {@link make}
- * and {@link agent}.
+ * Configures schemas, metadata, effects, and body for {@link make}.
  *
  * @category models
  * @since 0.0.0
  * @slop
  */
 export interface MakeOptions<
-  Input extends Schema.Top,
-  Output extends Schema.Top,
-  E
+  I extends Schema.Top,
+  O extends Schema.Top,
+  Err extends Schema.Top,
+  Requires
 > {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly input?: Input | undefined
-  readonly output?: Output | undefined
+  readonly input?: I | undefined
+  readonly output?: O | undefined
+  readonly error?: Err | undefined
   readonly capabilities?: ReadonlyArray<string> | undefined
   readonly effects?: Effects.Declaration | undefined
   readonly model?: Seat | undefined
   readonly flows?: ReadonlyArray<Reference> | undefined
   readonly prompt?: string | undefined
   readonly body?:
-    | ((input: Types.NoInfer<Input["Type"]>) => Node.Node<Types.NoInfer<Output["Type"]>, E>)
+    | ((
+      input: Types.NoInfer<I["Type"]>
+    ) => Node.Node<Types.NoInfer<O["Type"]>, Types.NoInfer<Err["Type"]>, Requires>)
     | undefined
 }
 
-interface FlowOptions<
-  Input extends Schema.Top,
-  Output extends Schema.Top,
-  E
+/** Everything a signature is built from, with every default already applied. */
+interface Options<
+  I extends Schema.Top,
+  O extends Schema.Top,
+  Err extends Schema.Top,
+  Requires
 > {
-  readonly name: string | undefined
+  readonly name: string
   readonly description: string | undefined
-  readonly input: Input
-  readonly output: Output
+  readonly input: I
+  readonly output: O
+  readonly error: Err
   readonly capabilities: ReadonlyArray<string>
   readonly effects: Effects.Declaration | undefined
   readonly model: Seat | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
   readonly prompt: string | undefined
+  /**
+   * The annotations the AUTHOR supplied, before the declared `capabilities`
+   * and `effects` are lowered onto them.
+   *
+   * A combinator rebuilds from these rather than from the lowered bag the
+   * value exposes, so lowering a declaration twice cannot overwrite an
+   * annotation a caller put on top of it.
+   */
   readonly annotations: Context.Context<never>
-  readonly body: ((input: Input["Type"]) => Node.Node<Output["Type"], E>) | undefined
-  readonly implementation: Implementation | undefined
+  readonly body:
+    | ((input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>)
+    | undefined
 }
 
-const makeFlow = <
-  Input extends Schema.Top,
-  Output extends Schema.Top,
-  E
->(options: FlowOptions<Input, Output, E>): Flow<Input, Output, E> => {
-  const fn = (() => (input: Input["Type"]): Node.Node<Output["Type"], E> => {
-    if (options.body === undefined) {
-      throw new FlowError({
-        code: "missing_body",
-        message: options.name === undefined
-          ? "Cannot call a flow without a body"
-          : `Cannot call flow "${options.name}" without a body`
-      })
-    }
-    return makeNode(flowCall(self, { _tag: "FlowReference", name: options.name }, input, Annotations.empty))
-  })()
-  if (options.name !== undefined) {
-    Object.defineProperty(fn, "name", {
-      value: options.name,
-      enumerable: false,
-      configurable: true
-    })
+/** The options each built signature was built from, for the combinators. */
+const built = new WeakMap<object, Options<Schema.Top, Schema.Top, Schema.Top, unknown>>()
+
+const optionsOf = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  self: Flow<I, O, Err, Requires>
+): Options<I, O, Err, Requires> => built.get(self) as unknown as Options<I, O, Err, Requires>
+
+/** Whether a schema is the struct `@smthrs/flow` requires of a payload. */
+const isStruct = (schema: Schema.Top): schema is Durable.AnyStructSchema =>
+  Object.prototype.hasOwnProperty.call(schema, "fields")
+
+const payloadOf = <I extends Schema.Top>(input: I): Payload<I> =>
+  (isStruct(input) ? input : Schema.Struct({ input })) as Payload<I>
+
+/**
+ * The tier a signature's action dispatches under.
+ *
+ * A declared envelope states it. A signature that declared none is
+ * `irreversible`, the conservative default a harness already projects for this
+ * case, and never `@smthrs/flow`'s own `sealed` default: a signature that did
+ * not state its tier must not content-share another run's result.
+ */
+const tierOf = (effects: Effects.Declaration | undefined): Action.Tier => effects?.tier ?? "irreversible"
+
+const build = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  options: Options<I, O, Err, Requires>
+): Flow<I, O, Err, Requires> => {
+  const payload = payloadOf(options.input)
+  const wrapped = isStruct(options.input)
+  const declared = {
+    payload,
+    ...(options.description === undefined ? {} : { description: options.description }),
+    ...(options.capabilities.length === 0 ? {} : { capabilities: options.capabilities }),
+    ...(options.effects === undefined ? {} : { effects: options.effects }),
+    success: options.output,
+    error: options.error,
+    annotations: options.annotations
   }
-  const self = Object.assign(fn, {
+  const body = options.body
+  // A signature without a body IS the action a host implements later; the flow
+  // beside it exists because a declared capability ceiling is read off a Flow,
+  // and because a caller splices one node either way.
+  const action = body === undefined
+    ? Action.make(options.name, { ...declared, tier: tierOf(options.effects) }) as unknown as Action.Declared<
+      string,
+      Payload<I>,
+      O,
+      Err,
+      Requires
+    >
+    : undefined
+  const flow = Durable.make(options.name, {
+    ...declared,
+    body: (payloadValue: Payload<I>["Type"]) =>
+      body === undefined
+        ? action!.call(payloadValue as never)
+        : body(wrapped ? payloadValue : (payloadValue as { readonly input: I["Type"] }).input)
+  }) as unknown as Durable.Flow<string, Payload<I>, O, Err, Requires>
+  const self: Flow<I, O, Err, Requires> = {
     [TypeId]: {
       _Input: identity,
       _Output: identity,
       _Error: identity
     },
+    name: options.name,
     description: options.description,
     input: options.input,
     output: options.output,
+    error: options.error,
     capabilities: options.capabilities,
     effects: options.effects,
     model: options.model,
     flows: options.flows,
     prompt: options.prompt,
-    annotations: options.annotations,
-    body: options.body,
-    implementation: options.implementation,
+    annotations: flow.annotations,
+    flow,
+    action,
+    call: (input: I["Type"]) => flow.call((wrapped ? input : { input }) as never),
     pipe() {
       // eslint-disable-next-line prefer-rest-params
       return pipeArguments(this, arguments)
     }
-  }) as Flow<Input, Output, E>
+  }
+  built.set(self, options as unknown as Options<Schema.Top, Schema.Top, Schema.Top, unknown>)
   return self
 }
 
 /**
- * Builds the declaration recorded beside a body digest, or `undefined` when the
- * author declared no seat, collaborators, or prompt.
- */
-const bodyDeclaration = (
-  model: Seat | undefined,
-  flows: ReadonlyArray<Reference> | undefined,
-  prompt: string | undefined
-): BodyDeclaration | undefined =>
-  model === undefined && flows === undefined && prompt === undefined ? undefined : {
-    ...(model === undefined ? {} : { model }),
-    ...(flows === undefined ? {} : { flows: [...flows] }),
-    ...(prompt === undefined ? {} : { prompt })
-  }
-
-const optionsFromFlow = <
-  Input extends Schema.Top,
-  Output extends Schema.Top,
-  E
->(self: Flow<Input, Output, E>): FlowOptions<Input, Output, E> => ({
-  name: self.name,
-  description: self.description,
-  input: self.input,
-  output: self.output,
-  capabilities: self.capabilities,
-  effects: self.effects,
-  model: self.model,
-  flows: self.flows,
-  prompt: self.prompt,
-  annotations: self.annotations,
-  body: self.body,
-  implementation: self.implementation
-})
-
-/**
- * Returns `true` when a value is a `Flow`.
+ * Returns `true` when a value is a flow signature.
  *
  * @category guards
  * @since 0.0.0
@@ -374,81 +365,49 @@ const optionsFromFlow = <
 export const isFlow = (value: unknown): value is Any => Predicate.hasProperty(value, TypeId)
 
 /**
- * Creates a callable flow from one schema-first options object.
+ * Creates a flow signature from one schema-first options object.
  *
- * `model`, `flows`, and `prompt` are always recorded on the flow. On a flow
- * with a body they also form the `Body` implementation's
- * {@link BodyDeclaration}, so two flows sharing one body but declaring
- * different seats or collaborators are different steps; the body digest still
- * identifies the code that runs. When `body` is omitted and `model` or `flows`
- * is present, the same fields form the `Dynamic` implementation identity
- * instead and the body defaults to one dynamic node. With neither `model` nor
- * `flows`, the flow remains declaration-only and throws `FlowError` with code
- * `missing_body` when called.
+ * A signature declares a `name`, which is the tag its flow and its action
+ * carry. It is required: a tag is what a host binds an implementation to and
+ * what a plan records, and a declaration loaded from a file takes the name its
+ * loader derives from the path. `Flow.make` therefore throws `TypeError` on a
+ * missing or empty one rather than minting an empty tag.
+ *
+ * With a `body`, the signature is that body: it plans as the nodes the body
+ * returns. Without one, the signature is a declared action plus the flow that
+ * calls it once, and a host attaches the implementation with
+ * `flow.action.toLayer(...)`.
  *
  * @category constructors
  * @since 0.0.0
  * @slop
  */
 export const make = <
-  Input extends Schema.Top = typeof Schema.Void,
-  Output extends Schema.Top = typeof Schema.Unknown,
-  E = never
->(config: MakeOptions<Input, Output, E>): Flow<Input, Output, E> => {
-  const input = (config.input ?? Schema.Void) as Input
-  const output = (config.output ?? Schema.Unknown) as Output
-  const flows = config.flows === undefined ? undefined : [...config.flows]
-  let body = config.body
-  const bodyIdentity = body === undefined ? undefined : functionIdentity(body)
-  const declaration = bodyDeclaration(config.model, flows, config.prompt)
-  let implementation: Implementation | undefined = bodyIdentity === undefined
-    ? undefined
-    : {
-      _tag: "Body",
-      algorithm: bodyIdentity.algorithm,
-      digest: bodyIdentity.digest,
-      ...(declaration === undefined ? {} : { declaration })
-    }
-  if (body === undefined && (config.model !== undefined || flows !== undefined)) {
-    body = () =>
-      Node.dynamic({
-        ...(config.model === undefined ? {} : { model: config.model }),
-        ...(flows === undefined ? {} : { flows }),
-        output,
-        ...(config.prompt === undefined ? {} : { prompt: config.prompt })
-      })
-    implementation = {
-      _tag: "Dynamic",
-      model: config.model,
-      flows: flows ?? [],
-      prompt: config.prompt
-    }
+  I extends Schema.Top = typeof Schema.Void,
+  O extends Schema.Top = typeof Schema.Unknown,
+  Err extends Schema.Top = typeof Schema.Never,
+  Requires = Action.Requirement<string>
+>(config: MakeOptions<I, O, Err, Requires>): Flow<I, O, Err, Requires> => {
+  if (config.name === undefined || config.name.length === 0) {
+    throw new TypeError(
+      "Flow.make requires a name: it is the tag the flow, its action, and every plan that records a call carry"
+    )
   }
-  return makeFlow<Input, Output, E>({
+  return build<I, O, Err, Requires>({
     name: config.name,
     description: config.description,
-    input,
-    output,
+    input: (config.input ?? Schema.Void) as I,
+    output: (config.output ?? Schema.Unknown) as O,
+    error: (config.error ?? Schema.Never) as Err,
     capabilities: [...new Set(config.capabilities ?? [])].sort(),
     effects: config.effects,
     model: config.model,
-    flows,
+    flows: config.flows === undefined ? undefined : [...config.flows],
     prompt: config.prompt,
     annotations: Annotations.empty,
-    body,
-    implementation
+    body: config.body
   })
 }
-
-/**
- * Alias for {@link make}. Agent flows are ordinary flows whose omitted body is
- * filled by their model or callable-flow declaration.
- *
- * @category constructors
- * @since 0.0.0
- * @slop
- */
-export const agent: typeof make = make
 
 /**
  * Adds capabilities to a flow, returning a fresh flow with sorted,
@@ -461,19 +420,19 @@ export const agent: typeof make = make
 export const withCapabilities: {
   (
     capabilities: ReadonlyArray<string>
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>,
+  ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>,
     capabilities: ReadonlyArray<string>
-  ): Flow<Input, Output, E>
-} = dual(2, <Input extends Schema.Top, Output extends Schema.Top, E>(
-  self: Flow<Input, Output, E>,
+  ): Flow<I, O, Err, Requires>
+} = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  self: Flow<I, O, Err, Requires>,
   capabilities: ReadonlyArray<string>
-): Flow<Input, Output, E> =>
-  makeFlow({
-    ...optionsFromFlow(self),
+): Flow<I, O, Err, Requires> =>
+  build({
+    ...optionsOf(self),
     capabilities: [...new Set([...self.capabilities, ...capabilities])].sort()
   }))
 
@@ -487,63 +446,66 @@ export const withCapabilities: {
 export const within: {
   (
     placement: Placement.Placement
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>,
+  ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>,
     placement: Placement.Placement
-  ): Flow<Input, Output, E>
-} = dual(2, <Input extends Schema.Top, Output extends Schema.Top, E>(
-  self: Flow<Input, Output, E>,
+  ): Flow<I, O, Err, Requires>
+} = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  self: Flow<I, O, Err, Requires>,
   placement: Placement.Placement
-): Flow<Input, Output, E> =>
-  makeFlow({
-    ...optionsFromFlow(self),
-    annotations: Annotations.add(self.annotations, Annotations.Placement, placement)
-  }))
+): Flow<I, O, Err, Requires> => {
+  const options = optionsOf(self)
+  return build({
+    ...options,
+    annotations: Annotations.add(options.annotations, Annotations.Placement, placement)
+  })
+})
 
 /**
  * Attaches one typed annotation to a flow, returning a fresh flow.
  *
- * Annotations are metadata a host or a decorator reads, and they leave the
- * flow's implementation digest unchanged. A custom key is advisory, so a flow
- * annotated with one plans the same graph as the flow it was built from. The
- * built-in {@link Annotations.Placement} and {@link Annotations.Effects} keys
- * are not advisory: `Graph.build` projects both into node key material, so
- * annotating with either changes the keys the graph plans. {@link within} is
- * the placement-shaped special case of this combinator.
+ * Annotations are metadata a host or a decorator reads. A custom key is
+ * advisory, so a flow annotated with one plans the same graph as the flow it
+ * was built from. The built-in {@link Annotations.Placement} and
+ * {@link Annotations.Effects} keys are not advisory: `Graph.build` projects
+ * both into node key material, so annotating with either changes the keys the
+ * graph plans. {@link within} is the placement-shaped special case of this
+ * combinator.
  *
  * @category combinators
  * @since 0.1.0
  */
 export const annotate: {
-  <I, S>(
-    key: Context.Key<I, S>,
+  <Key, S>(
+    key: Context.Key<Key, S>,
     value: S
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E, I, S>(
-    self: Flow<Input, Output, E>,
-    key: Context.Key<I, S>,
+  ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires, Key, S>(
+    self: Flow<I, O, Err, Requires>,
+    key: Context.Key<Key, S>,
     value: S
-  ): Flow<Input, Output, E>
-} = dual(3, <Input extends Schema.Top, Output extends Schema.Top, E, I, S>(
-  self: Flow<Input, Output, E>,
-  key: Context.Key<I, S>,
+  ): Flow<I, O, Err, Requires>
+} = dual(3, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires, Key, S>(
+  self: Flow<I, O, Err, Requires>,
+  key: Context.Key<Key, S>,
   value: S
-): Flow<Input, Output, E> =>
-  makeFlow({
-    ...optionsFromFlow(self),
-    annotations: Annotations.add(self.annotations, key, value)
-  }))
+): Flow<I, O, Err, Requires> => {
+  const options = optionsOf(self)
+  return build({
+    ...options,
+    annotations: Annotations.add(options.annotations, key, value)
+  })
+})
 
 /**
  * Merges an annotation bag onto a flow, returning a fresh flow.
  *
- * Supplied values override existing values for matching keys. The body and
- * implementation identity are unchanged, as with {@link annotate}.
+ * Supplied values override existing values for matching keys.
  *
  * @category combinators
  * @since 0.1.0
@@ -551,34 +513,31 @@ export const annotate: {
 export const annotateMerge: {
   (
     annotations: Context.Context<never>
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>,
+  ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>,
     annotations: Context.Context<never>
-  ): Flow<Input, Output, E>
-} = dual(2, <Input extends Schema.Top, Output extends Schema.Top, E>(
-  self: Flow<Input, Output, E>,
+  ): Flow<I, O, Err, Requires>
+} = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  self: Flow<I, O, Err, Requires>,
   annotations: Context.Context<never>
-): Flow<Input, Output, E> =>
-  makeFlow({
-    ...optionsFromFlow(self),
-    annotations: Annotations.merge(self.annotations, annotations)
-  }))
+): Flow<I, O, Err, Requires> => {
+  const options = optionsOf(self)
+  return build({
+    ...options,
+    annotations: Annotations.merge(options.annotations, annotations)
+  })
+})
 
 /**
  * Replaces the collaborators a flow declares, returning a fresh flow.
  *
- * Everything else the flow carries comes across unchanged: its name, schemas,
- * capabilities, effects, and annotations. That is what lets a decorator rewrite
- * a flow tree without dropping the metadata a host reads back, such as a
- * placement or a lane. For a body-backed flow the body is untouched, so the
- * body digest still identifies the code that runs, and the new collaborators
- * replace the `Body` implementation's {@link BodyDeclaration}, so the change is
- * visible in key material. For a body-less dynamic flow, collaborators enter
- * identity through the `Dynamic` implementation, so both its default body and
- * implementation are rebuilt.
+ * Everything else comes across unchanged: name, schemas, capabilities,
+ * effects, body, and annotations. That is what lets a decorator rewrite a flow
+ * tree without dropping the metadata a host reads back, such as a placement or
+ * a lane.
  *
  * @category combinators
  * @since 0.1.0
@@ -586,95 +545,48 @@ export const annotateMerge: {
 export const withFlows: {
   (
     flows: ReadonlyArray<Reference>
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>,
+  ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>,
     flows: ReadonlyArray<Reference>
-  ): Flow<Input, Output, E>
-} = dual(2, <Input extends Schema.Top, Output extends Schema.Top, E>(
-  self: Flow<Input, Output, E>,
+  ): Flow<I, O, Err, Requires>
+} = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+  self: Flow<I, O, Err, Requires>,
   flows: ReadonlyArray<Reference>
-): Flow<Input, Output, E> => {
-  const nextFlows = [...flows]
-  const implementation = self.implementation
-  if (implementation === undefined || implementation._tag !== "Dynamic") {
-    return makeFlow({
-      ...optionsFromFlow(self),
-      flows: nextFlows,
-      implementation: implementation === undefined
-        ? undefined
-        : { ...implementation, declaration: bodyDeclaration(self.model, nextFlows, self.prompt) }
-    })
-  }
-  return makeFlow({
-    ...optionsFromFlow(self),
-    flows: nextFlows,
-    body: () =>
-      Node.dynamic({
-        ...(implementation.model === undefined ? {} : { model: implementation.model }),
-        flows: nextFlows,
-        output: self.output,
-        ...(implementation.prompt === undefined ? {} : { prompt: implementation.prompt })
-      }) as Node.Node<Output["Type"], E>,
-    implementation: {
-      _tag: "Dynamic",
-      model: implementation.model,
-      flows: nextFlows,
-      prompt: implementation.prompt
-    }
-  })
-})
-
-/**
- * Replaces a flow's effect declaration, returning a fresh flow.
- *
- * @category combinators
- * @since 0.0.0
- * @slop
- */
-export const withEffects: {
-  (
-    declaration: Effects.Declaration
-  ): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>,
-    declaration: Effects.Declaration
-  ): Flow<Input, Output, E>
-} = dual(2, <Input extends Schema.Top, Output extends Schema.Top, E>(
-  self: Flow<Input, Output, E>,
-  declaration: Effects.Declaration
-): Flow<Input, Output, E> =>
-  makeFlow({
-    ...optionsFromFlow(self),
-    effects: declaration
+): Flow<I, O, Err, Requires> =>
+  build({
+    ...optionsOf(self),
+    flows: [...flows]
   }))
 
 /**
  * Seals a flow's effect declaration, returning a fresh flow.
+ *
+ * A flow that declared no envelope gains the hermetic, sealed one; a flow that
+ * declared one keeps its reads and writes and seals the tier.
  *
  * @category combinators
  * @since 0.0.0
  * @slop
  */
 export const sealed: {
-  (): <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ) => Flow<Input, Output, E>
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ): Flow<Input, Output, E>
+  (): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ) => Flow<I, O, Err, Requires>
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ): Flow<I, O, Err, Requires>
 } = dual(
   (arguments_) => arguments_.length === 1,
-  <Input extends Schema.Top, Output extends Schema.Top, E>(
-    self: Flow<Input, Output, E>
-  ): Flow<Input, Output, E> =>
-    makeFlow({
-      ...optionsFromFlow(self),
-      effects: self.effects === undefined
+  <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
+    self: Flow<I, O, Err, Requires>
+  ): Flow<I, O, Err, Requires> => {
+    const options = optionsOf(self)
+    return build({
+      ...options,
+      effects: options.effects === undefined
         ? Effects.make({
           reads: [],
           writes: [],
@@ -682,6 +594,7 @@ export const sealed: {
           onConflict: "serialize",
           tier: "sealed"
         })
-        : Effects.sealed(self.effects)
+        : Effects.sealed(options.effects)
     })
+  }
 )

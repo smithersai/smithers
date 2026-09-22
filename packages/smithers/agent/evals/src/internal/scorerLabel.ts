@@ -19,9 +19,10 @@
  * Renders `name (first 8 of the key)`, or the bare key when the scorer carries
  * no name.
  *
- * A scorer is a flow, and a flow declared without a name is an anonymous
- * function whose `name` is the empty string. That is an absent name, not a
- * name, so it labels as the key rather than as a blank followed by a digest.
+ * Every flow carries a name, so a scorer a run holds always has one. A stored
+ * observation may not: a baseline recorded before a scorer was named, or one
+ * written by another tool, carries the key alone, and it labels as the key
+ * rather than as a blank followed by a digest.
  *
  * @since 0.1.0
  * @private

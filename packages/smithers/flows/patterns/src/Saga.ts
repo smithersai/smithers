@@ -10,13 +10,17 @@
  *
  * @since 0.1.0
  */
-import { Flow, Node } from "@smthrs/core"
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -46,10 +50,10 @@ export type OnFailure = "compensate" | "compensate-and-fail" | "fail"
  * @category models
  * @since 0.1.0
  */
-export interface Step {
+export interface Step<R = never> {
   readonly id: string
-  readonly action: Flow.Any
-  readonly compensation: Flow.Any
+  readonly action: Member<R>
+  readonly compensation: Member<R>
 }
 
 /**
@@ -58,10 +62,10 @@ export interface Step {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly steps: ReadonlyArray<Step>
+  readonly steps: ReadonlyArray<Step<R>>
   readonly onFailure?: OnFailure | undefined
 }
 
@@ -143,6 +147,20 @@ interface Unwind {
 
 const CleanUnwind = Schema.Struct({ failure: Schema.Unknown, residue: Schema.Tuple([]) })
 
+/**
+ * The declared form of a saga.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type SagaFlow<R = never> = Flow.Flow<
+  string,
+  typeof OpaqueInput,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
 // The refusal is minted once, as a value. `make` throws it, because a
 // declaration is built eagerly and a broken one is a programming error. `run`
 // FAILS with it, because `PatternError` is in its declared error channel and a
@@ -159,22 +177,34 @@ const stepsRefusal = (steps: ReadonlyArray<{ readonly id: string }>): PatternErr
   return undefined
 }
 
-// `make` builds topology out of the two flows a step names, so a value that is
-// not a flow is refused here rather than left to fail inside `Graph.build` with
-// a TypeError naming nothing a caller can act on. `run` takes effect functions
-// instead and has nothing to check.
-const declarationRefusal = (steps: ReadonlyArray<Step>): PatternError | undefined => {
+// `make` builds topology out of the two members a step names, so a value that
+// cannot record a call is refused here rather than left to fail inside
+// `Graph.build` with a TypeError naming nothing a caller can act on. A member
+// is a flow or an action, and both record a call through their own `.call`, so
+// that is what is checked. `run` takes effect functions instead and has nothing
+// to check.
+// Every function already inherits `Function.prototype.call`, so "has a `call`"
+// alone would admit a bare arrow. A member's own `call` shadows it: a flow's
+// comes from the flow prototype, an action's from the action prototype, and a
+// test fixture's is its own property.
+const callable = (member: unknown): boolean => {
+  if (member === null || (typeof member !== "object" && typeof member !== "function")) return false
+  const record = member as { readonly call?: unknown }
+  return typeof record.call === "function" && record.call !== Function.prototype.call
+}
+
+const declarationRefusal = <R>(steps: ReadonlyArray<Step<R>>): PatternError | undefined => {
   for (const step of steps) {
-    if (!Flow.isFlow(step.action)) {
+    if (!callable(step.action)) {
       return new PatternError({
         code: "invalid_decorator",
-        message: `Saga step "${step.id}" action must be a flow`
+        message: `Saga step "${step.id}" action must be a flow or an action`
       })
     }
-    if (!Flow.isFlow(step.compensation)) {
+    if (!callable(step.compensation)) {
       return new PatternError({
         code: "invalid_decorator",
-        message: `Saga step "${step.id}" compensation must be a flow`
+        message: `Saga step "${step.id}" compensation must be a flow or an action`
       })
     }
   }
@@ -203,10 +233,10 @@ const declarationRefusal = (steps: ReadonlyArray<Step>): PatternError | undefine
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown> => {
+export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // this snapshot and never the caller's steps again.
-  const steps: ReadonlyArray<Step> = options.steps.map((step) => ({
+  const steps: ReadonlyArray<Step<R>> = options.steps.map((step) => ({
     id: step.id,
     action: step.action,
     compensation: step.compensation
@@ -214,94 +244,99 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
   const refusal = stepsRefusal(steps) ?? declarationRefusal(steps)
   if (refusal !== undefined) throw refusal
   const policy = options.onFailure ?? "compensate"
-  const flows = policy === "fail"
-    ? steps.map((step) => step.action)
-    : steps.flatMap((step) => [step.action, step.compensation])
   const { name, description } = Compose.label(
     "saga",
     { steps: steps.map((step) => step.id), onFailure: policy },
     options
   )
-  return Flow.make({
-    name,
-    description,
-    input: Schema.Unknown,
-    output: Schema.Unknown,
-    flows,
-    body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, (input) => {
-      const visit = (index: number, completed: Readonly<Record<string, unknown>>): Node.Node<unknown, unknown> => {
-        const step = steps[index]
-        if (step === undefined) return Node.succeed({ _tag: "Completed", values: completed })
-        const action = Compose.call(step.action, { input, completed })
-        const guarded = policy === "fail" ? action : Node.catch(action, {
-          onFailure: Node.capture(
-            { step: step.id, forward: true },
-            (failure) => Node.fail<Unwind>({ failure, residue: [] })
-          )
-        })
-        return Node.andThen(
-          guarded,
-          Node.capture({ step: step.id }, (value) => {
-            const rest = visit(index + 1, { ...completed, [step.id]: value })
-            if (policy === "fail") return rest
-            return Node.catch(rest, {
-              onFailure: Node.capture(
-                { step: step.id },
-                (error: unknown) => {
-                  const unwind = error as Unwind
-                  const undo = Node.catch(
-                    Node.map(
-                      Compose.call(step.compensation, { id: step.id, input, value }),
-                      Node.capture({ step: step.id }, () => unwind)
-                    ),
-                    {
-                      onFailure: Node.capture({ step: step.id, residue: true }, (undoError) =>
-                        Node.map(
-                          Node.succeed({ unwind, undoError }),
-                          Node.capture({ step: step.id, residue: true }, ({ unwind, undoError }): Unwind => ({
-                            failure: unwind.failure,
-                            residue: [...unwind.residue, { id: step.id, error: undoError }]
-                          }))
-                        ))
-                    }
-                  )
-                  return Node.andThen(undo, Node.capture({ step: step.id }, (failure) => Node.fail(failure)))
-                }
-              )
-            })
-          })
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const visit = (index: number, completed: Readonly<Record<string, unknown>>): Node.Node<unknown, unknown, R> => {
+      const step = steps[index]
+      if (step === undefined) return Node.succeed({ _tag: "Completed", values: completed })
+      const action = callMember(step.action, { input, completed })
+      const guarded = policy === "fail" ? action : Node.catch(action, {
+        onFailure: Node.capture(
+          { step: step.id, forward: true },
+          (failure) => Node.fail<Unwind>({ failure, residue: [] })
         )
-      }
-      const chain = visit(0, {})
-      if (policy === "fail") return chain
-      const reported = Node.catch(chain, {
-        onFailure: Node.capture({ residue: true }, (error: unknown) =>
-          Node.andThen(
-            Node.map(
-              Node.succeed(error as Unwind),
-              Node.capture({ residue: true }, (unwind) => {
-                if (unwind.residue.length === 0) return unwind
-                const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id))
-                return new PatternError({
-                  code: "compensation_failed",
-                  message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(", ")}`,
-                  cause: { failure: unwind.failure, residue }
-                })
+      })
+      return Node.bindPlanned(
+        guarded,
+        Node.capture({ step: step.id }, (value): Node.Node<unknown, unknown, R> => {
+          const rest = visit(index + 1, { ...completed, [step.id]: value })
+          if (policy === "fail") return rest
+          return Node.catch(rest, {
+            onFailure: Node.capture(
+              { step: step.id },
+              (error: unknown): Node.Node<unknown, unknown, R> => {
+                const unwind = error as Unwind
+                // The unwind is a planned reference until the run produces it,
+                // so the compensation is SEQUENCED ahead of a node that hands
+                // that reference back. A mapper closing over the reference
+                // would return the placeholder instead of the unwind.
+                const undo = Node.catch(
+                  Node.andThen(
+                    callMember(step.compensation, { id: step.id, input, value }),
+                    Node.succeed(unwind)
+                  ),
+                  {
+                    onFailure: Node.capture({ step: step.id, residue: true }, (undoError) =>
+                      Node.map(
+                        Node.succeed({ unwind, undoError }),
+                        Node.capture({ step: step.id, residue: true }, ({ unwind, undoError }): Unwind => ({
+                          failure: unwind.failure,
+                          residue: [...unwind.residue, { id: step.id, error: undoError }]
+                        }))
+                      ))
+                  }
+                )
+                return Node.bindPlanned(undo, Node.capture({ step: step.id }, (failure) => Node.fail(failure)))
+              }
+            )
+          })
+        })
+      )
+    }
+    const chain = visit(0, {})
+    if (policy === "fail") return chain
+    const reported = Node.catch(chain, {
+      onFailure: Node.capture({ residue: true }, (error: unknown) =>
+        Node.bindPlanned(
+          Node.map(
+            Node.succeed(error as Unwind),
+            Node.capture({ residue: true }, (unwind: Unwind) => {
+              if (unwind.residue.length === 0) return unwind
+              const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id))
+              return new PatternError({
+                code: "compensation_failed",
+                message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(", ")}`,
+                cause: { failure: unwind.failure, residue }
               })
-            ),
-            Node.capture({ residue: true }, (failure) => Node.fail(failure))
-          ))
-      })
-      // A schema selects the clean arm at execution time; branching on a
-      // symbolic error while building the graph would hide the dirty arm.
-      return Node.catch(reported, {
-        error: CleanUnwind,
-        onFailure: Node.capture({ settled: true, onFailure: policy }, (unwind) =>
-          policy === "compensate"
-            ? Node.succeed({ _tag: "Compensated", failure: unwind.failure })
-            : Node.fail(unwind.failure))
-      })
+            })
+          ),
+          Node.capture({ residue: true }, (failure) => Node.fail(failure))
+        ))
     })
+    // A schema selects the clean arm at execution time; branching on a
+    // symbolic error while building the graph would hide the dirty arm.
+    return Node.catch(reported, {
+      error: CleanUnwind,
+      onFailure: Node.capture({ settled: true, onFailure: policy }, (unwind) =>
+        policy === "compensate"
+          ? Node.succeed({ _tag: "Compensated", failure: unwind.failure })
+          : Node.fail(unwind.failure))
+    })
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: OpaqueInput,
+    success: Schema.Unknown,
+    // `@smthrs/core` carried its error type as a phantom parameter and declared
+    // no error schema. `@smthrs/flow` needs a real one, because the engine
+    // encodes a typed failure through it, and a saga fails with whatever the
+    // step it called failed with.
+    error: Schema.Unknown,
+    body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, body)
   })
 }
 

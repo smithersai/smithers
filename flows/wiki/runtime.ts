@@ -12,7 +12,8 @@ import { Effect, FileSystem, Layer } from "effect"
 import { checkCitations, unsupportedCitations } from "./jev-citations.ts"
 import { operations } from "./operations.ts"
 import { WikiError } from "./schema.ts"
-import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Wiki, Write } from "./workflow.ts"
+import Wiki from "./flow.ts"
+import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Write } from "./workflow.ts"
 
 /** Select a real judge or refuse composition before opening host resources.
  * Offline hosts pass an evidence-based scripted evaluator explicitly. The

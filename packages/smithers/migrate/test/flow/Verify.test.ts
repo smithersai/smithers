@@ -33,15 +33,18 @@ const projectWithFlow = (name: string, descriptor: string): string => {
   return root
 }
 
-const discoverable = `import { Flow } from "@smthrs/core"
+/** The shape a migrated flow module has: one default-exported flow. */
+const discoverable = `import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
-export default Flow.make({
+export default Flow.make("demo", {
   description: "A demonstration flow.",
-  input: Schema.Struct({ topic: Schema.String }),
-  output: Schema.String,
   capabilities: [],
-  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }
+  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+  payload: Schema.Struct({ topic: Schema.String }),
+  success: Schema.String,
+  body: ({ topic }) => Node.succeed(topic)
 })
 `
 

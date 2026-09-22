@@ -7,10 +7,10 @@ This page covers the six `@smthrs/patterns` modules that coordinate several agen
 
 Every module here follows the two-surface shape the package uses everywhere:
 
-| Surface               | What it is                                                                                 | When to use it                                        |
-| --------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| `make(options)`       | A `Flow` whose body is a conservative plan-time topology over `@smthrs/core` `Flow`/`Node` | Planning, graph inspection, step keys, cost estimates |
-| `run(input, options)` | An `Effect` that performs the value-dependent branching                                    | Execution                                             |
+| Surface               | What it is                                                                                                    | When to use it                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `make(options)`       | A `Flow` whose body is a conservative plan-time topology over `@smthrs/flow` `Flow` and `@smthrs/plan` `Node` | Planning, graph inspection, step keys, cost estimates |
+| `run(input, options)` | An `Effect` that performs the value-dependent branching                                                       | Execution                                             |
 
 `make` declares a superset of any single execution. Graph planning evaluates a `Node.bindPlanned` builder once against a symbolic value, so a loop or a short circuit that depends on a real result cannot narrow the plan. `run` performs that narrowing. The two surfaces agree on structure, not on how many calls a particular execution makes.
 

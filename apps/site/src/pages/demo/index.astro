@@ -95,6 +95,7 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
     padding: 1.8rem; box-shadow: var(--shadow-2);
   }
+  .card[hidden] { display: none; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
   label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.88rem; font-weight: 500; }
   label em { color: var(--brand); font-style: normal; }
@@ -135,6 +136,7 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault()
+    if (form.hidden || button.disabled) return
     status.textContent = ""
     status.classList.remove("error")
 
@@ -160,7 +162,7 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
         : "Something went wrong sending that. Try again, or email will@smithers.sh."
       status.classList.add("error")
     } finally {
-      button.disabled = false
+      button.disabled = form.hidden
       label.textContent = "Continue"
     }
   })

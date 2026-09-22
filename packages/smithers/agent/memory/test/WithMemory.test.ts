@@ -36,8 +36,10 @@ const author = passthrough("author")
 const leaf = passthrough("leaf")
 const envelope: Trellis.Envelope = { fuel: 2, depth: 2, fanout: 2 }
 
-const planned = (flow: Flow.Any): ReadonlyArray<string> =>
-  Graph.nodes(Graph.build(flow, "ship it")).map((node) => `${node.kind}:${node.id}`)
+// A trellis is one `@smthrs/flow` declaration whose payload is the `{ input }`
+// struct every flow payload is, so the prompt is entered as a field.
+const planned = (flow: Trellis.TrellisFlow<unknown>): ReadonlyArray<string> =>
+  Graph.nodes(Graph.build(flow, { input: "ship it" })).map((node) => `${node.kind}:${node.id}`)
 
 const annotation = <I, S>(flow: Flow.Any, key: Parameters<typeof Annotations.getOption<I, S>>[1]): S | undefined =>
   Option.getOrUndefined(
@@ -177,9 +179,30 @@ describe("WithMemory", () => {
     const scoped = MemoryTrellis.make({ author, leaf, envelope, memory: policy })
 
     // Node for node, the same graph: an annotation is metadata, not identity.
+    // The count is stated so the equality above cannot pass on two empty plans.
+    expect(planned(plain)).toHaveLength(9)
     expect(planned(scoped)).toEqual(planned(plain))
     expect(WithMemory.policyOf(scoped)).toEqual(policy)
     expect(WithMemory.policyOf(plain)).toBeUndefined()
+    // A composed flow declares no collaborator list; the flows it calls were
+    // scoped by `parts` before `Trellis.make` composed them.
+    expect(WithMemory.references(scoped)).toEqual([])
+    expect(WithMemory.children(scoped)).toEqual([])
+  })
+
+  it("carries the caller's name and description onto the trellis it declares", () => {
+    const named = MemoryTrellis.make({
+      name: "release-notes",
+      description: "Delegates release notes under one memory policy.",
+      author,
+      leaf,
+      envelope,
+      memory: policy
+    })
+
+    expect(named._tag).toBe("release-notes")
+    expect(named.description).toBe("Delegates release notes under one memory policy.")
+    expect(WithMemory.policyOf(named)).toEqual(policy)
   })
 
   it("hands the policy to the leaf the trellis calls and to the memory flows that leaf declares", () => {

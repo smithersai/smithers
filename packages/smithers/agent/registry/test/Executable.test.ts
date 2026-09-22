@@ -511,6 +511,7 @@ import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Schema } from "effect"
 import { identity } from "./helper.ts"
 export default Flow.make({
+  name: "revision",
   description: "Priority ${priority}",
   input: Schema.Unknown,
   output: Schema.Unknown,

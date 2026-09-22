@@ -76,28 +76,33 @@ export interface CheckpointFiles {
 }
 
 /**
- * The two constructors registry discovery accepts on a default export.
+ * The one constructor registry discovery accepts on a default export.
  *
  * `@smthrs/registry`'s `internal/ModuleMetadata.ts` tokenizes the module text
- * and requires the literal tokens `export default Flow . make (` or `export
- * default Flow . agent (`. Nothing else is discovered, so nothing else counts
- * here: a description on a `Widget.make`, on a bare `make`, or on a namespace
- * alias is a description no registry ever reads.
+ * and requires the literal tokens `export default Flow . make (`. Nothing else
+ * is discovered, so nothing else counts here: a description on a `Widget.make`,
+ * on a bare `make`, or on a namespace alias is a description no registry ever
+ * reads.
  */
-const descriptorConstructors: ReadonlyArray<string> = ["Flow.make", "Flow.agent"]
+const descriptorConstructor = "Flow.make"
 
 /**
- * The options object of the default-exported flow descriptor, when the module
+ * The options object of the default-exported flow declaration, when the module
  * has one in the shape discovery accepts.
+ *
+ * The object is looked for among the arguments rather than at a fixed index:
+ * `@smthrs/flow`'s `Flow.make("tag", { ... })`, which a migrated
+ * `flows/<name>/flow.ts` default-exports, names its tag first, and discovery
+ * reads the declaration data out of the object wherever it sits.
  */
 const defaultDescriptor = (source: ts.SourceFile): ts.ObjectLiteralExpression | undefined => {
   for (const statement of source.statements) {
     if (!ts.isExportAssignment(statement) || statement.isExportEquals === true) continue
     const call = statement.expression
     if (!ts.isCallExpression(call)) continue
-    if (!descriptorConstructors.includes(Ts.calleeName(call))) continue
-    const options = call.arguments[0]
-    if (options !== undefined && ts.isObjectLiteralExpression(options)) return options
+    if (Ts.calleeName(call) !== descriptorConstructor) continue
+    const options = call.arguments.find((argument) => ts.isObjectLiteralExpression(argument))
+    if (options !== undefined) return options
   }
   return undefined
 }
@@ -143,9 +148,9 @@ interface DeclaredFlow {
 const schemaText = (value: ts.Expression | undefined): string | undefined => {
   if (value === undefined) return undefined
   const text = value.getText().replaceAll(/\s+/g, " ").trim()
-  // `Flow.make` takes struct FIELDS or a schema; `Flow.make` on the core side
-  // takes a schema. `{ topic: Schema.String }` and `Schema.Struct({ topic:
-  // Schema.String })` are the same contract written for the two signatures.
+  // `Flow.make` takes struct FIELDS or a schema: `{ topic: Schema.String }`
+  // and `Schema.Struct({ topic: Schema.String })` are one contract written
+  // two ways, so both spell the same comparison key.
   return text.startsWith("{") ? `Schema.Struct(${text})` : text
 }
 
@@ -190,18 +195,15 @@ const delegateTarget = (value: ts.Expression): string | undefined => {
  * Whether the descriptor the registry admits describes the flow the engine
  * runs.
  *
- * Discovery reads the default export and never the named one, so a module whose
- * descriptor declares a different contract from its durable flow admits one
- * thing and runs another. What "the same" can mean is bounded by flows itself:
- * `@smthrs/core`'s `body` returns a `@smthrs/core/Node` while a durable flow's
- * `.call` returns a `@smthrs/plan/Node`, so a descriptor cannot delegate to a
- * durable flow by body until the core-runtime bridge lands, and the binding
- * that can be written today is the contract — the descriptor's `input` and
- * `output` are the flow's `payload` and `success`. A `body` that does delegate
- * is accepted, so this check does not have to change when the bridge does.
+ * A migrated module default-exports the flow itself, body and all, which is
+ * what the tool emits and what this check wants to see: one declaration, so
+ * the contract the control plane admits is the one that runs.
  *
- * A module that declares no durable flow has to carry its own behavior, or
- * calling it fails with `missing_body` and nothing runs.
+ * Discovery reads the default export and never a named one, so the two ways a
+ * module can still admit one thing and run another are both refused here. A
+ * default export that names a durable flow the module declares beside it has
+ * to reach it, by `body`; one that names nothing has to carry its own
+ * behavior, or calling it fails with `missing_body` and nothing runs.
  */
 const describesTheFlowItDeclares = (
   file: string,
@@ -216,8 +218,10 @@ const describesTheFlowItDeclares = (
   const flows = declaredFlows(source)
   const body = property(options, "body")
   if (flows.length === 0) {
-    // `model` or `flows` makes core build a dynamic body, so a descriptor
-    // carrying either is executable without one of its own.
+    // A descriptor that declares a `model`, or the one flow it delegates to,
+    // runs on the registry's `agent` delegate
+    // (`@smthrs/registry`'s `Executable.ts` `delegateFor`), so it is executable
+    // without a body of its own.
     const executable = body !== undefined ||
       property(options, "model") !== undefined ||
       property(options, "flows") !== undefined
@@ -469,7 +473,7 @@ export const run = (
             file,
             line: 1,
             message:
-              "the registry needs `export default Flow.make({ description: \"...\" })` with a string literal to discover this flow"
+              "the registry needs `export default Flow.make(\"<tag>\", { description: \"...\" })` with a string literal to discover this flow"
           }]
       })
     )

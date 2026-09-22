@@ -63,16 +63,12 @@ export interface NodeAssertions {
   readonly key: (expected: string) => Effect.Effect<void, PlanAssertionError>
   /** Asserts the node's placement tag, and its option payload when given. */
   readonly placement: (expected: PlacementExpectation) => Effect.Effect<void, PlanAssertionError>
-  /** Asserts the node's effect mode. */
+  /** Asserts the node's boundary mode. */
   readonly mode: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
-  /** Asserts the node's effect tier. */
-  readonly tier: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
-  /** Asserts the node's conflict strategy. */
-  readonly onConflict: (expected: string | undefined) => Effect.Effect<void, PlanAssertionError>
+  /** Asserts the tier the node is keyed under. */
+  readonly tier: (expected: string) => Effect.Effect<void, PlanAssertionError>
   /** Asserts the node's declared effects. */
   readonly declaresEffects: (expected: ReadonlyArray<string>) => Effect.Effect<void, PlanAssertionError>
-  /** Asserts the node's envelope. */
-  readonly envelope: (expected: Record<string, unknown> | undefined) => Effect.Effect<void, PlanAssertionError>
 }
 
 /**
@@ -224,12 +220,6 @@ export const expectPlan = (plan: PlanLike): PlanAssertions => {
           assertValue("declared_effect_mismatch", `Effect tier for node '${id}'`, expected, found.tier)
         )
       ),
-    onConflict: (expected) =>
-      nodeOrFail(plan, id).pipe(
-        Effect.flatMap((found) =>
-          assertValue("declared_effect_mismatch", `Conflict strategy for node '${id}'`, expected, found.onConflict)
-        )
-      ),
     declaresEffects: (expected) =>
       nodeOrFail(plan, id).pipe(
         Effect.flatMap((found) =>
@@ -239,12 +229,6 @@ export const expectPlan = (plan: PlanLike): PlanAssertions => {
             [...expected].sort(),
             [...found.effects].sort()
           )
-        )
-      ),
-    envelope: (expected) =>
-      nodeOrFail(plan, id).pipe(
-        Effect.flatMap((found) =>
-          assertValue("envelope_mismatch", `Envelope for node '${id}'`, expected, found.envelope)
         )
       )
   })

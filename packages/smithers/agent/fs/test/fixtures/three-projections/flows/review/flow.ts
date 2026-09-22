@@ -2,6 +2,7 @@ import { Flow, Node } from "@smthrs/core"
 import * as Schema from "effect/Schema"
 
 export default Flow.make({
+  name: "review",
   input: Schema.Struct({
     number: Schema.Number
   }),

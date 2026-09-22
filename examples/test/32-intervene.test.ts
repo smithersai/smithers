@@ -1,11 +1,12 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { expect, it } from "@effect/vitest"
-import { Graph } from "@smthrs/core"
+import { Graph } from "@smthrs/flow"
+import { GraphBuildError, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 import * as Effect from "effect/Effect"
 import { dryPlan, intervene, main, plan } from "../src/32-intervene.ts"
 
 const literal = (node: Graph.GraphNode): Record<string, unknown> => {
-  const first = node.keyMaterial.inputs[0]
+  const first = node.draft.material.inputs[0]
   return first !== undefined && first._tag === "Literal" ? first.value as Record<string, unknown> : {}
 }
 
@@ -29,8 +30,8 @@ const grantDiagnostics = (graph: Graph.Graph): ReadonlyArray<Record<string, unkn
   Graph.diagnostics(graph).map(({ code, node, path }) => ({ code, node, path }))
 
 /** The fatal diagnostics a graph records. A plan must have none. */
-const fatal = (graph: Graph.Graph): ReadonlyArray<Graph.GraphBuildError> =>
-  Graph.diagnostics(graph).filter((diagnostic) => Graph.isFatalDiagnostic(diagnostic))
+const fatal = (graph: Graph.Graph): ReadonlyArray<GraphBuildError> =>
+  Graph.diagnostics(graph).filter((diagnostic) => isFatalDiagnostic(diagnostic))
 
 /** The nodes that call the write. */
 const writes = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
@@ -66,26 +67,32 @@ it.effect("refuses the write when the approval answers anything else", () =>
   }))
 
 it("plans the approval ahead of the write", () => {
-  const graph = Graph.build(plan, "greeting")
+  const graph = Graph.build(plan, { input: "greeting" })
   const approval = approvals(graph)
 
   expect(approval).toHaveLength(1)
   expect(fatal(graph)).toEqual([])
   expect(grantDiagnostics(graph)).toEqual([
-    { code: "capability_outside_grant", node: "root.andThen", path: ["fs:read:/**"] },
+    { code: "capability_outside_grant", node: "root.flow.andThen", path: ["fs:read:/**"] },
+    { code: "capability_outside_grant", node: "root.flow.andThen.flow", path: ["fs:read:/**"] },
     {
       code: "capability_outside_grant",
-      node: "root.then.then.andThen",
+      node: "root.flow.then.then.andThen",
       path: ["fs:read:/**", "fs:write:/**"]
     },
     {
       code: "capability_outside_grant",
-      node: "root.then.then.andThen.flow.then",
+      node: "root.flow.then.then.andThen.flow.then",
       path: ["fs:read:/**", "fs:write:/**"]
     },
     {
       code: "capability_outside_grant",
-      node: "root.then.then.andThen.flow.then.flow.then",
+      node: "root.flow.then.then.andThen.flow.then.flow.then",
+      path: ["fs:read:/**", "fs:write:/**"]
+    },
+    {
+      code: "capability_outside_grant",
+      node: "root.flow.then.then.andThen.flow.then.flow.then.flow",
       path: ["fs:read:/**", "fs:write:/**"]
     }
   ])
@@ -93,20 +100,25 @@ it("plans the approval ahead of the write", () => {
   const gatedWrites = writes(graph).filter((node) => node.dependencies.includes(approval[0]!.id))
   expect(gatedWrites).toHaveLength(1)
   const write = gatedWrites[0]!
+  // The declared apply step is a signature with no body, so the node its call
+  // expands into is the action a host implements.
   const body = Graph.nodes(graph).find((node) => node.id === `${write.id}.flow`)!
-  expect(body.kind).toBe("Dynamic")
+  expect(body.kind).toBe("ActionCall")
   expect(body.dependencies).toContain(approval[0]!.id)
   // Graph propagates continuation prerequisites into a FlowCall's body.
   // Both the apply call and its executable body must wait for approval, so
-  // scheduling the body directly cannot bypass the gate.
+  // scheduling the body directly cannot bypass the gate. The third edge is the
+  // approval's own value reaching the call that asked for it.
+  const asked = approval[0]!.id.slice(0, approval[0]!.id.lastIndexOf("."))
   expect(gates).toEqual([
+    { from: approval[0]!.id, to: asked, reason: "value" },
     { from: approval[0]!.id, to: write.id, reason: "continuation" },
     { from: approval[0]!.id, to: body.id, reason: "continuation" }
   ])
 })
 
 it("plans no write and no approval at all on a dry run", () => {
-  const graph = Graph.build(dryPlan, "greeting")
+  const graph = Graph.build(dryPlan, { input: "greeting" })
 
   expect(approvals(graph)).toEqual([])
   expect(writes(graph)).toEqual([])
@@ -117,6 +129,7 @@ it("plans no write and no approval at all on a dry run", () => {
   // The dry-run plan reads and never writes, so the only capability it reaches
   // for outside its grant is the read. No `fs:write` path appears anywhere.
   expect(grantDiagnostics(graph)).toEqual([
-    { code: "capability_outside_grant", node: "root.andThen", path: ["fs:read:/**"] }
+    { code: "capability_outside_grant", node: "root.flow.andThen", path: ["fs:read:/**"] },
+    { code: "capability_outside_grant", node: "root.flow.andThen.flow", path: ["fs:read:/**"] }
   ])
 })

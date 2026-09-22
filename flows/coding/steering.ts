@@ -38,7 +38,12 @@ export const routeMessages = (queue: NotificationQueue.Service, control: Control
       }
       const plan = yield* control.getPlan(run.planId).pipe(Effect.mapError(() => unavailable(notification.id)))
       if (plan.decision !== "approved" || plan.card.flowId !== flowId || run.planDigest !== plan.card.digest ||
-          plan.card.executionDigest === undefined || !plan.card.envelope.flows.includes("coding/RunRequest")) {
+          plan.card.executionDigest === undefined ||
+          // `coding/request` IS its own flow, so its approved envelope names no
+          // delegate. An envelope that names one was approved for a descriptor
+          // that hands this work to code this coordinator does not own, and a
+          // steering message must not reach it.
+          plan.card.envelope.flows.length !== 0) {
         return yield* Effect.fail(unavailable(notification.id))
       }
       const closed = yield* isClosed(journal, runId)

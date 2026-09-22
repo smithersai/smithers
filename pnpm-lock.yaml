@@ -2840,6 +2840,9 @@ importers:
       '@smthrs/database':
         specifier: 1.0.0-rc.0
         version: link:../../flows/database
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.0
+        version: link:../../flows/flow
       '@smthrs/patterns':
         specifier: 1.0.0-rc.0
         version: link:../../flows/patterns
@@ -4128,6 +4131,9 @@ importers:
       '@smthrs/crypto':
         specifier: 1.0.0-rc.0
         version: link:../crypto
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.0
+        version: link:../flow
       '@smthrs/plan':
         specifier: 1.0.0-rc.0
         version: link:../plan
@@ -4147,6 +4153,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/engine':
+        specifier: 1.0.0-rc.0
+        version: link:../engine
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4926,9 +4935,9 @@ importers:
 
   packages/smithers/flows/patterns:
     dependencies:
-      '@smthrs/core':
+      '@smthrs/flow':
         specifier: 1.0.0-rc.0
-        version: link:../core
+        version: link:../flow
       '@smthrs/plan':
         specifier: 1.0.0-rc.0
         version: link:../plan
@@ -4942,9 +4951,6 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/flow':
-        specifier: 1.0.0-rc.0
-        version: link:../flow
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

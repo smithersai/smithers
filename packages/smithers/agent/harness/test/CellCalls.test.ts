@@ -31,6 +31,7 @@ const moduleFlow = [
   `import { Schema } from "effect"`,
   ``,
   `export default Flow.make({`,
+  `  name: "list",`,
   `  description: "Lists the files the run may read.",`,
   `  input: Schema.Struct({ path: Schema.String }),`,
   `  output: Schema.Array(Schema.String),`,

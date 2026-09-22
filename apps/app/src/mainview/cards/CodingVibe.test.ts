@@ -25,7 +25,7 @@ describe("the Vibe invitation is derived from retained native request evidence",
       return { ...card, payload: { ...card.payload, events } }
     }
     expect(codingVibeRequestOf({ ...card, payload: { ...card.payload, events: [], result: JSON.stringify({ status: "validated" }) } })).toBeUndefined()
-    expect(codingVibeRequestOf(rewrite(state => { if (state.flowName === "coding/request") state.flowName = "coding/RunRequest" }))).toBeUndefined()
+    expect(codingVibeRequestOf(rewrite(state => { if (state.flowName === "coding/request") state.flowName = "coding/Vibe" }))).toBeUndefined()
     expect(codingVibeRequestOf(rewrite(state => { if (state.flowName === "coding/request") state.payload = { input: { prompt: "other" } } }))).toBeUndefined()
     expect(codingVibeRequestOf(rewrite(state => { if (state.flowName === "agent/run") state.payload = {} }))).toBeUndefined()
     expect(codingVibeRequestOf(rewrite(state => { if (state.flowName === "coding/Request") state.parentExecutionId = "foreign-root" }))).toBeUndefined()

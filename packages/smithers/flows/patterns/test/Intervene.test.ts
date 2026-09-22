@@ -1,148 +1,216 @@
+/**
+ * `Intervene` on `@smthrs/flow`'s `Graph.build` and `Interpreter`.
+ *
+ * Every assertion is the one it was: which stages a declaration carries in
+ * which order, that a dry run drops the writing call outright, where the
+ * approval sits relative to apply, and what {@link Intervene.run} does. A
+ * call's declared payload is read off `node.payload`, and the payload-parity
+ * case runs the declaration through the real interpreter.
+ */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Intervene from "../src/Intervene.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as WithApproval from "../src/WithApproval.ts"
+import { execute } from "./Execute.ts"
+import { payloadOf } from "./Graphs.ts"
 
-const step = Flow.make({
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+/** Every payload a declared stage was handed while the plan ran, in order. */
+const seen: Array<unknown> = []
+/** What each declared stage answers, keyed by phase and set per case. */
+const answers = new Map<string, unknown>()
+
+const record = Action.make("intervene/record", {
+  payload: { phase: Schema.String, payload: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Never
 })
 
-const gate = Flow.make({
-  name: "human-approval",
+const recordLayer = record.toLayer(({ payload, phase }) =>
+  Effect.sync(() => {
+    seen.push(payload)
+    return answers.get(phase)
+  })
+)
+
+/**
+ * A scripted member: a real `@smthrs/flow` flow, type-erased.
+ *
+ * `Flow.Any` states a declaration's schemas and annotations but not `.call`,
+ * which is what a pattern member is called through, and a flow's `Requires`
+ * names the actions its body reaches. Erasing both is what lets one
+ * declaration compose members backed by different actions.
+ */
+type Scripted = Flow.Any & { readonly call: (payload: never) => Node.Node<unknown, unknown, never> }
+
+/** One declared stage, taking exactly the payload the pattern hands it. */
+const stage = (phase: string, fields: Schema.Struct.Fields): Scripted =>
+  Flow.make(`intervene/${phase}`, {
+    payload: fields,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture({ phase }, function(this: { readonly phase: string }, payload: unknown) {
+      return record.call({ phase: this.phase, payload })
+    })
+  }) as unknown as Scripted
+
+const read = stage("read", { phase: Schema.String, input: Schema.Unknown })
+const propose = stage("propose", { phase: Schema.String, input: Schema.Unknown, context: Schema.Unknown })
+const apply = stage("apply", { phase: Schema.String, input: Schema.Unknown, proposal: Schema.Unknown })
+const report = stage("report", {
+  phase: Schema.String,
   input: Schema.Unknown,
-  output: WithApproval.Approved,
-  body: () => Node.dynamic({ output: WithApproval.Approved })
+  proposal: Schema.Unknown,
+  applied: Schema.Unknown,
+  dryRun: Schema.Boolean
 })
 
-const literal = (node: Graph.GraphNode): Record<string, unknown> => {
-  const first = node.keyMaterial.inputs[0]
-  return first !== undefined && first._tag === "Literal" && typeof first.value === "object" && first.value !== null
-    ? first.value as Record<string, unknown>
-    : {}
-}
+const decide = Action.make("intervene/decide", {
+  payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+  success: WithApproval.Approved,
+  error: Schema.Never
+})
 
-const calls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) => node.kind === "FlowCall")
+const decideLayer = decide.toLayer(() => Effect.succeed("approved" as const))
+
+const gate: Scripted = Flow.make("human-approval", {
+  payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+  success: WithApproval.Approved,
+  error: Schema.Unknown,
+  body: Node.capture(
+    {},
+    (payload: { readonly input: unknown; readonly reason: string; readonly scope: string }) => decide.call(payload)
+  )
+}) as unknown as Scripted
+
+/** A declaration carrying exactly the schema pair a refusal case needs. */
+const declaring = (input: Schema.Top, output: Schema.Top): Scripted =>
+  Flow.make("intervene/probe", {
+    payload: input as Flow.AnyStructSchema,
+    success: output,
+    error: Schema.Never,
+    body: (value: unknown) => Node.succeed(value)
+  }) as unknown as Scripted
+
+/** Every member call a graph carries, in order, named by the flow it calls. */
+const memberTags = (graph: Graph.Graph): ReadonlyArray<string> =>
+  Graph.nodes(graph)
+    .filter((node) => node.kind === "FlowCall" && node.id !== "root")
+    .map((node) => (node.ast as { readonly flow: string }).flow)
+
+/** Every member call a graph carries, in order, named by its declared phase. */
+const phases = (graph: Graph.Graph): ReadonlyArray<unknown> =>
+  Graph.nodes(graph)
+    .filter((node) => node.kind === "FlowCall" && node.id !== "root")
+    .map((node) => payloadOf(node).phase)
 
 describe("Intervene", () => {
-  it.effect("declares the payloads it executes", () =>
-    Effect.gen(function*() {
-      for (const dryRun of [false, true]) {
-        const executed: Array<unknown> = []
-        const declared: Array<unknown> = []
-        yield* Intervene.run("refactor", {
+  it("declares the payloads it executes", async () => {
+    for (const dryRun of [false, true]) {
+      const executed: Array<unknown> = []
+      await Effect.runPromise(
+        Intervene.run("refactor", {
           dryRun,
           read: (input) => Effect.sync(() => (executed.push(input), ["a.ts"])),
           propose: (input) => Effect.sync(() => (executed.push(input), { edits: 1 })),
           apply: (input) => Effect.sync(() => (executed.push(input), "written")),
-          report: (input) => Effect.sync(() => executed.push(input))
+          report: (input) => Effect.sync(() => (executed.push(input), "reported"))
         })
-        const declaration = Intervene.make({ read: step, propose: step, apply: step, report: step, dryRun })
-        const outputs = dryRun ? [["a.ts"], { edits: 1 }, "reported"] : [["a.ts"], { edits: 1 }, "written", "reported"]
-        const result = TestRuntime.evaluate(declaration.body!("refactor"), (request) => {
-          if (request._tag !== "FlowCall") throw new Error("unexpected dynamic node")
-          declared.push(request.input)
-          return Result.succeed(outputs[declared.length - 1])
-        })
-        if (Result.isFailure(result)) throw result.failure
+      )
 
-        expect(declared).toEqual(executed)
-      }
-    }))
+      seen.length = 0
+      answers.clear()
+      answers.set("read", ["a.ts"])
+      answers.set("propose", { edits: 1 })
+      answers.set("apply", "written")
+      answers.set("report", "reported")
+      const declaration = Intervene.make({ read, propose, apply, report, dryRun })
+      await execute(declaration as never, { input: "refactor" }, `intervene-parity-${dryRun}`, recordLayer)
+
+      expect(seen).toEqual(executed)
+    }
+  })
 
   it("declares read, propose, apply, and report", () => {
-    const graph = Graph.build(
-      Intervene.make({ read: step, propose: step, apply: step, report: step, dryRun: false }),
-      "refactor"
-    )
+    const graph = Graph.build(Intervene.make({ read, propose, apply, report, dryRun: false }), { input: "refactor" })
 
-    expect(calls(graph).map((node) => literal(node).phase)).toEqual(["read", "propose", "apply", "report"])
+    expect(phases(graph)).toEqual(["read", "propose", "apply", "report"])
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
   it("drops the apply call on a dry run", () => {
-    const graph = Graph.build(
-      Intervene.make({ read: step, propose: step, apply: step, report: step, dryRun: true }),
-      "refactor"
-    )
+    const graph = Graph.build(Intervene.make({ read, propose, apply, report, dryRun: true }), { input: "refactor" })
 
-    expect(calls(graph).map((node) => literal(node).phase)).toEqual(["read", "propose", "report"])
-    expect(literal(calls(graph)[2]!).dryRun).toBe(true)
+    expect(phases(graph)).toEqual(["read", "propose", "report"])
+    expect(payloadOf(Graph.nodes(graph).filter((node) => node.kind === "FlowCall" && node.id !== "root")[2]!).dryRun)
+      .toBe(true)
   })
 
   it("declares the approval call before apply only when an approval is configured", () => {
     const gated = Graph.build(
       Intervene.make({
-        read: step,
-        propose: step,
-        apply: step,
-        report: step,
+        read,
+        propose,
+        apply,
+        report,
         dryRun: false,
         approval: gate,
         reason: "rewrite the module"
       }),
-      "refactor"
+      { input: "refactor" }
     )
     const ungated = Graph.build(
-      Intervene.make({ read: step, propose: step, apply: step, report: step, dryRun: false }),
-      "refactor"
+      Intervene.make({ read, propose, apply, report, dryRun: false }),
+      { input: "refactor" }
     )
 
-    // `withApproval` contributes two wrapper calls (the decorator and the
-    // declaration it wraps) that carry the apply input, then the approval, then
-    // the apply flow itself.
-    const phases = calls(gated).map((node) => literal(node).scope === "run" ? "approval" : literal(node).phase)
-    expect(phases).toEqual(["read", "propose", "apply", "apply", "approval", "apply", "report"])
-    expect(phases.indexOf("approval")).toBeLessThan(phases.lastIndexOf("apply"))
-    expect(calls(ungated).some((node) => literal(node).scope === "run")).toBe(false)
+    // `withApproval` contributes two wrapper calls, the decorator and the
+    // declaration it wraps, beside the approval and the apply flow itself:
+    // seven member calls where an ungated intervention declares four.
+    // `@smthrs/flow` lists a spliced body BEFORE the call that splices it,
+    // where `@smthrs/core` listed the enclosing call first, so the two wrapper
+    // calls sit after the pair they enclose rather than before it.
+    expect(memberTags(gated)).toEqual([
+      "intervene/read",
+      "intervene/propose",
+      "human-approval",
+      "intervene/apply",
+      "withApproval(intervene/apply)",
+      "withApproval(intervene/apply)",
+      "intervene/report"
+    ])
+    expect(memberTags(gated).indexOf("human-approval")).toBeLessThan(
+      memberTags(gated).lastIndexOf("intervene/apply")
+    )
+    expect(memberTags(ungated)).toEqual([
+      "intervene/read",
+      "intervene/propose",
+      "intervene/apply",
+      "intervene/report"
+    ])
     expect(Graph.diagnostics(gated)).toEqual([])
   })
 
   it("rejects an approval flow that permits denial", () => {
-    const permissive = Flow.make({
-      input: Schema.Unknown,
-      output: Schema.String,
-      body: () => Node.succeed("approved")
-    })
+    const permissive = declaring(Schema.Unknown, Schema.String)
+    const options = { read, propose, apply, report, dryRun: false, approval: permissive }
 
-    expect(() =>
-      Intervene.make({
-        read: step,
-        propose: step,
-        apply: step,
-        report: step,
-        dryRun: false,
-        approval: permissive
-      })
-    ).toThrow(expect.objectContaining({
+    expect(() => Intervene.make(options)).toThrow(expect.objectContaining({
       code: "invalid_decorator",
       message: "The bound flow has an incompatible output schema: expected Literal, received String"
     }))
-    expect(() =>
-      Intervene.make({
-        read: step,
-        propose: step,
-        apply: step,
-        report: step,
-        dryRun: false,
-        approval: permissive
-      })
-    ).toThrow(PatternError)
+    expect(() => Intervene.make(options)).toThrow(PatternError)
   })
 
   it.effect("never applies on a dry run and reports the proposal", () =>
     Effect.gen(function*() {
       let applied = 0
 
-      const report = yield* Intervene.run("refactor", {
+      const reported = yield* Intervene.run("refactor", {
         dryRun: true,
         read: () => Effect.succeed(["a.ts", "b.ts"]),
         propose: ({ context }) => Effect.succeed({ edits: context.length }),
@@ -155,7 +223,7 @@ describe("Intervene", () => {
       })
 
       expect(applied).toBe(0)
-      expect(report).toEqual({
+      expect(reported).toEqual({
         phase: "report",
         input: "refactor",
         proposal: { edits: 2 },
@@ -168,7 +236,7 @@ describe("Intervene", () => {
     Effect.gen(function*() {
       const trace: Array<string> = []
 
-      const report = yield* Intervene.run("refactor", {
+      const reported = yield* Intervene.run("refactor", {
         dryRun: false,
         read: () => Effect.sync(() => trace.push("read")).pipe(Effect.as(["a.ts"])),
         propose: () => Effect.sync(() => trace.push("propose")).pipe(Effect.as({ edits: 1 })),
@@ -178,13 +246,13 @@ describe("Intervene", () => {
       })
 
       expect(trace).toEqual(["read", "propose", "approve", "apply", "report"])
-      expect(report).toMatchObject({ applied: "written", dryRun: false })
+      expect(reported).toMatchObject({ applied: "written", dryRun: false })
     }))
 
   it.effect("applies directly when no approval callback is configured", () =>
     Effect.gen(function*() {
       const trace: Array<string> = []
-      const report = yield* Intervene.run("refactor", {
+      const reported = yield* Intervene.run("refactor", {
         dryRun: false,
         read: () => Effect.sync(() => (trace.push("read"), ["a.ts"])),
         propose: () => Effect.sync(() => (trace.push("propose"), { edits: 1 })),
@@ -193,7 +261,7 @@ describe("Intervene", () => {
       })
 
       expect(trace).toEqual(["read", "propose", "apply", "report"])
-      expect(report).toMatchObject({ applied: "written", dryRun: false })
+      expect(reported).toMatchObject({ applied: "written", dryRun: false })
     }))
 
   it.effect("stops before apply when the approval is denied", () =>
@@ -218,16 +286,64 @@ describe("Intervene", () => {
     }))
 
   it("gives two approval reasons different step identity", () => {
-    const material = (reason: string) =>
+    const nodes = (reason: string) =>
       Graph.nodes(Graph.build(
-        Intervene.make({ read: step, propose: step, apply: step, report: step, dryRun: false, reason }),
-        "refactor"
+        Intervene.make({ read, propose, apply, report, dryRun: false, reason }),
+        { input: "refactor" }
       ))
 
-    const rename = material("rename the symbol")
-    const rewrite = material("rewrite the greeting")
+    const rename = nodes("rename the symbol")
+    const rewrite = nodes("rewrite the greeting")
 
     expect(rename.map((node) => node.kind)).toEqual(rewrite.map((node) => node.kind))
-    expect(rename.map((node) => node.keyMaterial.body)).not.toEqual(rewrite.map((node) => node.keyMaterial.body))
+    expect(rename.map((node) => node.draft.material.body)).not.toEqual(
+      rewrite.map((node) => node.draft.material.body)
+    )
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const named = Intervene.make({
+      name: "rewrite",
+      description: "Read, propose, apply, report.",
+      read,
+      propose,
+      apply,
+      report,
+      dryRun: false
+    })
+
+    expect(named._tag).toBe("rewrite")
+    expect(named.description).toBe("Read, propose, apply, report.")
+    const derived = Intervene.make({ read, propose, apply, report, dryRun: true })
+    expect(derived._tag).toBe("intervene(dryRun=true)")
+    expect(derived.description).toBeUndefined()
+  })
+})
+
+describe("Intervene execution", () => {
+  it("runs the whole declared intervention through the interpreter", async () => {
+    seen.length = 0
+    answers.clear()
+    answers.set("read", ["a.ts"])
+    answers.set("propose", { edits: 1 })
+    answers.set("apply", "written")
+    answers.set("report", "reported")
+
+    const settled = await execute(
+      Intervene.make({ read, propose, apply, report, dryRun: false, approval: gate, reason: "rewrite" }) as never,
+      { input: "refactor" },
+      "intervene-gated-run",
+      recordLayer,
+      decideLayer,
+      Interpreter.layer(gate as never) as never
+    )
+
+    expect(settled).toBe("reported")
+    expect(seen).toEqual([
+      { phase: "read", input: "refactor" },
+      { phase: "propose", input: "refactor", context: ["a.ts"] },
+      { phase: "apply", input: "refactor", proposal: { edits: 1 } },
+      { phase: "report", input: "refactor", proposal: { edits: 1 }, applied: "written", dryRun: false }
+    ])
   })
 })

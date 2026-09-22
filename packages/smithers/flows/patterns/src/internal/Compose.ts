@@ -1,6 +1,6 @@
 /**
- * The shared machinery every composition pattern is built from: reading a
- * flow's declaration, calling it as a node, and intersecting the effect
+ * The shared machinery every composition pattern is built from: labelling a
+ * pattern flow, refusing a bound it cannot build, and intersecting the effect
  * envelopes of the flows a pattern wraps.
  *
  * The envelope algebra comes straight from `@smthrs/plan/Effects`, the one
@@ -10,23 +10,10 @@
  *
  * @since 0.1.0
  */
-import { Annotations, Flow, Graph, Node } from "@smthrs/core"
+import * as Graph from "@smthrs/flow/Graph"
 import * as Effects from "@smthrs/plan/Effects"
-import type * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
-
-/**
- * @since 0.1.0
- * @private
- */
-export interface FlowDetails extends Flow.Any {
-  readonly annotations: Context.Context<never>
-  readonly name?: string | undefined
-  readonly description?: string | undefined
-  readonly capabilities: ReadonlyArray<string>
-  readonly effects: Effects.Declaration | undefined
-}
 
 /**
  * @since 0.1.0
@@ -39,19 +26,6 @@ export interface EffectIntersection {
   readonly mode: boolean
   readonly tier: boolean
 }
-
-/**
- * @since 0.1.0
- * @private
- */
-export const details = (flow: Flow.Any): FlowDetails => flow as FlowDetails
-
-/**
- * @since 0.1.0
- * @private
- */
-export const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
 
 /**
  * Reads the shared acceptance vocabulary using own properties only.
@@ -88,13 +62,54 @@ export const safeIntegerPriorityRefusal = (
     })
 
 /**
+ * Refuses a width bound that is not a positive safe integer.
+ *
+ * Every pattern that bounds how many members are in flight refuses the same
+ * values with the same sentence, so the sentence is stated once and named by
+ * the pattern that declared the bound. What counts as "no bound at all"
+ * differs per pattern, so each caller answers that before asking: `Panel`
+ * reads an absent option and `Quarantine` reads the literal `"unbounded"`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const concurrencyRefusal = (pattern: string, concurrency: number): PatternError | undefined =>
+  Number.isSafeInteger(concurrency) && concurrency >= 1 ? undefined : new PatternError({
+    code: "invalid_decorator",
+    message: `${pattern} concurrency must be a positive safe integer, received ${concurrency}`
+  })
+
+/**
+ * Refuses a member record a pattern cannot compose because it holds nothing.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const nonEmptyMembersRefusal = (
+  pattern: string,
+  names: ReadonlyArray<string>
+): PatternError | undefined =>
+  names.length === 0
+    ? new PatternError({ code: "invalid_decorator", message: `${pattern} requires at least one member` })
+    : undefined
+
+/**
  * Refuses a declared bound whose unrolling can never be built into a plan.
  *
  * A pattern that unrolls a bound sequences `callsPerUnit` calls per unit into
- * a left-nested chain, so the plan nests one level deeper per call. Core
- * refuses a plan nested past `Graph.maximumGraphDepth` with a `graph_too_deep`
- * `GraphBuildError` naming the node, which names neither the option nor the
- * pattern that produced it. Refusing at the declaration names both.
+ * a left-nested chain, so the plan nests one level deeper per call.
+ * `@smthrs/flow`'s `Graph.build`, the builder that executes these
+ * declarations, refuses a plan nested past its exported
+ * `Graph.maximumGraphDepth` with a `graph_too_deep` `GraphBuildError` naming
+ * the node, which names neither the option nor the pattern that produced it.
+ * Refusing at the declaration names both, and reads the same constant the
+ * builder does, so the two can never drift apart.
+ *
+ * The arithmetic: the flow's own root is one level, each of the `value` units
+ * nests `callsPerUnit` more, and the value the chain settles with sits one
+ * unit below the last one, so the deepest node is
+ * `callsPerUnit * (value + 1) + 1`. The largest bound that still builds is the
+ * largest `value` keeping that at or under the builder's limit.
  *
  * The limit counts the chain alone. Deeper member flows, or an enclosing
  * pattern that unrolls this one, spend the same budget, so a bound under the
@@ -109,7 +124,7 @@ export const sequencedBoundRefusal = (
   value: number,
   callsPerUnit: number
 ): PatternError | undefined => {
-  const limit = Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit)
+  const limit = Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1
   return value <= limit ? undefined : new PatternError({
     code: "invalid_decorator",
     message: `${pattern} ${option} must be at most ${limit} to stay inside the plan depth limit, received ${value}`
@@ -195,52 +210,6 @@ export const intersectCapabilities = (
   template: ReadonlyArray<string>,
   supplied: ReadonlyArray<string>
 ): ReadonlyArray<string> => normalized(supplied.filter((capability) => template.includes(capability)))
-
-/**
- * @since 0.1.0
- * @private
- */
-export const redeclare = (
-  template: Flow.Any,
-  supplied: Flow.Any,
-  name: string
-): Flow.Any => {
-  const expected = details(template)
-  const actual = details(supplied)
-  if (
-    actual.effects !== undefined &&
-    (expected.effects === undefined || !Effects.narrow(expected.effects, actual.effects).ok)
-  ) {
-    throw new PatternError({
-      code: "envelope_conflict",
-      message: `Decorator "${name}" widens the wrapped flow's declared effect envelope`
-    })
-  }
-  const wrapper = Flow.make({
-    name,
-    description: actual.description,
-    input: expected.input,
-    output: expected.output,
-    capabilities: intersectCapabilities(expected.capabilities, actual.capabilities),
-    effects: intersectEffects(expected.effects, actual.effects).declaration,
-    flows: [supplied],
-    body: Node.capture({ name }, (input) =>
-      Node.andThen(
-        Node.succeed({ _tag: "Decorator", name }),
-        Node.capture({ name }, () => call(supplied, input))
-      ))
-  })
-  // Fresh decorator declarations may carry only their own metadata. Retain
-  // the inner bag too, with the supplied outer declaration taking precedence.
-  return Flow.annotateMerge(wrapper, Annotations.merge(expected.annotations, actual.annotations))
-}
-
-/**
- * @since 0.1.0
- * @private
- */
-export const seal = (flow: Flow.Any): Flow.Any =>
-  Flow.sealed(flow as unknown as Flow.Flow<Schema.Top, Schema.Top, unknown>)
 
 const schemaDocument = (schema: Schema.Top): unknown | undefined => {
   try {
@@ -338,36 +307,31 @@ const compareSchemas = (
 }
 
 /**
- * @since 0.1.0
+ * Compares a declared input and output pair against the pair another
+ * declaration states, whatever shape the declaration itself has.
+ *
+ * A `@smthrs/flow` flow states its pair as `payloadSchema`/`successSchema`, so
+ * the comparison takes the two schemas rather than the declaration that
+ * carries them.
+ *
+ * @since 1.0.0
  * @private
  */
-export const schemasCompatible = (
+export const declaredSchemasCompatible = (
   input: Schema.Top,
   output: Schema.Top,
-  flow: Flow.Any
+  declared: { readonly input: Schema.Top; readonly output: Schema.Top }
 ): SchemaCompatibilityIssue | undefined => {
-  if (!isNever(input) && !isTop(flow.input)) {
+  if (!isNever(input) && !isTop(declared.input)) {
     const inputIssue = isTop(input)
-      ? incompatible("input", input, flow.input)
-      : compareSchemas("input", input, flow.input)
+      ? incompatible("input", input, declared.input)
+      : compareSchemas("input", input, declared.input)
     if (inputIssue !== undefined) return inputIssue
   }
-  if (!isTop(output) && !isNever(flow.output)) {
-    return compareSchemas("output", output, flow.output)
+  if (!isTop(output) && !isNever(declared.output)) {
+    return compareSchemas("output", output, declared.output)
   }
   return undefined
-}
-
-/**
- * @since 0.1.0
- * @private
- */
-// `Flow.make` defaults an unnamed flow's name to the empty string rather than
-// leaving it undefined, so a nullish check alone let decorator names read
-// `withRetry(, attempts=2)`. Both forms of "no name" answer "anonymous".
-export const displayName = (flow: Flow.Any): string => {
-  const name = details(flow).name
-  return name === undefined || name.length === 0 ? "anonymous" : name
 }
 
 /**

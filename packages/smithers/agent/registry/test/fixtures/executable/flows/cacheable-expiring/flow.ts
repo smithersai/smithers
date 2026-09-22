@@ -12,6 +12,7 @@ import { Schema } from "effect"
  * reads it, and the age the engine measures is stated rather than timed.
  */
 export default Flow.make({
+  name: "cacheable-expiring",
   description: "Delegates to the agent and expires its recorded result at once.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

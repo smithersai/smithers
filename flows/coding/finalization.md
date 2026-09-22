@@ -1,7 +1,7 @@
 # Vibing and appending to main
 
-The public `coding/vibe` descriptor delegates to `coding/RunVibe`, whose
-`coding/Vibe` flow composes three private children in order: `coding/AdmitVibe`,
+The public `coding/vibe` descriptor's module IS the `coding/Vibe` flow, which
+composes three private children in order: `coding/AdmitVibe`,
 `coding/CleanVibeHistory` and `coding/LandVibe`. Each child leaves its own
 source-qualified receipt for the existing cards. Shipment is separate and not
 implemented. The existing request outcome stops at validated, changes-requested
@@ -19,8 +19,8 @@ completed native Request through the existing RunStore, checks its successful
 domain outcome, and walks at most 1,024 retained executions to one completed
 approved control wrapper in this host. The persisted `coding/request` registry
 bridge must carry the same decoded input as both Request and the approved
-control plan. The approved envelope names `coding/RunRequest`; the registry
-inlines that delegate, so a separate RunRequest row is not required. Ordinary
+control plan. `coding/request` IS its own flow, so its approved envelope names
+no delegate and there is no separate delegate row. Ordinary
 spawn edges and trampoline row parents use their existing meanings. A native
 control fork remains eligible when it satisfies the same wrapper checks.
 

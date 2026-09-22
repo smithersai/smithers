@@ -13,6 +13,7 @@ import { Schema } from "effect"
  * cannot tell a policy that reached the runtime from one that did not.
  */
 export default Flow.make({
+  name: "scoped",
   description: "Declares a run-scoped cache policy.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

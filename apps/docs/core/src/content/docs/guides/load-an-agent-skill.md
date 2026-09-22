@@ -60,20 +60,21 @@ const lowered = Markdown.lowerSkill(document)
 The result is a `Flow` whose input is `{ args: string }` and whose output is
 `string`. Only `name`, `description`, and `allowed-tools` are lowered:
 
-| Frontmatter     | Becomes                            |
-| --------------- | ---------------------------------- |
-| `name`          | The flow's name.                   |
-| `description`   | The flow's description.            |
-| `allowed-tools` | The flow's declared collaborators. |
-| the body        | The flow's prompt.                 |
+| Frontmatter     | Becomes                                 |
+| --------------- | --------------------------------------- |
+| `name`          | The signature's name, which is its tag. |
+| `description`   | The flow's description.                 |
+| `allowed-tools` | The flow's declared collaborators.      |
+| the body        | The flow's prompt.                      |
 
 Everything else stays in `extra` for the caller to interpret. Coercing a field
 such as `model` or `placement` here would duplicate the flow-level frontmatter
 typing that `@smthrs/registry` owns.
 
-The lowered flow has no body, and it declares `flows`, so it is a dynamic flow:
-its implementation identity is the seat, the collaborators, and the prompt. A
-skill that declares no `model` gets the explicit `smart` fallback seat.
+The lowered signature has no body, so it carries the action a host supplies the
+implementation for, and the seat, the collaborators, and the prompt travel
+beside it as the declaration that host reads. A skill that declares no `model`
+gets the explicit `smart` fallback seat.
 Harnesses append non-empty runtime `args` when they render the prompt, which is
 the markdown-flow calling convention.
 

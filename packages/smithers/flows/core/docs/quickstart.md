@@ -1,14 +1,14 @@
 ---
 title: "Quickstart"
-description: "Declare two flows, plan them into a graph, read the topology and key material back, and evaluate the same declaration in memory. No host, no engine, no model."
+description: "Declare two signatures, compose them, plan them into a graph, and read the topology and the dependency references back. No host, no engine, no model."
 sidebar:
   order: 2
 ---
 
 This quickstart builds one plan end to end. Nothing executes: you declare two
-flows, compose them, and read back the topology, the dependency references, and
-the key material a durable engine would key its steps on. Everything runs in
-one process with no engine, no model, and no file system.
+signatures, compose them, and read back the topology and the dependency
+references a durable engine keys its steps on. Everything runs in one process
+with no engine, no model, and no file system.
 
 ## Prerequisites
 
@@ -19,15 +19,14 @@ one process with no engine, no model, and no file system.
 pnpm add @smthrs/core@next
 ```
 
-## Declare two flows
+## Declare two signatures
 
-Create `quickstart.ts`. A flow is a declaration: input schema, output schema,
-and a body that returns a node. The body is a plain function, and this package
-never calls it for its value.
+Create `quickstart.ts`. A signature is a declaration: a name, an input schema,
+an output schema, and a body that returns a node. The body is a plain function,
+and this package never calls it for its value.
 
 ```ts
-import { Flow, Graph, Node, TestRuntime } from "@smthrs/core"
-import * as Result from "effect/Result"
+import { Flow, Graph, Node } from "@smthrs/core"
 import * as Schema from "effect/Schema"
 
 const Review = Flow.make({
@@ -45,33 +44,35 @@ const Report = Flow.make({
 })
 ```
 
-Calling `Review({ path: "src/api.ts" })` does not run the body. It returns a
-node that records the call.
+The `name` is required: it is the tag the flow, the action, and every plan that
+records a call carry. `Review.call({ path: "src/api.ts" })` does not run the
+body. It returns a node that records the call.
 
 ## Compose them into a plan
 
-`Node.all` runs two independent calls as one join. `Node.andThen` sequences a
-builder after it, and the builder receives a symbolic placeholder standing for
+`Node.all` runs two independent calls as one join. `Node.bindPlanned` sequences
+a builder after it, and the builder receives a symbolic placeholder standing for
 the join's eventual value:
 
 ```ts
 const plan = Node.all({
-  api: Review({ path: "src/api.ts" }),
-  cli: Review({ path: "src/cli.ts" })
+  api: Review.call({ path: "src/api.ts" }),
+  cli: Review.call({ path: "src/cli.ts" })
 }).pipe(
-  Node.andThen((reviews) => Report({ notes: reviews.api.notes }))
+  Node.bindPlanned((reviews) => Report.call({ notes: reviews.api.notes }))
 )
 ```
 
 `reviews` is not the reviews. It is a placeholder whose member reads are
 recorded, so `reviews.api.notes` says "this step reads the `notes` field of the
-`api` member". Read members from it; never compute on it. See
-[Plan time](./concepts/plan-time.md) for what happens when you do.
+`api` member". Read members from it; never compute on it. `Node.andThen` takes a
+node rather than a builder, and a continuation that has to DECIDE on a real
+value is `Node.branch`. See [Plan time](./concepts/plan-time.md) for why.
 
 ## Plan the graph
 
 `Graph.build` walks the declaration once, evaluating each flow body and each
-`andThen` builder exactly once against those placeholders:
+builder exactly once against those placeholders:
 
 ```ts
 const graph = Graph.build(plan)
@@ -82,19 +83,20 @@ for (const node of Graph.nodes(graph)) {
 ```
 
 ```text
-root (AndThen)
-root.andThen (All)
-root.andThen.all.api (FlowCall)
 root.andThen.all.api.flow (Succeed)
-root.andThen.all.cli (FlowCall)
+root.andThen.all.api (FlowCall)
 root.andThen.all.cli.flow (Succeed)
-root.then (FlowCall)
+root.andThen.all.cli (FlowCall)
+root.andThen (All)
 root.then.flow (Succeed)
+root.then (FlowCall)
+root (AndThen)
 ```
 
 Node ids are structural: a node's id is its position in the declaration, so the
 same declaration always produces the same ids. A `FlowCall` node and the
-`.flow` node under it are the call and the body it entered.
+`.flow` node under it are the call and the body it entered. The nodes arrive in
+dependency order, so a step appears after everything it depends on.
 
 ## Read the edges
 
@@ -109,100 +111,58 @@ root.andThen.all.api.flow -> root.andThen.all.api [value]
 root.andThen.all.api -> root.andThen [value]
 root.andThen.all.cli.flow -> root.andThen.all.cli [value]
 root.andThen.all.cli -> root.andThen [value]
+root.andThen -> root [value]
 root.andThen -> root.then [continuation]
 root.then.flow -> root.then [value]
 root.then -> root [value]
 ```
 
 The two reviews depend on nothing and on each other in no way, so a scheduler
-may run them at the same time. The `continuation` edge is the `andThen`: the
-report cannot start until the join settles.
+may run them at the same time. The `continuation` edge is the bind: the report
+cannot start until the join settles.
 
-## Check for problems, then read the key material
+## Check for problems
 
 `Graph.build` records declaration problems rather than throwing them, so an
 invalid plan stays inspectable. Check `diagnostics` before you trust a graph:
 
 ```ts
 console.log(Graph.diagnostics(graph).length) // 0
-
-const material = Result.getOrThrow(Graph.keyMaterial(graph))
-console.log(material.map((entry) => entry.nodeId))
 ```
 
-```text
-[
-  'root.andThen.all.api.flow',
-  'root.andThen.all.api',
-  'root.andThen.all.cli.flow',
-  'root.andThen.all.cli',
-  'root.andThen',
-  'root.then.flow',
-  'root.then',
-  'root'
-]
-```
+`@smthrs/flow` documents every code a build records and which of them are fatal,
+and `Graph.drafts` refuses a graph carrying a fatal one rather than compiling a
+plan the builder called invalid.
 
-`keyMaterial` returns a `Result`, and it refuses a graph carrying a fatal
-diagnostic rather than handing back a key for a plan the builder called
-invalid. The entries arrive in topological dependency order, so a key compiler
-can substitute each dependency's digest before it hashes the node that depends
-on it.
+## Declare work this package does not implement
 
-Look at what the placeholder read became. This is the entry for `root.then`,
-the report call:
+A signature without a `body` is a declaration of work someone else implements.
+It carries the action a host attaches the implementation to, and a flow whose
+whole body is one call to that action:
 
 ```ts
-console.dir(
-  material.find((entry) => entry.nodeId === "root.then")?.material.inputs,
-  { depth: null }
-)
+import { Effect } from "effect"
+
+const Fetch = Flow.make({
+  name: "fetch",
+  input: Schema.Struct({ url: Schema.String }),
+  output: Schema.String,
+  capabilities: ["net"]
+})
+
+const layer = Fetch.action!.toLayer(({ url }) => Effect.succeed(`body of ${url}`))
 ```
 
-```text
-[
-  {
-    _tag: 'Literal',
-    value: [Object: null prototype] {
-      notes: { _tag: 'PlannedInput', path: [ 'api', 'notes' ] }
-    }
-  },
-  { _tag: 'Ref', from: 'root.andThen', path: [ 'api', 'notes' ] },
-  { _tag: 'Pending', from: 'root.andThen' },
-  { _tag: 'Ref', from: 'root.then.flow', path: [] }
-]
-```
-
-Reading `reviews.api.notes` recorded a `Ref` naming the node it came from and
-the path it read. That is the whole point of planning against placeholders: the
-dependency is a fact in the plan, not something discovered while the plan runs.
-
-## Evaluate the same declaration
-
-`TestRuntime` runs the deferred callbacks the AST stores, so a test can assert
-on value behavior without a host. `evaluateInline` also enters called flows
-that carry a body:
-
-```ts
-const evaluated = TestRuntime.evaluateInline(plan)
-console.log(Result.isSuccess(evaluated) ? evaluated.success : evaluated)
-```
-
-```text
-{ published: true, notes: 'reviewed src/api.ts' }
-```
-
-This is a test helper, not a runtime. It models no capabilities, no
-persistence, no scheduling, no retries, and no cache. See
-[Test a declaration without a host](./guides/test-a-declaration.md) for what it
-is good for and where the boundary sits.
+`Fetch.call({ url })` plans the same way `Review.call` does. What changes is
+where the work comes from: the body is code this package planned, and the action
+is code a host supplied, which is why one is a field and the other is a layer.
 
 ## What just happened
 
-You wrote a declaration and got back a complete plan: eight nodes, seven edges,
-one dependency reference, and eight pieces of key material, without executing
-a single step. That is the contract this package exists to provide, and it is
-what lets the layers above it cache, resume, schedule, and place work.
+You wrote a declaration and got back a complete plan: eight nodes, eight edges,
+and one dependency reference, without executing a single step. That is the
+contract this package exists to provide, and it is what lets the layers above
+it cache, resume, schedule, and place work.
 
 ## Next steps
 

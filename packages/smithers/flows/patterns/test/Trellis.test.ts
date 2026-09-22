@@ -1,26 +1,38 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Trellis from "../src/Trellis.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
-const author = Flow.make({
-  name: "author",
+// The author is handed the caller's prompt and a leaf is handed a `Leaf`, so
+// one payload struct covers both roles: a `@smthrs/flow` flow states the
+// payload it takes.
+const MemberPayload = {
+  input: Schema.optional(Schema.Unknown),
+  goal: Schema.optional(Schema.Unknown),
+  seat: Schema.optional(Schema.Unknown),
+  path: Schema.optional(Schema.Unknown)
+}
+
+const author = Flow.make("author", {
+  payload: MemberPayload,
+  success: Schema.Unknown,
+  error: Schema.Unknown,
   capabilities: ["delegate/author"],
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+  body: (payload) => Node.succeed(payload)
 })
 
-const leaf = Flow.make({
-  name: "leaf",
+const leaf = Flow.make("leaf", {
+  payload: MemberPayload,
+  success: Schema.Unknown,
+  error: Schema.Unknown,
   capabilities: ["delegate/leaf"],
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+  body: (payload) => Node.succeed(payload)
 })
 
 const envelope: Trellis.Envelope = { fuel: 3, depth: 3, fanout: 2 }
@@ -37,17 +49,12 @@ const reported = (
 ): ReadonlyArray<readonly [string, string, string]> =>
   errors.map((error) => [error.code, error.path, error.message] as const)
 
-const payload = (node: Graph.GraphNode): unknown =>
-  (node.keyMaterial.inputs as ReadonlyArray<{ readonly _tag: string; readonly value?: unknown }>)
-    .find((input) => input._tag === "Literal")?.value
+// `@smthrs/flow` keeps a call's hydrated payload on the node, where core kept a
+// `Literal` entry in key material, and it names a call by the callee's tag,
+// where core had only the capability the callee declared.
+const payload = (node: Graph.GraphNode): unknown => payloadOf(node)
 
-const leafCalls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> =>
-  Graph.nodes(graph).filter((node) =>
-    node.kind === "FlowCall" &&
-    ((node.keyMaterial.body as { readonly capabilities?: ReadonlyArray<string> }).capabilities ?? []).includes(
-      "delegate/leaf"
-    )
-  )
+const leafCalls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> => callsTo(graph, "leaf")
 
 describe("Trellis", () => {
   it("reports depth, fan-out, and fuel overruns at the offending path", () => {
@@ -531,9 +538,11 @@ describe("Trellis", () => {
     const trellis = Trellis.make({ author, leaf, envelope })
 
     expect(Flow.isFlow(trellis)).toBe(true)
-    const graph = Graph.build(trellis, "ship it")
+    const graph = Graph.build(trellis, { input: "ship it" })
     expect(leafCalls(graph)).toHaveLength(envelope.fuel)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(envelope.fuel + 1)
+    // The builder enters the declaration as a call of its own, so core's
+    // `fuel + 1` FlowCall count is the fuel slots plus the one author call.
+    expect(callsTo(graph, "author")).toHaveLength(1)
     // The declared payload is a Leaf, which is what `run` and `execute` hand a
     // leaf flow. A declaration cannot know the goals, so the plan stands in for
     // them and the path names the slot.
@@ -554,13 +563,22 @@ describe("Trellis", () => {
     )
   })
 
+  it("keeps the caller's name and description on the declared flow", () => {
+    const trellis = Trellis.make({ author, leaf, envelope, name: "plan-it", description: "Author and run a plan." })
+
+    expect(trellis._tag).toBe("plan-it")
+    expect(trellis.description).toBe("Author and run a plan.")
+    expect(Trellis.make({ author, leaf, envelope }).description).toBeUndefined()
+  })
+
   it("compiles a plan into the calls the plan names", () => {
-    const compiled = Flow.make({
-      input: Schema.Unknown,
-      output: Schema.Unknown,
+    const compiled = Flow.make("compiled-nested", {
+      payload: MemberPayload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
       body: () => Trellis.compile(nested, { leaf })
     })
-    const graph = Graph.build(compiled, "ship it")
+    const graph = Graph.build(compiled, { input: "ship it" })
 
     expect(leafCalls(graph)).toHaveLength(3)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(1)
@@ -573,12 +591,13 @@ describe("Trellis", () => {
 
   it("preserves an explicitly selected seat in compiled and executed leaves", () => {
     const seated: Trellis.Plan = { agent: { goal: "review", seat: "critic" } }
-    const compiled = Flow.make({
-      input: Schema.Unknown,
-      output: Schema.Unknown,
+    const compiled = Flow.make("compiled-seated", {
+      payload: MemberPayload,
+      success: Schema.Unknown,
+      error: Schema.Unknown,
       body: () => Trellis.compile(seated, { leaf })
     })
-    const graph = Graph.build(compiled, "ship it")
+    const graph = Graph.build(compiled, { input: "ship it" })
 
     expect(payload(leafCalls(graph)[0]!)).toEqual({ goal: "review", seat: "critic", path: "root" })
     expect(Trellis.leaves(seated)).toEqual([{ goal: "review", seat: "critic", path: "root" }])

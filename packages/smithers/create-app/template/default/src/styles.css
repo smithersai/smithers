@@ -22,7 +22,7 @@ code {
 
 .shell {
   display: grid;
-  grid-template-columns: 15rem 1fr;
+  grid-template-columns: 15rem minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -58,6 +58,8 @@ code {
 }
 
 .shell-main {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 2.5rem 3rem;
 }
 
@@ -87,6 +89,7 @@ code {
 }
 
 .composer-input {
+  min-width: 0;
   flex: 1;
   padding: 0.625rem 0.875rem;
   border: 1px solid var(--house-border);
@@ -97,6 +100,7 @@ code {
 }
 
 .composer-send {
+  flex-shrink: 0;
   padding: 0.625rem 1.25rem;
   border: 0;
   border-radius: var(--house-radius-lg);
@@ -134,4 +138,20 @@ code {
 .pane-body {
   margin: 0;
   color: var(--house-foreground-muted);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--house-border);
+    padding: 1rem;
+  }
+
+  .shell-main {
+    padding: 1.5rem 1rem;
+  }
 }

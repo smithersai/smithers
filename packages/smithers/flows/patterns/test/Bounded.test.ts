@@ -1,5 +1,6 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
@@ -7,21 +8,24 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Bounded from "../src/Bounded.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { callsTo } from "./Graphs.ts"
 
-const worker = Flow.make({
-  name: "worker",
-  input: Schema.Unknown,
-  output: Schema.Unknown,
-  body: (input) => Node.succeed(input)
+const worker = Flow.make("worker", {
+  payload: { input: Schema.Unknown },
+  success: Schema.Unknown,
+  body: ({ input }) => Node.succeed(input)
 })
 
 const members = (names: ReadonlyArray<string>): Record<string, Node.Any> =>
-  Object.fromEntries(names.map((name) => [name, worker(name) as Node.Any]))
+  Object.fromEntries(names.map((name) => [name, worker.call({ input: name }) as Node.Any]))
 
 const invalidPriorities = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5, 2 ** 53]
 
-const graphOf = (node: Node.Node<unknown, unknown>): Graph.Graph =>
-  Graph.build(Flow.make({ input: Schema.Unknown, output: Schema.Unknown, body: () => node }), undefined)
+const graphOf = (node: Node.Node<unknown, unknown, any>): Graph.Graph =>
+  Graph.build(
+    Flow.make("bounded/host", { payload: { input: Schema.Unknown }, success: Schema.Unknown, body: () => node }),
+    { input: undefined }
+  )
 
 const memberNode = (graph: Graph.Graph, name: string): Graph.GraphNode | undefined =>
   Graph.nodes(graph).find((node) => node.id.endsWith(`.all.${name}`))
@@ -32,13 +36,13 @@ describe("Bounded", () => {
     const joins = Graph.nodes(graph).filter((node) => node.kind === "All")
 
     expect(joins).toHaveLength(3)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "FlowCall")).toHaveLength(5)
+    expect(callsTo(graph, "worker")).toHaveLength(5)
   })
 
   it("runs a higher priority member in an earlier batch", () => {
     const graph = graphOf(
       Bounded.all(
-        { ...members(["a", "b", "c"]), late: Node.priority(worker("late") as Node.Any, 9) },
+        { ...members(["a", "b", "c"]), late: Node.priority(worker.call({ input: "late" }) as Node.Any, 9) },
         { concurrency: 2 }
       )
     )
@@ -52,13 +56,13 @@ describe("Bounded", () => {
   it("applies the container priority only to members that declare none", () => {
     const graph = graphOf(
       Bounded.all(
-        { ...members(["a"]), urgent: Node.priority(worker("urgent") as Node.Any, 9) },
+        { ...members(["a"]), urgent: Node.priority(worker.call({ input: "urgent" }) as Node.Any, 9) },
         { concurrency: 2, priority: 3 }
       )
     )
 
-    expect(memberNode(graph, "a")?.priority).toBe(3)
-    expect(memberNode(graph, "urgent")?.priority).toBe(9)
+    expect(memberNode(graph, "a")?.draft.priority).toBe(3)
+    expect(memberNode(graph, "urgent")?.draft.priority).toBe(9)
   })
 
   it("rejects an empty record and an invalid width", () => {

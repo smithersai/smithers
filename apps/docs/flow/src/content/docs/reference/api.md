@@ -45,7 +45,7 @@ The [export reference](/reference/flow/) lists every exported symbol with its si
 
 ## `Flow`
 
-`Flow.make(tag, options)` accepts struct payload fields, success and error schemas, an optional `idempotencyKey`, annotations, a `suspendedRetryPolicy`, and a `maxRounds` bound for trampoline lineages. Three literals lower into the annotation bag rather than staying options: `description`, `capabilities`, and `effects`, the effect envelope from [`@smthrs/plan`](https://plan.smithers.sh/reference/api/#effects). They are literals so a catalog can project a discovered flow's authority from source text without importing the module, and `Graph.build` refuses a composition beneath the flow that reads or writes outside that envelope, loosens its mode, or raises its tier. `body` is required: a flow with nothing to plan is an action, whose implementation attaches separately as a layer. `maxRounds` must be a positive safe integer, and `Flow.make` throws a `RangeError` when it is not.
+`Flow.make(tag, options)` accepts struct payload fields, success and error schemas, an optional `idempotencyKey`, annotations, a `suspendedRetryPolicy`, and a `maxRounds` bound for trampoline lineages. Four literals lower into the annotation bag rather than staying options: `description`, `capabilities`, `effects`, the effect envelope from [`@smthrs/plan`](https://plan.smithers.sh/reference/api/#effects), and `modelInvocable`, which says whether a catalog may offer this flow to a model and defaults to `true`. They are literals so a catalog can project a discovered flow's authority from source text without importing the module, and `Graph.build` refuses a composition beneath the flow that reads or writes outside that envelope, loosens its mode, or raises its tier. `body` is required: a flow with nothing to plan is an action, whose implementation attaches separately as a layer. `maxRounds` must be a positive safe integer, and `Flow.make` throws a `RangeError` when it is not.
 
 The returned definition exposes:
 
@@ -137,6 +137,7 @@ A deferred token encodes the flow name, the execution id, and the deferred name,
 | `nodes`, `edges`, `drafts`, `diagnostics`                                  | read what the build produced                                                                |
 | `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, `BuildOptions` | the models                                                                                  |
 | `maximumGraphDepth`                                                        | the nesting bound the build refuses past, so an unrolling composition reads the same number |
+| `evaluatedFrom`                                                            | states that a file about to be evaluated holds bytes read from another, so the declarations inside it report the entry an author can open |
 
 A graph carrying a FATAL diagnostic is inspectable but deliberately not compilable, so a body whose topology is incomplete is reported rather than half-driven. Building refuses a nesting depth past its bound and refuses a duplicate node id, because a node id is durable dispatch identity and two nodes answering to one address would let a later settlement overwrite an earlier one.
 

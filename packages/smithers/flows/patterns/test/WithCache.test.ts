@@ -1,26 +1,76 @@
+/**
+ * `WithCache` on `@smthrs/flow` declarations.
+ *
+ * Every assertion is the one it was: which envelopes the decorator refuses,
+ * what the wrapper is named, which fields reach the policy annotation, and
+ * which declarations share key material. A wrapper's name is `flow._tag`, its
+ * envelope is the `Flow.EffectEnvelope` annotation, and its key material is
+ * the canonical digest of the per-node `draft.material` `@smthrs/flow`'s graph
+ * publishes.
+ */
 import { describe, expectTypeOf, it } from "@effect/vitest"
-import { Annotations, Digest, Effects, Flow, Graph, Node, Placement } from "@smthrs/core"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
+import * as Effects from "@smthrs/plan/Effects"
+import * as Node from "@smthrs/plan/Node"
+import * as Placement from "@smthrs/plan/Placement"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
+import * as Decorate from "../src/internal/Decorate.ts"
 import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as WithCache from "../src/WithCache.ts"
 import * as WithRetry from "../src/WithRetry.ts"
 
+/** The one step a cached flow wraps: an action, which is opaque work. */
+const read = Action.make("withCache/read", {
+  payload: { path: Schema.String },
+  success: Schema.String,
+  error: Schema.Never
+})
+
+const flowOf = (
+  tag: string,
+  options?: {
+    readonly effects?: Effects.Declaration | undefined
+    readonly pure?: boolean | undefined
+    readonly description?: string | undefined
+  }
+): Flow.Any =>
+  Flow.make(tag, {
+    ...(options?.description === undefined ? {} : { description: options.description }),
+    payload: { path: Schema.String },
+    success: Schema.String,
+    error: Schema.Never,
+    ...(options?.effects === undefined ? {} : { effects: options.effects }),
+    body: Node.capture(
+      { tag, pure: options?.pure === true },
+      ({ path }: { readonly path: string }) => options?.pure === true ? Node.succeed(path) : read.call({ path })
+    )
+  }) as unknown as Flow.Any
+
+const hermetic = Effects.make({
+  reads: ["workspace/**"],
+  writes: [],
+  mode: "hermetic",
+  onConflict: "serialize"
+})
+
+const sealedRead = (): Flow.Any => flowOf("read", { effects: hermetic })
+
+/** Everything a built graph keys on, which is what `/keys` hashes. */
+const keyMaterial = (flow: Flow.Any): ReadonlyArray<unknown> =>
+  Graph.nodes(Graph.build(flow, { path: "file" })).map((node) => node.draft.material)
+
+/** The annotation bag a built flow carries; `Flow.Any` states the field. */
+const annotationsOf = (flow: Flow.Any): Context.Context<never> => flow.annotations
+
 describe("WithCache", () => {
   it("rejects an unsealed inner flow", () => {
-    const inner = Flow.make({
-      input: Schema.String,
-      output: Schema.String,
-      body: (input) => Node.succeed(input)
-    })
-
     try {
-      WithCache.withCache(inner)
+      WithCache.withCache(flowOf("unsealed"))
       throw new Error("expected withCache to fail")
     } catch (error) {
       expect(error).toBeInstanceOf(PatternError)
@@ -32,24 +82,13 @@ describe("WithCache", () => {
   })
 
   it("marks the wrapper sealed without emitting an unconsumed marker", () => {
-    const inner = Flow.make({
-      name: "read",
-      input: Schema.String,
-      output: Schema.String,
-      effects: Effects.make({
-        reads: ["workspace/**"],
-        writes: [],
-        mode: "hermetic",
-        onConflict: "serialize"
-      }),
-      body: () => Node.dynamic({ output: Schema.String })
-    })
-    const cached = WithCache.withCache(inner)
-    const graph = Graph.build(cached, "file")
-    expect((cached as typeof inner).name).toBe("withCache(read)")
-    expect((cached as typeof inner).effects).toMatchObject({ mode: "hermetic", tier: "sealed" })
-    expect(Graph.nodes(graph).some((node) => JSON.stringify(node.keyMaterial).includes("StepKeyCache"))).toBe(false)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Dynamic")).toHaveLength(1)
+    const cached = WithCache.withCache(sealedRead())
+    const graph = Graph.build(cached, { path: "file" })
+
+    expect(cached._tag).toBe("withCache(read)")
+    expect(Decorate.envelopeOf(cached)).toMatchObject({ mode: "hermetic", tier: "sealed" })
+    expect(Graph.nodes(graph).some((node) => JSON.stringify(node.draft.material).includes("StepKeyCache"))).toBe(false)
+    expect(Graph.nodes(graph).filter((node) => node.kind === "ActionCall")).toHaveLength(1)
   })
 
   it("accepts a declared policy alongside the inner flow", () => {
@@ -59,65 +98,44 @@ describe("WithCache", () => {
   })
 })
 
-const sealedRead = () =>
-  Flow.make({
-    name: "read",
-    input: Schema.String,
-    output: Schema.String,
-    effects: Effects.make({
-      reads: ["workspace/**"],
-      writes: [],
-      mode: "hermetic",
-      onConflict: "serialize"
-    }),
-    body: () => Node.dynamic({ output: Schema.String })
-  })
-
-/** The canonical digest of everything `/keys` hashes for a built graph. */
-const keyDigest = (flow: Flow.Any): string => {
-  const material = Graph.keyMaterial(Graph.build(flow, "file"))
-  if (Result.isFailure(material)) throw material.failure
-  return Digest.canonical(material.success.map((entry) => entry.material))
-}
-
 describe("WithCache policy", () => {
   it("names every declared field in the wrapper", () => {
     const cached = WithCache.withCache(sealedRead(), { ttlMs: 1000, scope: "run", version: "v2" })
-    expect((cached as ReturnType<typeof sealedRead>).name).toBe("withCache(read, ttlMs=1000, scope=run, version=v2)")
+    expect(cached._tag).toBe("withCache(read, ttlMs=1000, scope=run, version=v2)")
   })
 
   it("names only the fields the caller declared", () => {
-    const cached = WithCache.withCache(sealedRead(), { scope: "flow" })
-    expect((cached as ReturnType<typeof sealedRead>).name).toBe("withCache(read, scope=flow)")
+    expect(WithCache.withCache(sealedRead(), { scope: "flow" })._tag).toBe("withCache(read, scope=flow)")
+  })
+
+  it("carries the wrapped flow's description, and states none when it has none", () => {
+    const described = WithCache.withCache(flowOf("read", { effects: hermetic, description: "Read one file." }))
+
+    expect(described.description).toBe("Read one file.")
+    expect(WithCache.withCache(sealedRead()).description).toBeUndefined()
   })
 
   it("leaves an undeclared policy at the pre-policy declaration", () => {
     const inner = sealedRead()
     const cached = WithCache.withCache(inner)
     const emptyPolicy = WithCache.withCache(inner, {})
-    expect((cached as ReturnType<typeof sealedRead>).name).toBe("withCache(read)")
-    // Core commit d54180b9fe embeds callable references in BodyDeclaration. Restore whole-implementation
-    // equality once core records stable flow identities there.
-    expect(keyDigest(cached)).toBe(keyDigest(emptyPolicy))
+
+    expect(cached._tag).toBe("withCache(read)")
+    expect(keyMaterial(cached)).toEqual(keyMaterial(emptyPolicy))
   })
 
   it("folds the policy into declaration key material", () => {
     const inner = sealedRead()
-    const oneSecond = WithCache.withCache(inner, { ttlMs: 1000 }) as typeof inner
-    const oneSecondAgain = WithCache.withCache(inner, { ttlMs: 1000 }) as typeof inner
-    const twoSeconds = WithCache.withCache(inner, { ttlMs: 2000 }) as typeof inner
-    const runScoped = WithCache.withCache(inner, { ttlMs: 1000, scope: "run" }) as typeof inner
-    const versioned = WithCache.withCache(inner, { ttlMs: 1000, version: "v2" }) as typeof inner
+    const oneSecond = WithCache.withCache(inner, { ttlMs: 1000 })
+    const oneSecondAgain = WithCache.withCache(inner, { ttlMs: 1000 })
+    const twoSeconds = WithCache.withCache(inner, { ttlMs: 2000 })
+    const runScoped = WithCache.withCache(inner, { ttlMs: 1000, scope: "run" })
+    const versioned = WithCache.withCache(inner, { ttlMs: 1000, version: "v2" })
 
-    // Core commit d54180b9fe embeds callable references in BodyDeclaration. Restore whole-implementation
-    // equality once core records stable flow identities there.
-    expect(keyDigest(oneSecond)).toBe(keyDigest(oneSecondAgain))
-    expect(oneSecond.implementation).not.toEqual(twoSeconds.implementation)
-    expect(keyDigest(oneSecond)).not.toBe(keyDigest(twoSeconds))
-    expect(oneSecond.implementation).not.toEqual(runScoped.implementation)
-    expect(keyDigest(oneSecond)).not.toBe(keyDigest(runScoped))
-    expect(oneSecond.implementation).not.toEqual(versioned.implementation)
-    expect(keyDigest(oneSecond)).not.toBe(keyDigest(versioned))
+    expect(keyMaterial(oneSecond)).toEqual(keyMaterial(oneSecondAgain))
+    expect(keyMaterial(oneSecond)).not.toEqual(keyMaterial(twoSeconds))
+    expect(keyMaterial(oneSecond)).not.toEqual(keyMaterial(runScoped))
+    expect(keyMaterial(oneSecond)).not.toEqual(keyMaterial(versioned))
   })
 
   it("refuses a time to live no clock reading satisfies", () => {
@@ -139,17 +157,14 @@ describe("WithCache policy", () => {
   })
 
   it("accepts the TTL boundaries on an explicitly hermetic pure flow", () => {
-    const echo = Flow.make({
-      name: "echo",
-      input: Schema.String,
-      output: Schema.String,
-      effects: Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize" }),
-      body: (input) => Node.succeed(input)
+    const echo = flowOf("echo", {
+      pure: true,
+      effects: Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize" })
     })
     for (const ttlMs of [1, Number.MAX_SAFE_INTEGER]) {
       const cached = WithCache.withCache(echo, { ttlMs, version: "v1" })
       expect(CacheEnvironment.cachePolicyOf(annotationsOf(cached))).toEqual({ ttlMs })
-      expect(Graph.diagnostics(Graph.build(cached, "hello"))).toEqual([])
+      expect(Graph.diagnostics(Graph.build(cached, { path: "hello" }))).toEqual([])
     }
   })
 
@@ -164,11 +179,9 @@ describe("WithCache policy", () => {
 
   it("refuses every non-cacheable effect envelope with its exact code", () => {
     const inner = (mode: "expected" | "hermetic", tier: "sealed" | "compensable") =>
-      Flow.make({
-        input: Schema.String,
-        output: Schema.String,
-        effects: Effects.make({ reads: [], writes: [], mode, onConflict: "serialize", tier }),
-        body: (input) => Node.succeed(input)
+      flowOf(`${mode}-${tier}`, {
+        pure: true,
+        effects: Effects.make({ reads: [], writes: [], mode, onConflict: "serialize", tier })
       })
 
     for (const flow of [inner("expected", "sealed"), inner("hermetic", "compensable")]) {
@@ -181,10 +194,6 @@ describe("WithCache policy", () => {
     }
   })
 })
-
-/** The annotation bag a built flow carries; `Flow.Any` hides the field. */
-const annotationsOf = (flow: Flow.Any): Context.Context<never> =>
-  (flow as unknown as { readonly annotations: Context.Context<never> }).annotations
 
 describe("WithCache policy annotation", () => {
   it("preserves the policy through Pattern.decorate", () => {
@@ -216,17 +225,26 @@ describe("WithCache policy annotation", () => {
 
   it("preserves placement and custom metadata from both sides of the seam", () => {
     const Metadata = Context.Service<string>("test/WithCache/Metadata")
-    const inner = Flow.annotate(Flow.within(sealedRead(), Placement.local()), Metadata, "inner")
+    const inner = Decorate.annotate(
+      Decorate.annotate(sealedRead(), Flow.Placement, Placement.local()),
+      Metadata,
+      "inner"
+    )
     const cached = Pattern.decorate(inner, WithCache.make({ ttlMs: 1000 }))
-    expect(Option.getOrUndefined(Context.getOption(annotationsOf(cached), Annotations.Placement))).toEqual(
+    expect(Option.getOrUndefined(Context.getOption(annotationsOf(cached), Flow.Placement))).toEqual(
       Placement.local()
     )
     expect(Option.getOrUndefined(Context.getOption(annotationsOf(cached), Metadata))).toBe("inner")
     const outer = Pattern.decorate(
       cached,
-      () => Flow.annotate(Flow.within(sealedRead(), Placement.remote()), Metadata, "outer")
+      () =>
+        Decorate.annotate(
+          Decorate.annotate(sealedRead(), Flow.Placement, Placement.remote()),
+          Metadata,
+          "outer"
+        )
     )
-    expect(Option.getOrUndefined(Context.getOption(annotationsOf(outer), Annotations.Placement))).toEqual(
+    expect(Option.getOrUndefined(Context.getOption(annotationsOf(outer), Flow.Placement))).toEqual(
       Placement.remote()
     )
     expect(Option.getOrUndefined(Context.getOption(annotationsOf(outer), Metadata))).toBe("outer")
@@ -263,12 +281,24 @@ describe("WithCache policy annotation", () => {
 
   it("gives two declarations differing only in version different key material", () => {
     const inner = sealedRead()
-    const first = keyDigest(WithCache.withCache(inner, { version: "v1" }))
-    const firstAgain = keyDigest(WithCache.withCache(inner, { version: "v1" }))
-    const second = keyDigest(WithCache.withCache(inner, { version: "v2" }))
-    // The digest is over what `/keys` hashes, so a step key derived from it
-    // moves with the version and a row recorded under v1 is unreachable at v2.
-    expect(first).toBe(firstAgain)
-    expect(first).not.toBe(second)
+    const first = keyMaterial(WithCache.withCache(inner, { version: "v1" }))
+    const firstAgain = keyMaterial(WithCache.withCache(inner, { version: "v1" }))
+    const second = keyMaterial(WithCache.withCache(inner, { version: "v2" }))
+
+    // The material is what `/keys` hashes, so a step key derived from it moves
+    // with the version and a row recorded under v1 is unreachable at v2.
+    expect(first).toEqual(firstAgain)
+    expect(first).not.toEqual(second)
+  })
+
+  it("seals a flow that declared no envelope at all", () => {
+    // `Decorate.seal` has two arms: a declared envelope is narrowed, and a flow
+    // with none gets the closed one. `withCache` refuses the second case, so it
+    // is exercised here directly.
+    const sealed = Decorate.seal(flowOf("unsealed", { pure: true }))
+
+    expect(Decorate.envelopeOf(sealed)).toEqual(
+      Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" })
+    )
   })
 })

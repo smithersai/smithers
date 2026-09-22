@@ -1,8 +1,12 @@
 import { describe, it } from "@effect/vitest"
-import * as Core from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
+import { Action, Flow } from "@smthrs/flow"
+import * as Graph from "@smthrs/flow/Graph"
+import * as Node from "@smthrs/plan/Node"
+import * as Placement from "@smthrs/plan/Placement"
 import * as StepKey from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Plan from "../src/Plan.ts"
 import { expectKeyGoldens } from "../src/PlanAssertions.ts"
@@ -32,30 +36,41 @@ import goldens from "./fixtures/key-goldens.json" with { type: "json" }
 // because the same change re-encodes the effect declarations and placements a
 // leaf is keyed on. The two StepKey digests are unchanged, since neither reads
 // graph material.
+//
+// The three graph keys were re-pinned a third time, also deliberately, when
+// this package moved onto `@smthrs/flow`'s graph. There is one graph builder
+// now, and it keys a declared call as an `ActionCall` carrying the callee's
+// name, tier, and schema documents where the deleted second builder keyed a
+// `Dynamic` node carrying a model id; the two leaves therefore hash different
+// `body` values, different `inputs`, and a `boundaryMode` effect declaration
+// rather than a mode/onConflict/tier one. The root moved with them: an `All`
+// node's `body` names its members under `members` rather than `keys`, and its
+// `inputs` are refs resolved to the two leaf keys that had already moved. The
+// two StepKey digests are unchanged, since neither reads graph material.
 
-const buildGraph = (): Core.Graph.Graph => {
-  const read = Core.Node.dynamic({
-    model: "recorded:reader",
-    effects: Core.Effects.make({
-      reads: ["workspace/pr.json"],
-      writes: [],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: "sealed"
-    })
-  }).pipe(Core.Node.within(Core.Placement.local()))
-  const review = Core.Node.dynamic({
-    model: "recorded:reviewer",
-    effects: Core.Effects.make({
-      reads: [],
-      writes: ["workspace/review.json"],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: "sealed"
-    })
-  }).pipe(Core.Node.within(Core.Placement.remote({ profile: "reviewer" })))
-  return Core.Graph.build(Core.Node.all({ read, review }))
-}
+const effects = (reads: ReadonlyArray<string>, writes: ReadonlyArray<string>) => ({
+  reads,
+  writes,
+  boundaryMode: "hard" as const
+})
+
+const reader = Action.make("recorded:reader", {
+  payload: Schema.Struct({}),
+  success: Schema.String,
+  tier: "sealed"
+})
+  .annotate(Flow.EffectsDeclaration, effects(["workspace/pr.json"], []))
+  .annotate(Placement.Annotation, Placement.local())
+
+const reviewer = Action.make("recorded:reviewer", {
+  payload: Schema.Struct({}),
+  success: Schema.String,
+  tier: "sealed"
+})
+  .annotate(Flow.EffectsDeclaration, effects([], ["workspace/review.json"]))
+  .annotate(Placement.Annotation, Placement.remote({ profile: "reviewer" }))
+
+const buildGraph = (): Graph.Graph => Graph.build(Node.all({ read: reader.call({}), review: reviewer.call({}) }))
 
 const actualKeys = (): Record<string, string> => {
   const keys = Plan.keys(buildGraph())

@@ -5,7 +5,8 @@ import * as Plan from "../src/Plan.ts"
 import { expectKeyGoldens, expectPlan, expectPlans, expectPure } from "../src/PlanAssertions.ts"
 import type { PlanLike } from "../src/PlanLike.ts"
 
-// Structural unit fixture; the applied suite covers Plan.fromGraph over /core.
+// Structural unit fixture; the applied suite covers Plan.fromGraph over
+// @smthrs/flow's graph.
 const plan: PlanLike = {
   digest: "plan:review:small-pr",
   envelope: {
@@ -16,47 +17,41 @@ const plan: PlanLike = {
     {
       id: "read-pr",
       key: "key:read-pr",
-      kind: "step",
+      kind: "ActionCall",
       placement: { tag: "local", options: {} },
       effects: ["fs:read", "net:get"],
-      mode: "hermetic",
+      mode: "hard",
       tier: "sealed",
-      onConflict: "serialize",
       sealed: true
     },
     {
       id: "lint",
       key: "key:lint",
-      kind: "step",
+      kind: "ActionCall",
       placement: { tag: "sandbox", options: { profile: "lane-3" } },
       effects: ["proc:spawn"],
       mode: "expected",
       tier: "compensable",
-      onConflict: "lane",
       sealed: false
     },
     {
       id: "test",
       key: "key:test",
-      kind: "step",
+      kind: "ActionCall",
       placement: { tag: "sandbox", options: { profile: "lane-3" } },
       effects: ["proc:spawn", "fs:read"],
+      tier: "irreversible",
       sealed: false
     },
     {
       id: "review",
       key: "key:review",
-      kind: "dynamic",
+      kind: "FlowCall",
       placement: { tag: "remote", options: { profile: "reviewer" } },
       effects: ["model:reviewer"],
-      mode: "hermetic",
+      mode: "hard",
       tier: "sealed",
-      onConflict: "serialize",
-      sealed: true,
-      envelope: {
-        budget: { tokens: 300_000 },
-        flows: ["read-pr", "lint", "test"]
-      }
+      sealed: true
     }
   ],
   edges: [
@@ -84,9 +79,6 @@ describe("PlanAssertions", () => {
       expect(error.code).toBe("envelope_mismatch")
       expect(error.expected).toBe(cyclic)
       expect(error.message).toContain("Circular")
-      const nodeError = yield* expectPlan(plan).node("review").envelope(cyclic).pipe(Effect.flip)
-      expect(nodeError.code).toBe("envelope_mismatch")
-      expect(nodeError.message).toContain("Circular")
     }))
 
   it.effect("renders throwing getters without invoking them", () =>
@@ -177,24 +169,20 @@ describe("PlanAssertions", () => {
       yield* review.placement("remote")
       yield* review.placement({ tag: "remote", options: { profile: "reviewer" } })
       yield* review.placement({ tag: "remote" })
-      yield* review.mode("hermetic")
+      yield* review.mode("hard")
       yield* review.tier("sealed")
-      yield* review.onConflict("serialize")
       yield* review.declaresEffects(["model:reviewer"])
-      yield* review.envelope({ budget: { tokens: 300_000 }, flows: ["read-pr", "lint", "test"] })
       yield* assertFailure(review.key("key:other"), "key_mismatch")
       yield* assertFailure(review.placement("local"), "placement_mismatch")
       yield* assertFailure(review.mode("expected"), "declared_effect_mismatch")
       yield* assertFailure(review.tier("irreversible"), "declared_effect_mismatch")
-      yield* assertFailure(review.onConflict("fail"), "declared_effect_mismatch")
       yield* assertFailure(review.declaresEffects([]), "declared_effect_mismatch")
-      yield* assertFailure(review.envelope({}), "envelope_mismatch")
       yield* assertFailure(expectPlan(plan).node("missing").key("key:none"), "missing_node")
       const lint = expectPlan(plan).node("lint")
       yield* lint.mode("expected")
       yield* lint.tier("compensable")
-      yield* lint.onConflict("lane")
       yield* expectPlan(plan).node("test").mode(undefined)
+      yield* expectPlan(plan).node("test").tier("irreversible")
 
       const absentMode = yield* expectPlan(plan).node("test").mode("expected").pipe(Effect.flip)
       expect(absentMode.code).toBe("declared_effect_mismatch")

@@ -4,6 +4,7 @@ import { Flow } from "@smthrs/core"
 import { Schema } from "effect"
 
 export default Flow.make({
+  name: "greet",
   description: "Greets whoever the caller names.",
   input: Schema.Struct({ name: Schema.String }),
   output: Schema.Struct({ greeting: Schema.String }),

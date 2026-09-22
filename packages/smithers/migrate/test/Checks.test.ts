@@ -13,7 +13,7 @@ import * as RunState from "../src/RunState.ts"
 import * as Scan from "../src/Scan.ts"
 import * as Units from "../src/Units.ts"
 import { copyFixture, fixture, nodeLayer } from "./fixtures/helpers.ts"
-import * as golden from "./fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts"
+import golden from "./fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts"
 
 const emptyCheckpoint: Checks.CheckpointFiles = { sources: new Map(), digests: new Map() }
 
@@ -296,12 +296,13 @@ describe("Checks.run finds each defect on its own", () => {
         ["another binding", "const description = \"x\"\nexport default Flow.make({ input: 1 })\n"],
         ["an empty string", "export default Flow.make({ description: \"\" })\n"],
         ["a computed value", "export default Flow.make({ description: name })\n"],
-        // Discovery tokenizes `export default Flow.make(` / `Flow.agent(`
-        // literally (registry `internal/ModuleMetadata.ts`), so a description
-        // on any other constructor is a description the registry never reads.
+        // Discovery tokenizes `export default Flow.make(` literally (registry
+        // `internal/ModuleMetadata.ts`), so a description on any other
+        // constructor is a description the registry never reads.
         ["another constructor", "export default Widget.make({ description: \"Real.\" })\n"],
         ["a bare make", "export default make({ description: \"Real.\" })\n"],
-        ["a namespaced alias", "export default DurableFlow.make({ description: \"Real.\" })\n"]
+        ["a namespaced alias", "export default DurableFlow.make({ description: \"Real.\" })\n"],
+        ["Flow.agent", "export default Flow.agent({ description: \"Real.\" })\n"]
       ]
 
       for (const [title, body] of bodies) {
@@ -311,10 +312,8 @@ describe("Checks.run finds each defect on its own", () => {
         expect(named(results, "every flow module declares a description").ok, title).toBe(false)
       }
 
-      for (const constructor of ["Flow.make", "Flow.agent"]) {
-        const good = writeFlow(root, `export default ${constructor}({ description: "Real." })\n`, "flows/bad/flow.ts")
-        expect(named(yield* run(root, [good]), "every flow module declares a description").ok, constructor).toBe(true)
-      }
+      const good = writeFlow(root, "export default Flow.make({ description: \"Real.\" })\n", "flows/bad/flow.ts")
+      expect(named(yield* run(root, [good]), "every flow module declares a description").ok).toBe(true)
     }))
 
   it.effect("fails on a TODO marker the report does not name, and passes on one it does", () =>
@@ -469,23 +468,22 @@ describe("Checks.run finds each defect on its own", () => {
     }))
 })
 
-describe("Checks.run ties the descriptor to the flow that runs", () => {
-  // Discovery reads the default export and never the named one, so a module
-  // whose descriptor declares a different contract from its durable flow admits
-  // one thing and runs another. Binding them by `body` is `TS2322` until the
-  // core-runtime bridge lands — core's `body` returns a `@smthrs/core/Node`,
-  // `.call` returns a `@smthrs/plan/Node` — so the contract is what is checked,
-  // and a delegating body is accepted for the day it becomes writable.
+describe("Checks.run ties the default export to the flow that runs", () => {
+  // A migrated module default-exports the flow itself, body and all, so the
+  // contract the control plane admits is the one that runs. Discovery reads
+  // the default export and never a named one, so a module that keeps its body
+  // in a named declaration the default export does not reach admits one thing
+  // and runs another, and that is what this check refuses.
   const CHECK = "every flow module's descriptor describes the flow it declares"
   const declared = [
-    "const SimpleExample = DurableFlow.make(\"simple-workflow/SimpleExample\", {",
+    "const SimpleExample = Flow.make(\"simple-workflow/SimpleExample\", {",
     "  payload: { topic: Schema.String },",
     "  success: Article,",
     "  body: ({ topic }) => ResearchStep.call({ topic })",
     "})"
   ].join("\n")
 
-  it.effect("passes on the golden, whose descriptor admits its durable flow", () =>
+  it.effect("passes on the golden, which default-exports the flow it runs", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const results = yield* run(root, ["flows/simple-workflow/flow.ts"], checkpointOf("simple-workflow.jsx"))
@@ -493,7 +491,7 @@ describe("Checks.run ties the descriptor to the flow that runs", () => {
       expect(named(results, CHECK).ok).toBe(true)
     }))
 
-  it.effect("fails when the descriptor admits a contract the module's flow does not declare", () =>
+  it.effect("fails when the default export admits a contract the module's flow does not declare", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const file = writeFlow(
@@ -507,7 +505,7 @@ describe("Checks.run ties the descriptor to the flow that runs", () => {
       expect(named(results, CHECK).findings[0]?.message).toContain("SimpleExample")
     }))
 
-  it.effect("fails when a lone descriptor carries no behavior at all", () =>
+  it.effect("fails when a lone default export carries no behavior at all", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const file = writeFlow(root, "export default Flow.make({ description: \"Real.\" })\n", "flows/bad/flow.ts")
@@ -517,7 +515,7 @@ describe("Checks.run ties the descriptor to the flow that runs", () => {
       expect(named(results, CHECK).findings[0]?.message).toContain("missing_body")
     }))
 
-  it.effect("accepts a descriptor whose body delegates, for the day one can", () =>
+  it.effect("accepts a default export whose body reaches the flow beside it", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const delegating = writeFlow(
@@ -537,12 +535,14 @@ describe("Checks.run ties the descriptor to the flow that runs", () => {
       expect(named(results, CHECK).findings[0]?.message).toContain("does not call SimpleExample")
     }))
 
-  it.effect("accepts a descriptor that declares no durable flow and carries its own behavior", () =>
+  it.effect("accepts a default export that is the flow, tag and body included", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const bodies = [
+        // The shape the tool emits: one `@smthrs/flow` declaration, tag first.
+        "export default Flow.make(\"greeting\", { description: \"Real.\", payload: {}, body: () => Node.succeed(1) })\n",
         "export default Flow.make({ description: \"Real.\", body: (input) => Node.succeed(input) })\n",
-        "export default Flow.agent({ description: \"Real.\", model: \"anthropic:claude-sonnet-5\" })\n"
+        "export default Flow.make({ description: \"Real.\", model: \"anthropic:claude-sonnet-5\" })\n"
       ]
 
       for (const body of bodies) {
@@ -554,9 +554,8 @@ describe("Checks.run ties the descriptor to the flow that runs", () => {
 })
 
 describe("the module the emitter writes passes these checks", () => {
-  // The tool's own output is held to the tool's own contract. Before the
-  // descriptor was emitted, the `Workflow` rewrite produced a named flow alone,
-  // which fails both the description check and registry discovery.
+  // The tool's own output is held to the tool's own contract: one default
+  // export the registry can list and the engine can run.
   const greeting = [
     "/** @jsxImportSource smthrs */",
     "import { createSmithers } from \"smthrs\";",
@@ -580,8 +579,7 @@ describe("the module the emitter writes passes these checks", () => {
 
   const module = (body: string): string =>
     [
-      "import { Flow } from \"@smthrs/core\"",
-      "import { Flow as DurableFlow } from \"@smthrs/flow\"",
+      "import { Flow } from \"@smthrs/flow\"",
       "import * as Schema from \"effect/Schema\"",
       "import { Greet } from \"./steps.ts\"",
       "",
@@ -598,23 +596,23 @@ describe("the module the emitter writes passes these checks", () => {
       expect(results.filter((result) => !result.ok)).toEqual([])
     }))
 
-  it.effect("fails once the default descriptor is dropped, and again once it drifts", () =>
+  it.effect("fails once the flow stops being the default export, and again once a descriptor drifts", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
       const checkpoint = { sources: new Map([["greeting.tsx", greeting]]), digests: new Map() }
-      const onlyTheFlow = emitted().split("\nexport default Flow.make({")[0] ?? ""
+      // The same declaration as a named export. The registry reads the default
+      // export and never a named one, so this is a flow nobody can list.
+      const named_ = emitted().replace("export default Flow.make(", "export const Greeting = Flow.make(")
 
-      // What the emitter wrote before this round: the named flow alone, which
-      // the registry cannot list and this check refuses.
-      const dropped = yield* run(root, [writeFlow(root, module(onlyTheFlow), "flows/greeting/flow.ts")], checkpoint)
+      const dropped = yield* run(root, [writeFlow(root, module(named_), "flows/greeting/flow.ts")], checkpoint)
       expect(named(dropped, "every flow module declares a description").ok).toBe(false)
       // The descriptor check stays quiet here on purpose: a module with no
-      // descriptor is already named once, and saying it twice hides which
+      // default export is already named once, and saying it twice hides which
       // contract broke.
       expect(named(dropped, "every flow module's descriptor describes the flow it declares").ok).toBe(true)
 
-      // A descriptor beside the flow that admits something else.
-      const drifted = `${onlyTheFlow}\nexport default Flow.make({ description: "Greets.", input: Schema.Void })\n`
+      // A body-less descriptor beside the flow, admitting something else.
+      const drifted = `${named_}\nexport default Flow.make({ description: "Greets.", input: Schema.Void })\n`
       const results = yield* run(root, [writeFlow(root, module(drifted), "flows/greeting/flow.ts")], checkpoint)
       expect(named(results, "every flow module declares a description").ok).toBe(true)
       expect(named(results, "every flow module's descriptor describes the flow it declares").ok).toBe(false)
@@ -633,10 +631,9 @@ describe("the module the emitter writes passes these checks", () => {
 
 describe("the golden's execution plan", () => {
   it("is two ordered agent calls answering with the Article schema", () => {
-    // The named flow is what the engine runs; the descriptor delegates to it.
-    // Building it here is the execution half of the same claim the shape check
-    // makes statically.
-    const graph = Graph.build(golden.SimpleExample, { topic: "effect" })
+    // The default export is the flow the engine runs. Building it here is the
+    // execution half of the same claim the shape check makes statically.
+    const graph = Graph.build(golden, { topic: "effect" })
     const nodes = Graph.nodes(graph)
 
     expect(Graph.diagnostics(graph)).toEqual([])
@@ -645,7 +642,7 @@ describe("the golden's execution plan", () => {
       "root.flow.then"
     ])
     expect(nodes[1]?.dependencies).toEqual(["root.flow.andThen"])
-    expect(Object.keys(golden.SimpleExample.successSchema.fields)).toEqual(["article", "wordCount"])
+    expect(Object.keys(golden.successSchema.fields)).toEqual(["article", "wordCount"])
   })
 })
 

@@ -1,3 +1,4 @@
+import { Graph } from "@smthrs/flow"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -5,39 +6,35 @@ import { describe, expect, it } from "vitest"
 import * as Annotations from "../src/Annotations.ts"
 import * as Effects from "../src/Effects.ts"
 import * as Flow from "../src/Flow.ts"
-import * as Graph from "../src/Graph.ts"
 import * as Markdown from "../src/Markdown.ts"
 import * as Placement from "../src/Placement.ts"
 
 describe("Markdown", () => {
-  it("lowers markdown to an ordinary callable flow without executing its body", () => {
-    const flow = Markdown.lowerMarkdown({}, "Summarize the supplied arguments.")
+  it("lowers markdown to an ordinary signature tagged with its name", () => {
+    const flow = Markdown.lowerMarkdown({ name: "summarize" }, "Summarize the supplied arguments.")
 
-    expect(typeof flow).toBe("function")
-    expect(flow({ args: "hello" }).ast._tag).toBe("FlowCall")
+    expect(flow.name).toBe("summarize")
+    expect(flow.flow._tag).toBe("summarize")
+    expect(flow.action?.name).toBe("summarize")
     expect(flow.effects).toBeUndefined()
+    // The authored call splices the one-call flow, which calls the action.
+    expect(Graph.nodes(Graph.build(flow.call({ args: "hello" }))).map((node) => node.kind)).toEqual([
+      "ActionCall",
+      "FlowCall"
+    ])
   })
 
-  it("forwards the markdown body as the dynamic prompt and applies defaults", () => {
-    const flow = Markdown.lowerMarkdown({}, "The markdown prompt.")
-    const node = flow.body?.({ args: "" })
+  it("forwards the markdown body as the prompt and applies the documented defaults", () => {
+    const flow = Markdown.lowerMarkdown({ name: "prompted" }, "The markdown prompt.")
 
-    expect(node?.ast).toMatchObject({
-      _tag: "Dynamic",
-      model: "smart",
-      flows: [],
-      prompt: "The markdown prompt."
-    })
-    expect(flow.implementation).toEqual({
-      _tag: "Dynamic",
-      model: "smart",
-      flows: [],
-      prompt: "The markdown prompt."
-    })
+    expect(flow.prompt).toBe("The markdown prompt.")
+    expect(flow.model).toBe("smart")
+    expect(flow.flows).toEqual([])
   })
 
   it("normalizes capability and effect declarations", () => {
     const flow = Markdown.lowerMarkdown({
+      name: "normalized",
       capabilities: ["shell", "shell", "git"],
       effects: {
         reads: ["src", "src"],
@@ -56,15 +53,26 @@ describe("Markdown", () => {
     }))
   })
 
-  it("places the lowered flow using its ordinary placement annotation", () => {
-    const flow = Markdown.lowerMarkdown({ placement: "sandbox" }, "Prompt")
+  it("uses the empty read set when markdown effects omit reads", () => {
+    const flow = Markdown.lowerMarkdown({ name: "empty-reads", effects: {} }, "Prompt")
 
-    expect(Option.getOrThrow(Annotations.getOption(flow.annotations, Annotations.Placement))).toEqual(
-      Placement.sandbox()
-    )
+    expect(flow.effects).toMatchObject({ reads: [], writes: [] })
   })
 
-  it("has the same structure as an equivalent hand-written flow", () => {
+  it.each(
+    [
+      ["sandbox", Placement.sandbox()],
+      ["remote", Placement.remote()],
+      ["client", Placement.client()],
+      ["local", Placement.local()]
+    ] as const
+  )("places the lowered flow with the %s annotation", (placement, expected) => {
+    const flow = Markdown.lowerMarkdown({ name: `placed-${placement}`, placement }, "Prompt")
+
+    expect(Option.getOrThrow(Annotations.getOption(flow.annotations, Annotations.Placement))).toEqual(expected)
+  })
+
+  it("has the same structure as an equivalent hand-written signature", () => {
     const markdown = Markdown.lowerMarkdown({
       name: "markdown-flow",
       description: "A markdown flow",
@@ -90,7 +98,11 @@ describe("Markdown", () => {
       prompt: "Prompt"
     })
 
-    expect(Graph.nodes(Graph.build(markdown))).toEqual(Graph.nodes(Graph.build(handwritten)))
+    expect(Graph.nodes(Graph.build(markdown.flow, { args: "" })).map((node) => node.kind)).toEqual(
+      Graph.nodes(Graph.build(handwritten.flow, { args: "" })).map((node) => node.kind)
+    )
+    expect(markdown.action?.tier).toBe(handwritten.action?.tier)
+    expect(markdown.capabilities).toEqual(handwritten.capabilities)
   })
 
   it("returns a stable code when SKILL.md frontmatter is incomplete", () => {
@@ -104,7 +116,10 @@ describe("Markdown", () => {
       "---\nname: example\ndescription: Example skill\nmodel: fast\nplacement: remote\n---\nPrompt"
     ))
 
-    // lowerSkill's JSDoc keeps untyped extras at the parse boundary, so lowerMarkdown supplies its documented default.
-    expect(flow.implementation).toMatchObject({ _tag: "Dynamic", model: "smart" })
+    // lowerSkill's JSDoc keeps untyped extras at the parse boundary, so
+    // lowerMarkdown supplies its documented default.
+    expect(flow.model).toBe("smart")
+    expect(flow.name).toBe("example")
+    expect(Option.isNone(Annotations.getOption(flow.annotations, Annotations.Placement))).toBe(true)
   })
 })

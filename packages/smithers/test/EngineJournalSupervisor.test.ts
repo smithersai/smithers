@@ -16,7 +16,7 @@ import * as Supervisor from "../src/internal/EngineJournalSupervisor.ts"
 
 const summary = (id = "root", status: RunSummary["status"] = "running"): RunSummary => ({
   runId: id,
-  flowId: "coding/RunPlan",
+  flowId: "coding/ImplementPlan",
   status,
   planId: "approved-plan",
   createdAt: 1,

@@ -1,52 +1,51 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph, Node } from "@smthrs/core"
-import * as TestRuntime from "@smthrs/core/TestRuntime"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as TryCatchFinally from "../src/TryCatchFinally.ts"
+import { execute } from "./Execute.ts"
 
 class Timeout extends Schema.TaggedError<Timeout>()("Timeout", { seconds: Schema.Number }) {}
 class Denied extends Schema.TaggedError<Denied>()("Denied", { who: Schema.String }) {}
 
-// Each flow echoes its own name, so a built graph can name the flow behind
-// every `FlowCall` node.
+// Each flow is tagged with its arm, so a built graph can name the flow behind
+// every call node. `@smthrs/flow` names a call by the flow's tag, which is
+// what core's echoed body value stood in for.
 const named = (name: string) =>
-  Flow.make({
-    input: Schema.Unknown,
-    output: Schema.Unknown,
+  Flow.make(name, {
+    payload: { input: Schema.Unknown, error: Schema.optional(Schema.Unknown) },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
     body: Node.capture({ name }, () => Node.succeed({ from: name }))
   })
 
 // A flow that fails with its own name, so a declaration run can name which arm
 // produced the failure it reports.
 const failing = (error: string) =>
-  Flow.make({
-    input: Schema.Unknown,
-    output: Schema.Unknown,
+  Flow.make(error.replace(/\s/g, "-"), {
+    payload: { input: Schema.Unknown, error: Schema.optional(Schema.Unknown) },
+    success: Schema.Unknown,
+    error: Schema.Unknown,
     body: Node.capture({ error }, () => Node.fail(error))
   })
 
-// Executes a declaration's in-memory body, entering every flow it calls.
-const declared = (flow: Flow.Any, input: unknown): Result.Result<unknown, unknown> => {
-  const body = (flow as Flow.Flow<typeof Schema.Unknown, typeof Schema.Unknown, unknown>).body
-  if (body === undefined) throw new Error("declaration has no body")
-  return TestRuntime.evaluateInline(body(input))
-}
+const request = { input: "request" }
 
-const flowName = (graph: Graph.Graph, callId: string): string => {
-  const body = Graph.nodes(graph).find((node) => node.id === `${callId}.flow`)?.keyMaterial.body
-  return (body as { readonly value: { readonly from: string } }).value.from
-}
-
-const calledFlows = (graph: Graph.Graph): ReadonlyArray<string> =>
+const calledFlows = (graph: Graph.Graph): Array<string> =>
   Graph.nodes(graph)
     .filter((node) => node.kind === "FlowCall")
-    .map((call) => flowName(graph, call.id))
+    .filter((call) => call.id !== "root")
+    .map((call) => (call.ast as { readonly flow?: string }).flow!)
+
+const flowId = (graph: Graph.Graph, tag: string): ReadonlyArray<string> =>
+  Graph.nodes(graph)
+    .filter((node) => node.kind === "FlowCall" && (node.ast as { readonly flow?: string }).flow === tag)
+    .map((node) => node.id)
 
 const kindsById = (graph: Graph.Graph): Readonly<Record<string, string>> =>
   Object.fromEntries(Graph.nodes(graph).map((node) => [node.id, node.kind]))
@@ -60,7 +59,7 @@ describe("TryCatchFinally", () => {
         catchSchema: Timeout,
         finally: named("finally")
       }),
-      "request"
+      request
     )
     const catches = Graph.nodes(graph).filter((node) => node.kind === "Catch")
 
@@ -68,9 +67,12 @@ describe("TryCatchFinally", () => {
     // and the arm that absorbs a finalizer failure on the unhandled path.
     expect(calledFlows(graph)).toEqual(["try", "catch", "finally", "finally"])
     expect(catches).toHaveLength(3)
-    expect((catches[0]?.keyMaterial.body as { readonly error?: unknown }).error).toBeUndefined()
-    expect((catches[1]?.keyMaterial.body as { readonly error?: unknown }).error).toBeDefined()
-    expect((catches[2]?.keyMaterial.body as { readonly error?: unknown }).error).toBeUndefined()
+    // `@smthrs/flow` names the schema that selects handled failures `filter`
+    // where core named it `error`, and the graph lists the arms innermost
+    // first, so the filtered one is the recovery arm at index 0.
+    expect((catches[0]?.draft.material.body as { readonly filter?: unknown }).filter).toBeDefined()
+    expect((catches[1]?.draft.material.body as { readonly filter?: unknown }).filter).toBeUndefined()
+    expect((catches[2]?.draft.material.body as { readonly filter?: unknown }).filter).toBeUndefined()
   })
 
   // The outer boundary exists to catch what the BODY raised. The success-arm
@@ -86,33 +88,54 @@ describe("TryCatchFinally", () => {
         catchSchema: Timeout,
         finally: named("finally")
       }),
-      "request"
+      request
     )
     const kinds = kindsById(graph)
     const boundary = Graph.nodes(graph).filter((node) => node.kind === "Catch").map((node) => node.id).sort()
 
-    // Root sequences the boundary into the success-arm finalizer, so the
+    // `@smthrs/flow` enters the declaration as a call of its own, so the body
+    // this pattern declares is spliced under `root.flow`, and it names a
+    // catch's two arms `protected` and `failure` where core named them `catch`
+    // and `recover`. The topology is the same one, node for node.
+    //
+    // The body sequences the boundary into the success-arm finalizer, so the
     // finalizer is downstream of the boundary rather than protected by it.
-    expect(kinds["root"]).toBe("AndThen")
-    expect(kinds["root.andThen"]).toBe("Catch")
+    expect(kinds["root.flow"]).toBe("AndThen")
+    expect(kinds["root.flow.andThen"]).toBe("Catch")
     // What the outer boundary protects is the try/catch node itself.
-    expect(kinds["root.andThen.catch"]).toBe("Catch")
-    expect(boundary).toEqual(["root.andThen", "root.andThen.catch", "root.andThen.recover.andThen"])
-    // The success-arm finalizer is the root's continuation, outside the catch.
-    expect(flowName(graph, "root.then.map")).toBe("finally")
+    expect(kinds["root.flow.andThen.protected"]).toBe("Catch")
+    expect(boundary).toEqual([
+      "root.flow.andThen",
+      "root.flow.andThen.failure.andThen",
+      "root.flow.andThen.protected"
+    ])
+    // The success-arm finalizer is the body's continuation, outside the catch.
+    expect(flowId(graph, "finally")).toContain("root.flow.then.andThen")
     // The unhandled arm still calls the finalizer and re-raises. Its finalizer
     // call sits under a catch that recovers, so a cleanup failure cannot take
     // the place of the body failure the arm re-raises.
-    expect(kinds["root.andThen.recover.andThen"]).toBe("Catch")
-    expect(flowName(graph, "root.andThen.recover.andThen.catch")).toBe("finally")
-    expect(kinds["root.andThen.recover.andThen.recover"]).toBe("Succeed")
-    expect(kinds["root.andThen.recover.then"]).toBe("Fail")
+    expect(kinds["root.flow.andThen.failure.andThen"]).toBe("Catch")
+    expect(flowId(graph, "finally")).toContain("root.flow.andThen.failure.andThen.protected")
+    expect(kinds["root.flow.andThen.failure.andThen.failure"]).toBe("Succeed")
+    expect(kinds["root.flow.andThen.failure.then"]).toBe("Fail")
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const boundary = TryCatchFinally.make({
+      try: named("try"),
+      name: "guarded-write",
+      description: "Write behind a boundary."
+    })
+
+    expect(boundary._tag).toBe("guarded-write")
+    expect(boundary.description).toBe("Write behind a boundary.")
+    expect(TryCatchFinally.make({ try: named("try") }).description).toBeUndefined()
   })
 
   it("declares the unhandled arm as a re-raise", () => {
     const graph = Graph.build(
       TryCatchFinally.make({ try: named("try"), finally: named("finally") }),
-      "request"
+      request
     )
 
     expect(calledFlows(graph)).toEqual(["try", "finally", "finally"])
@@ -123,25 +146,26 @@ describe("TryCatchFinally", () => {
   // body and the finalizer fail. Sequencing the finalizer ahead of the re-raise
   // without catching it loses the body failure, and the boundary reports the
   // cleanup error the caller never asked about.
-  it("declares the body failure as the one the unhandled arm reports when cleanup fails too", () => {
-    const result = declared(
-      TryCatchFinally.make({ try: failing("body failed"), finally: failing("cleanup failed") }),
-      "request"
+  it("declares the body failure as the one the unhandled arm reports when cleanup fails too", async () => {
+    const boundary = TryCatchFinally.make({ try: failing("body failed"), finally: failing("cleanup failed") })
+    const reported = await execute(boundary, request, "tcf-body-failure").then(
+      (settled: unknown) => ({ settled }),
+      (failure: unknown) => ({ failure })
     )
 
-    expect(Result.isFailure(result)).toBe(true)
-    expect(Result.isFailure(result) ? result.failure : undefined).toBe("body failed")
+    expect(JSON.stringify(reported)).toContain("body failed")
+    expect(JSON.stringify(reported)).not.toContain("cleanup failed")
   })
 
   it("declares nothing extra without a catch or a finalizer", () => {
-    const graph = Graph.build(TryCatchFinally.make({ try: named("try") }), "request")
+    const graph = Graph.build(TryCatchFinally.make({ try: named("try") }), request)
 
     expect(calledFlows(graph)).toEqual(["try"])
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(0)
   })
 
   it("declares an unfiltered catch when no error schema is supplied", () => {
-    const graph = Graph.build(TryCatchFinally.make({ try: named("try"), catch: named("catch") }), "request")
+    const graph = Graph.build(TryCatchFinally.make({ try: named("try"), catch: named("catch") }), request)
 
     expect(calledFlows(graph)).toEqual(["try", "catch"])
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(1)
@@ -172,19 +196,16 @@ describe("TryCatchFinally", () => {
       catchSchema: Timeout,
       finally: named("finally")
     })
-    const material = () => Graph.nodes(Graph.build(boundary, "request")).map((node) => node.keyMaterial)
-    const handlers = Graph.nodes(Graph.build(boundary, "request"))
-      .filter((node) => node.kind === "Catch")
-      .map((node) => (node.keyMaterial.body as { readonly handler: { readonly algorithm: string } }).handler.algorithm)
+    const material = () => Graph.nodes(Graph.build(boundary, request)).map((node) => node.draft.material)
 
     expect(material()).toEqual(material())
-    // One entry per `Catch` the boundary declares: the unhandled-failure arm,
-    // the filtered recovery arm, and the arm absorbing a finalizer failure.
-    expect(handlers).toEqual([
-      "sha256-source-captures/v4",
-      "sha256-source-captures/v4",
-      "sha256-source-captures/v4"
-    ])
+    // Core digested a recovery arm as one captured FUNCTION and this case
+    // pinned that digest's algorithm. `@smthrs/flow` expands each arm into its
+    // own graph nodes instead, so there is no handler digest to pin; the
+    // property the pin protected, that the same declaration keys the same way
+    // on every build, is the equality above, and the three arms are the three
+    // `Catch` nodes below.
+    expect(Graph.nodes(Graph.build(boundary, request)).filter((node) => node.kind === "Catch")).toHaveLength(3)
   })
 
   it.effect("runs the finalizer once after a successful body", () =>

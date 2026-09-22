@@ -592,16 +592,18 @@ key({ a: 1, b: 2 }) === key({ b: 2, a: 1 })
 
 ### [@smthrs/core](https://core.smithers.sh)
 
-Describes multi-step agent work as inert data and builds it into a graph you can inspect, order, and cache before anything runs.
+Schema-first flow signatures over [@smthrs/flow](https://flow.smithers.sh): one options object lowers to the declared action a host implements and the flow that calls it, so you can inspect, order, and cache the graph before anything runs.
 
 ```ts
-import { Graph, Node } from "@smthrs/core"
+import { Flow, Graph } from "@smthrs/core"
+import { Schema } from "effect"
 
-const plan = Node.all({
-  api: Node.dynamic({ model: "smart", prompt: "Review src/api.ts." }),
-  cli: Node.dynamic({ model: "smart", prompt: "Review src/cli.ts." })
+const review = Flow.make({
+  name: "review/file",
+  input: Schema.Struct({ path: Schema.String }),
+  output: Schema.String
 })
-console.log(Graph.edges(Graph.build(plan)))
+console.log(Graph.edges(Graph.build(review.flow, { path: "src/api.ts" })))
 ```
 
 ### [@smthrs/jj](https://jj.smithers.sh)

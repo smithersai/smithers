@@ -8,14 +8,14 @@ import { test } from "node:test"
 import { NodeServices } from "@effect/platform-node"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import { Action, DurableDeferred, HumanTask, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, HumanTask, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import { Ownership } from "@smthrs/run-store"
-import { Effect, Layer, ManagedRuntime, Option } from "effect"
+import { Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { atomDelegate } from "../coding/atoms.ts"
 import { checkDelegate } from "../coding/checks.ts"
 import { NativeCoding, nativeLayer } from "../coding/native.ts"
 import { gather, memoryLayer } from "../coding/planning-memory.ts"
@@ -26,6 +26,15 @@ import { admitSource } from "../coding/source-admission.ts"
 import { operations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
+// The coding host's `coding/implementation` module IS its own flow, so the host
+// registers nothing under a delegate name for it. A Markdown fixture entry has
+// to name a delegate that the catalog can resolve, and this plan records that
+// entry's digest without ever calling it, so a stand-in is the whole of what
+// this fixture needs.
+const Implement = Flow.make("fixture/Implement", {
+  payload: Executable.Invocation, success: Schema.Unknown, error: Schema.Never,
+  body: (invocation): Node.Node<unknown, never> => Node.succeed(invocation.input)
+})
 const input = { prompt: "Add the next feature using the existing answer.", feedback: "" }
 const revision = (index: number) => ({ changeId: `native-${index}`, commitId: `commit-${index}`, treeId: `tree-${index}`,
   operationId: "operation", parentCommitIds: [`commit-${index - 1}`], description: `✨ feat: atom ${index}` })
@@ -109,7 +118,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   await writeFile(join(root, "page.md"), "# Answer\n\nThe answer is 42.\n")
   await writeFile(join(root, "README.md"), "# Canary\n\nAn existing introduction.\n")
   await writeFile(join(root, "src/answer.ts"), "export const answer = 42\n")
-  for (const [name, delegate, body] of [["coding/atoms", "coding/Implement", "Implement the supplied atom."],
+  for (const [name, delegate, body] of [["coding/atoms", "fixture/Implement", "Implement the supplied atom."],
     ["checks/fast", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })],
     ["checks/slow", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })]]) {
     const directory = join(root, "flows", name!)
@@ -140,7 +149,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   const executables = await Effect.runPromise(Effect.gen(function*() {
     const catalog = yield* (yield* Discovery.Discovery).scan({ source: "project", root: join(root, "flows"), naming: "path" })
     assert.equal(catalog.entries.length, 3)
-    return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [atomDelegate, checkDelegate] }))
+    return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [checkDelegate, Implement] }))
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const options = { wiki: true, repositoryPath: root, wikiOutput: output, pages: [spec], implementation: "coding/atoms", checks: context.checks.map(({ flowDigest: _, ...check }) => check) }
   let reviewed = 0, drafted = 0
@@ -219,7 +228,6 @@ test("native memory and a real SQLite clarification resume across hosts and reje
   await assert.rejects(host.runPromise(gather(options, input)), /Stale wiki page/)
   t.diagnostic("Real JJ history, verified artifact checks, durable SQLite wait and reopened replay passed; model decisions were scripted.")
 })
-
 
 test("each edit atom retains the original task and acceptance criteria", () => {
   const request = { prompt: "Add ## Purpose mentioning disposable production tests; preserve the title.", feedback: "Keep the introduction." }

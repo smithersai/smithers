@@ -15,6 +15,7 @@
  */
 import * as Annotations from "@smthrs/core/Annotations"
 import * as Flow from "@smthrs/core/Flow"
+import type * as DurableFlow from "@smthrs/flow/Flow"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -58,26 +59,53 @@ export const MemoryPolicy = Context.Service<Policy>("flows/memory/Annotations/Me
  * existential the patterns pass around, and it hides the fields a decorator
  * has to read.
  */
-type Declaration = Flow.Flow<Schema.Top, Schema.Top, unknown>
+type Declaration = Flow.Flow<Schema.Top, Schema.Top, Schema.Top>
 
 const declaration = (flow: Flow.Any): Declaration => flow as unknown as Declaration
+
+/**
+ * A `@smthrs/flow` declaration held with the annotating half `Flow.Any` states
+ * no method for.
+ *
+ * `@smthrs/flow` carries its annotation bag as a field and its annotating
+ * operation as a method, so the erased shape reads a bag it cannot add to.
+ * This is the erased shape plus that method.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DurableDeclaration extends DurableFlow.Any {
+  annotate<I, S>(key: Context.Key<I, S>, value: S): DurableDeclaration
+}
+
+/**
+ * A declaration a memory policy attaches to.
+ *
+ * A `@smthrs/core` signature is one, and so is the `@smthrs/flow` flow a
+ * pattern composes: `Trellis.make` answers one, and {@link module:MemoryTrellis}
+ * annotates it. The two differ in what they declare BESIDE the annotation bag:
+ * a signature carries the collaborator list a policy is inherited through, and
+ * a composed flow carries none, reaching its collaborators by calling them.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Declared = Flow.Any | DurableDeclaration
 
 /**
  * Lists the collaborators a flow declares, callable flows and unresolved
  * registry names alike.
  *
- * Only a dynamic flow, one whose body a model fills in from a declared flow
- * list, carries collaborators as data. A flow with a body reaches its
+ * It is the flow's own `flows` declaration, which is what a model filling in a
+ * body is given and what a catalog lists. A flow that declares none reaches its
  * collaborators by calling them, and those calls are graph nodes rather than a
- * list, so this returns nothing for one.
+ * list, so this returns nothing for one. A `@smthrs/flow` flow declares no
+ * list at all and is always that case.
  *
  * @category introspection
  * @since 0.1.0
  */
-export const references = (flow: Flow.Any): ReadonlyArray<Flow.Reference> => {
-  const implementation = declaration(flow).implementation
-  return implementation === undefined || implementation._tag !== "Dynamic" ? [] : implementation.flows
-}
+export const references = (flow: Declared): ReadonlyArray<Flow.Reference> => Flow.isFlow(flow) ? flow.flows ?? [] : []
 
 /**
  * Lists the callable flows a flow declares. A name a registry has not resolved
@@ -86,7 +114,7 @@ export const references = (flow: Flow.Any): ReadonlyArray<Flow.Reference> => {
  * @category introspection
  * @since 0.1.0
  */
-export const children = (flow: Flow.Any): ReadonlyArray<Flow.Any> =>
+export const children = (flow: Declared): ReadonlyArray<Flow.Any> =>
   references(flow).filter((reference): reference is Flow.Any => Flow.isFlow(reference))
 
 /**
@@ -95,16 +123,16 @@ export const children = (flow: Flow.Any): ReadonlyArray<Flow.Any> =>
  * @category introspection
  * @since 0.1.0
  */
-export const policyOf = (flow: Flow.Any): Policy | undefined =>
-  Option.getOrUndefined(Annotations.getOption(declaration(flow).annotations, MemoryPolicy))
+export const policyOf = (flow: Declared): Policy | undefined =>
+  Option.getOrUndefined(Annotations.getOption(flow.annotations, MemoryPolicy))
 
 const rebuild = (flow: Flow.Any, policy: Policy): Declaration => {
   const self = declaration(flow)
-  const implementation = self.implementation
-  if (implementation === undefined || implementation._tag !== "Dynamic") return self
+  const declared = references(flow)
+  if (declared.length === 0) return self
   return Flow.withFlows(
     self,
-    implementation.flows.map((reference) => Flow.isFlow(reference) ? attach(reference, policy) : reference)
+    declared.map((reference) => Flow.isFlow(reference) ? attach(reference, policy) : reference)
   )
 }
 
@@ -145,10 +173,10 @@ const snapshot = (input: Policy): Policy => {
  * @category combinators
  * @since 0.1.0
  */
-export function withMemory<Input extends Schema.Top, Output extends Schema.Top, E>(
-  flow: Flow.Flow<Input, Output, E>,
+export function withMemory<Input extends Schema.Top, Output extends Schema.Top, Err extends Schema.Top>(
+  flow: Flow.Flow<Input, Output, Err>,
   policy: Policy
-): Flow.Flow<Input, Output, E>
+): Flow.Flow<Input, Output, Err>
 
 /**
  * Returns a copy of a flow held as the existential {@link Flow.Any} carrying
@@ -163,6 +191,33 @@ export function withMemory<Input extends Schema.Top, Output extends Schema.Top, 
  */
 export function withMemory(flow: Flow.Any, policy: Policy): Flow.Any
 
-export function withMemory(flow: Flow.Any, policy: Policy): Flow.Any {
-  return attach(flow, snapshot(policy))
+/**
+ * Returns a copy of a `@smthrs/flow` flow carrying `policy`.
+ *
+ * A composed flow is what a pattern answers: `Trellis.make` states a whole
+ * topology as one `@smthrs/flow` declaration, and {@link module:MemoryTrellis}
+ * puts the policy on top of it. Such a flow declares no collaborator list, so
+ * there is no tree to inherit through here; the flows the pattern composed
+ * carry the policy because they were scoped before they were composed.
+ *
+ * The copy keeps the tag and all three schemas, so it is still the flow the
+ * pattern declared and plans the same graph node for node.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export function withMemory<
+  Tag extends string,
+  Payload extends DurableFlow.AnyStructSchema,
+  Success extends Schema.Top,
+  Err extends Schema.Top,
+  Requires
+>(
+  flow: DurableFlow.Flow<Tag, Payload, Success, Err, Requires>,
+  policy: Policy
+): DurableFlow.Flow<Tag, Payload, Success, Err, Requires>
+
+export function withMemory(flow: Declared, policy: Policy): Declared {
+  const attached = snapshot(policy)
+  return Flow.isFlow(flow) ? attach(flow, attached) : flow.annotate(MemoryPolicy, attached)
 }

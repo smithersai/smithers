@@ -11,38 +11,41 @@ that every step stays inside the envelope it inherited, and compares every pair
 of writers to find the ones that would race. Both checks are plan-time data
 work: nothing opens a file.
 
-## Declare an envelope on the flow
+## Declare an envelope on the signature
 
-A flow's declaration is the envelope for everything in its body:
+A signature's declaration is the envelope for everything beneath it: its body,
+and every call that body makes.
 
 ```ts
-import { Effects, Flow, Node } from "@smthrs/core"
+import { Effects, Flow } from "@smthrs/core"
 import * as Schema from "effect/Schema"
+
+const Write = Flow.make({
+  name: "write",
+  input: Schema.Struct({ path: Schema.String }),
+  output: Schema.Void,
+  effects: Effects.make({
+    reads: ["src/index.ts"],
+    writes: ["out/report.json"],
+    mode: "hermetic",
+    onConflict: "serialize"
+  })
+})
 
 const Publish = Flow.make({
   name: "publish",
-  input: Schema.Void,
-  output: Schema.Void,
   effects: Effects.make({
     reads: ["src/**"],
     writes: ["out/**"],
     mode: "expected",
     onConflict: "serialize"
   }),
-  body: () =>
-    Node.dynamic({ model: "smart", prompt: "Write the report." }).pipe(
-      Node.withEffects(Effects.make({
-        reads: ["src/index.ts"],
-        writes: ["out/report.json"],
-        mode: "hermetic",
-        onConflict: "serialize"
-      }))
-    )
+  body: () => Write.call({ path: "out/report.json" })
 })
 ```
 
-The step claims less than the flow granted, which is allowed. Claiming more is
-not. For the coverage grammar behind "less", see
+The callee claims less than the caller granted, which is allowed. Claiming more
+is not. For the coverage grammar behind "less", see
 [Effect envelopes](/concepts/effects/).
 
 ## Check the claim yourself
@@ -64,8 +67,8 @@ if (!result.ok) console.error(result.code, result.paths)
 | `effect_mode_widening`    | A `hermetic` envelope with an `expected` step.                        |
 | `effect_tier_widening`    | A step whose tier is less reversible than the envelope's.             |
 
-All three are fatal when `Graph.build` records them, so the graph has no key
-material until you fix the declaration.
+All three are fatal when `Graph.build` records them, so the graph compiles no
+drafts until you fix the declaration.
 
 ## Read the diagnostics from a build
 
@@ -75,108 +78,46 @@ import { Graph } from "@smthrs/core"
 const Escaping = Flow.make({
   name: "escaping",
   effects: Effects.make({ reads: [], writes: ["out/**"], mode: "expected", onConflict: "serialize" }),
-  body: () =>
-    Node.dynamic({ model: "smart" }).pipe(
-      Node.withEffects(Effects.make({
-        reads: [],
-        writes: ["secret.txt"],
-        mode: "expected",
-        onConflict: "serialize"
-      }))
-    )
+  body: () => Write.call({ path: "secret.txt" })
 })
 
-console.log(Graph.diagnostics(Graph.build(Escaping)))
+const graph = Graph.build(Escaping.flow, { input: undefined })
+
+console.dir(Graph.diagnostics(graph).map(({ code, node, path }) => ({ code, node, path })))
 ```
 
 ```text
 [
-  {
-    _tag: '@smthrs/plan/GraphBuildError',
-    code: 'effect_outside_envelope',
-    node: 'root',
-    path: [ 'secret.txt' ]
-  }
+  { code: 'effect_outside_envelope', node: 'root.flow', path: [ 'secret.txt' ] },
+  { code: 'effect_outside_envelope', node: 'root.flow.flow', path: [ 'secret.txt' ] }
 ]
 ```
 
-`node` names the node whose declaration was refused, so you can find it in
-your source by its structural position.
+Here `Write` declares `secret.txt` and `Escaping` granted only `out/**`, so the
+call and the action dispatch beneath it are both refused. `node` names the node
+whose declaration was refused, so you can find it in your source by its
+structural position.
+
+The payload is `{ input: undefined }` rather than `undefined`: `Escaping`
+declared no `input`, so its input schema is `Schema.Void`, and a non-struct
+input travels as the one field `input`.
 
 ## Two writers of one path
 
-Only `Dynamic` nodes count as writers. A plan built from `Node.succeed` records
-no conflicts however its declarations overlap, which is the most common reason
-a conflict test appears to do nothing.
-
-```ts
-const writes = Effects.make({
-  reads: [],
-  writes: ["out/report.json"],
-  mode: "expected",
-  onConflict: "serialize"
-})
-
-const racing = Graph.build(Node.all({
-  a: Node.dynamic({ model: "smart" }).pipe(Node.withEffects(writes)),
-  b: Node.dynamic({ model: "smart" }).pipe(Node.withEffects(writes))
-}))
-```
-
-With `onConflict: "serialize"` the planner records the conflict and adds an
-ordering edge, and the graph still keys:
-
-```ts
-console.log(Graph.conflicts(racing))
-```
-
-```text
-[
-  {
-    nodes: [ 'root.all.a', 'root.all.b' ],
-    paths: [ 'out/report.json' ],
-    strategy: 'serialize'
-  }
-]
-```
-
-The edge it added is `{ from: 'root.all.a', to: 'root.all.b', reason: 'conflict' }`,
-so a scheduler runs the two writers in a fixed order instead of at the same
-time.
-
-Change both declarations to `onConflict: "lane"` and the planner gives each
-writer a lane derived from its node id, synthesizes a merge node, and joins
-them to it:
-
-```text
-[
-  {
-    nodes: [ 'root.all.a', 'root.all.b' ],
-    paths: [ 'out/report.json' ],
-    strategy: 'lane',
-    mergeNodeId: 'lane.merge.0'
-  }
-]
-```
-
-The graph now has a fourth node, `lane.merge.0 (LaneMerge)`, and three
-`lane-merge` edges: one from each writer to the merge, and one from the merge
-to the join it feeds.
-
-Change them to `onConflict: "fail"` and the planner records a fatal
-`write_conflict` diagnostic naming both nodes, so `Graph.keyMaterial` refuses
-the graph. Choose `fail` when two writers of one path is a bug in the
-declaration rather than a scheduling problem.
-
+[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) owns the comparison: its graph builder records a
+conflict when two writers' effective write declarations overlap, orders them
+under `serialize`, lanes them under `lane`, and refuses the plan under `fail`.
 The stricter declaration decides: `fail` beats `lane`, and `lane` beats
 `serialize`, so one careful step can refuse to share a path with a careless
-one.
+one. Its reference documents each strategy and the diagnostics it records.
 
-## Seal a flow
+## Seal a signature
 
 `Flow.sealed()` returns a copy whose declaration is `hermetic` and `sealed`. A
-flow that had no declaration gets an empty one with those two values, which is
-the strictest possible claim: this flow touches nothing.
+signature that had no declaration gets an empty one with those two values, which
+is the strictest possible claim: this step touches nothing. A signature that
+declares no envelope at all dispatches as `irreversible` instead, so an
+undeclared tier never content-shares another run's result.
 
 ```ts
 const Locked = Publish.pipe(Flow.sealed())
@@ -186,8 +127,8 @@ const Locked = Publish.pipe(Flow.sealed())
 
 `Effects.overlaps` returns the concrete or narrower write paths two
 declarations share, sorted and duplicate-free. It is the primitive the conflict
-pass uses, and it is useful on its own when you are deciding whether two flows
-can run together:
+pass uses, and it is useful on its own when you are deciding whether two
+signatures can run together:
 
 ```ts
 const left = Effects.make({ reads: [], writes: ["out/**"], mode: "expected", onConflict: "serialize" })
@@ -205,5 +146,5 @@ envelope, and two writers of it are still writing the same resource.
 
 - [Effect envelopes](/concepts/effects/): the model, including the full
   coverage grammar.
-- [Build limits](/concepts/limits/): what bounds the paths and patterns one
-  declaration may carry.
+- [Declare a flow](/guides/declare-a-flow/): where a signature states its envelope,
+  its capabilities, and its tier.

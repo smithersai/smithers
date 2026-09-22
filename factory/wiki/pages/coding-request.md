@@ -1,6 +1,6 @@
 # From a prompt to a measured coding outcome
 
-`coding/request` is a private discovered repository flow. It lowers through the existing catalog into `coding/RunRequest` and `coding/Request`. Its input is `{ prompt, feedback?, maxRounds? }`; it uses the ordinary gateway plan, approval, run and watch operations. No new endpoint or execution store is introduced.
+`coding/request` is a private discovered repository flow. Its module IS the `coding/Request` flow, so the catalog lowers it without a delegate. Its input is `{ prompt, feedback?, maxRounds? }`; it uses the ordinary gateway plan, approval, run and watch operations. No new endpoint or execution store is introduced.
 
 ## Make each stage observable
 
