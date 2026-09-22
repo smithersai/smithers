@@ -122,6 +122,15 @@ const harness = (options: HarnessOptions = {}) => {
 
 const TOKEN = "ghp_test_token_never_served"
 
+test("catalog refusals release every unused upstream response body", async () => {
+  for (const status of [302, 401, 404, 429, 500]) {
+    let cancelled = 0
+    const server = harness({ answer: () => new Response(new ReadableStream({ cancel() { cancelled++ } }), { status }) })
+    expect((await server.handler(request())).status).toBe(200)
+    expect(cancelled).toBe(FETCH_COUNT)
+  }
+})
+
 /**
  * A real RSA key pair for the GitHub App secrets: the handler signs an App JWT
  * with it, so these tests exercise the same WebCrypto path the Worker runs.

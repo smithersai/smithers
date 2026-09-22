@@ -35,8 +35,8 @@ const REPO = "codeplanesmithers/canary-sandbox"
 const controlPlaneRefusal = (flow: string) => `No flow "${flow}" is registered on this workspace.`
 
 const relay = (options: { readonly registered?: boolean } = {}) => {
-  const launched: Array<{ flowId: string; input: unknown }> = []
-  let planned: { flowId: string; input: unknown } | undefined
+  const launched: Array<{ flowId: string; input: unknown; repo: string }> = []
+  let planned: { flowId: string; input: unknown; repo: string } | undefined
   const services: AppServices = {
     workflowPollMs: 1,
     toastDebounceMs: 0,
@@ -66,7 +66,7 @@ const relay = (options: { readonly registered?: boolean } = {}) => {
               }
             })
           }
-          planned = { flowId, input: payload.input }
+          planned = { flowId, input: payload.input, repo: String(body?.repo) }
           return json(200, {
             ok: true,
             payload: { planId: "plan-1", flowId, digest: "d", envelope: { capabilities: [], flows: [], budget: {} },
@@ -150,5 +150,20 @@ test("a workspace without the authoring flow is told what to do, not handed an i
     /* A toast dismisses in four seconds; the durable card is what is still there. */
     expect(authoringCard(store)?.status).toBe("error")
     expect(authoringCard(store)?.payload.observationError).toBe(answer)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
+
+
+test("a flow-authoring form honors its named repository instead of the loaded default", async () => {
+  const store = await signedInStore()
+  const double = relay()
+  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const target = "codeplanesmithers/other-repository"
+  try {
+    const outcome = await controller.commands.submit({ name: "flow.create", actor: "user",
+      payload: { description: "summarise my issues", repo: target } })
+    expect(said(outcome)).toContain(`repo=${target}`)
+    await until(() => double.launched.length === 1)
+    expect(double.launched[0]).toEqual({ flowId: FLOW_AUTHORING_ENTRY, input: { args: "summarise my issues" }, repo: target })
   } finally { await controller.dispose(); await store.dispose?.() }
 })

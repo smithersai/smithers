@@ -16,7 +16,6 @@ import { createAppStore } from "../state/AppStore"
 import { dropDesktopStream, holdDesktopStream } from "../state/seams/DesktopStream"
 import {
   EnvironmentImagesCardBody,
-  environmentProvenance,
   headerFacts,
   sessionUntil,
   uptimeLabel,
@@ -916,75 +915,7 @@ describe("the workspace card's desktop facet", () => {
   })
 })
 
-/*
- * Lane L3b — the environment provenance line: the closure hash's first eight
- * and the image TAG (never the full registry path), for vm and desktop only.
- */
-describe("the workspace card's environment provenance", () => {
-  test("a desktop workspace names the closure short and the image tag", () => {
-    expect(
-      environmentProvenance(
-        workspaceCard({
-          workspaceKind: "desktop",
-          environment: {
-            source: ".smithers/environment.nix",
-            revision: null,
-            closureHash: "9f2b1c0d4e5a6b7c8d9e0f1a",
-            image: "registry.smithers-cloud.test/environments/smithersai/smithers:nixos-2405-9f2b1c0d"
-          }
-        }).payload
-      )
-    ).toBe("env · 9f2b1c0d · nixos-2405-9f2b1c0d")
-  })
-
-  test("a container workspace has no provenance line, whatever its environment says", () => {
-    expect(
-      environmentProvenance(
-        workspaceCard({
-          workspaceKind: "container",
-          environment: { source: ".smithers/environment.nix", revision: null, closureHash: "9f2b1c0d", image: "x:tag" }
-        }).payload
-      )
-    ).toBeNull()
-  })
-
-  test("a vm that named only a closure says only the closure; one that named neither says nothing", () => {
-    expect(
-      environmentProvenance(
-        workspaceCard({
-          workspaceKind: "vm",
-          environment: { source: ".smithers/environment.nix", revision: null, closureHash: "1122334455667788", image: null }
-        }).payload
-      )
-    ).toBe("env · 11223344")
-    expect(
-      environmentProvenance(
-        workspaceCard({
-          workspaceKind: "vm",
-          environment: { source: ".smithers/environment.nix", revision: null, closureHash: null, image: null }
-        }).payload
-      )
-    ).toBeNull()
-    expect(environmentProvenance(workspaceCard({ workspaceKind: "vm" }).payload)).toBeNull()
-  })
-
-  test("an image with no tag at all is not a tag — the registry path never renders", () => {
-    expect(
-      environmentProvenance(
-        workspaceCard({
-          workspaceKind: "vm",
-          environment: {
-            source: ".smithers/environment.nix",
-            revision: null,
-            closureHash: null,
-            image: "registry.smithers-cloud.test/environments/base"
-          }
-        }).payload
-      )
-    ).toBeNull()
-  })
-
-  test("the provenance line renders on a desktop card and not on a container one", () => {
+  test("routine workspace cards omit environment provenance", () => {
     const { host } = render(
       workspaceCard({
         workspaceKind: "vm",
@@ -996,13 +927,14 @@ describe("the workspace card's environment provenance", () => {
         }
       })
     )
-    expect(host.textContent).toContain("env · 9f2b1c0d · nixos-2405")
+    expect(host.textContent).not.toContain("env · ")
+    expect(host.textContent).not.toContain("9f2b1c0d")
+    expect(host.textContent).not.toContain("nixos-2405")
     host.remove()
     const plain = render(workspaceCard())
     expect(plain.host.textContent).not.toContain("env · ")
     plain.host.remove()
   })
-})
 
 /*
  * Lane L3b addendum (RFD-004): the computer an agent run executed in. The kind

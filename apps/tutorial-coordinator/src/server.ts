@@ -19,7 +19,8 @@ if(!token)throw new Error("Configure tutorial service authentication before star
 await mkdir(directory,{recursive:true})
 if(settings.provider==="chatgpt")await prepareSubscription(settings.authFile,process.env.TUTORIAL_CHATGPT_BOOTSTRAP_FILE)
 const coordinator=new Coordinator(directory,{ensure,agent:(filename,id,instructions,context)=>runAgent(filename,settings,id,instructions,context,proxy,evaluator)})
-coordinator.resume()
+const resume=()=>{try{if(coordinator.resume())return}catch{console.error("Tutorial recovery failed")}setTimeout(resume,1000).unref()}
+resume()
 setInterval(()=>{void coordinator.prune().catch(()=>console.error("Tutorial artifact cleanup failed"))},5*60*1000).unref()
 createServer(async(request,response)=>{
   const send=(status:number,value:unknown)=>{response.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});response.end(JSON.stringify(value))}

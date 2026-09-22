@@ -7,7 +7,7 @@ import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
 import { CryptoFailure } from "./Failures"
-import { fetchWithDeadline, readJson, readText, Transport } from "./Http"
+import { discardBody, fetchWithDeadline, readJson, readText, Transport } from "./Http"
 import type { TransportShape } from "./Http"
 
 /**
@@ -351,6 +351,7 @@ export const makeGithubAppAuth = (
           return undefined
         }
         if (!response.success.ok) {
+          yield* discardBody(response.success)
           log(`the GitHub App installation lookup answered ${response.success.status}`)
           return undefined
         }
@@ -377,6 +378,7 @@ export const makeGithubAppAuth = (
           return undefined
         }
         if (!response.success.ok) {
+          yield* discardBody(response.success)
           log(`the GitHub App installation token exchange answered ${response.success.status}`)
           return undefined
         }

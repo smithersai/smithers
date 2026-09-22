@@ -82,6 +82,24 @@ restores the previous build without a rebuild.
 
 ### Cutover log
 
+- **2026-09-21 — frontend telemetry export (configuration/deployment pending).**
+  Declare `PLUE_WORKER_EXCHANGE_TOKEN` on this Worker with the same value as
+  the API's `SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN`. No value was read or set
+  during the local review. This adds a secret declaration only; Worker names,
+  domains, DO identities and persisted keys are unchanged by this fix.
+  Admitted `/api/client-errors` reports send one bounded background POST to
+  `${SMITHERS_CLOUD_API_BASE_URL}/api/telemetry/errors`, with only `client`,
+  build version and a fixed `Error` type. Browser credentials, addresses,
+  report text and URLs remain out of the export. The API's matching bearer
+  selects its dedicated 120/minute Worker telemetry quota; the public quota
+  remains 10/minute. Release both sides together with the matching binding.
+  `202 accepted` remains local admission, not proof of export. Missing config,
+  storage failure, transport timeout (at most 5 seconds for headers), and
+  non-204 responses produce sanitized `client-error telemetry` log records;
+  the local ring and chat remain usable. Release validation still needs the
+  API `client_error_reporting` flag enabled and a verified increase in
+  `smithers_client_errors_total{client="web"}`. No deployment was performed.
+
 - Account provider vault (2026-09-20): append `MODEL_VAULTS=AccountModelVault`
   and migration `v5`; preserve every existing namespace and migration.
   Preflight permits only this named additive cutover when missing live, and
@@ -216,14 +234,16 @@ bun x wrangler secret list                         # names only
 ```
 
 `src/Config.ts` reads each name below from the Worker's `env` bag into
-`ServerConfig` as `Redacted`; an unset one makes its route answer an honest
-501/503:
+`ServerConfig` as `Redacted`; unset required credentials normally make their
+route answer 501/503. Telemetry preserves local admission and logs an explicit
+export configuration failure instead:
 
 | Name | Spent by |
 | --- | --- |
 | `SMITHERS_CHAT_AUTH_TOKEN` | the chat forward (`POST /api/agent/turn`) |
 | `CHAT_PRODUCT_SERVICE_TOKEN` | vouching the validated login to chat |
 | `IDENTITY_SERVICE_TOKEN` | `/api/identity/validate` |
+| `PLUE_WORKER_EXCHANGE_TOKEN` | `/api/telemetry/errors`; matches API `SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN` |
 | `IDENTITY_ADMIN_TOKEN` | `POST /api/admin/allowlist`, `GET /api/admin/requests` |
 | `BILLING_AUTH_TOKEN` | the signed-out billing fallback |
 | `BILLING_PRODUCT_SERVICE_TOKEN` | billing reads as the user |

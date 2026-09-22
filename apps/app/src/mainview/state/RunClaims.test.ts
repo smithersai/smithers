@@ -9,6 +9,7 @@ test("a requested launch arms claim suppression without claiming a run has start
   expect(toolResultLaunchedRun("failed: run-requested")).toBe(false)
   expect(renderedRunTurnText("flow.run", "The run has completed.")).toBe("Run requested.")
   expect(renderedRunTurnText("flow.run", "The run is now running.")).toBe("Run requested.")
+  expect(renderedRunTurnText("flow.create", "The flow has been created.")).toBe("Run requested.")
 })
 
 /*

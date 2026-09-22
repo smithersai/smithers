@@ -2,12 +2,11 @@ import { DatabaseSync } from "node:sqlite"
 import { randomUUID, createHash } from "node:crypto"
 import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
-import { Ownership } from "@smthrs/run-store"
-import { Duration } from "effect"
 import type { LiveTutorialRun, LiveTutorialOperation, LiveTutorialStart } from "@smthrs/rpc/LiveTutorial"
 import type { Executor } from "../../tutorial-executor/src/KubernetesExecutor"
 import type { AgentAnswer } from "./agent"
 import { TutorialJournal } from "./TutorialJournal"
+import { CoordinatorOwnership } from "./CoordinatorOwnership"
 
 export interface Dependencies {
   ensure(session:string):Promise<Executor>
@@ -27,14 +26,36 @@ export class Coordinator {
   readonly db:DatabaseSync
   private busy=new Set<string>()
   private readonly ownerId=randomUUID()
+  private readonly ownership:CoordinatorOwnership
+  private recovered=false
+  private closed=false
   readonly directory:string
   readonly deps:Dependencies
   readonly journal:TutorialJournal
   constructor(directory:string,deps:Dependencies){
     this.directory=directory;this.deps=deps
+    this.ownership=new CoordinatorOwnership(directory)
     this.db=new DatabaseSync(join(directory,"coordinator.sqlite"))
+    try{
     this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, session TEXT NOT NULL, playthrough INTEGER NOT NULL, key TEXT NOT NULL, plan TEXT, body TEXT NOT NULL, input TEXT NOT NULL, UNIQUE(session,playthrough,key)); CREATE TABLE IF NOT EXISTS checkpoints (run TEXT NOT NULL,name TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(run,name));")
     this.journal=new TutorialJournal(this.db)
+    this.activate()
+    }catch(error){this.db.close();this.ownership.close();throw error}
+  }
+  private activate():boolean{
+    if(this.closed)throw new Error("The tutorial coordinator is closed")
+    if(!this.ownership.acquire())return false
+    if(!this.recovered){for(const {run} of this.journal.all())this.journal.interrupt(run);this.recovered=true}
+    return true
+  }
+  private assertOwner(){if(!this.ownership.owned)throw new Error("Another tutorial coordinator is still running. Try again shortly.")}
+  private async external<T>(work:()=>Promise<T>):Promise<T>{
+    this.assertOwner();const value=await work();this.assertOwner();return value
+  }
+  close(){
+    if(this.closed)return
+    this.closed=true
+    try{this.db.close()}finally{this.ownership.close()}
   }
   get(session:string,id:string){return this.journal.get(session,id)}
   private save(run:LiveTutorialRun){this.journal.save(run)}
@@ -42,8 +63,10 @@ export class Coordinator {
     return this.journal.all().reverse().find(({run,input})=>run.sessionId===session&&input.playthrough===playthrough&&run.operation===operation&&run.phase==="completed")?.run
   }
   start(session:string,operation:LiveTutorialOperation,input:LiveTutorialStart):LiveTutorialRun{
+    this.activate()
     const prior=this.journal.all().find(row=>row.run.sessionId===session&&row.input.playthrough===input.playthrough&&row.input.idempotencyKey===input.idempotencyKey)
     if(prior){const run=prior.run;if(run.operation!==operation)throw new Error("The request key belongs to another tutorial action");this.schedule(run,prior.input);return run}
+    this.assertOwner()
     if(operation==="implement"){
       const plan=this.latest(session,input.playthrough,"plan")?.plan
       if(!plan||plan.id!==input.planId)throw new Error("Review the latest plan before starting implementation")
@@ -59,6 +82,7 @@ export class Coordinator {
     this.schedule(run,input);return run
   }
   async prune(now=Date.now()){
+    if(!this.activate())return
     const rows=this.journal.all()
     const retained=new Set<string>(),expired:Array<{run:LiveTutorialRun,scope:string}>=[]
     for(const row of rows){
@@ -73,12 +97,12 @@ export class Coordinator {
     }
     if(expired.length)this.db.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
   }
-  resume(){for(const {run,input} of this.journal.all()){if(run.phase==="queued"||run.phase==="running")this.schedule(run,input,Duration.toMillis(Ownership.heartbeatStaleAfter)+1000)}}
-  private schedule(run:LiveTutorialRun,input:LiveTutorialStart,delay=0){if(this.busy.has(run.runId)||!["queued","running"].includes(run.phase))return;if(!this.journal.claim(run,this.ownerId))return;this.busy.add(run.runId);void (delay?new Promise<void>(resolve=>setTimeout(resolve,delay)):Promise.resolve()).then(()=>this.execute(run,input)).catch(error=>console.error("Tutorial journal did not accept run progress",error)).finally(()=>this.busy.delete(run.runId))}
+  resume():boolean{if(!this.activate())return false;for(const {run,input} of this.journal.all()){if(run.phase==="queued")this.schedule(run,input)}return true}
+  private schedule(run:LiveTutorialRun,input:LiveTutorialStart){if(!this.ownership.owned||this.busy.has(run.runId)||run.phase!=="queued")return;if(!this.journal.claim(run,this.ownerId))return;this.busy.add(run.runId);void Promise.resolve().then(()=>this.execute(run,input)).catch(error=>{if(!this.closed)console.error("Tutorial journal did not accept run progress",error)}).finally(()=>this.busy.delete(run.runId))}
   private async checkpoint<T>(run:LiveTutorialRun,name:string,work:()=>Promise<T>):Promise<T>{
     const existing=this.journal.checkpoint(run,name)
     if(existing!==undefined)return JSON.parse(existing)
-    const value=await work();this.journal.recordCheckpoint(run,name,JSON.stringify(value));return value
+    const value=await this.external(work);this.journal.recordCheckpoint(run,name,JSON.stringify(value));return value
   }
   private async step<T>(run:LiveTutorialRun,id:string,label:string,work:()=>Promise<T>):Promise<T>{
     let event=run.events.find(e=>e.id===id)
@@ -97,6 +121,7 @@ export class Coordinator {
   }
   private async execute(run:LiveTutorialRun,input:LiveTutorialStart){
     try{
+      this.assertOwner()
       run.phase="running";this.save(run)
       const scope=createHash("sha256").update(`${run.sessionId}:${input.playthrough}${run.operation === "poc" ? `:poc:${run.runId}` : ""}`).digest("hex")
       const folder=join(this.directory,scope);await mkdir(folder,{recursive:true})
@@ -107,9 +132,9 @@ export class Coordinator {
         run.change={id:run.runId,title:implemented.plan?.title??"Fix the greeting",summary:implemented.result??"",commitIds:selected,baseCommitId:implemented.baseCommitId!}
         run.commits=commits.filter(c=>selected.includes(c.commitId));run.diff=implemented.diff;run.files=implemented.files;run.result="The Change is ready to review.";run.phase="completed";this.save(run);return
       }
-      const executor=await this.step(run,"workspace","Prepare your isolated example repository",()=>this.deps.ensure(scope).then(()=>({ready:true}))).then(()=>this.deps.ensure(scope))
+      const executor=await this.step(run,"workspace","Prepare your isolated example repository",()=>this.deps.ensure(scope).then(()=>({ready:true}))).then(()=>this.external(()=>this.deps.ensure(scope)))
       const snapshot=await this.step(run,"snapshot","Read the repository",()=>executor.snapshot())
-      if ((await executor.snapshot()).base !== snapshot.base) throw new Error("This isolated example workspace expired. Start a new tutorial playthrough.")
+      if ((await this.external(()=>executor.snapshot())).base !== snapshot.base) throw new Error("This isolated example workspace expired. Start a new tutorial playthrough.")
       run.baseCommitId=snapshot.head;run.branch="main";run.files=snapshot.files;this.save(run)
       const model=(name:string,instructions:string,context:unknown)=>this.step(run,name,name==="research"?"Research the issue":name==="plan"?"Plan the implementation":"Ask the agent to implement the fix",()=>this.deps.agent(join(folder,"flows.sqlite"),`${run.runId}-${name}`,instructions,context))
       if(run.operation==="research"){
@@ -139,11 +164,11 @@ export class Coordinator {
         if(!passed||!last)throw new Error("The implementation did not pass the tests after three attempts. Review the recorded test output before retrying")
         const before=await this.step(run,"diff","Read the actual diff",()=>executor.diff(plan.baseCommitId));const diff=parseDiff(before.patch)
         if(!diff.length)throw new Error("The agent produced no code change")
-        if(run.operation === "poc") { run.diff=diff;run.files=await executor.files();run.result=`${last.summary}\n\nThe proof of concept passed the recorded tests in a separate disposable repository. Your implementation workspace is unchanged.`;run.phase="completed";this.save(run);return }
+        if(run.operation === "poc") { run.diff=diff;run.files=await this.external(()=>executor.files());run.result=`${last.summary}\n\nThe proof of concept passed the recorded tests in a separate disposable repository. Your implementation workspace is unchanged.`;run.phase="completed";this.save(run);return }
         const commit=await this.step(run,"commit","Commit the verified fix",()=>executor.commit(last!.message.trim().slice(0,160)||plan.title,run.runId))
         if(commit.parent!==plan.baseCommitId)throw new Error("The committed fix does not match the approved plan base")
         run.commits=[{commitId:commit.sha,parentCommitId:commit.parent,message:commit.subject,files:diff.map(f=>f.path),additions:diff.reduce((n,f)=>n+f.additions,0),deletions:diff.reduce((n,f)=>n+f.deletions,0)}]
-        run.diff=diff;run.files=await executor.files();run.result=last.summary
+        run.diff=diff;run.files=await this.external(()=>executor.files());run.result=last.summary
       }
       run.phase="completed";this.save(run)
     }catch(error){run.phase="failed";run.error=error instanceof Error?error.message.slice(0,350):"The tutorial action failed";this.save(run)}

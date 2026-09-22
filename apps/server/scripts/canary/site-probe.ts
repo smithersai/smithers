@@ -17,6 +17,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import { argReader } from "./CanaryArgs.ts"
 import { observeSiteResponse, originFromHostname, renderTable, runSiteChecks, tally } from "./site-checks.ts"
 
 const args = process.argv.slice(2)
@@ -27,8 +28,10 @@ if (target === undefined || target.startsWith("--")) {
   // never a verdict about a deployment.
   process.exit(2)
 }
-const jsonIndex = args.indexOf("--json")
-const jsonPath = jsonIndex === -1 ? undefined : args[jsonIndex + 1]
+const jsonPath = argReader(args, (detail) => {
+  console.error(`FAIL: ${detail}`)
+  process.exit(2)
+})("--json")
 
 const origin = originFromHostname(target)
 const legacy = JSON.parse(

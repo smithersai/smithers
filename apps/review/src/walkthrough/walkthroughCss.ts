@@ -260,6 +260,7 @@ td.finding-cell { padding: 0 !important; }
 .quiz-expl { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
 .quiz-expl .jump { white-space: nowrap; }
 .quiz-summary { border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-top: 16px; background: var(--surface-2); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-weight: 600; }
+.quiz-summary[hidden] { display: none; }
 .quiz-retake { font-size: var(--fs-2); border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 12px; cursor: pointer; color: var(--muted); margin-left: auto; }
 .quiz-retake:hover { background: var(--surface-3); color: var(--text); }
 .quiz-attest { font-size: var(--fs-2); border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 12px; cursor: pointer; color: var(--muted); margin-left: auto; }

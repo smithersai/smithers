@@ -261,7 +261,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
     (_id, theater, honest) => {
       expect(offersImpossibleCapability(theater)).toBe(true)
       expect(renderedRunTurnText("flow.create", theater)).toBe(
-        "I requested a create-flow run — the run card shows its real progress."
+        "Run requested."
       )
       expect(offersImpossibleCapability(honest)).toBe(false)
       expect(renderedRunTurnText("flow.create", honest)).toBe(honest)
@@ -353,7 +353,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
     const rendered = transcript(store)
     expect(rendered).not.toContain("emails")
     expect(rendered).not.toContain("Shall I create the workflow")
-    expect(rendered).toContain("the run card shows its real progress")
+    expect(rendered).toContain("Run requested.")
   })
 
   test("a launch turn's honest can't-yet renders untouched", () => {

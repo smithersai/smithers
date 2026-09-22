@@ -208,27 +208,42 @@ export const walkthroughScript = `
   }
 
   /* ---- copy buttons ---- */
+  var copyResetTimers = new WeakMap();
+  function copyText(text, button, label) {
+    if (button.disabled) return;
+    clearTimeout(copyResetTimers.get(button));
+    button.disabled = true;
+    function finish(copied) {
+      button.disabled = false;
+      button.textContent = copied ? "Copied" : "Copy failed";
+      copyResetTimers.set(button, setTimeout(function () { button.textContent = label; }, 1400));
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        Promise.resolve(navigator.clipboard.writeText(text)).then(function () { finish(true); }, function () { finish(false); });
+      } else {
+        var scratch = doc.createElement("textarea");
+        scratch.value = text;
+        doc.body.appendChild(scratch);
+        var copied = false;
+        try {
+          scratch.select();
+          copied = doc.execCommand("copy") === true;
+        } finally {
+          scratch.remove();
+          button.focus();
+        }
+        finish(copied);
+      }
+    } catch (_) { finish(false); }
+  }
   doc.addEventListener("click", function (event) {
     var button = event.target.closest && event.target.closest("[data-copy]");
     if (!button) return;
     var pre = button.closest("pre");
     var code = pre && pre.querySelector("code");
     if (!code) return;
-    var done = function () {
-      button.textContent = "Copied";
-      setTimeout(function () { button.textContent = "Copy"; }, 1400);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code.textContent).then(done, done);
-    } else {
-      var scratch = doc.createElement("textarea");
-      scratch.value = code.textContent;
-      doc.body.appendChild(scratch);
-      scratch.select();
-      try { doc.execCommand("copy"); } catch (_) {}
-      doc.body.removeChild(scratch);
-      done();
-    }
+    copyText(code.textContent, button, "Copy");
   });
 
   /* ---- print: expand every diff, restore after ---- */
@@ -330,21 +345,7 @@ export const walkthroughScript = `
     if (attestBtn) attestBtn.addEventListener("click", function () {
       var text = attestBtn.getAttribute("data-attestation") || "";
       if (!text) return;
-      var done = function () {
-        attestBtn.textContent = "Copied";
-        setTimeout(function () { attestBtn.textContent = "Copy attestation"; }, 1400);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done, done);
-      } else {
-        var scratch = doc.createElement("textarea");
-        scratch.value = text;
-        doc.body.appendChild(scratch);
-        scratch.select();
-        try { doc.execCommand("copy"); } catch (_) {}
-        doc.body.removeChild(scratch);
-        done();
-      }
+      copyText(text, attestBtn, "Copy attestation");
     });
     var retake = quiz.querySelector("[data-quiz-retake]");
     if (retake) retake.addEventListener("click", function () {

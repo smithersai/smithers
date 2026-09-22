@@ -9,7 +9,7 @@ import { SurfaceHeader } from "./SurfaceChrome"
 
 /*
  * The connect surface (Wave 10, §2e): extension-store grammar — a compact
- * list of connector rows: icon, name, ONE line of description, one action
+ * list of connector rows: icon, name, repository count when known, one action
  * (Connect / Connected ✓ / Coming soon). No paragraphs, no prose blocks.
  * Keyboard-complete: arrows move between rows, Enter is the row's action.
  * Sign-in IS the GitHub connector (§2a′): a valid session reads Connected.
@@ -29,17 +29,12 @@ export function ConnectorsSurface() {
   const signedIn = identity?.state === "signed-in"
   const githubAvailable = controller.commands.find(signedIn ? "auth.sign-out" : "auth.sign-in") !== undefined
   const cloudAvailable = controller.commands.find("repos.import") !== undefined
-  const emptyGuidance = cloudAvailable
-    ? signedIn
-      ? "Import a GitHub repository into Smithers Cloud and it appears here."
-      : "Connecting GitHub above is the first step; imported repositories appear here."
-    : "No repository service is available in this runtime."
 
   interface StoreRow {
     readonly key: string
     readonly icon: "github" | "local" | "cloud"
     readonly name: string
-    readonly description: string
+    readonly repositoryCount?: number
     readonly action:
       | {
         readonly kind: "button"
@@ -62,9 +57,7 @@ export function ConnectorsSurface() {
       key: "github",
       icon: "github",
       name: "GitHub",
-      description: installedRepositories > 0
-        ? `App installed on ${installedRepositories} ${installedRepositories === 1 ? "repository" : "repositories"} — issues, pull requests, and reviews.`
-        : "Issues, pull requests, and reviews from the repositories you choose.",
+      ...(installedRepositories > 0 ? { repositoryCount: installedRepositories } : {}),
       action: signedIn
         ? { kind: "button", label: "Check the App", flow: "github.app" }
         : { kind: "button", label: "Connect", flow: "auth.sign-in" }
@@ -82,7 +75,6 @@ export function ConnectorsSurface() {
       key: "cloud",
       icon: "cloud",
       name: "Smithers Cloud repository",
-      description: "Import a GitHub repository into hosted workspace storage.",
       action: signedIn
         ? { kind: "button", label: "Import", flow: "repos.import" }
         : { kind: "badge", label: "Needs GitHub", variant: "outline" }
@@ -119,7 +111,6 @@ export function ConnectorsSurface() {
       <SurfaceHeader
         icon={<Plug size={17} />}
         title="Connectors"
-        subtitle="What Smithers can see and change"
         closeCommand="chat"
         onClose={() => controller.runCommand("chat")}
       />
@@ -140,7 +131,7 @@ export function ConnectorsSurface() {
               <span className="connect-store-icon">{rowIcon(row.icon)}</span>
               <span className="connect-store-text">
                 <strong>{row.name}</strong>
-                <span>{row.description}</span>
+                {row.repositoryCount === undefined ? null : <span>{row.repositoryCount} {row.repositoryCount === 1 ? "repository" : "repositories"}</span>}
               </span>
               {row.action.kind === "button" ?
                 (
@@ -192,7 +183,6 @@ export function ConnectorsSurface() {
             <FolderGit2 size={20} />
             <div>
               <strong>No repositories connected</strong>
-              <span>{emptyGuidance}</span>
               {signedIn && cloudAvailable ?
                 (
                   <Button

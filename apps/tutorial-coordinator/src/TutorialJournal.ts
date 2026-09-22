@@ -14,6 +14,7 @@ const Fact = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("created"), value: Baseline }).strict(),
   z.object({ kind: z.literal("legacy-baseline"), value: Baseline }).strict(),
   z.object({ kind: z.literal("execution.claimed"), ownerId: z.string().min(1), executionId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("execution.interrupted"), ownerId: z.string().min(1).nullable(), executionId: z.string().min(1), error: z.string().min(1) }).strict(),
   z.object({ kind: z.literal("phase.changed"), phase: LiveTutorialRunSchema.shape.phase, error: z.string().nullable() }).strict(),
   z.object({ kind: z.literal("step.observed"), step: LiveTutorialEventSchema }).strict(),
   z.object({ kind: z.literal("artifacts.observed"), value: Artifacts }).strict(),
@@ -58,6 +59,14 @@ export const reduceTutorialFact = (prior: State | undefined, fact: Fact, at: num
         throw new TutorialJournalIntegrityError("a repeated execution claim")
       }
       return { ...next, run: { ...next.run, phase: "running" }, execution: { ownerId: fact.ownerId, executionId: fact.executionId } }
+    case "execution.interrupted":
+      if (prior.run.phase !== "running" || fact.executionId !== prior.run.runId || fact.ownerId !== (prior.execution?.ownerId ?? null)) {
+        throw new TutorialJournalIntegrityError("a foreign execution interruption")
+      }
+      next.run.phase = "failed"
+      next.run.error = fact.error
+      for (const step of next.run.events) if (step.status === "running") { step.status = "failed"; step.finishedAt = at }
+      break
     case "phase.changed":
       if (fact.phase === "queued" || (prior.run.phase !== "queued" && prior.run.phase !== "running")) {
         throw new TutorialJournalIntegrityError("a terminal run restart")
@@ -179,6 +188,18 @@ export class TutorialJournal {
     if (prior.state.execution !== undefined || prior.state.run.phase !== "queued") return false
     this.commit(run, prior, [{ kind: "execution.claimed", ownerId, executionId: run.runId }], Date.now())
     run.phase = "running"
+    return true
+  }
+  /** The caller must first acquire the process-lifetime coordinator lock.
+   * Preserve receipts and identity; an interrupted external effect is not replayed.
+   */
+  interrupt(run: LiveTutorialRun): boolean {
+    const prior = this.loaded.get(run)
+    if (prior === undefined) throw new TutorialJournalIntegrityError("an unowned interruption")
+    if (prior.state.run.phase !== "running") return false
+    this.commit(run, prior, [{ kind: "execution.interrupted", ownerId: prior.state.execution?.ownerId ?? null,
+      executionId: prior.state.run.runId, error: "This action was interrupted. Retry the action." }], Date.now())
+    Object.assign(run, structuredClone(this.loaded.get(run)!.state.run))
     return true
   }
   get(session: string, id: string): LiveTutorialRun | undefined {

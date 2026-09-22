@@ -87,6 +87,7 @@
 	--inverse-bg: #403f53;
 	--inverse-text: #fbfbfb;
 	--brand: #994cc3;
+	--action-primary: #7f3fa2;
 	--success: #207770;
 	--warning: #826601;
 	--danger: #ba3f3b;
@@ -95,6 +96,10 @@
 	--code-text: #403f53;
 	--inline-code-bg: rgb(64 63 83 / 6%);
 	--shadow-rgb: 64 63 83;
+
+	/* Action colors are audited against tinted/solid controls, separately from decoration. */
+	--on-action-primary: var(--inverse-text);
+	--on-confluence: var(--inverse-text);
 
 	/* ── Focus (derived from the palette's brand) ────────────── */
 	--ring: color-mix(in srgb, var(--brand) 45%, transparent);
@@ -219,6 +224,7 @@
 	--inverse-bg: #d6deeb;
 	--inverse-text: #011627;
 	--brand: #c792ea;
+	--action-primary: #cd9dec;
 	--success: #addb67;
 	--warning: #ecc48d;
 	--danger: #ef5350;
@@ -258,6 +264,7 @@
  * included, which is why this palette overrides the recipes above).
  */
 :root[data-palette="paper"] {
+	--on-confluence: var(--ink-900);
 	--bg: var(--paper-1);
 	--text: var(--ink-900);
 	--text-muted: var(--ink-500);
@@ -276,6 +283,7 @@
 	--inverse-bg: var(--ink-900);
 	--inverse-text: var(--paper-1);
 	--brand: var(--water-500);
+	--action-primary: #0d6760;
 	--success: var(--water-600);
 	--warning: var(--sediment-600);
 	--danger: var(--ember-600);
@@ -315,6 +323,7 @@
 	--inverse-bg: #ece7db;
 	--inverse-text: var(--ink-900);
 	--brand: #45c4b2;
+	--action-primary: var(--brand);
 	--success: var(--water-300);
 	--warning: var(--sediment-300);
 	--danger: var(--ember-400);
@@ -355,6 +364,7 @@
 	--inverse-bg: #18181b;
 	--inverse-text: #fafafa;
 	--brand: #6d56d8;
+	--action-primary: #5e4aba;
 	--success: #087461;
 	--warning: #916000;
 	--danger: #c5343f;
@@ -384,6 +394,7 @@
 	--inverse-bg: #f4f4f5;
 	--inverse-text: #18181b;
 	--brand: #8b78e6;
+	--action-primary: #a192eb;
 	--success: #2ec9a8;
 	--warning: #e0a23a;
 	--danger: #f2555a;
@@ -414,6 +425,7 @@
 	--inverse-bg: #383a42;
 	--inverse-text: #fafafa;
 	--brand: #a626a4;
+	--action-primary: #9a2399;
 	--success: #3c763b;
 	--warning: #8e6201;
 	--danger: #b8473b;
@@ -443,6 +455,7 @@
 	--inverse-bg: #abb2bf;
 	--inverse-text: #282c34;
 	--brand: #c678dd;
+	--action-primary: #e3bdee;
 	--success: #98c379;
 	--warning: #d19a66;
 	--danger: #e06c75;
@@ -473,6 +486,7 @@
 	--inverse-bg: #24292e;
 	--inverse-text: #f6f8fa;
 	--brand: #0366d6;
+	--action-primary: #0358b8;
 	--success: #1e7b31;
 	--warning: #836609;
 	--danger: #c53443;
@@ -502,6 +516,7 @@
 	--inverse-bg: #e1e4e8;
 	--inverse-text: #24292e;
 	--brand: #58a6ff;
+	--action-primary: #9ecbff;
 	--success: #34d058;
 	--warning: #e3b341;
 	--danger: #f97583;
@@ -532,6 +547,7 @@
 	--inverse-bg: #4c4f69;
 	--inverse-text: #eff1f5;
 	--brand: #8839ef;
+	--action-primary: #7531ce;
 	--success: #307a22;
 	--warning: #925d10;
 	--danger: #d20f39;
@@ -561,6 +577,7 @@
 	--inverse-bg: #cdd6f4;
 	--inverse-text: #1e1e2e;
 	--brand: #cba6f7;
+	--action-primary: var(--brand);
 	--success: #a6e3a1;
 	--warning: #f9e2af;
 	--danger: #f38ba8;
@@ -591,6 +608,7 @@
 	--inverse-bg: #586e75;
 	--inverse-text: #fdf6e3;
 	--brand: #2aa198;
+	--action-primary: #1a6560;
 	--success: #5f6e00;
 	--warning: #826200;
 	--danger: #c32e2b;
@@ -620,6 +638,7 @@
 	--inverse-bg: #93a1a1;
 	--inverse-text: #002b36;
 	--brand: #2aa198;
+	--action-primary: #9dd4d0;
 	--success: #859900;
 	--warning: #b58900;
 	--danger: #dc322f;
@@ -650,6 +669,7 @@
 	--inverse-bg: #3c3836;
 	--inverse-text: #fbf1c7;
 	--brand: #b57614;
+	--action-primary: #774e0d;
 	--success: #6b680e;
 	--warning: #af3a03;
 	--danger: #9d0006;
@@ -679,6 +699,7 @@
 	--inverse-bg: #ebdbb2;
 	--inverse-text: #282828;
 	--brand: #fabd2f;
+	--action-primary: #fabe31;
 	--success: #b8bb26;
 	--warning: #fe8019;
 	--danger: #fb4934;
@@ -709,6 +730,7 @@
 	--inverse-bg: #575279;
 	--inverse-text: #faf4ed;
 	--brand: #907aa9;
+	--action-primary: #655576;
 	--success: #416e75;
 	--warning: #8c5e22;
 	--danger: #9b5469;
@@ -738,6 +760,7 @@
 	--inverse-bg: #e0def4;
 	--inverse-text: #191724;
 	--brand: #c4a7e7;
+	--action-primary: var(--brand);
 	--success: #9ccfd8;
 	--warning: #f6c177;
 	--danger: #eb6f92;
@@ -779,3 +802,13 @@
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* App action pairs override the library's decorative-brand defaults, including portals. */
+.sui-button.sui-button-default { color: var(--action-primary); }
+.sui-button.sui-button-solid {
+	border-color: var(--action-primary);
+	background: var(--action-primary);
+	color: var(--on-action-primary);
+}
+.sui-button.sui-button-solid:hover { background: color-mix(in srgb, var(--action-primary) 88%, var(--text)); }
+.sui-button.sui-button-solid:active:not(:disabled) { background: color-mix(in srgb, var(--action-primary) 80%, var(--text)); }

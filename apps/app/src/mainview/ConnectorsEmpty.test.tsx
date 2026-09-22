@@ -105,25 +105,27 @@ const openConnectors = async (
 }
 
 describe("the connectors surface with nothing connected", () => {
-  test("signed in, it names the act that adds one and offers it", async () => {
+  test("signed in, it offers import without explanatory copy", async () => {
     const { host } = await openConnectors(true)
     const empty = host.querySelector(".connector-empty")
     expect(empty).not.toBeNull()
     const text = empty?.textContent ?? ""
     expect(text).toContain("No repositories connected")
-    // A fact plus a move, not a fact alone.
-    expect(text).toContain("Import a GitHub repository")
+    expect(text).not.toContain("Import a GitHub repository")
+    expect(host.textContent).not.toContain("hosted workspace storage")
+    expect(host.textContent).not.toContain("What Smithers can see and change")
     const action = empty?.querySelector("[data-flow=\"repos.import\"]")
     expect(action).not.toBeNull()
     expect(action?.textContent).toContain("Import a repository")
   })
 
-  test("signed out, it points at the one door there is instead of offering a second", async () => {
+  test("signed out, the GitHub row remains the sign-in action", async () => {
     const { host } = await openConnectors(false)
     const empty = host.querySelector(".connector-empty")
     const text = empty?.textContent ?? ""
     expect(text).toContain("No repositories connected")
-    expect(text).toContain("Connecting GitHub above is the first step")
+    expect(text).not.toContain("Connecting GitHub above is the first step")
+    expect(host.querySelector('button[data-flow="auth.sign-in"]')).not.toBeNull()
     // §1.1: signed out there is exactly one way in, and it is the GitHub row.
     expect(empty?.querySelector("[data-flow=\"repos.import\"]")).toBeNull()
   })

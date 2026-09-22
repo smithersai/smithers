@@ -18,7 +18,6 @@
  * failure. Nothing here touches the store or the DOM, so the rule is unit-pinned.
  */
 
-import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 import { canonicalCommandName } from "../flows/CommandName"
 import { ASK_HONEST_LINES, type ImpossibleAskClass } from "./Instructions"
 
@@ -96,9 +95,8 @@ export const claimsRunState = (text: string): boolean => {
  * one about its own layout, so it names the card instead of pointing at it.
  */
 export const deterministicRunLine = (command: string): string =>
-  command === "flow.run" ? "Run requested." : command === "flow.create"
-    /* The authoring door SAVES the request and launches in the background, so the client says what it did. */
-    ? `I requested a ${FLOW_AUTHORING_ENTRY} run — the run card shows its real progress.`
+  command === "flow.run" || command === "flow.create"
+    ? "Run requested."
     : "I started that run — the run card shows its real progress."
 
 /*

@@ -11,8 +11,10 @@ import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
  */
 import { machineReadableRefusal } from "@smthrs/rpc/UpstreamProse"
 import { CLIENT_ERROR_UNKNOWN_SOURCE, ClientErrors } from "./clientErrorLog"
+import { exportClientError } from "./clientErrorTelemetry"
 import { ServerConfig } from "./Config"
 import { BrowserEgress } from "./Environment"
+import type { DeploymentBindings, ExecutionContext } from "./Environment"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
@@ -317,7 +319,7 @@ const SESSION_COOKIE = "smithers_session"
 const carriesSessionCookie = (request: Request): boolean =>
   (request.headers.get("cookie") ?? "").split(";").some((part) => part.trim().startsWith(`${SESSION_COOKIE}=`))
 
-export const handleClientError = (request: Request): Effect.Effect<Response, never, ClientErrors> =>
+export const handleClientError = (request: Request): Effect.Effect<Response, never, ClientErrors | ServerConfig | Transport | DeploymentBindings | ExecutionContext> =>
   Effect.gen(function* () {
     const read = yield* Effect.result(readBoundedBytes(request, CLIENT_ERROR_MAX_BODY))
     if (Result.isFailure(read)) {
@@ -353,5 +355,6 @@ export const handleClientError = (request: Request): Effect.Effect<Response, nev
       return refuse("error_reports_throttled", "Too many error reports.")
     }
     yield* Effect.sync(() => console.error("client-error:", text))
+    yield* exportClientError(outcome)
     return json(202, { status: "accepted" })
   })

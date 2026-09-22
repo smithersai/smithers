@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
 import { ServerConfig } from "./Config"
 import { EdgeCache } from "./githubApp"
-import { readJsonOrUndefined, readText, Transport } from "./Http"
+import { discardBody, readJsonOrUndefined, readText, Transport } from "./Http"
 import { AVAILABLE_REPOS, cloudRepoFor } from "./publicRepoCatalog"
 import { readPublicRepository } from "./publicRepositoryReads"
 
@@ -129,7 +129,10 @@ interface Document {
 const document = (appPath: string, origin: string, base: string): Effect.Effect<Document | null, never, Transport> =>
   Effect.gen(function*() {
     const response = yield* readPublicRepository(new URL(appPath, origin), base)
-    if (!response.ok) return null
+    if (!response.ok) {
+      yield* discardBody(response)
+      return null
+    }
     const body = yield* readJsonOrUndefined(response)
     return body === undefined ? null : { body, response }
   })

@@ -205,7 +205,7 @@ export const handleWorkflowRpc = (request: Request): Effect.Effect<Response, nev
     if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
       return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
     }
-    const mount = GATEWAY_PROCEDURE_MOUNTS[procedure]
+    const mount = Object.hasOwn(GATEWAY_PROCEDURE_MOUNTS, procedure) ? GATEWAY_PROCEDURE_MOUNTS[procedure] : undefined
     if (mount === undefined) {
       return refuse("procedure_not_relayed", `The workflow seam does not relay ${procedure}.`)
     }

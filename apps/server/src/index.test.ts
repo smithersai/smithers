@@ -4268,15 +4268,15 @@ describe("wave 11 — the /api/workflow/* routes", () => {
 
   test("the rpc relay refuses any procedure outside the allowlist before touching the gateway", async () => {
     await withRelay({}, async (calls) => {
-      const refused = await worker.fetch(
-        signedIn("/api/workflow/rpc", {
-          method: "POST",
-          body: JSON.stringify({ repo: "will/mvp", procedure: "RunShell", payload: { cmd: "rm -rf /" } })
-        }),
-        env()
-      )
-      expect(refused.status).toBe(400)
-      expect(((await refused.json()) as { message: string }).message).toContain("does not relay RunShell")
+      for (const procedure of ["RunShell", "constructor", "toString", "__proto__", "hasOwnProperty"]) {
+        const refused = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST", body: JSON.stringify({ repo: "will/mvp", procedure, payload: {} })
+          }), env()
+        )
+        expect(refused.status).toBe(400)
+        expect(((await refused.json()) as { message: string }).message).toContain(`does not relay ${procedure}`)
+      }
 
       // A call that names no procedure at all is refused the same way.
       const unnamed = await worker.fetch(

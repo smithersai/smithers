@@ -10,14 +10,13 @@ Durable Object transport failures use the route's JSON contract:
 - Admin client-error reads return HTTP 200 with `status: "ok"`, an empty log,
   and a `note` stating that the log is unavailable. The cause is logged.
 
-Both Worker entrypoints catch unexpected route failures, log the cause, and
+The Worker entrypoint catches unexpected route failures, logs the cause, and
 return HTTP 500 with `status: "error"`, a generic `message`, and the isolation
 headers every JSON answer carries. A client that disconnects interrupts the
 route's fiber — its finalizers run, the upstream fetch aborts — and reads
 HTTP 499; an interruption is never restated as a 500. The native adapter
-(`src/index.ts`) goes through `runRequest` and the deployed Worker
-(`src/Worker.ts`) through `runFetch`; both map the fiber's exit with the same
-`responseFromExit` in `src/Boundary.ts`, so the two paths answer identically.
+(`src/index.ts`, also the deployed entry) goes through `runRequest` and maps
+the fiber's exit with `responseFromExit` in `src/Boundary.ts`.
 This boundary covers response creation; errors after a streaming response
 has been returned remain the stream handler's responsibility.
 
@@ -50,13 +49,13 @@ those calls returns `not-found` instead of cancelling the replacement.
 
 The terminal frame, headers deadline, disconnect, and stream finalization
 share one settlement. Settlement runs under `waitUntil`, including when the
-client disconnects; the deployed Worker (`src/Worker.ts`) hands the router
-the platform execution context for that, and the native adapter in
-`src/index.ts` takes it from workerd's `ctx`. Settlement failures are logged;
+client disconnects; the deployed entry in `src/index.ts` hands the router
+the platform execution context from workerd's `ctx`. Settlement failures are logged;
 the ten-minute stale registration window remains the recovery backstop.
 
-Silent turn polling backs off from 500 milliseconds to 5 seconds, resets on
-upstream data, and stops after 96 registry reads. A monitoring failure or
+Turn polling backs off from 500 milliseconds to 5 seconds without resetting
+on upstream data. A poll also runs after 256 chunks; monitoring stops after
+eight minutes or 600 registry reads. A monitoring failure or
 exhausted poll allowance aborts upstream, settles the registration, and emits
 a terminal `done` frame with `reason: "stop"` and an explanatory `error`.
 Registry read failures and stream cleanup rejections are logged.

@@ -11,14 +11,15 @@ const style = (path: string) => {
   document.head.append(sheet)
 }
 
-for (const [theme, accent] of [["light", "#994cc3"], ["dark", "#c792ea"]]) {
-  test(`chrome sign-in inherits the ${theme} brand color shared with card sign-in without a guide shell`, () => {
+for (const theme of ["light", "dark"]) {
+  test(`chrome sign-in shares the ${theme} card action color without a guide shell`, () => {
     style("./tokens.css")
     style("./base.css")
     style("./chrome.css")
     document.documentElement.dataset.theme = theme
-    document.body.innerHTML = '<div class="session-shell"><button class="chrome-action" data-flow="auth.sign-in">Sign in with GitHub</button></div>'
-    expect(getComputedStyle(document.querySelector("button")!).color).toBe(accent)
+    document.body.innerHTML = '<div class="session-shell"><button class="chrome-action" data-flow="auth.sign-in">Sign in with GitHub</button><button class="sui-button sui-button-default">Connect GitHub</button></div>'
+    expect(getComputedStyle(document.querySelector(".chrome-action")!).color)
+      .toBe(getComputedStyle(document.querySelector(".sui-button")!).color)
   })
 }
 

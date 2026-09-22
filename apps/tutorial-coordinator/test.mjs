@@ -17,7 +17,7 @@ try {
  assert.match(refused.stderr,/tutorial-coordinator needs AI_GATEWAY_API_KEY,/)
  assert.equal(existsSync(state),false,'a refused host must not create its state directory')
  console.log('tutorial server refuses a missing judge before creating state')
- for (const name of ['kubernetes','providerRelay','model','agent','retry','coordinator','executorAuth']) {
+ for (const name of ['kubernetes','providerRelay','model','agent','retry','journal','coordinator','restart','executorAuth']) {
   const output=join(directory,`${name}.mjs`)
   await bundle(new URL(`./src/${name}.smoke.ts`,import.meta.url).pathname,output)
   const env={...process.env}

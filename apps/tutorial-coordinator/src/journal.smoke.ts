@@ -67,6 +67,33 @@ try {
   assert.deepEqual(migrated.get("alice", "legacy"), legacy); checks++
   assert.equal(migrated.checkpoint(migrated.get("alice", "legacy")!, "done"), '{"value":"old checkpoint"}'); checks++
 
+  const interrupted = fresh("interrupted")
+  journal.create(interrupted, { playthrough: 2, idempotencyKey: "interrupted" })
+  journal.claim(interrupted, "dead-owner")
+  interrupted.events.push({ id: "effect", label: "External effect", status: "running", startedAt: 200 }); journal.save(interrupted)
+  journal.recordCheckpoint(interrupted, "received", '{"value":"confirmed receipt"}')
+  const beforeInterrupt = journal.history("interrupted")
+  db.exec("CREATE TRIGGER fail_interrupt BEFORE INSERT ON tutorial_events WHEN NEW.run='interrupted' BEGIN SELECT RAISE(ABORT, 'disk failure'); END")
+  assert.throws(() => journal.interrupt(interrupted), /disk failure/); checks++
+  assert.equal(interrupted.phase, "running"); checks++
+  assert.deepEqual(journal.history("interrupted"), beforeInterrupt); checks++
+  db.exec("DROP TRIGGER fail_interrupt")
+  assert.equal(journal.interrupt(interrupted), true); checks++
+  assert.equal(journal.interrupt(interrupted), false); checks++
+  assert.equal(interrupted.phase, "failed"); checks++
+  assert.equal(interrupted.events[0]!.status, "failed"); checks++
+  assert.equal(journal.checkpoint(interrupted, "received"), '{"value":"confirmed receipt"}'); checks++
+  assert.deepEqual(replayTutorialJournal(journal.history("interrupted")).state.execution, { ownerId: "dead-owner", executionId: "interrupted" }); checks++
+  assert.equal(journal.verify("interrupted"), true); checks++
+
+  const legacyRunning = fresh("legacy-running"); legacyRunning.phase = "running"
+  db.prepare("INSERT INTO runs(id,session,playthrough,key,body,input) VALUES(?,?,?,?,?,?)").run("legacy-running", "alice", 3, "legacy-running", JSON.stringify(legacyRunning), JSON.stringify({ playthrough: 3, idempotencyKey: "legacy-running" }))
+  const legacyJournal = new TutorialJournal(db), legacyRecovered = legacyJournal.get("alice", "legacy-running")!
+  assert.equal(legacyJournal.interrupt(legacyRecovered), true); checks++
+  assert.equal(legacyRecovered.phase, "failed"); checks++
+  assert.equal(legacyJournal.history("legacy-running")[0]!.fact.kind, "legacy-baseline"); checks++
+  assert.equal(legacyJournal.verify("legacy-running"), true); checks++
+
   const original = db.prepare("SELECT body FROM tutorial_events WHERE run=? AND sequence=?").get("run", 2) as { body: string }
   const corrupted = JSON.parse(original.body); corrupted.at++
   db.prepare("UPDATE tutorial_events SET body=? WHERE run=? AND sequence=?").run(JSON.stringify(corrupted), "run", 2)
@@ -79,5 +106,5 @@ try {
   assert.equal(migrated.get("alice", "legacy"), undefined); checks++
   assert.deepEqual(migrated.history("legacy"), []); checks++
   assert.equal((db.prepare("SELECT COUNT(*) AS count FROM checkpoints WHERE run='legacy'").get() as { count: number }).count, 0); checks++
-  console.log(`Tutorial journal passed ${checks} assertions: replay, cache deletion/rebuild, session scope, durable checkpoint admission, rollback, independent stale writers, legacy baseline, hash verification, scoped retention`)
+  console.log(`Tutorial journal passed ${checks} assertions: replay, cache deletion/rebuild, session scope, durable checkpoint admission, rollback, independent stale writers, legacy baseline/recovery, interruption identity/receipt retention, hash verification, scoped retention`)
 } finally { db.close(); await rm(directory, { recursive: true, force: true }) }

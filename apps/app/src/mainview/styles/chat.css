@@ -371,7 +371,13 @@
 .app-shell .smithers-composer .sui-chat-composer-send {
 	border-radius: 50%;
 	background: var(--confluence);
-	color: var(--ink-900);
+	color: var(--on-confluence);
+}
+
+.app-shell .smithers-composer .sui-chat-composer-send:hover,
+.app-shell .smithers-composer .sui-chat-composer-send:active:not(:disabled) {
+	background: var(--confluence-hover);
+	color: var(--on-confluence);
 }
 
 .composer-action {

@@ -117,6 +117,7 @@
 		//                              require a validated, allowlisted session (they spend the model credential
 		//                              and meter real dollars, and the same-origin guard does not stop a curl).
 		//   IDENTITY_SERVICE_TOKEN   — service token for the product Worker → /api/identity/validate call
+		//   PLUE_WORKER_EXCHANGE_TOKEN — backend telemetry bearer; matches SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN
 		//   BILLING_UPSTREAM_URL     — the billing worker; proxies /api/billing/* with the validated login as context
 		//   BILLING_PRODUCT_SERVICE_TOKEN — billing's PRODUCT_SERVICE_TOKEN (the wave-5 bridge key): a validated
 		//                              session's billing reads authenticate AS THE USER (x-smithers-service-token +

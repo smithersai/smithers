@@ -22,7 +22,7 @@ describe("anonymous repository reads", () => {
     for (const suffix of ["", "/contents/src/index.ts", "/topics", "/bookmarks", "/issues", "/issues/1/comments", "/changes/abc/diff"]) {
       expect(isPublicRepositoryRead("GET", `/api/repos/smithersai/smithers${suffix}`)).toBe(true)
     }
-    for (const path of ["/api/user/repos", "/api/billing/balance", "/api/admin/errors", "/api/repos/a/b/workspaces", "/api/repos/a/b/workspaces/1/ssh", "/api/repos/a/b/gateway", "/api/repos/a/b/secrets", "/api/repos/a/../issues"]) {
+    for (const path of ["/api/repos/a/b/stargazers", "/api/user/repos", "/api/billing/balance", "/api/admin/errors", "/api/repos/a/b/workspaces", "/api/repos/a/b/workspaces/1/ssh", "/api/repos/a/b/gateway", "/api/repos/a/b/secrets", "/api/repos/a/../issues"]) {
       expect(isPublicRepositoryRead("GET", path)).toBe(false)
     }
     for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
@@ -76,12 +76,16 @@ describe("anonymous repository reads", () => {
   test("the upstream request asks for a manual redirect and a 3xx answer is unavailable", async () => {
     // workerd rejects redirect: "error" before sending anything, which made
     // every production public read a 502; "manual" is the accepted mode.
-    const { read, seen } = reader(() => new Response(null, { status: 302, headers: { location: "https://elsewhere.test/login" } }))
+    let cancelled = false
+    const { read, seen } = reader(() => new Response(new ReadableStream({ cancel() { cancelled = true } }), {
+      status: 302, headers: { location: "https://elsewhere.test/login" }
+    }))
     const response = await read(new URL("https://app.test/api/repos/smithersai/smithers/contents/README.md"), "https://cloud.test")
     expect(seen[0]?.redirect).toBe("manual")
     expect(response.status).toBe(502)
     expect(response.headers.get("location")).toBeNull()
     expect(await response.json()).toEqual({ message: "Repository data is temporarily unavailable." })
+    expect(cancelled).toBe(true)
   })
 
   test("an unreachable backend is the same honest 502, never a thrown error", async () => {

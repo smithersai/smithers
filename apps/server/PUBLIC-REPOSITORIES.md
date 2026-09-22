@@ -61,7 +61,7 @@ Set `PUBLIC_APP_ORIGIN` at site build time to point the cards at a preview app.
 
 ## Existing repository APIs
 
-Anonymous GETs to the app's repository metadata, contents, topics, stargazers,
+Anonymous GETs to the app's repository metadata, contents, topics,
 bookmarks, changes, issues, labels, and Git object read routes now reach the
 Cloud backend without an identity-service round trip. Both `/api/repos/...`
 and `/api/cloud/api/repos/...` use this path. Every read checks the Cloud

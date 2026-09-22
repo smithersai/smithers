@@ -72,6 +72,11 @@
 	--rail-fill-strong: color-mix(in srgb, var(--text) 14%, transparent);
 }
 
+/* Reserve the dock's 36px width and its 12px gutters for every app surface. */
+.session-shell:has(> .chrome-dock) > .app-shell {
+	margin-inline-start: calc(36px + var(--sp-3) * 2);
+}
+
 /* One row recipe: 32px, 8px inline padding, 8px radius. */
 .chrome-action {
 	display: flex;
@@ -89,17 +94,17 @@
 	background: var(--rail-fill, color-mix(in srgb, var(--text) 8%, transparent));
 }
 
-/* Sign-in uses the same brand token as sign-in cards. */
+/* Sign-in shares the card action's readable foreground. */
 .chrome-action[data-flow="auth.sign-in"] {
 	background: color-mix(in srgb, var(--brand) 10%, var(--surface));
-	color: var(--brand);
+	color: var(--action-primary);
 	font-weight: 500;
 }
 
 .chrome-action[data-flow="auth.sign-in"]:hover,
 .chrome-action[data-flow="auth.sign-in"]:focus-visible {
 	background: color-mix(in srgb, var(--brand) 16%, var(--surface));
-	color: var(--brand);
+	color: var(--action-primary);
 }
 
 /* Dock utilities stay quiet: no glass chips on the recessed rail. */

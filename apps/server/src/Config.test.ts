@@ -38,6 +38,14 @@ describe("ServerConfig from the binding bag", () => {
     expect(Redacted.value(config.chatAuthToken!)).toBe("bearer-secret")
   })
 
+  test("the telemetry exchange bearer is absent when blank and redacted when configured", () => {
+    expect(configFrom({}).plueWorkerExchangeToken).toBeUndefined()
+    expect(configFrom({ PLUE_WORKER_EXCHANGE_TOKEN: "  " }).plueWorkerExchangeToken).toBeUndefined()
+    const config = configFrom({ PLUE_WORKER_EXCHANGE_TOKEN: " synthetic-telemetry-secret " })
+    expect(JSON.stringify(config)).not.toContain("synthetic-telemetry-secret")
+    expect(Redacted.value(config.plueWorkerExchangeToken!)).toBe("synthetic-telemetry-secret")
+  })
+
   test("UPSTREAM_TIMEOUT_MS accepts any finite positive number of milliseconds and nothing else", () => {
     expect(upstreamTimeoutFrom("45000")).toBe(45000)
     expect(upstreamTimeoutFrom("0")).toBe(20_000)

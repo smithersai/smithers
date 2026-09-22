@@ -269,6 +269,12 @@ const resolveRecord = (
     })
     yield* Effect.forkDetach(
       provisionAndStore(login, repo, workspaceId, force, requiredCapability).pipe(
+        // A detached leader must complete the join even when malformed
+        // upstream data or configuration causes an unexpected defect.
+        Effect.catchCause(() => Effect.sync(() => {
+          console.error("gateway resolution failed: UnexpectedFailure")
+          return { status: "unavailable", detail: "The gateway resolution failed. Try again." } as const
+        })),
         // Cleared only once the record write inside the task has settled, so
         // a later caller either joins this task or reads the fresh record.
         Effect.ensuring(Effect.sync(() => {
@@ -804,9 +810,10 @@ const provisionGateway = (
         vm_id?: unknown
         workspace_id?: unknown
       }
+      | null
       | undefined
     if (
-      body === undefined ||
+      body === undefined || body === null ||
       typeof body.base_url !== "string" ||
       typeof body.token !== "string" ||
       typeof body.gateway_id !== "string" ||

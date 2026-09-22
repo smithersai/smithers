@@ -227,7 +227,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(rendered).not.toContain("has been created")
     expect(rendered).not.toContain("summarize-open-issues")
     // What IS on screen: the deterministic line, and the card beside it.
-    expect(rendered).toContain("I requested a create-flow run — the run card shows its real progress.")
+    expect(rendered).toContain("Run requested.")
     expect(runCard(store)).toBeDefined()
     // The act line names the run the CLIENT started, from the machine ack.
     expect(rendered).toContain(`Smithers requested a create-flow run on ${REPO}`)
@@ -291,7 +291,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(30)
     const rendered = transcript(store)
     expect(rendered).not.toContain("has been created")
-    expect(rendered).toContain("I requested a create-flow run — the run card shows its real progress.")
+    expect(rendered).toContain("Run requested.")
     expect(rendered).toContain(`Smithers requested a create-flow run on ${REPO}`)
     expect(runCard(store)).toBeDefined()
   })
@@ -318,7 +318,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     controller.send("make me a workflow")
     await settle(30)
     expect(transcript(store)).not.toContain("Creating that workflow for you now")
-    expect(transcript(store)).toContain("I requested a create-flow run")
+    expect(transcript(store)).toContain("Run requested.")
   })
 
   test("an unknown remote flow is requested, then its recorded refusal appears on the card", async () => {
@@ -424,7 +424,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     await settle(4)
 
     expect(transcript(store)).not.toContain("has been created")
-    expect(transcript(store)).toContain("I requested a create-flow run")
+    expect(transcript(store)).toContain("Run requested.")
     expect(store.session().phase).toBe("idle")
   })
 
@@ -434,7 +434,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
     expect(claimsRunState("It should be done shortly.")).toBe(true)
     expect(claimsRunState("Approvals go to you, never to me.")).toBe(false)
     expect(renderedRunTurnText("flow.create", WAVE11_LIE)).toBe(
-      "I requested a create-flow run — the run card shows its real progress."
+      "Run requested."
     )
     expect(
       runLaunchCommandOf("commands", JSON.stringify({ action: "execute", name: "flow.create", args: "x" }))

@@ -593,6 +593,39 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
   })
 
+  test("a null provision response settles every joined caller and permits a later retry", async () => {
+    let release: (response: Response) => void = () => {}
+    const gate = new Promise<Response>((resolve) => { release = resolve })
+    const { calls, fetch } = relay({ provision: (_call, attempt) => attempt === 1 ? gate : freshGateway(attempt) })
+    const layer = seam(fetch)
+    const outcomes = await run(Effect.gen(function* () {
+      const fibers = yield* Effect.forEach([1, 2, 3], () => Effect.forkChild(ensureGateway("will", "will/mvp")))
+      yield* Effect.sleep("20 millis")
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+      release(json(200, null))
+      return yield* Effect.forEach(fibers, Fiber.join)
+    }).pipe(
+      Effect.timeoutOrElse({ duration: "250 millis", orElse: () => Effect.succeed("timed out" as const) }),
+      Effect.provide(layer)
+    ))
+    expect(outcomes).toEqual([1, 2, 3].map(() => ({
+      status: "unavailable", detail: "Provisioning answered in a shape the gateway seam did not understand."
+    })))
+    const retried = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(layer)))
+    expect(retried.status).toBe("ready")
+    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(2)
+  })
+
+  test("an unexpected provisioning defect settles the resolution instead of stranding its waiters", async () => {
+    const { calls, fetch } = relay()
+    const outcome = await run(ensureGateway("will", "will/mvp").pipe(
+      Effect.timeoutOrElse({ duration: "250 millis", orElse: () => Effect.succeed("timed out" as const) }),
+      Effect.provide(seam(fetch, { config: { cloudApiBaseUrl: "invalid origin" } }))
+    ))
+    expect(outcome).toEqual({ status: "unavailable", detail: "The gateway resolution failed. Try again." })
+    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+  })
+
   test("callGateway sets the bearer the browser cannot, and joins the relay's PATH base", async () => {
     const { calls, fetch } = relay()
     const call = await run(callGateway("will", "will/mvp", "/rpc", { method: "POST", body: {} }).pipe(Effect.provide(seam(fetch))))

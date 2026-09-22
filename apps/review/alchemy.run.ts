@@ -25,7 +25,8 @@ import * as Config from "effect/Config";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-const CLOUDFLARE_ZONE_ID = "72854846f57d9e46794e7e6aae7e3328";
+const JJHUB_ZONE_ID = "72854846f57d9e46794e7e6aae7e3328";
+const SMITHERS_ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14";
 
 const requireSecret = (name: string) =>
   Config.schema(Schema.Redacted(Schema.Trim.check(Schema.isNonEmpty())), name).pipe(
@@ -37,7 +38,7 @@ const db = Cloudflare.D1.Database("review-db", { name: "review-db" });
 
 const smithersShRoutes =
   process.env.REVIEW_ENABLE_SMITHERS_SH_ROUTE === "1"
-    ? [{ pattern: "review.smithers.sh/*", zoneId: CLOUDFLARE_ZONE_ID }]
+    ? [{ pattern: "review.smithers.sh/*", zoneId: SMITHERS_ZONE_ID }]
     : [];
 
 export const workerProps = {
@@ -54,7 +55,7 @@ export const workerProps = {
     ANTHROPIC_API_KEY: requireSecret("REVIEW_ANTHROPIC_API_KEY"),
     PUBLIC_BASE_URL: process.env.REVIEW_PUBLIC_BASE_URL?.trim() || "https://review.jjhub.tech",
   },
-  domain: { name: "review.jjhub.tech", zoneId: CLOUDFLARE_ZONE_ID },
+  domain: { name: "review.jjhub.tech", zoneId: JJHUB_ZONE_ID },
   routes: smithersShRoutes,
 } satisfies Cloudflare.WorkerProps;
 

@@ -142,26 +142,6 @@ const imageTag = (image: string | null | undefined): string | null => {
 }
 
 /**
- * Lane L3b — the environment provenance line a vm or desktop workspace
- * carries: `env · <closure hash, first 8> · <image tag>`. A container has no
- * such line at all (it boots no closure image), and a field the DTO did not
- * answer contributes nothing — an environment that named neither renders no
- * line rather than a bare `env ·`.
- */
-export const environmentProvenance = (payload: WorkspacePayload): string | null => {
-  const kind = payload.workspaceKind
-  if (kind !== "vm" && kind !== "desktop") return null
-  const environment = payload.environment
-  if (environment === null || environment === undefined) return null
-  const parts: Array<string> = []
-  const closure = environment.closureHash
-  if (closure !== null && closure !== undefined && closure !== "") parts.push(closure.slice(0, 8))
-  const tag = imageTag(environment.image)
-  if (tag !== null) parts.push(tag)
-  return parts.length === 0 ? null : `env · ${parts.join(" · ")}`
-}
-
-/**
  * When the minted desktop session lapses, in the app's one timestamp
  * vocabulary. A session the mint gave no expiry for says nothing — a guessed
  * deadline is worse than none, because the iframe simply dies at the real one.
@@ -543,7 +523,6 @@ export const WorkspaceCardBody = ({
   const [deleteDraft, setDeleteDraft] = useState<string | null>(null)
   /* Uptime is derived at render from the payload's start time — no lifecycle, no timer, no stored duration. */
   const facts = headerFacts(payload, Date.now())
-  const provenance = environmentProvenance(payload)
   const sshHost = payload.sshHost ?? null
   return (
     <div className="world-card-list">
@@ -558,8 +537,6 @@ export const WorkspaceCardBody = ({
         <StatusPill status={payload.status} />
       </p>
       {facts.length === 0 ? null : <p className="world-card-path">{facts.join(" · ")}</p>}
-      {/* Lane L3b: what a vm or desktop workspace actually booted — the closure short and the image TAG. */}
-      {provenance === null ? null : <p className="world-card-path">{provenance}</p>}
       {/*
         RFD-004: the agent session that drove this computer. It is stated, not
         opened: this app has no agent-session surface, and binding "Open the

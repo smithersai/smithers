@@ -14,7 +14,7 @@ export function SurfaceHeader({
 }: {
   readonly icon: ReactNode
   readonly title: string
-  readonly subtitle: string
+  readonly subtitle?: string
   /**
    * The registered command the close affordance runs. A pane inside the
    * chat-first shell never "exits" to somewhere else — closing it is the
@@ -32,7 +32,7 @@ export function SurfaceHeader({
         <div className="surface-header-icon" aria-hidden="true">{icon}</div>
         <div>
           <h1>{title}</h1>
-          <p>{subtitle}</p>
+          {subtitle && <p>{subtitle}</p>}
         </div>
       </div>
       <div className="surface-header-actions">

@@ -147,6 +147,17 @@ const harness = (options: HarnessOptions = {}) => {
 }
 
 describe("the App JWT", () => {
+  test("failed installation lookup and exchange release unused upstream response bodies", async () => {
+    for (const failingPath of ["/app/installations", "/app/installations/150824198/access_tokens"]) {
+      let cancelled = false
+      const server = harness({ answer: request => new URL(request.url).pathname === failingPath
+        ? new Response(new ReadableStream({ cancel() { cancelled = true } }), { status: 503 })
+        : Response.json(SMITHERSAI_INSTALLATION) })
+      expect(await server.token()).toBeUndefined()
+      expect(cancelled).toBe(true)
+    }
+  })
+
   test("carries an RS256 header and GitHub's claims, and verifies with the App's public key", async () => {
     const token = await jwt(APP_ID, PKCS1_PEM, NOW)
     const [header, claims, signature] = token.split(".")

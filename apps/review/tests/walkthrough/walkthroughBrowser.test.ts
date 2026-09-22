@@ -245,7 +245,7 @@ describe("the hosted walkthrough page, with storage denied", () => {
     expect((summary as unknown as { hidden: boolean }).hidden).toBe(true);
   });
 
-  test("a rejected clipboard write still reports the copy and leaves the page usable", async () => {
+  test("a rejected clipboard write reports failure and leaves the page usable", async () => {
     const page = await hostedPage();
     const copyButton = query(page, "pre.suggested [data-copy]");
     expect(copyButton.textContent).toBe("Copy");
@@ -254,8 +254,8 @@ describe("the hosted walkthrough page, with storage denied", () => {
     await flushMicrotasks();
 
     expect(page.clipboardWrites).toEqual(["if (!token) return null"]);
-    // writeText rejected; the button reports the attempt rather than hanging.
-    expect(copyButton.textContent).toBe("Copied");
+    // A denied write must never claim the clipboard changed.
+    expect(copyButton.textContent).toBe("Copy failed");
     // ... and the label restores itself once the timer runs.
     await page.window.happyDOM.waitUntilComplete();
     expect(copyButton.textContent).toBe("Copy");
@@ -266,6 +266,40 @@ describe("the hosted walkthrough page, with storage denied", () => {
     // No attestation exists until every question is answered, so nothing is copied.
     expect(page.clipboardWrites.length).toBe(1);
   });
+
+  for (const outcome of ["success", "reject", "throw", "fallback-success", "fallback-false", "fallback-throw"] as const) {
+    test(`suggestion and attestation copy reflect ${outcome}`, async () => {
+      const page = await hostedPage();
+      const fallback = outcome.startsWith("fallback");
+      Object.defineProperty(page.window.navigator, "clipboard", {
+        configurable: true,
+        value: fallback ? undefined : {
+          writeText() {
+            if (outcome === "throw") throw new Error("clipboard unavailable");
+            return outcome === "reject" ? Promise.reject(new Error("denied")) : Promise.resolve();
+          },
+        },
+      });
+      Object.defineProperty(page.doc, "execCommand", {
+        configurable: true,
+        value() {
+          if (outcome === "fallback-throw") throw new Error("copy unavailable");
+          return outcome === "fallback-success";
+        },
+      });
+      for (const question of page.doc.querySelectorAll(".quiz-question")) {
+        click(page, question.querySelector('.quiz-option[data-option="0"]'));
+      }
+      for (const selector of ["pre.suggested [data-copy]", "[data-quiz-attest]"]) {
+        const button = query(page, selector);
+        click(page, button);
+        await flushMicrotasks();
+        const succeeds = outcome === "success" || outcome === "fallback-success";
+        expect(button.textContent).toBe(succeeds ? "Copied" : "Copy failed");
+        expect(page.doc.querySelectorAll("textarea").length).toBe(0);
+      }
+    });
+  }
 
   test("expand all / collapse all drive every diff at once", async () => {
     const page = await hostedPage();

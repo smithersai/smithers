@@ -26,9 +26,10 @@ export function modelSettings(environment: Readonly<Record<string, string | unde
   return { provider, modelId, apiKey }
 }
 
-// One refresh owner per file in this single coordinator process. The durable
-// auth file survives restarts; do not replace it with an older bootstrap token.
-const stores = new Map<string, CodexAuth.Store>()
+// A store captures its executor, whose dispatcher belongs to one run's scope.
+// Never retain that transport in a process-global file cache after scope close.
+// CodexAuth's file lock coordinates refreshes across independent run scopes.
+const stores = new WeakMap<RequestExecutor.RequestExecutor, Map<string, CodexAuth.Store>>()
 export const modelSeats = (settings: TutorialModelSettings) => Effect.gen(function*() {
   const executor = yield* RequestExecutor.RequestExecutor
   const resolve = <Body, Frame, Event, State>(config: Route.Config<Body, Frame, Event, State>) => Effect.gen(function*() {
@@ -38,10 +39,12 @@ export const modelSeats = (settings: TutorialModelSettings) => Effect.gen(functi
     })) })
   })
   if (settings.provider === "chatgpt") {
-    let store = stores.get(settings.authFile)
+    let owned = stores.get(executor)
+    if (!owned) { owned = new Map(); stores.set(executor, owned) }
+    let store = owned.get(settings.authFile)
     if (!store) {
       store = CodexAuth.make({ file: settings.authFile, executor })
-      stores.set(settings.authFile, store)
+      owned.set(settings.authFile, store)
     }
     return yield* Effect.fromResult(OpenAIChatGPT.make({ auth: store.auth({ modelId: settings.modelId }) })).pipe(Effect.flatMap(resolve))
   }

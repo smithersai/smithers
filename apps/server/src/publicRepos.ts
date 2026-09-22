@@ -4,7 +4,7 @@ import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import type { ServerConfig } from "./Config"
 import { EdgeCache, GithubAppAuth } from "./githubApp"
-import { fetchWithDeadline, readJson, readText, Transport } from "./Http"
+import { discardBody, fetchWithDeadline, readJson, readText, Transport } from "./Http"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS, PUBLIC_REPOS_PATH } from "./publicRepoCatalog"
 import type { PublicComingSoonRepository, PublicRepoCatalog, PublicRepoStats, PublicRepository } from "./publicRepoCatalog"
 
@@ -105,6 +105,7 @@ const statsFor = (name: string, token: string | undefined): Effect.Effect<StatsR
     // Availability is curated independently of a transient metadata outage.
     if (Result.isFailure(answer)) return TRANSIENT
     const response = answer.success
+    if (!response.ok) yield* discardBody(response)
     if (response.status >= 500) return TRANSIENT
     // GitHub metadata never redirects; a 3xx is not metadata and will not
     // change in the next few minutes, so it caches for the full window.

@@ -54,7 +54,7 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
       description: Schema.String,
       repo: Schema.optional(Schema.String)
     }),
-    handler: ({ description }) => actions.createWorkflow(description)
+    handler: ({ description, repo }) => actions.createWorkflow(description, repo)
   }),
   flow({
     /*

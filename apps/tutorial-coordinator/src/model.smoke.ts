@@ -6,7 +6,7 @@ import { Effect, Stream } from "effect"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { modelSeats, modelSettings } from "./model"
+import { modelSeats, modelSettings, type TutorialModelSettings } from "./model"
 import { prepareSubscription } from "./subscription"
 import { throughProxy, proxySettings } from "./proxy"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
@@ -20,7 +20,7 @@ const executor = RequestExecutor.RequestExecutor.of({ execute: (request) => {
   assert.equal(request.headers["x-smithers-proxy-token"], "proxy-secret")
   if (request.url === "https://smithers.sh/api/tutorial/provider/refresh") {
     refreshes++
-    return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ access_token: fresh, refresh_token: "rotated-refresh", expires_in: 3600 })))
+    return Effect.sleep("10 millis").pipe(Effect.andThen(Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ access_token: fresh, refresh_token: "rotated-refresh", expires_in: 3600 })))))
   }
   generations++
   assert.equal(request.url, "https://smithers.sh/api/tutorial/provider/chatgpt")
@@ -51,14 +51,14 @@ try {
   assert.deepEqual(settings, { provider: "chatgpt", modelId: "gpt-5.6-luna", authFile })
   assert.throws(() => modelSettings({ OPENAI_API_KEY: "ignored-api-key" }), /TUTORIAL_CHATGPT_AUTH_FILE/)
   const request = ModelRequest.ModelRequest.make({ modelId: settings.modelId, system: [], messages: [], tools: [], params: ModelRequest.GenerationParams.make() })
-  const execute = () => Effect.runPromise(Effect.gen(function*() {
-    const resolver = yield* modelSeats(settings)
+  const execute = (requestExecutor = proxied, config: TutorialModelSettings = settings) => Effect.runPromise(Effect.gen(function*() {
+    const resolver = yield* modelSeats(config)
     const seat = yield* resolver.resolve("tutorial/model")
     const prepared = yield* seat.route!.prepare(request)
     assert(!JSON.stringify(prepared).includes("test-account"))
     assert(!JSON.stringify(prepared).includes(fresh))
     yield* seat.model.stream(request).pipe(Stream.runDrain)
-  }).pipe(Effect.provideService(RequestExecutor.RequestExecutor, proxied)))
+  }).pipe(Effect.provideService(RequestExecutor.RequestExecutor, requestExecutor)))
   await Promise.all([execute(), execute()])
   assert.equal(refreshes, 1, "concurrent runs must share one refresh")
   assert.equal(generations, 2)
@@ -73,5 +73,19 @@ try {
   await assert.rejects(prepareSubscription(join(directory, "missing.json")), /bootstrap login/)
   await execute()
   assert.equal(refreshes, 1, "subsequent runs must retain rotated credentials")
-  console.log("Subscription route passed: Luna generation and refresh through Cloudflare, no direct/API-key fallback, one concurrent refresh, durable rotation, credential-free sealed request")
+
+  const laterFile = join(directory, "later.json")
+  const laterSettings = modelSettings({ TUTORIAL_CHATGPT_AUTH_FILE: laterFile })
+  await writeFile(laterFile, JSON.stringify({ tokens: { access_token: fresh, refresh_token: "later-refresh", account_id: "test-account" } }))
+  let firstOpen = true
+  const firstExecutor = RequestExecutor.RequestExecutor.of({ execute: (request, options) => firstOpen
+    ? proxied.execute(request, options) : Effect.die(new Error("The previous model run's transport is closed")) })
+  await execute(firstExecutor, laterSettings)
+  firstOpen = false // agentLayer closes its scoped dispatcher when the first run settles.
+  await writeFile(laterFile, JSON.stringify({ tokens: { access_token: jwt(1), refresh_token: "later-refresh", account_id: "test-account" } }))
+  const concurrentExecutor = RequestExecutor.RequestExecutor.of({ execute: (request, options) => proxied.execute(request, options) })
+  await Promise.all([execute(proxied, laterSettings), execute(concurrentExecutor, laterSettings)])
+  assert.equal(refreshes, 2, "later run scopes share one file refresh while using live executors")
+  assert.equal(JSON.parse(await readFile(laterFile, "utf8")).tokens.refresh_token, "rotated-refresh")
+  console.log("Subscription route passed: Luna generation and refresh through Cloudflare, no direct/API-key fallback, one concurrent refresh, durable rotation, credential-free sealed request, live transport after prior run closes")
 } finally { await rm(directory, { recursive: true, force: true }) }

@@ -122,6 +122,14 @@ const harness = (answer?: Answer, documents: Record<string, unknown> = mirror().
 }
 
 describe("the activity sentence", () => {
+  test("unavailable mirror documents release their unused response bodies", async () => {
+    let cancelled = 0
+    const server = harness(() => new Response(new ReadableStream({ cancel() { cancelled++ } }), { status: 503 }))
+    expect((await server.request()).status).toBe(200)
+    expect(server.requests.length).toBeGreaterThan(0)
+    expect(cancelled).toBe(server.requests.length)
+  })
+
   test("names each count with its own number and verb", () => {
     expect(activitySentence({ commits: 12, pullRequests: 3, issues: 5 }, "main"))
       .toBe("In the last 7 days, 12 commits landed on main, 3 pull requests were opened, and 5 issues were filed.")

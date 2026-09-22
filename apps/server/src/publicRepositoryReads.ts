@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect"
-import { fetchWithDeadline, Transport } from "./Http"
+import { discardBody, fetchWithDeadline, Transport } from "./Http"
 import { cloudRepoFor } from "./publicRepoCatalog"
 
 /** Public repository documents, not account, workspace, gateway, or secret reads. */
@@ -7,7 +7,7 @@ export const isPublicRepositoryRead = (method: string, pathname: string): boolea
   if (method !== "GET") return false
   const match = /^\/api\/repos\/([a-z\d][a-z\d-]{0,38})\/([a-z\d_.-]{1,100})(.*)$/i.exec(pathname)
   if (!match || match[2] === "." || match[2] === "..") return false
-  return /^(?:\/?|\/contents(?:\/.*)?|\/topics|\/stargazers|\/bookmarks(?:\/[^/]+)?|\/changes(?:\/[^/]+(?:\/(?:diff|files))?)?|\/issues(?:\/\d+(?:\/comments)?)?|\/labels|\/git\/(?:refs|trees\/[^/]+|commits\/[^/]+))$/.test(match[3]!)
+  return /^(?:\/?|\/contents(?:\/.*)?|\/topics|\/bookmarks(?:\/[^/]+)?|\/changes(?:\/[^/]+(?:\/(?:diff|files))?)?|\/issues(?:\/\d+(?:\/comments)?)?|\/labels|\/git\/(?:refs|trees\/[^/]+|commits\/[^/]+))$/.test(match[3]!)
 }
 
 /**
@@ -50,7 +50,10 @@ export const readPublicRepository = Effect.fn("PublicRepositories.read")(
       undefined,
       READ_TIMEOUT_MS
     )
-    if (upstream.status >= 300 && upstream.status < 400) return unavailable()
+    if (upstream.status >= 300 && upstream.status < 400) {
+      yield* discardBody(upstream)
+      return unavailable()
+    }
     const headers = new Headers(upstream.headers)
     headers.delete("set-cookie")
     headers.set("cache-control", "private, no-store")
