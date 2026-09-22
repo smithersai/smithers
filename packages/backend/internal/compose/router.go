@@ -104,7 +104,7 @@ func buildRouter(
 	gitHubWebhookHandler *routes.GitHubWebhookHandler,
 	smithersMetrics *routes.SmithersMetrics,
 	alertRemediationReady ...bool,
-) http.Handler {
+) *chi.Mux {
 	r := chi.NewRouter()
 	// Fleet routes are available only when the hosted assembly supplied its
 	// runner handler. Their SQL belongs to the deployment adapter.

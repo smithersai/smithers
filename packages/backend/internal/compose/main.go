@@ -41,6 +41,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
+	"github.com/smithersai/smithers/packages/backend/webapp"
 )
 
 // newRevocationBus is a test seam: run() tests capture the bus to prove its
@@ -1349,7 +1350,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		repoGatewayHandler = nil
 	}
 
-	var r http.Handler = buildRouter(
+	router := buildRouter(
 		cfg,
 		queries,
 		pool,
@@ -1426,6 +1427,25 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		smithersMetrics,
 		alertRemediationWorker != nil,
 	)
+	if root := strings.TrimSpace(os.Getenv("SMITHERS_WEB_ROOT")); root != "" {
+		mode := webapp.SelfHosted
+		if options.Role.hosted() {
+			mode = webapp.Hosted
+		}
+		assets, err := webapp.New(root, mode)
+		if err != nil {
+			return fmt.Errorf("initialize browser assets: %w", err)
+		}
+		defer assets.Close()
+		router.NotFound(assets.ServeHTTP)
+	}
+	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
+		role: options.Role, identity: authHandler != nil,
+		redirectAuth:    strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
+		agent:           cfg.FeatureFlags.Agents && sandboxClient != nil && len(agentProviderEnv) != 0,
+		billingCheckout: billingComposition.Service != nil,
+		isolatedSandbox: provider != nil,
+	}))
 	r = mountBlobTransferHandler(r, blobStore)
 
 	requestTracker := newInFlightRequestTracker()
