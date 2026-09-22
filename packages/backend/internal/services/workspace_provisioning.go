@@ -597,8 +597,8 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	if s.q == nil {
 		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
 	}
-	if s.sandbox == nil {
-		return WorkspaceResponse{}, pkgerrors.Internal("sandbox provider unavailable")
+	if s.runtime == nil && s.sandbox == nil {
+		return WorkspaceResponse{}, pkgerrors.Internal("workspace runtime unavailable")
 	}
 	if err := validateWorkspaceCreateMetadata(input); err != nil {
 		return WorkspaceResponse{}, err
@@ -649,6 +649,11 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	if err != nil {
 		return WorkspaceResponse{}, err
 	}
+	if s.runtime != nil {
+		if _, err := s.runtimeSnapshots(); err != nil {
+			return WorkspaceResponse{}, err
+		}
+	}
 
 	workspace, err = s.createWorkspaceRow(ctx, db.CreateWorkspaceParams{
 		RepositoryID:           input.RepositoryID,
@@ -667,6 +672,14 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	if err != nil {
 		return WorkspaceResponse{}, mapWorkspaceCreateError(err, "create snapshot workspace")
 	}
+	if s.runtime != nil {
+		workspace, err = s.restoreRuntimeWorkspaceSnapshot(ctx, workspace, snapshot, input.UserID)
+		if err != nil {
+			s.markWorkspaceProvisionFailed(ctx, workspace, err)
+			return WorkspaceResponse{}, err
+		}
+		return s.toWorkspaceResponse(workspace), nil
+	}
 
 	workspace, err = s.createWorkspaceVMFromSnapshot(ctx, workspace, snapshot)
 	if err != nil {
@@ -677,16 +690,16 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 }
 
 // CreateWorkspaceAsync creates or reuses the workspace row immediately and
-// provisions the sandbox provider VM in the background. Browser-facing routes use this
-// path so VM creation can exceed proxy/client deadlines without canceling the
-// real workspace startup.
+// provisions its configured execution runtime in the background. Browser
+// routes use this path so startup can exceed proxy/client deadlines without
+// canceling the real operation.
 func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input CreateWorkspaceInput) (out WorkspaceResponse, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("create", retErr) }()
 	if s.q == nil {
 		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
 	}
-	if s.sandbox == nil {
-		return WorkspaceResponse{}, pkgerrors.Internal("sandbox provider unavailable")
+	if s.runtime == nil && s.sandbox == nil {
+		return WorkspaceResponse{}, pkgerrors.Internal("workspace runtime unavailable")
 	}
 	if err := validateWorkspaceCreateMetadata(input); err != nil {
 		return WorkspaceResponse{}, err
@@ -732,6 +745,11 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 	if err != nil {
 		return WorkspaceResponse{}, err
 	}
+	if s.runtime != nil {
+		if _, err := s.runtimeSnapshots(); err != nil {
+			return WorkspaceResponse{}, err
+		}
+	}
 
 	workspace, err = s.createWorkspaceRow(ctx, db.CreateWorkspaceParams{
 		RepositoryID:           input.RepositoryID,
@@ -759,6 +777,9 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 func (s *WorkspaceService) ForkWorkspace(ctx context.Context, input ForkWorkspaceInput) (WorkspaceResponse, error) {
 	if s.q == nil {
 		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
+	}
+	if s.runtime != nil {
+		return s.forkRuntimeWorkspace(ctx, input)
 	}
 	if s.sandbox == nil {
 		return WorkspaceResponse{}, pkgerrors.Internal("sandbox provider unavailable")
@@ -815,16 +836,18 @@ func (s *WorkspaceService) CreateWorkspaceSnapshot(ctx context.Context, input Cr
 	if s.q == nil {
 		return WorkspaceSnapshotResponse{}, pkgerrors.Internal("workspace store unavailable")
 	}
-	if s.sandbox == nil {
-		return WorkspaceSnapshotResponse{}, pkgerrors.Internal("sandbox provider unavailable")
-	}
-
 	// Validate the name BEFORE any external side effect: sandbox provider happily
 	// creates a snapshot for a name our own text validation then rejects, and
 	// the early return would leak that external snapshot forever.
 	snapshotName := strings.TrimSpace(input.Name)
 	if err := validateSafeText("WorkspaceSnapshot", "name", snapshotName); err != nil {
 		return WorkspaceSnapshotResponse{}, err
+	}
+	if s.runtime != nil {
+		return s.createRuntimeWorkspaceSnapshot(ctx, input, snapshotName)
+	}
+	if s.sandbox == nil {
+		return WorkspaceSnapshotResponse{}, pkgerrors.Internal("sandbox provider unavailable")
 	}
 
 	workspace, err := s.loadOwnedWorkspace(ctx, input.WorkspaceID, input.RepositoryID, input.UserID)
@@ -919,7 +942,11 @@ func (s *WorkspaceService) DeleteWorkspaceSnapshot(ctx context.Context, snapshot
 	if err != nil {
 		return err
 	}
-	if s.sandbox != nil && strings.TrimSpace(snapshot.SnapshotID) != "" {
+	if s.runtime != nil {
+		if err := s.deleteRuntimeWorkspaceSnapshot(ctx, snapshot, userID); err != nil {
+			return err
+		}
+	} else if s.sandbox != nil && strings.TrimSpace(snapshot.SnapshotID) != "" {
 		if err := s.sandbox.DeleteSnapshot(ctx, snapshot.SnapshotID); err != nil {
 			var statusErr *sandbox.StatusError
 			if !errors.As(err, &statusErr) || statusErr.StatusCode != 404 {
@@ -1579,7 +1606,7 @@ func (s *WorkspaceService) recoverAsyncProvision(ctx context.Context, workspace 
 }
 
 func (s *WorkspaceService) provisionWorkspaceAsync(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) {
-	if workspace.Status == "running" && strings.TrimSpace(workspace.VmID) != "" {
+	if s.runtime == nil && workspace.Status == "running" && strings.TrimSpace(workspace.VmID) != "" {
 		return
 	}
 	go func() {
@@ -1615,7 +1642,13 @@ func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, 
 		defer s.recoverAsyncProvision(ctx, workspace, "async-snapshot")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		if _, err := s.createWorkspaceVMFromSnapshot(provisionCtx, workspace, snapshot); err != nil {
+		var err error
+		if s.runtime != nil {
+			_, err = s.restoreRuntimeWorkspaceSnapshot(provisionCtx, workspace, snapshot, workspace.UserID)
+		} else {
+			_, err = s.createWorkspaceVMFromSnapshot(provisionCtx, workspace, snapshot)
+		}
+		if err != nil {
 			slog.Error("async snapshot workspace provisioning failed", "workspace_id", workspace.ID, "snapshot_id", snapshot.ID, "error", err)
 			s.markWorkspaceProvisionFailed(provisionCtx, workspace, err)
 		}

@@ -117,16 +117,16 @@ type CommandResult struct {
 	OutputTruncated bool
 }
 
-// ServiceSpec describes one adapter-managed long-lived process. ReadyPort,
-// when set, must accept TCP connections in the workspace's network namespace
-// before StartService returns.
+// ServiceSpec describes one adapter-managed long-lived process. ReadyAddress,
+// when set, must be a loopback host:port in the workspace's network namespace
+// that accepts TCP connections before StartService returns.
 type ServiceSpec struct {
 	Name string
 	// Identity is a caller-computed, secret-free configuration digest used to
 	// deduplicate retries when an adapter-assigned address changes the argv.
 	Identity     string
 	Command      Command
-	ReadyPort    uint16
+	ReadyAddress string
 	ReadyTimeout time.Duration
 }
 
@@ -186,6 +186,20 @@ type WorkspaceExecution interface {
 	StartService(ctx context.Context, workspaceID string, spec ServiceSpec) (Service, error)
 	InspectService(ctx context.Context, workspaceID, name string) (ServiceObservation, error)
 	StopService(ctx context.Context, workspaceID, name string) error
+}
+
+// WorkspaceServiceCatalog is optional because not every execution backend can
+// enumerate its init system. A runtime advertising ManagedServices implements
+// it so the common product service can list real observations.
+type WorkspaceServiceCatalog interface {
+	ListServices(ctx context.Context, workspaceID string) ([]ServiceObservation, error)
+}
+
+// WorkspaceNamedServiceController preserves deployment-defined service
+// semantics such as systemd units without exposing an init-system model to the
+// common product service.
+type WorkspaceNamedServiceController interface {
+	ManageService(ctx context.Context, workspaceID, name, action string) (ServiceObservation, error)
 }
 
 // WorkspaceTerminal opens a real PTY after common authorization succeeds.

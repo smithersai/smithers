@@ -97,6 +97,39 @@ func resolveWorkspaceMutationPath(root, requested string) (string, error) {
 	return filepath.Join(parent, filepath.Base(cleaned)), nil
 }
 
+func ensureWorkspaceMutationParent(root, requested string) error {
+	cleaned := filepath.Clean(strings.TrimSpace(requested))
+	parent := filepath.Dir(cleaned)
+	if parent == "." {
+		return nil
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	current := canonicalRoot
+	for _, component := range strings.Split(parent, string(filepath.Separator)) {
+		if component == "" || component == "." || component == ".." {
+			return errors.New("workspace mutation path has an invalid parent")
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if errors.Is(err, fs.ErrNotExist) {
+			if err := os.Mkdir(current, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+			info, err = os.Lstat(current)
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || !withinRoot(canonicalRoot, current) {
+			return errors.New("workspace mutation parent is not a directory inside root")
+		}
+	}
+	return nil
+}
+
 func (r *Runtime) workspaceRoot(id string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -151,6 +184,9 @@ func (r *Runtime) WriteFile(ctx context.Context, workspaceID, path string, conte
 	root, err := r.workspaceRoot(workspaceID)
 	if err != nil {
 		return err
+	}
+	if err := ensureWorkspaceMutationParent(root, path); err != nil {
+		return fmt.Errorf("prepare workspace file parent: %w", err)
 	}
 	resolved, err := resolveWorkspaceMutationPath(root, path)
 	if err != nil {

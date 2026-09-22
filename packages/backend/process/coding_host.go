@@ -52,6 +52,7 @@ func (r *Runtime) StartCodingHost(ctx context.Context, workspaceID string, confi
 		return workspaceapi.Service{}, fmt.Errorf("reserve coding host port: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 	if err := listener.Close(); err != nil {
 		return workspaceapi.Service{}, fmt.Errorf("release coding host port: %w", err)
 	}
@@ -77,6 +78,6 @@ func (r *Runtime) StartCodingHost(ctx context.Context, workspaceID string, confi
 		Name: "coding-host", Identity: "coding-host:" + hex.EncodeToString(identityDigest[:]),
 		Command: workspaceapi.Command{Args: []string{executable, "serve", "--root", workspace.Root, "--state-dir", workspace.StateDir,
 			"--host", "127.0.0.1", "--port", strconv.Itoa(port), "--listen"}, Environment: environment},
-		ReadyPort: uint16(port), ReadyTimeout: config.ReadyTimeout,
+		ReadyAddress: address, ReadyTimeout: config.ReadyTimeout,
 	})
 }

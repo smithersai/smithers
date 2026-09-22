@@ -21,9 +21,10 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // errNoAdvertisedHostKeys is returned when the service layer produced a
@@ -63,6 +64,11 @@ type WorkspaceTerminalService interface {
 	TouchSessionActivity(ctx context.Context, sessionID string) error
 	// ResolveLanguageServer answers the launch for an LSP session (#505).
 	ResolveLanguageServer(ctx context.Context, sessionID string, repositoryID, userID int64) (services.LanguageServerLaunch, error)
+}
+
+type workspaceRuntimeTerminalService interface {
+	WorkspaceRuntimeTerminalAvailable() bool
+	OpenWorkspaceTerminal(ctx context.Context, sessionID string, repositoryID, userID int64, columns, rows uint16) (workspace.Terminal, error)
 }
 
 // WorkspaceTerminalHandler handles the WebSocket terminal endpoint for workspace sessions.
@@ -278,14 +284,24 @@ func (h *WorkspaceTerminalHandler) TerminalWebSocket(w http.ResponseWriter, r *h
 		}
 	}()
 
-	// Get SSH connection info (this also ensures the workspace VM is running).
-	sshInfo, svcErr := h.Service.GetSSHConnectionInfo(r.Context(), sessionID, repoCtx.Repository.ID, user.ID)
-	if svcErr != nil {
-		if h.Metrics != nil {
-			h.Metrics.ObserveWorkspaceTerminalAttach("ssh_info_error")
+	// Runtime-backed terminals and hosted SSH terminals share the same durable
+	// terminal manager, WebSocket protocol, limits, activity tracking, and
+	// revocation behavior. Only the backend dial strategy differs.
+	var sshInfo services.WorkspaceSSHConnectionInfo
+	if runtimeService, ok := h.Service.(workspaceRuntimeTerminalService); ok && runtimeService.WorkspaceRuntimeTerminalAvailable() {
+		sshInfo = services.WorkspaceSSHConnectionInfo{
+			WorkspaceID: session.WorkspaceID, SessionID: sessionID, Kind: "container",
+			RuntimeTerminal: true, RepositoryID: repoCtx.Repository.ID, RequesterUserID: user.ID,
 		}
-		writeRouteError(w, r, svcErr)
-		return
+	} else {
+		sshInfo, svcErr = h.Service.GetSSHConnectionInfo(r.Context(), sessionID, repoCtx.Repository.ID, user.ID)
+		if svcErr != nil {
+			if h.Metrics != nil {
+				h.Metrics.ObserveWorkspaceTerminalAttach("ssh_info_error")
+			}
+			writeRouteError(w, r, svcErr)
+			return
+		}
 	}
 
 	slog.Info("workspace terminal websocket upgrade",
@@ -464,6 +480,17 @@ func (h *WorkspaceTerminalHandler) terminalSessionManager() *TerminalSessionMana
 	defer h.managerMu.Unlock()
 	if h.TerminalSessions == nil {
 		h.TerminalSessions = NewTerminalSessionManager(func(ctx context.Context, info services.WorkspaceSSHConnectionInfo, cols, rows int32) (terminalSSHClient, terminalSSHSession, error) {
+			if info.RuntimeTerminal {
+				runtimeService, ok := h.Service.(workspaceRuntimeTerminalService)
+				if !ok || !runtimeService.WorkspaceRuntimeTerminalAvailable() {
+					return nil, nil, errors.New("workspace runtime terminal unavailable")
+				}
+				terminal, err := runtimeService.OpenWorkspaceTerminal(context.WithoutCancel(ctx), info.SessionID, info.RepositoryID, info.RequesterUserID, uint16(cols), uint16(rows))
+				if err != nil {
+					return nil, nil, err
+				}
+				return newRuntimeTerminalBackend(terminal)
+			}
 			client, sess, err := h.dialSSH(info, cols, rows)
 			if err != nil {
 				return nil, nil, err

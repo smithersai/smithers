@@ -53,7 +53,7 @@ func (s *WorkspaceService) ResumeWorkspace(ctx context.Context, workspaceID stri
 	return s.toWorkspaceResponse(workspace), nil
 }
 
-// DeleteWorkspace stops and deletes a workspace VM.
+// DeleteWorkspace stops and deletes a workspace execution environment.
 func (s *WorkspaceService) DeleteWorkspace(ctx context.Context, workspaceID string, repositoryID, userID int64) error {
 	if s.q == nil {
 		return pkgerrors.Internal("workspace store unavailable")
@@ -67,7 +67,8 @@ func (s *WorkspaceService) DeleteWorkspace(ctx context.Context, workspaceID stri
 	return s.destroyWorkspace(ctx, workspace)
 }
 
-// StopWorkspace shuts down the owner's VM while retaining the workspace row.
+// StopWorkspace shuts down execution while retaining the workspace row and
+// persistent files.
 func (s *WorkspaceService) StopWorkspace(ctx context.Context, workspaceID string, repositoryID, userID int64) (_ WorkspaceResponse, retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("stop", retErr) }()
 	store, ok := s.q.(interface {
@@ -83,7 +84,7 @@ func (s *WorkspaceService) StopWorkspace(ctx context.Context, workspaceID string
 	if workspace.Status == "stopped" {
 		return WorkspaceResponse{}, pkgerrors.Conflict("workspace is already stopped")
 	}
-	if workspace.VmID != "" && s.sandbox == nil {
+	if s.runtime == nil && workspace.VmID != "" && s.sandbox == nil {
 		return WorkspaceResponse{}, pkgerrors.Internal("workspace sandbox unavailable")
 	}
 	// Unlike best-effort cleanup, an explicit stop must report a failed token
@@ -93,7 +94,20 @@ func (s *WorkspaceService) StopWorkspace(ctx context.Context, workspaceID string
 			return WorkspaceResponse{}, pkgerrors.Internal("revoke workspace credentials: " + err.Error())
 		}
 	}
-	if err := s.teardownWorkspaceVM(ctx, workspace); err != nil {
+	if s.runtime != nil {
+		unlock := s.lockRuntimeWorkspace(workspace.ID)
+		defer unlock()
+		workspace, err = s.currentRuntimeWorkspaceLocked(ctx, workspace)
+		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		if workspace.Status == "stopped" {
+			return WorkspaceResponse{}, pkgerrors.Conflict("workspace is already stopped")
+		}
+		if err := s.stopRuntimeWorkspaceLocked(ctx, workspace, userID, "stop"); err != nil {
+			return WorkspaceResponse{}, err
+		}
+	} else if err := s.teardownWorkspaceVM(ctx, workspace); err != nil {
 		return WorkspaceResponse{}, err
 	}
 	stopped, err := store.StopWorkspaceRetainingRow(ctx, workspace.ID)
@@ -165,6 +179,9 @@ func (s *WorkspaceService) UpdateWorkspaceHead(ctx context.Context, input Update
 
 func (s *WorkspaceService) teardownWorkspaceVM(ctx context.Context, workspace db.Workspace) error {
 	s.revokeWorkspaceHeadToken(ctx, workspace)
+	if s.runtime != nil {
+		return s.deleteRuntimeWorkspace(ctx, workspace, workspace.UserID)
+	}
 	if workspace.VmID != "" && s.sandbox != nil {
 		// A 404 means the VM is already gone (reclaimed out-of-band or a prior
 		// delete that failed to soft-delete the row). That is the desired terminal
@@ -196,7 +213,19 @@ func (s *WorkspaceService) teardownWorkspaceVM(ctx context.Context, workspace db
 
 func (s *WorkspaceService) destroyWorkspace(ctx context.Context, workspace db.Workspace) (retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("stop", retErr) }()
-	if err := s.teardownWorkspaceVM(ctx, workspace); err != nil {
+	if s.runtime != nil {
+		unlock := s.lockRuntimeWorkspace(workspace.ID)
+		defer unlock()
+		current, err := s.currentRuntimeWorkspaceLocked(ctx, workspace)
+		if err != nil {
+			return err
+		}
+		s.revokeWorkspaceHeadToken(ctx, current)
+		if err := s.deleteRuntimeWorkspaceLocked(ctx, current, current.UserID); err != nil {
+			return err
+		}
+		workspace = current
+	} else if err := s.teardownWorkspaceVM(ctx, workspace); err != nil {
 		return err
 	}
 
@@ -319,6 +348,9 @@ func (s *WorkspaceService) CleanupStalePendingWorkspaces(ctx context.Context) er
 }
 
 func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, workspace db.Workspace) (db.Workspace, error) {
+	if s.runtime != nil {
+		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, workspace.UserID)
+	}
 	if s.sandbox == nil {
 		return workspace, pkgerrors.Internal("sandbox provider unavailable")
 	}
@@ -401,6 +433,13 @@ func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, w
 }
 
 func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, error) {
+	if s.runtime != nil {
+		requesterID := input.UserID
+		if requesterID == 0 {
+			requesterID = workspace.UserID
+		}
+		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, requesterID)
+	}
 	if strings.TrimSpace(workspace.VmID) == "" {
 		return s.createWorkspaceVM(ctx, workspace, input)
 	}
@@ -703,6 +742,43 @@ func (s *WorkspaceService) resetWorkspaceForReprovision(ctx context.Context, wor
 
 func (s *WorkspaceService) suspendWorkspace(ctx context.Context, workspace db.Workspace) (retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("suspend", retErr) }()
+	if s.runtime != nil {
+		unlock := s.lockRuntimeWorkspace(workspace.ID)
+		defer unlock()
+		current, err := s.currentRuntimeWorkspaceLocked(ctx, workspace)
+		if err != nil {
+			return err
+		}
+		if current.Status == "suspended" || current.Status == "stopped" {
+			return nil
+		}
+		if current.Status != "running" {
+			return pkgerrors.Conflict("workspace is " + current.Status)
+		}
+		s.revokeWorkspaceHeadToken(ctx, current)
+		suspended, err := s.q.SuspendRunningWorkspace(ctx, current.ID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return pkgerrors.Internal("update workspace status: " + err.Error())
+		}
+		if err := s.stopRuntimeWorkspaceLocked(ctx, suspended, current.UserID, "suspend"); err != nil {
+			rollbackCtx, cancel := detachedRuntimeContext(ctx, workspaceResumeTimeout)
+			defer cancel()
+			running, updateErr := s.q.UpdateWorkspaceStatus(rollbackCtx, db.UpdateWorkspaceStatusParams{ID: current.ID, Status: "running"})
+			if updateErr == nil {
+				_, updateErr = s.ensureRuntimeWorkspaceRunningLocked(rollbackCtx, running, current.UserID)
+			}
+			if updateErr != nil {
+				return pkgerrors.Internal(err.Error() + "; restore workspace after failed suspend: " + updateErr.Error())
+			}
+			return err
+		}
+		s.meterWorkspaceUsage(ctx, suspended, "suspended")
+		s.notifyWorkspace(ctx, suspended.ID, "suspended")
+		return nil
+	}
 	if s.sandbox == nil || strings.TrimSpace(workspace.VmID) == "" {
 		return nil
 	}
@@ -762,6 +838,49 @@ func (s *WorkspaceService) suspendWorkspace(ctx context.Context, workspace db.Wo
 // window and resumes the VM for them.
 func (s *WorkspaceService) suspendWorkspaceIfSessionless(ctx context.Context, workspace db.Workspace) (retErr error) {
 	defer func() { s.observeWorkspaceLifecycle("suspend", retErr) }()
+	if s.runtime != nil {
+		unlock := s.lockRuntimeWorkspace(workspace.ID)
+		defer unlock()
+		current, err := s.currentRuntimeWorkspaceLocked(ctx, workspace)
+		if err != nil {
+			if apiErr, ok := err.(*pkgerrors.APIError); ok && apiErr.Code == pkgerrors.CodeNotFound {
+				return nil
+			}
+			return err
+		}
+		if current.Status != "running" {
+			return nil
+		}
+		suspended, err := s.q.SuspendRunningWorkspaceIfSessionless(ctx, current.ID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return pkgerrors.Internal("update workspace status: " + err.Error())
+		}
+		if err := s.stopRuntimeWorkspaceLocked(ctx, suspended, current.UserID, "sessionless-suspend"); err != nil {
+			// Reconcile the product row back to running because the runtime stop
+			// did not reach its required terminal state.
+			rollbackCtx, cancel := detachedRuntimeContext(ctx, workspaceResumeTimeout)
+			defer cancel()
+			running, updateErr := s.q.UpdateWorkspaceStatus(rollbackCtx, db.UpdateWorkspaceStatusParams{ID: current.ID, Status: "running"})
+			if updateErr == nil {
+				_, updateErr = s.ensureRuntimeWorkspaceRunningLocked(rollbackCtx, running, current.UserID)
+			}
+			if updateErr != nil {
+				return pkgerrors.Internal(err.Error() + "; restore workspace after failed sessionless suspend: " + updateErr.Error())
+			}
+			return err
+		}
+		s.meterWorkspaceUsage(ctx, suspended, "suspended")
+		s.notifyWorkspace(ctx, suspended.ID, "suspended")
+		active, countErr := s.q.CountActiveSessionsForWorkspace(ctx, suspended.ID)
+		if countErr == nil && active > 0 {
+			_, resumeErr := s.ensureRuntimeWorkspaceRunningLocked(ctx, suspended, current.UserID)
+			return resumeErr
+		}
+		return nil
+	}
 	if s.sandbox == nil || strings.TrimSpace(workspace.VmID) == "" {
 		return nil
 	}

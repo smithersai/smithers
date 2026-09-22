@@ -15,6 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 const (
@@ -197,20 +198,21 @@ type WorkspaceHead struct {
 
 // WorkspaceResponse is the API representation of a first-class workspace.
 type WorkspaceResponse struct {
-	ID             string               `json:"id"`
-	RepositoryID   int64                `json:"repository_id"`
-	UserID         int64                `json:"user_id"`
-	Name           string               `json:"name"`
-	Slug           string               `json:"slug,omitempty"`
-	Branch         string               `json:"branch,omitempty"`
-	TargetBookmark string               `json:"target_bookmark"`
-	RepoFullName   string               `json:"repo_full_name,omitempty"`
-	HTMLURL        string               `json:"html_url,omitempty"`
-	Status         string               `json:"status"`
-	FailureCode    string               `json:"failure_code,omitempty"`
-	FailureMessage string               `json:"failure_message,omitempty"`
-	Kind           string               `json:"kind"`
-	Environment    WorkspaceEnvironment `json:"environment"`
+	ID             string                      `json:"id"`
+	RepositoryID   int64                       `json:"repository_id"`
+	UserID         int64                       `json:"user_id"`
+	Name           string                      `json:"name"`
+	Slug           string                      `json:"slug,omitempty"`
+	Branch         string                      `json:"branch,omitempty"`
+	TargetBookmark string                      `json:"target_bookmark"`
+	RepoFullName   string                      `json:"repo_full_name,omitempty"`
+	HTMLURL        string                      `json:"html_url,omitempty"`
+	Status         string                      `json:"status"`
+	Isolation      workspaceapi.IsolationLevel `json:"isolation,omitempty"`
+	FailureCode    string                      `json:"failure_code,omitempty"`
+	FailureMessage string                      `json:"failure_message,omitempty"`
+	Kind           string                      `json:"kind"`
+	Environment    WorkspaceEnvironment        `json:"environment"`
 	// Desktop is present only for kind=desktop workspaces.
 	Desktop *WorkspaceDesktop `json:"desktop,omitempty"`
 	Head    WorkspaceHead     `json:"head"`
@@ -308,6 +310,12 @@ type WorkspaceSSHConnectionInfo struct {
 	AccessToken string                `json:"access_token"`
 	Command     string                `json:"command"`
 	HostKeys    []WorkspaceSSHHostKey `json:"host_keys"`
+	// RuntimeTerminal selects the shared WorkspaceRuntime PTY transport. The
+	// remaining fields are request-local inputs for the common terminal manager
+	// and are never serialized or persisted.
+	RuntimeTerminal bool  `json:"-"`
+	RepositoryID    int64 `json:"-"`
+	RequesterUserID int64 `json:"-"`
 }
 
 // PersistedWorkspaceSSHConnectionInfo is the shape-safe subset of
@@ -528,7 +536,9 @@ type WorkspaceQuerier interface {
 	GetWorkspaceShare(ctx context.Context, arg db.GetWorkspaceShareParams) (db.WorkspaceShare, error)
 }
 
-// WorkspaceService handles workspace lifecycle on sandbox provider VMs.
+// WorkspaceService owns product authorization, admission, durable rows, and
+// lifecycle reconciliation around either a shared runtime or the legacy
+// sandbox transport during migration.
 type WorkspaceService struct {
 	launchSessionCleanup         func(string, func())
 	billing                      BillingPolicy
@@ -537,6 +547,9 @@ type WorkspaceService struct {
 	capabilityTransactions       RepositoryJobTransactions
 	capabilityProbe              WorkspaceCapabilityProbe
 	sandbox                      SandboxVMClient
+	runtime                      workspaceapi.WorkspaceRuntime
+	runtimeIdentity              WorkspaceRuntimeIdentityResolver
+	runtimeLocks                 *workspaceRuntimeLockRegistry
 	sandboxMetrics               SandboxMetricsRecorder
 	gitBaseURL                   string
 	sshHost                      string
@@ -584,6 +597,23 @@ type WorkspaceService struct {
 
 // WorkspaceServiceOption configures optional dependencies.
 type WorkspaceServiceOption func(*WorkspaceService)
+
+// WorkspaceRuntimeIdentityResolver maps an already-authorized product
+// workspace request onto the tenant and principal identifiers an isolated
+// deployment uses for infrastructure fencing. The default uses the durable
+// workspace owner as tenant and the authenticated user as principal.
+type WorkspaceRuntimeIdentityResolver func(context.Context, db.Workspace, int64) (workspaceapi.Operation, error)
+
+// WithWorkspaceRuntime selects the common execution boundary used after
+// product authorization and admission. Both trusted process and isolated Plue
+// adapters enter WorkspaceService through this option.
+func WithWorkspaceRuntime(runtime workspaceapi.WorkspaceRuntime) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.runtime = runtime }
+}
+
+func WithWorkspaceRuntimeIdentityResolver(resolver WorkspaceRuntimeIdentityResolver) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.runtimeIdentity = resolver }
+}
 
 // WithWorkspaceSandboxClient sets the sandbox provider VM client for workspace lifecycle operations.
 func WithWorkspaceSandboxClient(client SandboxVMClient) WorkspaceServiceOption {
@@ -756,6 +786,7 @@ func NewWorkspaceService(q WorkspaceQuerier, opts ...WorkspaceServiceOption) *Wo
 		desktopMemoryMB:              defaultWorkspaceDesktopMemoryMB,
 		desktopVCPUCount:             defaultWorkspaceDesktopVCPUCount,
 		desktopObserveText:           true,
+		runtimeLocks:                 &workspaceRuntimeLockRegistry{entries: make(map[string]*workspaceRuntimeLock)},
 	}
 	for _, opt := range opts {
 		opt(svc)
@@ -1094,6 +1125,11 @@ func (s *WorkspaceService) toWorkspaceResponse(workspace db.Workspace) Workspace
 		LastActivityAt:     workspace.LastActivityAt,
 		CreatedAt:          workspace.CreatedAt,
 		UpdatedAt:          workspace.UpdatedAt,
+	}
+	if s.runtime != nil {
+		resp.Isolation = s.runtime.Isolation()
+	} else if s.sandbox != nil {
+		resp.Isolation = workspaceapi.IsolationSandboxed
 	}
 	if strings.TrimSpace(workspace.VmID) != "" {
 		resp.SSHHost = fmt.Sprintf("%s@%s", workspace.VmID, s.sshHost)

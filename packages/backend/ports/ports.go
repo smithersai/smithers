@@ -4,6 +4,7 @@
 package ports
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
@@ -48,6 +49,21 @@ var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
 // AgentLogStore persists archived session transcripts through the same
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
+
+// Workload identifies admitted work; the common worker owns durable receipts.
+type Workload struct {
+	ID          string
+	WorkspaceID string
+	Command     []string
+	Directory   string
+}
+
+type ExecutionResult struct{ ExitCode int }
+
+type Executor interface {
+	Isolation() IsolationLevel
+	Execute(context.Context, Workload) (ExecutionResult, error)
+}
 
 // MetricsDoer is a deployment-authenticated HTTP client for hosted metrics.
 // Local deployments leave it nil.
@@ -98,3 +114,26 @@ type WorkspaceTerminal = workspace.WorkspaceTerminal
 type WorkspacePreview = workspace.WorkspacePreview
 type WorkspaceFiles = workspace.WorkspaceFiles
 type WorkspaceRuntime = workspace.WorkspaceRuntime
+type WorkspaceOperation = workspace.Operation
+type IsolationGuarantees = workspace.IsolationGuarantees
+type WorkspaceIsolationGuarantees = workspace.IsolationGuarantees
+type WorkspaceIsolationReporter = workspace.IsolationReporter
+type WorkspacePortPurpose = workspace.PortPurpose
+type WorkspacePortRequest = workspace.PortRequest
+type WorkspacePortDialer = workspace.PortDialer
+type RoutedPreviewSpec = workspace.RoutedPreviewSpec
+type RoutedPreview = workspace.RoutedPreview
+type WorkspaceRoutedPreview = workspace.RoutedPreviewPublisher
+type WorkspaceServiceCatalog = workspace.WorkspaceServiceCatalog
+type WorkspaceNamedServiceController = workspace.WorkspaceNamedServiceController
+
+const WorkspacePortPurposeFlowRuntime = workspace.PortPurposeFlowRuntime
+
+var WithWorkspaceOperation = workspace.WithOperation
+var WorkspaceOperationFromContext = workspace.OperationFromContext
+
+// WorkspaceAccess is the narrow legacy terminal facet used by callers that do
+// not need the full runtime contract.
+type WorkspaceAccess interface {
+	OpenTerminal(ctx context.Context, workspaceID string) (Terminal, error)
+}

@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path"
 	"regexp"
 	"sort"
@@ -14,6 +16,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 const (
@@ -89,6 +92,41 @@ func (s *WorkspaceService) ListWorkspaceFiles(ctx context.Context, workspaceID s
 	if err != nil {
 		return nil, err
 	}
+	if s.runtime != nil {
+		row, runtimeCtx, targetErr := s.workspaceRuntimeFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead, "")
+		if targetErr != nil {
+			return nil, targetErr
+		}
+		listed, listErr := s.runtime.ListFiles(runtimeCtx, row.ID, relativePath)
+		if listErr != nil {
+			return nil, mapRuntimeFileError(listErr, "directory")
+		}
+		entries := make([]WorkspaceFileEntry, 0, len(listed))
+		for _, entry := range listed {
+			entryType := "file"
+			size := entry.Size
+			switch {
+			case entry.Mode&fs.ModeSymlink != 0:
+				entryType = "symlink"
+			case entry.IsDir:
+				entryType = "dir"
+				size = 0
+			}
+			entryPath := entry.Name
+			if relativePath != "" {
+				entryPath = relativePath + "/" + entry.Name
+			}
+			entries = append(entries, WorkspaceFileEntry{Name: entry.Name, Path: entryPath, Type: entryType, Size: size})
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			if (entries[i].Type == "dir") != (entries[j].Type == "dir") {
+				return entries[i].Type == "dir"
+			}
+			return entries[i].Name < entries[j].Name
+		})
+		s.touchWorkspaceEntryRecency(ctx, row.ID, "files")
+		return entries, nil
+	}
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead)
 	if err != nil {
 		return nil, err
@@ -151,6 +189,22 @@ func (s *WorkspaceService) ReadWorkspaceFile(ctx context.Context, workspaceID st
 	if err != nil {
 		return WorkspaceFileContent{}, err
 	}
+	if s.runtime != nil {
+		row, runtimeCtx, targetErr := s.workspaceRuntimeFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead, "")
+		if targetErr != nil {
+			return WorkspaceFileContent{}, targetErr
+		}
+		content, readErr := s.runtime.ReadFile(runtimeCtx, row.ID, relativePath)
+		if readErr != nil {
+			return WorkspaceFileContent{}, mapRuntimeFileError(readErr, "file")
+		}
+		if len(content) > MaxWorkspaceFileBytes {
+			return WorkspaceFileContent{}, pkgerrors.RequestEntityTooLarge("workspace file exceeds 1 MiB limit")
+		}
+		result := workspaceFileContent(relativePath, content)
+		s.touchWorkspaceEntryRecency(ctx, row.ID, "file-content")
+		return result, nil
+	}
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead)
 	if err != nil {
 		return WorkspaceFileContent{}, err
@@ -195,6 +249,18 @@ func (s *WorkspaceService) WriteWorkspaceFile(ctx context.Context, workspaceID s
 	if err != nil {
 		return WorkspaceFileContent{}, err
 	}
+	if s.runtime != nil {
+		digest := sha256Hex(content)
+		row, runtimeCtx, targetErr := s.workspaceRuntimeFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite, "workspace-file:"+relativePath+":"+digest)
+		if targetErr != nil {
+			return WorkspaceFileContent{}, targetErr
+		}
+		if writeErr := s.runtime.WriteFile(runtimeCtx, row.ID, relativePath, []byte(content), 0o644); writeErr != nil {
+			return WorkspaceFileContent{}, mapRuntimeFileError(writeErr, "file")
+		}
+		s.touchWorkspaceEntryRecency(ctx, row.ID, "file-content-write")
+		return workspaceFileContent(relativePath, []byte(content)), nil
+	}
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite)
 	if err != nil {
 		return WorkspaceFileContent{}, err
@@ -231,6 +297,17 @@ case "$resolved" in "$root"|"$root"/*) ;; *) exit %d ;; esac`, shellQuote(defaul
 // declarations are regular unit files in /etc/systemd/system, while package
 // units live below /usr and aliases in this directory are symlinks.
 func (s *WorkspaceService) ListWorkspaceServices(ctx context.Context, workspaceID string, repositoryID, userID int64) ([]WorkspaceManagedService, error) {
+	if s.runtime != nil {
+		row, _, err := s.workspaceRuntimeFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead, "")
+		if err != nil {
+			return nil, err
+		}
+		services, err := s.listRuntimeWorkspaceServices(ctx, row, userID)
+		if err == nil {
+			s.touchWorkspaceEntryRecency(ctx, row.ID, "services")
+		}
+		return services, err
+	}
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessRead)
 	if err != nil {
 		return nil, err
@@ -270,6 +347,25 @@ func (s *WorkspaceService) ManageWorkspaceService(ctx context.Context, workspace
 	if strings.HasPrefix(name, workspaceInternalUnitPrefix) {
 		return WorkspaceManagedService{}, pkgerrors.NotFound("workspace service not found")
 	}
+	if s.runtime != nil {
+		controller, ok := s.runtime.(workspaceapi.WorkspaceNamedServiceController)
+		if !ok {
+			return WorkspaceManagedService{}, pkgerrors.Internal("workspace service management unavailable")
+		}
+		row, runtimeCtx, err := s.workspaceRuntimeFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite, "workspace-service:"+workspaceID+":"+name+":"+action)
+		if err != nil {
+			return WorkspaceManagedService{}, err
+		}
+		observed, err := controller.ManageService(runtimeCtx, row.ID, name, action)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return WorkspaceManagedService{}, pkgerrors.NotFound("workspace service not found")
+			}
+			return WorkspaceManagedService{}, pkgerrors.Internal(action + " workspace service")
+		}
+		s.touchWorkspaceEntryRecency(ctx, row.ID, "service-"+action)
+		return runtimeManagedService(observed.Name, observed.State, observed.Address), nil
+	}
 
 	workspace, client, err := s.workspaceFacetTarget(ctx, workspaceID, repositoryID, userID, WorkspaceAccessWrite)
 	if err != nil {
@@ -306,6 +402,25 @@ printf '%%s\0%%s\0%%s\0%%s\0%%s\0' "$unit" "$load" "$active" "$sub" "$port"`, wo
 	}
 	s.touchWorkspaceEntryRecency(ctx, workspace.ID, "service-"+action)
 	return services[0], nil
+}
+
+func (s *WorkspaceService) workspaceRuntimeFacetTarget(ctx context.Context, workspaceID string, repositoryID, userID int64, access WorkspaceAccessLevel, operationID string) (db.Workspace, context.Context, error) {
+	if s == nil || s.q == nil {
+		return db.Workspace{}, nil, pkgerrors.Internal("workspace store unavailable")
+	}
+	row, err := s.loadWorkspaceWithAccess(ctx, workspaceID, repositoryID, userID, access)
+	if err != nil {
+		return db.Workspace{}, nil, err
+	}
+	row, err = s.ensureRuntimeWorkspaceRunning(ctx, row, userID)
+	if err != nil {
+		return db.Workspace{}, nil, err
+	}
+	runtimeCtx, err := s.workspaceRuntimeContext(ctx, row, userID, operationID)
+	if err != nil {
+		return db.Workspace{}, nil, err
+	}
+	return row, runtimeCtx, nil
 }
 
 func (s *WorkspaceService) workspaceFacetTarget(ctx context.Context, workspaceID string, repositoryID, userID int64, access WorkspaceAccessLevel) (db.Workspace, workspaceFacetExecClient, error) {

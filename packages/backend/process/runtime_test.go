@@ -179,7 +179,7 @@ func TestRuntimeServicePreviewAndTerminal(t *testing.T) {
 	address := reserveTestAddress(t)
 	service, err := runtime.StartService(context.Background(), workspace.ID, workspaceapi.ServiceSpec{
 		Name: "preview", Command: helperCommand("serve", map[string]string{"SMITHERS_TEST_ADDRESS": address}),
-		ReadyPort: uint16(portFromAddress(t, address)), ReadyTimeout: 2 * time.Second,
+		ReadyAddress: address, ReadyTimeout: 2 * time.Second,
 	})
 	require.NoError(t, err)
 	assert.Positive(t, service.PID)

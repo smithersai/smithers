@@ -130,6 +130,19 @@ func (r *Runtime) Isolation() workspaceapi.IsolationLevel {
 	return workspaceapi.IsolationTrustedProcess
 }
 
+// WorkspaceIsolation reports the limits of this adapter explicitly. It is a
+// trusted child process with controlled workspace directories and process
+// supervision, not a tenant or host security boundary.
+func (r *Runtime) WorkspaceIsolation(ctx context.Context, workspaceID string) (workspaceapi.IsolationGuarantees, error) {
+	if _, err := r.InspectWorkspace(ctx, workspaceID); err != nil {
+		return workspaceapi.IsolationGuarantees{}, err
+	}
+	return workspaceapi.IsolationGuarantees{
+		Level:    workspaceapi.IsolationTrustedProcess,
+		Boundary: "host_process",
+	}, nil
+}
+
 func (r *Runtime) Capabilities() workspaceapi.WorkspaceCapabilities {
 	return workspaceapi.WorkspaceCapabilities{
 		PersistentFiles: true, Execution: true, ManagedServices: true, Terminal: true,

@@ -3,16 +3,20 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // WorkspaceRouteService defines the interface expected by WorkspaceHandler.
@@ -46,6 +50,18 @@ type asyncWorkspaceCreator interface {
 	CreateWorkspaceAsync(ctx context.Context, input services.CreateWorkspaceInput) (services.WorkspaceResponse, error)
 }
 
+type workspaceCommandRouteService interface {
+	ExecuteWorkspaceCommand(ctx context.Context, workspaceID string, repositoryID, userID int64, input services.WorkspaceCommandInput) (services.WorkspaceCommandResult, error)
+}
+
+type workspaceServiceLaunchRouteService interface {
+	LaunchWorkspaceService(ctx context.Context, workspaceID string, repositoryID, userID int64, input services.WorkspaceServiceLaunchInput) (services.WorkspaceManagedService, error)
+}
+
+type workspacePreviewRouteService interface {
+	ResolveWorkspacePreview(ctx context.Context, workspaceID string, repositoryID, userID int64, port uint16, hostname string) (services.WorkspacePreviewAccess, error)
+}
+
 // WorkspaceHandler handles workspace session API endpoints.
 type WorkspaceHandler struct {
 	Service     WorkspaceRouteService
@@ -61,6 +77,20 @@ type WorkspaceHandler struct {
 	// If nil, the SSE stream endpoints return a 500.
 	Broker  *sse.Broker
 	Metrics *SmithersMetrics
+}
+
+// RegisterWorkspaceRuntimeRoutes adds the execution endpoints beside the
+// existing repository-scoped workspace routes. Composition supplies the same
+// auth, scope, repository permission, quota, and product gate middleware used
+// by the rest of WorkspaceHandler.
+func RegisterWorkspaceRuntimeRoutes(r chi.Router, handler *WorkspaceHandler, readWorkspace, writeWorkspace []func(http.Handler) http.Handler) {
+	if r == nil || handler == nil {
+		return
+	}
+	r.With(writeWorkspace...).Post("/workspaces/{id}/commands", handler.ExecuteWorkspaceCommand)
+	r.With(writeWorkspace...).Post("/workspaces/{id}/services", handler.LaunchWorkspaceService)
+	r.With(readWorkspace...).Get("/workspaces/{id}/preview/{port}", handler.ProxyWorkspacePreview)
+	r.With(readWorkspace...).Get("/workspaces/{id}/preview/{port}/*", handler.ProxyWorkspacePreview)
 }
 
 // ListEgressAudit handles GET /api/repos/{owner}/{repo}/workspaces/{id}/egress.
@@ -120,6 +150,163 @@ type createWorkspaceSnapshotRequest struct {
 
 type writeWorkspaceFileRequest struct {
 	Content string `json:"content"`
+}
+
+// ExecuteWorkspaceCommand handles POST
+// /api/repos/{owner}/{repo}/workspaces/{id}/commands. Product middleware owns
+// authentication, repository permission, admission, and request limits before
+// this method invokes the shared runtime service.
+func (h *WorkspaceHandler) ExecuteWorkspaceCommand(w http.ResponseWriter, r *http.Request) {
+	user, repoCtx, workspaceID, routeErr := workspaceFacetRouteContext(r)
+	if routeErr != nil {
+		pkgerrors.WriteError(w, routeErr)
+		return
+	}
+	service, ok := h.Service.(workspaceCommandRouteService)
+	if !ok {
+		pkgerrors.WriteError(w, pkgerrors.Internal("workspace execution unavailable"))
+		return
+	}
+	var input services.WorkspaceCommandInput
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid request body"))
+		return
+	}
+	result, err := service.ExecuteWorkspaceCommand(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID, input)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, result)
+}
+
+// LaunchWorkspaceService starts a runtime-managed process. Its declared port
+// is the only port the local authenticated preview proxy may resolve.
+func (h *WorkspaceHandler) LaunchWorkspaceService(w http.ResponseWriter, r *http.Request) {
+	user, repoCtx, workspaceID, routeErr := workspaceFacetRouteContext(r)
+	if routeErr != nil {
+		pkgerrors.WriteError(w, routeErr)
+		return
+	}
+	service, ok := h.Service.(workspaceServiceLaunchRouteService)
+	if !ok {
+		pkgerrors.WriteError(w, pkgerrors.Internal("workspace managed services unavailable"))
+		return
+	}
+	var input services.WorkspaceServiceLaunchInput
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid request body"))
+		return
+	}
+	managed, err := service.LaunchWorkspaceService(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID, input)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusCreated, managed)
+}
+
+// ProxyWorkspacePreview authenticates each request before forwarding it to a
+// local loopback service. Hosted adapters return their existing authenticated
+// routed preview URL and this handler redirects to that gateway.
+func (h *WorkspaceHandler) ProxyWorkspacePreview(w http.ResponseWriter, r *http.Request) {
+	user, repoCtx, workspaceID, routeErr := workspaceFacetRouteContext(r)
+	if routeErr != nil {
+		pkgerrors.WriteError(w, routeErr)
+		return
+	}
+	rawPort, err := routeParam(r, "port", "preview port is required")
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	parsedPort, parseErr := strconv.ParseUint(rawPort, 10, 16)
+	if parseErr != nil || parsedPort == 0 {
+		pkgerrors.WriteError(w, pkgerrors.BadRequest("invalid preview port"))
+		return
+	}
+	service, ok := h.Service.(workspacePreviewRouteService)
+	if !ok {
+		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
+		return
+	}
+	access, resolveErr := service.ResolveWorkspacePreview(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID, uint16(parsedPort), "")
+	if resolveErr != nil {
+		writeRouteError(w, r, resolveErr)
+		return
+	}
+	if !access.Proxy {
+		http.Redirect(w, r, access.URL, http.StatusTemporaryRedirect)
+		return
+	}
+	target, parseTargetErr := url.Parse(access.URL)
+	if parseTargetErr != nil || target.Scheme != "http" || !previewLoopbackHost(target.Hostname()) ||
+		target.User != nil || target.Port() != rawPort || (target.Path != "" && target.Path != "/") ||
+		target.RawQuery != "" || target.Fragment != "" {
+		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	previewPath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	externalPrefix := strings.TrimSuffix(r.URL.Path, "/"+previewPath)
+	if previewPath == "" {
+		externalPrefix = strings.TrimSuffix(r.URL.Path, "/")
+	}
+	proxy := newWorkspacePreviewProxy(target, externalPrefix)
+	r.URL.Path = "/" + previewPath
+	r.URL.RawPath = ""
+	proxy.ErrorHandler = func(response http.ResponseWriter, _ *http.Request, _ error) {
+		pkgerrors.WriteError(response, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+var workspacePreviewCredentialHeaders = []string{
+	"Authorization",
+	"Cookie",
+	"Proxy-Authorization",
+	"Cf-Access-Jwt-Assertion",
+	"X-Forwarded-Access-Token",
+	"X-Goog-Authenticated-User-Email",
+	"X-Goog-Authenticated-User-Id",
+}
+
+func newWorkspacePreviewProxy(target *url.URL, externalPrefix string) *httputil.ReverseProxy {
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	direct := proxy.Director
+	proxy.Director = func(request *http.Request) {
+		direct(request)
+		for _, header := range workspacePreviewCredentialHeaders {
+			request.Header.Del(header)
+		}
+		request.Header.Del("Forwarded")
+		request.Header.Del("X-Forwarded-For")
+		request.Header.Del("X-Forwarded-Host")
+		request.Header.Del("X-Forwarded-Proto")
+		request.Host = target.Host
+		if externalPrefix != "" {
+			request.Header.Set("X-Forwarded-Prefix", externalPrefix)
+		}
+	}
+	proxy.ModifyResponse = func(response *http.Response) error {
+		// A preview shares the product origin and must not mint or overwrite the
+		// product session cookie.
+		response.Header.Del("Set-Cookie")
+		return nil
+	}
+	return proxy
+}
+
+func previewLoopbackHost(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // CreateWorkspace handles POST /api/repos/{owner}/{repo}/workspaces.

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -150,7 +152,7 @@ func serviceFingerprint(spec workspaceapi.ServiceSpec) string {
 	if spec.Identity != "" {
 		return spec.Identity
 	}
-	return fmt.Sprintf("%q|%q|%q|%d", spec.Command.Args, spec.Command.Directory, spec.Command.Environment, spec.ReadyPort)
+	return fmt.Sprintf("%q|%q|%q|%s", spec.Command.Args, spec.Command.Directory, spec.Command.Environment, spec.ReadyAddress)
 }
 
 func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec workspaceapi.ServiceSpec) (workspaceapi.Service, error) {
@@ -161,10 +163,11 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 	if spec.ReadyTimeout <= 0 {
 		spec.ReadyTimeout = 15 * time.Second
 	}
-	readyAddress := ""
-	if spec.ReadyPort != 0 {
-		readyAddress = net.JoinHostPort("127.0.0.1", fmt.Sprint(spec.ReadyPort))
+	readyAddress, err := normalizeReadyAddress(spec.ReadyAddress)
+	if err != nil {
+		return workspaceapi.Service{}, err
 	}
+	spec.ReadyAddress = readyAddress
 	fingerprint := serviceFingerprint(spec)
 	r.mu.Lock()
 	ws, err := r.runningWorkspaceLocked(workspaceID)
@@ -182,7 +185,7 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 				r.mu.Unlock()
 				return workspaceapi.Service{}, fmt.Errorf("service %q is already running with different configuration", name)
 			}
-			service := workspaceapi.Service{Name: name, PID: existing.process.cmd.Process.Pid, Address: serviceAddress(existing.spec)}
+			service := workspaceapi.Service{Name: name, PID: existing.process.cmd.Process.Pid, Address: existing.spec.ReadyAddress}
 			r.mu.Unlock()
 			return service, nil
 		}
@@ -228,11 +231,20 @@ func (r *Runtime) StartService(ctx context.Context, workspaceID string, spec wor
 	return workspaceapi.Service{Name: name, PID: process.cmd.Process.Pid, Address: readyAddress}, nil
 }
 
-func serviceAddress(spec workspaceapi.ServiceSpec) string {
-	if spec.ReadyPort == 0 {
-		return ""
+func normalizeReadyAddress(address string) (string, error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "", nil
 	}
-	return net.JoinHostPort("127.0.0.1", fmt.Sprint(spec.ReadyPort))
+	host, rawPort, err := net.SplitHostPort(address)
+	if err != nil || (host != "127.0.0.1" && host != "localhost" && host != "::1") {
+		return "", errors.New("service ready address must be loopback host:port")
+	}
+	parsedPort, err := strconv.ParseUint(rawPort, 10, 16)
+	if err != nil || parsedPort == 0 {
+		return "", errors.New("service ready address has an invalid port")
+	}
+	return net.JoinHostPort(host, strconv.FormatUint(parsedPort, 10)), nil
 }
 
 func (r *Runtime) InspectService(ctx context.Context, workspaceID, name string) (workspaceapi.ServiceObservation, error) {
@@ -251,7 +263,7 @@ func (r *Runtime) InspectService(ctx context.Context, workspaceID, name string) 
 		return workspaceapi.ServiceObservation{}, fmt.Errorf("service %q is not found", name)
 	}
 	process := service.process
-	result := workspaceapi.ServiceObservation{Service: workspaceapi.Service{Name: service.spec.Name, PID: process.cmd.Process.Pid, Address: serviceAddress(service.spec)}, State: workspaceapi.ServiceRunning}
+	result := workspaceapi.ServiceObservation{Service: workspaceapi.Service{Name: service.spec.Name, PID: process.cmd.Process.Pid, Address: service.spec.ReadyAddress}, State: workspaceapi.ServiceRunning}
 	select {
 	case <-process.done:
 		result.State = workspaceapi.ServiceExited
@@ -264,6 +276,35 @@ func (r *Runtime) InspectService(ctx context.Context, workspaceID, name string) 
 	stdout, stdoutTruncated := service.stdout.result()
 	stderr, stderrTruncated := service.stderr.result()
 	result.Stdout, result.Stderr, result.OutputTruncated = stdout, stderr, stdoutTruncated || stderrTruncated
+	return result, nil
+}
+
+// ListServices returns bounded observations for processes owned by one
+// workspace. It does not inspect unrelated host processes.
+func (r *Runtime) ListServices(ctx context.Context, workspaceID string) ([]workspaceapi.ServiceObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(workspaceID)
+	if err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
+	names := make([]string, 0, len(ws.services))
+	for name := range ws.services {
+		names = append(names, name)
+	}
+	r.mu.Unlock()
+	sort.Strings(names)
+	result := make([]workspaceapi.ServiceObservation, 0, len(names))
+	for _, name := range names {
+		observed, inspectErr := r.InspectService(ctx, workspaceID, name)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		result = append(result, observed)
+	}
 	return result, nil
 }
 
@@ -283,11 +324,50 @@ func (r *Runtime) StopService(ctx context.Context, workspaceID, name string) err
 		r.mu.Unlock()
 		return nil
 	}
-	delete(ws.services, trimmedName)
 	r.mu.Unlock()
 	service.process.stop(r.grace)
 	r.unregister(workspaceID, service.process)
 	return nil
+}
+
+func (r *Runtime) ManageService(ctx context.Context, workspaceID, name, action string) (workspaceapi.ServiceObservation, error) {
+	name = strings.TrimSpace(name)
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "start" && action != "stop" && action != "restart" {
+		return workspaceapi.ServiceObservation{}, errors.New("service action must be start, stop, or restart")
+	}
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(workspaceID)
+	if err != nil {
+		r.mu.Unlock()
+		return workspaceapi.ServiceObservation{}, err
+	}
+	managed := ws.services[name]
+	if managed == nil {
+		r.mu.Unlock()
+		return workspaceapi.ServiceObservation{}, fmt.Errorf("service %q is not found", name)
+	}
+	spec := managed.spec
+	r.mu.Unlock()
+
+	if action == "stop" || action == "restart" {
+		if err := r.StopService(ctx, workspaceID, name); err != nil {
+			return workspaceapi.ServiceObservation{}, err
+		}
+		if action == "stop" {
+			return r.InspectService(ctx, workspaceID, name)
+		}
+	}
+	if action == "start" {
+		observed, inspectErr := r.InspectService(ctx, workspaceID, name)
+		if inspectErr == nil && observed.State == workspaceapi.ServiceRunning {
+			return observed, nil
+		}
+	}
+	if _, err := r.StartService(ctx, workspaceID, spec); err != nil {
+		return workspaceapi.ServiceObservation{}, err
+	}
+	return r.InspectService(ctx, workspaceID, name)
 }
 
 func waitForTCP(ctx context.Context, address string, exited <-chan struct{}) error {
@@ -387,7 +467,28 @@ func (r *Runtime) PreviewTarget(ctx context.Context, workspaceID string, port ui
 		return workspaceapi.PreviewTarget{}, errors.New("preview port is required")
 	}
 	r.mu.Lock()
-	_, err := r.runningWorkspaceLocked(workspaceID)
+	ws, err := r.runningWorkspaceLocked(workspaceID)
+	if err == nil {
+		owned := false
+		for _, service := range ws.services {
+			_, rawPort, splitErr := net.SplitHostPort(service.spec.ReadyAddress)
+			servicePort, portErr := strconv.ParseUint(rawPort, 10, 16)
+			if splitErr != nil || portErr != nil || uint16(servicePort) != port {
+				continue
+			}
+			select {
+			case <-service.process.done:
+			default:
+				owned = true
+			}
+			if owned {
+				break
+			}
+		}
+		if !owned {
+			err = fmt.Errorf("workspace preview port %d has no running managed service", port)
+		}
+	}
 	r.mu.Unlock()
 	if err != nil {
 		return workspaceapi.PreviewTarget{}, err

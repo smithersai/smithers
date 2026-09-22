@@ -14,13 +14,14 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
-// CreateSession creates a new workspace session and ensures a Microsandbox VM exists for the workspace.
+// CreateSession creates a new workspace session and ensures its configured
+// workspace runtime is running.
 func (s *WorkspaceService) CreateSession(ctx context.Context, input CreateWorkspaceSessionInput) (WorkspaceSessionResponse, error) {
 	if s.q == nil {
 		return WorkspaceSessionResponse{}, pkgerrors.Internal("workspace store unavailable")
 	}
-	if s.sandbox == nil {
-		return WorkspaceSessionResponse{}, pkgerrors.Internal("microsandbox client unavailable")
+	if s.runtime == nil && s.sandbox == nil {
+		return WorkspaceSessionResponse{}, pkgerrors.Internal("workspace runtime unavailable")
 	}
 
 	cols := input.Cols
