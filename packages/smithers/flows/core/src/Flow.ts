@@ -17,13 +17,14 @@
 import { Action, Flow as Durable } from "@smthrs/flow"
 import type * as Context from "effect/Context"
 import { dual, identity } from "effect/Function"
+import * as Option from "effect/Option"
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
 import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import type * as Types from "effect/Types"
 import * as Annotations from "./Annotations.ts"
 import * as Effects from "./Effects.ts"
-import type * as Node from "./Node.ts"
+import * as Node from "./Node.ts"
 import type * as Placement from "./Placement.ts"
 
 /**
@@ -147,12 +148,13 @@ export interface Flow<
    */
   readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
   /**
-   * Records a call to this signature, in the shape its `input` declares.
+   * Records a call in the input schema's constructor shape, like the native
+   * flow. In particular a class schema accepts its inert field data here.
    *
    * It never runs the body: graph construction evaluates pure bodies at plan
    * time.
    */
-  readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+  readonly call: (input: I["~type.make.in"]) => Node.Node<O["Type"], Err["Type"], Requires>
 }
 
 /**
@@ -266,6 +268,8 @@ interface Options<
   readonly body:
     | ((input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>)
     | undefined
+  /** The original native declarations whose diagnostic source locations survive a rebuild. */
+  readonly original?: { readonly flow: object; readonly action: object | undefined } | undefined
 }
 
 /** The options each built signature was built from, for the combinators. */
@@ -276,8 +280,7 @@ const optionsOf = <I extends Schema.Top, O extends Schema.Top, Err extends Schem
 ): Options<I, O, Err, Requires> => built.get(self) as unknown as Options<I, O, Err, Requires>
 
 /** Whether a schema is the struct `@smthrs/flow` requires of a payload. */
-const isStruct = (schema: Schema.Top): schema is Durable.AnyStructSchema =>
-  Object.prototype.hasOwnProperty.call(schema, "fields")
+const isStruct = (schema: Schema.Top): schema is Durable.AnyStructSchema => Predicate.hasProperty(schema, "fields")
 
 const payloadOf = <I extends Schema.Top>(input: I): Payload<I> =>
   (isStruct(input) ? input : Schema.Struct({ input })) as Payload<I>
@@ -297,11 +300,22 @@ const build = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.To
 ): Flow<I, O, Err, Requires> => {
   const payload = payloadOf(options.input)
   const wrapped = isStruct(options.input)
+  // Capabilities is a Context.Reference: getOption supplies its default even
+  // when no value was annotated. Only an explicitly stored value overrides
+  // the author's declaration.
+  const annotatedCapabilities = options.annotations.mapUnsafe.has(Durable.Capabilities.key)
+    ? Annotations.getOption(options.annotations, Durable.Capabilities)
+    : Option.none<ReadonlyArray<string>>()
+  const capabilities = Option.getOrElse(annotatedCapabilities, () => options.capabilities)
+  const effects = Option.getOrElse(
+    Annotations.getOption(options.annotations, Annotations.Effects),
+    () => options.effects
+  )
   const declared = {
     payload,
     ...(options.description === undefined ? {} : { description: options.description }),
-    ...(options.capabilities.length === 0 ? {} : { capabilities: options.capabilities }),
-    ...(options.effects === undefined ? {} : { effects: options.effects }),
+    ...(capabilities.length === 0 && Option.isNone(annotatedCapabilities) ? {} : { capabilities }),
+    ...(effects === undefined ? {} : { effects }),
     success: options.output,
     error: options.error,
     annotations: options.annotations
@@ -311,7 +325,11 @@ const build = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.To
   // beside it exists because a declared capability ceiling is read off a Flow,
   // and because a caller splices one node either way.
   const action = body === undefined
-    ? Action.make(options.name, { ...declared, tier: tierOf(options.effects) }) as unknown as Action.Declared<
+    ? Action.make(options.name, {
+      ...declared,
+      declaredFrom: options.original?.action,
+      tier: tierOf(effects)
+    }) as unknown as Action.Declared<
       string,
       Payload<I>,
       O,
@@ -319,12 +337,26 @@ const build = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.To
       Requires
     >
     : undefined
+  type NativeBody = (payload: Payload<I>["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+  let nativeBody: NativeBody
+  if (body === undefined) {
+    nativeBody = (payloadValue) => action!.call(payloadValue as never)
+  } else if (wrapped) {
+    nativeBody = body
+  } else {
+    const adapter: NativeBody = (payloadValue) => body((payloadValue as { readonly input: I["Type"] }).input)
+    const bodyIdentity = Node.functionIdentity(body)
+    // The adapter adds no author behavior. A captured body already names all
+    // of its semantics; carry that identity through the wrapping operation.
+    // An uncaptured body must keep failing the native stable-callback policy.
+    nativeBody = bodyIdentity.algorithm === "sha256-source-captures/v4"
+      ? Node.capture({ body: bodyIdentity }, adapter)
+      : adapter
+  }
   const flow = Durable.make(options.name, {
     ...declared,
-    body: (payloadValue: Payload<I>["Type"]) =>
-      body === undefined
-        ? action!.call(payloadValue as never)
-        : body(wrapped ? payloadValue : (payloadValue as { readonly input: I["Type"] }).input)
+    declaredFrom: options.original?.flow,
+    body: nativeBody
   }) as unknown as Durable.Flow<string, Payload<I>, O, Err, Requires>
   const self: Flow<I, O, Err, Requires> = {
     [TypeId]: {
@@ -337,21 +369,24 @@ const build = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.To
     input: options.input,
     output: options.output,
     error: options.error,
-    capabilities: options.capabilities,
-    effects: options.effects,
+    capabilities,
+    effects,
     model: options.model,
     flows: options.flows,
     prompt: options.prompt,
     annotations: flow.annotations,
     flow,
     action,
-    call: (input: I["Type"]) => flow.call((wrapped ? input : { input }) as never),
+    call: (input: I["~type.make.in"]) => flow.call((wrapped ? input : { input }) as never),
     pipe() {
       // eslint-disable-next-line prefer-rest-params
       return pipeArguments(this, arguments)
     }
   }
-  built.set(self, options as unknown as Options<Schema.Top, Schema.Top, Schema.Top, unknown>)
+  built.set(self, {
+    ...options,
+    original: options.original ?? { flow, action }
+  })
   return self
 }
 
@@ -430,11 +465,17 @@ export const withCapabilities: {
 } = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
   self: Flow<I, O, Err, Requires>,
   capabilities: ReadonlyArray<string>
-): Flow<I, O, Err, Requires> =>
-  build({
-    ...optionsOf(self),
-    capabilities: [...new Set([...self.capabilities, ...capabilities])].sort()
-  }))
+): Flow<I, O, Err, Requires> => {
+  const options = optionsOf(self)
+  const combined = [...new Set([...self.capabilities, ...capabilities])].sort()
+  return build({
+    ...options,
+    capabilities: combined,
+    annotations: options.annotations.mapUnsafe.has(Durable.Capabilities.key)
+      ? Annotations.add(options.annotations, Durable.Capabilities, combined)
+      : options.annotations
+  })
+})
 
 /**
  * Places a flow within a host directive, returning a fresh flow.
@@ -584,17 +625,18 @@ export const sealed: {
     self: Flow<I, O, Err, Requires>
   ): Flow<I, O, Err, Requires> => {
     const options = optionsOf(self)
+    const effects = self.effects === undefined
+      ? Effects.make({
+        reads: [],
+        writes: [],
+        mode: "hermetic",
+        onConflict: "serialize",
+        tier: "sealed"
+      })
+      : Effects.sealed(self.effects)
     return build({
       ...options,
-      effects: options.effects === undefined
-        ? Effects.make({
-          reads: [],
-          writes: [],
-          mode: "hermetic",
-          onConflict: "serialize",
-          tier: "sealed"
-        })
-        : Effects.sealed(options.effects)
+      annotations: Annotations.add(options.annotations, Annotations.Effects, effects)
     })
   }
 )

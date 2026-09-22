@@ -13,12 +13,12 @@ told about in advance.
 
 ## Planning requires trusted declarations
 
-`Flow.make` builds a value. Calling that value builds another value. `Node.map`
-and `Node.andThen` store the functions you hand them without calling them.
+`Flow.make` builds a value. Calling its `call` method builds another value.
+`Node.map` and `Node.bindPlanned` store callbacks without calling them.
 Those values can contain executable JavaScript or TypeScript callbacks.
 
 JavaScript and TypeScript declarations and all planning callbacks must be
-trusted. `Graph.build` executes flow bodies, `Node.andThen` builders,
+trusted. `Graph.build` executes flow bodies, `Node.bindPlanned` builders,
 `Node.catch` recovery callbacks, and an optional `resolveLayers` callback in
 the caller process with its ambient authority, including access to files,
 credentials, the network, and process state. Callers must keep these callbacks
@@ -40,7 +40,7 @@ whose permissions and resource limits are enforced outside `@smthrs/core`.
 `Graph.build` walks the declaration once. It evaluates:
 
 - Every flow body it enters, against that call's input.
-- Every `Node.andThen` builder and every `Node.catch` recovery arm, against a
+- Every `Node.bindPlanned` builder and every `Node.catch` recovery arm, against a
   symbolic placeholder standing for the value the arm will receive.
 - The optional `resolveLayers` callback, independently for each node.
 
@@ -81,28 +81,26 @@ asked for, without either declaration knowing the other exists.
 
 ## The placeholder is a name, not a value
 
-The value handed to an `andThen` builder or a `catch` arm is a symbolic
+The value handed to a `bindPlanned` builder or a `catch` arm is a symbolic
 placeholder. It is typed as the success type so member access reads naturally,
 and reading a member is the intended use: it records an input reference naming
 the node and the path.
 
 ```ts
-Node.andThen(reviews, (result) => Report({ notes: result.api.notes }))
+Node.bindPlanned(reviews, (result) => Report.call({ notes: result.api.notes }))
 ```
 
 That records `{ _tag: "Ref", from: "root.andThen", path: ["api", "notes"] }`.
 The dependency is now a fact in the plan.
 
-Computing on the placeholder is not the intended use, and the failure mode is
-quiet:
+Computing on the placeholder raises `GraphBuildError` with code
+`planned_value_computed`. Arithmetic, interpolation, JSON conversion, calls,
+property enumeration, and the `in` operator are refused. Use `Node.map` for
+computation and `Node.branch` for a decision on the eventual value.
 
-- Arithmetic and string interpolation coerce it to the literal text
-  `[planned:<path>]`. A body that writes `` `report: ${result.api.notes}` ``
-  bakes the string `report: [planned:api.notes]` into the plan's identity.
-- A conditional on it always takes the truthy branch, because the placeholder
-  is an object. Only that branch gets planned.
-- Neither produces a diagnostic. The plan is well formed; it just says
-  something you did not mean.
+JavaScript truthiness and strict identity comparisons cannot be trapped. A
+conditional on the placeholder sees a truthy object rather than its result;
+authors must use `Node.branch` instead.
 
 The rule that follows is short: read members from the placeholder to name what
 a later step consumes, and decide with real values inside the step that
@@ -125,9 +123,10 @@ that matters for your code, pass a value nothing else holds a handle to.
 ## Failures split two ways, on purpose
 
 Construction failures throw, because they mean the declaration is malformed and
-there is nothing to inspect: `Flow.make` and a flow call raise `FlowError`,
-`Node.all` and `Node.priority` and continuation elaboration raise
-`NodeBuildError`, and `Node.capture` raises a `TypeError`.
+there is nothing to inspect: a missing flow name raises `TypeError`;
+invalid nodes and continuation elaboration raise the native `GraphBuildError`;
+and invalid capture data raises `TypeError`. A body-less signature is a declared
+action, so it remains callable without inventing a second dynamic node model.
 
 Declaration failures are recorded. `Graph.build` returns a graph even when the
 declaration is invalid and lists the problems in `Graph.diagnostics`, so a

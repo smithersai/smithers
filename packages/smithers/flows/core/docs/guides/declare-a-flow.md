@@ -77,9 +77,10 @@ const layer = Summarize.action!.toLayer(({ text }) => Effect.succeed(text.slice(
 `model`, `flows`, and `prompt` are recorded either way, for a catalog to list
 and for a host filling in that implementation to read.
 
-A signature that declares no effect envelope dispatches as `irreversible`: a
-declaration that never stated its tier must not content-share another run's
-result. `Flow.sealed` states the opposite.
+A signature that declares no effect envelope dispatches as `irreversible`.
+`Flow.sealed` changes its tier, but the generated action remains keyless and
+uses invocation identity. Native `Action.make` exposes the explicit idempotency
+key and implementation-version contract for content sharing across runs.
 
 ## A non-struct input travels as one field
 
@@ -100,11 +101,16 @@ Length.action!.toLayer(({ input }) => Effect.succeed(input.length))
 `signature.input` is the schema as declared, and `Flow.Payload<I>` names the
 wrapped one. `call` wraps for you; an implementation sees the payload.
 
+Struct schemas include `Schema.Class`, whose inherited fields pass through to
+the native flow and action. Calls accept the schema's constructor input, so a
+class call can carry plain field data.
+
 ## Combinators return a fresh signature
 
 Every combinator rebuilds. The original is never modified, and everything it
 carried comes across unchanged, which is what lets a decorator rewrite a flow
 tree without dropping the metadata a host reads back.
+The original source location also survives in graph diagnostics.
 
 ```ts
 import { Annotations, Placement } from "@smthrs/core"

@@ -56,6 +56,12 @@ The returned definition exposes:
 - `annotate` and `annotateMerge`
 - `withRollback`
 
+`Flow.make`, declared `Action.make`, and `Action.makeSystem` accept
+`declaredFrom: original` when a wrapper reconstructs a native declaration.
+The new declaration retains the original's diagnostic source location, including
+an absent location. It still owns its new body, options, and call closures.
+The source reference is not stored in key material and changes no digest.
+
 There is no `toLayer` on a flow. A flow carries a body and never a handler, so the seam that registers one is internal and `Interpreter.layer(flow)` is the public way to make a flow executable.
 
 ### Execution identity

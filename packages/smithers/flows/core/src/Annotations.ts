@@ -40,7 +40,8 @@ export const merge = (parent: Context.Context<never>, child: Context.Context<nev
   Context.merge(parent, child)
 
 /**
- * Safely retrieves an annotation, returning `Option.none()` when it is absent.
+ * Safely retrieves an annotation. An absent service key returns `Option.none()`;
+ * a `Context.Reference` key supplies its declared default.
  *
  * @category getters
  * @since 0.0.0

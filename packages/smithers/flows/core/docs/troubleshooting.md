@@ -9,25 +9,20 @@ reviewer should see the whole plan and its objections at once.
 
 ## Failures that throw
 
-### Cannot call flow "x" without a body
+### Flow.make requires a name
 
 ```text
-flows/core/FlowError: Cannot call flow "x" without a body
-flows/core/FlowError: Cannot build flow "x" without a body
+TypeError: Flow.make requires a name
 ```
 
-A flow declared with no `body`, no `model`, and no `flows` is
-declaration-only: schemas and metadata for a catalog to show. Calling it or
-building it raises `FlowError` with code `missing_body`.
-
-Add a `body`, or add a `model` or `flows` so the flow becomes dynamic and gets
-a default body of one dynamic node. If it is meant to stay declaration-only,
-stop calling it.
+A signature needs a non-empty `name`, which becomes its native flow and action
+tag. A signature without a `body` remains callable: it plans the declared action
+whose implementation a host supplies through `signature.action.toLayer`.
 
 ### Node.all expected a Node at member "x"
 
 ```text
-flows/core/NodeBuildError: Node.all expected a Node at member "x"
+@smthrs/plan/GraphBuildError: Node.all expected a Node at member "x"
 ```
 
 A member of the record you passed to `Node.all` is not a node. Usually the
@@ -37,7 +32,7 @@ plain value that needs `Node.succeed`.
 ### Node.priority expects a safe integer
 
 ```text
-flows/core/NodeBuildError: Node.priority expects a safe integer, received 1.5
+@smthrs/plan/GraphBuildError: Node.priority expects a safe integer, received 1.5
 ```
 
 Priority is a signed integer ordering ready work. Fractions and values past
@@ -46,8 +41,8 @@ truncated.
 
 ### Node.andThen at "x" must return a Node
 
-`NodeBuildError` with code `invalid_continuation` is raised during
-`Graph.build`, when a continuation or a `catch` recovery arm returns something
+`GraphBuildError` with code `invalid_continuation` is raised during
+`Graph.build`, when a `bindPlanned` continuation or a `catch` recovery arm returns something
 other than a node. The message names the node id, so the structural position
 tells you which builder in your source is wrong.
 
@@ -210,16 +205,12 @@ is what an unannotated function gets. Declare what the function closes over
 with `Node.capture` and the algorithm becomes `sha256-source-captures/v4`. See
 [Identity and key material](./concepts/identity.md).
 
-### A plan contains the text `[planned:...]`
+### planned_value_computed
 
-Something computed on the symbolic placeholder rather than reading a member
-from it. Arithmetic and string interpolation coerce the placeholder to the
-literal text `[planned:<path>]`, and that text is now part of the plan's
-identity. No diagnostic is produced, because the plan is well formed.
-
-Look for a template literal or an arithmetic expression in an `andThen` builder
-or a flow body. Read members from the placeholder to name what a later step
-consumes, and compute with real values inside the step that produces them.
+An operation computed on a symbolic result while planning. Arithmetic, string
+interpolation, JSON conversion, calls, property enumeration, and the `in`
+operator raise `GraphBuildError` with this code. Read members to name a dependency,
+use `Node.map` to compute on the eventual value, and use `Node.branch` to decide.
 
 ### Only one branch of a conditional was planned
 

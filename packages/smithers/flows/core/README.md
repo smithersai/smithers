@@ -76,7 +76,9 @@ const layer = read.action!.toLayer(({ path }) => Effect.succeed(path))
 
 An input schema that is not a struct travels as the one field `input`, because `@smthrs/flow` requires a struct payload. `Flow.Payload<I>` names the wrapped schema, and `signature.call(value)` takes the declared shape and wraps it, so an author never writes the wrapper.
 
-A signature that declares no effect envelope dispatches as `irreversible`: a declaration that never stated its tier must not content-share another run's result. `Flow.sealed` is how a signature states the opposite.
+A signature that declares no effect envelope dispatches as `irreversible`. `Flow.sealed` changes its tier to `sealed`, but its generated action remains keyless and uses invocation identity; the tier alone does not enable content sharing across runs. Use the native `Action.make` contract for explicit idempotency keys and implementation versions.
+
+Struct schemas, including `Schema.Class`, pass through as the native payload schema. Calls accept the schema's constructor input, so class schemas accept inert field data without requiring a class instance in a planned payload.
 
 ## Identity and caching
 
@@ -87,6 +89,13 @@ An unannotated mapper, continuation, or flow body receives a process-local `sha2
 ```ts
 const scaled = Node.capture({ factor: 3 }, (value: number) => value * 3)
 ```
+
+An authored captured body retains its identity through core lowering and
+decorators, including the adapter for a non-struct input. An uncaptured body
+remains process-local. Generated action-only wrappers also remain process-local:
+use `Interpreter.layer`, or explicitly select `callbackIdentity: "process-local"`
+when registering them. A stable composition uses authored captured bodies or
+native declarations with explicit capture contracts.
 
 Capture data must be finite, inert, plain data. Accessors, cycles, non-finite numbers, symbols, functions, and non-plain prototypes are rejected rather than hashed incompletely, and accepted capture data is copied and deeply frozen. A function expression reads the copy through its `this` receiver; the returned function keeps its ordinary arguments. Caller objects remain unchanged. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. Captures are compared by structural value: two references to one shared object digest identically to two structurally equal copies, so aliasing is not identity.
 

@@ -73,6 +73,12 @@ interface DeclaredOptions<
   Error extends Schema.Top
 > {
   readonly payload: Payload
+  /**
+   * Native declaration whose source location this reconstructed action retains.
+   * A source with no recorded location preserves that absence. This affects
+   * diagnostics only, never identity; calls still refer to the new declaration.
+   */
+  readonly declaredFrom?: object | undefined
   readonly implementationVersion?: string | undefined
   readonly success?: Success | undefined
   readonly error?: Error | undefined
@@ -395,10 +401,15 @@ export const make: {
     readonly retryPolicy?: RetryPolicy.RetryPolicy | undefined
     readonly annotations?: Context.Context<never> | undefined
   }): Action<Success, Error, Exclude<R, FlowInstance | FlowRuntime | Scope>>
-} = ((first: string | Parameters<typeof makeInline>[0], second?: object) =>
-  typeof first === "string"
-    ? makeDeclared(first, second as Parameters<typeof makeDeclared>[1], DeclarationSite.capture())
-    : makeInline(first)) as any
+} = ((first: string | Parameters<typeof makeInline>[0], second?: object) => {
+  if (typeof first !== "string") return makeInline(first)
+  const options = second as Parameters<typeof makeDeclared>[1]
+  return makeDeclared(
+    first,
+    options,
+    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.declaredAt(options.declaredFrom)
+  )
+}) as any
 
 /**
  * Declares a SYSTEM action: one whose implementation ships with the engine
@@ -434,7 +445,11 @@ export const makeSystem = <
   // from `toLayer`, and dropping it from `call` only means nothing asks for it.
   // Providing a service no one requires is always sound; the reverse would not
   // be, which is why this is the one place the channel is written off.
-  makeDeclared(tag, options, DeclarationSite.capture()) as unknown as Declared<
+  makeDeclared(
+    tag,
+    options,
+    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.declaredAt(options.declaredFrom)
+  ) as unknown as Declared<
     Tag,
     Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
     Success,

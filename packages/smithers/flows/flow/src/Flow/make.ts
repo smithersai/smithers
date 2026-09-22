@@ -216,6 +216,12 @@ interface MakeOptions<
 > {
   readonly payload: Payload
   /**
+   * Native declaration whose source location this reconstructed flow retains.
+   * A source with no recorded location preserves that absence. This affects
+   * diagnostics only, never identity; the new flow keeps its own body and calls.
+   */
+  readonly declaredFrom?: object | undefined
+  /**
    * One sentence saying what this flow does, read by a catalog that lists it.
    */
   readonly description?: string | undefined
@@ -347,7 +353,9 @@ export const make = <
   // Captured here, where the stack still names the author's file, and carried
   // as a non-enumerable property so no digest can see it
   // (`internal/DeclarationSite.ts`).
-  const site = DeclarationSite.capture()
+  const site = options.declaredFrom === undefined
+    ? DeclarationSite.capture()
+    : DeclarationSite.declaredAt(options.declaredFrom)
   return DeclarationSite.annotate(
     makeProto<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>({
       _tag: tag,
