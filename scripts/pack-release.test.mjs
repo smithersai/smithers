@@ -270,22 +270,25 @@ test("every gate in ci.yml also runs in release.yml", () => {
   // already carries that gate; `browser` runs `//scripts:webBundleContract`, which
   // `//scripts/...` already covers; `packages` runs `test '//packages/...'`,
   // which `ci '//packages/...'` already covers; `apps-e2e` needs the runner's
-  // Chrome; native Rust tests stay in `rust`. Release mirrors `wasm-repro`
-  // so the committed artifact is rebuilt and byte-compared before packing.
+  // Chrome; the native Rust crate remains in `rust`, while the shipped FFI
+  // and Go backend jobs are mirrored. Release mirrors `wasm-repro` so the
+  // committed artifact is rebuilt and byte-compared before packing.
   const jobs = Object.keys(parse(ci).jobs)
   assert.deepEqual(jobs, [
     "cache-publish",
     "test",
     "apps-e2e",
     "rust",
+    "rust-ffi",
     "wasm-repro",
     "e2e-faults",
     "browser",
     "packages",
+    "go-backend",
     "review-lints"
   ])
 
-  const mirrored = ["test", "e2e-faults", "wasm-repro"]
+  const mirrored = ["test", "rust-ffi", "e2e-faults", "wasm-repro", "go-backend"]
   const isGate = (step) => graphCommands([step]).length > 0
   const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
   const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)

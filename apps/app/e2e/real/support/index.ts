@@ -144,11 +144,17 @@ export const realApi = async (
   const token = await page.evaluate(() =>
     document.querySelector('meta[name="smithers-local-session"]')?.getAttribute("content") ?? null)
   const authorization = applicationAuthorization()
+  const ownerMutation = process.env.SMITHERS_REAL_AUTH_KIND === "owner-session" && !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())
+  const csrf = ownerMutation
+    ? (await page.context().cookies(target.origin)).find((cookie) => cookie.name === "__csrf")?.value
+    : undefined
+  if (ownerMutation && !csrf) throw new Error("Owner session has no CSRF cookie for the requested mutation.")
   return page.context().request.fetch(target.toString(), {
     method,
-    ...(token || authorization ? { headers: {
+    ...(token || authorization || ownerMutation ? { headers: {
       ...(token ? { "x-smithers-local-session": token } : {}),
-      ...(authorization ? { authorization } : {})
+      ...(authorization ? { authorization } : {}),
+      ...(ownerMutation ? { Origin: target.origin, "X-CSRF-Token": csrf! } : {})
     } } : {}),
     ...(data === undefined ? {} : { data })
   })

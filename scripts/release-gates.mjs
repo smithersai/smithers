@@ -110,6 +110,7 @@ export const releaseGates = [
   { name: "Generated workflow drift", verb: "lint", target: "//:ci" },
   { name: "Factory projection drift", verb: "lint", target: "//:factoryProjection" },
   { name: "Target index drift", verb: "lint", target: "//:targetIndex" },
+  { name: "Native FFI clippy and tests", verb: "build", target: "//:nativeFfi" },
   // Ordinary workspace CI omits this exclusive tier; the explicit label opts in.
   { name: "Exclusive fault matrix", verb: "test", target: "//packages/...:faults", jobs: 1 },
   // Release-only: a pinned target outside its package's `ci`.
@@ -118,7 +119,8 @@ export const releaseGates = [
   { name: "Release version coherence", verb: "test", target: "//scripts:releaseVersion" },
   { name: "Build-script unit tests", verb: "test", target: "//crates/flows-jj:buildScript" },
   // The committed flows_jj.wasm is rebuilt and byte-compared before packing.
-  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//crates/flows-jj:wasmReproducibility" }
+  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//crates/flows-jj:wasmReproducibility" },
+  { name: "Build and test shared backend", verb: "test", target: "//:backendGo" }
 ]
 
 /**

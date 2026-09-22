@@ -5,8 +5,10 @@ import { join, resolve } from "node:path"
 import {
   MATRIX_OBLIGATIONS,
   MATRIX_SCENARIO_IDS,
+  applicableScenarioIds,
   MODE_DESCRIPTORS,
   missingModeReadiness,
+  matrixPasses,
   parseMatrixConfig,
   probeMode,
   readExecutionReceipt,
@@ -95,10 +97,10 @@ describe("deployment mode matrix", () => {
     expect(validateExecutionReceipt(remoteConfig, revision, receipt("native-plue", ["native-ui"]))).toEqual([])
   })
 
-  test("reports unavailable modes and missing executions as unavailable, never passed", () => {
+  test("reports unlaunched own modes as failed, never passed", () => {
     const readiness = { ...missingModeReadiness("web-selfhost", "not launched"), origin: "https://example.test" }
     const rows = scenarioReceipts(readiness, revision, [])
-    expect(rows.every(({ status }) => status === "unavailable")).toBe(true)
+    expect(rows.every(({ status }) => status === "failed")).toBe(true)
     expect(rows.find(({ obligation }) => obligation === "approval-decision")?.reason).toBe("not launched")
     expect(rows.find(({ obligation }) => obligation === "chat")?.reason).toBe("not launched")
   })
@@ -127,7 +129,7 @@ describe("deployment mode matrix", () => {
           host: "cloud",
           version: "test",
           buildSha: revision,
-          capabilities: ["agent", "browser.read", "identity", "cloud", "cloud.terminal"],
+          capabilities: ["agent", "model.turn", "browser.read", "identity", "cloud", "cloud.terminal"],
           authFlow: "both",
           sandbox: null
         })
@@ -147,7 +149,7 @@ describe("deployment mode matrix", () => {
       apiVersion: 1, host: "local", version: "test", buildSha: "b".repeat(40),
       capabilities: [], authFlow: "redirect", sandbox: null
     }))
-    expect(result.status).toBe("unavailable")
+    expect(result.status).toBe("failed")
     expect(result.reasons).toContain("bootstrap host local does not match local-plue provider plue")
     expect(result.reasons).toContain(`bootstrap revision ${"b".repeat(40)} does not match ${revision}`)
   })
@@ -165,7 +167,7 @@ describe("deployment mode matrix", () => {
       capabilities: [], authFlow: "none", sandbox: null
     }))
     const result = await probeMode(config, revision, { OWNER: "configured" }, fetcher)
-    expect(result.status).toBe("unavailable")
+    expect(result.status).toBe("failed")
     expect(result.reasons).toContain("bootstrap authFlow none does not advertise owner credentials")
   })
 
@@ -181,7 +183,7 @@ describe("deployment mode matrix", () => {
       apiVersion: 1, host: "local", version: "test", buildSha: revision,
       capabilities: [], authFlow: "none", sandbox: null
     }))
-    expect(result.status).toBe("unavailable")
+    expect(result.status).toBe("failed")
     expect(result.reasons).toContain("native mode has no packaged Electrobun CDP driver configuration")
   })
 
@@ -201,7 +203,7 @@ describe("deployment mode matrix", () => {
       ? new Response("ok")
       : Response.json({
         apiVersion: 1, host: "cloud", version: "test", buildSha: revision,
-        capabilities: [], authFlow: "both", sandbox: null
+        capabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"], authFlow: "both", sandbox: null
       })
     expect((await probeMode(config, revision, { PLUE_TOKEN: "configured" }, fetcher)).reasons)
       .toContain("native driver environment NATIVE_PLUE_DRIVER is unavailable")
@@ -236,5 +238,56 @@ describe("deployment mode matrix", () => {
     const path = join(root, "receipt.json")
     writeFileSync(path, JSON.stringify({ ...receipt("native-own", ["native-ui", "supervisor", "app", "postgres"]), startedRoles: ["native-ui", "magic"] }))
     expect(() => readExecutionReceipt(path)).toThrow("malformed execution receipt")
+  })
+
+  test("missing a required capability fails a configured mode and filters its scenarios", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-mode-matrix-"))
+    roots.push(root)
+    const path = join(root, "receipt.json")
+    writeFileSync(path, JSON.stringify(receipt("local-plue", ["local-ui"])))
+    const config = parseMatrixConfig({ revision, modes: [{
+      mode: "local-plue", origin: "https://example.test",
+      auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
+    }] }).modes[0]!
+    const result = await probeMode(config, revision, { PROFILE: "configured" }, async (input) =>
+      new URL(String(input)).pathname === "/api/health" ? new Response("ok") : Response.json({
+        apiVersion: 1, host: "cloud", version: "test", buildSha: revision,
+        capabilities: ["identity", "agent", "model.turn", "cloud"], authFlow: "redirect", sandbox: null
+      }))
+    expect(result.status).toBe("failed")
+    expect(result.reasons).toContain("bootstrap does not advertise required cloud.terminal")
+    expect(applicableScenarioIds(result.capabilities)).not.toContain("workspaces.cloud-terminal-keyboard-output")
+    const readiness = DEPLOYMENT_MODES.map((mode) => mode === "local-plue" ? result :
+      mode.endsWith("-plue") ? missingModeReadiness(mode, "not configured") :
+      { ...missingModeReadiness(mode, "not launched"), status: "passed" as const })
+    expect(matrixPasses(readiness, [], true, true)).toBe(false)
+  })
+
+  test("unconfigured Plue modes remain distinct from a passing owned gate", () => {
+    const readiness = DEPLOYMENT_MODES.map((mode) => mode.endsWith("-plue")
+      ? missingModeReadiness(mode, "not configured")
+      : { ...missingModeReadiness(mode, "ready"), status: "passed" as const })
+    expect(readiness.filter(({ status }) => status === "not-configured")).toHaveLength(3)
+    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, []).map((row) => ({
+      ...row, status: state.status === "not-configured" ? "not-configured" as const : "passed" as const
+    })))
+    expect(matrixPasses(readiness, rows, true, false)).toBe(true)
+    expect(matrixPasses(readiness, rows, true, true)).toBe(false)
+    expect(matrixPasses(readiness, rows.slice(1), true, false)).toBe(false)
+  })
+
+  test("runner partitions cover only their declared modes while the default still requires all six", () => {
+    const ubuntu = ["web-selfhost", "web-plue", "local-own", "local-plue"] as const
+    const mac = ["native-own", "native-plue"] as const
+    expect(new Set([...ubuntu, ...mac])).toEqual(new Set(DEPLOYMENT_MODES))
+    const readiness = ubuntu.map((mode) => mode.endsWith("-plue")
+      ? missingModeReadiness(mode, "not configured")
+      : { ...missingModeReadiness(mode, "ready"), status: "passed" as const })
+    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, []).map((row) => ({
+      ...row, status: state.status === "not-configured" ? "not-configured" as const : "passed" as const
+    })))
+    expect(matrixPasses(readiness, rows, true, false, ubuntu)).toBe(true)
+    expect(matrixPasses(readiness, rows, true, false)).toBe(false)
+    expect(matrixPasses(readiness, rows, true, false, ["web-selfhost", "web-selfhost"])).toBe(false)
   })
 })

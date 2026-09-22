@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"runtime"
-	"runtime/debug"
+	"strings"
 
 	"github.com/go-chi/cors"
 )
+
+// BuildSHA is set by the distribution build. A local development binary may
+// leave it unset, but packaged builds must inject the exact source revision.
+var BuildSHA string
 
 // appBootstrap describes only capabilities that this assembled process can
 // actually serve. The browser reads it before making any authenticated call.
@@ -30,6 +34,8 @@ type bootstrapFeatures struct {
 	redirectAuth     bool
 	agent            bool
 	modelTurn        bool
+	workspace        bool
+	terminal         bool
 	billingCheckout  bool
 	workspaceRuntime bool
 	isolatedSandbox  bool
@@ -56,6 +62,12 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	if features.modelTurn {
 		result.Capabilities = append(result.Capabilities, "model.turn")
 	}
+	if features.workspace {
+		result.Capabilities = append(result.Capabilities, "cloud")
+	}
+	if features.terminal {
+		result.Capabilities = append(result.Capabilities, "cloud.terminal")
+	}
 	if features.billingCheckout {
 		result.Capabilities = append(result.Capabilities, "billing.checkout")
 	}
@@ -73,21 +85,11 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 }
 
 func buildIdentity() (version, sha string) {
-	version, sha = "dev", "unknown"
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version, sha
+	sha = strings.TrimSpace(BuildSHA)
+	if sha == "" {
+		sha = "unknown"
 	}
-	if info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = info.Main.Version
-	}
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" && setting.Value != "" {
-			sha = setting.Value
-			break
-		}
-	}
-	return version, sha
+	return "dev", sha
 }
 
 func withAppBootstrap(next http.Handler, bootstrap appBootstrap, corsOptions cors.Options) http.Handler {

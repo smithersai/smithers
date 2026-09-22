@@ -256,6 +256,25 @@ func TestLoad_ReturnsNoError(t *testing.T) {
 	require.NotNil(t, cfg)
 }
 
+func TestLoadCookieSecurityFollowsPublicOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		origin string
+		secure bool
+	}{
+		{name: "loopback HTTP", origin: "http://127.0.0.1:4000", secure: false},
+		{name: "public HTTPS", origin: "https://smithers.example.test", secure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("SMITHERS_PUBLIC_URL", tc.origin)
+			cfg, err := Load("")
+			require.NoError(t, err)
+			require.Equal(t, tc.secure, cfg.Auth.CookieSecure)
+		})
+	}
+}
+
 // TestLoad_ServerConfigDefaults verifies server defaults match the spec (port 4000).
 func TestLoad_ServerConfigDefaults(t *testing.T) {
 	clearConfigEnv(t)
@@ -684,7 +703,7 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 				SessionCookieName:    "smithers_session",
 				SessionSecret:        "",
 				LFSSigningSecret:     "",
-				CookieSecure:         true,
+				CookieSecure:         false,
 				ClosedAlphaEnabled:   true,
 				EnableKeyAuth:        true,
 				KeyAuthDomain:        "smithers.sh",
@@ -878,7 +897,7 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			SessionRefreshWindow: "168h",
 			SessionCookieName:    "smithers_session",
 			SessionSecret:        "",
-			CookieSecure:         true,
+			CookieSecure:         false,
 			ClosedAlphaEnabled:   true,
 			EnableKeyAuth:        true,
 			KeyAuthDomain:        "smithers.sh",

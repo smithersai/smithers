@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -990,6 +991,11 @@ func Load(configFile string) (*Config, error) {
 		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("read config file: %w", err)
 		}
+	}
+	// Browser cookies must work on the public origin chosen for this process.
+	// An explicit cookie_secure setting still wins over this scheme default.
+	if publicURL, err := url.Parse(v.GetString("server.public_url")); err == nil {
+		v.SetDefault("auth.cookie_secure", strings.EqualFold(publicURL.Scheme, "https"))
 	}
 
 	var cfg Config

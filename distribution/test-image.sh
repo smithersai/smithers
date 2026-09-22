@@ -106,14 +106,19 @@ start_app() {
     "$image" >/dev/null
 }
 
+build_sha=${SMITHERS_BUILD_SHA:-}
 if [ "${SMITHERS_DOCKER_SKIP_BUILD:-0}" != 1 ]; then
-  docker build --progress=plain -f "$root/distribution/Dockerfile" -t "$image" "$root"
+  if [ -z "$build_sha" ]; then build_sha=$(jj -R "$root" log -r @ --no-graph -T commit_id); fi
+  test -n "$build_sha" || { printf 'BUILD_SHA is required\n' >&2; exit 1; }
+  docker build --progress=plain --build-arg "BUILD_SHA=$build_sha" -f "$root/distribution/Dockerfile" -t "$image" "$root"
 fi
 
 docker network create "$network" >/dev/null
 for volume in "$data_volume" "$restored_data_volume" "$postgres_volume" "$restored_postgres_volume" "$backup_volume"; do
   docker volume create "$volume" >/dev/null
 done
+docker run --rm --user 0 -v "$backup_volume:/backups" \
+  --entrypoint /bin/sh "$image" -eu -c 'chown smithers:smithers /backups; chmod 0700 /backups'
 
 start_postgres "$postgres" "$postgres_volume"
 start_app "$app" "$data_volume" "$postgres"
@@ -154,6 +159,9 @@ docker exec "$app" sh -eu -c '
 '
 curl -fsS "$origin/" | grep -q '<div id="root"'
 curl -fsS "$origin/api/bootstrap" | grep -q '"apiVersion":1'
+if [ -n "$build_sha" ]; then
+  curl -fsS "$origin/api/bootstrap" | grep -Fq "\"buildSha\":\"$build_sha\""
+fi
 curl -fsS "$origin/api/auth/local/status" | grep -q '"initialized":false'
 curl -fsS -X POST "$origin/api/auth/local/bootstrap" \
   -H 'Content-Type: application/json' \
@@ -179,6 +187,7 @@ table_count=$(docker exec "$postgres" psql -U "$database_user" -d "$database_nam
 test "$table_count" -gt 0
 
 docker restart "$app" >/dev/null
+origin=$(published_origin "$app")
 wait_http "$app" "$origin"
 test "$(docker exec "$app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')" = "$secret_checksum"
 curl -fsS -H "Authorization: token $api_token" \

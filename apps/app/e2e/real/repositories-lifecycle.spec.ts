@@ -28,7 +28,7 @@ authenticatedTest(
     capabilities: ["identity"],
     description: "Create an initialized private repository through the canonical product API, read its stored metadata and README, then delete only that uniquely owned repository and prove it is gone.",
     coverage: [
-      "action:repo.create", "host:production", "path:success", "path:persistence", "door:user-only",
+      "action:repo.create", "host:local", "host:production", "host:native", "path:success", "path:persistence", "door:user-only",
       "surface:repository-api", "dimension:repository-create", "dimension:initialized-repository",
       "dimension:owned-cleanup", "evidence:create-read-delete-readback"
     ]

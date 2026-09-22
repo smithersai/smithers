@@ -63,6 +63,8 @@ COPY packages packages
 COPY flows flows
 COPY evals evals
 COPY apps apps
+COPY examples examples
+COPY evals evals
 COPY scripts scripts
 COPY distribution/flow-host-manifest.mjs distribution/flow-host-manifest.mjs
 COPY --from=flows-jj /src/packages/smithers/flows/jj/wasm/flows_jj.wasm packages/smithers/flows/jj/wasm/flows_jj.wasm
@@ -79,13 +81,15 @@ RUN node flows/coding/build.mjs /out/flow-hosts/smithers-coding-host \
     /out/flow-hosts/smithers-librarian-host
 
 FROM golang:1.26.8-bookworm AS backend
+ARG BUILD_SHA
 WORKDIR /src
+RUN printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40,64}$' || (echo 'BUILD_SHA must be an exact source revision' >&2; exit 1)
 COPY go.mod go.sum ./
 RUN go mod download
 COPY apps/backend apps/backend
 COPY apps/smithers apps/smithers
 COPY packages/backend packages/backend
-RUN GOMAXPROCS=2 CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/smithers-backend ./apps/backend
+RUN GOMAXPROCS=2 CGO_ENABLED=1 go build -trimpath -ldflags="-s -w -X github.com/smithersai/smithers/packages/backend/internal/compose.BuildSHA=$BUILD_SHA" -o /out/smithers-backend ./apps/backend
 RUN GOMAXPROCS=2 CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/smithers ./apps/smithers
 
 # Debian/glibc is required by libsmithers_ffi; Alpine/musl is ABI-incompatible.

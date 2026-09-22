@@ -6,7 +6,9 @@ import {
   MANDATORY_DETERMINISTIC_BROWSER_SPECS,
   MANDATORY_DETERMINISTIC_BUN_TESTS,
   MODE_DESCRIPTORS,
+  applicableScenarioIds,
   missingModeReadiness,
+  matrixPasses,
   parseMatrixConfig,
   probeMode,
   scenarioReceipts
@@ -18,7 +20,7 @@ import type { DeploymentMode, RealE2EEvidenceFile, RealScenarioRunEvidence } fro
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
 const command = args[0] ?? "audit"
-if (command !== "audit" && command !== "run") throw new Error("usage: run-mode-matrix.ts audit|run [--config path] [--report path]")
+if (command !== "audit" && command !== "run") throw new Error("usage: run-mode-matrix.ts audit|run [--config path] [--report path] [--modes comma-separated]")
 
 const option = (name: string): string | undefined => {
   const index = args.indexOf(name)
@@ -27,14 +29,28 @@ const option = (name: string): string | undefined => {
   if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`)
   return value
 }
+const requestedModes = option("--modes")?.split(",")
+const selectedModes: readonly DeploymentMode[] = requestedModes === undefined
+  ? DEPLOYMENT_MODES
+  : requestedModes.map((mode) => {
+    if (!(DEPLOYMENT_MODES as readonly string[]).includes(mode)) throw new Error(`invalid matrix mode ${mode}`)
+    return mode as DeploymentMode
+  })
+if (selectedModes.length === 0 || new Set(selectedModes).size !== selectedModes.length) {
+  throw new Error("matrix modes must be a nonempty set")
+}
 
 const detectRevision = async (): Promise<string> => {
-  // Let jj snapshot first: a stale @ would label tests of unsnapshotted source
-  // with the previous tree's revision.
-  const child = Bun.spawn(["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], { cwd: appDir, stdout: "pipe", stderr: "pipe" })
-  const revision = (await new Response(child.stdout).text()).trim()
-  if (await child.exited !== 0 || !/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("cannot identify the exact jj revision")
-  return revision
+  // jj snapshots local workspaces; the release checkout is Git-only.
+  for (const command of [["jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"], ["git", "rev-parse", "HEAD"]]) {
+    try {
+      const child = Bun.spawn(command, { cwd: appDir, stdout: "pipe", stderr: "pipe" })
+      const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
+      const revision = stdout.trim()
+      if (code === 0 && /^[0-9a-f]{40,64}$/.test(revision)) return revision
+    } catch { /* Git-only release checkouts have no jj. */ }
+  }
+  throw new Error("cannot identify the exact source revision")
 }
 
 const detectedRevision = await detectRevision()
@@ -64,7 +80,7 @@ if (command === "run") {
 
 const readiness: ModeReadiness[] = []
 const runs: RealScenarioRunEvidence[] = []
-for (const mode of DEPLOYMENT_MODES) {
+for (const mode of selectedModes) {
   const modeConfig = config.modes.find((entry) => entry.mode === mode)
   const state = configFailure ? missingModeReadiness(mode, configFailure)
     : modeConfig === undefined ? missingModeReadiness(mode, `configuration for ${mode} is unavailable`)
@@ -73,24 +89,36 @@ for (const mode of DEPLOYMENT_MODES) {
   if (command !== "run" || state.status !== "passed" || modeConfig === undefined || !deterministicPassed) continue
 
   const evidence = resolve(appDir, "test-results", "mode-matrix", `${mode}.real-e2e.json`)
+  const selectedScenarios = applicableScenarioIds(state.capabilities)
+  if (selectedScenarios.length === 0) continue
   const nativeDriver = modeConfig.surfaceDriver
-  const invocation = nativeDriver === undefined
+  const prelaunchedNative = nativeDriver !== undefined && process.env.SMITHERS_NATIVE_MATRIX_PRELAUNCHED === mode
+  const invocation = nativeDriver === undefined || prelaunchedNative
     ? ["bun", "scripts/run-real-e2e.ts"]
     : ["bun", "scripts/run-native-mode-matrix.ts"]
+  const childEnvironment = { ...process.env }
+  if (nativeDriver === undefined) {
+    delete childEnvironment.SMITHERS_REAL_NATIVE_CDP_ENDPOINT
+    delete childEnvironment.SMITHERS_REAL_NATIVE_WINDOW_URL
+    delete childEnvironment.SMITHERS_REAL_NATIVE_TARGET_NONCE
+    delete childEnvironment.SMITHERS_NATIVE_MATRIX_PRELAUNCHED
+  }
   const child = Bun.spawn(invocation, {
     cwd: appDir,
     env: {
-      ...process.env,
+      ...childEnvironment,
       ...(nativeDriver === undefined
         ? { SMITHERS_REAL_BASE_URL: modeConfig.origin }
         : {
           SMITHERS_REAL_API_ORIGIN: modeConfig.origin,
-          SMITHERS_NATIVE_MATRIX_DRIVER_ENVIRONMENT: nativeDriver.environment
+          SMITHERS_NATIVE_MATRIX_DRIVER_ENVIRONMENT: nativeDriver.environment,
+          ...(prelaunchedNative ? { SMITHERS_REAL_BASE_URL: new URL(process.env.SMITHERS_REAL_NATIVE_WINDOW_URL!).origin } : {})
         }),
       SMITHERS_REAL_E2E_MODE: mode,
       SMITHERS_REAL_E2E_HOST: MODE_DESCRIPTORS[mode].legacyHost,
       SMITHERS_REAL_E2E_REVISION: config.revision,
       SMITHERS_REAL_E2E_RESULTS: evidence,
+      SMITHERS_REAL_MATRIX_SCENARIOS: JSON.stringify(selectedScenarios),
       SMITHERS_REAL_AUTH_KIND: modeConfig.auth.kind,
       SMITHERS_REAL_AUTH_ENVIRONMENT: modeConfig.auth.environment,
       ...(modeConfig.auth.kind === "browser-profile" ? { SMITHERS_E2E_PROFILE: process.env[modeConfig.auth.environment] } : {})
@@ -108,10 +136,11 @@ for (const mode of DEPLOYMENT_MODES) {
 
 const scenarios: MatrixScenarioReceipt[] = readiness.flatMap((state) => scenarioReceipts(state, config.revision, runs))
 const report = {
-  ok: deterministicPassed && readiness.every(({ status }) => status === "passed") && scenarios.every(({ status }) => status === "passed"),
+  ok: matrixPasses(readiness, scenarios, deterministicPassed, Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL), selectedModes),
   generatedAt: new Date().toISOString(),
   revision: config.revision,
   command,
+  modes: selectedModes,
   commands,
   readiness,
   scenarios
@@ -121,7 +150,7 @@ mkdirSync(dirname(reportPath), { recursive: true })
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n")
 
 for (const state of readiness) console.log(`${state.status.toUpperCase()} ${state.mode}${state.reasons.length ? `: ${state.reasons.join("; ")}` : ""}`)
-const counts = scenarios.reduce((result, row) => ({ ...result, [row.status]: result[row.status] + 1 }), { passed: 0, failed: 0, unavailable: 0 })
-console.log(`matrix scenarios: ${counts.passed} passed, ${counts.failed} failed, ${counts.unavailable} unavailable`)
+const counts = scenarios.reduce((result, row) => ({ ...result, [row.status]: result[row.status] + 1 }), { passed: 0, failed: 0, unavailable: 0, "not-configured": 0, "not-applicable": 0 })
+console.log(`matrix scenarios: ${counts.passed} passed, ${counts.failed} failed, ${counts.unavailable} unavailable, ${counts["not-configured"]} not configured, ${counts["not-applicable"]} not applicable`)
 console.log(`matrix report: ${reportPath}`)
 if (!report.ok) process.exitCode = 1

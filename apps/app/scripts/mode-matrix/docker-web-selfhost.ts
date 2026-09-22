@@ -57,6 +57,7 @@ export interface WebSelfhostLaunchOptions {
   readonly revision: string
   readonly outputDir: string
   readonly authEnvironment?: string
+  readonly image?: string
   readonly executor?: CommandExecutor
   readonly fetcher?: LaunchFetcher
   readonly now?: () => Date
@@ -141,7 +142,11 @@ const provesDockerResourceAbsent = (args: readonly string[], detail: string): bo
 
 export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions): Promise<WebSelfhostSession> => {
   if (!/^[0-9a-f]{40,64}$/.test(options.revision)) throw new Error("web-selfhost launcher requires an exact revision")
-  const resources = webSelfhostResources()
+  const generated = webSelfhostResources()
+  if (options.image !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]+$/.test(options.image)) {
+    throw new Error("web-selfhost image must be a Docker image tag")
+  }
+  const resources = { ...generated, image: options.image ?? generated.image }
   const executor = options.executor ?? ((args: readonly string[]) => executeCommand(args, options.rootDir))
   const fetcher = options.fetcher ?? fetch
   const wait = options.wait ?? ((milliseconds: number) => new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds)))
@@ -308,7 +313,7 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
       absent("prove app volume is fresh", ["docker", "volume", "inspect", resources.dataVolume]),
       absent("prove PostgreSQL volume is fresh", ["docker", "volume", "inspect", resources.postgresVolume]),
       absent("prove network is fresh", ["docker", "network", "inspect", resources.network]),
-      absent("prove image tag is fresh", ["docker", "image", "inspect", resources.image])
+      ...(options.image === undefined ? [absent("prove image tag is fresh", ["docker", "image", "inspect", resources.image])] : [])
     ])).every(Boolean)
     if (!fresh) throw new Error("one or more unique Docker launch resources already existed")
 
@@ -318,11 +323,16 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
     postgresVolumeCreated = true
     await run("create app data volume", ["docker", "volume", "create", resources.dataVolume])
     dataVolumeCreated = true
-    await run("build packaged product image", [
-      "docker", "build", "--file", "distribution/Dockerfile", "--tag", resources.image,
-      "--build-arg", `SMITHERS_DISTRIBUTION_VERSION=matrix-${options.revision.slice(0, 12)}`, "."
-    ])
-    imageBuilt = true
+    if (options.image === undefined) {
+      await run("build packaged product image", [
+        "docker", "build", "--file", "distribution/Dockerfile", "--tag", resources.image,
+        "--build-arg", `BUILD_SHA=${options.revision}`,
+        "--build-arg", `SMITHERS_DISTRIBUTION_VERSION=matrix-${options.revision.slice(0, 12)}`, "."
+      ])
+      imageBuilt = true
+    } else {
+      await run("verify packaged product image", ["docker", "image", "inspect", resources.image])
+    }
     await run("start isolated PostgreSQL", [
       "docker", "run", "--detach", "--name", resources.postgresContainer, "--network", resources.network,
       "--env", "POSTGRES_USER=smithers", "--env", `POSTGRES_PASSWORD=${databasePassword}`, "--env", `POSTGRES_DB=${resources.database}`,

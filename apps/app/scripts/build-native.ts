@@ -16,6 +16,8 @@ import { validateGitBundle } from "./validate-git-bundle"
 
 const appDir = resolve(import.meta.dir, "..")
 const root = resolve(appDir, "..", "..")
+const revision = process.env.SMITHERS_BUILD_SHA?.trim()
+if (!revision || !/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("Native build requires an exact SMITHERS_BUILD_SHA.")
 const nativeDir = join(appDir, ".native")
 const jjRevision = "47589ada70c12b3e829b5c98ab32503abad49eac"
 const jjVersion = `jj 0.44.0-${jjRevision}`
@@ -184,7 +186,7 @@ cpSync(installedJj, join(nativeDir, "bin", "jj"))
 rmSync(jjInstallRoot, { recursive: true, force: true })
 await run(
   "Go backend",
-  ["go", "build", "-trimpath", "-o", join(nativeDir, "bin", "smithers-backend"), "./apps/backend"]
+  ["go", "build", "-trimpath", "-ldflags", `-X github.com/smithersai/smithers/packages/backend/internal/compose.BuildSHA=${revision}`, "-o", join(nativeDir, "bin", "smithers-backend"), "./apps/backend"]
 )
 await run("Node buildchain", [nodeBinary, "--version"], root, nodeEnvironment)
 await run("pinned pnpm buildchain", [corepackBinary, "pnpm", "--version"], root, nodeEnvironment)

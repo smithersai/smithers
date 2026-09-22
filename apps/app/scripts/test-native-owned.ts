@@ -132,8 +132,9 @@ const launch = async (home: string, mode: "own" | "plue", origin: string, token?
     if (!launcherExited) child.kill("SIGTERM")
     const code = await exited
     await collectors
-    if (launcherExited && code !== 0) {
-      throw new Error(`Installed launcher exited ${code} after app shutdown.\n${output}`)
+    if (launcherExited && code !== 0 && code !== 143) {
+      throw new Error(`Installed launcher exited ${code} after app shutdown.
+${output}`)
     }
   }
   return {
@@ -209,11 +210,14 @@ try {
     fetch(`${origin}/`).then((response) => response.text()),
     fetch(`${origin}/api/bootstrap`).then(async (response) => {
       if (!response.ok) throw new Error(`/api/bootstrap returned ${response.status}`)
-      return response.json() as Promise<{ readonly apiVersion?: number }>
+      return response.json() as Promise<{ readonly apiVersion?: number; readonly buildSha?: string }>
     })
   ])
   if (!index.includes('<div id="root"')) throw new Error("The installed backend did not serve the real web application.")
   if (bootstrap.apiVersion !== 1) throw new Error("The installed backend returned an invalid bootstrap document.")
+  if (process.env.SMITHERS_BUILD_SHA && bootstrap.buildSha !== process.env.SMITHERS_BUILD_SHA) {
+    throw new Error(`The installed backend reported buildSha ${bootstrap.buildSha}, expected ${process.env.SMITHERS_BUILD_SHA}.`)
+  }
   const secrets = join(first.state, "config", "secrets.json")
   const pgVersion = join(first.state, "postgres", "data", "PG_VERSION")
   const postmasterPID = join(first.state, "postgres", "data", "postmaster.pid")
@@ -276,21 +280,23 @@ try {
   if (existsSync(postmasterPID)) throw new Error("Bundled PostgreSQL left postmaster.pid after restart shutdown.")
 
   const plueHome = join(root, "plue-home")
-  const secretResult = Bun.spawnSync(["kubectl", "-n", "smithers", "get", "secret", "smithers-secrets", "-o", "json"], {
-    stdout: "pipe", stderr: "pipe"
-  })
-  if (secretResult.exitCode !== 0) throw new Error("Could not read the Plue canary credential from Kubernetes.")
-  const secret = JSON.parse(new TextDecoder().decode(secretResult.stdout)) as { data?: Record<string, string> }
-  const canary = secret.data?.CANARY_API_TOKEN
-  if (!canary) throw new Error("The Plue canary credential is unavailable.")
-  const token = Buffer.from(canary, "base64").toString("utf8").trim()
-  const plueOrigin = "https://api.jjhub.tech"
-  await jsonRequest(plueOrigin, "/api/user", { headers: { authorization: `token ${token}` } })
-  const plue = await launch(plueHome, "plue", plueOrigin, token)
+  const plueOrigin = process.env.SMITHERS_MODE_MATRIX_PLUE_URL || "https://plue.invalid"
+  const plueToken = process.env.SMITHERS_MODE_MATRIX_PLUE_TOKEN
+  if (Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL) !== Boolean(plueToken)) {
+    throw new Error("Configured Plue target requires both a URL and token.")
+  }
+  if (plueToken) {
+    const response = await fetch(new URL("/api/bootstrap", plueOrigin), { signal: AbortSignal.timeout(10_000) })
+    if (!response.ok || (await response.json() as { host?: string }).host !== "cloud") {
+      throw new Error("Configured Plue target did not advertise a ready cloud bootstrap.")
+    }
+    await jsonRequest(plueOrigin, "/api/user", { headers: { authorization: `token ${plueToken}` } })
+  }
+  const plue = await launch(plueHome, "plue", plueOrigin, plueToken)
   await plue.appPID
   const plueState = await plue.bridgeState()
   if (plueState.app?.origin !== plueOrigin || plueState.app.packaged !== true) {
-    throw new Error("The installed native app did not select the production Plue backend.")
+    throw new Error("The installed native app did not select the configured Plue backend.")
   }
   await plue.stop()
   if (existsSync(plue.state)) throw new Error("Native Plue mode created local backend or PostgreSQL state.")

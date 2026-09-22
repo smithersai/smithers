@@ -44,9 +44,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-mode-matrix:
+    name: packaged native topology and persistence
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: 1.26.8
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.1
+      - run: pnpm install --frozen-lockfile
+      - run: rustup toolchain install 1.89.0 1.98.0
+      - run: brew install postgresql@18
+      - name: Build packaged native app
+        env:
+          SMITHERS_POSTGRES_BUNDLE_DIR: /opt/homebrew/opt/postgresql@18
+          SMITHERS_NATIVE_E2E_CEF: "1"
+          SMITHERS_NATIVE_E2E_CDP_PORT: "9444"
+        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts
+      - name: Prove native owned and Plue process topology
+        env:
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/test-native-owned.ts "$executable"
+      - name: Prove native matrix launcher and capabilities
+        env:
+          SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT: http://127.0.0.1:9444
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/test-native-mode-matrix.ts "$executable"
+      - name: Product native modes
+        env:
+          SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT: http://127.0.0.1:9444
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+          SMITHERS_MODE_MATRIX_OUTPUT_DIR: ${{ runner.temp }}/smithers-native-matrix
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/run-packaged-native-mode-matrix.ts "$executable"
+      - name: Upload native mode receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: product-native-mode-matrix
+          path: ${{ runner.temp }}/smithers-native-matrix
   publish:
     name: validate, build, and publish
     runs-on: ubuntu-latest
+    needs: native-mode-matrix
     timeout-minutes: 120
     environment: npm-publish
     permissions:
@@ -127,7 +188,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          go-version: 1.26.0
+          go-version: 1.26.8
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
         with:
@@ -365,12 +426,33 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      # Issue 1668: launch the ordinary packaged app against a fresh external
-      # PostgreSQL volume, prove a persistent restart, then merge any opt-in
-      # Plue/native launcher configuration. Missing modes remain unavailable
-      # rows and block release.
+      - name: Install Playwright Chromium
+        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
+      - name: Install local FFI toolchain
+        run: rustup toolchain install 1.98.0
+      - name: Install PostgreSQL 18 for the owned local mode
+        run: bash .github/scripts/install-postgres-18.sh
+      - name: Real PostgreSQL backup and restore
+        run: go test -p 1 ./distribution -run TestRealBackupRestorePostgreSQL -count=1 -v
+        env:
+          SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
+          SMITHERS_POSTGRES_TEST_MAJOR: "18"
+      - name: Build distribution image
+        run: docker build --build-arg "BUILD_SHA=$(git rev-parse HEAD)" -f distribution/Dockerfile -t smithers-distribution:release .
+      - name: Test distribution image
+        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_DOCKER_SKIP_BUILD=1 bash distribution/test-image.sh smithers-distribution:release
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+      # The macOS job gates the native pair. This job gates the web and local
+      # pairs with fresh PostgreSQL and the distribution image.
       - name: Product deployment mode matrix
-        run: bun apps/app/scripts/run-packaged-mode-matrix.ts run --output-dir "$RUNNER_TEMP/smithers-mode-matrix"
+        run: bun apps/app/scripts/run-packaged-mode-matrix.ts run --modes web-selfhost,web-plue,local-own,local-plue --output-dir "$RUNNER_TEMP/smithers-mode-matrix"
+        env:
+          SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
+          SMITHERS_MODE_MATRIX_IMAGE: smithers-distribution:release
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
       - name: Upload product deployment mode matrix receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -378,6 +460,9 @@ jobs:
           name: product-deployment-mode-matrix
           path: "${{ runner.temp }}/smithers-mode-matrix"
           if-no-files-found: error
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
       - name: Server typecheck and tests
         run: pnpm exec smthrs ci '//apps/server/...' --verbose
         env:
@@ -462,6 +547,12 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Native FFI clippy and tests
+        run: pnpm exec smthrs build '//:nativeFfi' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       # Ordinary workspace CI omits this exclusive tier; the explicit label opts in.
       - name: Exclusive fault matrix
         run: pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
@@ -493,6 +584,12 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Rebuild and byte-compare flows_jj.wasm
         run: pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Build and test shared backend
+        run: pnpm exec smthrs test '//:backendGo' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"

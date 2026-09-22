@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/repohostffi"
 )
@@ -185,6 +187,42 @@ func TestRepositoryLifecycle(t *testing.T) {
 				t.Fatalf("oversized JSON: %d", resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestLocalStagedProvisionUsesEmbeddedRepository(t *testing.T) {
+	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Skip("set SMITHERS_FFI_LIBRARY_PATH to run the repository integration suite")
+	}
+	local, err := OpenLocal(Config{StoragePath: t.TempDir(), AuthToken: "stage-token", FFILibraryPath: ffi})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = local.Shutdown(context.Background()) })
+	// A product API handler carries an outer chi route context into the
+	// in-process repository client. Exercise the real nested router call.
+	var provisionErr error
+	outer := chi.NewRouter()
+	outer.Route("/api", func(routes chi.Router) {
+		routes.Post("/user/repos", func(_ http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			staged, err := local.Client().PrepareStagedInit(ctx, "s1", "owner", "repo", "main", true)
+			if err == nil {
+				err = local.Client().ExecuteStagedProvision(ctx, staged)
+			}
+			if err == nil {
+				err = local.Client().PublishStagedProvision(ctx, staged)
+			}
+			if err == nil {
+				err = local.Client().FinalizeStagedProvision(ctx, staged)
+			}
+			provisionErr = err
+		})
+	})
+	outer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/user/repos", nil))
+	if provisionErr != nil {
+		t.Fatal(provisionErr)
 	}
 }
 

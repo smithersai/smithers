@@ -11,6 +11,9 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error(`Invali
 const externalBaseURL = process.env.SMITHERS_REAL_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${PORT}`
 const deploymentMode = process.env.SMITHERS_REAL_E2E_MODE
+const matrixScenarioIds = process.env.SMITHERS_REAL_MATRIX_SCENARIOS === undefined
+  ? MATRIX_SCENARIO_IDS
+  : JSON.parse(process.env.SMITHERS_REAL_MATRIX_SCENARIOS) as string[]
 if (deploymentMode !== undefined && !(DEPLOYMENT_MODES as readonly string[]).includes(deploymentMode)) throw new Error(`Invalid SMITHERS_REAL_E2E_MODE: ${deploymentMode}`)
 const matrixHost = deploymentMode === undefined ? undefined : MODE_DESCRIPTORS[deploymentMode as keyof typeof MODE_DESCRIPTORS].legacyHost
 const expectedHost = process.env.SMITHERS_REAL_E2E_HOST ?? matrixHost ?? (externalBaseURL ? "production" : "local")
@@ -27,7 +30,7 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   grep: deploymentMode === undefined
     ? hostGrep(expectedHost as RealHost, process.env.SMITHERS_REAL_TEST_GREP)
-    : scenarioGrep(MATRIX_SCENARIO_IDS, process.env.SMITHERS_REAL_TEST_GREP),
+    : scenarioGrep(matrixScenarioIds, process.env.SMITHERS_REAL_TEST_GREP),
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

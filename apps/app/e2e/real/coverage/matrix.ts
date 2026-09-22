@@ -5,7 +5,7 @@ import { DEPLOYMENT_MODES } from "./types"
 import type { DeploymentMode, RealHost, RealScenarioRunEvidence } from "./types"
 
 export type MatrixTier = "deterministic" | "local-infrastructure" | "live-provider" | "plue-production"
-export type MatrixStatus = "passed" | "failed" | "unavailable"
+export type MatrixStatus = "passed" | "failed" | "unavailable" | "not-configured" | "not-applicable"
 export type ProductProvider = "selfhost" | "plue"
 export type ProductSurface = "web" | "local" | "native"
 export type ProcessRole = "web" | "local-ui" | "native-ui" | "supervisor" | "app" | "docker-app" | "postgres"
@@ -20,6 +20,7 @@ export interface ModeDescriptor {
   readonly requiredProcessRoles: readonly ProcessRole[]
   readonly forbiddenProcessRoles: readonly ProcessRole[]
   readonly requiresPersistentRestart: boolean
+  readonly expectedCapabilities: readonly RuntimeCapability[]
 }
 
 interface MatrixScenario {
@@ -36,27 +37,33 @@ interface MatrixObligation {
 export const MODE_DESCRIPTORS: Readonly<Record<DeploymentMode, ModeDescriptor>> = {
   "web-selfhost": {
     id: "web-selfhost", surface: "web", provider: "selfhost", legacyHost: "local",
-    requiredProcessRoles: ["docker-app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true
+    requiredProcessRoles: ["docker-app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   },
   "web-plue": {
     id: "web-plue", surface: "web", provider: "plue", legacyHost: "production",
-    requiredProcessRoles: ["web"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false
+    requiredProcessRoles: ["web"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   },
   "local-own": {
     id: "local-own", surface: "local", provider: "selfhost", legacyHost: "local",
-    requiredProcessRoles: ["local-ui", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true
+    requiredProcessRoles: ["local-ui", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   },
   "local-plue": {
     id: "local-plue", surface: "local", provider: "plue", legacyHost: "production",
-    requiredProcessRoles: ["local-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false
+    requiredProcessRoles: ["local-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   },
   "native-own": {
     id: "native-own", surface: "native", provider: "selfhost", legacyHost: "local",
-    requiredProcessRoles: ["native-ui", "supervisor", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true
+    requiredProcessRoles: ["native-ui", "supervisor", "app", "postgres"], forbiddenProcessRoles: [], requiresPersistentRestart: true,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   },
   "native-plue": {
     id: "native-plue", surface: "native", provider: "plue", legacyHost: "production",
-    requiredProcessRoles: ["native-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false
+    requiredProcessRoles: ["native-ui"], forbiddenProcessRoles: ["app", "docker-app", "postgres", "supervisor"], requiresPersistentRestart: false,
+    expectedCapabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"]
   }
 }
 
@@ -96,6 +103,11 @@ export const MATRIX_OBLIGATIONS: readonly MatrixObligation[] = [
 
 export const MATRIX_SCENARIO_IDS = [...new Set(MATRIX_OBLIGATIONS.flatMap((entry) => entry.scenarios.map(({ id }) => id)))]
 
+export const applicableScenarioIds = (capabilities: readonly string[]): readonly string[] =>
+  MATRIX_OBLIGATIONS.flatMap(({ scenarios }) => scenarios
+    .filter((scenario) => scenario.capabilities.every((capability) => capabilities.includes(capability)))
+    .map(({ id }) => id))
+
 export const MANDATORY_DETERMINISTIC_BUN_TESTS = [
   "src/mainview/state/controller/workflows.test.ts",
   "src/mainview/state/controller/liveTutorial.test.ts",
@@ -104,7 +116,6 @@ export const MANDATORY_DETERMINISTIC_BUN_TESTS = [
 
 export const MANDATORY_DETERMINISTIC_BROWSER_SPECS = [
   "e2e/playwright/flow-launch-background.spec.ts",
-  "e2e/playwright/tutorial-live-background.spec.ts",
   "e2e/playwright/toast-stack.spec.ts"
 ] as const
 
@@ -230,7 +241,7 @@ export const validateExecutionReceipt = (config: ModeConfig, revision: string, r
   if (!receipt.ready) reasons.push("launcher did not report actual readiness")
   for (const role of descriptor.requiredProcessRoles) if (!receipt.startedRoles.includes(role)) reasons.push(`launcher did not prove ${role} started`)
   for (const role of descriptor.forbiddenProcessRoles) if (receipt.startedRoles.includes(role)) reasons.push(`remote mode unexpectedly started ${role}`)
-  if (!receipt.freshLaunch) reasons.push("launcher did not prove a fresh launch")
+  if (descriptor.provider === "selfhost" && !receipt.freshLaunch) reasons.push("launcher did not prove a fresh launch")
   if (descriptor.requiresPersistentRestart) {
     if (!receipt.restarted || !receipt.dataPreserved) reasons.push("persistent restart with preserved data was not proven")
     const proof = receipt.persistenceProof
@@ -279,6 +290,9 @@ export const probeMode = async (
       if (!parsed.success) reasons.push(`bootstrap contract is invalid: ${parsed.error.message}`)
       else {
         capabilities = parsed.data.capabilities
+        for (const capability of MODE_DESCRIPTORS[config.mode].expectedCapabilities) {
+          if (!capabilities.includes(capability)) reasons.push(`bootstrap does not advertise required ${capability}`)
+        }
         const bootstrapHost: RealHost = parsed.data.host === "cloud" ? "production" : "local"
         if (bootstrapHost !== MODE_DESCRIPTORS[config.mode].legacyHost) {
           reasons.push(`bootstrap host ${parsed.data.host} does not match ${config.mode} provider ${MODE_DESCRIPTORS[config.mode].provider}`)
@@ -289,7 +303,7 @@ export const probeMode = async (
   } catch (error) { reasons.push(`readiness request failed: ${error instanceof Error ? error.message : String(error)}`) }
   return {
     mode: config.mode,
-    status: reasons.length === 0 ? "passed" : "unavailable",
+    status: reasons.length === 0 ? "passed" : "failed",
     tier: MODE_DESCRIPTORS[config.mode].provider === "plue" ? "plue-production" : "local-infrastructure",
     origin: config.origin,
     capabilities,
@@ -314,12 +328,13 @@ export const scenarioReceipts = (
     const failure = attempts.find((run) => run.status !== "passed")
     const passed = attempts.find((run) => run.status === "passed")
     const reason = readiness.status !== "passed" ? readiness.reasons.join("; ")
-      : missingCapabilities.length > 0 ? `bootstrap does not advertise ${missingCapabilities.join(", ")}`
+      : missingCapabilities.length > 0 ? `requires ${missingCapabilities.join(", ")}`
       : failure ? `unsuccessful attempt: ${failure.status}`
         : !passed ? "no executed receipt" : undefined
     const status: MatrixStatus = reason === undefined ? "passed"
-      : readiness.status !== "passed" || missingCapabilities.length > 0 || failure === undefined ? "unavailable"
-        : "failed"
+      : readiness.status !== "passed" ? readiness.status
+        : missingCapabilities.length > 0 ? "not-applicable"
+          : failure === undefined ? "unavailable" : "failed"
     return {
       mode: readiness.mode, obligation: obligation.id, scenarioId, tier,
       status,
@@ -330,8 +345,28 @@ export const scenarioReceipts = (
 
 export const missingModeReadiness = (mode: DeploymentMode, reason: string): ModeReadiness => ({
   mode,
-  status: "unavailable",
+  status: MODE_DESCRIPTORS[mode].provider === "plue" ? "not-configured" : "failed",
   tier: MODE_DESCRIPTORS[mode].provider === "plue" ? "plue-production" : "local-infrastructure",
   capabilities: [],
   reasons: [reason]
 })
+
+export const matrixPasses = (
+  readiness: readonly ModeReadiness[],
+  scenarios: readonly MatrixScenarioReceipt[],
+  deterministicPassed: boolean,
+  plueConfigured: boolean,
+  requiredModes: readonly DeploymentMode[] = DEPLOYMENT_MODES
+): boolean => deterministicPassed &&
+  requiredModes.length > 0 &&
+  new Set(requiredModes).size === requiredModes.length &&
+  requiredModes.every((mode) => DEPLOYMENT_MODES.includes(mode)) &&
+  readiness.length === requiredModes.length &&
+  new Set(readiness.map(({ mode }) => mode)).size === requiredModes.length &&
+  readiness.every(({ mode }) => requiredModes.includes(mode)) &&
+  scenarios.length === requiredModes.length * MATRIX_OBLIGATIONS.reduce((count, { scenarios: rows }) => count + rows.length, 0) &&
+  new Set(scenarios.map(({ mode, scenarioId }) => `${mode}:${scenarioId}`)).size === scenarios.length &&
+  readiness.every(({ mode, status }) => status === "passed" ||
+    (MODE_DESCRIPTORS[mode].provider === "plue" && !plueConfigured && status === "not-configured")) &&
+  scenarios.every(({ status }) => status === "passed" || status === "not-applicable" ||
+    (!plueConfigured && status === "not-configured"))

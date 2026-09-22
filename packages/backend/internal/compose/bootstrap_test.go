@@ -11,9 +11,9 @@ import (
 )
 
 func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
-	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, redirectAuth: true, workspaceRuntime: true})
+	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, redirectAuth: true, workspaceRuntime: true, workspace: true, terminal: true})
 	require.Equal(t, "local", local.Host)
-	require.Equal(t, []string{"identity"}, local.Capabilities)
+	require.Equal(t, []string{"identity", "cloud", "cloud.terminal"}, local.Capabilities)
 	require.Equal(t, "credentials", local.AuthFlow)
 	require.Equal(t, "trusted-only", local.Sandbox.Mode)
 	require.NotEmpty(t, local.Sandbox.Platform)
@@ -29,6 +29,17 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 	require.Nil(t, unavailable.Sandbox)
 	require.Empty(t, unavailable.Capabilities)
 	require.Equal(t, "none", unavailable.AuthFlow)
+}
+
+func TestBuildIdentityUsesInjectedRevision(t *testing.T) {
+	old := BuildSHA
+	t.Cleanup(func() { BuildSHA = old })
+	BuildSHA = "abcd1234"
+	_, sha := buildIdentity()
+	require.Equal(t, "abcd1234", sha)
+	BuildSHA = ""
+	_, sha = buildIdentity()
+	require.Equal(t, "unknown", sha)
 }
 
 func TestAppBootstrapRoute(t *testing.T) {

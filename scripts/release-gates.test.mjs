@@ -256,7 +256,7 @@ test("exception and exclusion drift checks use literal tokens and reject dynamic
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
-const ciJobs = ["cache-publish", "test", "apps-e2e", "rust", "wasm-repro", "e2e-faults", "browser", "packages", "review-lints"]
+const ciJobs = ["cache-publish", "test", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "e2e-faults", "browser", "packages", "go-backend", "review-lints"]
 
 /** A copy of the release workflow with one more gate step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {

@@ -47,15 +47,14 @@ interface CloudFixtureOptions {
 
 /** Install common routes first; later page.route registrations override scenario responses. */
 export const installCloudFixture = async (page: Page, options: CloudFixtureOptions = {}): Promise<void> => {
+  const capabilities = [...options.capabilities ?? ["agent", "identity", "cloud"]]
   const bootstrap = {
     apiVersion: 1,
     host: "local",
     version: "test",
     buildSha: "test",
-    capabilities: [...options.capabilities ?? [
-      "agent", "identity", "cloud"
-    ]],
-    authFlow: "none",
+    capabilities,
+    authFlow: capabilities.includes("identity") ? "credentials" : "none",
     sandbox: { platform: "darwin", mode: "trusted-only" }
   } satisfies AppBootstrap
   const session = {
@@ -79,6 +78,7 @@ export const installCloudFixture = async (page: Page, options: CloudFixtureOptio
   }))
   await respond("/api/bootstrap", bootstrap)
   await respond("/api/repos", localRepos)
+  await respond("/api/user", { id: 1, username: SCOPED_TEST_USER.login, is_admin: false })
   await respond("/api/auth/session", SCOPED_TEST_USER)
   await respond("/api/cloud-auth/session", session)
   await respond("/api/cloud/api/user/repos", repos)

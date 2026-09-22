@@ -1537,10 +1537,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
 		role: options.Role, identity: authHandler != nil,
+		agent:        options.ChatHost != nil && chatService != nil && options.Role.servesHTTP(),
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
 		// A configured model turn is available only when the durable journal
 		// routes are mounted; it does not imply a separate agent executor.
 		modelTurn:        chatService != nil && options.Role.servesHTTP(),
+		workspace:        options.Workspace != nil && options.Role.servesHTTP(),
+		terminal:         options.Workspace != nil && options.Role.servesHTTP(),
 		billingCheckout:  billingComposition.Service != nil,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
