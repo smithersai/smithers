@@ -9,10 +9,11 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2823 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2827 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **matrix:** exercise portable repository and owner workflows across modes ([b2475c2216](https://github.com/smithersai/smithers/commit/b2475c2216b864872451fa29a609a704f6e173b0))
 - **matrix:** verify owned deployment modes and distribution image ([d3da1f55ca](https://github.com/smithersai/smithers/commit/d3da1f55caf81a9f7f13396aeef865a0e1ec8f38))
 - **schema:** audit product baseline adoption before Plue cutover ([ddf659f227](https://github.com/smithersai/smithers/commit/ddf659f2277a3f9ecc1990dcc3875bffaee26356))
 - **chat:** serve hosted producer callbacks on shared API listener ([5cdf9619b6](https://github.com/smithersai/smithers/commit/5cdf9619b6ff713a0efacd5821a21dc165998885))
@@ -291,6 +292,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **app:** bind native matrix fixtures to CDP target ([edeed0c28e](https://github.com/smithersai/smithers/commit/edeed0c28edbd6ac11519d272631bdba2ea34b46))
+- **matrix:** share landed jj revision across all runners ([844951929d](https://github.com/smithersai/smithers/commit/844951929d2558c01461eb8f791c67e6d62db2e4))
+- **matrix:** resolve landed revision and serve native Plue UI locally ([c4e08b5c93](https://github.com/smithersai/smithers/commit/c4e08b5c93afd79f10a281b410b51e0e8efbbbc7))
 - **app:** retain packaged native target across navigation ([c88e909f94](https://github.com/smithersai/smithers/commit/c88e909f94cbad39524e79e38a79dada10c21f9c))
 - **coding:** replace Python atomic filesystem with packaged Rust helper ([de653087ee](https://github.com/smithersai/smithers/commit/de653087ee5516851757f487c15c0462b7ba8868))
 - **release:** install native browser and derive local image revision ([0ff9781a00](https://github.com/smithersai/smithers/commit/0ff9781a001dc6ba75bd7e56afd1d0416040971b))
