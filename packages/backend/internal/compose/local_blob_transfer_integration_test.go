@@ -113,6 +113,9 @@ func TestLocalBlobTransferComposed(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("local composition did not become ready")
 	}
+	readiness := httptest.NewRecorder()
+	handler.ServeHTTP(readiness, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4000/readyz", nil))
+	require.Equal(t, http.StatusOK, readiness.Code, readiness.Body.String())
 	var store blob.Store
 	select {
 	case store = <-storeCh:
