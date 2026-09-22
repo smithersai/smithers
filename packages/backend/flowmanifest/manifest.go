@@ -96,7 +96,7 @@ func Load(path string) (Registry, error) {
 
 func verifyHost(directory, family string, entry rawHost, wanted []string) (Host, error) {
 	name := entry.Executable
-	if name == "" || name == "." || filepath.Base(name) != name || strings.ContainsAny(name, `/\\\x00`) {
+	if name == "" || name == "." || filepath.Base(name) != name || strings.ContainsAny(name, "/\\\x00") {
 		return Host{}, fmt.Errorf("%s Flow host executable is not a bundle basename", family)
 	}
 	if len(entry.SHA256) != 64 || entry.SHA256 != strings.ToLower(entry.SHA256) {

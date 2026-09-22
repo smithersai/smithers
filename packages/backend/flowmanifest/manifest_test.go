@@ -15,7 +15,7 @@ func bundledManifest(t *testing.T) (string, map[string]rawHost) {
 	directory := t.TempDir()
 	hosts := map[string]rawHost{}
 	for family, flows := range expectedFlows {
-		name := "smithers-" + family + "-host"
+		name := "smithers-" + family + "-host-v10"
 		contents := []byte("host:" + family)
 		if err := os.WriteFile(filepath.Join(directory, name), contents, 0o755); err != nil {
 			t.Fatal(err)
@@ -65,7 +65,7 @@ func TestLoadRejectsEscapedOrSubstitutedHost(t *testing.T) {
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "basename") {
 		t.Fatalf("path escape accepted: %v", err)
 	}
-	coding.Executable = "smithers-coding-host"
+	coding.Executable = "smithers-coding-host-v10"
 	hosts["coding"] = coding
 	if err := os.Remove(filepath.Join(filepath.Dir(path), coding.Executable)); err != nil {
 		t.Fatal(err)
