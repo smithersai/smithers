@@ -12,12 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 )
 
 func TestObservability_Cov_RuntimeMetricsStoreDatabaseBranches(t *testing.T) {
 	ctx := context.Background()
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	userID, repoID := observabilityCovSeedUserRepo(t, ctx)
 
 	_, err := pool.Exec(ctx, `INSERT INTO runner_pool (name, status, metadata) VALUES ($1, 'idle', '{}'::jsonb)`, "cov-runner-"+strings.ReplaceAll(uuid.NewString(), "-", ""))

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
@@ -100,7 +100,7 @@ func TestRepoGatewayReuse_LegacyGatewayReprovisions(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-old", VmID: "vm-old", Status: "running",
 			BaseUrl: "https://old.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -133,7 +133,7 @@ func TestRepoGatewayReuse_HostCheckTransportErrorDoesNotDiscard(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-old", VmID: "vm-old", Status: "running",
 			BaseUrl: "https://old.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -166,7 +166,7 @@ func TestRepoGatewayReuse_HealthProbeFailureReprovisions(t *testing.T) {
 	defer probe.Close()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-wedged", VmID: "vm-wedged", Status: "running",
 			BaseUrl: "https://wedged.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -198,7 +198,7 @@ func TestRepoGatewayReuse_UnreachableIngressKeepsGateway(t *testing.T) {
 	probe.Close()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-live", VmID: "vm-live", Status: "running",
 			BaseUrl: "https://live.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -229,7 +229,7 @@ func TestRepoGatewayReuse_HealthyGatewayAnswersRunning(t *testing.T) {
 	defer probe.Close()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-live", VmID: "vm-live", Status: "running",
 			BaseUrl: "https://live.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -263,7 +263,7 @@ func TestRepoGatewayReuse_ProbeRetriesWhileUnitBinds(t *testing.T) {
 	defer probe.Close()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-slow", VmID: "vm-slow", Status: "suspended",
 			BaseUrl: "https://slow.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),
@@ -291,8 +291,8 @@ func TestRepoGatewaySweepWidowed(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	newRow := func(id, vmID string, idle time.Duration) db.RepoGateway {
-		return db.RepoGateway{
+	newRow := func(id, vmID string, idle time.Duration) clusterdb.RepoGateway {
+		return clusterdb.RepoGateway{
 			ID: id, VmID: vmID, Status: "running",
 			AuthTokenCiphertext: "tok",
 			LastActivityAt:      now.Add(-idle),
@@ -302,7 +302,7 @@ func TestRepoGatewaySweepWidowed(t *testing.T) {
 	staleErr := &sandbox.StatusError{StatusCode: 409, Code: "stale_generation", Message: "placement changed"}
 
 	q := &fakeRepoGatewayQuerier{
-		activeRows: []db.RepoGateway{
+		activeRows: []clusterdb.RepoGateway{
 			newRow("gw-gone", "vm-gone", time.Hour),
 			newRow("gw-stale-gen", "vm-stale-gen", time.Hour),
 			newRow("gw-stale-stopped", "vm-stale", 48*time.Hour),
@@ -349,7 +349,7 @@ func TestRepoGatewayReuse_StaleFencedVMReprovisions(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &db.RepoGateway{
+		active: &clusterdb.RepoGateway{
 			ID: "gw-fenced", VmID: "vm-fenced", Status: "running",
 			BaseUrl: "https://fenced.example", AuthTokenCiphertext: "tok",
 			LastActivityAt: time.Now(),

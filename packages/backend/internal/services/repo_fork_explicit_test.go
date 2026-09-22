@@ -107,7 +107,6 @@ func TestRepoService_ForkRepo_AllowsAReaderWithoutWriteAccess(t *testing.T) {
 	actor := &db.User{ID: 7, Username: "forker"}
 	source := db.Repository{
 		ID: 90, Name: "source", LowerName: "source", IsPublic: true,
-		DefaultBookmark: "trunk", StorageSetID: "s1",
 		UserID: pgtype.Int8{Int64: 99, Valid: true},
 	}
 	q := &mockRepoQuerier{
@@ -144,7 +143,6 @@ func TestRepoService_ForkRepo_IsIdempotentForTheSameUpstream(t *testing.T) {
 	actor := &db.User{ID: 7, Username: "forker"}
 	source := db.Repository{
 		ID: 90, Name: "source", LowerName: "source", IsPublic: true,
-		DefaultBookmark: "trunk", StorageSetID: "s1",
 		UserID: pgtype.Int8{Int64: 99, Valid: true},
 	}
 	existingFork := db.Repository{
@@ -187,7 +185,6 @@ func TestRepoService_ForkRepo_DoesNotAdoptAnUnrelatedRepositoryOfTheSameName(t *
 	actor := &db.User{ID: 7, Username: "forker"}
 	source := db.Repository{
 		ID: 90, Name: "source", LowerName: "source", IsPublic: true,
-		DefaultBookmark: "trunk", StorageSetID: "s1",
 		UserID: pgtype.Int8{Int64: 99, Valid: true},
 	}
 	unrelated := db.Repository{

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -24,8 +25,8 @@ type fakeGitHubProxyStore struct {
 	getRepoByIDFn               func(ctx context.Context, id int64) (db.Repository, error)
 	getUserByIDFn               func(ctx context.Context, id int64) (db.User, error)
 	getOrgByIDFn                func(ctx context.Context, id int64) (db.Organization, error)
-	insertGithubProxyAuditLogFn func(ctx context.Context, arg db.InsertGithubProxyAuditLogParams) error
-	auditRows                   []db.InsertGithubProxyAuditLogParams
+	insertGithubProxyAuditLogFn func(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
+	auditRows                   []clusterdb.InsertGithubProxyAuditLogParams
 }
 
 func (f *fakeGitHubProxyStore) GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error) {
@@ -56,7 +57,7 @@ func (f *fakeGitHubProxyStore) GetOrgByID(ctx context.Context, id int64) (db.Org
 	return db.Organization{}, nil
 }
 
-func (f *fakeGitHubProxyStore) InsertGithubProxyAuditLog(ctx context.Context, arg db.InsertGithubProxyAuditLogParams) error {
+func (f *fakeGitHubProxyStore) InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error {
 	f.auditRows = append(f.auditRows, arg)
 	if f.insertGithubProxyAuditLogFn != nil {
 		return f.insertGithubProxyAuditLogFn(ctx, arg)
@@ -223,7 +224,7 @@ func TestGitHubProxyService_ProxyRequest_UserRepoRewritesHeadersAndAudits(t *tes
 	require.Len(t, tokenIssuer.calls, 1)
 	assert.Equal(t, fakeGitHubProxyTokenIssuerCall{userID: 77, owner: "acme", repo: "demo"}, tokenIssuer.calls[0])
 	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, db.InsertGithubProxyAuditLogParams{
+	assert.Equal(t, clusterdb.InsertGithubProxyAuditLogParams{
 		WorkflowRunID: 42,
 		Method:        http.MethodPost,
 		Path:          "/repos/acme/demo/check-runs?per_page=1",
@@ -412,7 +413,7 @@ func TestGitHubProxyService_ProxyRequest_BudgetTrackerDeniesBeforeUpstream(t *te
 	require.Len(t, tokenIssuer.calls, 1)
 	assert.Equal(t, fakeGitHubProxyTokenIssuerCall{userID: 77, owner: "acme", repo: "demo"}, tokenIssuer.calls[0])
 	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, db.InsertGithubProxyAuditLogParams{
+	assert.Equal(t, clusterdb.InsertGithubProxyAuditLogParams{
 		WorkflowRunID: 44,
 		Method:        http.MethodGet,
 		Path:          "/repos/acme/demo/issues",

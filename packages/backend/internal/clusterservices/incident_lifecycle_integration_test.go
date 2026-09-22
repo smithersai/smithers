@@ -1,4 +1,4 @@
-package services
+package clusterservices
 
 import (
 	"context"
@@ -11,7 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func TestIncidentLifecycleSQL(t *testing.T) {
@@ -20,12 +22,12 @@ func TestIncidentLifecycleSQL(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	policy := "incident-sql-" + uuid.NewString()
-	create := func(id, condition string) db.AlertIncident {
-		row, err := q.CreateAlertIncident(ctx, db.CreateAlertIncidentParams{IncidentID: id, PolicyName: policy, ConditionName: condition})
+	create := func(id, condition string) clusterdb.AlertIncident {
+		row, err := q.CreateAlertIncident(ctx, clusterdb.CreateAlertIncidentParams{IncidentID: id, PolicyName: policy, ConditionName: condition})
 		require.NoError(t, err)
-		return db.AlertIncident(row)
+		return clusterdb.AlertIncident(row)
 	}
 	a := create("canary-"+uuid.NewString(), "Backend canary probe failing")
 	b := create(uuid.NewString(), "monitoring")
@@ -35,13 +37,13 @@ func TestIncidentLifecycleSQL(t *testing.T) {
 	_, err = tx.Exec(ctx, "UPDATE alert_incidents SET state='pr_opened' WHERE id=$1", a.ID)
 	require.NoError(t, err)
 	mutate := func(action string, id int64) {
-		rows, err := q.AdminMutateAlertIncidents(ctx, db.AdminMutateAlertIncidentsParams{Action: action, Actor: "operator", Ids: []int64{id}, Until: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}, Note: pgtype.Text{String: "fixed", Valid: true}})
+		rows, err := q.AdminMutateAlertIncidents(ctx, clusterdb.AdminMutateAlertIncidentsParams{Action: action, Actor: "operator", Ids: []int64{id}, Until: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}, Note: pgtype.Text{String: "fixed", Valid: true}})
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
 	}
 	mutate("acknowledge", a.ID)
 	mutate("snooze", b.ID)
-	hits, err := q.IncrementActiveAlertIncident(ctx, db.IncrementActiveAlertIncidentParams{PolicyName: policy, ConditionName: a.ConditionName, IncidentID: "canary-new", Summary: "latest"})
+	hits, err := q.IncrementActiveAlertIncident(ctx, clusterdb.IncrementActiveAlertIncidentParams{PolicyName: policy, ConditionName: a.ConditionName, IncidentID: "canary-new", Summary: "latest"})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), hits)
 	refreshed, err := q.GetAlertIncident(ctx, a.ID)
@@ -51,7 +53,7 @@ func TestIncidentLifecycleSQL(t *testing.T) {
 	require.Equal(t, "operator", refreshed.AcknowledgedBy.String)
 	views := map[string][]int64{"active": {a.ID, b.ID, c.ID}, "open": {c.ID}, "acknowledged": {a.ID}, "snoozed": {b.ID}, "resolved": {}, "all": {a.ID, b.ID, c.ID}}
 	for state, want := range views {
-		rows, err := q.ListAlertIncidents(ctx, db.ListAlertIncidentsParams{StateFilter: state, Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
+		rows, err := q.ListAlertIncidents(ctx, clusterdb.ListAlertIncidentsParams{StateFilter: state, Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
 		require.NoError(t, err)
 		ids := []int64{}
 		for _, r := range rows {
@@ -83,13 +85,13 @@ func TestIncidentLifecycleSQL(t *testing.T) {
 	require.Equal(t, "fixed", closed.ResolutionNote.String)
 	// A delayed open for a resolved delivery cannot refresh a newer incident.
 	d := create("canary-"+uuid.NewString(), a.ConditionName)
-	hits, err = q.IncrementActiveAlertIncident(ctx, db.IncrementActiveAlertIncidentParams{PolicyName: policy, ConditionName: a.ConditionName, IncidentID: a.IncidentID})
+	hits, err = q.IncrementActiveAlertIncident(ctx, clusterdb.IncrementActiveAlertIncidentParams{PolicyName: policy, ConditionName: a.ConditionName, IncidentID: a.IncidentID})
 	require.NoError(t, err)
 	require.Zero(t, hits)
 	// Healthy workflow resolves only the matching canary source and condition.
 	monitoring := create(uuid.NewString(), a.ConditionName)
 	require.NoError(t, NewCanaryReportService(q).ReportResults(ctx, CanaryReportInput{Suite: "workflow", RunID: "healthy", Results: []CanaryReportResult{{Test: "probe", Status: "success"}}}, time.Now()))
-	for _, row := range []db.AlertIncident{d, c, monitoring} {
+	for _, row := range []clusterdb.AlertIncident{d, c, monitoring} {
 		got, err := q.GetAlertIncident(ctx, row.ID)
 		require.NoError(t, err)
 		if row.ID == d.ID {
@@ -104,7 +106,7 @@ func TestIncidentLifecycleSQL(t *testing.T) {
 
 func TestIncidentLifecycleConcurrentDedupe(t *testing.T) {
 	pool := getAgentTestPool(t)
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	ctx := context.Background()
 	policy := "concurrent-" + uuid.NewString()
 	defer pool.Exec(ctx, "DELETE FROM alert_incidents WHERE policy_name=$1", policy)
@@ -124,7 +126,7 @@ func TestIncidentLifecycleConcurrentDedupe(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	rows, err := q.ListAlertIncidents(ctx, db.ListAlertIncidentsParams{StateFilter: "active", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
+	rows, err := q.ListAlertIncidents(ctx, clusterdb.ListAlertIncidentsParams{StateFilter: "active", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, int32(deliveries), rows[0].Occurrences)
@@ -142,11 +144,11 @@ func TestIncidentLifecycleAuditTransaction(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
-	row, err := q.CreateAlertIncident(ctx, db.CreateAlertIncidentParams{IncidentID: "audit-" + uuid.NewString(), PolicyName: "audit-policy"})
+	q := deploymentdb.New(tx)
+	row, err := q.CreateAlertIncident(ctx, clusterdb.CreateAlertIncidentParams{IncidentID: "audit-" + uuid.NewString(), PolicyName: "audit-policy"})
 	require.NoError(t, err)
 	// An unknown admin fails the audit FK, and must roll back the resolution.
-	badCtx := ContextWithAdminAuditActor(ctx, AdminAuditActor{UserID: 9223372036854775807, Username: "missing"})
+	badCtx := services.ContextWithAdminAuditActor(ctx, services.AdminAuditActor{UserID: 9223372036854775807, Username: "missing"})
 	_, err = NewAdminIncidentsService(q).Resolve(badCtx, row.ID, nil)
 	require.Error(t, err)
 	got, err := q.GetAlertIncident(ctx, row.ID)
@@ -156,7 +158,7 @@ func TestIncidentLifecycleAuditTransaction(t *testing.T) {
 	name := "incident-admin-" + uuid.NewString()
 	var actorID int64
 	require.NoError(t, tx.QueryRow(ctx, "INSERT INTO users (username,lower_username) VALUES ($1,$1) RETURNING id", name).Scan(&actorID))
-	adminCtx := ContextWithAdminAuditActor(ctx, AdminAuditActor{UserID: actorID, Username: name})
+	adminCtx := services.ContextWithAdminAuditActor(ctx, services.AdminAuditActor{UserID: actorID, Username: name})
 	svc := NewAdminIncidentsService(q)
 	note := "manual fix"
 	result, err := svc.Resolve(adminCtx, row.ID, &note)
@@ -182,7 +184,7 @@ func TestIncidentLifecycleDeduplicatedDeliveryReplay(t *testing.T) {
 			tx, err := pool.Begin(ctx)
 			require.NoError(t, err)
 			defer tx.Rollback(ctx)
-			q := db.New(tx)
+			q := deploymentdb.New(tx)
 			policy := "Smithers High Error Rate - " + uuid.NewString()
 			svc := NewAlertIncidentService(q, testAlertRegistry(t))
 			a := MonitoringAlertIncident{IncidentID: "canary-" + uuid.NewString(), PolicyName: policy, ConditionName: "Backend canary probe failing", State: "open"}
@@ -203,7 +205,7 @@ func TestIncidentLifecycleDeduplicatedDeliveryReplay(t *testing.T) {
 				name := "replay-admin-" + uuid.NewString()
 				var actorID int64
 				require.NoError(t, tx.QueryRow(ctx, "INSERT INTO users (username,lower_username) VALUES ($1,$1) RETURNING id", name).Scan(&actorID))
-				adminCtx := ContextWithAdminAuditActor(ctx, AdminAuditActor{UserID: actorID, Username: name})
+				adminCtx := services.ContextWithAdminAuditActor(ctx, services.AdminAuditActor{UserID: actorID, Username: name})
 				_, err = NewAdminIncidentsService(q).Resolve(adminCtx, canonical.ID, nil)
 				require.NoError(t, err)
 			} else {
@@ -213,7 +215,7 @@ func TestIncidentLifecycleDeduplicatedDeliveryReplay(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "resolved", resolved.State)
 			require.NoError(t, svc.HandleAlertIncident(ctx, b))
-			rows, err := q.ListAlertIncidents(ctx, db.ListAlertIncidentsParams{StateFilter: "all", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
+			rows, err := q.ListAlertIncidents(ctx, clusterdb.ListAlertIncidentsParams{StateFilter: "all", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
 			require.NoError(t, err)
 			require.Len(t, rows, 1, "replayed deduplicated ID must not resurrect an incident")
 			afterReplay, err := q.GetAlertIncident(ctx, canonical.ID)
@@ -251,7 +253,7 @@ func TestIncidentLifecycleCloseDeliveryAssociation(t *testing.T) {
 			tx, err := pool.Begin(ctx)
 			require.NoError(t, err)
 			defer tx.Rollback(ctx)
-			q := db.New(tx)
+			q := deploymentdb.New(tx)
 			svc := NewAlertIncidentService(q, nil, WithAlertRemediationEnabled(false))
 			policy := "close-association-" + uuid.NewString()
 			deliveries := []MonitoringAlertIncident{
@@ -280,7 +282,7 @@ func TestIncidentLifecycleCloseDeliveryAssociation(t *testing.T) {
 			for _, delivery := range deliveries {
 				require.NoError(t, svc.HandleAlertIncident(ctx, delivery))
 			}
-			rows, err := q.ListAlertIncidents(ctx, db.ListAlertIncidentsParams{StateFilter: "all", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
+			rows, err := q.ListAlertIncidents(ctx, clusterdb.ListAlertIncidentsParams{StateFilter: "all", Policy: pgtype.Text{String: policy, Valid: true}, PageLimit: 200})
 			require.NoError(t, err)
 			require.Len(t, rows, 1)
 			unknown := MonitoringAlertIncident{IncidentID: uuid.NewString(), PolicyName: policy, State: "closed"}
@@ -308,7 +310,7 @@ func TestIncidentLifecycleDeliveryAdmissionRollback(t *testing.T) {
 		CREATE TRIGGER reject_incident_job BEFORE INSERT ON alert_remediation_jobs
 		FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_incident_job();`)
 	require.NoError(t, err)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	svc := NewAlertIncidentService(q, testAlertRegistry(t))
 	delivery := MonitoringAlertIncident{IncidentID: uuid.NewString(), PolicyName: "Smithers High Error Rate - " + uuid.NewString(), ConditionName: "condition", State: "open"}
 	require.ErrorContains(t, svc.HandleAlertIncident(ctx, delivery), "injected enqueue failure")

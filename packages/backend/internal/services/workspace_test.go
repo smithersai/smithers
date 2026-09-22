@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
@@ -81,8 +82,8 @@ type mockWorkspaceQuerier struct {
 	deleteAccessTokenFn                    func(ctx context.Context, arg db.DeleteAccessTokenParams) error
 	notifyWorkspaceStatusFn                func(ctx context.Context, arg db.NotifyWorkspaceStatusParams) error
 	getWorkspaceShareFn                    func(ctx context.Context, arg db.GetWorkspaceShareParams) (db.WorkspaceShare, error)
-	createSandboxAccessTokenFn             func(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error)
-	getSandboxAccessTokenByHashFn          func(ctx context.Context, tokenHash []byte) (db.SandboxAccessToken, error)
+	createSandboxAccessTokenFn             func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error)
+	getSandboxAccessTokenByHashFn          func(ctx context.Context, tokenHash []byte) (clusterdb.SandboxAccessToken, error)
 	markSandboxAccessTokenUsedFn           func(ctx context.Context, id string) error
 	deleteExpiredSandboxAccessTokensFn     func(ctx context.Context) error
 }
@@ -515,18 +516,18 @@ func (m *mockWorkspaceQuerier) GetWorkspaceShare(ctx context.Context, arg db.Get
 	return db.WorkspaceShare{}, pgx.ErrNoRows
 }
 
-func (m *mockWorkspaceQuerier) CreateSandboxAccessToken(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error) {
+func (m *mockWorkspaceQuerier) CreateSandboxAccessToken(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
 	if m.createSandboxAccessTokenFn != nil {
 		return m.createSandboxAccessTokenFn(ctx, arg)
 	}
-	return db.SandboxAccessToken{ID: "sat-123", VmID: arg.VmID, UserID: arg.UserID, LinuxUser: arg.LinuxUser, TokenHash: arg.TokenHash, TokenType: arg.TokenType, ExpiresAt: arg.ExpiresAt, CreatedAt: time.Now()}, nil
+	return clusterdb.SandboxAccessToken{ID: "sat-123", VmID: arg.VmID, UserID: arg.UserID, LinuxUser: arg.LinuxUser, TokenHash: arg.TokenHash, TokenType: arg.TokenType, ExpiresAt: arg.ExpiresAt, CreatedAt: time.Now()}, nil
 }
 
-func (m *mockWorkspaceQuerier) GetSandboxAccessTokenByHash(ctx context.Context, tokenHash []byte) (db.SandboxAccessToken, error) {
+func (m *mockWorkspaceQuerier) GetSandboxAccessTokenByHash(ctx context.Context, tokenHash []byte) (clusterdb.SandboxAccessToken, error) {
 	if m.getSandboxAccessTokenByHashFn != nil {
 		return m.getSandboxAccessTokenByHashFn(ctx, tokenHash)
 	}
-	return db.SandboxAccessToken{}, nil
+	return clusterdb.SandboxAccessToken{}, nil
 }
 
 func (m *mockWorkspaceQuerier) MarkSandboxAccessTokenUsed(ctx context.Context, id string) error {
@@ -778,9 +779,9 @@ func TestWorkspaceSSH_CredentialScopedToOwner(t *testing.T) {
 			}
 			return db.WorkspaceSession{}, pgx.ErrNoRows
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error) {
+		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
 			tokenCreated = true
-			return db.SandboxAccessToken{}, nil
+			return clusterdb.SandboxAccessToken{}, nil
 		},
 	}
 
@@ -817,9 +818,9 @@ func TestWorkspaceSSH_CrossRepoRejected(t *testing.T) {
 			}
 			return db.WorkspaceSession{}, pgx.ErrNoRows
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error) {
+		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
 			tokenCreated = true
-			return db.SandboxAccessToken{}, nil
+			return clusterdb.SandboxAccessToken{}, nil
 		},
 	}
 

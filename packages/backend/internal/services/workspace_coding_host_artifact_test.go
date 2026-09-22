@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
@@ -39,7 +39,7 @@ func TestWorkspaceCodingHostPreservesGeneralCLI(t *testing.T) {
 		require.NoError(t, decoder.Close())
 		require.Equal(t, expected, actual)
 	}
-	command := workspaceGatewayCommand(db.RepoGateway{})
+	command := workspaceGatewayCommand(clusterdb.RepoGateway{})
 	require.Contains(t, command, "flock --nonblock --no-fork --conflict-exit-code 75")
 	require.Contains(t, command, workspaceCodingHostPath+" serve")
 	require.NotContains(t, command, workspaceSmithersCLIPath+" serve")

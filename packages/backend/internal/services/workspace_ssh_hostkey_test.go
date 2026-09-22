@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
@@ -145,8 +146,8 @@ func TestWorkspaceService_GetWorkspaceSSHConnectionInfo_PopulatesHostKeys(t *tes
 			workspace.VmID = "vm-ssh-hk"
 			return workspace, nil
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error) {
-			return db.SandboxAccessToken{ID: "sat", VmID: arg.VmID}, nil
+		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
+			return clusterdb.SandboxAccessToken{ID: "sat", VmID: arg.VmID}, nil
 		},
 	}
 

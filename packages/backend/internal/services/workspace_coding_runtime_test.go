@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
@@ -367,7 +368,7 @@ func TestWorkspaceCodingRuntime_ServiceFencesBindingAndAcknowledgement(t *testin
 
 func TestWorkspaceCodingRuntime_HealthyGatewayRefreshesWithoutRestart(t *testing.T) {
 	s, q, vm, workspace := boundGatewayFixture(t)
-	q.active = &db.RepoGateway{ID: q.nextGatewayID, RepositoryID: workspace.RepositoryID, UserID: workspace.UserID, VmID: workspace.VmID,
+	q.active = &clusterdb.RepoGateway{ID: q.nextGatewayID, RepositoryID: workspace.RepositoryID, UserID: workspace.UserID, VmID: workspace.VmID,
 		WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}, Status: "running", AuthTokenCiphertext: "enc:retained"}
 	// Same real gateway flow, with the production head-store capability present.
 	wq := &workspaceHeadTestQuerier{mockWorkspaceQuerier: &mockWorkspaceQuerier{getWorkspaceByRepoFn: func(context.Context, db.GetWorkspaceByRepoParams) (db.Workspace, error) { return *workspace, nil }}}

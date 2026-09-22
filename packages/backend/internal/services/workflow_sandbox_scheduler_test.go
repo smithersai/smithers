@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
@@ -29,7 +30,7 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 	markWorkflowRunSuccessFn           func(ctx context.Context, id int64) (db.WorkflowRun, error)
 	markWorkflowRunFailureFn           func(ctx context.Context, id int64) (db.WorkflowRun, error)
 	resumeWorkflowRunFn                func(ctx context.Context, id int64) error
-	renewWorkflowSandboxClaimFn        func(ctx context.Context, arg db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error)
+	renewWorkflowSandboxClaimFn        func(ctx context.Context, arg clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error)
 	getWorkflowDefinitionFn            func(ctx context.Context, arg db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error)
 	getRepoByIDFn                      func(ctx context.Context, id int64) (db.Repository, error)
 	getUserByIDFn                      func(ctx context.Context, id int64) (db.User, error)
@@ -56,10 +57,10 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 
 	markSuccessIDs         []int64
 	markFailureIDs         []int64
-	markSuccessParams      []db.MarkWorkflowRunSuccessParams
-	markFailureParams      []db.MarkWorkflowRunFailureParams
+	markSuccessParams      []clusterdb.MarkWorkflowRunSuccessParams
+	markFailureParams      []clusterdb.MarkWorkflowRunFailureParams
 	resumeRunIDs           []int64
-	renewClaimParams       []db.RenewWorkflowSandboxClaimParams
+	renewClaimParams       []clusterdb.RenewWorkflowSandboxClaimParams
 	cancelTaskIDs          []int64
 	terminalSteps          []db.UpdateWorkflowStepStatusTerminalParams
 	logInserts             []db.InsertWorkflowRunLogNextSequenceParams
@@ -78,13 +79,13 @@ type mockWorkflowSandboxSchedulerQuerier struct {
 	terminalTasks []db.MarkWorkflowTaskTerminalByIDParams
 }
 
-func (m *mockWorkflowSandboxSchedulerQuerier) ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]db.ClaimQueuedWorkflowRunsRow, error) {
+func (m *mockWorkflowSandboxSchedulerQuerier) ClaimQueuedWorkflowRuns(ctx context.Context, limitCount int32) ([]clusterdb.ClaimQueuedWorkflowRunsRow, error) {
 	if m.claimQueuedWorkflowRunsFn != nil {
 		runs, err := m.claimQueuedWorkflowRunsFn(ctx, limitCount)
 		if err != nil {
 			return nil, err
 		}
-		claims := make([]db.ClaimQueuedWorkflowRunsRow, 0, len(runs))
+		claims := make([]clusterdb.ClaimQueuedWorkflowRunsRow, 0, len(runs))
 		for _, run := range runs {
 			claim := testWorkflowSandboxClaimRow(run)
 			if !m.claimLeaseExpiresAt.IsZero() {
@@ -97,7 +98,7 @@ func (m *mockWorkflowSandboxSchedulerQuerier) ClaimQueuedWorkflowRuns(ctx contex
 	return nil, nil
 }
 
-func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowRunSuccess(ctx context.Context, arg db.MarkWorkflowRunSuccessParams) (db.WorkflowRun, error) {
+func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowRunSuccess(ctx context.Context, arg clusterdb.MarkWorkflowRunSuccessParams) (db.WorkflowRun, error) {
 	m.markSuccessIDs = append(m.markSuccessIDs, arg.ID)
 	m.markSuccessParams = append(m.markSuccessParams, arg)
 	if m.markWorkflowRunSuccessFn != nil {
@@ -106,7 +107,7 @@ func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowRunSuccess(ctx context
 	return db.WorkflowRun{ID: arg.ID, Status: "success"}, nil
 }
 
-func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowRunFailure(ctx context.Context, arg db.MarkWorkflowRunFailureParams) (db.WorkflowRun, error) {
+func (m *mockWorkflowSandboxSchedulerQuerier) MarkWorkflowRunFailure(ctx context.Context, arg clusterdb.MarkWorkflowRunFailureParams) (db.WorkflowRun, error) {
 	m.markFailureIDs = append(m.markFailureIDs, arg.ID)
 	m.markFailureParams = append(m.markFailureParams, arg)
 	if m.markWorkflowRunFailureFn != nil {
@@ -123,7 +124,7 @@ func (m *mockWorkflowSandboxSchedulerQuerier) ResumeWorkflowRun(ctx context.Cont
 	return nil
 }
 
-func (m *mockWorkflowSandboxSchedulerQuerier) RenewWorkflowSandboxClaim(ctx context.Context, arg db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
+func (m *mockWorkflowSandboxSchedulerQuerier) RenewWorkflowSandboxClaim(ctx context.Context, arg clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
 	m.renewClaimParams = append(m.renewClaimParams, arg)
 	if m.renewWorkflowSandboxClaimFn != nil {
 		return m.renewWorkflowSandboxClaimFn(ctx, arg)
@@ -131,8 +132,8 @@ func (m *mockWorkflowSandboxSchedulerQuerier) RenewWorkflowSandboxClaim(ctx cont
 	return pgtype.Timestamptz{Time: time.Now().Add(2 * time.Minute), Valid: true}, nil
 }
 
-func testWorkflowSandboxClaimRow(run db.WorkflowRun) db.ClaimQueuedWorkflowRunsRow {
-	return db.ClaimQueuedWorkflowRunsRow{
+func testWorkflowSandboxClaimRow(run db.WorkflowRun) clusterdb.ClaimQueuedWorkflowRunsRow {
+	return clusterdb.ClaimQueuedWorkflowRunsRow{
 		ID:                   run.ID,
 		RepositoryID:         run.RepositoryID,
 		WorkflowDefinitionID: run.WorkflowDefinitionID,
@@ -889,9 +890,9 @@ func TestWorkflowSandboxSchedulerWorker_PollOnce_ShutdownFailsUnstartedClaimedRu
 func TestWorkflowSandboxSchedulerWorker_LostLeaseCancelsStaleExecution(t *testing.T) {
 	t.Parallel()
 
-	renewed := make(chan db.RenewWorkflowSandboxClaimParams, 1)
+	renewed := make(chan clusterdb.RenewWorkflowSandboxClaimParams, 1)
 	queries := newSandboxSchedulerRunQuerier(53, 17)
-	queries.renewWorkflowSandboxClaimFn = func(_ context.Context, arg db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
+	queries.renewWorkflowSandboxClaimFn = func(_ context.Context, arg clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
 		select {
 		case renewed <- arg:
 		default:
@@ -933,7 +934,7 @@ func TestWorkflowSandboxSchedulerWorker_RenewalErrorsCancelAtClaimExpiry(t *test
 
 	queries := newSandboxSchedulerRunQuerier(54, 18)
 	queries.claimLeaseExpiresAt = time.Now().Add(500 * time.Millisecond)
-	queries.renewWorkflowSandboxClaimFn = func(_ context.Context, _ db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
+	queries.renewWorkflowSandboxClaimFn = func(_ context.Context, _ clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
 		return pgtype.Timestamptz{}, errors.New("database unavailable")
 	}
 	queries.markWorkflowRunFailureFn = func(_ context.Context, _ int64) (db.WorkflowRun, error) {
@@ -963,7 +964,7 @@ func TestWorkflowSandboxSchedulerWorker_BlockedRenewalCannotOutliveClaim(t *test
 	renewalCanceled := make(chan struct{}, 1)
 	queries := newSandboxSchedulerRunQuerier(55, 19)
 	queries.claimLeaseExpiresAt = time.Now().Add(500 * time.Millisecond)
-	queries.renewWorkflowSandboxClaimFn = func(ctx context.Context, _ db.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
+	queries.renewWorkflowSandboxClaimFn = func(ctx context.Context, _ clusterdb.RenewWorkflowSandboxClaimParams) (pgtype.Timestamptz, error) {
 		<-ctx.Done()
 		renewalCanceled <- struct{}{}
 		return pgtype.Timestamptz{}, ctx.Err()

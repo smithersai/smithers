@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
@@ -20,7 +21,7 @@ func TestWorkspaceService_GetWorkspaceSSHConnectionInfo_CreatesSandboxAccessToke
 	t.Parallel()
 
 	const wsID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	var storedTokenParams db.CreateSandboxAccessTokenParams
+	var storedTokenParams clusterdb.CreateSandboxAccessTokenParams
 
 	q := &mockWorkspaceQuerier{
 		getWorkspaceForUserRepoFn: func(ctx context.Context, arg db.GetWorkspaceForUserRepoParams) (db.Workspace, error) {
@@ -28,9 +29,9 @@ func TestWorkspaceService_GetWorkspaceSSHConnectionInfo_CreatesSandboxAccessToke
 			workspace.VmID = "vm-ssh-123"
 			return workspace, nil
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg db.CreateSandboxAccessTokenParams) (db.SandboxAccessToken, error) {
+		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
 			storedTokenParams = arg
-			return db.SandboxAccessToken{
+			return clusterdb.SandboxAccessToken{
 				ID:        "sat-123",
 				VmID:      arg.VmID,
 				UserID:    arg.UserID,

@@ -11,11 +11,12 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 )
 
 func TestWorkflowArtifactServiceIntegration_ConfirmedArtifactNameIsImmutable(t *testing.T) {
 	pool := getAgentTestPool(t)
-	queries := db.New(pool)
+	queries := deploymentdb.New(pool)
 	repoID := createWorkflowRunIntegrationRepo(t, pool)
 
 	ctx := context.Background()

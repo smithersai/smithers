@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 )
 
 func TestObserveV2DurableInventoryQueries(t *testing.T) {
@@ -15,7 +15,7 @@ func TestObserveV2DurableInventoryQueries(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	before, err := q.GetSandboxInstancesByState(ctx)
 	require.NoError(t, err)
 	states := map[string]int64{}
@@ -67,7 +67,7 @@ func TestObserveV2QueueQueriesIncludeDelayedWork(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback(ctx)
-	q := db.New(tx)
+	q := deploymentdb.New(tx)
 	before, err := q.GetAdminQueueMetrics(ctx)
 	require.NoError(t, err)
 	require.Len(t, before, 11)

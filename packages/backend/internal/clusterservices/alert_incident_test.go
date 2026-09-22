@@ -30,7 +30,7 @@ type fakeAlertIncidentQuerier struct {
 	resolved               []string
 	createdIncidents       []clusterdb.CreateAlertIncidentParams
 	enqueuedJobs           []int64
-	outcomes               []db.RecordAlertIncidentRemediationOutcomeGuardedParams
+	outcomes               []clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams
 	incidentByID           map[string]clusterdb.AlertIncident
 	outcomeAlreadyResolved bool // when true, RecordAlertIncidentRemediationOutcomeGuarded reports 0 rows affected (idempotent no-op)
 	authorizedOutcomeRows  int64
@@ -86,7 +86,7 @@ func (f *fakeAlertIncidentQuerier) AuthorizeAlertRemediationOutcomeRun(_ context
 	return f.authorizedOutcomeRows, f.authorizedOutcomeErr
 }
 
-func (f *fakeAlertIncidentQuerier) RecordAlertIncidentRemediationOutcomeGuarded(_ context.Context, arg db.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error) {
+func (f *fakeAlertIncidentQuerier) RecordAlertIncidentRemediationOutcomeGuarded(_ context.Context, arg clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error) {
 	if f.outcomeAlreadyResolved {
 		return 0, nil
 	}
@@ -348,7 +348,7 @@ func TestRecordWorkflowRemediationOutcome_RequiresExactPersistedBinding(t *testi
 		WorkflowDefinitionID: 23,
 	}, q.authorizedOutcome[0])
 	require.Len(t, q.outcomes, 1)
-	assert.Equal(t, db.RecordAlertIncidentRemediationOutcomeGuardedParams{
+	assert.Equal(t, clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams{
 		ID:               42,
 		State:            "pr_opened",
 		RemediationPrUrl: "https://github.com/smithers-ai/plue/pull/42",

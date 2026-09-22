@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +21,7 @@ import (
 func TestGatewayPushToken_PostgresLifecycle(t *testing.T) {
 	pool := getAgentTestPool(t)
 	ctx := context.Background()
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	ownerID, repoID := setupTestUserAndRepo(t, pool)
 	actorID, otherRepoID := setupTestUserAndRepo(t, pool)
 	owner, err := q.GetUserByID(ctx, ownerID)
@@ -32,10 +34,10 @@ func TestGatewayPushToken_PostgresLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	_, err = q.AddCollaborator(ctx, db.AddCollaboratorParams{RepositoryID: repoID, UserID: pgtypeInt8(actorID), Permission: "write"})
 	require.NoError(t, err)
-	gateway, err := q.CreateRepoGateway(ctx, db.CreateRepoGatewayParams{RepositoryID: repoID, UserID: actorID, Status: "running"})
+	gateway, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: actorID, Status: "running"})
 	require.NoError(t, err)
 	hash := sha256.Sum256([]byte("operator"))
-	_, err = q.UpdateRepoGatewayExecutionInfo(ctx, db.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "vm-test", AuthTokenHash: hex.EncodeToString(hash[:]), Status: "running"})
+	_, err = q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "vm-test", AuthTokenHash: hex.EncodeToString(hash[:]), Status: "running"})
 	require.NoError(t, err)
 	service := NewGatewayPushTokenService(NewRepoGatewayService(q), q, NewAuditService(q))
 	input := GatewayPushTokenInput{Repo: owner.Username + "/" + repo.Name}
@@ -101,7 +103,7 @@ func TestGatewayPushToken_PostgresLifecycle(t *testing.T) {
 	require.Equal(t, 401, apiStatus(t, err))
 	_, err = pool.Exec(ctx, `UPDATE users SET prohibit_login=false WHERE id=$1`, actorID)
 	require.NoError(t, err)
-	_, err = q.UpdateRepoGatewayStatus(ctx, db.UpdateRepoGatewayStatusParams{ID: gateway.ID, Status: "stopped"})
+	_, err = q.UpdateRepoGatewayStatus(ctx, clusterdb.UpdateRepoGatewayStatusParams{ID: gateway.ID, Status: "stopped"})
 	require.NoError(t, err)
 	_, err = service.Mint(ctx, gateway.ID, "operator", input)
 	require.Equal(t, 409, apiStatus(t, err))

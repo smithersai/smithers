@@ -21,7 +21,6 @@ func (m *benchRepoQuerier) CreateRepo(_ context.Context, arg db.CreateRepoParams
 		ID:              1,
 		Name:            arg.Name,
 		LowerName:       arg.LowerName,
-		StorageSetID:    arg.StorageSetID,
 		IsPublic:        arg.IsPublic,
 		UserID:          arg.UserID,
 		DefaultBookmark: arg.DefaultBookmark,

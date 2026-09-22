@@ -43,7 +43,7 @@ type alertRemediationWorkerZQuerier struct {
 	atomicFailed    bool
 	atomicFailSet   bool
 	atomicFailErr   error
-	states          []db.UpdateAlertIncidentStateGuardedParams
+	states          []clusterdb.UpdateAlertIncidentStateGuardedParams
 	existingRun     db.WorkflowRun
 	recoveredRun    db.WorkflowRun
 	findRunCalls    int
@@ -106,7 +106,7 @@ func (q *alertRemediationWorkerZQuerier) GetAlertIncident(context.Context, int64
 	return q.incident, nil
 }
 
-func (q *alertRemediationWorkerZQuerier) UpdateAlertIncidentStateGuarded(_ context.Context, arg db.UpdateAlertIncidentStateGuardedParams) (int64, error) {
+func (q *alertRemediationWorkerZQuerier) UpdateAlertIncidentStateGuarded(_ context.Context, arg clusterdb.UpdateAlertIncidentStateGuardedParams) (int64, error) {
 	q.states = append(q.states, arg)
 	if q.stateErr != nil {
 		return 0, q.stateErr

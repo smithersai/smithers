@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -116,7 +117,7 @@ func TestGitHubProxy_H_OwnerAuditAndNormalizeBranches(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, apiStatus(t, err))
 
 	store := &fakeGitHubProxyStore{
-		insertGithubProxyAuditLogFn: func(context.Context, db.InsertGithubProxyAuditLogParams) error {
+		insertGithubProxyAuditLogFn: func(context.Context, clusterdb.InsertGithubProxyAuditLogParams) error {
 			return errors.New("audit insert failed")
 		},
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
@@ -45,14 +45,14 @@ func (repoGatewayCovRow) Scan(...any) error {
 	return pgx.ErrNoRows
 }
 
-func (q *repoGatewayCovQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg db.GetActiveRepoGatewayForUserRepoParams) (db.RepoGateway, error) {
+func (q *repoGatewayCovQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
 	if q.activeErr != nil {
-		return db.RepoGateway{}, q.activeErr
+		return clusterdb.RepoGateway{}, q.activeErr
 	}
 	return q.fakeRepoGatewayQuerier.GetActiveRepoGatewayForUserRepo(ctx, arg)
 }
 
-func (q *repoGatewayCovQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]db.RepoGateway, error) {
+func (q *repoGatewayCovQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]clusterdb.RepoGateway, error) {
 	if q.staleErr != nil {
 		return nil, q.staleErr
 	}
@@ -195,7 +195,7 @@ func TestRepoGateway_Cov_VMCommandReuseAndSystemdBranches(t *testing.T) {
 	})
 
 	t.Run("reuse maps get and start VM non-404 failures", func(t *testing.T) {
-		gateway := db.RepoGateway{ID: "gw-1", VmID: "vm-1", BaseUrl: "https://gw", AuthTokenCiphertext: "smithers_gateway_token", Status: "running"}
+		gateway := clusterdb.RepoGateway{ID: "gw-1", VmID: "vm-1", BaseUrl: "https://gw", AuthTokenCiphertext: "smithers_gateway_token", Status: "running"}
 		svc := newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, &fakeRepoGatewayVMClient{
 			getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
 				return sandbox.Sandbox{}, errors.New("sandbox unavailable")

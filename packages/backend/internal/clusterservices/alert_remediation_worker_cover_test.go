@@ -36,7 +36,7 @@ type alertRemediationWorkerCovQuerier struct {
 	atomicFailed    bool
 	atomicFailSet   bool
 	atomicFailErr   error
-	states          []db.UpdateAlertIncidentStateGuardedParams
+	states          []clusterdb.UpdateAlertIncidentStateGuardedParams
 	defPath         string
 	getDefErr       error
 	getIncErr       error
@@ -100,7 +100,7 @@ func (q *alertRemediationWorkerCovQuerier) GetAlertIncident(context.Context, int
 	return q.incident, nil
 }
 
-func (q *alertRemediationWorkerCovQuerier) UpdateAlertIncidentStateGuarded(_ context.Context, arg db.UpdateAlertIncidentStateGuardedParams) (int64, error) {
+func (q *alertRemediationWorkerCovQuerier) UpdateAlertIncidentStateGuarded(_ context.Context, arg clusterdb.UpdateAlertIncidentStateGuardedParams) (int64, error) {
 	q.states = append(q.states, arg)
 	return 1, nil
 }

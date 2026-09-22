@@ -11,6 +11,17 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
+type fixedRepoPlacement struct {
+	storageSetID string
+	err          error
+	seenID       int64
+}
+
+func (p *fixedRepoPlacement) StorageSetForRepository(_ context.Context, id int64) (string, error) {
+	p.seenID = id
+	return p.storageSetID, p.err
+}
+
 type stubStorageSetQuerier struct {
 	repo db.Repository
 	err  error
@@ -27,8 +38,8 @@ func TestDBStorageSetResolverResolveURL_UsesStorageSetTemplate(t *testing.T) {
 	t.Parallel()
 
 	resolver := NewDBStorageSetResolver(&stubStorageSetQuerier{
-		repo: db.Repository{StorageSetID: "s1"},
-	}, "http://smithers-repo-host-%s:8080")
+		repo: db.Repository{ID: 42},
+	}, "http://smithers-repo-host-%s:8080", &fixedRepoPlacement{storageSetID: "s1"})
 
 	got, err := resolver.ResolveURL(context.Background(), "alice", "demo")
 	require.NoError(t, err)
@@ -39,8 +50,8 @@ func TestDBStorageSetResolverResolveURL_AllowsStaticBaseURL(t *testing.T) {
 	t.Parallel()
 
 	resolver := NewDBStorageSetResolver(&stubStorageSetQuerier{
-		repo: db.Repository{StorageSetID: "s1"},
-	}, "http://repo-host:8080")
+		repo: db.Repository{ID: 42},
+	}, "http://repo-host:8080", &fixedRepoPlacement{storageSetID: "s1"})
 
 	got, err := resolver.ResolveURL(context.Background(), "alice", "demo")
 	require.NoError(t, err)

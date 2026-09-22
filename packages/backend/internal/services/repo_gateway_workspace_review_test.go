@@ -16,7 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
@@ -47,7 +49,7 @@ func TestWorkspaceGateway_OwnerEnvironmentAndSharing(t *testing.T) {
 func TestWorkspaceGateway_ExistingProviderProfilePreservesHostIdentity(t *testing.T) {
 	profile := filepath.Join(t.TempDir(), "agent-environment.sh")
 	require.NoError(t, os.WriteFile(profile, []byte("export ANTHROPIC_API_KEY='ANTHROPIC_API_KEY'\nexport SMITHERS_API_KEY='repository-value'\nexport SMITHERS_GATEWAY_ID='repository-id'\nexport HOME='/repository-home'\n"), 0600))
-	command := workspaceGatewayCommand(db.RepoGateway{ID: "owned-host"})
+	command := workspaceGatewayCommand(clusterdb.RepoGateway{ID: "owned-host"})
 	command = strings.ReplaceAll(command, "/etc/profile.d/10-smithers-agent-environment.sh", profile)
 	command = command[:strings.LastIndex(command, "\nexec flock")] + "\nprintf '%s\\n' \"$SMITHERS_API_KEY\" \"$SMITHERS_GATEWAY_ID\" \"$ANTHROPIC_API_KEY\" \"$HOME\""
 	process := exec.Command("sh", "-c", command)
@@ -61,8 +63,8 @@ func TestWorkspaceGateway_RetriesOnlyTombstonedServiceCleanup(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "recovered", true: "stop-failed"}[failed], func(t *testing.T) {
 			s, q, vm, w := boundGatewayFixture(t)
-			old := db.RepoGateway{ID: uuid.NewString(), VmID: w.VmID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, DeletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}}
-			q.discardedWorkspaceRows = []db.RepoGateway{old}
+			old := clusterdb.RepoGateway{ID: uuid.NewString(), VmID: w.VmID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, DeletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}}
+			q.discardedWorkspaceRows = []clusterdb.RepoGateway{old}
 			var cleanupSeen bool
 			vm.execAwaitFn = func(_ context.Context, _ string, request sandbox.ExecRequest) (sandbox.ExecResult, error) {
 				if strings.Contains(request.Command, "LoadState") {
@@ -103,7 +105,7 @@ func TestWorkspaceGateway_BoundActivityAndRevocation(t *testing.T) {
 	vm.execAwaitFn = func(context.Context, string, sandbox.ExecRequest) (sandbox.ExecResult, error) {
 		return sandbox.ExecResult{}, errors.New("asleep")
 	}
-	s.discardGateway(context.Background(), db.RepoGateway{ID: info.GatewayID, VmID: w.VmID, UserID: w.UserID, RepositoryID: w.RepositoryID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}})
+	s.discardGateway(context.Background(), clusterdb.RepoGateway{ID: info.GatewayID, VmID: w.VmID, UserID: w.UserID, RepositoryID: w.RepositoryID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}})
 	require.Len(t, publisher.all(), 1)
 	assert.Equal(t, revocation.KindGatewayRevoked, publisher.all()[0].Kind)
 	assert.Equal(t, info.GatewayID, publisher.all()[0].GatewayID)
@@ -112,8 +114,8 @@ func TestWorkspaceGateway_BoundActivityAndRevocation(t *testing.T) {
 
 func TestWorkspaceGateway_ReaperRetainsFailedCleanupAndRetriesAfterResume(t *testing.T) {
 	s, q, vm, w := boundGatewayFixture(t)
-	old := db.RepoGateway{ID: uuid.NewString(), VmID: w.VmID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, DeletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}, AuthTokenHash: "retained"}
-	q.discardedWorkspaceRows = []db.RepoGateway{old}
+	old := clusterdb.RepoGateway{ID: uuid.NewString(), VmID: w.VmID, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, DeletedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}, AuthTokenHash: "retained"}
+	q.discardedWorkspaceRows = []clusterdb.RepoGateway{old}
 	vm.execAwaitFn = func(context.Context, string, sandbox.ExecRequest) (sandbox.ExecResult, error) {
 		return sandbox.ExecResult{}, errors.New("asleep")
 	}
@@ -135,7 +137,7 @@ func TestWorkspaceGateway_PostgresSharingAdmissionSerializes(t *testing.T) {
 	pool := getAgentTestPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	for _, gatewayFirst := range []bool{true, false} {
 		t.Run(map[bool]string{true: "gateway-first", false: "share-first"}[gatewayFirst], func(t *testing.T) {
 			owner, repoID := setupTestUserAndRepo(t, pool)
@@ -149,7 +151,7 @@ func TestWorkspaceGateway_PostgresSharingAdmissionSerializes(t *testing.T) {
 			require.NoError(t, err)
 			defer tx2.Rollback(context.Background())
 			binding := pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}
-			gateway := db.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner, WorkspaceID: binding, Status: "pending"}
+			gateway := clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner, WorkspaceID: binding, Status: "pending"}
 			share := db.UpsertWorkspaceShareParams{WorkspaceID: workspace.ID, OwnerUserID: owner, GranteeUserID: grantee, Level: "write"}
 			if gatewayFirst {
 				_, err = q.WithTx(tx1).CreateRepoGateway(ctx, gateway)
@@ -181,16 +183,16 @@ func TestWorkspaceGateway_PostgresSharingAdmissionSerializes(t *testing.T) {
 func TestWorkspaceGateway_PostgresTombstoneWaitsForCleanupAndPinsActiveVM(t *testing.T) {
 	pool := getAgentTestPool(t)
 	ctx := context.Background()
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	owner, repoID := setupTestUserAndRepo(t, pool)
 	grantee, _ := setupTestUserAndRepo(t, pool)
 	w, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: owner, Name: uuid.NewString(), TargetBookmark: "main", Kind: "vm", Status: "running"})
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, "UPDATE workspaces SET vm_id='review-vm', last_activity_at=NOW()-interval '1 day' WHERE id=$1", w.ID)
 	require.NoError(t, err)
-	gateway, err := q.CreateRepoGateway(ctx, db.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, Status: "running"})
+	gateway, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner, WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, Status: "running"})
 	require.NoError(t, err)
-	_, err = q.UpdateRepoGatewayExecutionInfo(ctx, db.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "review-vm", AuthTokenHash: "not-cleared-until-process-stops", AuthTokenCiphertext: "encrypted", Status: "running"})
+	_, err = q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "review-vm", AuthTokenHash: "not-cleared-until-process-stops", AuthTokenCiphertext: "encrypted", Status: "running"})
 	require.NoError(t, err)
 	idle, err := q.ListIdleWorkspaces(ctx)
 	require.NoError(t, err)
@@ -271,7 +273,7 @@ func TestWorkspaceGateway_TeardownRevokesTheLandingCredential(t *testing.T) {
 	require.Len(t, q.landingTokenWrites, 1)
 	tokenID := q.landingTokenWrites[0].LandingTokenID
 
-	tombstoned := db.RepoGateway{
+	tombstoned := clusterdb.RepoGateway{
 		ID: info.GatewayID, VmID: w.VmID, UserID: w.UserID, RepositoryID: w.RepositoryID,
 		WorkspaceID:    pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true},
 		LandingTokenID: tokenID,
@@ -296,7 +298,7 @@ func TestWorkspaceGateway_LandingCredentialNeverComesFromTheShellProfile(t *test
 		"export SMITHERS_JJHUB_TOKEN='repository-declared-token'\nexport SMITHERS_JJHUB_API_URL='https://attacker.example/api'\n"), 0600))
 	probe := func(t *testing.T, env []string) string {
 		t.Helper()
-		command := workspaceGatewayCommand(db.RepoGateway{ID: "owned-host"})
+		command := workspaceGatewayCommand(clusterdb.RepoGateway{ID: "owned-host"})
 		command = strings.ReplaceAll(command, "/etc/profile.d/10-smithers-agent-environment.sh", profile)
 		command = command[:strings.LastIndex(command, "\nexec flock")] +
 			"\nprintf '%s\\n' \"${SMITHERS_JJHUB_TOKEN-absent}\" \"${SMITHERS_JJHUB_API_URL-absent}\""

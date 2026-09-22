@@ -17,11 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type mockLFSQuerier struct {
-	clearPurgedStorageDeletionFn      func(ctx context.Context, arg db.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
+	clearPurgedStorageDeletionFn      func(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
 	getRepoByOwnerAndLowerNameFn      func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
 	isOrgOwnerForRepoUserFn           func(ctx context.Context, arg db.IsOrgOwnerForRepoUserParams) (bool, error)
 	getHighestTeamPermissionForRepoFn func(ctx context.Context, arg db.GetHighestTeamPermissionForRepoUserParams) (string, error)
@@ -37,11 +38,11 @@ type mockLFSQuerier struct {
 	deleteExpiredLFSReservationFn     func(ctx context.Context, arg db.DeleteExpiredLFSUploadReservationParams) (int64, error)
 	listLFSObjectsFn                  func(ctx context.Context, arg db.ListLFSObjectsParams) ([]db.LfsObject, error)
 	countLFSObjectsFn                 func(ctx context.Context, repositoryID int64) (int64, error)
-	hasStorageDeletionAllocationFn    func(ctx context.Context, arg db.HasStorageDeletionAllocationParams) (bool, error)
+	hasStorageDeletionAllocationFn    func(ctx context.Context, arg clusterdb.HasStorageDeletionAllocationParams) (bool, error)
 	lastCreate                        db.CreateLFSObjectParams
 }
 
-func (m *mockLFSQuerier) HasStorageDeletionAllocation(ctx context.Context, arg db.HasStorageDeletionAllocationParams) (bool, error) {
+func (m *mockLFSQuerier) HasStorageDeletionAllocation(ctx context.Context, arg clusterdb.HasStorageDeletionAllocationParams) (bool, error) {
 	if m.hasStorageDeletionAllocationFn != nil {
 		return m.hasStorageDeletionAllocationFn(ctx, arg)
 	}
@@ -55,7 +56,7 @@ func (m *mockLFSQuerier) DeleteUnissuedLFSUploadReservation(ctx context.Context,
 	return 1, nil
 }
 
-func (m *mockLFSQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg db.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+func (m *mockLFSQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 	if m.clearPurgedStorageDeletionFn != nil {
 		return m.clearPurgedStorageDeletionFn(ctx, arg)
 	}

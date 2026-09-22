@@ -121,7 +121,7 @@ func TestCreateRepo_RequiresAuthenticatedUser(t *testing.T) {
 	assert.Equal(t, 401, apiStatus(t, err))
 }
 
-func TestForkRepo_UsesSourceStorageSetForSameHostCopy(t *testing.T) {
+func TestForkRepoProductRowTracksSourceByStableID(t *testing.T) {
 	t.Parallel()
 
 	actor := &db.User{ID: 7, Username: "bob", LowerUsername: "bob"}
@@ -130,7 +130,6 @@ func TestForkRepo_UsesSourceStorageSetForSameHostCopy(t *testing.T) {
 		repository.UserID = pgtype.Int8{Int64: 2, Valid: true}
 		repository.Name = "source"
 		repository.LowerName = "source"
-		repository.StorageSetID = "legacy-s7"
 		repository.IsPublic = true
 	})
 	q := &mockRepoQuerier{
@@ -138,14 +137,12 @@ func TestForkRepo_UsesSourceStorageSetForSameHostCopy(t *testing.T) {
 			return source, nil
 		},
 		createForkRepoFn: func(_ context.Context, arg db.CreateForkRepoParams) (db.Repository, error) {
-			assert.Equal(t, source.StorageSetID, arg.StorageSetID)
 			return db.Repository{
 				ID:              42,
 				UserID:          arg.UserID,
 				Name:            arg.Name,
 				LowerName:       arg.LowerName,
 				Description:     arg.Description,
-				StorageSetID:    arg.StorageSetID,
 				IsPublic:        arg.IsPublic,
 				DefaultBookmark: arg.DefaultBookmark,
 				IsFork:          true,
@@ -161,11 +158,11 @@ func TestForkRepo_UsesSourceStorageSetForSameHostCopy(t *testing.T) {
 		context.Background(), actor, "alice", source.Name, "copy", "",
 	)
 	require.NoError(t, err)
-	assert.Equal(t, source.StorageSetID, forked.Repository.StorageSetID)
+	assert.Equal(t, source.ID, forked.Repository.ForkID.Int64)
 	assert.Equal(t, 1, rh.forkRepoCalls)
 }
 
-func TestGitHubImport_UsesConfiguredActiveStorageSet(t *testing.T) {
+func TestGitHubImportCreatesProductRepositoryRow(t *testing.T) {
 	t.Parallel()
 
 	var createArg db.CreateRepoParams
@@ -187,8 +184,8 @@ func TestGitHubImport_UsesConfiguredActiveStorageSet(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.False(t, reused)
-	assert.Equal(t, "active-s9", createArg.StorageSetID)
-	assert.Equal(t, "active-s9", repository.StorageSetID)
+	assert.Equal(t, int64(71), repository.ID)
+	assert.Equal(t, "demo", createArg.Name)
 }
 
 func TestProvisioningCleanup_PreservesPlacementRowWhenStorageDeletionFails(t *testing.T) {

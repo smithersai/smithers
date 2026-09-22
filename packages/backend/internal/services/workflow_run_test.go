@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
@@ -43,7 +44,7 @@ type mockWorkflowRunQuerier struct {
 	resumeTasksFn                 func(ctx context.Context, workflowRunID int64) error
 	resumeStepsFn                 func(ctx context.Context, workflowRunID int64) error
 	notifyRunFn                   func(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
-	bindAlertRunFn                func(ctx context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	bindAlertRunFn                func(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
 	getBookmarkCommitFn           func(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error)
 
 	createRunCalls      []db.CreateWorkflowRunParams
@@ -61,7 +62,7 @@ type mockWorkflowRunQuerier struct {
 	resumeStepsCalls    []int64
 	listDefsCount       int
 	getDefCount         int
-	bindAlertRunCalls   []db.BindAlertRemediationJobWorkflowRunAtAttemptParams
+	bindAlertRunCalls   []clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams
 }
 
 func (m *mockWorkflowRunQuerier) GetRepositoryBookmarkCommitID(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error) {
@@ -143,7 +144,7 @@ func (m *mockWorkflowRunQuerier) CreateWorkflowRun(ctx context.Context, arg db.C
 	}, nil
 }
 
-func (m *mockWorkflowRunQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
+func (m *mockWorkflowRunQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
 	m.bindAlertRunCalls = append(m.bindAlertRunCalls, arg)
 	if m.bindAlertRunFn != nil {
 		return m.bindAlertRunFn(ctx, arg)
@@ -624,7 +625,7 @@ func TestWorkflowRunService_AlertRemediationBindingFailureAbortsRowCreation(t *t
 		getDefFn: func(_ context.Context, _ db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error) {
 			return makeWorkflowDef(definitionID, 42, "remediate", true, `{"on":{"webhook":{"event":"monitoring_alert"}},"jobs":{"fix":{}}}`), nil
 		},
-		bindAlertRunFn: func(context.Context, db.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
+		bindAlertRunFn: func(context.Context, clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
 			return 0, nil
 		},
 	}

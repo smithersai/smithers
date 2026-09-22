@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -235,10 +236,10 @@ func (g *repositoryJobTestGateway) CallRepositoryJob(_ context.Context, connecti
 	return nil, fmt.Errorf("unexpected procedure %s", procedure)
 }
 
-func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *db.Queries, *RepositoryJobService, *repositoryJobTestGateway, RegisterRepositoryJobInput) {
+func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *deploymentdb.Queries, *RepositoryJobService, *repositoryJobTestGateway, RegisterRepositoryJobInput) {
 	t.Helper()
 	pool := getAgentTestPool(t)
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	uid, rid := setupTestUserAndRepo(t, pool)
 	ctx := context.Background()
 	t.Cleanup(func() {

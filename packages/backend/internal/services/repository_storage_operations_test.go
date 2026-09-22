@@ -121,7 +121,7 @@ func TestDeleteRepoPersistsPreparedHandleBeforeStorageMutation(t *testing.T) {
 	actor := &db.User{ID: 11, Username: "Alice", LowerUsername: "alice"}
 	repository := db.Repository{
 		ID: 91, UserID: pgtype.Int8{Int64: actor.ID, Valid: true},
-		Name: "Demo", LowerName: "demo", StorageSetID: "s1", IsPublic: true,
+		Name: "Demo", LowerName: "demo", IsPublic: true,
 	}
 	events := make([]string, 0, 6)
 	baseQ := &mockRepoQuerier{
@@ -171,7 +171,7 @@ func TestDeleteRepoPersistsPreparedHandleBeforeStorageMutation(t *testing.T) {
 
 func TestDeleteRepoRetainsIntentWhenFinalizationFails(t *testing.T) {
 	actor := &db.User{ID: 12, Username: "alice", LowerUsername: "alice"}
-	repository := db.Repository{ID: 92, UserID: pgtype.Int8{Int64: actor.ID, Valid: true}, Name: "demo", LowerName: "demo", StorageSetID: "s1"}
+	repository := db.Repository{ID: 92, UserID: pgtype.Int8{Int64: actor.ID, Valid: true}, Name: "demo", LowerName: "demo"}
 	baseQ := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 		return repository, nil
 	}}
@@ -202,7 +202,7 @@ func TestTransferRepoPersistsPreparedHandleBeforeStorageMutation(t *testing.T) {
 	actor := &db.User{ID: 21, Username: "Alice", LowerUsername: "alice"}
 	repository := db.Repository{
 		ID: 101, UserID: pgtype.Int8{Int64: actor.ID, Valid: true},
-		Name: "Demo", LowerName: "demo", StorageSetID: "s1", IsPublic: true,
+		Name: "Demo", LowerName: "demo", IsPublic: true,
 	}
 	lookupCalls := 0
 	baseQ := &mockRepoQuerier{

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
@@ -34,12 +34,12 @@ type repoGatewayZWinnerErrQuerier struct {
 	calls int
 }
 
-func (q *repoGatewayZWinnerErrQuerier) GetActiveRepoGatewayForUserRepo(context.Context, db.GetActiveRepoGatewayForUserRepoParams) (db.RepoGateway, error) {
+func (q *repoGatewayZWinnerErrQuerier) GetActiveRepoGatewayForUserRepo(context.Context, clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
 	q.calls++
 	if q.calls == 1 {
-		return db.RepoGateway{}, pgx.ErrNoRows
+		return clusterdb.RepoGateway{}, pgx.ErrNoRows
 	}
-	return db.RepoGateway{}, errors.New("winner lookup failed")
+	return clusterdb.RepoGateway{}, errors.New("winner lookup failed")
 }
 
 type repoGatewayZGoldenRow struct{}
@@ -78,13 +78,13 @@ func TestRepoGateway_Z_ReuseDiscardAndProvisionCleanupBranches(t *testing.T) {
 			return sandbox.StartResult{}, &sandbox.StatusError{StatusCode: 404, Message: "gone"}
 		},
 	})
-	_, err := svc.reuseGateway(ctx, db.RepoGateway{ID: "gw", VmID: "vm-idle", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
+	_, err := svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw", VmID: "vm-idle", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
 	require.ErrorIs(t, err, errRepoGatewayUnrecoverable)
 
 	q := &repoGatewayHStatusErrQuerier{fakeRepoGatewayQuerier: &fakeRepoGatewayQuerier{}, softErr: errors.New("soft failed")}
 	vm := &repoGatewayZVMClient{fakeRepoGatewayVMClient: &fakeRepoGatewayVMClient{}, deleteDomainErr: errors.New("unmap failed")}
 	svc = newTestRepoGatewayService(q, vm, WithRepoGatewaySandboxMetrics(&mockSandboxMetricsRecorder{}))
-	svc.discardGateway(ctx, db.RepoGateway{ID: "gw", VmID: "vm", Status: "running"})
+	svc.discardGateway(ctx, clusterdb.RepoGateway{ID: "gw", VmID: "vm", Status: "running"})
 	assert.Contains(t, vm.unmappedDomains, repoGatewayDomain("vm"))
 
 	qBase := &fakeRepoGatewayQuerier{executionInfoErr: errors.New("persist failed")}
@@ -160,7 +160,7 @@ func TestRepoGateway_Z_GoldenSnapshotWorkspaceAndReaperBranches(t *testing.T) {
 		}
 	}, time.Second, time.Millisecond)
 
-	sweepQ := &fakeRepoGatewayQuerier{staleRows: []db.RepoGateway{{ID: "gw", VmID: "vm", Status: "starting"}}}
+	sweepQ := &fakeRepoGatewayQuerier{staleRows: []clusterdb.RepoGateway{{ID: "gw", VmID: "vm", Status: "starting"}}}
 	sweepVM := &repoGatewayZVMClient{
 		fakeRepoGatewayVMClient: &fakeRepoGatewayVMClient{
 			deleteVMFn: func(context.Context, string) error { return errors.New("delete failed") },

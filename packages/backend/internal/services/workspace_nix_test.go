@@ -12,27 +12,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 type stubEnvironmentImageResolver struct {
-	image db.SandboxEnvironmentImage
+	image clusterdb.SandboxEnvironmentImage
 	err   error
 	calls []string
 }
 
-func (s *stubEnvironmentImageResolver) Resolve(_ context.Context, repositoryID int64, kind string) (db.SandboxEnvironmentImage, error) {
+func (s *stubEnvironmentImageResolver) Resolve(_ context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
 	s.calls = append(s.calls, kind)
 	if s.err != nil {
-		return db.SandboxEnvironmentImage{}, s.err
+		return clusterdb.SandboxEnvironmentImage{}, s.err
 	}
 	return s.image, nil
 }
 
-func nixTestImage(kind string) db.SandboxEnvironmentImage {
-	return db.SandboxEnvironmentImage{
+func nixTestImage(kind string) clusterdb.SandboxEnvironmentImage {
+	return clusterdb.SandboxEnvironmentImage{
 		ID:             "img-1",
 		Kind:           kind,
 		Source:         defaultWorkspaceEnvironmentSource,
@@ -477,11 +478,11 @@ func TestCreateDesktopSessionRejectsWrongKindAndState(t *testing.T) {
 }
 
 type fakeEnvironmentImageQuerier struct {
-	rows     []db.SandboxEnvironmentImage
-	upserted []db.UpsertSandboxEnvironmentImageParams
+	rows     []clusterdb.SandboxEnvironmentImage
+	upserted []clusterdb.UpsertSandboxEnvironmentImageParams
 }
 
-func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Context, arg db.UpsertSandboxEnvironmentImageParams) (db.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Context, arg clusterdb.UpsertSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
 	f.upserted = append(f.upserted, arg)
 	if !arg.RepositoryID.Valid {
 		for index := range f.rows {
@@ -490,22 +491,22 @@ func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Co
 			}
 		}
 	}
-	row := db.SandboxEnvironmentImage{ID: "new", RepositoryID: arg.RepositoryID, Kind: arg.Kind, Source: arg.Source, SourceRevision: arg.SourceRevision, ClosureHash: arg.ClosureHash, Image: arg.Image, Status: "ready"}
-	f.rows = append([]db.SandboxEnvironmentImage{row}, f.rows...)
+	row := clusterdb.SandboxEnvironmentImage{ID: "new", RepositoryID: arg.RepositoryID, Kind: arg.Kind, Source: arg.Source, SourceRevision: arg.SourceRevision, ClosureHash: arg.ClosureHash, Image: arg.Image, Status: "ready"}
+	f.rows = append([]clusterdb.SandboxEnvironmentImage{row}, f.rows...)
 	return row, nil
 }
 
-func (f *fakeEnvironmentImageQuerier) GetLatestReadySandboxEnvironmentImage(_ context.Context, arg db.GetLatestReadySandboxEnvironmentImageParams) (db.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) GetLatestReadySandboxEnvironmentImage(_ context.Context, arg clusterdb.GetLatestReadySandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
 	for _, row := range f.rows {
 		if row.Kind == arg.Kind && row.Status == "ready" && row.RepositoryID.Int64 == arg.RepositoryID.Int64 && row.RepositoryID.Valid == arg.RepositoryID.Valid {
 			return row, nil
 		}
 	}
-	return db.SandboxEnvironmentImage{}, pgx.ErrNoRows
+	return clusterdb.SandboxEnvironmentImage{}, pgx.ErrNoRows
 }
 
-func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Context, repositoryID pgtype.Int8) ([]db.SandboxEnvironmentImage, error) {
-	var out []db.SandboxEnvironmentImage
+func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Context, repositoryID pgtype.Int8) ([]clusterdb.SandboxEnvironmentImage, error) {
+	var out []clusterdb.SandboxEnvironmentImage
 	for _, row := range f.rows {
 		if row.RepositoryID == repositoryID {
 			out = append(out, row)
@@ -514,18 +515,18 @@ func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Con
 	return out, nil
 }
 
-func (f *fakeEnvironmentImageQuerier) RetireSandboxEnvironmentImage(_ context.Context, arg db.RetireSandboxEnvironmentImageParams) (db.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) RetireSandboxEnvironmentImage(_ context.Context, arg clusterdb.RetireSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
 	for i := range f.rows {
 		if f.rows[i].ID == arg.ID && f.rows[i].RepositoryID == arg.RepositoryID {
 			f.rows[i].Status = "retired"
 			return f.rows[i], nil
 		}
 	}
-	return db.SandboxEnvironmentImage{}, pgx.ErrNoRows
+	return clusterdb.SandboxEnvironmentImage{}, pgx.ErrNoRows
 }
 
 func TestSandboxEnvironmentImageResolveFallsBackToBase(t *testing.T) {
-	q := &fakeEnvironmentImageQuerier{rows: []db.SandboxEnvironmentImage{
+	q := &fakeEnvironmentImageQuerier{rows: []clusterdb.SandboxEnvironmentImage{
 		{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
 		{ID: "repo-vm", RepositoryID: pgtype.Int8{Int64: 7, Valid: true}, Kind: "vm", ClosureHash: "r", Image: "reg/nixos-guest:o--r-r", Status: "ready"},
 	}}
@@ -605,7 +606,7 @@ func TestSandboxEnvironmentImageRegisterValidatesInput(t *testing.T) {
 }
 
 func TestSandboxEnvironmentImageRegisterBaseRetiresPriorKindOnly(t *testing.T) {
-	q := &fakeEnvironmentImageQuerier{rows: []db.SandboxEnvironmentImage{
+	q := &fakeEnvironmentImageQuerier{rows: []clusterdb.SandboxEnvironmentImage{
 		{ID: "old-vm", Kind: "vm", ClosureHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Image: "reg/base:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Status: "ready"},
 		{ID: "desktop", Kind: "desktop", ClosureHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Image: "reg/base:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Status: "ready"},
 		{ID: "repo-vm", RepositoryID: pgtype.Int8{Int64: 7, Valid: true}, Kind: "vm", ClosureHash: "cccccccccccccccccccccccccccccccc", Image: "reg/repo:cccccccccccccccccccccccccccccccc", Status: "ready"},

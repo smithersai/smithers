@@ -14,11 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 type mockWorkflowCacheQuerier struct {
-	clearPurgedStorageDeletionFn          func(ctx context.Context, arg db.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
+	clearPurgedStorageDeletionFn          func(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
 	getRepoByIDFn                         func(ctx context.Context, id int64) (db.Repository, error)
 	getWorkflowCacheByIDFn                func(ctx context.Context, id int64) (db.WorkflowCache, error)
 	getWorkflowCacheByScopeVersionFn      func(ctx context.Context, arg db.GetWorkflowCacheByScopeVersionParams) (db.WorkflowCache, error)
@@ -39,7 +40,7 @@ type mockWorkflowCacheQuerier struct {
 	listWorkflowCacheEvictionCandidatesFn func(ctx context.Context, arg db.ListWorkflowCacheEvictionCandidatesParams) ([]db.WorkflowCache, error)
 }
 
-func (m *mockWorkflowCacheQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg db.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+func (m *mockWorkflowCacheQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 	if m.clearPurgedStorageDeletionFn != nil {
 		return m.clearPurgedStorageDeletionFn(ctx, arg)
 	}

@@ -9,7 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
@@ -17,7 +19,7 @@ func TestDestroySession_PostgresPreservesBoundNativeExecution(t *testing.T) {
 	pool := getAgentTestPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	q := db.New(pool)
+	q := deploymentdb.New(pool)
 	for _, mode := range []string{"running-gateway", "starting-gateway", "no-gateway", "stopped-gateway", "deleted-gateway", "different-vm", "active-session"} {
 		t.Run(mode, func(t *testing.T) {
 			owner, repoID := setupTestUserAndRepo(t, pool)
@@ -37,7 +39,7 @@ func TestDestroySession_PostgresPreservesBoundNativeExecution(t *testing.T) {
 			if mode == "active-session" {
 				createSession()
 			} else if mode != "no-gateway" {
-				gateway, err := q.CreateRepoGateway(ctx, db.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner,
+				gateway, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: owner,
 					WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}, Status: "pending"})
 				require.NoError(t, err)
 				status, boundVM := "running", vmID
@@ -50,7 +52,7 @@ func TestDestroySession_PostgresPreservesBoundNativeExecution(t *testing.T) {
 				if mode == "different-vm" {
 					boundVM = "previous-" + vmID
 				}
-				_, err = q.UpdateRepoGatewayExecutionInfo(ctx, db.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: boundVM, Status: status})
+				_, err = q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: boundVM, Status: status})
 				require.NoError(t, err)
 				if mode == "deleted-gateway" {
 					_, err = q.SoftDeleteRepoGateway(ctx, gateway.ID)

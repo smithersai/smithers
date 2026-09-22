@@ -43,15 +43,15 @@ func TestStorageSet_Cov_TemplateDerivation(t *testing.T) {
 }
 
 func TestStorageSet_Cov_ResolveURLBranches(t *testing.T) {
-	q := &storageSetCovQuerier{repo: db.Repository{StorageSetID: "s2"}}
-	resolver := NewDBStorageSetResolver(q, "https://repo-host-%s.internal")
+	q := &storageSetCovQuerier{repo: db.Repository{ID: 42}}
+	resolver := NewDBStorageSetResolver(q, "https://repo-host-%s.internal", &fixedRepoPlacement{storageSetID: "s2"})
 	got, err := resolver.ResolveURL(context.Background(), "Alice", "Demo")
 	if err != nil || got != "https://repo-host-s2.internal" || q.arg.Owner != "Alice" || q.arg.LowerName != "demo" {
 		t.Fatalf("got=%q err=%v arg=%+v", got, err, q.arg)
 	}
 
-	q = &storageSetCovQuerier{repo: db.Repository{StorageSetID: "s2"}}
-	got, err = NewDBStorageSetResolver(q, "https://static.internal").ResolveURL(context.Background(), "alice", "demo")
+	q = &storageSetCovQuerier{repo: db.Repository{ID: 42}}
+	got, err = NewDBStorageSetResolver(q, "https://static.internal", &fixedRepoPlacement{storageSetID: "s2"}).ResolveURL(context.Background(), "alice", "demo")
 	if err != nil || got != "https://static.internal" {
 		t.Fatalf("static got=%q err=%v", got, err)
 	}
@@ -64,10 +64,14 @@ func TestStorageSet_Cov_ResolveURLBranches(t *testing.T) {
 	}{
 		{name: "not found", q: &storageSetCovQuerier{err: pgx.ErrNoRows}, tmpl: "x", want: "not found"},
 		{name: "lookup error", q: &storageSetCovQuerier{err: assertErr("db down")}, tmpl: "x", want: "failed to lookup"},
-		{name: "missing storage", q: &storageSetCovQuerier{repo: db.Repository{}}, tmpl: "x", want: "no assigned storage set"},
-		{name: "empty template", q: &storageSetCovQuerier{repo: db.Repository{StorageSetID: "s1"}}, tmpl: "", want: "template is empty"},
+		{name: "missing storage", q: &storageSetCovQuerier{repo: db.Repository{}}, tmpl: "x", want: "not configured"},
+		{name: "empty template", q: &storageSetCovQuerier{repo: db.Repository{ID: 42}}, tmpl: "", want: "template is empty"},
 	} {
-		_, err := NewDBStorageSetResolver(tc.q, tc.tmpl).ResolveURL(context.Background(), "alice", "demo")
+		var placement RepoPlacementLookup = &fixedRepoPlacement{storageSetID: "s1"}
+		if tc.name == "missing storage" {
+			placement = nil
+		}
+		_, err := NewDBStorageSetResolver(tc.q, tc.tmpl, placement).ResolveURL(context.Background(), "alice", "demo")
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s err = %v, want %q", tc.name, err, tc.want)
 		}

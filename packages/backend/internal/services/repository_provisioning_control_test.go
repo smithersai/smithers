@@ -136,7 +136,6 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 		createCalls := 0
 		source := db.Repository{
 			ID: 41, UserID: pgtype.Int8{Int64: 22, Valid: true},
-			Name: "source", LowerName: "source", StorageSetID: "s1",
 			IsPublic: true, DefaultBookmark: "main",
 		}
 		q := &rolloutRepoQuerier{

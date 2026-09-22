@@ -1,4 +1,4 @@
-package services
+package clusterservices
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 func TestCanaryCadenceAndStatus(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCanaryCadenceAndStatus(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := healthyStatusConfig()
-			cfg.Canaries = &fakeStatusCanaryLister{results: []db.CanaryResult{{
+			cfg.Canaries = &fakeStatusCanaryLister{results: []clusterdb.CanaryResult{{
 				Suite: test.suite, TestName: test.probe, Status: "success", ReportedAt: statusTestNow.Add(-test.age),
 			}}}
 			status := NewAdminSystemStatusService(cfg).SystemStatus(context.Background())

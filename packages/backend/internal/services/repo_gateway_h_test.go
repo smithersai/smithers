@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
@@ -45,16 +46,16 @@ type repoGatewayHStatusErrQuerier struct {
 	softErr   error
 }
 
-func (q *repoGatewayHStatusErrQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg db.UpdateRepoGatewayStatusParams) (db.RepoGateway, error) {
+func (q *repoGatewayHStatusErrQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg clusterdb.UpdateRepoGatewayStatusParams) (clusterdb.RepoGateway, error) {
 	if q.statusErr != nil {
-		return db.RepoGateway{}, q.statusErr
+		return clusterdb.RepoGateway{}, q.statusErr
 	}
 	return q.fakeRepoGatewayQuerier.UpdateRepoGatewayStatus(ctx, arg)
 }
 
-func (q *repoGatewayHStatusErrQuerier) SoftDeleteRepoGateway(ctx context.Context, id string) (db.RepoGateway, error) {
+func (q *repoGatewayHStatusErrQuerier) SoftDeleteRepoGateway(ctx context.Context, id string) (clusterdb.RepoGateway, error) {
 	if q.softErr != nil {
-		return db.RepoGateway{}, q.softErr
+		return clusterdb.RepoGateway{}, q.softErr
 	}
 	return q.fakeRepoGatewayQuerier.SoftDeleteRepoGateway(ctx, id)
 }
@@ -67,14 +68,14 @@ type repoGatewayHAccessTokenErrQuerier struct {
 
 type repoGatewayHActiveSequenceQuerier struct {
 	*fakeRepoGatewayQuerier
-	winner      db.RepoGateway
+	winner      clusterdb.RepoGateway
 	activeCalls int
 }
 
-func (q *repoGatewayHActiveSequenceQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg db.GetActiveRepoGatewayForUserRepoParams) (db.RepoGateway, error) {
+func (q *repoGatewayHActiveSequenceQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
 	q.activeCalls++
 	if q.activeCalls == 1 {
-		return db.RepoGateway{}, pgx.ErrNoRows
+		return clusterdb.RepoGateway{}, pgx.ErrNoRows
 	}
 	return q.winner, nil
 }
@@ -105,7 +106,7 @@ func TestRepoGateway_H_ConnectionConfigAndReuseBranches(t *testing.T) {
 	assert.Equal(t, 409, apiStatus(t, err))
 
 	svc := newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, &fakeRepoGatewayVMClient{})
-	_, err = svc.reuseGateway(ctx, db.RepoGateway{ID: "gw", Status: "weird", AuthTokenCiphertext: "token"})
+	_, err = svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw", Status: "weird", AuthTokenCiphertext: "token"})
 	require.Error(t, err)
 	assert.Equal(t, 500, apiStatus(t, err))
 
@@ -118,9 +119,9 @@ func TestRepoGateway_H_ConnectionConfigAndReuseBranches(t *testing.T) {
 			metricsDelta += delta
 		}}),
 	)
-	_, err = svc.reuseGateway(ctx, db.RepoGateway{ID: "gw-live", VmID: "vm-live", Status: "running", AuthTokenCiphertext: "bad"})
+	_, err = svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw-live", VmID: "vm-live", Status: "running", AuthTokenCiphertext: "bad"})
 	require.ErrorIs(t, err, errRepoGatewayUnrecoverable)
-	svc.discardGateway(ctx, db.RepoGateway{ID: "gw-live", VmID: "vm-live", Status: "running"})
+	svc.discardGateway(ctx, clusterdb.RepoGateway{ID: "gw-live", VmID: "vm-live", Status: "running"})
 	assert.Contains(t, vm.deletedVMIDs, "vm-live")
 	assert.Contains(t, q.softDeleted, "gw-live")
 	assert.Equal(t, float64(-1), metricsDelta)
@@ -130,7 +131,7 @@ func TestRepoGateway_H_ConnectionConfigAndReuseBranches(t *testing.T) {
 			return sandbox.Sandbox{}, &sandbox.StatusError{StatusCode: 404, Message: "gone"}
 		},
 	})
-	_, err = svc.reuseGateway(ctx, db.RepoGateway{ID: "gw", VmID: "vm-missing", Status: "running", AuthTokenCiphertext: "smithers_gateway_token"})
+	_, err = svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw", VmID: "vm-missing", Status: "running", AuthTokenCiphertext: "smithers_gateway_token"})
 	require.ErrorIs(t, err, errRepoGatewayUnrecoverable)
 
 	var startedWait *bool
@@ -146,7 +147,7 @@ func TestRepoGateway_H_ConnectionConfigAndReuseBranches(t *testing.T) {
 	}, WithRepoGatewaySandboxMetrics(&mockSandboxMetricsRecorder{addActiveVMsFn: func(_ string, delta float64) {
 		metricsDelta += delta
 	}}))
-	info, err := svc.reuseGateway(ctx, db.RepoGateway{ID: "gw-idle", VmID: "vm-idle", BaseUrl: "https://gw", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
+	info, err := svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw-idle", VmID: "vm-idle", BaseUrl: "https://gw", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
 	require.NoError(t, err)
 	require.NotNil(t, startedWait)
 	assert.False(t, *startedWait)
@@ -176,7 +177,7 @@ func TestRepoGateway_H_ProvisionFailureAndRaceBranches(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 500, apiStatus(t, err))
 
-	winner := db.RepoGateway{ID: "gw-winner", VmID: "vm-winner", BaseUrl: "https://winner", Status: "running", AuthTokenCiphertext: "smithers_gateway_winner"}
+	winner := clusterdb.RepoGateway{ID: "gw-winner", VmID: "vm-winner", BaseUrl: "https://winner", Status: "running", AuthTokenCiphertext: "smithers_gateway_winner"}
 	raceQ := &repoGatewayHActiveSequenceQuerier{
 		fakeRepoGatewayQuerier: &fakeRepoGatewayQuerier{
 			executionInfoErr: &pgconn.PgError{Code: "23505", ConstraintName: "uq_repo_gateways_active"},
@@ -261,7 +262,7 @@ func TestRepoGateway_H_WorkspaceCommandsConcurrencyAndReaper(t *testing.T) {
 
 	q := &repoGatewayHStatusErrQuerier{
 		fakeRepoGatewayQuerier: &fakeRepoGatewayQuerier{
-			staleRows: []db.RepoGateway{
+			staleRows: []clusterdb.RepoGateway{
 				{ID: "gw-vm", VmID: "vm-1", Status: "starting"},
 				{ID: "gw-no-vm", Status: "pending"},
 			},

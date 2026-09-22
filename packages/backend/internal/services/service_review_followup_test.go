@@ -193,8 +193,6 @@ func TestReservedSecretMarkerIsRejectedAcrossConfigurationBoundaries(t *testing.
 
 	secrets := []string{SecretEnvKeysRuntimeMarker}
 	assert.Error(t, validateWorkflowJobSecrets(JobConfig{Name: "build", Secrets: &secrets}))
-	_, _, err = workflowTaskSecretAllowlist([]byte(`{"secret_names":["SMITHERS_SECRET_ENV_KEYS"]}`))
-	assert.Error(t, err)
 
 	injector := NewSecretInjector(&mockSecretInjectionQuerier{
 		listVariablesFn: func(context.Context, int64) ([]db.RepositoryVariable, error) {

@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestAlertIncident_Z_ErrorBranchesAndConstructorClock(t *testing.T) {
@@ -134,7 +132,7 @@ func (q alertIncidentZQuerier) GetAlertIncidentByIncidentID(ctx context.Context,
 	return q.fakeAlertIncidentQuerier.GetAlertIncidentByIncidentID(ctx, incidentID)
 }
 
-func (q alertIncidentZQuerier) RecordAlertIncidentRemediationOutcomeGuarded(ctx context.Context, arg db.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error) {
+func (q alertIncidentZQuerier) RecordAlertIncidentRemediationOutcomeGuarded(ctx context.Context, arg clusterdb.RecordAlertIncidentRemediationOutcomeGuardedParams) (int64, error) {
 	if q.recordOutcomeErr != nil {
 		return 0, q.recordOutcomeErr
 	}

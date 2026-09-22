@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -1046,7 +1047,7 @@ type mockAgentDispatchQuerier struct {
 	createWorkflowRunFn                   func(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
 	createWorkflowStepFn                  func(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
 	createWorkflowTaskFn                  func(ctx context.Context, arg db.CreateWorkflowTaskParams) (db.WorkflowTask, error)
-	codingHost                            db.WorkflowRunCodingHost
+	codingHost                            clusterdb.WorkflowRunCodingHost
 	codingHostErr                         error
 	createAccessTokenFn                   func(ctx context.Context, arg db.CreateAccessTokenParams) (db.AccessToken, error)
 	deleteAccessTokenFn                   func(ctx context.Context, arg db.DeleteAccessTokenParams) error
@@ -1120,15 +1121,15 @@ func (m *mockAgentDispatchQuerier) CreateWorkflowStep(ctx context.Context, arg d
 // The dispatched turn's host identity. Recorded per run, read back by the
 // poller; the mock keeps the last write so a test can assert the handle a
 // dispatch published rather than only that it published one.
-func (m *mockAgentDispatchQuerier) RecordWorkflowRunCodingHost(_ context.Context, arg db.RecordWorkflowRunCodingHostParams) (db.WorkflowRunCodingHost, error) {
-	m.codingHost = db.WorkflowRunCodingHost{WorkflowRunID: arg.WorkflowRunID, WorkspaceID: arg.WorkspaceID,
+func (m *mockAgentDispatchQuerier) RecordWorkflowRunCodingHost(_ context.Context, arg clusterdb.RecordWorkflowRunCodingHostParams) (clusterdb.WorkflowRunCodingHost, error) {
+	m.codingHost = clusterdb.WorkflowRunCodingHost{WorkflowRunID: arg.WorkflowRunID, WorkspaceID: arg.WorkspaceID,
 		HostRunID: arg.HostRunID, FlowID: arg.FlowID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	return m.codingHost, m.codingHostErr
 }
 
-func (m *mockAgentDispatchQuerier) GetWorkflowRunCodingHost(_ context.Context, workflowRunID int64) (db.WorkflowRunCodingHost, error) {
+func (m *mockAgentDispatchQuerier) GetWorkflowRunCodingHost(_ context.Context, workflowRunID int64) (clusterdb.WorkflowRunCodingHost, error) {
 	if m.codingHost.WorkflowRunID != workflowRunID {
-		return db.WorkflowRunCodingHost{}, pgx.ErrNoRows
+		return clusterdb.WorkflowRunCodingHost{}, pgx.ErrNoRows
 	}
 	return m.codingHost, nil
 }
