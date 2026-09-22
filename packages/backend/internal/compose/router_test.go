@@ -1,7 +1,6 @@
 package compose
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -25,10 +27,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // Compile-time assertion: services.WorkflowAPIService must satisfy routes.WorkflowRunRouteService.
@@ -63,13 +65,13 @@ type mockRouterCommitStatusService struct {
 }
 
 type stubRouterCanaryStore struct {
-	upserts []db.UpsertCanaryResultParams
-	results []db.CanaryResult
+	upserts []clusterdb.UpsertCanaryResultParams
+	results []clusterdb.CanaryResult
 }
 
-func (s *stubRouterCanaryStore) UpsertCanaryResult(_ context.Context, arg db.UpsertCanaryResultParams) (db.CanaryResult, error) {
+func (s *stubRouterCanaryStore) UpsertCanaryResult(_ context.Context, arg clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error) {
 	s.upserts = append(s.upserts, arg)
-	result := db.CanaryResult{
+	result := clusterdb.CanaryResult{
 		Suite:           arg.Suite,
 		TestName:        arg.TestName,
 		Status:          arg.Status,
@@ -86,8 +88,8 @@ func (s *stubRouterCanaryStore) ListLatestCanaryStepStatuses(_ context.Context, 
 	return nil, nil
 }
 
-func (s *stubRouterCanaryStore) ListCanaryResults(_ context.Context) ([]db.CanaryResult, error) {
-	return append([]db.CanaryResult(nil), s.results...), nil
+func (s *stubRouterCanaryStore) ListCanaryResults(_ context.Context) ([]clusterdb.CanaryResult, error) {
+	return append([]clusterdb.CanaryResult(nil), s.results...), nil
 }
 
 type mockRouterWorkflowService struct {
@@ -451,8 +453,8 @@ func (m *mockRouterWikiService) ListWikiRevisions(ctx context.Context, viewer *d
 
 type mockAdminRunnerRouteService struct{}
 
-func (m *mockAdminRunnerRouteService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]db.RunnerPool, int64, error) {
-	return []db.RunnerPool{}, 0, nil
+func (m *mockAdminRunnerRouteService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
+	return []clusterdb.RunnerPool{}, 0, nil
 }
 
 type mockAdminUserRouteService struct {
@@ -3918,7 +3920,7 @@ func TestServerRouter_UserDevicesRequireWriteUserScope(t *testing.T) {
 	assert.NotEqual(t, http.StatusForbidden, rec.Code, "write:user token must pass the scope gate")
 }
 
-func (s *stubRouterCanaryStore) ResolveCanaryAlertIncidents(context.Context, db.ResolveCanaryAlertIncidentsParams) (int64, error) {
+func (s *stubRouterCanaryStore) ResolveCanaryAlertIncidents(context.Context, clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error) {
 	return 0, nil
 }
 
