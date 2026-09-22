@@ -126,6 +126,26 @@ describe("validateSession", () => {
 })
 
 describe("requireTurnSession", () => {
+  test("public admission is an explicit authority claim, never implied by a fresh or revoked login", async () => {
+    const answers = [
+      [{ login: "new-user", allowlisted: false, admission: "public" }, true],
+      [{ login: "revoked", allowlisted: false }, false],
+      [{ login: "denied", allowlisted: false, admission: "denied" }, false],
+      [{ login: "legacy", allowlisted: false, admission: true }, false],
+      [{ login: "invited", allowlisted: true }, true]
+    ] as const
+    for (const [body, admitted] of answers) {
+      const outcome = await run(requireTurnSession(session("smithers_session=abc")), wire(() => jsonAnswer(200, body)).layer, config())
+      if (admitted) {
+        expect(outcome).toMatchObject({ login: body.login })
+      } else {
+        expect(outcome).toBeInstanceOf(Response)
+        expect((outcome as Response).status).toBe(403)
+      }
+    }
+    const signedOut = await run(requireTurnSession(session()), wire(() => jsonAnswer(200, { admission: "public" })).layer, config())
+    expect((signedOut as Response).status).toBe(401)
+  })
   test("stays out of the way without a seam, refuses 401 signed out and 403 off the allowlist, and admits a member", async () => {
     expect(await run(requireTurnSession(session()), wire(() => jsonAnswer(200, {})).layer, testConfigLayer())).toBeUndefined()
     const signedOut = await run(requireTurnSession(session()), wire(() => new Response("{}", { status: 401 })).layer, config())

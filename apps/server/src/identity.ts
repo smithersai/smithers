@@ -67,6 +67,8 @@ export const proxyToIdentity = (request: Request): Effect.Effect<Response, never
 export interface ValidatedIdentity {
   readonly login: string
   readonly allowlisted: boolean
+  /** Identity authority's public admission decision; never inferred from a missing allowlist row. */
+  readonly admitted?: boolean
   readonly admin: boolean
   readonly scopes: ReadonlyArray<string>
 }
@@ -123,6 +125,7 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
     const body = (yield* readJsonOrUndefined(response)) as {
       login?: unknown
       allowlisted?: unknown
+      admission?: unknown
       admin?: unknown
       scopes?: unknown
     } | undefined
@@ -144,6 +147,7 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
       identity: {
         login: body.login,
         allowlisted: body.allowlisted === true,
+        ...(body.admission === "public" ? { admitted: true } : {}),
         admin: body.admin === true,
         scopes: Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === "string") : []
       }
@@ -177,7 +181,7 @@ export const requireTurnSession = (
       return refuse("sign_in_required", "Sign in to run a Smithers turn.")
     }
     const session = validation.identity
-    if (!session.allowlisted) {
+    if (!session.allowlisted && !session.admitted) {
       return refuse("account_not_allowlisted", "This account is not in the closed-alpha allowlist yet.")
     }
     return session

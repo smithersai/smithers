@@ -253,7 +253,7 @@ export const createAuthBillingController = (
       return
     }
     const body = (await response.json().catch(() => undefined)) as
-      | { status?: unknown; state?: unknown; login?: unknown; allowlisted?: unknown; admin?: unknown }
+      | { status?: unknown; state?: unknown; login?: unknown; allowlisted?: unknown; admission?: unknown; admin?: unknown }
       | undefined
     if (ctx.accountEpoch !== epoch || signal?.aborted) return
     if (body?.status === "signed-out" || body?.state === "signed-out") {
@@ -267,7 +267,7 @@ export const createAuthBillingController = (
       return
     }
     await finishSignedInSession(
-      { login: body.login, allowlisted: body.allowlisted === true, admin: body.admin === true },
+      { login: body.login, allowlisted: body.allowlisted === true || body.admission === "public", admin: body.admin === true && body.allowlisted === true },
       previous
     )
   }

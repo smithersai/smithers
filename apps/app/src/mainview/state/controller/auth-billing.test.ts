@@ -39,14 +39,14 @@ const signedIn = {
   admin: false
 }
 
-const runSignedInEntry = async (entry: "load" | "adopt") => {
+const runSignedInEntry = async (entry: "load" | "adopt", sessionAnswer: Record<string, unknown> = signedIn) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const calls: string[] = []
   const ctx = createControllerContext(store, repositories, agent, {
     fetchImpl: async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       const body = new URL(url, "https://app.test").pathname.endsWith("/auth/session")
-        ? signedIn
+        ? sessionAnswer
         : {
           state: "ok",
           allowedToStartWork: true,
@@ -87,6 +87,11 @@ const runSignedInEntry = async (entry: "load" | "adopt") => {
 }
 
 describe("signed-in session adoption", () => {
+  test("an authority-admitted public session resumes the app without inheriting admin", async () => {
+    const publicSession = await runSignedInEntry("load", { login: "new-user", allowlisted: false, admission: "public", admin: true })
+    expect(publicSession.transitions[0]?.payload).toMatchObject({ login: "new-user", allowlisted: true, admin: false })
+    expect(publicSession.calls).toContain("resumeWorkflowRuns")
+  })
   test("live and server-resolved sessions share every transition and follow-on call", async () => {
     const live = await runSignedInEntry("load")
     const adopted = await runSignedInEntry("adopt")

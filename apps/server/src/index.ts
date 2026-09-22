@@ -413,7 +413,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
       const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
-      const login = validation?.status === "valid" && validation.identity.allowlisted ? validation.identity.login : undefined
+      const login = validation?.status === "valid" && (validation.identity.allowlisted || validation.identity.admitted) ? validation.identity.login : undefined
       const account = login === undefined ? undefined : yield* accountModelCredentials(request, login)
       if (account && (yield* account.current)) return yield* handleModelCatalog(undefined, false)
       return yield* handleModelCatalog(account, login !== undefined)

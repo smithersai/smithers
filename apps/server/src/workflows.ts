@@ -49,7 +49,7 @@ export const requireWorkflowSession = (request: Request): Effect.Effect<Validate
       return refuse("sign_in_required", "Sign in to run workflows on your workspace.")
     }
     const session = validation.identity
-    if (!session.allowlisted) {
+    if (!session.allowlisted && !session.admitted) {
       return refuse("account_not_allowlisted", "This account is not in the closed-alpha allowlist yet.")
     }
     return session
