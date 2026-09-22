@@ -208,6 +208,50 @@ func TestPostgresHostRetirementSurvivesDeleteAndStopFailure(t *testing.T) {
 	}
 }
 
+func TestPostgresHostRetirementFailureDoesNotStarveLaterBindings(t *testing.T) {
+	pool := hostTestPool(t)
+	ctx := context.Background()
+	store, err := NewStore(pool, testCodec{})
+	require.NoError(t, err)
+	var bindings []Binding
+	for i := 0; i < 2; i++ {
+		authority, catalog := hostFixture(t, pool)
+		held, err := store.Acquire(ctx, authority, catalog)
+		require.NoError(t, err)
+		bindings = append(bindings, held.Binding())
+		require.NoError(t, held.Close())
+		_, err = pool.Exec(ctx, `UPDATE workspaces SET deleted_at=clock_timestamp() WHERE id=$1`, authority.WorkspaceID)
+		require.NoError(t, err)
+		// Make the retry order deterministic without sleeps or clock precision assumptions.
+		_, err = pool.Exec(ctx, `UPDATE flow_runtime_host_bindings SET updated_at=$2 WHERE id=$1`, bindings[i].ID,
+			time.Date(2020, 1, i+1, 0, 0, 0, 0, time.UTC))
+		require.NoError(t, err)
+	}
+
+	stopFailure := errors.New("old workspace unavailable")
+	var attempts []string
+	stopper := stopFunc(func(_ context.Context, binding Binding) error {
+		attempts = append(attempts, binding.ID)
+		if binding.ID == bindings[0].ID {
+			return stopFailure
+		}
+		return nil
+	})
+	require.ErrorIs(t, store.ReconcileRetired(ctx, stopper, 1), stopFailure)
+	var state string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT state FROM flow_runtime_host_bindings WHERE id=$1`, bindings[0].ID).Scan(&state))
+	require.Equal(t, "retired", state, "a failed stop must retain its cleanup record")
+
+	require.NoError(t, store.ReconcileRetired(ctx, stopper, 1), "a failed oldest row must not monopolize the bounded pass")
+	require.Equal(t, []string{bindings[0].ID, bindings[1].ID}, attempts)
+	require.ErrorIs(t, pool.QueryRow(ctx, `SELECT state FROM flow_runtime_host_bindings WHERE id=$1`, bindings[1].ID).Scan(&state), pgx.ErrNoRows)
+	require.NoError(t, store.ReconcileRetired(ctx, stopFunc(func(_ context.Context, binding Binding) error {
+		require.Equal(t, bindings[0].ID, binding.ID, "the failed stop remains retryable")
+		return nil
+	}), 1))
+	require.ErrorIs(t, pool.QueryRow(ctx, `SELECT state FROM flow_runtime_host_bindings WHERE id=$1`, bindings[0].ID).Scan(&state), pgx.ErrNoRows)
+}
+
 func deleteHostTestRepository(ctx context.Context, pool *pgxpool.Pool, repo int64) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {

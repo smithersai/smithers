@@ -75,6 +75,14 @@ func (store *Store) retireOne(ctx context.Context, stopper RetirementStopper, id
 	if err != nil {
 		return err
 	}
+	// Advance the retry order before the external stop, including when that
+	// call exhausts its context. Otherwise a full batch of unavailable hosts
+	// can permanently starve newer retirement records. Keep their authority
+	// until stop actually succeeds.
+	if _, err = connection.Exec(ctx, `UPDATE flow_runtime_host_bindings
+  SET updated_at=clock_timestamp() WHERE id=$1 AND state='retired'`, id); err != nil {
+		return err
+	}
 	if err = stopper.StopFlowHost(ctx, binding); err != nil {
 		return err
 	}
