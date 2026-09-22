@@ -978,10 +978,9 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			WebEditor:            false,
 			ClientErrorReporting: true,
 			ClientMetrics:        true,
-			// Ticket 12: core launch families default true; every other
-			// non-MVP family defaults false.
+			// Legacy workflows require an explicit hosted opt-in.
 			StackedPRs: true,
-			Workflows:  true,
+			Workflows:  false,
 			Sandboxes:  true,
 			AutoPush:   true,
 			Secrets:    true,

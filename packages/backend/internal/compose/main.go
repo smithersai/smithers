@@ -188,6 +188,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
 	}
+	if !options.Role.hosted() && cfg.FeatureFlags.Workflows {
+		return errors.New("legacy workflow triggers are unavailable in single-owner mode; use canonical Flow hosts")
+	}
 	if options.Blobs == nil {
 		if err := validateProductionBlobStore(os.Getenv("SMITHERS_ENV"), cfg.Blob); err != nil {
 			slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid production blob config", "error", err)

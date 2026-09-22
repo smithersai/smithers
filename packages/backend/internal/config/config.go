@@ -150,7 +150,8 @@ type FeatureFlagsConfig struct {
 
 	// StackedPRs gates the stacked-changes / stacked-PR family. MVP = true.
 	StackedPRs bool `mapstructure:"stacked_prs"`
-	// Workflows gates the workflow execution family (workflows, runs, dispatches, caches, artifacts). MVP = true.
+	// Workflows gates the legacy workflow execution family. Hosted Plue opts in
+	// explicitly until canonical Flow trigger ingestion replaces it.
 	Workflows bool `mapstructure:"workflows"`
 	// Sandboxes gates workspace + agent sandbox creation. MVP = true.
 	Sandboxes bool `mapstructure:"sandboxes"`
@@ -718,7 +719,7 @@ func Load(configFile string) (*Config, error) {
 	// default to true; every other family defaults to false until it ships.
 	// Operators can flip flags per-environment via SMITHERS_FEATURE_FLAGS_<NAME>.
 	v.SetDefault("feature_flags.stacked_prs", true)
-	v.SetDefault("feature_flags.workflows", true)
+	v.SetDefault("feature_flags.workflows", false)
 	v.SetDefault("feature_flags.sandboxes", true)
 	v.SetDefault("feature_flags.auto_push", true)
 

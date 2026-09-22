@@ -161,6 +161,9 @@ func TestBuildServer_WiresGitHTTPProxyWebhookDependencies(t *testing.T) {
 	require.NoError(t, err)
 
 	found := false
+	runnerTokenOption := false
+	singleOwnerOption := false
+	singleOwnerGuard := false
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -173,42 +176,57 @@ func TestBuildServer_WiresGitHTTPProxyWebhookDependencies(t *testing.T) {
 		}
 
 		pkgIdent, ok := sel.X.(*ast.Ident)
-		if !ok || pkgIdent.Name != "services" || sel.Sel.Name != "NewGitHTTPProxyService" {
+		if !ok {
+			return true
+		}
+		if pkgIdent.Name == "config" && sel.Sel.Name == "IsSingleOwner" {
+			singleOwnerGuard = true
+			return true
+		}
+		if pkgIdent.Name != "services" {
+			return true
+		}
+		if sel.Sel.Name == "WithGitHTTPRunnerTaskTokenSecret" {
+			runnerTokenOption = true
+			require.Len(t, call.Args, 1)
+			envCall, ok := call.Args[0].(*ast.CallExpr)
+			require.True(t, ok)
+			envSelector, ok := envCall.Fun.(*ast.SelectorExpr)
+			require.True(t, ok)
+			assert.Equal(t, "Getenv", envSelector.Sel.Name)
+			require.Len(t, envCall.Args, 1)
+			literal, ok := envCall.Args[0].(*ast.BasicLit)
+			require.True(t, ok)
+			assert.Equal(t, `"SMITHERS_AGENT_TOKEN"`, literal.Value)
+			return true
+		}
+		if sel.Sel.Name == "WithGitHTTPSingleOwnerBoundary" {
+			singleOwnerOption = true
+			return true
+		}
+		if sel.Sel.Name != "NewGitHTTPProxyService" {
 			return true
 		}
 
 		found = true
 		require.Len(t, call.Args, 4)
-
 		expected := []string{"queries", "sshAuthzService", "repoHostClient"}
-		for i, arg := range call.Args {
-			if i == 3 {
-				optionCall, ok := arg.(*ast.CallExpr)
-				require.True(t, ok, "arg 3 should configure task-token Git authorization")
-				optionSelector, ok := optionCall.Fun.(*ast.SelectorExpr)
-				require.True(t, ok)
-				assert.Equal(t, "WithGitHTTPRunnerTaskTokenSecret", optionSelector.Sel.Name)
-				require.Len(t, optionCall.Args, 1)
-				envCall, ok := optionCall.Args[0].(*ast.CallExpr)
-				require.True(t, ok)
-				envSelector, ok := envCall.Fun.(*ast.SelectorExpr)
-				require.True(t, ok)
-				assert.Equal(t, "Getenv", envSelector.Sel.Name)
-				require.Len(t, envCall.Args, 1)
-				literal, ok := envCall.Args[0].(*ast.BasicLit)
-				require.True(t, ok)
-				assert.Equal(t, `"SMITHERS_AGENT_TOKEN"`, literal.Value)
-				continue
-			}
+		for i, arg := range call.Args[:3] {
 			ident, ok := arg.(*ast.Ident)
 			require.Truef(t, ok, "arg %d should be identifier", i)
 			assert.Equal(t, expected[i], ident.Name)
 		}
-
-		return false
+		optionIdent, ok := call.Args[3].(*ast.Ident)
+		require.True(t, ok, "Git HTTP options should be forwarded as a slice")
+		assert.Equal(t, "gitHTTPOptions", optionIdent.Name)
+		assert.True(t, call.Ellipsis.IsValid(), "Git HTTP options should be expanded")
+		return true
 	})
 
 	require.True(t, found, "expected services.NewGitHTTPProxyService call in main.go")
+	require.True(t, runnerTokenOption, "Git HTTP proxy must have the task-token secret")
+	require.True(t, singleOwnerOption, "single-owner mode must fence Git HTTP requests")
+	require.True(t, singleOwnerGuard, "single-owner fencing must follow the configured auth mode")
 }
 
 func TestBuildRouter_RepoForkRouteRequiresWriteScopeAndReadPermission(t *testing.T) {

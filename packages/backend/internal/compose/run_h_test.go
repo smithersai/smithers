@@ -27,7 +27,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/services/alertregistry"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 )
@@ -636,24 +635,13 @@ func TestRun_FullyConfigured(t *testing.T) {
 	assert.Contains(t, h.logs.String(), "error shutting down tracer provider")
 }
 
-func TestRun_PairSchemaWarnAndRegistryError(t *testing.T) {
+func TestRun_PairSchemaWarn(t *testing.T) {
 	preserveSlog(t)
 	env := baseRunEnv(t)
-	env["SMITHERS_FEATURE_FLAGS_WORKFLOWS"] = "true"
-	env["SMITHERS_MICROSANDBOX_CONTROL_URL"] = "https://sandbox.example.com"
-	env["SMITHERS_MICROSANDBOX_API_KEY"] = "sk-test"
-	env["SMITHERS_ALERT_REMEDIATION_REPOSITORY_ID"] = "1"
-	// GitHub client configured (githubClient non-nil arm).
-	env["SMITHERS_AUTH_GITHUB_CLIENT_ID"] = "gh-id"
-	env["SMITHERS_AUTH_GITHUB_CLIENT_SECRET"] = "gh-secret"
 
 	swapVar(t, &ensurePairSchema, func(*services.PairService, context.Context) error {
 		return errors.New("pair schema boom")
 	})
-	swapVar(t, &loadAlertRegistry, func() (*alertregistry.Registry, error) {
-		return nil, errors.New("registry boom")
-	})
-
 	h := startRun(t, env)
 	resp, err := h.get("/health")
 	require.NoError(t, err)
@@ -663,7 +651,14 @@ func TestRun_PairSchemaWarnAndRegistryError(t *testing.T) {
 
 	out := h.logs.String()
 	assert.Contains(t, out, "pair: ensure schema failed")
-	assert.Contains(t, out, "remediation worker disabled")
+}
+
+func TestRun_LocalLegacyWorkflowsFailClosed(t *testing.T) {
+	env := baseRunEnv(t)
+	env["SMITHERS_FEATURE_FLAGS_WORKFLOWS"] = "true"
+	applyEnv(t, env)
+	err := run(context.Background(), nil, io.Discard, io.Discard)
+	require.ErrorContains(t, err, "legacy workflow triggers are unavailable in single-owner mode")
 }
 
 func TestRun_ShutdownTimeoutWarn(t *testing.T) {
