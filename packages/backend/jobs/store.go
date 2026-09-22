@@ -1,0 +1,250 @@
+package jobs
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+//go:embed schema.sql
+var schemaSQL string
+
+// SchemaSQL returns the additive schema owned by this package. Product hosts
+// apply it through their normal migration system; Store never self-migrates.
+func SchemaSQL() string { return schemaSQL }
+
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+func NewStore(pool *pgxpool.Pool) (*Store, error) {
+	if pool == nil {
+		return nil, errors.New("jobs: PostgreSQL pool is required")
+	}
+	return &Store{pool: pool}, nil
+}
+
+func validateAdmission(input Admission) (json.RawMessage, json.RawMessage, error) {
+	if err := input.Scope.validate(); err != nil {
+		return nil, nil, err
+	}
+	if input.Operation == "" || input.RequestID == "" {
+		return nil, nil, errors.New("jobs: operation and request ID are required")
+	}
+	if !validatePolicy(input.EffectPolicy) {
+		return nil, nil, errors.New("jobs: invalid external effect policy")
+	}
+	payload, err := canonicalJSON(input.Payload, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	authorization, err := canonicalJSON(input.AuthorizationContext, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	return payload, authorization, nil
+}
+
+// Admit atomically persists the request, its dispatch row, and its first
+// ordered event. It performs no provider or runtime call. A successful return
+// therefore means durable acceptance, not launch or completion.
+func (store *Store) Admit(ctx context.Context, input Admission) (RequestReceipt, error) {
+	payload, authorization, err := validateAdmission(input)
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	fingerprint := payloadFingerprint(payload)
+	operationID := uuid.NewString()
+	acceptedAt := time.Now().UTC()
+	receipt := RequestReceipt{
+		OperationID: operationID,
+		RequestID:   input.RequestID,
+		Kind:        "requested",
+		State:       StateAccepted,
+		AcceptedAt:  acceptedAt,
+	}
+	receiptJSON, err := json.Marshal(receipt)
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	effectKey := input.EffectKey
+	if effectKey == "" {
+		effectKey = "product-job:" + operationID
+	}
+	availableAt := input.AvailableAt
+	if availableAt.IsZero() {
+		availableAt = acceptedAt
+	}
+
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	defer tx.Rollback(context.Background()) //nolint:errcheck
+
+	var inserted bool
+	err = tx.QueryRow(ctx, `
+		INSERT INTO product_job_requests
+			(id, tenant_id, principal_id, operation, request_id, payload_fingerprint,
+			 payload, authorization_context, state, request_receipt)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'accepted',$9)
+		ON CONFLICT (tenant_id, principal_id, operation, request_id) DO NOTHING
+		RETURNING true`, operationID, input.Scope.TenantID, input.Scope.PrincipalID,
+		input.Operation, input.RequestID, fingerprint[:], payload, authorization, receiptJSON).Scan(&inserted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var existingID string
+		var existingFingerprint []byte
+		var existingReceipt json.RawMessage
+		err = tx.QueryRow(ctx, `
+			SELECT id, payload_fingerprint, request_receipt
+			FROM product_job_requests
+			WHERE tenant_id=$1 AND principal_id=$2 AND operation=$3 AND request_id=$4`,
+			input.Scope.TenantID, input.Scope.PrincipalID, input.Operation, input.RequestID,
+		).Scan(&existingID, &existingFingerprint, &existingReceipt)
+		if err != nil {
+			return RequestReceipt{}, err
+		}
+		if !bytes.Equal(existingFingerprint, fingerprint[:]) {
+			return RequestReceipt{}, ErrPayloadConflict
+		}
+		if err := json.Unmarshal(existingReceipt, &receipt); err != nil {
+			return RequestReceipt{}, fmt.Errorf("jobs: decode request receipt: %w", err)
+		}
+		receipt.OperationID = existingID
+		receipt.Joined = true
+		if err := tx.Commit(ctx); err != nil {
+			return RequestReceipt{}, err
+		}
+		return receipt, nil
+	}
+	if err != nil {
+		return RequestReceipt{}, err
+	}
+	if !inserted {
+		return RequestReceipt{}, errors.New("jobs: admission insert returned no result")
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO product_job_dispatches
+			(operation_id, effect_policy, effect_key, next_attempt_at)
+		VALUES ($1,$2,$3,$4)`, operationID, input.EffectPolicy, effectKey, availableAt); err != nil {
+		return RequestReceipt{}, err
+	}
+	if _, err := appendEvent(ctx, tx, input.Scope, operationID, "operation.accepted", StateAccepted, receiptJSON); err != nil {
+		return RequestReceipt{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return RequestReceipt{}, err
+	}
+	return receipt, nil
+}
+
+func payloadFingerprint(payload json.RawMessage) [32]byte {
+	return sha256Sum(payload)
+}
+
+// Kept separate so the operation identity code has one reviewable hash site.
+func sha256Sum(payload []byte) [32]byte {
+	return sha256.Sum256(payload)
+}
+
+func appendEvent(ctx context.Context, tx pgx.Tx, scope Scope, operationID, eventType string, state State, data json.RawMessage) (Event, error) {
+	if len(data) == 0 {
+		data = json.RawMessage(`{}`)
+	}
+	canonical, err := canonicalJSON(data, true)
+	if err != nil {
+		return Event{}, err
+	}
+	var sequence int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO product_job_streams (tenant_id, principal_id, head)
+		VALUES ($1,$2,1)
+		ON CONFLICT (tenant_id, principal_id)
+		DO UPDATE SET head = product_job_streams.head + 1
+		RETURNING head`, scope.TenantID, scope.PrincipalID).Scan(&sequence)
+	if err != nil {
+		return Event{}, err
+	}
+	event := Event{
+		Scope: scope, Sequence: sequence, EventID: uuid.NewString(),
+		OperationID: operationID, Type: eventType, State: state, Data: canonical,
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO product_job_events
+			(tenant_id, principal_id, sequence, event_id, operation_id, event_type, state, data)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		RETURNING recorded_at`, scope.TenantID, scope.PrincipalID, sequence, event.EventID,
+		operationID, eventType, state, canonical).Scan(&event.RecordedAt)
+	if err != nil {
+		return Event{}, err
+	}
+	// NOTIFY is delivered on commit. It is only a wake hint; subscribers always
+	// repair from product_job_events using their committed cursor.
+	if _, err := tx.Exec(ctx, `SELECT pg_notify('smithers_product_jobs', '')`); err != nil {
+		return Event{}, err
+	}
+	return event, nil
+}
+
+func (store *Store) Get(ctx context.Context, scope Scope, operationID string) (Operation, error) {
+	if err := scope.validate(); err != nil {
+		return Operation{}, err
+	}
+	return queryOperation(ctx, store.pool, scope, operationID, false)
+}
+
+type rowQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func queryOperation(ctx context.Context, q rowQuerier, scope Scope, operationID string, forUpdate bool) (Operation, error) {
+	query := `
+		SELECT request.id, request.tenant_id, request.principal_id, request.operation,
+		       request.request_id, request.payload_fingerprint, request.payload,
+		       request.authorization_context, request.state, request.request_receipt,
+		       dispatch.external_receipt, request.terminal_receipt,
+		       dispatch.effect_policy, dispatch.effect_key, dispatch.attempt,
+		       dispatch.generation, dispatch.reconcile_required,
+		       request.cancellation_requested, request.cancellation_requested_at,
+		       request.created_at, request.updated_at
+		FROM product_job_requests request
+		JOIN product_job_dispatches dispatch ON dispatch.operation_id=request.id
+		WHERE request.tenant_id=$1 AND request.principal_id=$2 AND request.id=$3`
+	if forUpdate {
+		query += ` FOR UPDATE OF request`
+	}
+	var operation Operation
+	var fingerprint []byte
+	var external []byte
+	var terminal []byte
+	var cancelledAt *time.Time
+	err := q.QueryRow(ctx, query, scope.TenantID, scope.PrincipalID, operationID).Scan(
+		&operation.ID, &operation.Scope.TenantID, &operation.Scope.PrincipalID,
+		&operation.Operation, &operation.RequestID, &fingerprint, &operation.Payload,
+		&operation.AuthorizationContext, &operation.State, &operation.RequestReceipt,
+		&external, &terminal, &operation.EffectPolicy, &operation.EffectKey,
+		&operation.Attempt, &operation.Generation, &operation.NeedsReconciliation,
+		&operation.CancellationRequested, &cancelledAt,
+		&operation.CreatedAt, &operation.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Operation{}, ErrNotFound
+	}
+	if err != nil {
+		return Operation{}, err
+	}
+	copy(operation.PayloadFingerprint[:], fingerprint)
+	operation.ExternalReceipt = external
+	operation.TerminalReceipt = terminal
+	operation.CancellationRequestedAt = cancelledAt
+	return operation, nil
+}
