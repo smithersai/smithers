@@ -58,3 +58,12 @@ func chatCallbackHandler(runtime *chat.Runtime) http.Handler {
 	runtime.MountProducerCallbacks(router)
 	return router
 }
+
+// Hosted API replicas can receive capability-authenticated producer callbacks
+// on their existing HTTPS listener. This lets isolated guests reach the journal
+// through the deployment's public API address without a second exposed port.
+func mountChatProducerOnSharedListener(router chi.Router, composition *chatComposition) {
+	if composition != nil && composition.listener == nil {
+		composition.runtime.MountProducerCallbacks(router)
+	}
+}

@@ -5,9 +5,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/ports"
@@ -32,6 +34,20 @@ func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
 		Role: RoleLocal, ChatHost: unusedChatHost{}, ChatCallbackListener: publicListener,
 	}}, nil)
 	require.ErrorContains(t, err, "must bind loopback")
+}
+
+func TestHostedAPICallbackUsesSharedListenerWhenPrivateListenerIsAbsent(t *testing.T) {
+	runtime, err := newChatComposition(runOptions{Options: Options{
+		Role: RoleHostedAPI, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	}}, &pgxpool.Pool{})
+	require.NoError(t, err)
+	require.NotNil(t, runtime)
+	require.Nil(t, runtime.listener)
+	router := chi.NewRouter()
+	mountChatProducerOnSharedListener(router, runtime)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, chat.CommitPath, strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusUnauthorized, response.Code)
 }
 
 func TestChatStreamingRoutesRequireAuthentication(t *testing.T) {

@@ -1519,6 +1519,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	if chatService != nil && options.Role.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
+		mountChatProducerOnSharedListener(router, chatService)
 		mountModelPublic(router, modelhost.OwnerModels{Pool: pool, Codec: webhookSecretCodec}, queries, cfg)
 	}
 	if root := strings.TrimSpace(os.Getenv("SMITHERS_WEB_ROOT")); root != "" {
