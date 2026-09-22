@@ -14,9 +14,9 @@ import (
 	"github.com/coder/websocket"
 	gossh "golang.org/x/crypto/ssh"
 
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 const (
@@ -204,10 +204,14 @@ func (m *TerminalSessionManager) open(ctx context.Context, sessionID string, inf
 		_ = client.Close()
 		return nil, nil, fmt.Errorf("ssh request pty: %w", err)
 	}
-	if err := startWorkspaceShell(sshSess, info.Workdir); err != nil {
-		_ = sshSess.Close()
-		_ = client.Close()
-		return nil, nil, fmt.Errorf("ssh shell: %w", err)
+	// WorkspaceRuntime opens its PTY and shell together. Only a raw SSH
+	// session still needs a shell command after its streams are attached.
+	if !info.RuntimeTerminal {
+		if err := startWorkspaceShell(sshSess, info.Workdir); err != nil {
+			_ = sshSess.Close()
+			_ = client.Close()
+			return nil, nil, fmt.Errorf("ssh shell: %w", err)
+		}
 	}
 
 	var sess *terminalSession

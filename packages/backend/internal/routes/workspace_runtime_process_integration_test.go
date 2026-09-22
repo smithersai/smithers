@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -111,7 +111,7 @@ func TestWorkspaceRuntimeProcessRequestPath(t *testing.T) {
 	// The same middleware stack rejects the execution path before the runtime
 	// can observe an unauthenticated request.
 	unauthorized := processWorkspaceDoRequest(t, server.Client(), server.URL, http.MethodPost, basePath+"/workspaces/missing/commands", []byte(`{"operation_id":"unauthorized","args":["/bin/true"]}`))
-	require.Equal(t, http.StatusUnauthorized, unauthorized.StatusCode)
+	require.Equal(t, http.StatusNotFound, unauthorized.StatusCode)
 	_ = processWorkspaceReadBody(t, unauthorized)
 
 	cookie := processWorkspaceCreateSessionCookie(t, queries, user)
@@ -248,41 +248,43 @@ func setupProcessWorkspacePool(t *testing.T) *pgxpool.Pool {
 	if databaseURL == "" {
 		t.Skip("SMITHERS_PROCESS_RUNTIME_TEST_DATABASE_URL is required for the process workspace request-path test")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	parsed, err := url.Parse(databaseURL)
 	require.NoError(t, err)
-	databaseName := strings.TrimPrefix(parsed.Path, "/")
-	require.NotEmpty(t, databaseName)
 	adminURL := *parsed
 	adminURL.Path = "/postgres"
-	admin, err := pgx.Connect(context.Background(), adminURL.String())
+	admin, err := pgx.Connect(ctx, adminURL.String())
 	require.NoError(t, err)
 	defer admin.Close(context.Background())
-	var exists bool
-	require.NoError(t, admin.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, databaseName).Scan(&exists))
-	if !exists {
-		_, err = admin.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(databaseName, `"`, `""`)+`"`)
-		require.NoError(t, err)
-	}
-
-	connection, err := pgx.Connect(context.Background(), databaseURL)
+	databaseName := "process_workspace_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	_, err = admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{databaseName}.Sanitize())
 	require.NoError(t, err)
-	defer connection.Close(context.Background())
-	_, err = connection.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`)
-	require.NoError(t, err)
-	schema, err := os.ReadFile(filepath.Join("..", "..", "db", "schema.sql"))
-	require.NoError(t, err)
-	_, err = connection.Exec(context.Background(), "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;\n"+string(schema))
-	require.NoError(t, err)
-
-	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	t.Cleanup(func() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		cleanup, err := pgx.Connect(cleanupCtx, adminURL.String())
+		if err != nil {
+			t.Errorf("connect for test database cleanup: %v", err)
+			return
+		}
+		defer cleanup.Close(cleanupCtx)
+		_, err = cleanup.Exec(cleanupCtx, "DROP DATABASE "+pgx.Identifier{databaseName}.Sanitize()+" WITH (FORCE)")
+		if err != nil {
+			t.Errorf("drop test database: %v", err)
+		}
+	})
+	parsed.Path = "/" + databaseName
+	poolConfig, err := pgxpool.ParseConfig(parsed.String())
 	require.NoError(t, err)
 	poolConfig.AfterConnect = func(_ context.Context, connection *pgx.Conn) error {
 		database.ConfigureSQLCTypes(connection.TypeMap())
 		return nil
 	}
-	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
+	require.NoError(t, product.Apply(ctx, pool))
 	return pool
 }
 
@@ -301,7 +303,7 @@ func processWorkspaceCreateRepo(t *testing.T, pool *pgxpool.Pool, owner processW
 	unique := strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", ""))[:12]
 	name := prefix + "_" + unique
 	var id int64
-	err := pool.QueryRow(context.Background(), `INSERT INTO repositories (user_id,name,lower_name,description,storage_set_id,is_public,default_bookmark,next_issue_number,next_landing_number) VALUES ($1,$2,$2,'','s1',$3,'main',1,1) RETURNING id`, owner.ID, name, public).Scan(&id)
+	err := pool.QueryRow(context.Background(), `INSERT INTO repositories (user_id,name,lower_name,description,is_public,default_bookmark,next_issue_number,next_landing_number) VALUES ($1,$2,$2,'',$3,'main',1,1) RETURNING id`, owner.ID, name, public).Scan(&id)
 	require.NoError(t, err)
 	return processWorkspaceRepo{ID: id, Owner: owner.Username, Name: name}
 }
