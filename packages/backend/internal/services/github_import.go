@@ -308,13 +308,30 @@ type GitHubImportService struct {
 	// withGitHubImportProvenance (the service is often built with a nil db).
 	provenanceMatches func(ctx context.Context, userID int64, githubOwner, githubRepo string, repositoryID int64) (bool, error)
 	pool              *pgxpool.Pool
-	provisioning      *postgresRepositoryProvisioningStore
+	provisioning      githubImportProvisioningStore
 	stagedRepoHost    gitHubImportStagedRepoHost
 	wakeDurable       chan struct{}
 	durableEnabled    bool
 	// syncedRepos enrolls imported GitHub sources into the sync registry so the
 	// metadata proxy and github-sync keep them fresh. Optional.
 	syncedRepos *GitHubSyncedRepoService
+}
+
+// githubImportProvisioningStore is the durable reservation boundary used by
+// the same import worker in local and clustered deployments. The local store
+// persists its reservation on import_jobs; Plue's store uses its cluster
+// provisioning journal. Neither path changes the job's public receipts.
+type githubImportProvisioningStore interface {
+	Reserve(context.Context, repositoryProvisioningOperation) (repositoryProvisioningOperation, error)
+	GetByToken(context.Context, string) (repositoryProvisioningOperation, error)
+	AcquireProcessing(context.Context, int64, string, string) error
+	GetPublished(context.Context, repositoryProvisioningOperation) (db.Repository, bool, error)
+	MarkPublishReady(context.Context, int64, string, string) error
+	RenewClaim(context.Context, int64, string, string) error
+	Publish(context.Context, repositoryProvisioningOperation, string) (db.Repository, error)
+	Complete(context.Context, int64, string, string) error
+	Abort(context.Context, repositoryProvisioningOperation, string, func(context.Context) error) error
+	ReleaseClaim(context.Context, repositoryProvisioningOperation, string, error)
 }
 
 // WithGitHubImportOrgs wires organization lookups into the import path so an

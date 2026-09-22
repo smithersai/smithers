@@ -1,8 +1,8 @@
 package compose
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -105,6 +106,10 @@ func buildRouter(
 	alertRemediationReady ...bool,
 ) http.Handler {
 	r := chi.NewRouter()
+	// Fleet routes are available only when the hosted assembly supplied its
+	// runner handler. Their SQL belongs to the deployment adapter.
+	hosted := adminRunnerHandler != nil
+	clusterQueries := deploymentdb.New(pool)
 
 	// Ticket 12: feature-flag gates for non-MVP route families. Each gate is a
 	// closure over cfg.FeatureFlags so flipping the flag at config-load time
@@ -250,15 +255,15 @@ func buildRouter(
 	// GCP Cloud Monitoring alert webhook receiver (webhook_basicauth channel)
 	// feeding the alert auto-remediation pipeline.
 	var alertIncidentService *clusterservices.AlertIncidentService
-	if queries != nil {
+	if hosted && queries != nil {
 		// Outcome callbacks only need the durable run/job binding. Keep this
 		// route available on every healthy API replica even when that replica
 		// could not start the background dispatcher.
-		alertIncidentService = clusterservices.NewAlertIncidentService(queries, nil)
+		alertIncidentService = clusterservices.NewAlertIncidentService(clusterQueries, nil)
 	}
 	if alertWebhookHandler := routes.NewAlertWebhookHandler(os.Getenv("SMITHERS_ALERT_WEBHOOK_SIGNING_KEY")); alertWebhookHandler != nil {
 		ready := len(alertRemediationReady) > 0 && alertRemediationReady[0]
-		if queries != nil {
+		if hosted && queries != nil {
 			// Recording the incident must NOT depend on the remediation worker.
 			// It used to: with alertRemediation.enabled=false (the deliberate
 			// fail-closed default during rollouts) the Receiver stayed nil and
@@ -275,7 +280,7 @@ func buildRouter(
 				alertRegistry = loaded
 			}
 			alertIncidentService = clusterservices.NewAlertIncidentService(
-				queries,
+				clusterQueries,
 				alertRegistry,
 				clusterservices.WithAlertRemediationEnabled(ready),
 			)
@@ -1808,7 +1813,7 @@ func buildRouter(
 					middleware.RequireScope(middleware.ScopeWriteAdmin),
 				}
 				// observe-v2: api-manage
-				if queries != nil {
+				if hosted && queries != nil {
 					var agents clusterservices.AdminAgentCanceller
 					var workspaces clusterservices.AdminWorkspaceLifecycle
 					if agentSessionHandler != nil {
@@ -1821,7 +1826,7 @@ func buildRouter(
 					if pool != nil {
 						hosts = control.NewPGStore(pool)
 					}
-					manage := clusterservices.NewAdminManageService(queries, agents, workspaces, hosts)
+					manage := clusterservices.NewAdminManageService(clusterQueries, agents, workspaces, hosts)
 					agentAdmin := &routes.AdminAgentSessionHandler{Service: manage}
 					workspaceAdmin := &routes.AdminWorkspaceHandler{Service: manage}
 					hostAdmin := &routes.AdminSandboxHostHandler{Service: manage}
@@ -1837,8 +1842,8 @@ func buildRouter(
 					r.With(readAdmin...).Get("/tokens", tokenAdmin.List)
 				}
 				// observe-v2: api-analytics
-				if queries != nil {
-					analyticsService := clusterservices.NewAdminAnalyticsService(queries)
+				if hosted && queries != nil {
+					analyticsService := clusterservices.NewAdminAnalyticsService(clusterQueries)
 					if pool != nil {
 						analyticsService = clusterservices.NewAdminAnalyticsServiceWithPool(pool)
 					}
@@ -1880,8 +1885,8 @@ func buildRouter(
 				}
 				// observe-v2: api-incidents
 				if adminSystemIncidentsHandler != nil {
-					if adminSystemIncidentsHandler.Actions == nil && queries != nil {
-						adminSystemIncidentsHandler.Actions = clusterservices.NewAdminIncidentsService(queries)
+					if adminSystemIncidentsHandler.Actions == nil && hosted && queries != nil {
+						adminSystemIncidentsHandler.Actions = clusterservices.NewAdminIncidentsService(clusterQueries)
 					}
 					r.With(writeAdmin...).Post("/system/incidents/{id}/acknowledge", adminSystemIncidentsHandler.Acknowledge)
 					r.With(writeAdmin...).Post("/system/incidents/{id}/unacknowledge", adminSystemIncidentsHandler.Unacknowledge)

@@ -26,6 +26,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/configsync"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -244,19 +245,22 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	database.StartPoolStatsCollector(poolStatsCtx, pool, smithersMetrics, 15*time.Second)
 
 	queries := db.New(pool)
+	// Hosted infrastructure adds cluster-only SQL without changing the product
+	// query model used by every common service and the local deployment.
+	hostedQueries := deploymentdb.New(pool)
 	var runnerStaleSweeper *runnerpool.RunnerPool
-	runtimeMetricsStore := services.NewRuntimeMetricsStore(queries, pool)
+	runtimeMetricsStore := services.NewRuntimeMetricsStore(hostedQueries, pool)
 	if options.Role.hosted() {
 		// These gauges read runner_pool and other fleet state, which is absent
 		// from the single-owner product schema.
 		services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
-		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(queries))
-		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(queries)
+		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(hostedQueries))
+		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(hostedQueries)
 		smithersMetrics.MustRegister(inventoryMetrics)
 		inventoryMetrics.Start(poolStatsCtx)
 	}
 	if options.Role.clusterWorkers() {
-		runnerStaleSweeper = runnerpool.NewRunnerPool(queries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
+		runnerStaleSweeper = runnerpool.NewRunnerPool(hostedQueries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
 	}
 	// One shared broker multiplexes every SSE stream type (notifications,
 	// workspaces, workflow-run logs, agent sessions, releases) over a SINGLE
@@ -398,37 +402,45 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		publicBaseURL = config.ResolvePublicAPIOrigin(agentAPIBaseURL, publicBaseURL)
 	}
 
-	var stripeBillingClient services.StripeBillingClient
-	if stripeSecretKey := strings.TrimSpace(cfg.Billing.StripeSecretKey); stripeSecretKey != "" {
-		stripeBillingClient = services.NewStripeBillingClient(stripeSecretKey)
-	}
-	billingService := services.NewBillingService(queries, stripeBillingClient, services.BillingServiceConfig{
-		BaseURL:                  publicBaseURL,
-		PortalReturnURL:          cfg.Billing.PortalReturnURL,
-		CheckoutSuccessURL:       cfg.Billing.CheckoutSuccessURL,
-		CheckoutCancelURL:        cfg.Billing.CheckoutCancelURL,
-		StripeWebhookSecret:      cfg.Billing.StripeWebhookSecret,
-		PersonalMonthlyPriceID:   cfg.Billing.PersonalMonthlyPriceID,
-		PersonalAnnualPriceID:    cfg.Billing.PersonalAnnualPriceID,
-		ProMonthlyPriceID:        cfg.Billing.ProMonthlyPriceID,
-		ProAnnualPriceID:         cfg.Billing.ProAnnualPriceID,
-		MaxMonthlyPriceID:        cfg.Billing.MaxMonthlyPriceID,
-		MaxAnnualPriceID:         cfg.Billing.MaxAnnualPriceID,
-		TeamMonthlyPriceID:       cfg.Billing.TeamMonthlyPriceID,
-		TeamAnnualPriceID:        cfg.Billing.TeamAnnualPriceID,
-		EnterpriseMonthlyPriceID: cfg.Billing.EnterpriseMonthlyPriceID,
-		EnterpriseAnnualPriceID:  cfg.Billing.EnterpriseAnnualPriceID,
+	billingComposition, err := services.NewBillingComposition(queries, services.BillingCompositionConfig{
+		Mode:            services.BillingMode(cfg.Billing.Mode),
+		StripeSecretKey: cfg.Billing.StripeSecretKey,
+		Service: services.BillingServiceConfig{
+			BaseURL:                  publicBaseURL,
+			PortalReturnURL:          cfg.Billing.PortalReturnURL,
+			CheckoutSuccessURL:       cfg.Billing.CheckoutSuccessURL,
+			CheckoutCancelURL:        cfg.Billing.CheckoutCancelURL,
+			StripeWebhookSecret:      cfg.Billing.StripeWebhookSecret,
+			PersonalMonthlyPriceID:   cfg.Billing.PersonalMonthlyPriceID,
+			PersonalAnnualPriceID:    cfg.Billing.PersonalAnnualPriceID,
+			ProMonthlyPriceID:        cfg.Billing.ProMonthlyPriceID,
+			ProAnnualPriceID:         cfg.Billing.ProAnnualPriceID,
+			MaxMonthlyPriceID:        cfg.Billing.MaxMonthlyPriceID,
+			MaxAnnualPriceID:         cfg.Billing.MaxAnnualPriceID,
+			TeamMonthlyPriceID:       cfg.Billing.TeamMonthlyPriceID,
+			TeamAnnualPriceID:        cfg.Billing.TeamAnnualPriceID,
+			EnterpriseMonthlyPriceID: cfg.Billing.EnterpriseMonthlyPriceID,
+			EnterpriseAnnualPriceID:  cfg.Billing.EnterpriseAnnualPriceID,
+		},
 	}, services.WithBillingEmailSender(emailService))
-	// Keep per-seat Stripe subscription quantities in sync with org membership.
-	orgService.SetSeatReconciler(billingService.ReconcileOrgSeats)
-	repoService := services.NewRepoServiceWithPool(
-		queries,
-		repoHostClient,
-		activeStorageSetID,
-		pool,
+	if err != nil {
+		return fmt.Errorf("compose billing: %w", err)
+	}
+	billingPolicy := billingComposition.Policy
+	if billingComposition.Service != nil {
+		// Hosted Stripe quantities follow organization membership changes.
+		orgService.SetSeatReconciler(billingComposition.Service.ReconcileOrgSeats)
+	}
+	repoOptions := []services.RepoServiceOption{
 		services.WithRepoWebhookDispatcher(webhookDispatcher),
-		services.WithRepoBillingPolicy(billingService),
-	)
+		services.WithRepoBillingPolicy(billingPolicy),
+	}
+	var repoService *services.RepoService
+	if options.Role.hosted() {
+		repoService = services.NewRepoServiceWithPool(queries, repoHostClient, activeStorageSetID, pool, repoOptions...)
+	} else {
+		repoService = services.NewProductRepoServiceWithPool(queries, repoHostClient, pool, repoOptions...)
+	}
 	if provisioningEnforced {
 		repoService.EnableDurableProvisioning()
 	}
@@ -489,7 +501,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithWorkflowRunGitHubCheckRunService(gitHubCheckRunService),
 		services.WithWorkflowRunGitHubInstallationResolver(repoConnectionService),
 		services.WithWorkflowRunSecretInjector(secretInjector),
-		services.WithWorkflowRunBillingPolicy(billingService),
+		services.WithWorkflowRunBillingPolicy(billingPolicy),
 		services.WithWorkflowRunDefinitionCommitLoader(workflowSyncService),
 		services.WithWorkflowRunBookmarkCommitResolver(workflowSyncService),
 	)
@@ -531,8 +543,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if cfg.FeatureFlags.Workflows {
 		runnerOptions = append(runnerOptions, clusterservices.WithRunnerWorkflowDispatcher(workflowRunService))
 	}
-	runnerService := clusterservices.NewRunnerService(queries, runnerOptions...)
-	runnerAdminService := clusterservices.NewRunnerAdminService(queries)
+	runnerService := clusterservices.NewRunnerService(hostedQueries, runnerOptions...)
+	runnerAdminService := clusterservices.NewRunnerAdminService(hostedQueries)
 	adminUserService := services.NewAdminUserService(queries,
 		services.WithTokenCreator(authService),
 		services.WithAdminAuditor(auditService),
@@ -557,14 +569,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		defer func() { _ = gcsClient.Close() }()
 	}
 	if _, canPurge := blobStore.(blob.GenerationPurger); canPurge {
-		legacyFinalKeyPurgeAllowed, gateErr := queries.IsLegacyFinalKeyPurgeAllowed(ctx)
+		legacyFinalKeyPurgeAllowed, gateErr := hostedQueries.IsLegacyFinalKeyPurgeAllowed(ctx)
 		if gateErr != nil {
 			return fmt.Errorf("load legacy final-key capability horizon: %w", gateErr)
 		}
 		fencedStore, fenceErr := blob.NewLegacyFinalKeyPurgeFencedStore(
 			blobStore,
 			func(gateCtx context.Context) (bool, error) {
-				return queries.IsLegacyFinalKeyPurgeAllowed(gateCtx)
+				return hostedQueries.IsLegacyFinalKeyPurgeAllowed(gateCtx)
 			},
 		)
 		if fenceErr != nil {
@@ -583,10 +595,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 
 	lfsService := services.NewLFSService(
-		queries,
+		hostedQueries,
 		blobStore,
 		expiryDuration,
-		services.WithLFSBillingPolicy(billingService),
+		services.WithLFSBillingPolicy(billingPolicy),
 		services.WithLFSVerifyBaseURL(publicBaseURL),
 		services.WithLFSVerifyTokenManager(lfsVerifyTokenManager),
 	)
@@ -600,20 +612,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.Error("blob store does not implement workflow cache storage requirements")
 		return errors.New("blob store does not implement workflow cache storage requirements")
 	}
-	workflowCacheService := services.NewWorkflowCacheService(queries, workflowCacheStore, services.WorkflowCacheConfig{
+	workflowCacheService := services.NewWorkflowCacheService(hostedQueries, workflowCacheStore, services.WorkflowCacheConfig{
 		Prefix:          cfg.Blob.WorkflowCachePrefix,
 		SignedURLExpiry: expiryDuration,
 		TTL:             workflowCacheTTL,
 		RepoQuotaBytes:  cfg.Blob.WorkflowCacheRepoQuotaBytes,
 		ArchiveMaxBytes: cfg.Blob.WorkflowCacheArchiveMaxBytes,
-	}, services.WithWorkflowCacheBillingPolicy(billingService))
+	}, services.WithWorkflowCacheBillingPolicy(billingPolicy))
 	workflowArtifactService := services.NewWorkflowArtifactService(
-		queries,
+		hostedQueries,
 		blobStore,
 		expiryDuration,
 		services.WithWorkflowArtifactWebhookDispatcher(webhookDispatcher),
 		services.WithWorkflowArtifactWorkflowRunService(workflowRunService),
-		services.WithWorkflowArtifactBillingPolicy(billingService),
+		services.WithWorkflowArtifactBillingPolicy(billingPolicy),
 	)
 
 	issueEventService := services.NewIssueEventService(queries)
@@ -643,7 +655,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Backstop for micro-VMs whose owning gateway/workspace row was cascade-
 	// deleted with its repository: nothing else can see them, because every
 	// other sweep starts from the row that is gone.
-	sandboxOrphanReaper := services.NewSandboxOrphanReaper(queries, orphanSandbox, smithersMetrics)
+	sandboxOrphanReaper := services.NewSandboxOrphanReaper(hostedQueries, orphanSandbox, smithersMetrics)
 
 	// Smithers Pair: realtime multiplayer pair-coding (shared doc + cursors +
 	// one shared Codex model run in a Microsandbox sandbox). Key-gated, no repo.
@@ -695,7 +707,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	providerConnectionRefreshWorker := services.NewProviderConnectionRefreshWorker(providerConnectionService, time.Minute, slog.Default())
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
 	agentService := services.NewAgentServiceWithPool(queries, pool,
-		services.WithAgentDispatchQuerier(queries),
+		services.WithAgentDispatchQuerier(hostedQueries),
 		services.WithAgentNeverStartedTimeout(neverStartedTimeout),
 		services.WithAgentChangesetMaterializer(changesetService),
 		services.WithAgentLogStore(agentLogStore),
@@ -719,7 +731,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithAgentWorkflowMetrics(smithersMetrics),
 		services.WithAgentSessionMetrics(smithersMetrics),
 		services.WithAgentSnapshotID(agentSnapshotID),
-		services.WithAgentBillingPolicy(billingService),
+		services.WithAgentBillingPolicy(billingPolicy),
 		// Fleet-wide capacity guard: cap concurrent agent sandboxes via a DB
 		// COUNT of live agent sessions (correct across all API pods). 0 =
 		// unlimited/disabled, so this no-ops until
@@ -731,7 +743,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	workspaceService := services.NewWorkspaceService(queries,
 		services.WithWorkspaceCapabilityTransactions(pool),
-		services.WithWorkspaceBillingPolicy(billingService),
+		services.WithWorkspaceBillingPolicy(billingPolicy),
 		services.WithWorkspaceSandboxClient(sandboxClient),
 		services.WithWorkspaceSourceReader(repoHostClient),
 		services.WithWorkspaceSandboxMetrics(smithersMetrics),
@@ -767,7 +779,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// NixOS environment images: the kind=vm/desktop compute path. Registering
 	// an image bakes its closure-keyed golden snapshot from the same request
 	// workspaces boot (NixBakeVMRequest), so the second boot clones a disk.
-	environmentImageService := services.NewSandboxEnvironmentImageService(queries,
+	environmentImageService := services.NewSandboxEnvironmentImageService(hostedQueries,
 		services.WithSandboxEnvironmentImageGoldenSnapshots(goldenSnapshotService, workspaceService.NixBakeVMRequest))
 	services.WithWorkspaceEnvironmentImages(environmentImageService)(workspaceService)
 	// NixOS CI routing: a repository whose trigger commit declares
@@ -780,12 +792,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Smithers Pair sessions: the server-authoritative pairing backend
 	// (fork-and-swap, ACL ladder, roles, invites, per-link slugs, serial FIFO
 	// queue with executor election, co-compose draft). Identity is the real
-	// signed-in user; the paid-plan gate rides billingService and the fork rides
+	// signed-in user; the paid-plan gate rides billingPolicy and the fork rides
 	// workspaceService. Invites deliver via emailTransport when configured and
 	// degrade to invite-record-only ("email delivery unavailable") otherwise.
 	pairSessionService := services.NewPairSessionService(
 		db.New(pool),
-		billingService,
+		billingPolicy,
 		workspaceService,
 		services.PairSessionServiceConfig{
 			EmailFrom:     emailFrom,
@@ -799,8 +811,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Repo gateway: durable per-user+repo `smithers gateway` control plane in a
 	// Microsandbox VM (the 4th sandbox archetype). Degrades honestly (409) when
 	// Microsandbox is not configured.
-	repoGatewayService := services.NewRepoGatewayService(queries,
-		services.WithRepoGatewayBillingPolicy(billingService),
+	repoGatewayService := services.NewRepoGatewayService(hostedQueries,
+		services.WithRepoGatewayBillingPolicy(billingPolicy),
 		services.WithRepoGatewayWorkspaces(workspaceService),
 		services.WithRepoGatewaySandboxClient(repoGatewaySandbox),
 		services.WithRepoGatewaySandboxMetrics(smithersMetrics),
@@ -814,7 +826,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// Reaper-driven authorization sweep: tear down gateways whose user lost
 		// write access, since the VM-local operator token is never re-checked
 		// against Smithers permissions on use.
-		services.WithRepoGatewayAccessRevocation(queries),
+		services.WithRepoGatewayAccessRevocation(hostedQueries),
 		// AI-provider seat for agent workflows on gateway VMs (Cerebras
 		// supplier key, per-VM systemd env at provision time). Empty disables
 		// the seat; gateways then honestly fail agent nodes for lack of a
@@ -839,7 +851,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		publicBaseURL,
 		services.WithGitHubImportOrgs(queries),
 		services.WithGitHubImportMetrics(smithersMetrics),
-		services.WithGitHubImportBillingPolicy(billingService),
+		services.WithGitHubImportBillingPolicy(billingPolicy),
 		services.WithGitHubImportStorageSet(activeStorageSetID),
 		services.WithGitHubImportWorkspaceProvisioner(workspaceService),
 		services.WithGitHubImportTokenRefresher(authService),
@@ -847,7 +859,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitHubImportSyncedRepos(gitHubSyncedRepoService),
 	)
 	gitHubSyncedRepoService.SetMirrorer(gitHubImportService)
-	if provisioningEnforced {
+	if !options.Role.hosted() {
+		services.WithGitHubImportProductProvisioning(pool)(gitHubImportService)
+	}
+	if !options.Role.hosted() || provisioningEnforced {
 		gitHubImportService.EnableDurableWorker()
 	}
 
@@ -860,7 +875,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	cronSchedulerWorker := services.NewCronSchedulerWorker(queries, workflowRunService)
 	workflowLogBudgetBackfiller := services.NewWorkflowLogBudgetBackfiller(queries)
 	workflowSandboxSchedulerWorker := services.NewWorkflowSandboxSchedulerWorker(
-		queries,
+		hostedQueries,
 		workflowSandboxClient,
 		services.WithWorkflowSandboxSchedulerAPIBaseURL(agentAPIBaseURL),
 		services.WithWorkflowSandboxSchedulerGitBaseURL(publicBaseURL),
@@ -882,7 +897,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 				slog.Error("failed to load alert remediation registry; remediation worker disabled", "error", err)
 			} else {
 				alertRemediationWorker = clusterservices.NewAlertRemediationWorker(
-					queries,
+					hostedQueries,
 					workflowRunService,
 					alertRegistry,
 					remediationRepo.ID,
@@ -915,7 +930,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	storageDeletionCleaner := cleanup.NewStorageDeletionCleaner(pool, blobStore, time.Minute, 250)
 
 	auditCleaner := cleanup.NewAuditCleaner(queries, 24*time.Hour, 90*24*time.Hour)
-	egressAuditCleaner := cleanup.NewSandboxEgressAuditCleaner(queries, 24*time.Hour, cfg.Cleanup.SandboxEgressAuditRetentionDays)
+	egressAuditCleaner := cleanup.NewSandboxEgressAuditCleaner(hostedQueries, 24*time.Hour, cfg.Cleanup.SandboxEgressAuditRetentionDays)
 
 	workspaceCleaner := cleanup.NewWorkspaceCleaner(workspaceService, 5*time.Minute)
 	repoSyncService := services.NewRepoSyncService("", repoConnectionService)
@@ -1012,20 +1027,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	// The admin system console reads the same sources the runtime gauges do, plus
 	// the incident and landing-queue aggregates, through one adapter.
-	adminSystemConsoleStore := clusterservices.NewAdminSystemConsoleStore(queries)
+	adminSystemConsoleStore := clusterservices.NewAdminSystemConsoleStore(hostedQueries)
 	adminSystemStatusHandler := &routes.AdminSystemStatusHandler{
 		Service: clusterservices.NewAdminSystemStatusService(clusterservices.AdminSystemStatusServiceConfig{
 			DB:           pool,
 			Runtime:      runtimeMetricsStore,
-			Canaries:     queries,
-			Sandboxes:    queries,
+			Canaries:     hostedQueries,
+			Sandboxes:    hostedQueries,
 			LandingQueue: adminSystemConsoleStore,
-			Incidents:    queries,
+			Incidents:    hostedQueries,
 			SSE:          sseBroker,
 		}),
 	}
 	adminSystemCanariesHandler := &routes.AdminSystemCanariesHandler{
-		Store: queries,
+		Store: hostedQueries,
 	}
 	adminSystemIncidentsHandler := &routes.AdminSystemIncidentsHandler{
 		Service: clusterservices.NewAdminSystemIncidentsService(adminSystemConsoleStore),
@@ -1063,8 +1078,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	variableHandler := &routes.VariableHandler{
 		Service: variableService,
 	}
-	billingHandler := &routes.BillingHandler{
-		Service: billingService,
+	var billingHandler *routes.BillingHandler
+	if billingComposition.Service != nil {
+		billingHandler = &routes.BillingHandler{Service: billingComposition.Service}
 	}
 	protectedBookmarkHandler := &routes.ProtectedBookmarkHandler{
 		Service: services.NewProtectedBookmarkService(queries),
@@ -1101,7 +1117,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service:      agentService,
 		TokenQuerier: queries,
 	}
-	egressAuditService := services.NewSandboxEgressAuditService(queries)
+	egressAuditService := services.NewSandboxEgressAuditService(hostedQueries)
 	agentSessionHandler := &routes.AgentSessionHandler{
 		Service:     agentService,
 		EgressAudit: egressAuditService,
@@ -1131,10 +1147,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service: approvalsService,
 		Enabled: cfg.FeatureFlags.ApprovalsFlowEnabled,
 	}
+	branchJoinAuthorizer, ok := billingPolicy.(services.BranchLockJoinAuthorizer)
+	if !ok {
+		return errors.New("billing policy does not authorize branch-lock joins")
+	}
 	branchLockHandler := &routes.BranchLockHandler{
 		Service: services.NewBranchLockService(
 			queries,
-			services.WithBranchLockJoinAuthorizer(billingService),
+			services.WithBranchLockJoinAuthorizer(branchJoinAuthorizer),
 			services.WithBranchLockNotifier(notificationService),
 		),
 	}
@@ -1195,7 +1215,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	anonSandboxHandler := routes.NewAnonSandboxHandler(anonSandboxService)
 	gitHubProxyHandler := &routes.GitHubProxyHandler{
 		Service: services.NewGitHubProxyService(
-			queries,
+			hostedQueries,
 			repoConnectionService,
 			services.WithGitHubProxyBudgetTracker(gitHubBudgetTracker),
 		),
@@ -1286,7 +1306,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		pushHookHandler.WorkflowRun = workflowRunService
 	}
 	canaryReportHandler := &routes.CanaryReportHandler{
-		Store: queries,
+		Store: hostedQueries,
 	}
 	workflowHandler := &routes.WorkflowHandler{
 		Service: workflowAPIService,
@@ -1312,8 +1332,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	agentService.SetRevocationPublisher(revocationPublisher)
 	repoService.SetRevocationPublisher(revocationPublisher)
 	if !options.Role.hosted() {
-		// These HTTP surfaces operate on fleet placement, runner, canary, or
-		// durable import state excluded from the single-owner product schema.
+		// These HTTP surfaces operate on fleet placement, runner, or canary
+		// state excluded from the single-owner product schema.
 		// The shared router already treats nil handlers as absent routes.
 		runnerHandler = nil
 		adminRunnerHandler = nil
@@ -1323,7 +1343,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		adminSystemMetricsHandler = nil
 		canaryReportHandler = nil
 		repoGatewayHandler = nil
-		gitHubImportHandler = nil
 	}
 
 	var r http.Handler = buildRouter(
@@ -1429,7 +1448,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() { runnerStaleSweeper.RunStaleSweeper(workerCtx, 30*time.Second) })
 	}
 	var gitHubImportWorker *joinedBackgroundWorker
-	if options.Role.clusterWorkers() && provisioningEnforced {
+	if options.Role.workers() && (!options.Role.hosted() || provisioningEnforced) {
 		gitHubImportWorker = startJoinedBackgroundWorker(func() {
 			gitHubImportService.Start(workerCtx)
 		})
