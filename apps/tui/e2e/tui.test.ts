@@ -18,7 +18,7 @@ const fixture = join(app, "test", "fixtures", "fix-add.jsonl")
 /** The status bar's token counter: present once the first frame is drawn. */
 const drawn = (screen: string) => /↑\S+ ↓\S+/.test(screen)
 const idle = (screen: string) =>
-  drawn(screen) && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
+  drawn(screen) && !screen.includes("esc Interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
 /** The scrubber's playhead column. */
 const knob = (screen: string): number =>
@@ -91,6 +91,55 @@ describe("composer mode", () => {
   }, 60_000)
 })
 
+describe("which-key", () => {
+  /** The popup's title row: `Keys` on the left, `esc` on the right. */
+  const popup = (screen: string) => /^\s*Keys\s+esc\s*$/m.test(screen)
+  /** The draft: the composer's first non-empty row. */
+  const composerLine = (screen: string) =>
+    screen.split("\n").filter((line) => /^\s*┃/.test(line)).map((line) => line.replace(/^\s*┃/, "").trim()).find((line) => line !== "")
+
+  it("hints the context keys in the footer", async () => {
+    const { tui } = await start()
+    expect(tui.screen()).toContain("ctrl+k Search  ctrl+s Summary  ctrl+] Next tab  ? Keys")
+    await tui.type("!")
+    await tui.until((screen) => screen.includes("enter Run command  esc Cancel"), 5_000, "shell hints")
+  }, 60_000)
+
+  it("opens from the empty composer, dispatches a listed key, and closes", async () => {
+    const { tui } = await start()
+    await tui.press("?")
+    const shown = await tui.until(popup, 5_000, "which-key popup")
+    expect(shown).toMatch(/ctrl\+\]\/ctrl\+right\s+Next tab/)
+
+    // A listed binding is a real dispatch: Ctrl+K opens the palette.
+    await tui.press(key.ctrlK)
+    await tui.until((screen) => !popup(screen) && screen.includes("Search"), 5_000, "palette from which-key")
+    await tui.press(key.escape)
+
+    await tui.press("?")
+    await tui.until(popup, 5_000, "which-key reopen")
+    await tui.press(key.escape)
+    await tui.until((screen) => !popup(screen), 5_000, "which-key close on esc")
+    await tui.press("?")
+    await tui.until(popup, 5_000, "which-key reopen")
+    await tui.press("?")
+    const closed = await tui.until((screen) => !popup(screen), 5_000, "which-key close on ?")
+    expect(composerLine(closed)).not.toContain("?")
+  }, 60_000)
+
+  it("keeps a message that starts with ?", async () => {
+    const { tui } = await start()
+    await tui.press("?")
+    await tui.until(popup, 5_000, "which-key popup")
+    await tui.type("why")
+    const typed = await tui.until((screen) => !popup(screen) && composerLine(screen)?.startsWith("?why") === true, 5_000, "typed question")
+    expect(composerLine(typed)).toStartWith("?why")
+    // Mid-draft, ? is text.
+    await tui.type("?")
+    await tui.until((screen) => composerLine(screen)?.startsWith("?why?") === true, 5_000, "literal ?")
+  }, 60_000)
+})
+
 describe("ctrl+c and ctrl+d", () => {
   it("clears the editor on the first press and exits on a second within 500ms", async () => {
     const { tui } = await start()
@@ -147,7 +196,7 @@ describe("esc", () => {
     const { tui } = await start({ holdMs: 60_000 })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("esc interrupt") && /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen), 10_000, "running turn")
+    await tui.until((screen) => screen.includes("esc Interrupt") && /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen), 10_000, "running turn")
     await tui.press(key.escape)
     const screen = await tui.until((screen) => screen.includes("✗ Stopped") && idle(screen), 5_000, "stopped turn")
     expect(screen).toContain("Ask Smithers to change this repository")
@@ -495,7 +544,7 @@ describe("fork", () => {
     const { tui } = await start({ holdMs: 60_000 })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("esc interrupt"), 20_000, "turn running")
+    await tui.until((screen) => screen.includes("esc Interrupt"), 20_000, "turn running")
     await tui.type("/fork")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
@@ -526,7 +575,7 @@ describe("fork", () => {
     await tui.until(drawn, 20_000, "first draw")
     await tui.type("investigate")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("Investigation · running") && !screen.includes("esc interrupt"), 5_000, "worker")
+    await tui.until((screen) => screen.includes("Investigation · running") && !screen.includes("esc Interrupt"), 5_000, "worker")
     await tui.type("/fork")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
@@ -645,7 +694,7 @@ describe("runtime views", () => {
     const { tui } = await start({ holdMs: 60_000 })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("esc interrupt"), 10_000, "running turn")
+    await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
     await tui.press(key.ctrlS)
     await tui.until((screen) => screen.includes("u undo"), 5_000, "summary")
     await tui.type("u")

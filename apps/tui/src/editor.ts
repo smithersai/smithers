@@ -100,37 +100,6 @@ export const nextThinking = (current: Thinking): Thinking => {
   return at === thinkingLevels.length - 1 ? undefined : thinkingLevels[at + 1]
 }
 
-export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
-  ["enter", "send; while working, steer the next cell"],
-  ["alt+enter", "queue a follow-up for after the turn"],
-  ["alt+up", "move queued follow-ups back to the editor"],
-  ["shift+enter, ctrl+j", "newline"],
-  ["esc", "interrupt the turn or shell command"],
-  ["ctrl+c", "clear; twice to exit"],
-  ["ctrl+d", "exit when the editor is empty"],
-  ["up, down", "prompt history"],
-  ["ctrl+k", "search files, commands, text:, session:, tab:"],
-  ["ctrl+l", "pick a model"],
-  ["ctrl+p, shift+ctrl+p", "next, previous model"],
-  ["shift+tab", "cycle reasoning effort"],
-  ["ctrl+o", "expand cells and output"],
-  ["ctrl+t", "inspect run timeline"],
-  ["ctrl+s", "summary / focus chat"],
-  ["ctrl+left/right", "switch tabs"],
-  ["ctrl+], ctrl+\\", "next, previous tab"],
-  ["/filter, /grep", "filter the chat like a log"],
-  ["hjkl, arrows", "navigate a view; enter expands"],
-  ["d, v", "toggle diff / split diff"],
-  ["u", "undo a summary row's changes"],
-  ["r, x", "retry / stop selected worker or flow"],
-  ["a", "in a flow tab: approve or fill in"],
-  ["@", "mention a file"],
-  ["ctrl+g", "edit the prompt in $EDITOR"],
-  ["pageup, pagedown", "scroll"],
-  ["!cmd, !!cmd", "run a shell command; !! keeps it out of context"],
-  ["/", "commands"]
-]
-
 /** Formats a token count the way pi's footer does: 950, 1.2k, 45k, 1.2M. */
 export const tokens = (count: number): string => {
   if (count < 1000) return String(count)

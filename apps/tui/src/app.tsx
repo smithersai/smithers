@@ -22,6 +22,7 @@ import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.
 import * as Form from "./form.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import type * as Host from "./host.ts"
+import * as Keys from "./keys.ts"
 import type { Model } from "./models.ts"
 import { PanelView } from "./panel-view.tsx"
 import * as Palette from "./palette.ts"
@@ -278,6 +279,12 @@ export function App(props: AppProps) {
   }, [])
   const [surface, setSurface] = useState("chat")
   const [panelFocus, setPanelFocus] = useState(false)
+  const [whichKey, setWhichKey] = useState(false)
+  const whichKeyRef = useRef(false)
+  const setWhichKeyOpen = useCallback((open: boolean) => {
+    whichKeyRef.current = open
+    setWhichKey(open)
+  }, [])
   const [navigation, setNavigation] = useState(Panels.initial)
   const [filter, setFilter] = useState(Timeline.all)
   const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
@@ -445,8 +452,8 @@ export function App(props: AppProps) {
 
   // Key handlers read the latest values through these, never a stale render.
   // `now` is the clock the approval row rendered with, so its keys and its hints agree.
-  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now })
-  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now }
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -927,7 +934,7 @@ export function App(props: AppProps) {
       }
       case "hotkeys":
         setTranscript((current) =>
-          Transcript.note(current, Editor.keys.map(([key, action]) => `${key.padEnd(22)} ${action}`).join("\n"), Date.now())
+          Transcript.note(current, Keys.sheet(), Date.now())
         )
         return true
       case "quit":
@@ -1182,9 +1189,38 @@ export function App(props: AppProps) {
     return false
   }
 
-  useKeyboard((key: KeyEvent) => {
+  /** Which keys act right now, in the order `handleKey` tries them. */
+  const keyContext = (): Keys.KeyContext => {
+    if (live.current.picker !== undefined) return "picker"
+    if (activeInspection !== undefined) return "selection"
+    if (liveForm.current !== undefined) return "form"
+    if (live.current.approvals.length > 0 && composer.current?.plainText === "") return "approval"
+    if (panelFocus && panel !== undefined) return "panel"
+    if (live.current.menu !== undefined) return "completion"
+    if (live.current.shell !== undefined || composer.current?.plainText.startsWith("!") === true) return "shell"
+    if (live.current.turn !== undefined) return "working"
+    return "composer"
+  }
+
+  const handleKey = (key: KeyEvent): void => {
     const { turn: running, shell: shellRunning, picker: open, menu: completing } = live.current
     const text = composer.current?.plainText ?? ""
+    // `?` on an empty composer opens the key panel. Any key closes it: esc and
+    // `?` only close, a listed key then acts, and other typing becomes `?` plus
+    // that character, so a message that starts with `?` is never lost.
+    if (whichKeyRef.current) {
+      setWhichKeyOpen(false)
+      const binding = Keys.bindingFor(key, keyContext())
+      if (key.name === "escape" || binding?.id === "keys") return key.preventDefault()
+      const typed = key.sequence
+      if (binding === undefined && !key.ctrl && !key.meta && !key.option && typed.length === 1 && typed >= " " && typed !== "\x7f") {
+        key.preventDefault()
+        return setText(`?${typed}`)
+      }
+    } else if (key.name === "?" && text === "" && open === undefined && liveForm.current === undefined) {
+      key.preventDefault()
+      return setWhichKeyOpen(true)
+    }
     if (key.ctrl && key.name === "t" && showActivity && monitored !== undefined && open === undefined) {
       key.preventDefault()
       if (activeInspection !== undefined) followLive()
@@ -1381,7 +1417,9 @@ export function App(props: AppProps) {
         setText(newer)
       }
     }
-  })
+  }
+
+  useKeyboard(handleKey)
 
   const working = turn !== undefined
   const tick = spinner[Math.floor(now / 100) % spinner.length]!
@@ -1411,6 +1449,7 @@ export function App(props: AppProps) {
     Math.min(surfaces.findIndex((tab) => tab.id === surface) - Math.floor(tabCount / 2), surfaces.length - tabCount)
   )
   const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
+  const footerContext = keyContext()
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
@@ -1615,23 +1654,21 @@ export function App(props: AppProps) {
         <box
           style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}
         >
-          <text wrapMode="none" style={{ flexShrink: 1 }}>
-            {working
-              ? (
-                <>
-                  <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
-                  <span fg={color.text}>{"  esc"}</span>
-                  <span fg={color.faint}>{" interrupt"}</span>
-                </>
-              )
-              : (
-                <span fg={color.faint}>
-                  {props.host.cwd.replace(homedir(), "~")}
-                  {props.branch === undefined ? "" : ` (${props.branch})`}
-                  {name === undefined ? "" : ` • ${name}`}
-                </span>
-              )}
-          </text>
+          <box style={{ flexDirection: "row", flexShrink: 1, marginRight: 2 }}>
+            {/* The path gives way before the hints do. */}
+            <text wrapMode="none" style={{ flexShrink: 100, marginRight: 2 }}>
+              {working
+                ? <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
+                : (
+                  <span fg={color.faint}>
+                    {props.host.cwd.replace(homedir(), "~")}
+                    {props.branch === undefined ? "" : ` (${props.branch})`}
+                    {name === undefined ? "" : ` • ${name}`}
+                  </span>
+                )}
+            </text>
+            <View.KeyHints bindings={Keys.hintsFor(footerContext)} />
+          </box>
           <text wrapMode="none" style={{ flexShrink: 0 }}>
             {transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
               ? <span fg={color.warning}>{"context: "}{[
@@ -1656,6 +1693,7 @@ export function App(props: AppProps) {
         </box>
       </box>
       </box>
+      {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext)} width={dimensions.width} height={dimensions.height} /> : null}
       <View.ToastStack
         rows={[
           ...snapshot.tabs.filter((tab) =>

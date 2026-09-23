@@ -7,7 +7,7 @@
  */
 import { RGBA } from "@opentui/core"
 import { useState, type ReactNode } from "react"
-import * as Editor from "./editor.ts"
+import * as Keys from "./keys.ts"
 import * as Scrubber from "./scrubber.ts"
 import { color, mix, syntax } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
@@ -48,12 +48,7 @@ export function Home(props: { readonly expanded: boolean }) {
       {props.expanded
         ? (
           <box style={{ marginTop: 1 }}>
-            {Editor.keys.map(([key, action]) => (
-              <text key={key}>
-                <span fg={color.text}>{key.padEnd(22)}</span>
-                <span fg={color.faint}>{action}</span>
-              </text>
-            ))}
+            <KeyColumns bindings={Keys.registry} />
           </box>
         )
         : (
@@ -61,6 +56,67 @@ export function Home(props: { readonly expanded: boolean }) {
             <span fg={color.muted}>/</span> commands  <span fg={color.muted}>@</span> files  <span fg={color.muted}>!</span> shell  <span fg={color.muted}>ctrl+o</span> keys
           </text>
         )}
+    </box>
+  )
+}
+
+/** The context-sensitive footer hint strip. */
+export function KeyHints(props: { readonly bindings: ReadonlyArray<Keys.Binding> }) {
+  return (
+    <text wrapMode="none" style={{ flexShrink: 1 }}>
+      {props.bindings.map((binding, index) => (
+        <span key={binding.id}>
+          {index === 0 ? "" : "  "}
+          <span fg={color.text}>{Keys.primaryKey(binding)}</span>
+          <span fg={color.faint}> {binding.label}</span>
+        </span>
+      ))}
+    </text>
+  )
+}
+
+/** A bottom which-key panel, the current context's group first; a short terminal clips the rest. */
+export function KeyPopup(props: {
+  readonly bindings: ReadonlyArray<Keys.Binding>
+  readonly width: number
+  readonly height: number
+}) {
+  return (
+    <box
+      style={{ position: "absolute", left: 0, bottom: 1, width: "100%", zIndex: 200, alignItems: "center" }}
+    >
+      <box
+        style={{ width: Math.max(20, props.width - 2), maxHeight: Math.max(4, props.height - 2), overflow: "hidden", paddingTop: 1, paddingBottom: 1, paddingLeft: 2, paddingRight: 2 }}
+        backgroundColor={color.surface}
+      >
+        <box style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1 }}>
+          <text fg={color.text}><strong>Keys</strong></text>
+          <text fg={color.faint}>esc</text>
+        </box>
+        <KeyColumns bindings={props.bindings} />
+      </box>
+    </box>
+  )
+}
+
+/** Key groups side by side, wrapping to the next row when the width runs out. */
+function KeyColumns(props: { readonly bindings: ReadonlyArray<Keys.Binding> }) {
+  return (
+    <box style={{ flexDirection: "row", flexWrap: "wrap" }}>
+      {Keys.groups(props.bindings).map(({ group, bindings }) => {
+        const keyWidth = Math.max(...bindings.map((binding) => Keys.displayKeys(binding).length)) + 2
+        return (
+          <box key={group} style={{ marginRight: 3, marginBottom: 1 }}>
+            <text fg={color.muted}>{group}</text>
+            {bindings.map((binding) => (
+              <text key={binding.id} wrapMode="none">
+                <span fg={color.brand}>{Keys.displayKeys(binding).padEnd(keyWidth)}</span>
+                <span fg={color.text}>{binding.label}</span>
+              </text>
+            ))}
+          </box>
+        )
+      })}
     </box>
   )
 }

@@ -40,6 +40,9 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 
 ## Keys
 
+`src/keys.ts` lists every key; the footer, the `?` panel, `/hotkeys`, and
+Ctrl+O read it.
+
 | Key | Action |
 | --- | --- |
 | Enter | Send. While a turn runs: steer, delivered before the next cell |
@@ -47,6 +50,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | Alt+Up | Move queued follow-ups back to the editor |
 | Shift+Enter, Ctrl+J | Newline |
 | Esc | Stop the turn (queued messages return to the editor) or the shell command |
+| ? | With the editor empty: show the keys for the current context. Esc or ? closes it; other typing keeps the `?` |
 | y, n, a | Approval row showing its keys (editor empty, 400 ms after the row appears and after the editor last changed): allow once, deny, and where the row offers `a all bash` or `a all edits`, allow for the session. Otherwise the key is text |
 | Ctrl+C | Clear the editor; twice within 500 ms to exit |
 | Ctrl+D | Exit when the editor is empty |
@@ -58,7 +62,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | Ctrl+P, Shift+Ctrl+P | Next, previous model |
 | Shift+Tab | Cycle reasoning effort |
 | Ctrl+O | Expand cell code, output, diffs, and the key list |
-| Ctrl+T | Inspect the run timeline; arrows scrub, Home/End jump, Esc returns to live |
+| Ctrl+T | Inspect the run timeline; arrows scrub, [ ] or Shift+Left/Right step milestones, Home/End jump, Esc returns to live |
 | Ctrl+S | Open summary / switch focus between the view and chat |
 | Ctrl+], Ctrl+\\, Ctrl+Right, Ctrl+Left | Next, previous tab: Chat, Summary, worker tabs, and custom views. Click a tab to open it |
 | hjkl or arrows | In a view: move between rows, collapse/expand details |
