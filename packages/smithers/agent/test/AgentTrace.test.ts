@@ -625,6 +625,20 @@ describe("trace", () => {
         }
       ],
       [
+        "supervisor-memory-failed",
+        new AgentEvent.SupervisorMemoryFailed({
+          eventType: "flows.harness.supervisor-memory-failed.v1",
+          scope: "session-1",
+          frame: 2,
+          operation: "remember",
+          detail: "store: notes locked"
+        }),
+        {
+          eventType: "control.agent.supervisor-memory-failed",
+          payload: { scope: "session-1", frame: 2, operation: "remember", detail: "store: notes locked" }
+        }
+      ],
+      [
         "turn-closed",
         new AgentEvent.TurnClosed({
           eventType: "flows.harness.turn-closed.v1",
@@ -987,7 +1001,8 @@ describe("late payload fields", () => {
               ModelRequest.ToolResultPart.make({ toolCallId: "call-0", content: "exit 0" })
             ),
             assistant
-          ]
+          ],
+          supervisor: [ModelRequest.Message.user("Recalled fact: run tox before marking the task complete.")]
         })
       )
     ).toEqual({
@@ -996,7 +1011,8 @@ describe("late payload fields", () => {
         messages: [
           { role: "tool", text: "exit 0" },
           { role: "assistant", text: "First line.\nSecond line." }
-        ]
+        ],
+        supervisor: [{ role: "user", text: "Recalled fact: run tox before marking the task complete." }]
       }
     })
   })

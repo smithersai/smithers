@@ -17,6 +17,7 @@ import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Supervisor from "@smthrs/harness/Supervisor"
+import * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as MemorySource from "@smthrs/memory/Source"
@@ -325,6 +326,7 @@ describe("supervisor memory through Agent.run", () => {
       { mode: "recall", options: { namespace: "repository", steer: false, remember: true } },
       { mode: "absent", options: { namespace: "repository", steer: false, remember: true } },
       { mode: "failed", options: { namespace: "repository", steer: false, remember: true } },
+      { mode: "typed-failed", options: { namespace: "repository", steer: false, remember: true } },
       // No namespace: no bank is read or written, never one global bank.
       { mode: "unnamed", options: { steer: false, remember: true } },
       // A namespace but no opt-in: recalled, never written.
@@ -345,6 +347,9 @@ describe("supervisor memory through Agent.run", () => {
         Effect.suspend(() => {
           notes.push(input)
           if (mode === "failed") return Effect.die(new Error("recorded memory write failure"))
+          if (mode === "typed-failed") {
+            return Effect.fail(new MemoryError.MemoryError({ code: "store", message: "notes locked" }))
+          }
           return Effect.succeed({
             ...input,
             namespace: { kind: "agent" as const, id: namespace },
@@ -357,6 +362,9 @@ describe("supervisor memory through Agent.run", () => {
       recall: (input) =>
         Effect.suspend(() => {
           recalls.push(input)
+          if (mode === "typed-failed") {
+            return Effect.fail(new MemoryError.MemoryError({ code: "store", message: "recall locked" }))
+          }
           return mode === "failed"
             ? Effect.die(new Error("recorded memory recall failure"))
             : Effect.succeed(Array.from({ length: 8 }, (_, index) => ({
@@ -447,9 +455,17 @@ describe("supervisor memory through Agent.run", () => {
       }]
     )
     // A store that failed is journaled, typed, for a scorecard to count.
-    expect(failures.map((event) => event.operation)).toEqual(mode === "failed" ? ["recall", "remember"] : [])
+    const failed = mode === "failed" || mode === "typed-failed"
+    expect(failures.map((event) => event.operation)).toEqual(failed ? ["recall", "remember"] : [])
+    expect(failures.map((event) => event.detail)).toEqual(
+      mode === "typed-failed" ?
+        ["store: recall locked", "store: notes locked"] :
+        mode === "failed"
+        ? ["The memory store failed unexpectedly", "The memory store failed unexpectedly"]
+        : []
+    )
     expect(warnings.filter((message) => message.includes("supervisor could not"))).toEqual(
-      mode === "failed"
+      failed
         ? ["The supervisor could not recall memory", "The supervisor could not write memory"] :
         []
     )
