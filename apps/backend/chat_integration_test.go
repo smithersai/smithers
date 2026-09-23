@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,13 +69,15 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	defer cancel()
 	admin, err := pgx.Connect(ctx, adminURL)
 	require.NoError(t, err)
-	defer admin.Close(context.Background())
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
 	dbName := "l3b_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.Exec(ctx, `CREATE DATABASE `+dbName)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+dbName+` WITH (FORCE)`) })
-	databaseURL := strings.Replace(adminURL, "/postgres?", "/"+dbName+"?", 1)
-	require.NotEqual(t, adminURL, databaseURL)
+	databaseConfig, err := url.Parse(adminURL)
+	require.NoError(t, err)
+	databaseConfig.Path = "/" + dbName
+	databaseURL := databaseConfig.String()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := listener.Addr().String()

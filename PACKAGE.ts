@@ -2,6 +2,7 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import project from "./apps/site/src/data/project.json" with { type: "json" }
+import { Package as modelHostPackage } from "./packages/smithers/agent/model-host/PACKAGE.ts"
 
 export const cacheToken = Smithers.Secret("SMITHERS_CACHE_READ_TOKEN")
 export const cacheWriteToken = Smithers.Secret("SMITHERS_CACHE_WRITE_TOKEN")
@@ -222,7 +223,7 @@ const backendDatabaseURL = (name: string) =>
 // Native FFI needs its own compiler floor. The flows-jj wasm artifact keeps
 // the repository's 1.89.0 pin; `rustup run 1.98.0 cargo` cannot change it.
 const nativeFfi = Smithers.Shell.Build({
-  shell: "mkdir -p .native-ffi; export RUSTUP_HOME=\"$PWD/.native-ffi/rustup\" CARGO_TARGET_DIR=\"$PWD/.native-ffi/target\"; rustup toolchain install 1.98.0 --profile minimal --component clippy && rustup run 1.98.0 cargo clippy -p smithers-ffi --all-targets --locked -- -D warnings && rustup run 1.98.0 cargo test -p smithers-ffi --locked && touch .native-ffi/qualified",
+  shell: "mkdir -p .native-ffi; export RUSTUP_HOME=\"$PWD/.native-ffi/rustup\" CARGO_TARGET_DIR=\"$PWD/.native-ffi/target\"; rustup toolchain install 1.98.0 --profile minimal --component clippy && rustup run 1.98.0 cargo clippy -p smithers-ffi --all-targets --locked -- -D warnings && rustup run 1.98.0 cargo test -p smithers-ffi --locked && rustup run 1.98.0 cargo build -p smithers-ffi --lib --locked && touch .native-ffi/qualified",
   outDirs: ["//.native-ffi"],
   data: [
     Smithers.file("//Cargo.toml"),
@@ -247,13 +248,14 @@ const backendGoModules = Smithers.Go.ModDownload({
 const backendGo = Smithers.Shell.Test({
   // Services TestMain prepares the shared cluster fixture before clusterservices
   // attaches. Only Plue-owned Terraform/monitoring source tests live in infra.
-  shell: "export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go vet ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go test -count=1 $shared ./apps/backend/... ./distribution/...",
+  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go vet ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go test -count=1 $shared ./apps/backend/... ./distribution/...",
   env: {
     GOFLAGS: "-p=1 -buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
     SMITHERS_REQUIRE_DATABASE_TESTS: "1",
     GOPROXY: "off",
-    SMITHERS_PRODUCT_TEST_DATABASE_URL: backendDatabaseURL("backend_product"),
+    // The composition test creates its own isolated database through this admin connection.
+    SMITHERS_PRODUCT_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
     SMITHERS_TEST_DEPLOYMENTDB_DATABASE_URL: backendDatabaseURL("backend_deploymentdb"),
     SMITHERS_TEST_DB_DATABASE_URL: backendDatabaseURL("backend_db"),
     SMITHERS_ROUTES_TEST_DATABASE_URL: backendDatabaseURL("backend_routes"),
@@ -268,6 +270,11 @@ const backendGo = Smithers.Shell.Test({
   },
   data: [
     backendGoModules,
+    nativeFfi,
+    modelHostPackage.lib,
+    Smithers.glob("//apps/model-host/src/**/*.ts"),
+    Smithers.file("//apps/model-host/build.mjs"),
+    Smithers.file("//apps/model-host/package.json"),
     Smithers.file("//go.mod"),
     Smithers.file("//go.sum"),
     Smithers.glob("//packages/backend/**/*"),
