@@ -160,15 +160,21 @@ describe("attempt projection rebuild from retained typed SQLite history", () => 
             "--input-type=module",
             "-e",
             `
+            import { writeSync } from "node:fs";
             import { DatabaseSync } from "node:sqlite";
+            process.on("exit", () => writeSync(1, "unexpected clean exit\\n"));
             const db = new DatabaseSync(process.argv[1]);
             db.exec("DROP TABLE a2_attempt_projection");
+            writeSync(1, "projection dropped\\n");
             process.kill(process.pid, "SIGKILL");
           `,
             filename
-          ], { encoding: "utf8" })
-          expect(crashed.signal).toBe("SIGKILL")
-          expect(crashed.status).toBeNull()
+          ], { encoding: "utf8", timeout: 30_000, killSignal: "SIGKILL" })
+          expect(crashed.error).toBeUndefined()
+          expect(crashed.stdout).toBe("projection dropped\n")
+          // Windows self-kills use TerminateProcess(1), without a POSIX signal.
+          expect(crashed.signal).toBe(process.platform === "win32" ? null : "SIGKILL")
+          expect(crashed.status).toBe(process.platform === "win32" ? 1 : null)
 
           await Effect.runPromise(
             Effect.gen(function*() {
