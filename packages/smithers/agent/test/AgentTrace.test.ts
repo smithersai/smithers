@@ -144,7 +144,9 @@ describe("trace", () => {
       inserted: [1],
       remembered: [0],
       latencyMs: 23,
-      ...(present ? { outdatedContext: 0, irrelevantContext: 0.8, usage: { inputTokens: 7, outputTokens: 3 } } : {})
+      ...(present
+        ? { outdatedContext: 0, irrelevantContext: 0.8, steer: true, usage: { inputTokens: 7, outputTokens: 3 } }
+        : {})
     }
     const event = new AgentEvent.SupervisorSettled({ eventType: "flows.harness.supervisor-settled.v1", ...payload })
     expect(AgentSession.trace(event)).toEqual({ eventType: "control.agent.supervisor-settled", payload })

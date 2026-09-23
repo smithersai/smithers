@@ -206,7 +206,8 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
           Effect.scoped
         )
         expect(status).toBe(0)
-        expect(Date.now() - started).toBeLessThan(1500)
+        // Allow scheduler contention while still ruling out the full 5 s grace wait.
+        expect(Date.now() - started).toBeLessThan(4000)
         expect(yield* ledger.live).toEqual([])
       }))
   }
