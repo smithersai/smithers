@@ -993,7 +993,13 @@ describe("approvals", () => {
     const started = await start({ cwd, approve: "ask" })
     await started.tui.type("/flow consequential")
     await started.tui.press(key.enter)
-    await started.tui.until((screen) => screen.includes("fs:write:/**") && screen.includes("n deny"), 30_000)
+    const asked = (screen: string) => screen.includes("fs:write:/**") && screen.includes("n deny")
+    const launched = await started.tui.until((screen) => asked(screen) || screen.includes("✗ consequential"), 30_000, "approval row")
+    if (!asked(launched)) {
+      // A launch failure never asks; its reason is on the flow's tab.
+      await started.tui.click("✗ consequential")
+      throw new Error(`consequential failed before asking:\n${await started.tui.until((screen) => screen.includes("· failed"), 5_000, "flow tab")}`)
+    }
     await started.tui.type("draft")
     await started.tui.until((screen) => /┃\s+draft/.test(screen) && !screen.includes("n deny"))
     await started.tui.press(key.ctrlC)

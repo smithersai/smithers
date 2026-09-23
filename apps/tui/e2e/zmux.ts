@@ -24,6 +24,16 @@ export const zmuxd = (): string | undefined => {
   return existsSync(built) ? built : undefined
 }
 
+/**
+ * Host settings every TUI child keeps whatever `env` a case passes. Flows
+ * need `smithers-jj-export`; a fresh checkout has no `target/release` copy,
+ * so its override must reach the child.
+ */
+const passthrough = (): Record<string, string> => {
+  const helper = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+  return helper === undefined || helper === "" ? {} : { SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper }
+}
+
 export const key = {
   enter: "\r",
   escape: "\x1b",
@@ -106,7 +116,7 @@ export class Tui {
       cols: tui.cols,
       cwd: options.cwd,
       command: options.command,
-      env: { TERM: "xterm-256color", COLORTERM: "truecolor", ...options.env }
+      env: { TERM: "xterm-256color", COLORTERM: "truecolor", ...passthrough(), ...options.env }
     }) as { paneId?: string; id?: string }
     tui.paneId = created.paneId ?? created.id ?? "tui"
     return tui
