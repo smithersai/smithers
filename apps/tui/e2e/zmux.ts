@@ -29,6 +29,7 @@ export const key = {
   escape: "\x1b",
   ctrlC: "\x03",
   ctrlD: "\x04",
+  ctrlO: "\x0f",
   up: "\x1b[A",
   down: "\x1b[B",
   tab: "\t",

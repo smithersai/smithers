@@ -147,6 +147,19 @@ describe("turns", () => {
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
   }, 180_000)
 
+  it("shows every cell's code and folds what it printed until ctrl+o", async () => {
+    const { tui } = await start()
+    await tui.type("node check.mjs fails. Fix it and show it passes.")
+    await tui.press(key.enter)
+    await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
+    const folded = tui.screen()
+    expect(folded).toContain("ctx.done(")
+    expect(folded).toMatch(/printed \d+ lines · ctrl\+o/)
+    expect(folded).not.toContain("output to a specific file")
+    await tui.press(key.ctrlO)
+    await tui.until((screen) => screen.includes("output to a specific file"), 5_000, "expanded output")
+  }, 180_000)
+
   it("recalls the previous prompt with up", async () => {
     const { tui } = await start()
     await tui.type("!echo first")

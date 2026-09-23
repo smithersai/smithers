@@ -15,11 +15,6 @@ import * as Transcript from "./transcript.ts"
 type Cell = Extract<Transcript.Item, { kind: "cell" }>
 type ShellItem = Extract<Transcript.Item, { kind: "shell" }>
 
-/** A settled cell's code stays folded to one line until expanded; a writing cell shows its tail. */
-const writingLines = 8
-/** Printed output shows its tail until expanded: this many lines, at most `printedChars`. */
-const printedLines = 6
-const printedChars = 480
 /** A shell block shows its last lines until expanded (pi's `PREVIEW_LINES`). */
 const shellLines = 20
 /** An edit's diff shows this many lines until expanded. */
@@ -39,11 +34,6 @@ export const bar = {
   cross: ""
 }
 
-/** The tail of printed output; one long line (a JSON dump) is cut by characters. */
-const fold = (text: string): string => {
-  const tail = text.split("\n").slice(-printedLines).join("\n")
-  return tail.length > printedChars ? tail.slice(-printedChars) : tail
-}
 
 export function Home(props: { readonly expanded: boolean }) {
   return (
@@ -153,14 +143,11 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
   const { cell } = props
   const live = cell.status === "writing" || cell.status === "running"
   const elapsed = (cell.endedAt ?? props.now) - cell.startedAt
-  const lines = cell.source === "" ? [] : cell.source.split("\n")
-  const code = props.expanded
-    ? cell.source
-    : cell.status === "writing"
-    ? lines.slice(-writingLines).join("\n")
-    : ""
+  // The code is what the agent did, so it always shows; what it printed folds
+  // to a count until ctrl+o.
+  const code = cell.source
   const printed = cell.printed.trimEnd()
-  const shownPrinted = props.expanded ? printed : fold(printed)
+  const printedRows = printed === "" ? 0 : printed.split("\n").length
   const tone = statusColor[cell.status]
   const mark = live ? props.tick : cell.status === "done" ? "●" : "✗"
   return (
@@ -171,7 +158,6 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
           {cell.prose === ""
             ? <span fg={color.muted}>{cell.status === "writing" ? "writing" : "cell"}</span>
             : <span fg={color.text}>{cell.prose.split("\n")[0]}</span>}
-          {code === "" && lines.length > 0 ? <span fg={color.faint}>  {lines.length} lines · ctrl+o</span> : null}
         </text>
         <text fg={color.faint} style={{ flexShrink: 0 }}>{Transcript.duration(elapsed)}</text>
       </box>
@@ -188,14 +174,13 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
           ))}
         </box>
       )}
-      {printed === "" ? null : (
-        <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }} backgroundColor={color.surface}>
-          {!props.expanded && shownPrinted.length < printed.length
-            ? <text fg={color.faint}>… {printed.split("\n").length > printedLines ? `${printed.split("\n").length - printedLines} more lines` : "more"}</text>
-            : null}
-          <text fg={color.muted}>{shownPrinted}</text>
-        </box>
-      )}
+      {printed === "" ? null : props.expanded
+        ? (
+          <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }} backgroundColor={color.surface}>
+            <text fg={color.muted}>{printed}</text>
+          </box>
+        )
+        : <text fg={color.faint}>printed {printedRows} {printedRows === 1 ? "line" : "lines"} · ctrl+o</text>}
       {cell.error === undefined ? null : <text fg={cell.status === "rejected" ? color.warning : color.danger}>{cell.error}</text>}
     </box>
   )
