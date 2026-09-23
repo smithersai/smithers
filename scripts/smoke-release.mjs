@@ -37,6 +37,7 @@
  */
 import { spawn } from "node:child_process"
 import { build as bundle } from "esbuild"
+import { existsSync } from "node:fs"
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -252,10 +253,14 @@ try {
   }
   const cli = join(smokeRoot, "node_modules/.bin/smthrs")
   const nativePackage = join(smokeRoot, "node_modules/@smthrs/platform-node")
-  for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
-    const binary = join(nativePackage, "bin", platform, "smithers-jj-export")
-    const info = await stat(binary)
-    if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)
+  // The script gate packs before native helpers are downloaded. Final release
+  // packing supplies them, and a partial helper bundle must still fail here.
+  if (process.env.SMITHERS_NATIVE_HELPERS_DIR || existsSync(join(nativePackage, "bin"))) {
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+      const binary = join(nativePackage, "bin", platform, "smithers-jj-export")
+      const info = await stat(binary)
+      if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)
+    }
   }
   const unconfiguredEnv = { ...process.env }
   delete unconfiguredEnv.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
