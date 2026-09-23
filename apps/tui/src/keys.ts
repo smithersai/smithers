@@ -166,6 +166,23 @@ export const hintsFor = (context: KeyContext): ReadonlyArray<Binding> => {
   )
 }
 
+/**
+ * Footer hints for a focused panel: the keys this panel acts on first, then
+ * the panel basics. `action` relabels `a` with the selected row's action.
+ */
+export const panelHints = (
+  panel: { readonly worker?: boolean; readonly undo?: boolean; readonly action?: string }
+): ReadonlyArray<Binding> => {
+  const byId = (id: string) => registry.find((binding) => binding.id === id)!
+  return [
+    ...(panel.worker === true ? [byId("retry"), byId("stop")] : []),
+    ...(panel.undo === true ? [byId("undo")] : []),
+    ...(panel.action === undefined ? [] : [{ ...byId("approve-form"), label: panel.action }]),
+    byId("close-panel"),
+    ...hintsFor("panel").filter((binding) => binding.id !== "close-panel")
+  ]
+}
+
 export const displayKeys = (binding: Binding): string =>
   binding.display ?? binding.keys.filter((key) => key !== "linefeed").join("/")
 

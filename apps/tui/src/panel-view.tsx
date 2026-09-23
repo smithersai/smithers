@@ -64,9 +64,6 @@ export function PanelView(
     navigation: Panels.Navigation
     height: number
     width: number
-    focused: boolean
-    worker?: boolean
-    undo?: boolean
     scrollRef?: RefObject<((direction: number) => void) | undefined>
   }
 ) {
@@ -125,12 +122,6 @@ export function PanelView(
             ))}
           </scrollbox>
         )}
-      <text fg={color.faint} style={{ flexShrink: 0 }}>
-        {props.focused ? "hjkl/↑↓←→  enter details  d diff  v split  pgup/pgdn scroll  esc chat" : "ctrl+s focus"}
-        {props.worker ? "  r retry  x stop" : ""}
-        {props.focused && props.undo ? "  u undo" : ""}
-        {row?.action === undefined ? "" : `  a ${row.action.label}`}
-      </text>
     </box>
   )
 }

@@ -129,6 +129,23 @@ describe("key registry", () => {
     expect(Keys.hintsFor("approval").map((binding) => binding.id)).toEqual(["allow", "deny", "allow-all"])
   })
 
+  it("gives a panel's own keys to the footer, so the panel draws no key line", () => {
+    const hints = (options: Parameters<typeof Keys.panelHints>[0]) =>
+      Keys.panelHints(options).map((binding) => `${Keys.primaryKey(binding)} ${binding.label}`)
+    expect(hints({})).toEqual(["esc Chat", "hjkl/arrows Navigate", "enter Expand row", "? Keys"])
+    expect(hints({ worker: true, undo: true, action: "Approve" })).toEqual([
+      "r Retry",
+      "x Stop",
+      "u Undo changes",
+      "a Approve",
+      "esc Chat",
+      "hjkl/arrows Navigate",
+      "enter Expand row",
+      "? Keys"
+    ])
+    expect(read("panel-view.tsx")).not.toMatch(/esc chat|r retry|x stop|u undo/)
+  })
+
   it("matches the terminal forms the app dispatches", () => {
     expect(Keys.matches({ name: "p", ctrl: true, shift: true }, "ctrl+shift+p")).toBe(true)
     expect(Keys.matches({ name: "kpenter" }, "enter")).toBe(true)

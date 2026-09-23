@@ -175,9 +175,9 @@ describe("tabs", () => {
   it("switches Chat and Summary by clicking a tab title", async () => {
     const { tui } = await start()
     await tui.click("Summary")
-    await tui.until((screen) => screen.includes("esc chat"), 5_000, "summary focused")
+    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary focused footer")
     await tui.click("Chat")
-    await tui.until((screen) => !screen.includes("esc chat") && !screen.includes("ctrl+s focus"), 5_000, "chat")
+    await tui.until((screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"), 5_000, "chat footer")
   }, 60_000)
 
   it("cycles tabs with ctrl+] and ctrl+\\", async () => {
@@ -270,10 +270,13 @@ describe("turns", () => {
     await tui.until(screen => knob(screen) < knob(following), 5_000, "first journal position")
     await tui.press("\x1b[F")
     await tui.press("\x13")
-    await tui.until(screen => screen.includes("hjkl/"), 5_000, "summary keyboard focus")
+    // 40 columns clip the footer hints; Escape clearing these rows proves the panel had focus.
+    await tui.until(screen => /›\s+\d+ /.test(screen), 5_000, "summary keyboard focus")
     await tui.press(key.escape)
-    await tui.until(screen => screen.includes("▶"), 5_000, "summary handles Escape and restores the chat timeline")
+    await tui.until(screen => !/›\s+\d+ /.test(screen) && screen.includes("▶"), 5_000, "summary handles Escape and restores the chat timeline")
     await tui.press(key.escape)
+    // Typing right behind Escape reads as alt+key, so wait for the timeline to follow live again.
+    await tui.until(screen => screen.includes("⏸"), 5_000, "timeline follows live")
     await tui.type("keep the composer usable")
     const inspected = await tui.until(screen => /┃\s+keep the composer usable/.test(screen), 5_000, "chat after inspection")
     if (process.env.STRIP_EVIDENCE_DIR) {
@@ -630,7 +633,7 @@ describe("runtime views", () => {
       await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
       await tui.type("/summary")
       await tui.press(key.enter)
-      await tui.until((screen) => screen.includes("enter details") && screen.includes("Asked:"), 5_000, "summary")
+      await tui.until((screen) => screen.includes("enter Expand row") && screen.includes("Asked:"), 5_000, "summary")
       await tui.type("jl")
       await tui.until((screen) => screen.includes("ctx.call(\"ls\""), 5_000, "expanded cell source")
       await tui.type("hjd")
@@ -659,7 +662,7 @@ describe("runtime views", () => {
     await started.tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
     await started.tui.type("/summary")
     await started.tui.press(key.enter)
-    await started.tui.until((screen) => screen.includes("u undo") && screen.includes("Asked:"), 5_000, "summary")
+    await started.tui.until((screen) => screen.includes("u Undo changes") && screen.includes("Asked:"), 5_000, "summary")
     for (let step = 0; step < 8 && !/› .*Updated math\.js/.test(started.tui.screen()); step++) {
       await started.tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
@@ -681,7 +684,7 @@ describe("runtime views", () => {
     )
     await tui.until((screen) => /› .*Undone: Updated math\.js/.test(screen), 5_000, "undone row")
     await tui.press(key.escape)
-    await tui.until((screen) => screen.includes("Undid math.js") && !screen.includes("u undo"), 5_000, "chat note")
+    await tui.until((screen) => screen.includes("Undid math.js") && !screen.includes("u Undo changes"), 5_000, "chat note")
     await tui.type("still usable")
     await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "usable composer")
   }, 180_000)
@@ -713,7 +716,7 @@ describe("runtime views", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
     await tui.press(key.ctrlS)
-    await tui.until((screen) => screen.includes("u undo"), 5_000, "summary")
+    await tui.until((screen) => screen.includes("u Undo changes"), 5_000, "summary")
     await tui.type("u")
     await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "busy")
     await tui.press(key.escape)
@@ -769,7 +772,7 @@ describe("runtime views", () => {
     await tui.type("tab:fix")
     await tui.until((screen) => screen.includes("Search") && /Fixer\s+done/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("u undo"), 5_000, "worker tab")
+    await tui.until((screen) => screen.includes("u Undo changes"), 5_000, "worker tab")
     for (let step = 0; step < 8 && !/› .*math\.js/.test(tui.screen()); step++) {
       await tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
@@ -839,7 +842,7 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("review · running"))
     await tui.type("/tabs")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("r retry"))
+    await tui.until((screen) => screen.includes("r Retry") && screen.includes("u Undo changes"), 5_000, "worker footer")
     await tui.press("u")
     const screen = await tui.until((screen) => screen.includes("Stop running work first") || screen.includes("Undo math.js?"))
     expect(screen).toContain("Stop running work first")
@@ -1002,14 +1005,14 @@ it(
     await tui.until((screen) => screen.includes("Search") && /Investigation\s+running/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
     await tui.until(
-      (screen) => screen.includes("r retry") && screen.includes("Investigation · running"),
+      (screen) => screen.includes("r Retry") && screen.includes("x Stop") && screen.includes("Investigation · running"),
       5_000,
       "inspect running worker"
     )
     await tui.type("x")
     await tui.until((screen) => screen.includes("Investigation · cancelled"), 5_000, "actual worker settlement")
     await tui.press(key.escape)
-    await tui.until((screen) => screen.includes("Still here.") && !screen.includes("r retry"), 5_000, "escape returns to chat")
+    await tui.until((screen) => screen.includes("Still here.") && !screen.includes("r Retry"), 5_000, "escape returns to chat")
     await tui.type("still usable")
     await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "composer after cancellation")
   },
@@ -1131,7 +1134,8 @@ describe("approvals", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("? bash true") && screen.includes("n deny"))
     await tui.press(key.ctrlS)
-    await tui.until((screen) => screen.includes("u undo") && screen.includes("n deny"))
+    // The approval owns the keys, so the footer advertises it over the panel.
+    await tui.until((screen) => screen.includes("Asked: run") && screen.includes("n Deny"))
     await tui.press("n")
     await Bun.sleep(600)
     expect(tui.screen()).not.toContain("? bash true")

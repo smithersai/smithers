@@ -1608,6 +1608,13 @@ export function App(props: AppProps) {
   )
   const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
   const footerContext = keyContext()
+  const footerHints = footerContext === "panel" && panel !== undefined
+    ? Keys.panelHints({
+      worker: surface.startsWith("tab:") || surface.startsWith("flow:"),
+      undo: surface === "summary" || surface.startsWith("tab:"),
+      action: panel.rows[Math.max(0, Math.min(navigation.selected, panel.rows.length - 1))]?.action?.label
+    })
+    : Keys.hintsFor(footerContext)
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
@@ -1647,9 +1654,6 @@ export function App(props: AppProps) {
               navigation={navigation}
               height={dimensions.height - 10}
               width={width}
-              focused={panelFocus}
-              worker={surface.startsWith("tab:") || surface.startsWith("flow:")}
-              undo={surface === "summary" || surface.startsWith("tab:")}
               scrollRef={panelScroll}
             />
           ) :
@@ -1838,7 +1842,7 @@ export function App(props: AppProps) {
                   </span>
                 )}
             </text>
-            <View.KeyHints bindings={Keys.hintsFor(footerContext)} />
+            <View.KeyHints bindings={footerHints} />
           </box>
           <text wrapMode="none" style={{ flexShrink: 0 }}>
             {transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
