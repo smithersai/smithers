@@ -709,6 +709,7 @@ exit 0
 }
 
 func TestHandlerCover_UnitStatus(t *testing.T) {
+	handlerCovSetPathWithCommands(t, map[string]string{"systemctl": "exit 7\n"})
 	h := NewHandler(time.Hour)
 	_, err := h.handleUnitStatus(context.Background(), &UnitStatusRequest{})
 	if err == nil || !strings.Contains(err.Error(), "name is required") {
@@ -749,12 +750,13 @@ exit 7
 }
 
 func TestHandlerCover_TailJournal(t *testing.T) {
+	handlerCovSetPathWithCommands(t, map[string]string{"journalctl": "printf 'journal unavailable' >&2\nexit 7\n"})
 	h := NewHandler(time.Hour)
 	_, err := h.handleTailJournal(context.Background(), &TailJournalRequest{})
 	if err == nil || !strings.Contains(err.Error(), "unit is required") {
 		t.Fatalf("missing unit err = %v", err)
 	}
-	// Default line count (Lines<=0 -> 100); journalctl absent -> failure.
+	// Default line count (Lines<=0 -> 100); journalctl refuses the request.
 	_, err = h.handleTailJournal(context.Background(), &TailJournalRequest{Unit: "cover.service"})
 	if err == nil || !strings.Contains(err.Error(), "journalctl failed") {
 		t.Fatalf("default lines err = %v, want journalctl failed", err)
@@ -1174,10 +1176,14 @@ func TestHandlerCover_HandleRequest_SuccessDispatch(t *testing.T) {
 	}
 }
 
-// Dispatch the methods whose handlers return an error on this platform (missing
-// binaries or an unwritable unit path) and confirm HandleRequest surfaces the
+// Dispatch failing handlers with deterministic command refusals and confirm HandleRequest surfaces the
 // error with the backfilled internal code.
 func TestHandlerCover_HandleRequest_ErrorDispatch(t *testing.T) {
+	handlerCovSetPathWithCommands(t, map[string]string{
+		"systemctl":   "exit 7\n",
+		"systemd-run": "exit 7\n",
+		"journalctl":  "printf 'journal unavailable' >&2\nexit 7\n",
+	})
 	h := NewHandler(time.Hour)
 	cases := []struct {
 		name   string
