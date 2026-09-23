@@ -393,6 +393,27 @@ export const callFailureHint: Readonly<Record<CallFailureCode, string>> = Object
 })
 
 /**
+ * Which version of the live tree a sealed call reads; see `Call.epoch`.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export const TreeEpoch = Schema.Struct({
+  /** Earlier frames of this run that changed the workspace. */
+  frames: NonNegativeSafeInt,
+  /** Calls of this frame that may write, issued before this one. */
+  calls: NonNegativeSafeInt
+})
+
+/**
+ * Which version of the live tree a sealed call reads; see `Call.epoch`.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export type TreeEpoch = typeof TreeEpoch.Type
+
+/**
  * The complete identity of one flow call made inside one cell.
  *
  * Identity is what makes a mid-cell crash replayable. Re-executing the cell
@@ -460,6 +481,25 @@ export class Call extends Schema.Class<Call>("flows/harness/Cell/Call")({
    */
   at: Schema.optional(Schema.String),
   /**
+   * Which version of the live tree a sealed reading is taken against.
+   *
+   * A sealed call is content-addressed on what it asked, and "the same path
+   * against the tree as it stands" is the same question only until something
+   * has written to the tree. Without this, the second of two identical reads
+   * around a write replays the first's answer and a run reports the pre-edit
+   * text after its own edit. `frames` is the run's frame clock — the count of
+   * earlier frames that changed the workspace, measured where the host can
+   * measure — and `calls` is how many calls of this frame that may write
+   * were issued before this one. Both are derived from the journaled call
+   * sequence, so a replayed frame derives the same epoch and replays.
+   *
+   * Absent when nothing has written yet, and absent on every call that is not
+   * a sealed reading of the live tree (a checkpoint is immutable, and a
+   * non-sealed call already keys on its ordinal), so every key that existed
+   * before the epoch is byte-identical.
+   */
+  epoch: Schema.optional(TreeEpoch),
+  /**
    * What the resolved declaration says a call to this flow does.
    *
    * Carried on the call rather than looked up later, because the reader of a
@@ -498,6 +538,8 @@ export const callOf = (
     readonly identity: CallIdentity
     /** The checkpoint the cell named, when it named one. */
     readonly at?: string | undefined
+    /** The live tree's version, for a sealed reading taken after a write. */
+    readonly epoch?: TreeEpoch | undefined
   }
 ): Call =>
   new Call({
@@ -508,6 +550,7 @@ export const callOf = (
     placement: descriptor.placement,
     identity: options.identity,
     ...(options.at === undefined ? {} : { at: options.at }),
+    ...(options.epoch === undefined ? {} : { epoch: options.epoch }),
     ...(descriptor.activity === undefined ? {} : { activity: descriptor.activity }),
     ...(descriptor.presentation === undefined ? {} : { presentation: descriptor.presentation })
   })

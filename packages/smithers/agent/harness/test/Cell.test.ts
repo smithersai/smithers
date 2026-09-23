@@ -320,6 +320,14 @@ describe("Cell.callOf and Cell.displayDescriptor", () => {
     expect(built.presentation).toEqual(presentation)
   })
 
+  it("carries the tree epoch it was given and nothing when it was given none", () => {
+    const descriptor = FlowBinding.descriptorOf(declaration, {})
+    const epoch = { frames: 1, calls: 2 }
+
+    expect(Cell.callOf(descriptor, { input: { path: "." }, identity, epoch }).epoch).toEqual(epoch)
+    expect(Cell.callOf(descriptor, { input: { path: "." }, identity }).epoch).toBeUndefined()
+  })
+
   it("carries neither display field when the declaration claimed neither", () => {
     const built = call({})
 

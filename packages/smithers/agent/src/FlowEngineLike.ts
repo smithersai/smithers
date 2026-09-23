@@ -237,6 +237,10 @@ export const callMaterial = (
     // spreads to nothing, so every key that existed before checkpoints is
     // byte-identical.
     ...(call.at === undefined ? {} : { at: call.at }),
+    // Which version of the live tree a sealed reading is taken against. The
+    // controller stamps it only once something has written, so a read before
+    // any write keys as it always did, and one after a write is a new question.
+    ...(call.epoch === undefined ? {} : { epoch: call.epoch }),
     ...(Option.isSome(call.placement) ? { placement: call.placement.value } : {}),
     ...(call.effects.tier === "sealed" ? {} : {
       session: call.identity.session,
@@ -740,8 +744,10 @@ const callKey = (
         declaration: call.identity.declaration,
         input: call.input,
         effects: call.effects,
-        // See `callMaterial`: the tree a call reads is part of what it asked.
+        // See `callMaterial`: the tree a call reads is part of what it asked,
+        // and so is which version of the live tree it stood at.
         ...(call.at === undefined ? {} : { at: call.at }),
+        ...(call.epoch === undefined ? {} : { epoch: call.epoch }),
         ...(Option.isSome(call.placement) ? { placement: call.placement.value } : {}),
         ...(call.effects.tier === "sealed" ? {} : {
           session: call.identity.session,

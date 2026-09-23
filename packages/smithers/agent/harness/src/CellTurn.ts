@@ -1727,6 +1727,15 @@ const budgetMessage = (state: State): string =>
  * exactly the calls the read-only cap watches, so a run whose only edit was
  * refused had its read-only streak cleared by a write that never happened, and
  * the cap stayed silent through the stall it exists to break.
+ *
+ * `tree` counts the calls of this frame that may have written, in issue order.
+ * A sealed reading of the live tree carries that count and the run's frame
+ * clock as its `Cell.Call.epoch`, so a read after a write is a new question and
+ * not a replay of the read before it. Any call that is not sealed counts, not
+ * only one that declared a write: a shell command declares nothing and writes
+ * wherever it likes. The count advances when the call is issued, so a replayed
+ * frame — which issues the same calls in the same order — derives the same
+ * epochs and keys the same boundaries.
  */
 const callHandler = (
   state: State,
@@ -1735,6 +1744,7 @@ const callHandler = (
   engine: EngineLike.EngineLike,
   ledger: Array<TruncatedOutput.Capture>,
   performed: Set<number>,
+  tree: { writes: number },
   callMs: number,
   replaying: boolean,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
@@ -1792,6 +1802,10 @@ const callHandler = (
         )
       }
     }
+    const sealed = descriptor.effects.tier === "sealed"
+    const epoch = sealed && at === undefined && (state.mutations > 0 || tree.writes > 0)
+      ? { frames: state.mutations, calls: tree.writes }
+      : undefined
     const call = Cell.callOf(descriptor, {
       input: invocation.input,
       identity: new Cell.CallIdentity({
@@ -1802,9 +1816,11 @@ const callHandler = (
         declaration: Cell.declarationDigest(descriptor),
         layers: [...new Set(state.layers)].sort()
       }),
-      ...(at === undefined ? {} : { at })
+      ...(at === undefined ? {} : { at }),
+      ...(epoch === undefined ? {} : { epoch })
     })
     performed.add(invocation.ordinal)
+    if (!sealed) tree.writes++
     yield* emit(new AgentEvent.CellCallStarted({ eventType: eventType.cellCallStarted, call }))
     const result = yield* issued(
       engine,
@@ -2123,13 +2139,16 @@ const evaluate = (
     const calls: Array<Frame.ObservedCall> = []
     /** Ordinals of the invocations that reached the engine this frame. */
     const performed = new Set<number>()
+    /** Calls of this frame that may have written; see {@link callHandler}. */
+    const tree = { writes: 0 }
     // The per-call ceiling this frame enforces, resolved once. It is applied
     // where the settlement is recorded rather than in the drive loop, so the
     // number a run armed and the number its journal holds are the same one.
     const callMs = Sandbox.withDefaults(sandbox.capabilities, input.limits).callMs ?? Sandbox.defaultLimits.callMs
     let replaying = false
-    const observing: Sandbox.Handler = (invocation) =>
-      callHandler(state, cell, descriptors, engine, captures, performed, callMs, replaying, emit)(invocation).pipe(
+    const observing: Sandbox.Handler = (invocation) => {
+      const handle = callHandler(state, cell, descriptors, engine, captures, performed, tree, callMs, replaying, emit)
+      return handle(invocation).pipe(
         Effect.tap((result) =>
           Effect.sync(() => {
             const rendered = result.outcome === "success"
@@ -2173,6 +2192,7 @@ const evaluate = (
           })
         )
       )
+    }
     // One realm per run. It is the caller's scoped resource, so the loop hands
     // it the cell and the call handler and nothing else about how a frame runs
     // depends on where the realm came from.

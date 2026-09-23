@@ -435,6 +435,94 @@ ctx.done(page.content + "|" + ran.stdout + "|" + kept.key)`
     expect(requests[0]).toContain("remember")
   })
 
+  it("re-reads a file a write changed inside one cell instead of replaying the sealed read", async () => {
+    // A sealed call is content-addressed, and `read` is sealed: the same path
+    // asked twice is one boundary. But "the same path against the tree as it
+    // stands" is a different question once a write has settled in between, and
+    // a run that answers it from the record reports the pre-edit text after
+    // its own edit. The key therefore moves with the run's write epoch.
+    const filesystem = files({})
+    const outcome = await drive(
+      collect({
+        flows: [StandardFlows.filesystem(filesystem.services)],
+        cells: [
+          `await ctx.call("write", { path: "/repo/f.txt", content: "one" })
+const a = await ctx.call("read", { path: "/repo/f.txt" })
+await ctx.call("write", { path: "/repo/f.txt", content: "two" })
+const b = await ctx.call("read", { path: "/repo/f.txt" })
+ctx.done(JSON.stringify([a.content, b.content]))`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(["write", "read", "write", "read"])
+    const contents = settled.flatMap((event) =>
+      event.flowName === "read" ? [(event.result.value as { readonly content: string }).content] : []
+    )
+    expect(contents).toEqual(["one", "two"])
+  })
+
+  it("re-reads a file an earlier frame changed instead of replaying the sealed read", async () => {
+    // The same defect across frames: frame 0 reads then writes, frame 1 reads
+    // again. The frame clock the sufficiency control already keeps says the
+    // tree moved, so the second frame's read keys differently.
+    const filesystem = files({ "/repo/f.txt": "one" })
+    const outcome = await drive(
+      collect({
+        flows: [StandardFlows.filesystem(filesystem.services)],
+        cells: [
+          `const a = await ctx.call("read", { path: "/repo/f.txt" })
+await ctx.call("write", { path: "/repo/f.txt", content: "two" })`,
+          `const b = await ctx.call("read", { path: "/repo/f.txt" })
+ctx.done(b.content)`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(["read", "write", "read"])
+    expect((settled[2]?.result.value as { readonly content: string }).content).toBe("two")
+  })
+
+  it("serves two identical sealed reads with no write between them from one boundary", async () => {
+    // Caching is the point of sealed: the second read never reaches the
+    // filesystem, so a stub that counts reads sees one.
+    const filesystem = files({ "/repo/f.txt": "one" })
+    let reads = 0
+    const counting = Context.make(
+      FileSystem.FileSystem,
+      {
+        ...Context.get(filesystem.services, FileSystem.FileSystem),
+        readFile: (path: string) => {
+          reads++
+          return Context.get(filesystem.services, FileSystem.FileSystem).readFile(path)
+        }
+      } as FileSystem.FileSystem
+    ).pipe((context) => Context.merge(context, pathServices))
+    const outcome = await drive(
+      collect({
+        flows: [StandardFlows.filesystem(counting)],
+        cells: [
+          `const a = await ctx.call("read", { path: "/repo/f.txt" })
+const b = await ctx.call("read", { path: "/repo/f.txt" })
+ctx.done(JSON.stringify([a.content, b.content]))`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(["read", "read"])
+    expect(settled.map((event) => (event.result.value as { readonly content: string }).content)).toEqual([
+      "one",
+      "one"
+    ])
+    expect(reads).toBe(1)
+  })
+
   it("edits, patches, lists, searches, and recalls through the same one call boundary", async () => {
     // The five filesystem flows beyond `read` and `write` and the second memory
     // flow are the ones a composition can lose silently: a binding array is
