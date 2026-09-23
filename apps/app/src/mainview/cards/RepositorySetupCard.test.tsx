@@ -31,6 +31,28 @@ const mount = (card = makeCard(), signedOut = false) => {
   return { host, calls, render, button, close: () => { flushSync(() => root.unmount()); host.remove() } }
 }
 
+test("pending prompt edits survive blur and older projections, then accept later external edits", () => {
+  const card = makeCard()
+  card.payload.view = "prompts"
+  const t = mount(card)
+  try {
+    const field = t.host.querySelector<HTMLTextAreaElement>("textarea")!
+    field.focus()
+    field.value = "Complete prompt"
+    field.dispatchEvent(new Event("input", { bubbles: true }))
+    field.blur()
+    card.payload.draft.steps[0]!.prompt = "Complete"
+    t.render(card)
+    expect(field.value).toBe("Complete prompt")
+    expect(t.calls).toEqual([["setup.configure", flowArgs("setup.configure", { cardId: card.id, field: `step.${card.payload.draft.steps[0]!.id}.prompt`, value: "Complete prompt" })]])
+    card.payload.draft.steps[0]!.prompt = "Complete prompt"
+    t.render(card)
+    card.payload.draft.steps[0]!.prompt = "New external edit"
+    t.render(card)
+    expect(field.value).toBe("New external edit")
+  } finally { t.close() }
+})
+
 test("next chore execution shows the recorded UTC date, never an unenabled, paused or edited schedule", () => {
   const card = makeCard("chores"), t = mount(card)
   try {

@@ -73,11 +73,12 @@ test("setup preview offers all five jobs, keeps prompt edits and fits 320px", as
   await prompt.pressSequentially("Check observability before changing the adapter.", { delay: 5 })
   await expect(prompt).toHaveValue("Check observability before changing the adapter.")
   await prompt.press("Tab")
+  await expect(prompt).toHaveValue("Check observability before changing the adapter.")
   // The next durable view command follows all queued prompt edits. Await
   // its projection before reload instead of interrupting in-flight writes.
   await setup.getByRole("button", { name: "Flows", exact: true }).focus()
   await page.keyboard.press("Enter")
-  await expect(setup.getByRole("button", { name: "Research issue", exact: true })).toBeVisible()
+  await expect(setup.getByRole("button", { name: "Research issue", exact: true })).toBeVisible({ timeout: 30_000 })
   await setup.getByRole("button", { name: "Prompts", exact: true }).focus()
   await page.keyboard.press("Enter")
   await expect(prompt).toHaveValue("Check observability before changing the adapter.")

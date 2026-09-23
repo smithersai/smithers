@@ -19,11 +19,24 @@ const jobActions: Record<RepositoryJob, { trial: string; enable: string; update:
   chores: { trial: "Run test chore", enable: "Enable chore", update: "Update chore", title: "Test chore", body: "Maintenance task", scope: "This test chore only" }
 }
 
-// Every input dispatches the draft immediately. Delayed durable projections
-// must not replay older text into an editor while the person is still typing.
-const editor = (value: string | number) => ({ defaultValue: value, ref: (node: HTMLInputElement | HTMLTextAreaElement | null) => {
-  if (node && node.ownerDocument.activeElement !== node && node.value !== String(value)) node.value = String(value)
-} })
+// Keep the most recent edit until its durable projection arrives, including
+// after blur. Earlier writes in the queue are not edits from another source.
+const pendingEditorValues = new WeakMap<HTMLInputElement | HTMLTextAreaElement, string>()
+const editor = (value: string | number) => ({
+  defaultValue: value,
+  onInputCapture: (event: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
+    pendingEditorValues.set(event.currentTarget, event.currentTarget.value)
+  },
+  ref: (node: HTMLInputElement | HTMLTextAreaElement | null) => {
+    if (!node) return
+    const pending = pendingEditorValues.get(node)
+    if (pending !== undefined) {
+      if (String(value) !== pending) return
+      pendingEditorValues.delete(node)
+    }
+    if (node.ownerDocument.activeElement !== node && node.value !== String(value)) node.value = String(value)
+  }
+})
 
 /** Settings and chat edit the same persisted candidate; only host receipts activate it. */
 export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigured = false }: { card: CardOf<"repository-setup">; onRunCommand: RunCommand; signedOut?: boolean; ciConfigured?: boolean }) {
