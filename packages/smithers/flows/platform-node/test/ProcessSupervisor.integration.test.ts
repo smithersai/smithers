@@ -29,6 +29,10 @@ const fixture = Effect.acquireRelease(
   Effect.sync(() => mkdtempSync(join(tmpdir(), "flows-supervisor-contract-"))),
   (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
 )
+/** Restore instrumentation on Effect interruption as well as ordinary completion. */
+const scopedSpy = <A extends { mockRestore(): void }>(make: () => A) =>
+  Effect.acquireRelease(Effect.sync(make), (spy) => Effect.sync(() => spy.mockRestore()))
+
 const text = (value: string) => Stream.make(new TextEncoder().encode(value))
 const output = (stream: Stream.Stream<Uint8Array, unknown>) => stream.pipe(Stream.decodeText(), Stream.mkString)
 const group = (pid: number) =>
@@ -53,6 +57,22 @@ const beatOf = (path: string): { readonly token: string; readonly pid: number; r
 }
 
 describe.skipIf(process.platform === "win32")("prepared POSIX process contract", () => {
+  it.live("restores control instrumentation after its owning effect is interrupted", () =>
+    Effect.gen(function*() {
+      const original = Control.prototype.write
+      const installed = yield* Deferred.make<void>()
+      const owner = yield* Effect.gen(function*() {
+        yield* scopedSpy(() => vi.spyOn(Control.prototype, "write"))
+        yield* Deferred.succeed(installed, undefined)
+        yield* Effect.never
+      }).pipe(Effect.scoped, Effect.forkChild)
+      yield* Deferred.await(installed)
+      expect(vi.isMockFunction(Control.prototype.write)).toBe(true)
+      yield* Fiber.interrupt(owner)
+      expect(Control.prototype.write).toBe(original)
+      expect(vi.isMockFunction(Control.prototype.write)).toBe(false)
+    }))
+
   for (const operation of ["stdout", "stdin", "custom-output", "custom-input"] as const) {
     it.live(`fails ${operation} when the owner dies before target status instead of hanging on a live target`, () =>
       Effect.gen(function*() {
@@ -335,15 +355,17 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       let ownerExit: Effect.Effect<void> = Effect.die("the owner was not spawned")
       let control: Control | undefined
       const original = Control.prototype.write
-      const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
-        control = this
-        const sent = original.call(this, message)
-        return typeof message === "object" && message !== null && "type" in message && message.type === "stop"
-          ? sent.finally(() => {
-            Effect.runSync(Deferred.succeed(attempted, undefined))
-          })
-          : sent
-      })
+      const writes = yield* scopedSpy(() =>
+        vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+          control = this
+          const sent = original.call(this, message)
+          return typeof message === "object" && message !== null && "type" in message && message.type === "stop"
+            ? sent.finally(() => {
+              Effect.runSync(Deferred.succeed(attempted, undefined))
+            })
+            : sent
+        })
+      )
       const supervised = ContainedSpawner.layer({}, (command, spawn) =>
         ProcessReaper.processLifecycle(command, (owner) =>
           spawn(owner).pipe(Effect.tap((handle) =>
@@ -379,7 +401,7 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
         control?.socket?.resume()
         writes.mockRestore()
       }
-    }))
+    }).pipe(Effect.scoped))
 
   it.live("drains the cleanup receipt when target exit follows an explicit stop", () =>
     Effect.gen(function*() {
@@ -390,16 +412,18 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       const original = Control.prototype.write
       // Observe real socket writes. The target's stdin barrier keeps it alive
       // until the explicit stop is on the wire; no cleanup outcome is replaced.
-      const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
-        control = this
-        if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
-          requests.push(message)
-          return original.call(this, message).then(() => {
-            Effect.runSync(Deferred.succeed(stopped, undefined))
-          })
-        }
-        return original.call(this, message)
-      })
+      const writes = yield* scopedSpy(() =>
+        vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+          control = this
+          if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
+            requests.push(message)
+            return original.call(this, message).then(() => {
+              Effect.runSync(Deferred.succeed(stopped, undefined))
+            })
+          }
+          return original.call(this, message)
+        })
+      )
       try {
         yield* Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
@@ -427,7 +451,7 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       } finally {
         writes.mockRestore()
       }
-    }))
+    }).pipe(Effect.scoped))
 
   it.live("records an actual target signal without inventing an exit code", () =>
     Effect.gen(function*() {
@@ -466,12 +490,14 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
         const requests: Array<unknown> = []
         const original = Control.prototype.write
         // Observe the real wire policy without replacing delivery or outcomes.
-        const writes = vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
-          if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
-            requests.push(message)
-          }
-          return original.call(this, message)
-        })
+        const writes = yield* scopedSpy(() =>
+          vi.spyOn(Control.prototype, "write").mockImplementation(function(this: Control, message) {
+            if (typeof message === "object" && message !== null && "type" in message && message.type === "stop") {
+              requests.push(message)
+            }
+            return original.call(this, message)
+          })
+        )
         let target: number | undefined
         try {
           const raw = yield* ChildProcessSpawner
