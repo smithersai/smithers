@@ -22,7 +22,7 @@ async function fixture() {
   const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
     sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed"; onSnapshot?: () => Promise<void>;
     lostWorkspace?: string; lostGateway?: string; newWorkspace?: string; boundReplacement?: boolean; lostRelay?: boolean;
-    workspaceRefusal?: { status: number; code: string; message: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
+    workspaceRefusal?: { status: number; code: string; message: string }; workspaceRaw?: { status: number; text: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
   const workspaceCalls: Array<{ method: string; path: string; body?: unknown }> = []
   const capabilityCalls: unknown[] = []
   const plans = new Map<string, Record<string, unknown>>()
@@ -57,6 +57,7 @@ async function fixture() {
       }
       workspaceCalls.push({ method: request.method, path: url.pathname, ...(request.method === "POST" ? { body: await request.json() } : {}) })
       if (options.workspaceRefusal) return Response.json(options.workspaceRefusal, { status: options.workspaceRefusal.status })
+      if (options.workspaceRaw) return new Response(options.workspaceRaw.text, { status: options.workspaceRaw.status, headers: { "content-type": "text/html" } })
       if (options.lostWorkspace && url.pathname.endsWith(`/${options.lostWorkspace}`)) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
       // Cloud keeps the deleted workspace's capability binding, so the
       // allocation that would replace it is refused as a conflict.
@@ -179,6 +180,22 @@ test("only typed pending clears a previous selection error; generic conflicts re
   stored = t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as typeof stored
   expect(stored.observationError).toBeUndefined()
   expect(stored.workspaceId).toBeUndefined()
+  expect(t.launched.size).toBe(0)
+})
+
+test("a non-JSON or oversized workspace answer is a visible selection error, not a silent queue", async () => {
+  const t = await fixture()
+  const stored = () => t.durable.gatewayRows("alice").get(`repository-setup:request:${t.input.requestId}`) as { observationError?: string; workspaceId?: string }
+  t.options.workspaceRaw = { status: 502, text: "<html><body>502 Bad Gateway</body></html>" }
+  const response = await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  expect(response.status).toBe(202)
+  expect(stored().observationError).toBe("The repository workspace answered HTTP 502")
+  expect((await t.read()).status).toBe(503)
+  await t.settle()
+  t.options.workspaceRaw = { status: 200, text: "x".repeat(20_000) }
+  await t.durable.runGatewayAlarms()
+  expect(stored().observationError).toBe("Cloud returned an unreadable repository workspace")
+  expect(stored().workspaceId).toBeUndefined()
   expect(t.launched.size).toBe(0)
 })
 

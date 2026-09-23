@@ -38,7 +38,10 @@ const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string 
     if (token.status !== "ok") return yield* Effect.fail(failure(cloudTokenRefusalMessage(token, token.detail)))
     response = yield* call(token.token)
   }
-  const body = recordOf(yield* readBoundedJson(response, 16_000))
+  // A proxy's HTML error page or an empty body still carries the status; only
+  // a 2xx answer must be a readable workspace.
+  const body = recordOf(yield* readBoundedJson(response, 16_000).pipe(Effect.catch(() =>
+    response.ok ? Effect.fail(failure("Cloud returned an unreadable repository workspace")) : Effect.succeed(undefined))))
   // A cold primary is only a candidate. Keep selection pending until Cloud
   // proves its capability or chooses a different workspace within quota.
   if (response.status === 409 && body.code === "repository_workspace_pending") return { status: "pending" } as const
@@ -209,7 +212,8 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
   const requests = yield* SetupRequests
   const record = yield* requests.read(login, requestId)
   if (!record || record.result) return
-  const message = error.message.slice(0, 1000)
+  // An empty message would read as no error and leave the card queued.
+  const message = (error.message || "Cloud did not answer the repository setup").slice(0, 1000)
   if (error._tag !== "SetupExecutionError" || !error.settles) return yield* requests.update(login, record, { ...record, observationError: message })
   const receipt: SetupReceipt = { ...record.receipt, phase: "failed", updatedAt: Date.now(), error: message }
   yield* requests.update(login, record, { ...record, observationError: undefined, receipt,
