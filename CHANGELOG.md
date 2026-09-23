@@ -9,10 +9,12 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2935 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2949 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **chat:** keep the agent timeline within reach in app and TUI ([0f4a43bf55](https://github.com/smithersai/smithers/commit/0f4a43bf55f8f645af4ec1fdba7d01714631e32b))
+- **cli:** add `smthrs tui` and a `smthrs` bin so `npx smthrs tui` opens the TUI ([4a5b31df33](https://github.com/smithersai/smithers/commit/4a5b31df3370024e8ebb77c01ff0810657f312c9))
 - **tui:** undo a Summary row's captured file changes with u ([1c780cc4e0](https://github.com/smithersai/smithers/commit/1c780cc4e00308db70bad380d6a0a68b6997b1a0))
 - **tui:** add /fork to start a new session before an earlier message ([a600ba8aaf](https://github.com/smithersai/smithers/commit/a600ba8aaf1339d96ff88d1f99af01bcf0429997))
 - **tui:** add Ctrl+K search palette over commands, files, rg text, sessions, and worker tabs ([e6e3def5d5](https://github.com/smithersai/smithers/commit/e6e3def5d513560d2e7d7903fef0dc283ad35be7))
@@ -315,6 +317,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **evals:** the plue docker shim carries its own repo, CLI and token ([968d7548b7](https://github.com/smithersai/smithers/commit/968d7548b7269b3e943a3820f9f129d4a70a5949))
+- **app:** clip oversized children to the narrow app shell ([9c2bc14ddc](https://github.com/smithersai/smithers/commit/9c2bc14ddc31a433f344e0386f3e8edcdbc19e90))
 - **evals:** support subscription Codex benchmark lanes ([0c0f69794f](https://github.com/smithersai/smithers/commit/0c0f69794fb12db893ed4ea3845425cb9cfd084b))
 - **app:** keep Chat mode controls reachable by pointer and keyboard ([879dcf3fea](https://github.com/smithersai/smithers/commit/879dcf3feaf2901abbf1f8abd6341a63343e279d))
 - **app:** prepare Chat input before command persistence ([c38583901f](https://github.com/smithersai/smithers/commit/c38583901f5a4cc8db4d1b6be63ff1b8f4bd223e))
@@ -2126,6 +2130,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **site:** sync harness API page for Supervisor ([03b44c8893](https://github.com/smithersai/smithers/commit/03b44c88930978b1a5f0aef00d07985883ef9788))
 - **tui:** describe the current message layout ([f5f8c7576e](https://github.com/smithersai/smithers/commit/f5f8c7576e2dc7572788a1889617f117ccbe9f2d))
 - **site:** re-sync api reference pages from package api.md sources ([cbaf740fbc](https://github.com/smithersai/smithers/commit/cbaf740fbc8f762f18bb9d4f878aaf16176c3dc9))
 - regenerate public copy from its canonical source ([7049f97b58](https://github.com/smithersai/smithers/commit/7049f97b5868538b71325d22a3510fa04d2b9c6b))
@@ -2449,6 +2454,15 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(release):** match Go and Rust cache rehearsal toolchain ([22e656cf71](https://github.com/smithersai/smithers/commit/22e656cf715b08aeb4e3286e320770ff285b5a53))
+- **test(app):** run collaborative Wiki against current cloud and feature contracts ([4d41cb2725](https://github.com/smithersai/smithers/commit/4d41cb27258dafbaec23428350b22d405a88817e))
+- **test(tui):** verify one worker identity across pending tab updates ([83bfbd80a4](https://github.com/smithersai/smithers/commit/83bfbd80a45358c063263dbb9ea94fe95b731362))
+- **test(app):** verify sign-in toast actions through current identity doors ([e043f7ca19](https://github.com/smithersai/smithers/commit/e043f7ca19764b0535e6ddeb87bfed27d088bf4b))
+- **test(app):** exercise current keyboard dictation controls ([0d79446cb8](https://github.com/smithersai/smithers/commit/0d79446cb821a0b3b37ae413501dc568fc731e70))
+- **test(app):** await the boot mark without blocking on skeleton animation ([b49d5e7b13](https://github.com/smithersai/smithers/commit/b49d5e7b135339812de92c3764c496c73e6aaa6c))
+- **test(app):** update setup fixtures and paused configuration checks ([b0ff187c06](https://github.com/smithersai/smithers/commit/b0ff187c06604f2027635e461d55731f941ec8f2))
+- **test(sandbox):** drain replayed stdin after guest write refusal ([e4ccf11610](https://github.com/smithersai/smithers/commit/e4ccf116103129b7729e5c858ea59acfe65c8ddd))
+- **test(app):** use current dismissal control in run and recovery flows ([0cb54d90d6](https://github.com/smithersai/smithers/commit/0cb54d90d6a39d117da2c94cd0bb3e742e3a24fa))
 - **test(release):** stabilize sandbox signal gate and cover atomic helper staging ([79f14061e2](https://github.com/smithersai/smithers/commit/79f14061e26278d368bd1e690736d3df28113df1))
 - **style(docs):** format model and notification API tables ([46b47a4df9](https://github.com/smithersai/smithers/commit/46b47a4df9c3ac68ed85675ec58124ac7efea5b2))
 - **test(app):** align browser fixtures with current cloud and composer contracts ([db42ad1685](https://github.com/smithersai/smithers/commit/db42ad1685d7e462a83b56748a87aa9887654c97))
