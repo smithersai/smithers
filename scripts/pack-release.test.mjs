@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import test from "node:test"
@@ -736,6 +736,39 @@ test("the real staging and tarball retain authored template config and exclude r
     // The import closure beside .smithers is retained too.
     assert.ok(entries.includes("package/template/default/PACKAGE.ts"))
     assert.ok(entries.includes("package/template/default/TOOLS.ts"))
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test("the platform package tarball carries all four native helpers", async () => {
+  const publishedManifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
+  assert.ok(publishedManifest.files.includes("bin/**"))
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-native-"))
+  try {
+    const source = join(directory, "source")
+    const staged = join(directory, "staged")
+    const helpers = join(directory, "helpers")
+    await mkdir(source)
+    const manifest = {
+      name: "@smthrs/platform-node", version: "1.0.0", files: ["bin/**"],
+      publishConfig: { exports: { "./package.json": "./package.json" } }
+    }
+    await writeFile(join(source, "package.json"), JSON.stringify(manifest))
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+      const parent = join(helpers, platform)
+      await mkdir(parent, { recursive: true })
+      const binary = join(parent, "smithers-jj-export")
+      await writeFile(binary, `#!/bin/sh\necho ${platform}\n`)
+      await chmod(binary, 0o755)
+    }
+    await stagePackage(source, staged, manifest, helpers)
+    const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--config.ignore-scripts=true", "--pack-destination", directory], { cwd: staged, encoding: "utf8" }))
+    const file = resolve(directory, packed[0]?.filename ?? packed.filename)
+    const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" }).split("\n")
+    execFileSync("tar", ["-xzf", file, "-C", directory])
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+      assert.ok(entries.includes(`package/bin/${platform}/smithers-jj-export`))
+      assert.ok(statSync(join(directory, "package/bin", platform, "smithers-jj-export")).isFile())
+    }
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

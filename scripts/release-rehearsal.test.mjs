@@ -237,6 +237,7 @@ test("only the re-run guard, candidate preparation and publication select a path
     "Upload product deployment mode matrix receipt",
     "Build all workspaces from clean artifacts",
     "Review declaration API drift",
+    "Retrieve native helpers for npm",
     "Pack and smoke-test release artifacts",
     "Install the supported Node 24 floor",
     "Install certified npm for Node 24",

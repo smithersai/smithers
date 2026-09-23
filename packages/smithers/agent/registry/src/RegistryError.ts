@@ -110,12 +110,21 @@ export const discoveryError = (options: {
   readonly cause?: unknown
 }): DiscoveryError => {
   const module = options.module ?? "Discovery"
+  const reason = typeof options.cause === "object" && options.cause !== null && "reason" in options.cause
+    ? options.cause.reason
+    : undefined
+  const detail = typeof reason === "object" && reason !== null && "description" in reason &&
+      typeof reason.description === "string" && reason.description.includes("smithers-jj-export is missing")
+    ? reason.description
+    : undefined
   return new DiscoveryError({
     code: options.code,
     module,
     method: options.method,
     path: options.path,
-    message: format(options.code, module, options.method, options.description),
+    message: `${format(options.code, module, options.method, options.description)}${
+      detail === undefined ? "" : `: ${detail}`
+    }`,
     cause: options.cause
   })
 }

@@ -1,5 +1,5 @@
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Effect, FileSystem, Layer, Path, Result } from "effect"
+import { Effect, FileSystem, Layer, Path, PlatformError, Result } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Source } from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
@@ -61,6 +61,30 @@ const flowModule = (body: string): Node => ({
 })
 
 describe("Discovery host failures", () => {
+  it("includes a missing native helper fix in its typed read failure", async () => {
+    const cause = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "AtomicFileSystem",
+      method: "exists",
+      description: "smithers-jj-export is missing; set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path"
+    })
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        return yield* Effect.flip(
+          Discovery.make(
+            FileSystem.makeNoop({
+              exists: () => Effect.fail(cause)
+            }),
+            path
+          ).scan({ source: "virtual", root, naming: "path" })
+        )
+      }).pipe(Effect.provide(NodePath.layer))
+    )
+    expect(error).toMatchObject({ code: "read_failed", cause })
+    expect(error.message).toContain("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY")
+  })
+
   it("fails with invalid_root when the source root is not a directory", async () => {
     const error = await scanError(tree({ [root]: { kind: "file", contents: "" } }))
 

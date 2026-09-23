@@ -68,8 +68,8 @@ const phase = async (name, work) => {
     console.log(JSON.stringify({ smokePhase: name, event: "end", at: new Date().toISOString(), durationMs: performance.now() - started }))
   }
 }
-const runQuietly = (command, args, cwd) => phase(
-  `probe: ${[command, ...args].join(" ")}`, () => captureProcess(command, args, cwd))
+const runQuietly = (command, args, cwd, options) => phase(
+  `probe: ${[command, ...args].join(" ")}`, () => captureProcess(command, args, cwd, options))
 
 const run = (command, args, cwd) => phase(`command: ${[command, ...args].join(" ")}`, () =>
   new Promise((resolveRun, reject) => {
@@ -251,8 +251,16 @@ try {
     if (!result.ok || !result.output.includes(version)) throw new Error(`${binary} --version failed: ${result.output}`)
   }
   const cli = join(smokeRoot, "node_modules/.bin/smthrs")
+  const nativePackage = join(smokeRoot, "node_modules/@smthrs/platform-node")
+  for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+    const binary = join(nativePackage, "bin", platform, "smithers-jj-export")
+    const info = await stat(binary)
+    if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)
+  }
+  const unconfiguredEnv = { ...process.env }
+  delete unconfiguredEnv.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
   for (const args of [["init", "release-smoke", "--json"], ["targets", "--json"], ["flow", "list", "--json"]]) {
-    const result = await runQuietly(cli, args, smokeRoot)
+    const result = await runQuietly(cli, args, smokeRoot, { env: unconfiguredEnv })
     if (!result.ok) throw new Error(`Installed CLI ${args.join(" ")} failed: ${result.output}`)
   }
   console.log("CLI smoke ok: packaged binaries, workspace initialization, target loading, and flow discovery")

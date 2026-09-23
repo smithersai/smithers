@@ -46,6 +46,7 @@
     "./ScopedProcess": "./src/ScopedProcess.ts"
   },
   "files": [
+    "bin/**",
     "src/**/*.ts",
     "dist/**/*.js",
     "dist/**/*.js.map",

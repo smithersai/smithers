@@ -44,6 +44,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  native-helper:
+    name: native helper (${{ matrix.platform }})
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-15-intel
+            platform: darwin-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - name: Build helper
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
+          mkdir -p "$RUNNER_TEMP/native-helper"
+          install -m 0755 target/release/smithers-jj-export "$RUNNER_TEMP/native-helper/smithers-jj-export"
+        shell: bash
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-helper-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-helper/smithers-jj-export
   native-mode-matrix:
     name: packaged native topology and persistence
     runs-on: macos-latest
@@ -107,6 +134,7 @@ jobs:
   publish:
     name: validate, build, and publish
     runs-on: ubuntu-latest
+    needs: native-helper
     # npm libraries have their own source, package, and installed-consumer gates.
     # Keep the private app's native matrix visible without blocking that train.
     timeout-minutes: 120
@@ -615,6 +643,19 @@ jobs:
       - name: Review declaration API drift
         if: env.CANDIDATE_RUN_ID == ''
         run: node scripts/check-api-baseline.mjs
+      - name: Retrieve native helpers for npm
+        if: env.CANDIDATE_RUN_ID == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/smithers-native/linux-x64"
+          install -m 0755 "$RUNNER_TEMP/smithers-native/smithers-jj-export" "$RUNNER_TEMP/smithers-native/linux-x64/smithers-jj-export"
+          for platform in darwin-arm64 darwin-x64 linux-arm64; do
+            mkdir -p "$RUNNER_TEMP/smithers-native/$platform"
+            gh run download "$GITHUB_RUN_ID" --name "native-helper-$platform" --dir "$RUNNER_TEMP/smithers-native/$platform"
+            chmod 0755 "$RUNNER_TEMP/smithers-native/$platform/smithers-jj-export"
+          done
+        shell: bash
       # Pack from staging manifests whose exports point at built artifacts.
       # Repository manifests retain Effect's source-first export shape.
       - name: Pack and smoke-test release artifacts
@@ -622,6 +663,7 @@ jobs:
         env:
           PACK_DIR: ${{ runner.temp }}/release-packs
           SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/release-smoke-evidence
+          SMITHERS_NATIVE_HELPERS_DIR: ${{ runner.temp }}/smithers-native
         run: |
           test "$(node --version)" = 'v22.19.0'
           test "$(npm --version)" = '11.16.0'

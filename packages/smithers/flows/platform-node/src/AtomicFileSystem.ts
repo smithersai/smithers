@@ -8,13 +8,13 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Layer, PlatformError, Semaphore } from "effect"
 import { availableParallelism } from "node:os"
+import { packageRoot, resolveDefaultExecutable } from "./internal/AtomicFileSystemExecutable.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 
 /**
- * The default absolute path to the packaged helper. It is a fixed
- * absolute path and never a `PATH` lookup, so a helper planted in the working
- * directory or on an injected `PATH` cannot be selected.
+ * The legacy system installation path, used after package and checkout paths.
+ * Helper selection never consults `PATH` or the process working directory.
  *
  * @since 0.1.0
  * @category constants
@@ -265,10 +265,10 @@ const executeFramed = (options: Options, resolved: Settings | { readonly invalid
       }
       let executable: string
       try {
-        executable = Transport.usableExecutable(
-          options.executable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ?? defaultExecutable,
-          request.boundaryRoot
-        )
+        const configured = options.executable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+        executable = configured === undefined
+          ? resolveDefaultExecutable(packageRoot, request.boundaryRoot, defaultExecutable)
+          : Transport.usableExecutable(configured, request.boundaryRoot)
       } catch (cause) {
         return Effect.fail(Protocol.failure(request, cause))
       }

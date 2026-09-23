@@ -478,8 +478,17 @@ export const copyFilter = (packageRoot, manifest) => (source) => {
 }
 
 /** Stages the exact publication tree; exported for tarball-level regression fixtures. */
-export const stagePackage = async (packageRoot, stagedPackage, manifest) => {
+export const stagePackage = async (packageRoot, stagedPackage, manifest, nativeHelpersRoot = process.env.SMITHERS_NATIVE_HELPERS_DIR) => {
   await cp(packageRoot, stagedPackage, { recursive: true, filter: copyFilter(packageRoot, manifest) })
+  if (manifest.name === "@smthrs/platform-node" && nativeHelpersRoot) {
+    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+      const source = join(nativeHelpersRoot, platform, "smithers-jj-export")
+      await access(source)
+      const destination = join(stagedPackage, "bin", platform)
+      await mkdir(destination, { recursive: true })
+      await cp(source, join(destination, "smithers-jj-export"))
+    }
+  }
   await writeFile(join(stagedPackage, "package.json"), `${JSON.stringify(publicationManifest(manifest), null, 2)}\n`)
 }
 
