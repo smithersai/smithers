@@ -26,6 +26,7 @@
  * call is an absent answer, not a fact.
  */
 import { createCloudClient } from "./CloudClient"
+import { captureCloudOwner } from "./SeamContext"
 import type { SeamContext } from "./SeamContext"
 
 export interface RepositoriesSeam {
@@ -319,7 +320,9 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
       }
     },
     createRepository: async (name) => {
+      const currentOwner = captureCloudOwner(ctx, false)
       const answer = await send("POST", "/user/repos", { name, private: true, auto_init: true }, "repository creation")
+      if (!currentOwner()) return "The account or tutorial changed; create the repository again."
       if ("error" in answer) return answer.error
       const repo = parseRepo(answer.body)
       if (repo === null) return "The backend returned an unreadable repository."

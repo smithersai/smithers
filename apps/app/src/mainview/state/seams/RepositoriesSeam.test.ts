@@ -303,6 +303,59 @@ describe("repositories seam", () => {
     })
   })
 
+  test.each(["sign-out", "account switch", "sign-out then same account"] as const)(
+    "a pending create cannot restore the old account's private inventory after %s",
+    async (change) => {
+      let finish!: (response: Response) => void
+      const { store, seam } = await harness((path) => path === "api/user/repos"
+        ? new Promise<Response>((resolve) => { finish = resolve })
+        : json(404, {}))
+      const identity = (state: "signed-in" | "signed-out", login: string | null) => store.dispatch({
+        type: "identity.session.loaded", actor: "system", state, login,
+        allowlisted: state === "signed-in", admin: false, scopesPlain: null
+      }).isPersisted.promise
+
+      await identity("signed-in", "alice")
+      const pending = seam.createRepository("private-project")
+      expect(typeof finish).toBe("function")
+      await identity("signed-out", null)
+      if (change === "account switch") {
+        await identity("signed-in", "bob")
+        await store.dispatch({
+          type: "repositories.loaded", actor: "system",
+          repositories: [{ id: "bob/project", org: "bob", name: "project", ownerKind: "user", head: null }]
+        }).isPersisted.promise
+      }
+      if (change === "sign-out then same account") await identity("signed-in", "alice")
+      const expected = change === "account switch" ? ["bob/project"] : []
+      expect(repos(store).map((repo) => repo.id)).toEqual(expected)
+
+      finish(json(201, { owner: "alice", name: "private-project", full_name: "alice/private-project", default_bookmark: "main" }))
+      await expect(pending).resolves.toBe("The account or tutorial changed; create the repository again.")
+      expect(repos(store).map((repo) => repo.id)).toEqual(expected)
+    }
+  )
+
+  test("a pending create still commits after a same-account session refresh", async () => {
+    let finish!: (response: Response) => void
+    const { store, seam } = await harness((path) => path === "api/user/repos"
+      ? new Promise<Response>((resolve) => { finish = resolve })
+      : json(404, {}))
+    const signIn = () => store.dispatch({
+      type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice",
+      allowlisted: true, admin: false, scopesPlain: null
+    }).isPersisted.promise
+
+    await signIn()
+    const pending = seam.createRepository("private-project")
+    expect(typeof finish).toBe("function")
+    await signIn()
+    finish(json(201, { owner: "alice", name: "private-project", full_name: "alice/private-project", default_bookmark: "main" }))
+
+    await expect(pending).resolves.toEqual({ fullName: "alice/private-project" })
+    expect(repos(store).map((repo) => repo.id)).toEqual(["alice/private-project"])
+  })
+
   test("a 300-repo inventory never has more than 6 bookmarks reads in flight", async () => {
     const inventory = Array.from({ length: 300 }, (_, index) => ({
       owner: "org",
