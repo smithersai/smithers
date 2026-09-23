@@ -14,10 +14,11 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, parse, resolve, sep } from "node:path"
 import { copyFixture, fixture, hashTree, nodeLayer } from "../fixtures/helpers.ts"
 
 const decode = Schema.decodeUnknownSync(Options.MigrateOptions)
+const exampleRoot = resolve("/w")
 
 const temporaries: Array<string> = []
 const scratch = (name: string): string => {
@@ -62,34 +63,42 @@ describe("Options.relativePathIssue", () => {
 
 describe("Options.layoutIssue", () => {
   it("requires a normalized absolute root", () => {
+    const root = resolve("/work/project")
     expect(Options.layoutIssue({ root: "relative/project" })).toMatch(/absolute/)
-    expect(Options.layoutIssue({ root: "/work/../project" })).toMatch(/normalized/)
-    expect(Options.layoutIssue({ root: "/work/project/" })).toMatch(/normalized/)
-    expect(Options.layoutIssue({ root: "/work/pro\0ject" })).toMatch(/NUL/)
-    expect(Options.layoutIssue({ root: "/work/project" })).toBeUndefined()
-    expect(Options.layoutIssue({ root: "/" })).toBeUndefined()
+    expect(Options.layoutIssue({ root: `${root}${sep}..${sep}project` })).toMatch(/normalized/)
+    expect(Options.layoutIssue({ root: `${root}${sep}` })).toMatch(/normalized/)
+    expect(Options.layoutIssue({ root: join(root, "pro\0ject") })).toMatch(/NUL/)
+    expect(Options.layoutIssue({ root })).toBeUndefined()
+    expect(Options.layoutIssue({ root: parse(root).root })).toBeUndefined()
   })
 
   it("refuses a report directory and a flows directory that overlap, in either direction and in either normalization", () => {
-    expect(Options.layoutIssue({ root: "/w", reportDir: "flows", layout: { flowsDir: "flows" } })).toMatch(/overlap/)
-    expect(Options.layoutIssue({ root: "/w", reportDir: "flows/report" })).toMatch(/overlap/)
-    expect(Options.layoutIssue({ root: "/w", layout: { flowsDir: ".smithers-migrate/flows" } })).toMatch(/overlap/)
-    expect(Options.layoutIssue({ root: "/w", reportDir: "audit", layout: { flowsDir: ".smithers-migrate" } }))
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "flows", layout: { flowsDir: "flows" } })).toMatch(
+      /overlap/
+    )
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "flows/report" })).toMatch(/overlap/)
+    expect(Options.layoutIssue({ root: exampleRoot, layout: { flowsDir: ".smithers-migrate/flows" } })).toMatch(
+      /overlap/
+    )
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "audit", layout: { flowsDir: ".smithers-migrate" } }))
       .toMatch(/fixed migration state/)
-    expect(Options.layoutIssue({ root: "/w", reportDir: "audit", layout: { flowsDir: ".smithers-migrate/flows" } }))
+    expect(
+      Options.layoutIssue({ root: exampleRoot, reportDir: "audit", layout: { flowsDir: ".smithers-migrate/flows" } })
+    )
       .toMatch(/fixed migration state/)
     // The same directory name spelled with a composed and a decomposed é.
-    expect(Options.layoutIssue({ root: "/w", reportDir: "caf\u00e9", layout: { flowsDir: "cafe\u0301/flows" } }))
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "caf\u00e9", layout: { flowsDir: "cafe\u0301/flows" } }))
       .toMatch(/overlap/)
-    expect(Options.layoutIssue({ root: "/w", reportDir: "audit", layout: { flowsDir: "src/flows" } })).toBeUndefined()
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "audit", layout: { flowsDir: "src/flows" } }))
+      .toBeUndefined()
   })
 
   it("is what the schema refuses, so a payload that decodes is one the flow may join paths onto", () => {
-    expect(() => decode({ root: "/w", mode: "plan", reportDir: "../out" })).toThrow(/"\." or "\.\."/)
+    expect(() => decode({ root: exampleRoot, mode: "plan", reportDir: "../out" })).toThrow(/"\." or "\.\."/)
     expect(() => decode({ root: "w", mode: "plan" })).toThrow(/absolute/)
-    expect(() => decode({ root: "/w", mode: "plan", layout: { flowsDir: "/flows" } })).toThrow(/absolute/)
-    expect(decode({ root: "/w", mode: "plan", reportDir: "audit", layout: { flowsDir: "src/flows" } })).toEqual({
-      root: "/w",
+    expect(() => decode({ root: exampleRoot, mode: "plan", layout: { flowsDir: "/flows" } })).toThrow(/absolute/)
+    expect(decode({ root: exampleRoot, mode: "plan", reportDir: "audit", layout: { flowsDir: "src/flows" } })).toEqual({
+      root: exampleRoot,
       mode: "plan",
       reportDir: "audit",
       layout: { flowsDir: "src/flows" }

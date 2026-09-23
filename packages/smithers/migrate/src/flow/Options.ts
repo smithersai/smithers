@@ -14,7 +14,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
-import { isAbsolute, normalize, sep } from "node:path"
+import { isAbsolute, normalize, parse, sep } from "node:path"
 import * as Fs from "../internal/Fs.ts"
 import { make, type MigrateError } from "../MigrateError.ts"
 
@@ -241,7 +241,7 @@ export const layoutIssue = (options: {
   const root = options.root
   if (root.includes("\0")) return "root must not contain a NUL byte"
   if (!isAbsolute(root)) return `root must be an absolute path ("${root}")`
-  if (normalize(root) !== root || (root.length > 1 && root.endsWith(sep))) {
+  if (normalize(root) !== root || (root !== parse(root).root && root.endsWith(sep))) {
     return `root must be a normalized absolute path ("${root}")`
   }
   const report = options.reportDir ?? defaultReportDir
