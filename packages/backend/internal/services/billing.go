@@ -416,7 +416,7 @@ func (s *BillingService) bootstrapCatalog() {
 	}
 
 	maxLimits := proLimits
-	maxLimits.ConcurrentSandboxes = 20
+	maxLimits.ConcurrentSandboxes = 64
 	maxLimits.SandboxIdleTimeoutSecs = 0
 	s.checkoutPlans[BillingOwnerTypeUser] = map[string]billingPlanDefinition{}
 	s.checkoutPlans[BillingOwnerTypeOrg] = map[string]billingPlanDefinition{}
@@ -2239,12 +2239,19 @@ func (s *BillingService) planForSubscription(ownerType string, subscription *db.
 	if !s.subscriptionGrantsPaidAccess(subscription) {
 		return s.defaultPlan(ownerType)
 	}
-	plan := s.planFromPrice(ownerType, subscription.StripePriceID, subscription.BillingInterval)
+	interval := normalizeBillingInterval(subscription.BillingInterval)
+	// Legacy/manual paid rows may omit the interval. User-tier catalog entries
+	// are monthly by default, so resolve those rows against the monthly limits
+	// instead of silently falling back to the generic paid-plan defaults.
+	if interval == "" {
+		interval = BillingIntervalMonthly
+	}
+	plan := s.planFromPrice(ownerType, subscription.StripePriceID, interval)
 	if strings.TrimSpace(subscription.PlanKey) != "" {
 		plan.Key = subscription.PlanKey
 		// The persisted key survives price-ID rotation. Keep sandbox entitlements
 		// attached to that tier even if its former Stripe price is no longer configured.
-		catalog, ok := s.checkoutPlans[ownerType][subscription.PlanKey+":"+normalizeBillingInterval(subscription.BillingInterval)]
+		catalog, ok := s.checkoutPlans[ownerType][subscription.PlanKey+":"+interval]
 		if ok {
 			plan.Limits.ConcurrentSandboxes = catalog.Limits.ConcurrentSandboxes
 			plan.Limits.SandboxIdleTimeoutSecs = catalog.Limits.SandboxIdleTimeoutSecs
@@ -2259,7 +2266,7 @@ func (s *BillingService) planForSubscription(ownerType string, subscription *db.
 		}
 	}
 	if plan.Interval == "" {
-		plan.Interval = subscription.BillingInterval
+		plan.Interval = interval
 	}
 	return plan
 }

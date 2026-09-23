@@ -93,7 +93,7 @@ func authorizeSandboxEntitlement(entitlement SandboxEntitlement) error {
 	case BillingPlanFree:
 		upgrade, capacity = BillingPlanPro, 3
 	case BillingPlanPro, BillingPlanPersonal, BillingPlanTeam, BillingPlanEnterprise, BillingPlanCustom:
-		upgrade, capacity = BillingPlanMax, 20
+		upgrade, capacity = BillingPlanMax, 64
 	}
 	if entitlement.ConcurrentSandboxes < unlimitedBillingQuantity && entitlement.ConcurrentInUse >= entitlement.ConcurrentSandboxes {
 		noun := "sandboxes"

@@ -42,7 +42,7 @@ func TestBillingService_AuthorizeSandboxStart(t *testing.T) {
 		{name: "hours boundary below", plan: "free", seconds: 14399},
 		{name: "paid hours unlimited", plan: "pro", seconds: 999999},
 		{name: "pro at cap", plan: "pro", live: 3, kind: "concurrent_sandboxes", upgrade: "max"},
-		{name: "max at cap", plan: "max", live: 20, kind: "concurrent_sandboxes"},
+		{name: "max at cap", plan: "max", live: 64, kind: "concurrent_sandboxes"},
 		{name: "live error", plan: "free", dbError: "live"},
 		{name: "agent error", plan: "free", dbError: "agent"},
 		{name: "usage error", plan: "free", dbError: "usage"},
@@ -104,6 +104,18 @@ func TestBillingService_AuthorizeSandboxStart(t *testing.T) {
 		var svc *BillingService
 		require.NoError(t, svc.AuthorizeSandboxStart(context.Background(), 7))
 	})
+}
+
+func TestBillingService_MaxSubscriptionWithoutIntervalUsesMaxSandboxLimits(t *testing.T) {
+	svc, q := sandboxTestBilling(BillingPlanMax)
+	q.getLatestSubscriptionFn = func(context.Context, int64) (db.BillingSubscription, error) {
+		return db.BillingSubscription{PlanKey: BillingPlanMax, Status: "active"}, nil
+	}
+
+	entitlement, err := svc.SandboxEntitlement(context.Background(), 7)
+	require.NoError(t, err)
+	assert.Equal(t, int64(64), entitlement.ConcurrentSandboxes)
+	assert.Zero(t, entitlement.IdleTimeoutSecs)
 }
 
 func TestBillingService_CountedSandboxResume(t *testing.T) {
@@ -201,6 +213,7 @@ func TestBillingService_PlansAndMaxCheckout(t *testing.T) {
 	}
 	assert.Equal(t, int64(5000), plans.Plans[1].PriceCents)
 	assert.Equal(t, int64(50000), plans.Plans[2].PriceCents)
+	assert.Equal(t, int64(64), plans.Plans[2].Limits.ConcurrentSandboxes)
 	assert.Equal(t, int64(-1), plans.Plans[2].Limits.HoursPerDay)
 	assert.Zero(t, plans.Plans[2].Limits.IdleTimeoutSecs)
 	assert.False(t, plans.Plans[0].CheckoutAvailable)
