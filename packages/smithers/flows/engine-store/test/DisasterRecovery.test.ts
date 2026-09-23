@@ -24,7 +24,7 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import * as DisasterRecovery from "../src/DisasterRecovery.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -442,7 +442,8 @@ describe("verify", () => {
       const error = failure(exit)
       expect(error).toBeInstanceOf(DisasterRecovery.DisasterRecoveryError)
       expect(error.code).toBe("io")
-      expect(error.message).toContain(join(backupDirectory, DisasterRecovery.databaseFileName))
+      const file = join(backupDirectory, DisasterRecovery.databaseFileName).split(sep).join("/")
+      expect(error.message.split(sep).join("/")).toContain(file)
       expect(error.message).toContain(`${limit} bytes`)
       expect(error.message).toContain(`${limit - 1}`)
     }))
