@@ -177,7 +177,12 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // The human credential continuation opened by auth.sign-in. Passwords stay
   // in the form and its auth controller, outside the command journal.
   "../LocalAuthPanel.tsx": ["onSubmit={submit}", "close(event.currentTarget.ownerDocument)"],
-  "../StartupError.tsx": ["onClick={useSmithersHere}", "onClick={() => window.location.reload()}"],
+  // Bootstrap recovery runs before a controller exists. Backend selection
+  // stays in the boot adapter; its credential must never enter a command journal.
+  "../StartupError.tsx": [
+    "onClick={useSmithersHere}", "onClick={() => window.location.reload()}",
+    "onClick={() => setChoosing(true)}", "switchBackendTarget("
+  ],
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
@@ -229,6 +234,9 @@ describe("launch-law parity: every affordance is a command", () => {
   })
 
   test("the focused guide and run-card indirections retain their bindings", () => {
+    const startup = files["../StartupError.tsx"]!
+    expect(startup).toContain("await nativeSwitchBackendTarget(origin, token)")
+    expect(startup).toContain("switchBackendTarget(origin, token, window.location.origin)")
     expect(files["../LocalAuthPanel.tsx"]).toContain("void auth.submit({")
     expect(files["../LocalAuthPanel.tsx"]).toContain("auth.close()")
     expect(files["../HelpBubble.tsx"]).toContain("onDismiss()")
@@ -307,7 +315,7 @@ describe("launch-law parity: every affordance is a command", () => {
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
       "../LocalAuthPanel.tsx": 3,
-      "../StartupError.tsx": 3, // Held: takeover/reload; moved: takeover.
+      "../StartupError.tsx": 6, // Writer takeover/reload, plus bootstrap Retry, backend chooser and credential submission.
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
       "../WorldSurface.tsx": 6,
