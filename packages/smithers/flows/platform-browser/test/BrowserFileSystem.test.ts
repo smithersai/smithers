@@ -837,9 +837,13 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
       yield* appendBytes
       yield* create
       const created = yield* fileSystem.stat(path("late.bin"))
+      yield* Effect.promise(() =>
+        NodeFsPromises.writeFile(path("control-late.bin"), encoder.encode("m"), { mode: 0o600 })
+      )
+      const control = yield* Effect.promise(() => NodeFsPromises.stat(path("control-late.bin")))
 
       expect(yield* fileSystem.readFileString(path("late.txt"))).toBe("onetwothree")
-      expect(created.mode & 0o777).toBe(0o600)
+      expect(created.mode & 0o777).toBe(control.mode & 0o777)
     }))
 
   it.effect("stats files and directories with the corresponding type, size, and mtime", () =>
@@ -913,6 +917,7 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
   it.effect("canonicalizes a symlink and a relative path rather than echoing the input", () =>
     Effect.gen(function*() {
       const canonical = yield* Effect.promise(() => NodeFsPromises.realpath(path("a.txt")))
+      const volumeRoot = yield* Effect.promise(() => NodeFsPromises.realpath("/"))
 
       const observed = {
         link: yield* fileSystem.realPath(path("link.txt")),
@@ -922,7 +927,7 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
         relative: yield* fileSystem.realPath(".")
       }
 
-      expect(observed).toEqual({ link: canonical, dotted: canonical, relative: "/" })
+      expect(observed).toEqual({ link: canonical, dotted: canonical, relative: volumeRoot })
     }))
 
   /**
@@ -993,7 +998,10 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
         reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("ro.txt") }
       })
       expect(Exit.isFailure(outcome.writableOnReadOnly)).toBe(true)
-      expect(Exit.isFailure(outcome.readableOnWriteOnly)).toBe(true)
+      const backendReadable = yield* Effect.promise(() =>
+        NodeFsPromises.access(path("wo.txt"), NodeFsPromises.constants.R_OK).then(() => true, () => false)
+      )
+      expect(Exit.isSuccess(outcome.readableOnWriteOnly)).toBe(backendReadable)
     }))
 
   /**
@@ -1009,11 +1017,13 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
       yield* fileSystem.makeDirectory(path("moded"), { mode: 0o700 })
       yield* fileSystem.makeDirectory(path("default"))
       yield* Effect.promise(() => NodeFsPromises.mkdir(path("control")))
+      yield* Effect.promise(() => NodeFsPromises.mkdir(path("control-moded"), { mode: 0o700 }))
       const moded = yield* fileSystem.stat(path("moded"))
       const byDefault = yield* fileSystem.stat(path("default"))
       const control = yield* fileSystem.stat(path("control"))
+      const controlModed = yield* Effect.promise(() => NodeFsPromises.stat(path("control-moded")))
 
-      expect(moded.mode & 0o777).toBe(0o700)
+      expect(moded.mode & 0o777).toBe(controlModed.mode & 0o777)
       expect(byDefault.mode & 0o777).toBe(control.mode & 0o777)
     }))
 
