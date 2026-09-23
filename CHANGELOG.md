@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3077 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3089 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **migrate:** accept normalized Windows volume roots ([faaaf93e07](https://github.com/smithersai/smithers/commit/faaaf93e07c7e8355caef639a279e03a89a83890))
+- **std:** match Windows search paths against portable glob rules ([9db8828a0e](https://github.com/smithersai/smithers/commit/9db8828a0eb47a86168c39f14d317b25fededa1a))
+- **registry:** normalize entry paths before walking module cycles ([cc5a603d50](https://github.com/smithersai/smithers/commit/cc5a603d50ddc43df0fedda2bfa64eaa6f6f0395))
 - **release:** distinguish source-helper smoke from publishable packs ([fa0d750228](https://github.com/smithersai/smithers/commit/fa0d7502287deaafe38fb15a32845e647ec856c1))
 - **engine-store:** confine native Windows canonical paths ([2d8eea73d8](https://github.com/smithersai/smithers/commit/2d8eea73d86b8d50a9afc8e6940475d3356789ea))
 - **release:** account for pre-helper smoke rehearsal ([b04d286f29](https://github.com/smithersai/smithers/commit/b04d286f2968d32bcd277c30828de0c0f37c6508))
@@ -2518,6 +2521,15 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(flows):** ignore Node warnings in legacy CLI notice test ([26c550bbb6](https://github.com/smithersai/smithers/commit/26c550bbb60676f957ef97c4a2ddf1f9dab88f41))
+- **test(migrate):** compare native command and module paths ([1e01990135](https://github.com/smithersai/smithers/commit/1e01990135b9df6533911ae7955495d1fb54e83c))
+- **test(flows):** compare canonical native coverage paths ([0f1eb4e4d1](https://github.com/smithersai/smithers/commit/0f1eb4e4d124528bb8f683b2675195e328bb29cb))
+- **test(matrix):** select Plue target for bearer browser sessions ([35c68da07c](https://github.com/smithersai/smithers/commit/35c68da07c54beef24d932cb327f3fc8983f0675))
+- **test(agent):** use native paths for guarded disk searches ([5a986d07c5](https://github.com/smithersai/smithers/commit/5a986d07c533566b3c8289f94eec8c6367a66798))
+- **test(integrations):** exercise lock refusals across native filesystems ([a2b17356bb](https://github.com/smithersai/smithers/commit/a2b17356bbcf9f003b83556403c6b92d1ca03537))
+- **test(fs):** expose artifact compiler diagnostics in CI ([9194c7e16f](https://github.com/smithersai/smithers/commit/9194c7e16ffb042c72e5f59937a2262a16c1f472))
+- **test(registry):** compare native paths in import timeout refusals ([9868ffcd6a](https://github.com/smithersai/smithers/commit/9868ffcd6a67d98c241fd602d4e102168be07f42))
+- **test(build):** run remaining manager fixtures on native hosts ([587a1803f4](https://github.com/smithersai/smithers/commit/587a1803f4a2568e6bddb48222e2b600ed1c458c))
 - **test(release):** bind an offline evaluator for migration host acquisition ([9ceb72bb8e](https://github.com/smithersai/smithers/commit/9ceb72bb8e5b8eb6c5f8599ddd601d8dd81489ef))
 - **test(release):** pin the selected native Effect adapter family ([eadfc25ab6](https://github.com/smithersai/smithers/commit/eadfc25ab6848ac0ec2b1d074ee0553e5b581a24))
 - **test(registry):** select explicit path conventions for file URL oracles ([59f8e31ca2](https://github.com/smithersai/smithers/commit/59f8e31ca2f853f0aa8929e09d556ae9ece5bb57))
