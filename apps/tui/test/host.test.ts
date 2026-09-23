@@ -113,3 +113,74 @@ describe("Host.run Smithers plugin", () => {
     expect(outcome).toEqual({ _tag: "done", answer: "packages,cli,authoring" })
   })
 })
+
+/** A recorded model whose every reply delegates and prints, never calling `ctx.done`. */
+const pollingReplay = (directory: string): string => {
+  const file = join(directory, "polling.jsonl")
+  const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
+  const cell = [
+    "```cell",
+    "try { await ctx.call(\"agent.delegate\", { id: \"fix-tab-read\", title: \"Fix tab.read output\", prompt: \"fix it\" }) }",
+    "catch (error) { console.log(\"Still no seat\") }",
+    "await ctx.call(\"tab.list\", {})",
+    "```"
+  ].join("\n")
+  writeFileSync(
+    file,
+    [
+      JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
+      delta({ type: "text-start", id: "cell" }),
+      delta({ type: "text-delta", id: "cell", text: cell }),
+      delta({ type: "text-end", id: "cell" }),
+      JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
+    ].join("\n")
+  )
+  return file
+}
+
+const pollingTurn = async (delegate: (attempt: number) => unknown) => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-host-"))
+  roots.push(cwd)
+  const host = Host.make({ cwd, environment: {} })
+  const events: Array<AgentEvent.AgentEvent> = []
+  let delegations = 0
+  try {
+    const outcome = await host.run({
+      prompt: "fix tab.read",
+      role: "coordinator",
+      seat: `replay:${pollingReplay(cwd)}`,
+      history: [],
+      runtime: { publish: () => {}, delegate: () => delegate(++delegations), read: () => ({}), list: () => [] },
+      onEvent: (event) => events.push(event)
+    }).done
+    const answer = outcome._tag === "done" ? outcome.answer : `${outcome._tag}`
+    const resolved = events.flatMap((event) => (event._tag === "resolved" ? [event.message.content] : []))
+    return { answer, delegations, resolved }
+  } finally {
+    await host.dispose()
+  }
+}
+
+describe("Host.run frame budget", () => {
+  test("a coordinator that spends its frames polling a refused delegation says it was not delegated", async () => {
+    const { answer, delegations, resolved } = await pollingTurn(() => {
+      throw new Error("Three workers are active; wait for a completion")
+    })
+
+    expect(delegations).toBe(8)
+    expect(answer).toBe(
+      "Stopped after 8 frames.\nNot delegated: Fix tab.read output (Three workers are active; wait for a completion)"
+    )
+    // The transcript renders the resolved event, so it must carry the same words.
+    expect(resolved).toEqual([[{ type: "text", text: answer }]])
+  })
+
+  test("a delegation refused once and accepted later reads as requested, not as not delegated", async () => {
+    const { answer } = await pollingTurn((attempt) => {
+      if (attempt === 1) throw new Error("Three workers are active")
+      return { id: "fix-tab-read", status: "requested" }
+    })
+
+    expect(answer).toBe("Stopped after 8 frames.\nRequested: Fix tab.read output")
+  })
+})

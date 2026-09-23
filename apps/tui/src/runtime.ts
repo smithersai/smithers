@@ -1,7 +1,9 @@
 /** Agent-facing runtime UI and delegation use the harness's existing flow catalog. */
 import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import { Flow } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as Panels from "./panels.ts"
@@ -80,11 +82,80 @@ export const source = (ports: Ports): FlowBinding.Source =>
       ),
       bind(
         "tab.list",
-        "List the background agent tabs and their actual status.",
+        "List the background agent tabs and their actual status. Does not wait. Do not poll; the UI shows progress.",
         Schema.Struct({}),
         () => ports.list!()
       )
     ])
   ])
 export const coordinatorTeaching =
-  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Never wait or poll for a worker. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
+  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Every turn ends with ctx.done(acknowledgement) in the cell that makes the request; console.log does not end it. Never wait, retry, or re-check tab.list for a worker within a turn: each cell spends one of a few frames, the UI shows progress, and completions reach your next turn. If a request fails, end the turn saying it was not made and why. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
+
+/** Requests the coordinator makes; a failed one is work the user asked for that nobody took. */
+const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }
+
+const record = (value: unknown): Readonly<Record<string, unknown>> =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+/**
+ * Rewrites a coordinator turn's budget-exhausted answer into what happened.
+ *
+ * The harness ends a run whose frames ran out with a generic sentence about
+ * its last transition. The coordinator's frames are few, and a turn that
+ * spends them re-trying a refused delegation left the user reading "a request
+ * to continue" while the work was never handed to anyone. The ledger reads the
+ * turn's own journaled calls, so the answer names each request whose last
+ * attempt failed, and each one a worker took. A turn that completed, which the
+ * cell says with a `complete` transition, keeps its own answer.
+ */
+export const ledger = (maxFrames: number): (event: AgentEvent.AgentEvent) => AgentEvent.AgentEvent => {
+  const started = new Map<string, { readonly verdict: string; readonly id: string; readonly title: string }>()
+  const failed = new Map<string, string>()
+  const requested = new Map<string, string>()
+  let completed = false
+  const key = (identity: { readonly frame: number; readonly cell: string; readonly ordinal: number }) =>
+    `${identity.frame}:${identity.cell}:${identity.ordinal}`
+  return (event) => {
+    switch (event._tag) {
+      case "cell-call-started": {
+        const verdict = requestFlows[event.call.flowName]
+        if (verdict === undefined) return event
+        const input = record(event.call.input)
+        const id = String(input.id ?? "")
+        const title = String(input.title ?? input.flow ?? id)
+        started.set(key(event.call.identity), { verdict, id, title })
+        return event
+      }
+      case "cell-call-settled": {
+        const request = started.get(key(event.identity))
+        if (request === undefined) return event
+        const label = `${request.verdict}::${request.id}`
+        if (event.result.outcome === "success") {
+          failed.delete(label)
+          requested.set(request.id, request.title)
+        } else {
+          const reason = (event.result.message ?? "failed").replace(/^Flow \S+ failed: /, "")
+          failed.set(label, `${request.verdict}: ${request.title} (${reason})`)
+        }
+        return event
+      }
+      case "transition-applied":
+        completed = event.transition._tag === "complete"
+        return event
+      case "resolved": {
+        if (completed) return event
+        const lines = [
+          `Stopped after ${maxFrames} frames.`,
+          ...failed.values(),
+          ...[...requested.values()].map((title) => `Requested: ${title}`)
+        ]
+        return new AgentEvent.Resolved({
+          eventType: event.eventType,
+          message: ModelRequest.Message.assistant(lines.join("\n"), { stopReason: "stop" })
+        })
+      }
+      default:
+        return event
+    }
+  }
+}

@@ -223,6 +223,10 @@ export const make = (options: {
       const settled = Deferred.makeUnsafe<string, unknown>()
       let answer = ""
       let reply = ""
+      const maxFrames = input.role === "coordinator" ? 8 : 40
+      // Only the coordinator: its completion demands are all disarmed, so a
+      // budget ending never carries a bounced answer this would drop.
+      const receipts = input.role === "coordinator" ? Runtime.ledger(maxFrames) : (event: AgentEvent.AgentEvent) => event
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
@@ -271,11 +275,12 @@ export const make = (options: {
           : judged
           ? {}
           : { claimCap: 0 }),
-        maxFrames: input.role === "coordinator" ? 8 : 40
+        maxFrames
       }).pipe(
         Stream.provideService(Steering.Source, input.steering ?? Steering.makeNoop()),
-        Stream.runForEach((event) =>
+        Stream.runForEach((journaled) =>
           Effect.sync(() => {
+            const event = receipts(journaled)
             if (event._tag === "resolved") answer = text(event.message.content)
             if (event._tag === "model-requested") reply = ""
             if (event._tag === "model-delta" && event.delta.type === "text-delta") reply += event.delta.text
