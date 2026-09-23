@@ -351,24 +351,30 @@ describe("payload and environment boundary", () => {
     // error reported as a compile error three processes down.
     const previousSdk = process.env["SDKROOT"]
     const previousDeveloper = process.env["DEVELOPER_DIR"]
+    const previousHelper = process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
     process.env["SDKROOT"] = "/smthrs/test/MacOSX.sdk"
     process.env["DEVELOPER_DIR"] = "/smthrs/test/Developer"
+    process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = "/smthrs/test/native-helper"
     try {
       const result = await succeeded(payload(
         "process.stdout.write(JSON.stringify({" +
           "sdk: process.env.SDKROOT," +
-          "developer: process.env.DEVELOPER_DIR" +
+          "developer: process.env.DEVELOPER_DIR," +
+          "helper: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" +
           "}))"
       ))
       expect(JSON.parse(result.stdout)).toEqual({
         sdk: "/smthrs/test/MacOSX.sdk",
-        developer: "/smthrs/test/Developer"
+        developer: "/smthrs/test/Developer",
+        helper: "/smthrs/test/native-helper"
       })
     } finally {
       if (previousSdk === undefined) delete process.env["SDKROOT"]
       else process.env["SDKROOT"] = previousSdk
       if (previousDeveloper === undefined) delete process.env["DEVELOPER_DIR"]
       else process.env["DEVELOPER_DIR"] = previousDeveloper
+      if (previousHelper === undefined) delete process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+      else process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = previousHelper
     }
   })
 

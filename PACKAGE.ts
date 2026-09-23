@@ -279,6 +279,14 @@ const backendGo = Smithers.Shell.Test({
   timeout: "30m"
 })
 
+const nativeFilesystem = [{
+  package: "smithers-ffi",
+  binary: "smithers-jj-export",
+  toolchain: "1.98.0",
+  environment: "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
+  platforms: ["linux", "darwin"]
+}] as const
+
 const ci = Smithers.GithubCiGen({
   summary: "Regenerate and drift-check .github/workflows/ci.yml, the pipeline definition (not the run itself).",
   featured: true,
@@ -286,6 +294,8 @@ const ci = Smithers.GithubCiGen({
   cacheTokenSecret: cacheToken,
   cacheWriteTokenSecret: cacheWriteToken,
   workflowDispatch: false,
+  // Let an admitted run finish while concurrent agents keep pushing main.
+  cancelInProgress: false,
   mode: "check",
   gates: [
     { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },
@@ -304,6 +314,7 @@ const ci = Smithers.GithubCiGen({
       timeoutMinutes: 120,
       publishesToCache: true,
       toolchain: Smithers.CiToolchain.Needs({
+        cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
         jj,
         ripgrep,
@@ -322,6 +333,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 120,
       toolchain: Smithers.CiToolchain.Needs({
+        cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
         jj,
         ripgrep,
@@ -474,6 +486,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 30,
       toolchain: Smithers.CiToolchain.Needs({
+        cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
         jj,
         ripgrep,
@@ -584,7 +597,11 @@ const ci = Smithers.GithubCiGen({
       name: "fault-injection matrix",
       runsOn: ubuntu,
       timeoutMinutes: 30,
-      toolchain: Smithers.CiToolchain.Needs({ runtimes: [node], jj }),
+      toolchain: Smithers.CiToolchain.Needs({
+        cargoBinaries: nativeFilesystem,
+        runtimes: [node],
+        jj
+      }),
       steps: [{ name: "Exclusive fault matrix", verb: Smithers.Verb.Test, pattern: "//packages/...:faults", parallelism: 1 }]
     },
     {
@@ -636,6 +653,7 @@ const ci = Smithers.GithubCiGen({
       ],
       timeoutMinutes: 60,
       toolchain: Smithers.CiToolchain.Needs({
+        cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
         jj,
         ripgrep,

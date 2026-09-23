@@ -9,6 +9,16 @@ sidebar:
 under. Every tool-running rule reads that statement at plan time, so no target
 spells an interpreter or a package manager into an argv of its own.
 
+CI jobs that need a repository-built native helper declare it in
+`CiToolchain.Needs({ cargoBinaries: [...] })`. Each entry names `package`,
+`binary`, the reviewed `toolchain` (`"1.98.0"`), supported `platforms`
+(`"linux"` and/or `"darwin"`), and the `environment` variable carrying its path.
+The generator builds with the lockfile, installs the executable under
+`RUNNER_TEMP/smithers-native`, and exports its absolute path before targets run.
+The guarded filesystem's `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` path is part of
+the build runner's inherited tool environment; other variables must be
+declared by their consuming targets.
+
 The declaration accepts either the complete Node.js trio (`runtime`,
 `packageManager`, and `nodeModules`) or a non-empty `toolchains` list. A
 repository that builds more than one language declares both. Omitting only part

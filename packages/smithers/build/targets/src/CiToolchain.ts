@@ -864,17 +864,31 @@ export const Actionlint = (options: {
   })
 
 /**
- * Schema for everything one generated job requires before its targets run.
- *
- * Every field is a requirement, never a step. `submodules` is here because the
- * crates build against a vendored git submodule and a checkout without it dies
- * on a missing manifest; `fetchDepth` is here because a target that diffs
- * against a base revision needs the history the default checkout does not
- * fetch; `install` is here because a job that runs no workspace binary should
- * not spend a minute installing one.
- *
+ * Schema for a repository Cargo binary required by a CI job.
+ * The reviewed compiler pin and platform list make installation reproducible.
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
+ */
+export const CargoBinary = Schema.Struct({
+  package: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_-]*$/)),
+  binary: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_-]*$/)),
+  toolchain: Schema.Literal("1.98.0"),
+  environment: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]*$/)),
+  platforms: Schema.NonEmptyArray(Schema.Literals(["linux", "darwin"]))
+})
+
+/**
+ * A repository Cargo binary built for the runner and installed outside the checkout.
+ * Its absolute path is exported under the declared environment name.
+ * @category models
+ * @since 1.0.0
+ */
+export type CargoBinary = typeof CargoBinary.Type
+
+/**
+ * Schema for a generated job's checkout, runtimes, tools and artifacts.
+ * @category schemas
+ * @since 1.0.0
  */
 export const Toolchain = Schema.Struct({
   /** Check the tree out with its git submodules. */
@@ -894,6 +908,7 @@ export const Toolchain = Schema.Struct({
   /** The interpreters this job installs. */
   runtimes: Schema.Array(RuntimeSetup),
   rust: Schema.optional(RustSetup),
+  cargoBinaries: Schema.optional(Schema.Array(CargoBinary)),
   jj: Schema.optional(JjSetup),
   ripgrep: Schema.optional(RipgrepSetup),
   apt: Schema.optional(AptSetup),
@@ -946,6 +961,8 @@ export const Needs = (options: {
   /** @default [] */
   readonly runtimes?: ReadonlyArray<RuntimeSetup> | undefined
   readonly rust?: RustSetup | undefined
+  /** Repository binaries required by tests; compiled and installed before targets run. */
+  readonly cargoBinaries?: ReadonlyArray<CargoBinary> | undefined
   readonly jj?: JjSetup | undefined
   readonly ripgrep?: RipgrepSetup | undefined
   /** System packages a Linux runner installs before its targets run; a no-op elsewhere. */
@@ -962,7 +979,7 @@ export const Needs = (options: {
     // The environment supplies every interpreter and language toolchain, so a
     // job that also installs one on the runner would run two copies and the
     // generated PATH would decide which. Refuse the mix rather than pick.
-    const mixed = (["runtimes", "rust", "jj", "ripgrep", "go", "foundry"] as const).filter((name) => {
+    const mixed = (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "go", "foundry"] as const).filter((name) => {
       const value = options[name]
       return Array.isArray(value) ? value.length > 0 : value !== undefined
     })
@@ -986,6 +1003,7 @@ export const Needs = (options: {
     install: options.install ?? true,
     runtimes: options.runtimes ?? [],
     ...(options.rust === undefined ? {} : { rust: options.rust }),
+    ...(options.cargoBinaries === undefined ? {} : { cargoBinaries: options.cargoBinaries }),
     ...(options.jj === undefined ? {} : { jj: options.jj }),
     ...(options.ripgrep === undefined ? {} : { ripgrep: options.ripgrep }),
     ...(options.apt === undefined ? {} : { apt: options.apt }),

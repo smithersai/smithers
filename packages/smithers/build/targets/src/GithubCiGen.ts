@@ -863,6 +863,31 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
     // dependency build dominates a Rust job's time without it.
     if (needs.rust.cache) steps.push({ uses: actions.rustCache })
   }
+  if (needs.cargoBinaries !== undefined && needs.cargoBinaries.length > 0) {
+    if (!needs.rust?.cache) steps.push({ uses: actions.rustCache })
+    for (const binary of needs.cargoBinaries) {
+      const platforms = binary.platforms.map((platform) => platform === "darwin" ? "Darwin" : "Linux").join("|")
+      steps.push({
+        name: `Install native ${binary.binary}`,
+        shell: "bash",
+        run: [
+          `case "$(uname -s)" in ${platforms})`,
+          `  rustup toolchain install ${shellWord(binary.toolchain)} --profile minimal`,
+          `  cargo +${binary.toolchain} build --locked -p ${shellWord(binary.package)} --bin ${
+            shellWord(binary.binary)
+          }`,
+          "  mkdir -p \"$RUNNER_TEMP/smithers-native\"",
+          `  install -m 755 ${
+            shellWord(`target/debug/${binary.binary}`)
+          } "$RUNNER_TEMP/smithers-native/${binary.binary}"`,
+          `  printf '%s=%s\\n' ${
+            shellWord(binary.environment)
+          } "$RUNNER_TEMP/smithers-native/${binary.binary}" >> "$GITHUB_ENV"`,
+          "esac"
+        ].join("\n")
+      })
+    }
+  }
   if (needs.jj !== undefined) {
     steps.push({
       name: "Install jj",

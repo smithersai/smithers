@@ -5,7 +5,7 @@ on:
   pull_request:
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('ref-{0}', github.ref) }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   "cache-publish":
     name: "Publish reviewed workspace results to the cache"
@@ -50,6 +50,17 @@ jobs:
         with:
           "bun-version": "1.4.1"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Install jj"
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
@@ -121,6 +132,17 @@ jobs:
         with:
           "bun-version": "1.4.1"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Install jj"
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
@@ -368,6 +390,17 @@ jobs:
         with:
           "bun-version": "1.4.1"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Install jj"
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
@@ -556,6 +589,17 @@ jobs:
           test "$(npm --version)" = '11.16.0'
         shell: "bash"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Install jj"
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
@@ -645,6 +689,17 @@ jobs:
         with:
           "bun-version": "1.4.1"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Install jj"
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:

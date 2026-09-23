@@ -16,7 +16,7 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
   const recording = join(root, "recording")
   mkdirSync(recording)
   const environment: NodeJS.ProcessEnv = {}
-  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) {
+  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key]
   }
   Object.assign(environment, {

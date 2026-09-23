@@ -461,6 +461,7 @@ export const inheritedEnvironmentNames: ReadonlyArray<string> = Object.freeze([
   "PATH",
   "PATHEXT",
   "SDKROOT",
+  "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
   "SYSTEMROOT",
   "TEMP",
   "TMP",

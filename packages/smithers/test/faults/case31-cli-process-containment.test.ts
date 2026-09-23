@@ -35,7 +35,7 @@ const containment = async (mode: "shell" | "mcp", recovery: "automatic" | "reape
     // answers the gateway's evaluation the same way it answers the model's.
     AI_GATEWAY_API_KEY: "recorded-fixture-not-a-real-key"
   }
-  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) {
+  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key]
   }
   const invoke = (...args: Array<string>) => {

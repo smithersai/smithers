@@ -61,6 +61,64 @@ describe("CiToolchain.Needs", () => {
     const ripgrep = CiToolchain.Ripgrep({ release: "14.1.1" })
     expect(CiToolchain.Needs({ ripgrep }).ripgrep).toEqual(ripgrep)
   })
+
+  it.skipIf(process.platform === "win32")(
+    "installs declared native tools outside the checkout and exports their absolute paths",
+    async () => {
+      const root = await Fs.mkdtemp(NodePath.join(tmpdir(), "ci native tools "))
+      try {
+        const bin = NodePath.join(root, "bin")
+        const runnerTemp = NodePath.join(root, "runner temp")
+        await Fs.mkdir(bin)
+        await Fs.mkdir(runnerTemp)
+        await Fs.writeFile(NodePath.join(root, "env"), "")
+        await Fs.writeFile(NodePath.join(bin, "rustup"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> rustup-args\n", {
+          mode: 0o755
+        })
+        await Fs.writeFile(
+          NodePath.join(bin, "cargo"),
+          "#!/bin/sh\nprintf '%s\\n' \"$*\" >> cargo-args\nmkdir -p target/debug\nprintf '#!/bin/sh\\nexit 0\\n' > target/debug/native-helper\n",
+          { mode: 0o755 }
+        )
+        const job = {
+          ...goldenAttrs.jobs[0]!,
+          toolchain: CiToolchain.Needs({
+            cargoBinaries: [{
+              package: "native-package",
+              binary: "native-helper",
+              toolchain: "1.98.0",
+              environment: "NATIVE_HELPER",
+              platforms: ["linux", "darwin"]
+            }]
+          })
+        }
+        const step = toolchainSteps(goldenAttrs, job).find((step) => step.name === "Install native native-helper")!
+        const result = spawnSync("bash", ["-e", "-c", step.run!], {
+          cwd: root,
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            RUNNER_TEMP: runnerTemp,
+            GITHUB_ENV: NodePath.join(root, "env")
+          },
+          encoding: "utf8"
+        })
+        expect(result.stderr).toBe("")
+        expect(result.status).toBe(0)
+        const installed = NodePath.join(runnerTemp, "smithers-native/native-helper")
+        expect(await Fs.readFile(NodePath.join(root, "env"), "utf8")).toBe(`NATIVE_HELPER=${installed}\n`)
+        expect(spawnSync(installed).status).toBe(0)
+        expect(await Fs.readFile(NodePath.join(root, "rustup-args"), "utf8")).toBe(
+          "toolchain install 1.98.0 --profile minimal\n"
+        )
+        expect(await Fs.readFile(NodePath.join(root, "cargo-args"), "utf8")).toBe(
+          "+1.98.0 build --locked -p native-package --bin native-helper\n"
+        )
+      } finally {
+        await Fs.rm(root, { recursive: true, force: true })
+      }
+    }
+  )
 })
 
 /** The golden pipeline `write` mode renders. */
