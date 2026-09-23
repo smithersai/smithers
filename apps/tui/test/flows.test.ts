@@ -362,6 +362,25 @@ describe("flow runs", () => {
     expect(() => f.runs.request({ id: "r2", flow: "deploy", input: {}, by: "agent" })).toThrow("not for a model to start")
   })
 
+  it("keeps the newest discovery failure until a discovery succeeds", async () => {
+    const f = setup()
+    let fail = true
+    Object.assign(f.port, {
+      discover: async () => {
+        if (fail) throw new Error("Registry unreadable: flows/x/flow.ts")
+        return [{ name: "review", description: "", modelInvocable: true }]
+      }
+    })
+    f.runs.refresh()
+    await tick()
+    expect(f.runs.failure()).toBe("Registry unreadable: flows/x/flow.ts")
+    fail = false
+    f.runs.refresh()
+    await tick()
+    expect(f.runs.failure()).toBeUndefined()
+    expect(f.runs.listed().map((flow) => flow.name)).toEqual(["review"])
+  })
+
   it("an unknown flow fails with its name", async () => {
     const f = setup()
     f.runs.request({ id: "r1", flow: "nope", input: {}, by: "user" })

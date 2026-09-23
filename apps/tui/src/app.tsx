@@ -557,7 +557,8 @@ export function App(props: AppProps) {
   }, [now, clockRunning, props.host, setStatus])
 
   useEffect(() => {
-    if (toast === undefined) return
+    // A failure stays until another notice replaces it or the next submit.
+    if (toast === undefined || toast.tone === "danger") return
     const timer = setTimeout(() => setToast(undefined), 3000)
     return () => clearTimeout(timer)
   }, [toast])
@@ -1027,6 +1028,7 @@ export function App(props: AppProps) {
     if (input === null) return
     const text = (typed ?? input.plainText).trim()
     if (text === "") return
+    setToast((current) => (current?.tone === "danger" ? undefined : current))
     const shellLine = Shell.parse(text)
     const parked = parkedDraft.current
     parkedDraft.current = undefined
@@ -1847,7 +1849,7 @@ export function App(props: AppProps) {
               empty={picker.kind === "resume"
                 ? "No sessions in this directory"
                 : picker.kind === "flows"
-                ? "No flows"
+                ? runs.failure() ?? "No flows"
                 : picker.kind === "palette"
                 ? search?.status === "running" ? "Searching" : "No matches"
                 : picker.kind === "fork"

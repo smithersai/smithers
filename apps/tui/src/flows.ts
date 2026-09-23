@@ -100,6 +100,7 @@ export class FlowRuns {
   private attempts = new Map<string, number>()
   private loaded = new Set<string>()
   private cache: ReadonlyArray<Listed> = []
+  private discoveryFailure: string | undefined
   private discovery = 0
   private listeners = new Set<() => void>()
   private closed = false
@@ -134,11 +135,23 @@ export class FlowRuns {
   schema = (id: string): Schema.Top | undefined => this.schemas.get(id)
   /** The last discovery; `refresh` updates it in the background. */
   listed = (): ReadonlyArray<Listed> => this.cache
+  /** Why the newest discovery failed; cleared by the next one that succeeds. */
+  failure = (): string | undefined => this.discoveryFailure
   private async discover() {
     const version = ++this.discovery
-    const listed = await this.options.port!.discover()
+    let listed: ReadonlyArray<Listed>
+    try {
+      listed = await this.options.port!.discover()
+    } catch (error) {
+      if (version === this.discovery && !this.closed) {
+        this.discoveryFailure = error instanceof Error ? error.message : String(error)
+        this.changed()
+      }
+      throw error
+    }
     if (version === this.discovery && !this.closed) {
       this.cache = listed
+      this.discoveryFailure = undefined
       this.changed()
     }
     return listed
@@ -146,7 +159,8 @@ export class FlowRuns {
   refresh = (): void => {
     const port = this.options.port
     if (port === undefined || this.closed) return
-    this.discover().catch(() => { /* A failed listing leaves the last one; running a flow reports its own failure. */ })
+    // A failed listing keeps the last one and records `failure`; running a flow reports its own failure.
+    this.discover().catch(() => {})
   }
   private save(run: Run) {
     this.options.persist({ type: "flow", run })
