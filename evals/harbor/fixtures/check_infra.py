@@ -213,6 +213,31 @@ def check_transport_and_containment() -> None:
                 os.environ.pop(name, None)
 
 
+def check_image_tmp() -> None:
+    """The guest's /tmp is the image's /tmp, as under Docker. The microsandbox
+    guest init mounts a 512 MiB tmpfs over it, which hid layout-config-
+    recreation2's /tmp/google_fonts_cache (1393 fonts) from its own oracle."""
+    with tempfile.TemporaryDirectory() as directory:
+        calls = Path(directory) / "calls"
+        cli = Path(directory) / "smithers"
+        cli.write_text("#!/bin/sh\n"
+                       f"printf '%s\\n' \"$*\" >> {calls}\n"
+                       "printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"\",\"exit_code\":0}}'\n")
+        cli.chmod(0o755)
+        try:
+            ops = fake_ops(cli)
+            ops._plue_reserved = True
+            ops._plue_copies, ops._plue_chmods = [], []
+            asyncio.run(ops._plue_start())
+        finally:
+            for name in ("SMITHERS_CLI", "PLUE_REPO"):
+                os.environ.pop(name, None)
+        first = calls.read_text().splitlines()[0]
+        assert "umount -l /tmp" in first and "mkdir -p /logs/agent" in first, first
+        assert first.index("umount -l /tmp") < first.index("mkdir -p /logs/agent"), first
+        assert len(calls.read_text().splitlines()) == 1, "one exec, no extra round trip"
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -367,7 +392,8 @@ if __name__ == "__main__":
     check_classification()
     check_ledger()
     check_transport_and_containment()
+    check_image_tmp()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
-    print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, "
+    print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, "
           f"containment, requeue and health hold; {harbor_note}.")

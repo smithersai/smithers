@@ -113,6 +113,15 @@ EGRESS_ENV = "/etc/smithers/egress.env"
 EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
 
 
+# The microsandbox guest init mounts a 512 MiB tmpfs over /tmp, hiding the
+# image's own /tmp (layout-config-recreation2 ships 1393 fonts there) and
+# capping temp space. Under Docker /tmp is the image's directory, so the
+# tmpfs is lazily unmounted (a guest service may hold a log open in it) and
+# the overlay's disk-backed /tmp shows through.
+IMAGE_TMP = ("if grep -qs ' /tmp tmpfs ' /proc/mounts; then umount -l /tmp; fi; "
+             "[ -d /tmp ] || { mkdir -p /tmp && chmod 1777 /tmp; }")
+
+
 def with_egress(command: str) -> str:
     """The command, run with the workspace's egress proxy in its environment."""
     return EGRESS_PREFIX + command
@@ -570,7 +579,7 @@ class _PlueOps:
 
     async def _plue_start(self) -> None:
         await self._plue_reserve()
-        await self._plue_exec(f"mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
+        await self._plue_exec(f"{IMAGE_TMP}; mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
         for src, dst in self._plue_copies:
             await self._plue_upload(Path(self.environment_dir) / src, dst)
         for mode_bits, target in self._plue_chmods:
