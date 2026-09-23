@@ -480,6 +480,28 @@
       "reason": "Versioned JSON adapter from the Go product backend to the canonical Flow and Control runtime."
     },
     {
+      "name": "@smthrs/gateway",
+      "subpath": "./EngineTrace",
+      "development": "./src/EngineTrace.ts",
+      "published": {
+        "types": "./dist/esm/EngineTrace.d.ts",
+        "import": "./dist/esm/EngineTrace.js",
+        "require": "./dist/cjs/EngineTrace.js"
+      },
+      "reason": "Shared projection of native engine evidence into the run trace consumed by browser and terminal hosts."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RunTrace",
+      "development": "./src/RunTrace.ts",
+      "published": {
+        "types": "./dist/esm/RunTrace.d.ts",
+        "import": "./dist/esm/RunTrace.js",
+        "require": "./dist/cjs/RunTrace.js"
+      },
+      "reason": "Portable run-trace projection and step expansion shared by the browser and terminal run monitors."
+    },
+    {
       "name": "@smthrs/cli",
       "subpath": "./BunControl",
       "development": "./src/BunControl.ts",
