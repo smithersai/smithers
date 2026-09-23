@@ -120,7 +120,6 @@ export const WORKER_IDENTITY = {
     "AI_GATEWAY_API_KEY",
     "SMITHERS_GITHUB_APP_ID",
     "SMITHERS_GITHUB_APP_PRIVATE_KEY",
-    "TUTORIAL_SERVICE_TOKEN",
     "GITHUB_TOKEN"
   ] as ReadonlyArray<string>,
   /**
@@ -134,7 +133,6 @@ export const WORKER_IDENTITY = {
     // Optional secret, base64 of 32 random bytes; never a required preflight binding.
     "MODEL_VAULT_KEY",
     "SMITHERS_BUILD_SHA",
-    "TUTORIAL_SERVICE_URL",
     "UPSTREAM_TIMEOUT_MS",
     "BILLING_CHECKOUT_ENABLED",
     "CEREBRAS_MODEL_LIBRARIAN",

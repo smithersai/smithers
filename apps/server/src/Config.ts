@@ -34,8 +34,6 @@ export interface ServerEnvVars {
   readonly BILLING_CHECKOUT_ENABLED?: string
   readonly SMITHERS_CLOUD_API_BASE_URL?: string
   readonly PLUE_WORKER_EXCHANGE_TOKEN?: string
-  readonly TUTORIAL_SERVICE_URL?: string
-  readonly TUTORIAL_SERVICE_TOKEN?: string
   readonly ANONYMOUS_TURN_SALT?: string
   readonly CEREBRAS_API_KEY?: string
   readonly CEREBRAS_MODEL_LIBRARIAN?: string
@@ -72,8 +70,6 @@ export interface ServerConfigShape {
   readonly billingCheckoutEnabled: boolean
   readonly cloudApiBaseUrl: string
   readonly plueWorkerExchangeToken: Redacted.Redacted<string> | undefined
-  readonly tutorialServiceUrl: string | undefined
-  readonly tutorialServiceToken: Redacted.Redacted<string> | undefined
   readonly anonymousTurnSalt: Redacted.Redacted<string> | undefined
   /** The Cerebras key the cloud roles (the Librarian, the Flows agent) spend. */
   readonly cerebrasApiKey: Redacted.Redacted<string> | undefined
@@ -132,8 +128,6 @@ export const configFrom = (env: ServerEnvVars): ServerConfigShape => ({
   billingCheckoutEnabled: text(env.BILLING_CHECKOUT_ENABLED) === "1",
   cloudApiBaseUrl: text(env.SMITHERS_CLOUD_API_BASE_URL) ?? DEFAULT_CLOUD_API_BASE_URL,
   plueWorkerExchangeToken: secret(env.PLUE_WORKER_EXCHANGE_TOKEN),
-  tutorialServiceUrl: text(env.TUTORIAL_SERVICE_URL),
-  tutorialServiceToken: secret(env.TUTORIAL_SERVICE_TOKEN),
   anonymousTurnSalt: exactSecret(env.ANONYMOUS_TURN_SALT),
   cerebrasApiKey: secret(env.CEREBRAS_API_KEY),
   cerebrasModelLibrarian: text(env.CEREBRAS_MODEL_LIBRARIAN),
