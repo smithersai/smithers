@@ -8,8 +8,11 @@ type Tunnel = {
   generation: number
   upstream?: WebSocket
   pending: Array<string | Buffer>
-  opened: boolean
+  pendingBytes: number
 }
+
+// CEF sends terminal keystrokes as individual frames while the first WSS handshake is pending.
+const MAX_PENDING_BYTES = 1024 * 1024
 
 type StoredCookie = { name: string; value: string; path: string; expiresAt?: number }
 
@@ -129,7 +132,7 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
           const authorization = selectedAuthorization(request, selectedToken)
           if (authorization !== undefined) headers.authorization = authorization
           return server.upgrade(request, { data: { target: target.toString(), headers,
-            generation: selectedGeneration, pending: [], opened: false } })
+            generation: selectedGeneration, pending: [], pendingBytes: 0 } })
             ? undefined : new Response("Upgrade required", { status: 426 })
         }
         const headers = new Headers(request.headers)
@@ -233,9 +236,9 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
         upstream.binaryType = "arraybuffer"
         upstream.addEventListener("open", () => {
           if (tunnel.generation !== generation) { upstream.close(); return }
-          tunnel.opened = true
           for (const frame of tunnel.pending) upstream.send(frame)
           tunnel.pending.length = 0
+          tunnel.pendingBytes = 0
         })
         upstream.addEventListener("message", (event) => {
           if (tunnel.generation === generation) socket.send(event.data as string | ArrayBuffer)
@@ -254,10 +257,16 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
         const tunnel = socket.data
         if (tunnel.generation !== generation) { socket.terminate(); return }
         if (tunnel.upstream?.readyState === WebSocket.OPEN) {
-          if (tunnel.upstream.bufferedAmount > 1024 * 1024) socket.close(1009, "Terminal input outran backend")
+          if (tunnel.upstream.bufferedAmount > MAX_PENDING_BYTES) socket.close(1009, "Terminal input outran backend")
           else tunnel.upstream.send(frame)
-        } else if (tunnel.pending.length < 32) tunnel.pending.push(frame)
-        else socket.close(1011, "Backend socket did not open")
+        } else if (tunnel.upstream?.readyState === WebSocket.CONNECTING) {
+          const bytes = typeof frame === "string" ? Buffer.byteLength(frame) : frame.byteLength
+          if (tunnel.pendingBytes + bytes > MAX_PENDING_BYTES) socket.close(1009, "Terminal input outran backend")
+          else {
+            tunnel.pending.push(frame)
+            tunnel.pendingBytes += bytes
+          }
+        } else socket.close(1011, "Backend socket did not open")
       },
       close(socket) {
         tunnels.delete(socket)

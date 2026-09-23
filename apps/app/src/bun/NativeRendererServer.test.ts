@@ -339,3 +339,30 @@ test("switching targets stops an old streamed response", async () => {
     expect(String(error)).toContain("Backend changed")
   }
 })
+
+test("terminal input survives the first HTTPS upstream handshake", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-native-https-terminal-"))
+  try {
+    const key = join(directory, "key.pem")
+    const cert = join(directory, "cert.pem")
+    const generated = Bun.spawnSync([
+      "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key,
+      "-out", cert, "-days", "1", "-subj", "/CN=localhost",
+      "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    ], { stdout: "ignore", stderr: "pipe" })
+    expect(generated.exitCode).toBe(0)
+    const child = Bun.spawn([Bun.which("bun")!, join(import.meta.dir, "fixtures", "NativeRendererHttpsTerminal.ts")], {
+      cwd: join(import.meta.dir, "../../.."),
+      env: { ...process.env, NODE_EXTRA_CA_CERTS: cert, SMITHERS_NATIVE_HTTPS_CERT: cert, SMITHERS_NATIVE_HTTPS_KEY: key },
+      stdout: "pipe", stderr: "pipe"
+    })
+    const output = await Promise.race([
+      Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]),
+      Bun.sleep(10_000).then(() => { child.kill(); throw new Error("HTTPS terminal regression timed out") })
+    ])
+    expect(output[2], `${output[0]}\n${output[1]}`).toBe(0)
+    expect(output[0]).toContain("HTTPS_TERMINAL_OK")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
