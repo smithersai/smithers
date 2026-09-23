@@ -15963,7 +15963,7 @@
     "label": "//packages/smithers/agent/model-host:test",
     "package": "packages/smithers/agent/model-host",
     "name": "test",
-    "rule": "NodeTest",
+    "rule": "Vitest",
     "kinds": [
       "test"
     ],
@@ -15971,13 +15971,22 @@
     "inputs": [
       {
         "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/test/**/*.test.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
         "exclude": []
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/model-host/test/**/*.ts",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/vitest.config.ts"
       }
     ],
     "outputs": [],
