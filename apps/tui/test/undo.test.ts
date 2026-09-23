@@ -222,13 +222,13 @@ describe("undo", () => {
     expect(large.kind === "cell" && large.calls[0]!.patches![0]!.patch).toStartWith("Diff too large:")
     expect(Undo.target(r.transcript(), large.id)).toEqual({ _tag: "Unrendered", paths: ["big.ts"] })
 
-    const repo = gitRepo()
-    gitCommit(repo)
+    const repo = scratch()
     const g = recorder(repo)
     g.prompt("many")
     g.cell()
-    await g.call("bash", { command: "touch" }, () => {
-      for (let index = 0; index < 201; index++) put(repo, `f${index}.txt`, "x\n")
+    const many = Array.from({ length: 201 }, (_, index) => `f${index}.txt`)
+    await g.call("apply_patch", { input: `*** Begin Patch\n${many.map((path) => `*** Add File: ${path}\n+x`).join("\n")}\n*** End Patch` }, () => {
+      for (const path of many) put(repo, path, "x\n")
     })
     g.settle()
     const target = Undo.target(g.transcript(), cellRows(g.transcript())[0]!.id)
@@ -254,7 +254,7 @@ describe("undo", () => {
     expect(Undo.target(r.transcript(), cellRows(r.transcript())[1]!.id)).toEqual({ _tag: "Uncaptured", flows: ["edit"] })
   })
 
-  it("emits an empty receipt for a shell call that changes nothing in a clean repository", async () => {
+  it("allows a named-file Undo after an empty shell receipt in the same turn", async () => {
     const cwd = gitRepo()
     put(cwd, "a.ts", "x\n")
     gitCommit(cwd)
@@ -264,26 +264,88 @@ describe("undo", () => {
     const { receipts } = await r.call("bash", { command: "git status" }, () => {})
     expect(receipts).toHaveLength(1)
     expect(receipts[0]!.patches).toEqual([])
-  })
-
-  it.skipIf(Bun.which("jj") === null)("reverses shell changes captured by jj, including a deletion", async () => {
-    const cwd = scratch()
-    sh(cwd, "jj", "git", "init")
-    put(cwd, "a.ts", "original\n")
-    put(cwd, "d.ts", "doomed\n")
-    const r = recorder(cwd)
-    r.prompt("shell edits")
-    r.cell()
-    const { receipts } = await r.call("bash", { command: "edit" }, () => {
-      put(cwd, "a.ts", "changed\n")
-      unlinkSync(join(cwd, "d.ts"))
-    })
+    await r.call("write", { path: "a.ts", content: "changed\n" }, write(cwd, "a.ts", "changed\n"))
     r.settle()
-    expect(receipts[0]!.patches.find((patch) => patch.path === "d.ts")?.patch).toContain("deleted file mode")
     const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
     expect("_tag" in result).toBe(false)
-    expect(get(cwd, "a.ts")).toBe("original\n")
-    expect(get(cwd, "d.ts")).toBe("doomed\n")
+    expect(get(cwd, "a.ts")).toBe("x\n")
+  })
+
+  it("captures only a named file while another worker edits elsewhere", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "original A\n")
+    put(cwd, "b.ts", "original B\n")
+    put(cwd, "c.ts", "original C\n")
+    let started!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { started = resolve })
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    const receipts: Changes.Receipt[] = []
+    const source = {
+      name: "test",
+      bindings: () => Effect.succeed([{ run: () => Effect.promise(async () => {
+        started()
+        await hold
+        put(cwd, "a.ts", "worker A\n")
+        return { outcome: "success", value: {} }
+      }) }])
+    } as unknown as Parameters<typeof Changes.capture>[0]
+    const [binding] = await Effect.runPromise(Changes.capture(source, cwd, (receipt) => receipts.push(receipt)).bindings())
+    const identity = { session: "A", frame: 1, cell: 1, ordinal: 0 }
+    const running = Effect.runPromise(binding!.run({ flowName: "write", input: { path: "a.ts", content: "worker A\n" }, identity } as never))
+    await entered
+    put(cwd, "b.ts", "worker B\n")
+    put(cwd, "c.ts", "external edit\n")
+    release()
+    await running
+    expect(receipts.map((receipt) => receipt.patches.map((patch) => patch.path))).toEqual([["a.ts"]])
+    expect(get(cwd, "b.ts")).toBe("worker B\n")
+    expect(get(cwd, "c.ts")).toBe("external edit\n")
+  })
+
+  it.skipIf(Bun.which("jj") === null)("does not attribute a concurrent worker's edit to a shell call", async () => {
+    const cwd = scratch()
+    sh(cwd, "jj", "git", "init")
+    put(cwd, "a.ts", "original A\n")
+    put(cwd, "b.ts", "original B\n")
+    put(cwd, "c.ts", "original C\n")
+    let started!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { started = resolve })
+    const hold = new Promise<void>((resolve) => { release = resolve })
+    const receipts: Changes.Receipt[] = []
+    const source = {
+      name: "test",
+      bindings: () => Effect.succeed([{ run: () => Effect.promise(async () => {
+        started()
+        await hold
+        put(cwd, "a.ts", "worker A\n")
+        return { outcome: "success", value: {} }
+      }) }])
+    } as unknown as Parameters<typeof Changes.capture>[0]
+    const [binding] = await Effect.runPromise(Changes.capture(source, cwd, (receipt) => receipts.push(receipt)).bindings())
+    const identity = { session: "A", frame: 1, cell: 1, ordinal: 0 }
+    const running = Effect.runPromise(binding!.run({ flowName: "bash", input: { command: "edit a.ts" }, identity } as never))
+    await entered
+    put(cwd, "b.ts", "worker B\n")
+    put(cwd, "c.ts", "external edit\n")
+    release()
+    await running
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]!.patches.map((patch) => patch.path)).toContain("b.ts")
+    expect(receipts[0]!.patches.map((patch) => patch.path)).toContain("c.ts")
+    expect(get(cwd, "a.ts")).toBe("worker A\n")
+    expect(get(cwd, "b.ts")).toBe("worker B\n")
+    expect(get(cwd, "c.ts")).toBe("external edit\n")
+    const transcript = Session.restore([
+      { type: "user", at: 1, text: "edit a.ts" },
+      { type: "event", at: 2, event: { _tag: "cell-produced", cell: { text: "// shell" } } },
+      { type: "event", at: 3, event: { _tag: "cell-call-started", call: { flowName: "bash", input: { command: "edit a.ts" }, identity } } },
+      { type: "patch", receipt: receipts[0]! },
+      { type: "event", at: 4, event: { _tag: "cell-call-settled", flowName: "bash", identity, result: { outcome: "success", value: {} } } }
+    ] as Session.Record[]).transcript
+    expect(Undo.target(transcript, cellRows(transcript)[0]!.id)).toEqual({ _tag: "Uncaptured", flows: ["bash"] })
+    expect(get(cwd, "b.ts")).toBe("worker B\n")
   })
 
   it("refuses when a file changes between plan and commit, and writes nothing", async () => {
@@ -380,7 +442,7 @@ describe("undo", () => {
     expect(statSync(join(cwd, "run.sh")).mode & 0o777).toBe(0o755)
   })
 
-  it("restores a shell-deleted tracked executable with its mode", async () => {
+  it("refuses a standalone shell deletion", async () => {
     const cwd = gitRepo()
     put(cwd, "run.sh", "echo hi\n")
     chmodSync(join(cwd, "run.sh"), 0o755)
@@ -391,8 +453,8 @@ describe("undo", () => {
     await r.call("bash", { command: "rm run.sh" }, () => unlinkSync(join(cwd, "run.sh")))
     r.settle()
     const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
-    expect("_tag" in result).toBe(false)
-    expect(statSync(join(cwd, "run.sh")).mode & 0o777).toBe(0o755)
+    expect(result).toEqual({ _tag: "Uncaptured", flows: ["bash"] })
+    expect(existsSync(join(cwd, "run.sh"))).toBe(false)
   })
 
   it("has nothing to undo when a turn's edits net to no change", async () => {

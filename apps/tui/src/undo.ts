@@ -83,8 +83,12 @@ export const target = (transcript: Transcript.Transcript, rowId: string): Target
     }
   } else return { _tag: "NothingToUndo" }
   const all = cells.toReversed().flatMap((cell) => cell.calls.toReversed())
+  // A shell diff is repository-wide, so a nonempty receipt may include edits
+  // from other workers. An empty receipt made no edits and can coexist with a
+  // named-file call in the same turn.
   const uncaptured = [
-    ...new Set(all.filter((call) => writers.includes(call.flow) && call.patches === undefined).map((call) => call.flow))
+    ...new Set(all.filter((call) => writers.includes(call.flow) &&
+      (call.patches === undefined || (call.flow === "bash" && call.patches.length > 0))).map((call) => call.flow))
   ]
   if (uncaptured.length > 0) return { _tag: "Uncaptured", flows: uncaptured }
   const patched = all.filter((call) => (call.patches?.length ?? 0) > 0)
