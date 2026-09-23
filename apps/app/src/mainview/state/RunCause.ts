@@ -184,6 +184,7 @@ export type ModelCode = (typeof MODEL_CODES)[number]
  */
 export const SHARED_CODES = {
   invalid_request: [
+    "@smthrs/gateway/RuntimeBridgeError",
     "flows/model/ModelError",
     "flows/scorers/ScorerError",
     "@smthrs/sync/SyncError",
