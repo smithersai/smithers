@@ -57,6 +57,9 @@ const test = Smithers.Vitest({
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
+  // The serial suite reached 93 completed files before the default 20 minute
+  // target bound on the release runner; keep the run finite with room to finish.
+  timeoutMs: 1_800_000,
   cwd
 })
 

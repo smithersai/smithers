@@ -137,7 +137,7 @@ jobs:
     needs: native-helper
     # npm libraries have their own source, package, and installed-consumer gates.
     # Keep the private app's native matrix visible without blocking that train.
-    timeout-minutes: 120
+    timeout-minutes: 180
     environment: npm-publish
     permissions:
       contents: read
