@@ -653,6 +653,10 @@ describe("coverage conformance", () => {
       // would otherwise report a parent of 0, which reads as "reparented to
       // init" and is the exact claim the orphan cases assert.
       "testing/src/Faults.ts": 1,
+      // The loader's ESM/CJS directory selector is exercised by packed
+      // consumers in their own processes. Package-layout resolution and
+      // staged-helper exit cleanup remain measured by the unit suite.
+      "smithers/flows/platform-node/src/internal/AtomicFileSystemExecutable.ts": 1,
       // The fixture engine's three unreachable arms (`d1012596b6`): registered
       // execution bodies settle only after run or resume arms their
       // settlement, the registered execute function runs every subject flow so

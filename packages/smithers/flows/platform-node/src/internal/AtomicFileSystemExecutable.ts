@@ -9,19 +9,27 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { usableExecutable } from "./AtomicFileSystemTransport.ts"
 
-/* v8 ignore start -- the CJS and installed-layout paths run in the packed consumer smoke test */
+/* v8 ignore next -- the packed CJS consumer uses its loader's __dirname; source tests use the ESM loader */
 const moduleDirectory = typeof __dirname === "string" ? __dirname : dirname(fileURLToPath(import.meta.url))
-const sourcePackageRoot = resolve(moduleDirectory, "../..")
 
 /**
  * The same source module lives one directory deeper after an npm build.
  * @private
  * @since 1.0.0
  */
-export const packageRoot = existsSync(join(sourcePackageRoot, "package.json"))
-  ? sourcePackageRoot
-  : resolve(moduleDirectory, "../../..")
-/* v8 ignore stop */
+export const resolvePackageRoot = (directory: string): string => {
+  const sourcePackageRoot = resolve(directory, "../..")
+  return existsSync(join(sourcePackageRoot, "package.json"))
+    ? sourcePackageRoot
+    : resolve(directory, "../../..")
+}
+
+/**
+ * Package containing the currently loaded helper adapter.
+ * @private
+ * @since 1.0.0
+ */
+export const packageRoot = resolvePackageRoot(moduleDirectory)
 
 const staged = new Map<string, string>()
 
@@ -46,7 +54,6 @@ export const outsideWorkspace = (
       chmodSync(destination, 0o500)
       const executable = usableExecutable(destination, boundaryRoot)
       staged.set(source, executable)
-      /* v8 ignore next -- runs only when the host process exits */
       process.once("exit", () => rmSync(directory, { recursive: true, force: true }))
       return executable
     } catch (cause) {

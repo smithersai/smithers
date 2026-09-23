@@ -1,8 +1,12 @@
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { outsideWorkspace, resolveDefaultExecutable } from "../src/internal/AtomicFileSystemExecutable.ts"
+import {
+  outsideWorkspace,
+  resolveDefaultExecutable,
+  resolvePackageRoot
+} from "../src/internal/AtomicFileSystemExecutable.ts"
 
 const roots: Array<string> = []
 const fixture = async () => {
@@ -23,6 +27,29 @@ afterEach(async () => {
 })
 
 describe("default atomic helper resolution", () => {
+  it.each(["src/internal", "dist/esm/internal", "dist/cjs/internal"])(
+    "finds the package root from %s",
+    async (directory) => {
+      const { packageRoot } = await fixture()
+      await writeFile(join(packageRoot, "package.json"), "{}")
+      expect(resolvePackageRoot(join(packageRoot, directory))).toBe(packageRoot)
+    }
+  )
+
+  it("removes its staged helper when its own process-exit hook runs", async () => {
+    const { root } = await fixture()
+    const source = join(root, "helper")
+    await helper(source)
+    const previous = new Set(process.rawListeners("exit"))
+    const selected = outsideWorkspace(source, undefined, [root])
+    const owned = process.rawListeners("exit").filter((listener) => !previous.has(listener))
+    expect(owned).toHaveLength(1)
+    expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+    owned[0]!.call(process, 0)
+    await expect(access(dirname(selected))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(process.rawListeners("exit")).not.toContain(owned[0])
+  })
+
   it("tries a second staging location when the first is confined", async () => {
     const { root } = await fixture()
     const source = join(root, "helper")
