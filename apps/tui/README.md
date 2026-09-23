@@ -23,6 +23,9 @@ first available non-Cerebras seat (usually the ChatGPT subscription from
 `codex login`); `SMITHERS_TUI_WORKER_SEAT` overrides it. The picker lists only
 providers this machine can reach. Print mode runs a task directly.
 
+Edits, shell commands, and network calls wait for **y**/**n**;
+`SMITHERS_TUI_APPROVE=all|deny` overrides, and `-p` denies unless it is `all`.
+
 ## Keys
 
 | Key | Action |
@@ -32,6 +35,7 @@ providers this machine can reach. Print mode runs a task directly.
 | Alt+Up | Move queued follow-ups back to the editor |
 | Shift+Enter, Ctrl+J | Newline |
 | Esc | Stop the turn (queued messages return to the editor) or the shell command |
+| y, n, a | Approval waiting, editor empty: allow once, deny, allow for this session |
 | Ctrl+C | Clear the editor; twice within 500 ms to exit |
 | Ctrl+D | Exit when the editor is empty |
 | Up, Down | Prompt history |
@@ -160,5 +164,5 @@ require running work to finish or be stopped first.
 The end-to-end suite needs `zmuxd` (`$ZMUXD`, `PATH`, or `~/zmux/zig-out/bin`).
 Its model turns replay `test/fixtures/fix-add.jsonl` through the replay seat:
 `SMITHERS_TUI_REPLAY=<file>` streams a run recorded with
-`SMITHERS_TUI_RECORD=<file> bun src/ask.ts "<prompt>"`, and its cells run for
+`SMITHERS_TUI_APPROVE=all SMITHERS_TUI_RECORD=<file> bun src/ask.ts "<prompt>"`, and its cells run for
 real. `SMITHERS_TUI_REPLAY_SPEED` and `SMITHERS_TUI_REPLAY_HOLD_MS` pace it.

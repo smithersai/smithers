@@ -14,6 +14,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Capability from "@smthrs/capability/Capability"
+import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -467,6 +468,76 @@ ctx.done("done")`
     expect(result.executed).toEqual(["fs/read"])
     expect(result.outcome._tag).toBe("failed")
     expect(JSON.stringify(result.outcome)).toContain("fs/write is not permitted here")
+  })
+
+  it("resolves a call the host denies in the cell as permission_denied", async () => {
+    const denied = `await ctx.call("fs/read", {})
+const result = await ctx.call("fs/write", {})
+ctx.done(result.ok === false && result.error.code === "permission_denied" ? result.error.hint : "not denied")`
+    const executed: Array<string> = []
+    const outcome = await drive(
+      collect({
+        registry: registryOf(flows),
+        model: scripted([denied], []),
+        implementations: implementations(executed),
+        capabilityEnvelope: [],
+        authorize: (call) =>
+          call.flowName === "fs/write"
+            ? Effect.fail(
+              new HarnessError({
+                code: "engine_failed",
+                message: "Denied",
+                cause: Permission.permissionDenied(Capability.make("fs:write", "x"), "permission request denied")
+              })
+            )
+            : Effect.void,
+        maxFrames: 1
+      })
+    )
+
+    // A person said no. The cell reads that as a value and finishes; the run
+    // does not die, and the refused flow never ran.
+    expect(executed).toEqual(["fs/read"])
+    expect(completedOutput(events(outcome))).toBe(Cell.callFailureHint.permission_denied)
+  })
+
+  it("does not charge the time authorization waits to the call ceiling", async () => {
+    const one = `const result = await ctx.call("fs/write", {})
+ctx.done(typeof result === "string" ? result : result.error.code)`
+    const executed: Array<string> = []
+    const outcome = await drive(
+      collect({
+        registry: registryOf(flows),
+        model: scripted([one], []),
+        implementations: implementations(executed),
+        capabilityEnvelope: [],
+        limits: { callMs: 100 },
+        authorize: () => Effect.sleep("300 millis"),
+        maxFrames: 1
+      })
+    )
+
+    expect(executed).toEqual(["fs/write"])
+    expect(completedOutput(events(outcome))).toBe("ran")
+  })
+
+  it("authorizes an admitted call once", async () => {
+    const one = `await ctx.call("fs/write", {})
+ctx.done("done")`
+    let asked = 0
+    const outcome = await drive(
+      collect({
+        registry: registryOf(flows),
+        model: scripted([one], []),
+        implementations: implementations([]),
+        capabilityEnvelope: [],
+        authorize: () => Effect.sync(() => void asked++),
+        maxFrames: 1
+      })
+    )
+
+    expect(completedOutput(events(outcome))).toBe("done")
+    expect(asked).toBe(1)
   })
 })
 

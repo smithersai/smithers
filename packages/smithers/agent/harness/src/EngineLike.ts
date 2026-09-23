@@ -304,6 +304,17 @@ export interface EngineLike {
    */
   readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
   /**
+   * Decides a call's authority before the per-call clock starts.
+   *
+   * A person answering an approval is not the flow running slowly, so the
+   * controller asks here first and times only {@link call}. `undefined`
+   * admits the call; a result is the refusal the cell reads instead, and the
+   * call is never issued. A park or an engine failure travels in the error
+   * channel, exactly as it does from `call`. An implementation that admits a
+   * call does not ask again when that call is issued.
+   */
+  readonly admit?: (call: Cell.Call) => Effect.Effect<Cell.CallResult | undefined, HarnessError>
+  /**
    * Journals one nondeterministic controller read as a durable boundary.
    *
    * The controller's state is rebuilt by re-execution, so every read of the

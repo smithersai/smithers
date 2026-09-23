@@ -121,6 +121,7 @@ export class Workspace {
       const handle = this.options.host.run({
         prompt: tab.prompt,
         seat: tab.seat,
+        source: tab.id,
         history,
         role: "worker",
         runtime: { publish: (panel) => this.publish({ ...panel, id: `${tab.id}/${panel.id}` }) },

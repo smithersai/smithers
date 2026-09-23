@@ -36,6 +36,7 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
 import * as Context from "./context.ts"
 import * as Panels from "./panels.ts"
@@ -58,6 +59,8 @@ export interface TurnInput {
   readonly onCaption?: (prose: string) => void
   readonly onPatch?: (receipt: Changes.Receipt) => void
   readonly seat: string
+  /** Who waits on an approval: `chat` (the default) or a worker tab id. */
+  readonly source?: string
   readonly history: ReadonlyArray<Context.Entry>
   /** Where messages typed mid-turn wait for the next cell boundary. */
   readonly steering?: Steering.Source
@@ -76,6 +79,12 @@ export interface Host {
   /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
   readonly judged: boolean
   readonly run: (input: TurnInput) => Turn
+  /** Absent on hosts that approve nothing, such as test fakes. */
+  readonly approvals?: {
+    readonly mode: Approvals.Mode
+    readonly pending: () => Promise<ReadonlyArray<Approvals.Pending>>
+    readonly reply: (request: Approvals.Pending, choice: Approvals.Choice) => Promise<void>
+  }
   readonly dispose: () => Promise<void>
 }
 
@@ -117,7 +126,10 @@ export const make = (options: {
   readonly cwd: string
   /** The credentials environment; see `models.ts` `detect`. */
   readonly environment: Readonly<Record<string, string | undefined>>
+  /** How consequential flow calls are approved; see `approvals.ts`. Default `ask`. */
+  readonly approvals?: Approvals.Mode
 }): Host => {
+  const approvalMode = options.approvals ?? "ask"
   const env = options.environment
   const judged = (env[Evaluator.environmentKey] ?? "").trim() !== ""
   const judge = judged
@@ -136,6 +148,9 @@ export const make = (options: {
     // is keyed on no workspace digest and replays its first answer after an
     // edit: write "one", read, write "two", read returned "one" twice.
     NodeControl.layerObserver(options.cwd),
+    // Model HTTP keeps the noop store `executor` provides; this one only
+    // answers `authorize` below.
+    Approvals.layer(options.cwd, approvalMode),
     NodeCrypto.layer,
     NodeServices.layer
   )
@@ -155,6 +170,7 @@ export const make = (options: {
       const agent = yield* Agent.Agent
       const engine = yield* FlowRuntime.FlowRuntime
       const services = yield* Effect.context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>()
+      const grants = yield* GrantStore.GrantStore
       const flow = turnFlow(index)
       const settled = Deferred.makeUnsafe<string, unknown>()
       let answer = ""
@@ -194,6 +210,9 @@ export const make = (options: {
           ...(input.runtime === undefined ? [] : [Runtime.source(input.runtime)])
         ],
         capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+        ...(approvalMode === "all"
+          ? {}
+          : { authorize: Approvals.authorize(grants, { cwd: options.cwd, source: input.source ?? "chat" }) }),
         // The same explicit cell budget `smithers run` uses; never unlimited.
         limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 },
         // A person reads every answer here, so without a gateway key the one
@@ -241,7 +260,19 @@ export const make = (options: {
     return { done, cancel: () => void runtime.runFork(Fiber.interrupt(fiber)) }
   }
 
-  return { cwd: options.cwd, judged, run, dispose: () => runtime.dispose() }
+  const approvals: NonNullable<Host["approvals"]> = {
+    mode: approvalMode,
+    pending: () =>
+      runtime.runPromise(Effect.gen(function*() {
+        return Approvals.pending(yield* (yield* GrantStore.GrantStore).list)
+      })),
+    reply: (request, choice) =>
+      runtime.runPromise(Effect.gen(function*() {
+        yield* Approvals.reply(yield* GrantStore.GrantStore, request, choice, options.cwd)
+      }))
+  }
+
+  return { cwd: options.cwd, judged, run, approvals, dispose: () => runtime.dispose() }
 }
 
 /**

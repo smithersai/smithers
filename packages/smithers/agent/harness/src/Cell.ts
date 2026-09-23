@@ -339,7 +339,8 @@ export const CallFailureCode = Schema.Literals([
   "checkpoint_exhausted",
   "checkpoint_readonly",
   "checkpoint_unsupported",
-  "flow_failed"
+  "flow_failed",
+  "permission_denied"
 ])
 
 /**
@@ -389,7 +390,9 @@ export const callFailureHint: Readonly<Record<CallFailureCode, string>> = Object
     "This flow names what it touches rather than where it runs, so it cannot be pointed at a checkpoint. Drop at, or run the same work through a shell flow, which takes a working directory.",
   run_completed:
     "The run is over, so nothing after this line runs. If that was early, guard the ctx.done or ctx.park on the check that decides it.",
-  flow_failed: "Read error.message: the flow itself says what went wrong, and it is usually fixable in this same cell."
+  flow_failed: "Read error.message: the flow itself says what went wrong, and it is usually fixable in this same cell.",
+  permission_denied:
+    "A person or policy refused this call. Do not retry it or reach the same effect through another flow; finish with what you have or say what you need."
 })
 
 /**

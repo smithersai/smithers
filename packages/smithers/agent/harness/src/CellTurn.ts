@@ -1592,13 +1592,17 @@ const issued = (
     // reaches the record at all, so nothing journals it and the attempt the
     // grant answers asks again. That is the whole reason the call sits outside
     // the boundary rather than inside its `execute`.
-    const settlement = yield* issue.pipe(
+    //
+    // Authority is decided before the clock starts: time a person spends
+    // answering an approval is not the flow's to spend.
+    const refused = engine.admit === undefined ? undefined : yield* engine.admit(call)
+    const settlement = refused ?? (yield* issue.pipe(
       Effect.timeoutOrElse({
         duration: callMs,
         orElse: () => Effect.succeed(Sandbox.callTimedOut(flow, callMs))
       }),
       Effect.flatMap(Cell.decodeCallResult)
-    )
+    ))
     return yield* engine.record({
       name: "cell-call",
       call,

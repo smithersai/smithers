@@ -11,6 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import * as Approvals from "./approvals.ts"
 import * as Clipboard from "./clipboard.ts"
 import * as Complete from "./complete.ts"
 import type * as Context from "./context.ts"
@@ -206,6 +207,9 @@ export function App(props: AppProps) {
   const [menuDismissed, setMenuDismissed] = useState(false)
   const [name, setName] = useState(restored.current?.name)
   const [now, setNow] = useState(Date.now())
+  const [approvals, setApprovals] = useState<ReadonlyArray<Approvals.Pending>>([])
+  // Answered but maybe still listed: a poll can land before the store drops it.
+  const answered = useRef(new Set<string>())
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
   const history = useRef(new Editor.History(restored.current?.prompts ?? []))
   const writer = useRef<Session.Writer>(
@@ -297,8 +301,8 @@ export function App(props: AppProps) {
   useEffect(() => setMenuIndex(0), [menuIdentity])
 
   // Key handlers read the latest values through these, never a stale render.
-  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex })
-  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex }
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -315,6 +319,28 @@ export function App(props: AppProps) {
     const timer = setInterval(() => setNow(Date.now()), 100)
     return () => clearInterval(timer)
   }, [clockRunning])
+
+  // The store has no subscription; a request exists only while work runs, so
+  // the work clock is the poll.
+  useEffect(() => {
+    const ports = props.host.approvals
+    if (ports === undefined || ports.mode !== "ask") return
+    if (!clockRunning) return setApprovals((current) => (current.length === 0 ? current : []))
+    let active = true
+    ports.pending().then(
+      (listed) => {
+        if (!active) return
+        const next = listed.filter((request) => !answered.current.has(request.requestId))
+        setApprovals((current) =>
+          current.length === next.length && current.every((each, index) => each.requestId === next[index]!.requestId)
+            ? current
+            : next
+        )
+      },
+      (error) => setStatus(String(error), "danger")
+    )
+    return () => { active = false }
+  }, [now, clockRunning, props.host, setStatus])
 
   useEffect(() => {
     if (toast === undefined) return
@@ -1008,6 +1034,22 @@ export function App(props: AppProps) {
     }
     if (open !== undefined) return dialogKey(key, open)
     if (completing !== undefined && menuKey(key, completing)) return
+    const choice = Approvals.key(key.name, {
+      draft: text,
+      shift: key.shift,
+      ctrl: key.ctrl,
+      meta: key.meta || key.option,
+      pending: live.current.approvals
+    })
+    if (choice !== undefined && props.host.approvals !== undefined) {
+      key.preventDefault()
+      const [first, ...rest] = live.current.approvals
+      answered.current.add(first!.requestId)
+      live.current.approvals = rest
+      setApprovals(rest)
+      props.host.approvals.reply(first!, choice).catch(() => setStatus("Approval expired", "warning"))
+      return
+    }
     if (key.name === "escape") {
       if (running !== undefined) {
         restoreQueued(running.steering.take())
@@ -1171,6 +1213,15 @@ export function App(props: AppProps) {
               </box>
             </box>
           )}
+        {approvals[0] === undefined ? null : (
+          <View.Approval
+            request={approvals[0]}
+            more={approvals.length - 1}
+            {...(approvals[0].source === "chat"
+              ? {}
+              : { worker: snapshot.tabs.find((tab) => tab.id === approvals[0]!.source)?.title ?? approvals[0].source })}
+          />
+        )}
         <box
           style={{ border: ["left"], marginTop: 1, flexShrink: 0 }}
           borderColor={accent}
@@ -1258,7 +1309,9 @@ export function App(props: AppProps) {
             id: tab.id,
             text: `${
               tab.status === "running" || tab.status === "requested" ? tick : tab.status === "done" ? "✓" : "✗"
-            } ${tab.title} · ${tab.status}`,
+            } ${tab.title} · ${
+              approvals.some((request) => request.source === tab.id) ? "approval" : tab.status
+            }`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
           ...(search?.status === "running" && now - search.startedAt >= 300

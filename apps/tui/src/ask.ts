@@ -4,6 +4,7 @@
  *   bun src/ask.ts "list the files here" [seat]
  */
 import { appendFileSync, writeFileSync } from "node:fs"
+import * as Approvals from "./approvals.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
 
@@ -16,7 +17,12 @@ if (prompt === undefined) {
 const record = process.env.SMITHERS_TUI_RECORD
 if (record !== undefined) writeFileSync(record, "")
 const available = Models.detect(process.env)
-const host = Host.make({ cwd: process.cwd(), environment: available.environment })
+const approvals = Approvals.mode(process.env, { print: true })
+if (typeof approvals === "object") {
+  console.error(approvals.error)
+  process.exit(2)
+}
+const host = Host.make({ cwd: process.cwd(), environment: available.environment, approvals })
 const turn = host.run({
   prompt,
   seat: process.argv[3] ?? available.defaultSeat ?? "openai:gpt-6-sol",

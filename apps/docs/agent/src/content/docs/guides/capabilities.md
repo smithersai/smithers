@@ -180,6 +180,12 @@ one would replay forever and no later grant could unblock it. Checked outside,
 a park records nothing, and the resumed attempt asks again against the grant
 store as it now stands.
 
+A hook that fails with a `HarnessError` whose `cause` is a
+`Permission.PermissionDenied` refuses that one call: the cell reads
+`{ ok: false, error: { code: "permission_denied" } }` and the run goes on.
+Any other failure ends the run. The call's `callMs` clock starts after the
+hook answers, so a hook may wait for a person.
+
 ## Declare the envelope honestly
 
 `Agent.Options.capabilityEnvelope` is the composition's complete authority, and

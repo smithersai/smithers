@@ -418,6 +418,7 @@ const withRequestPlugins = (
       ),
     splice: engine.splice,
     call: engine.call,
+    ...(engine.admit === undefined ? {} : { admit: engine.admit }),
     record: engine.record,
     observe: engine.observe,
     capture: engine.capture,

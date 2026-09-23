@@ -461,7 +461,7 @@ projects a failed result into the fixed envelope the cell observes:
 
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
-flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 13 codes
+flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 14 codes
 to the one action that recovers it. The codes and hints are tabulated in
 [troubleshooting](./troubleshooting.md#a-flow-call-fails).
 
@@ -514,6 +514,7 @@ export interface EngineLike {
   ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
   readonly splice: (batch: Plan.Batch) => Stream.Stream<Plan.SpliceEvent, HarnessError>
   readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
+  readonly admit?: (call: Cell.Call) => Effect.Effect<Cell.CallResult | undefined, HarnessError>
   readonly record: <A>(boundary: RecordBoundary<A>) => Effect.Effect<A, HarnessError>
   readonly observe: Effect.Effect<Option.Option<Observation>, HarnessError>
   readonly capture: (request: CaptureRequest) => Effect.Effect<Option.Option<Snapshot>, HarnessError>
@@ -536,6 +537,11 @@ export interface EngineLike {
   `failure` `Cell.CallResult`; a permission requirement, an abort, or an
   engine failure travels in the error channel so the cell can never swallow a
   park.
+- `admit`, when present, decides a call's authority before the controller
+  starts the call's `callMs` clock, so time a person spends answering an
+  approval is not charged to the flow. `undefined` admits the call; a result
+  is the refusal the cell reads instead, and `call` is never issued. An
+  implementation does not ask again when an admitted call is issued.
 - `record` journals one nondeterministic controller read, keyed on `(name,
   identity)` together. `RecordBoundary` is `{ name, identity, success,
   execute }`, where `success` is a `DurableSchema`, a schema that decodes

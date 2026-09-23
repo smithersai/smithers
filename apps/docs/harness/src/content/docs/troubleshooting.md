@@ -84,6 +84,7 @@ from `Cell.CallFailureCode`:
 | `checkpoint_readonly`    | A flow that writes ran against a checkpoint.                                                                  | Drop `at` and make the change on the live tree.                                                         |
 | `checkpoint_unsupported` | The flow names what it touches rather than where it runs, so it cannot be pointed at a checkpoint.            | Drop `at`, or run the work through a shell flow, which takes a working directory.                       |
 | `flow_failed`            | The flow itself failed; the default when nothing classified the failure.                                      | Read `error.message`: the flow says what went wrong, and it is usually fixable in the same cell.        |
+| `permission_denied`      | A person or policy refused the call before it ran, through the host's `authorize`.                            | Do not retry it or reach the same effect through another flow; finish or say what you need.             |
 
 **The same interrupted call runs twice.** A call the `callMs` ceiling
 interrupted settled nowhere, so a re-executed frame issues it to the host

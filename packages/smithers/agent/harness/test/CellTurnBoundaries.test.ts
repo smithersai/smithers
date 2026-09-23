@@ -2043,6 +2043,35 @@ describe("CellTurn recorded observations", () => {
     expect(of(second.events, "cell-call-settled").map((event) => event.result.code)).toEqual(["timeout", undefined])
   })
 
+  it("admits a call before its clock starts and hands the cell a refusal admit returns", async () => {
+    const cell = `const slow = await ctx.call("fs/list", { path: "slow" })
+       const refused = await ctx.call("fs/list", { path: "refused" })
+       ctx.done(String(slow) + " " + refused.error.code)`
+    const model = ScriptedModel.make([emits(cell)])
+    const engine = ScriptedEngine.make(model.model, [])
+    const stub = EngineLike.make({
+      ...engine.engine,
+      // A person takes longer to answer than the call may run.
+      admit: (call) =>
+        (call.input as { path: string }).path === "refused"
+          ? Effect.succeed(
+            new Cell.CallResult({ outcome: "failure", value: null, code: "permission_denied", message: "Denied" })
+          )
+          : Effect.as(Effect.sleep("150 millis"), undefined),
+      call: (call) => {
+        engine.recorder.calls.push(call)
+        return Effect.succeed(new Cell.CallResult({ outcome: "success", value: "listed" }))
+      }
+    })
+    const observed = await collect(
+      { state: state({ maxFrames: 1 }), flows: [lister], limits: { callMs: 50 } },
+      { engine: EngineLike.layer(stub) }
+    )
+
+    expect(resolvedText(observed.events)).toBe("listed permission_denied")
+    expect(engine.recorder.calls.map((call) => call.input)).toEqual([{ path: "slow" }])
+  })
+
   it.each(["call", "checkpoint", "call-timeout", "slow-journal"])(
     "stops timeout replay at the interrupted %s frontier",
     async (kind) => {

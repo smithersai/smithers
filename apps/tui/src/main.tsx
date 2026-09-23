@@ -15,6 +15,7 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { App } from "./app.tsx"
 import * as Context from "./context.ts"
+import * as Approvals from "./approvals.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
 import * as Session from "./session.ts"
@@ -40,10 +41,24 @@ if (seat === undefined) {
   console.error("No model is available. Run `codex login` for the ChatGPT subscription, or set a provider API key.")
   process.exit(1)
 }
-const host = Host.make({ cwd, environment: available.environment })
+const approvals = Approvals.mode(process.env, { print: values.print !== undefined })
+if (typeof approvals === "object") {
+  console.error(approvals.error)
+  process.exit(1)
+}
+const host = Host.make({ cwd, environment: available.environment, approvals })
 
 if (values.print !== undefined) {
-  const turn = host.run({ prompt: values.print, seat, history: [] as Array<Context.Entry>, onEvent: () => {} })
+  const turn = host.run({
+    prompt: values.print,
+    seat,
+    history: [] as Array<Context.Entry>,
+    onEvent: (event) => {
+      if (event._tag === "cell-call-settled" && event.result.code === "permission_denied") {
+        console.error(`denied ${event.flowName}; ${Approvals.environmentKey}=all allows`)
+      }
+    }
+  })
   const outcome = await turn.done
   await host.dispose()
   if (outcome._tag === "done") {

@@ -356,6 +356,37 @@ export function Dialog(props: {
 }
 
 /** Toasts ride the top right, like the app's toast stack. */
+/** The oldest waiting approval, pinned above the composer. */
+export function Approval(
+  props: {
+    readonly request: {
+      readonly flow: string
+      readonly subject: string
+      readonly always: boolean
+    }
+    readonly more: number
+    readonly worker?: string
+  }
+) {
+  return (
+    <box style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
+      <text wrapMode="none" style={{ flexShrink: 1 }} fg={color.warning}>
+        {props.worker === undefined ? "" : `↳ ${props.worker} `}? {props.request.flow}{" "}
+        {props.request.subject.replace(/\s+/g, " ")}
+        {props.more > 0 ? ` +${props.more}` : ""}
+      </text>
+      <text wrapMode="none" style={{ flexShrink: 0, paddingLeft: 2 }}>
+        <span fg={color.text}>y</span>
+        <span fg={color.faint}>{" allow  "}</span>
+        <span fg={color.text}>n</span>
+        <span fg={color.faint}>{" deny"}</span>
+        {props.request.always ? <span fg={color.text}>{"  a"}</span> : null}
+        {props.request.always ? <span fg={color.faint}>{" always"}</span> : null}
+      </text>
+    </box>
+  )
+}
+
 export function ToastStack(
   props: {
     readonly rows: ReadonlyArray<

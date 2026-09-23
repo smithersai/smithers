@@ -974,6 +974,39 @@ export const make = (
         Stream.mapEffect((child) => Effect.fail(engineFailed("No child runner is configured", child.flowName)))
       )
 
+    // Calls `admit` authorized and `call` has not yet issued, by identity.
+    const admitted = new Set<string>()
+    const admission = (request: Cell.Call): string => JSON.stringify(request.identity)
+
+    /**
+     * Authorizes a call before the controller starts its per-call clock.
+     *
+     * A denial is the cell's to read, as `permission_denied`: a person or a
+     * policy said no, and the run goes on without that effect. A park and every
+     * other failure still escape, so the run parks or fails exactly as it would
+     * from `call`.
+     */
+    const authorize = options.calls?.authorize
+    const admit = authorize === undefined ? undefined : (
+      request: Cell.Call
+    ): Effect.Effect<Cell.CallResult | undefined, HarnessError.HarnessError> =>
+      authorize(request).pipe(
+        Effect.tap(() => Effect.sync(() => admitted.add(admission(request)))),
+        Effect.as(undefined),
+        Effect.catchIf(
+          (error) => error.cause instanceof Permission.PermissionDenied,
+          (error) =>
+            Effect.succeed(
+              new Cell.CallResult({
+                outcome: "failure",
+                value: null,
+                code: "permission_denied",
+                message: error.message
+              })
+            )
+        )
+      )
+
     const call = (
       request: Cell.Call
     ): Effect.Effect<Cell.CallResult, HarnessError.HarnessError> =>
@@ -990,7 +1023,9 @@ export const make = (
         if (calls === undefined) {
           return yield* Effect.fail(engineFailed("No cell-call runner is configured", decoded.flowName))
         }
-        if (calls.authorize !== undefined) yield* calls.authorize(decoded)
+        // A call `admit` already authorized is not asked twice: a grant a
+        // person gave once would otherwise be requested again here.
+        if (calls.authorize !== undefined && !admitted.delete(admission(decoded))) yield* calls.authorize(decoded)
         const key = yield* callKey(decoded, scope)
         return yield* Action.make({
           name: cellCallActivityName(decoded.flowName),
@@ -1101,6 +1136,7 @@ export const make = (
       sealStep,
       splice,
       call,
+      ...(admit === undefined ? {} : { admit }),
       record,
       observe,
       capture,
