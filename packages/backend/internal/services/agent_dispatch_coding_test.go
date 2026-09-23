@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
@@ -149,6 +152,58 @@ func TestCleanupCancellationReconnectsByStableProductRequest(t *testing.T) {
 	require.Len(t, dispatcher.cancels, 1)
 	assert.Equal(t, jobs.Scope{TenantID: "repository:5", PrincipalID: "user:9"}, dispatcher.cancels[0].scope)
 	assert.Equal(t, "agent-run:42", dispatcher.cancels[0].requestID)
+}
+
+func TestProjectFlowRuntimeIgnoresSupersededTurn(t *testing.T) {
+	projection, err := json.Marshal(agentFlowProjection{Kind: "agent-workflow-run", SessionID: "session-1", WorkflowRunID: 100, WorkflowTaskID: 101})
+	require.NoError(t, err)
+	terminalCalled := false
+	dq := &mockAgentDispatchQuerier{
+		getAgentSessionForFlowProjectionFn: func(_ context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error) {
+			assert.Equal(t, int64(100), arg.WorkflowRunID)
+			assert.Equal(t, int64(101), arg.WorkflowTaskID)
+			return db.AgentSession{}, pgx.ErrNoRows // session now belongs to run 200
+		},
+		updateAgentSessionTerminalForFlowFn: func(context.Context, db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error) {
+			terminalCalled = true
+			return db.AgentSession{}, nil
+		},
+	}
+	service := &AgentService{dispatchQ: dq, workspaces: stubAgentWorkspaceBackend{}}
+	require.NoError(t, service.ProjectFlowRuntime(context.Background(), flowdispatch.ProjectionUpdate{
+		State:      jobs.StateCompleted,
+		Checkpoint: flowdispatch.RuntimeCheckpoint{Projection: projection, RunID: "old-host-run", FlowID: codingDispatchFlowID},
+	}))
+	assert.False(t, terminalCalled)
+	assert.Zero(t, dq.codingHost.WorkflowRunID)
+}
+
+func TestProjectFlowRuntimeDoesNotCleanUpAfterOwnerChangesDuringProjection(t *testing.T) {
+	projection, err := json.Marshal(agentFlowProjection{Kind: "agent-workflow-run", SessionID: "session-1", WorkflowRunID: 100, WorkflowTaskID: 101})
+	require.NoError(t, err)
+	terminalCalled := false
+	notified := false
+	service := &AgentService{
+		q: &mockAgentQuerier{notifyAgentSessionFn: func(context.Context, db.NotifyAgentSessionParams) error { notified = true; return nil }},
+		dispatchQ: &mockAgentDispatchQuerier{
+			getAgentSessionForFlowProjectionFn: func(context.Context, db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error) {
+				return db.AgentSession{ID: "session-1", WorkflowRunID: pgtype.Int8{Int64: 100, Valid: true}}, nil
+			},
+			updateAgentSessionTerminalForFlowFn: func(_ context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error) {
+				terminalCalled = true
+				assert.Equal(t, "session-1", arg.SessionID)
+				assert.Equal(t, pgtype.Int8{Int64: 100, Valid: true}, arg.WorkflowRunID)
+				assert.Equal(t, int64(101), arg.WorkflowTaskID)
+				assert.Equal(t, "completed", arg.Status)
+				return db.AgentSession{}, pgx.ErrNoRows // run 200 claimed the row after the read
+			},
+		},
+	}
+	require.NoError(t, service.ProjectFlowRuntime(context.Background(), flowdispatch.ProjectionUpdate{
+		State: jobs.StateCompleted, Checkpoint: flowdispatch.RuntimeCheckpoint{Projection: projection},
+	}))
+	assert.True(t, terminalCalled)
+	assert.False(t, notified)
 }
 
 type stubAgentWorkspaceBackend struct{}

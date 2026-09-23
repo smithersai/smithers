@@ -1069,6 +1069,8 @@ type mockAgentDispatchQuerier struct {
 	clearWorkflowRunJJHubTokenIDFn        func(ctx context.Context, id int64) error
 	updateAgentSessionStatusFn            func(ctx context.Context, arg db.UpdateAgentSessionStatusParams) (db.AgentSession, error)
 	updateAgentSessionTerminalStatusFn    func(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusParams) (db.AgentSession, error)
+	getAgentSessionForFlowProjectionFn    func(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
+	updateAgentSessionTerminalForFlowFn   func(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	updateAgentSessionTimedOutFn          func(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
 }
 
@@ -1312,6 +1314,20 @@ func (m *mockAgentDispatchQuerier) UpdateAgentSessionTerminalStatus(ctx context.
 	s.Status = arg.Status
 	s.FinishedAt = arg.FinishedAt
 	return s, nil
+}
+
+func (m *mockAgentDispatchQuerier) GetAgentSessionForFlowProjection(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error) {
+	if m.getAgentSessionForFlowProjectionFn != nil {
+		return m.getAgentSessionForFlowProjectionFn(ctx, arg)
+	}
+	return db.AgentSession{}, pgx.ErrNoRows
+}
+
+func (m *mockAgentDispatchQuerier) UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error) {
+	if m.updateAgentSessionTerminalForFlowFn != nil {
+		return m.updateAgentSessionTerminalForFlowFn(ctx, arg)
+	}
+	return db.AgentSession{}, pgx.ErrNoRows
 }
 
 func (m *mockAgentDispatchQuerier) UpdateAgentSessionTimedOut(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error) {

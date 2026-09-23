@@ -425,6 +425,21 @@ func TestAgent_Cov_RuntimeWatchdogBookkeeping(t *testing.T) {
 	assert.False(t, ok)
 	svc.cancelAgentRuntimeWatchdog(" ")
 
+	svc.startAgentRuntimeWatchdog("session", "vm-3", 200, 0)
+	svc.watchdogsMu.Lock()
+	replacement := svc.watchdogs["session"]
+	svc.watchdogsMu.Unlock()
+	require.NotNil(t, replacement)
+	svc.cancelAgentRuntimeWatchdogForRun("session", 100)
+	svc.watchdogsMu.Lock()
+	assert.Same(t, replacement, svc.watchdogs["session"])
+	svc.watchdogsMu.Unlock()
+	svc.cancelAgentRuntimeWatchdogForRun("session", 200)
+	svc.watchdogsMu.Lock()
+	_, ok = svc.watchdogs["session"]
+	svc.watchdogsMu.Unlock()
+	assert.False(t, ok)
+
 	fastSvc := &AgentService{
 		sandbox:       svc.sandbox,
 		sandboxConfig: AgentSandboxConfig{MaxRuntime: 10 * time.Millisecond},

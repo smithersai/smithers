@@ -7,10 +7,15 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
@@ -178,8 +183,22 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	if projection.SessionID == "" || projection.WorkflowRunID <= 0 || projection.WorkflowTaskID <= 0 {
 		return errors.New("agent Flow projection identity is invalid")
 	}
+	// Check the task as well as the run before projecting a host receipt. This
+	// also avoids reading a replacement turn's workspace for an older receipt.
+	owner, err := service.dispatchQ.GetAgentSessionForFlowProjection(ctx, db.GetAgentSessionForFlowProjectionParams{
+		SessionID: projection.SessionID, WorkflowRunID: projection.WorkflowRunID, WorkflowTaskID: projection.WorkflowTaskID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load agent Flow projection owner: %w", err)
+	}
 	if update.Checkpoint.RunID != "" {
-		workspaceID := service.agentSessionWorkspaceID(ctx, projection.SessionID)
+		workspaceID := ""
+		if service.workspaces != nil {
+			workspaceID = UUIDString(owner.WorkspaceID)
+		}
 		if workspaceID == "" {
 			return errors.New("agent workspace is not ready for Flow receipt projection")
 		}
@@ -203,13 +222,19 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	case jobs.StateCancelled:
 		finalStatus, lastError = "cancelled", "the canonical Flow run was cancelled"
 	}
-	session, transitioned, err := service.transitionAgentSessionTerminalStatus(ctx, projection.SessionID, finalStatus)
+	session, err := service.dispatchQ.UpdateAgentSessionTerminalStatusForFlow(ctx, db.UpdateAgentSessionTerminalStatusForFlowParams{
+		SessionID: projection.SessionID, WorkflowRunID: pgtype.Int8{Int64: projection.WorkflowRunID, Valid: true}, WorkflowTaskID: projection.WorkflowTaskID,
+		Status: finalStatus, FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("project canonical Flow terminal status: %w", err)
 	}
-	if transitioned {
-		service.finalizeAgentSession(ctx, session, finalStatus, lastError)
-	}
+	meterSandboxUsage(ctx, service.dispatchQ, session.UserID, "agent", session.ID, false)
+	service.notifyAgentSessionStatus(ctx, session)
+	service.finalizeAgentSession(ctx, session, finalStatus, lastError)
 	return nil
 }
 

@@ -223,7 +223,11 @@ func (s *AgentService) notifyAgentSessionStatus(ctx context.Context, session db.
 
 func (s *AgentService) finalizeAgentSession(ctx context.Context, session db.AgentSession, finalStatus, lastError string) {
 	meterSandboxUsage(ctx, s.dispatchQ, session.UserID, "agent", session.ID, false)
-	s.cancelAgentRuntimeWatchdog(session.ID)
+	if session.WorkflowRunID.Valid {
+		s.cancelAgentRuntimeWatchdogForRun(session.ID, session.WorkflowRunID.Int64)
+	} else {
+		s.cancelAgentRuntimeWatchdog(session.ID)
+	}
 	s.observeAgentSessionCompletion(finalStatus)
 	s.updateAgentWorkflowTerminalState(ctx, session, finalStatus, lastError)
 	s.archiveAgentTranscript(ctx, session, finalStatus)
@@ -351,7 +355,7 @@ func (s *AgentService) deleteAgentSandboxVM(ctx context.Context, sessionID strin
 	if s == nil || s.sandbox == nil || !sandboxVMID.Valid {
 		return
 	}
-	s.cancelAgentRuntimeWatchdog(sessionID)
+	s.cancelAgentRuntimeWatchdogForRun(sessionID, workflowRunID)
 
 	logger := middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, sessionID, workflowRunID)
 	err := s.sandbox.DeleteSandbox(ctx, sandboxVMID.String)

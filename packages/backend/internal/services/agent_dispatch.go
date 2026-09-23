@@ -180,7 +180,7 @@ func (d *agentDispatch) cleanup() {
 		d.jjhubToken = temporaryRepoCloneToken{}
 	}
 	if d.watchdogStarted {
-		d.svc.cancelAgentRuntimeWatchdog(d.input.SessionID)
+		d.svc.cancelAgentRuntimeWatchdogForRun(d.input.SessionID, d.run.ID)
 	}
 	if d.vmCreated && d.workspaceID != "" {
 		// RFD-004: a workspace whose agent never started is failed (quota

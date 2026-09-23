@@ -295,6 +295,44 @@ func (q *Queries) GetAgentSessionAnyState(ctx context.Context, id string) (Agent
 	return i, err
 }
 
+const getAgentSessionForFlowProjection = `-- name: GetAgentSessionForFlowProjection :one
+SELECT session.id, session.repository_id, session.user_id, session.workflow_run_id, session.title, session.status, session.metadata, session.workspace_id, session.started_at, session.finished_at, session.created_at, session.updated_at, session.deleted_at
+FROM agent_sessions AS session
+JOIN workflow_tasks AS task
+  ON task.id = $1
+ AND task.workflow_run_id = $2
+WHERE session.id = $3
+  AND session.workflow_run_id = $2
+  AND session.deleted_at IS NULL
+`
+
+type GetAgentSessionForFlowProjectionParams struct {
+	WorkflowTaskID int64  `json:"workflow_task_id"`
+	WorkflowRunID  int64  `json:"workflow_run_id"`
+	SessionID      string `json:"session_id"`
+}
+
+func (q *Queries) GetAgentSessionForFlowProjection(ctx context.Context, arg GetAgentSessionForFlowProjectionParams) (AgentSession, error) {
+	row := q.db.QueryRow(ctx, getAgentSessionForFlowProjection, arg.WorkflowTaskID, arg.WorkflowRunID, arg.SessionID)
+	var i AgentSession
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.WorkflowRunID,
+		&i.Title,
+		&i.Status,
+		&i.Metadata,
+		&i.WorkspaceID,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getAgentSessionWithMessageCount = `-- name: GetAgentSessionWithMessageCount :one
 SELECT
     s.id,
@@ -898,6 +936,60 @@ type UpdateAgentSessionTerminalStatusParams struct {
 
 func (q *Queries) UpdateAgentSessionTerminalStatus(ctx context.Context, arg UpdateAgentSessionTerminalStatusParams) (AgentSession, error) {
 	row := q.db.QueryRow(ctx, updateAgentSessionTerminalStatus, arg.ID, arg.Status, arg.FinishedAt)
+	var i AgentSession
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.WorkflowRunID,
+		&i.Title,
+		&i.Status,
+		&i.Metadata,
+		&i.WorkspaceID,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateAgentSessionTerminalStatusForFlow = `-- name: UpdateAgentSessionTerminalStatusForFlow :one
+UPDATE agent_sessions AS session
+SET status = $1,
+    finished_at = $2,
+    updated_at = NOW()
+WHERE session.id = $3
+  AND session.workflow_run_id = $4
+  AND session.status = 'active'
+  AND session.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM workflow_tasks AS task
+      WHERE task.id = $5
+        AND task.workflow_run_id = $4
+  )
+RETURNING session.id, session.repository_id, session.user_id, session.workflow_run_id, session.title, session.status, session.metadata, session.workspace_id, session.started_at, session.finished_at, session.created_at, session.updated_at, session.deleted_at
+`
+
+type UpdateAgentSessionTerminalStatusForFlowParams struct {
+	Status         string             `json:"status"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
+	SessionID      string             `json:"session_id"`
+	WorkflowRunID  pgtype.Int8        `json:"workflow_run_id"`
+	WorkflowTaskID int64              `json:"workflow_task_id"`
+}
+
+// The session row lock acquired by UPDATE serializes this check with the next
+// turn's workflow_run_id assignment. A replay for an older run/task gets no row.
+func (q *Queries) UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg UpdateAgentSessionTerminalStatusForFlowParams) (AgentSession, error) {
+	row := q.db.QueryRow(ctx, updateAgentSessionTerminalStatusForFlow,
+		arg.Status,
+		arg.FinishedAt,
+		arg.SessionID,
+		arg.WorkflowRunID,
+		arg.WorkflowTaskID,
+	)
 	var i AgentSession
 	err := row.Scan(
 		&i.ID,

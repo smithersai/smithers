@@ -64,6 +64,34 @@ SET status = $2, finished_at = $3, updated_at = NOW()
 WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 RETURNING *;
 
+-- name: GetAgentSessionForFlowProjection :one
+SELECT session.*
+FROM agent_sessions AS session
+JOIN workflow_tasks AS task
+  ON task.id = sqlc.arg(workflow_task_id)
+ AND task.workflow_run_id = sqlc.arg(workflow_run_id)
+WHERE session.id = sqlc.arg(session_id)
+  AND session.workflow_run_id = sqlc.arg(workflow_run_id)
+  AND session.deleted_at IS NULL;
+
+-- name: UpdateAgentSessionTerminalStatusForFlow :one
+-- The session row lock acquired by UPDATE serializes this check with the next
+-- turn's workflow_run_id assignment. A replay for an older run/task gets no row.
+UPDATE agent_sessions AS session
+SET status = sqlc.arg(status),
+    finished_at = sqlc.arg(finished_at),
+    updated_at = NOW()
+WHERE session.id = sqlc.arg(session_id)
+  AND session.workflow_run_id = sqlc.arg(workflow_run_id)
+  AND session.status = 'active'
+  AND session.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM workflow_tasks AS task
+      WHERE task.id = sqlc.arg(workflow_task_id)
+        AND task.workflow_run_id = sqlc.arg(workflow_run_id)
+  )
+RETURNING session.*;
+
 -- name: UpdateAgentSessionTimedOut :one
 UPDATE agent_sessions
 SET status = 'timed_out', finished_at = $2, updated_at = NOW()

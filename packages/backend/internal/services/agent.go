@@ -258,6 +258,8 @@ type AgentDispatchQuerier interface {
 	ClearWorkflowRunJJHubTokenID(ctx context.Context, id int64) error
 	UpdateAgentSessionStatus(ctx context.Context, arg db.UpdateAgentSessionStatusParams) (db.AgentSession, error)
 	UpdateAgentSessionTerminalStatus(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusParams) (db.AgentSession, error)
+	GetAgentSessionForFlowProjection(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
+	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	UpdateAgentSessionTimedOut(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
 }
 
@@ -283,7 +285,8 @@ type AgentConcurrencyCounter interface {
 var agentRandRead = rand.Read
 
 type agentRuntimeWatchdog struct {
-	cancel context.CancelFunc
+	cancel        context.CancelFunc
+	workflowRunID int64
 }
 
 // agentAppendTx defines the transaction interface for atomic message appends.
@@ -1223,7 +1226,7 @@ func (s *AgentService) markAgentDispatchInfrastructureFailed(ctx context.Context
 		NotifyWorkflowRunEvent(ctx, s.dispatchQ, workflowRunID, "agent.infrastructure_failed")
 	}
 	if s.dispatchQ != nil && strings.TrimSpace(sessionID) != "" {
-		s.cancelAgentRuntimeWatchdog(sessionID)
+		s.cancelAgentRuntimeWatchdogForRun(sessionID, workflowRunID)
 		session, updated, err := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "failed")
 		if err == nil && updated {
 			s.observeAgentSessionCompletion("failed")
@@ -1373,7 +1376,7 @@ func (s *AgentService) startAgentRuntimeWatchdog(sessionID, vmID string, workflo
 	}
 
 	watchdogCtx, cancel := context.WithCancel(context.Background())
-	watchdog := &agentRuntimeWatchdog{cancel: cancel}
+	watchdog := &agentRuntimeWatchdog{cancel: cancel, workflowRunID: workflowRunID}
 
 	s.watchdogsMu.Lock()
 	if s.watchdogs == nil {
@@ -1452,6 +1455,25 @@ func (s *AgentService) cancelAgentRuntimeWatchdog(sessionID string) {
 	delete(s.watchdogs, sessionID)
 	s.watchdogsMu.Unlock()
 
+	if watchdog != nil {
+		watchdog.cancel()
+	}
+}
+
+// A terminal projection can finish after a replacement turn has installed its
+// watchdog under the same session ID. Only cancel the watchdog for this run.
+func (s *AgentService) cancelAgentRuntimeWatchdogForRun(sessionID string, workflowRunID int64) {
+	if s == nil || strings.TrimSpace(sessionID) == "" || workflowRunID <= 0 {
+		return
+	}
+	s.watchdogsMu.Lock()
+	watchdog := s.watchdogs[sessionID]
+	if watchdog != nil && watchdog.workflowRunID == workflowRunID {
+		delete(s.watchdogs, sessionID)
+	} else {
+		watchdog = nil
+	}
+	s.watchdogsMu.Unlock()
 	if watchdog != nil {
 		watchdog.cancel()
 	}
