@@ -110,13 +110,21 @@ describe("FixtureStore flush and recovery", () => {
         writeFileSync(path, previous)
         const first = yield* FixtureStore.makeFile(path)
         const second = yield* FixtureStore.makeFile(path)
-        const handle = openSync(path, "r")
+        const rename = fs.rename
+        vi.spyOn(fs, "rename").mockImplementationOnce(async (staging, destination) => {
+          expect(readFileSync(path, "utf8")).toBe(previous)
+          expect(JSON.parse(readFileSync(staging, "utf8")).calls).toHaveLength(2)
+          await rename(staging, destination)
+        })
+        // Windows refuses replacement while this reader is open. POSIX also
+        // proves the old descriptor keeps observing the original inode.
+        const handle = process.platform === "win32" ? undefined : openSync(path, "r")
         try {
           yield* first.append(call)
           yield* first.flush()
-          expect(readFileSync(handle, "utf8")).toBe(previous)
+          if (handle !== undefined) expect(readFileSync(handle, "utf8")).toBe(previous)
         } finally {
-          closeSync(handle)
+          if (handle !== undefined) closeSync(handle)
         }
         expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(2)
         expect(existsSync(`${path}.journal`)).toBe(false)
@@ -271,7 +279,7 @@ describe("FixtureStore flush and recovery", () => {
         fs.writeFile = async (path, data, options) => {
           if (String(path).endsWith(".tmp")) {
             await write(path, String(data).slice(0, String(data).length / 2), options);
-            process.kill(process.pid, "SIGKILL");
+            process.send("staged");
             await new Promise(() => {});
           }
           return write(path, data, options);
@@ -286,20 +294,34 @@ describe("FixtureStore flush and recovery", () => {
         }));
       `
         const result = yield* Effect.promise(() =>
-          new Promise<{ code: number | null; signal: string | null; stderr: string }>((resolve, reject) => {
-            const child = spawn(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
-              stdio: ["ignore", "ignore", "pipe"],
-              timeout: 20_000
-            })
-            let stderr = ""
-            child.stderr.on("data", (data) => {
-              stderr += data
-            })
-            child.on("error", reject)
-            child.on("close", (code, signal) => resolve({ code, signal, stderr }))
-          })
+          new Promise<{ code: number | null; signal: string | null; stderr: string; staged: boolean }>(
+            (resolve, reject) => {
+              const child = spawn(
+                process.execPath,
+                ["--experimental-strip-types", "--input-type=module", "-e", script],
+                {
+                  stdio: ["ignore", "ignore", "pipe", "ipc"],
+                  timeout: 20_000
+                }
+              )
+              let stderr = ""
+              let staged = false
+              child.on("message", (message) => {
+                if (message !== "staged") return
+                staged = true
+                // The parent observes its own kill on Windows too; a child
+                // killing itself only reports a generic exit code there.
+                child.kill("SIGKILL")
+              })
+              child.stderr!.on("data", (data) => {
+                stderr += data
+              })
+              child.on("error", reject)
+              child.on("close", (code, signal) => resolve({ code, signal, stderr, staged }))
+            }
+          )
         )
-        expect(result, result.stderr).toMatchObject({ code: null, signal: "SIGKILL" })
+        expect(result, result.stderr).toMatchObject({ code: null, signal: "SIGKILL", staged: true })
         expect(readFileSync(path, "utf8")).toBe(previous)
         expect(existsSync(`${path}.lock`)).toBe(true)
         rmSync(`${path}.lock`, { recursive: true })
