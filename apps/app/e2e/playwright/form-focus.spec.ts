@@ -145,6 +145,8 @@ test("T1: a path typed before the file options arrive survives them and reads th
     await expect(path).toBeFocused()
     await page.keyboard.type("DME.md")
     await expect(path).toHaveValue("README.md")
+    // The input buffer precedes its durable draft; Enter uses the card's readiness.
+    await expect(form.getByTestId("flow-form-submit")).toBeEnabled()
     await page.keyboard.press("Enter")
     await expect(page.getByTestId("card-file-smithersai/smithers-README.md")).toBeVisible({ timeout: 15_000 })
   } finally { held.release() }
