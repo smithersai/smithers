@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3089 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3105 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **app:** use bearer identity on hosted Plue targets ([8da689b023](https://github.com/smithersai/smithers/commit/8da689b02317bdb5d0b5d86273def1f1a558f46d))
+- **app:** return a valid selected backend document ([ccc9402a99](https://github.com/smithersai/smithers/commit/ccc9402a9931bf10f4cee54c0a3d7fc142f54dea))
+- **migrate:** protect gateway state across escaped native paths ([2bd5717893](https://github.com/smithersai/smithers/commit/2bd571789318680664ebaca10c901ef53d4aa1d5))
 - **migrate:** accept normalized Windows volume roots ([faaaf93e07](https://github.com/smithersai/smithers/commit/faaaf93e07c7e8355caef639a279e03a89a83890))
 - **std:** match Windows search paths against portable glob rules ([9db8828a0e](https://github.com/smithersai/smithers/commit/9db8828a0eb47a86168c39f14d317b25fededa1a))
 - **registry:** normalize entry paths before walking module cycles ([cc5a603d50](https://github.com/smithersai/smithers/commit/cc5a603d50ddc43df0fedda2bfa64eaa6f6f0395))
@@ -2521,6 +2524,19 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(app):** complete hosted onboarding and expose model fixture ([27db382946](https://github.com/smithersai/smithers/commit/27db38294623e8eddbe1632f005e871110920324))
+- **test(std):** check shell grants with POSIX and Windows paths ([828dcb422e](https://github.com/smithersai/smithers/commit/828dcb422e2dfb24d787702e12813a9a6b4fcdde))
+- **test(std):** use legal native search fixtures on Windows ([9dab35bfeb](https://github.com/smithersai/smithers/commit/9dab35bfebba98e2a15cc6bba78301052b858e81))
+- **test(std):** preserve checkpoint fixture bytes across Git settings ([4415f416ba](https://github.com/smithersai/smithers/commit/4415f416baa330927e009f73d4105380d3742033))
+- **test(build-cli):** generate fixture output with native Node ([9e30b7687c](https://github.com/smithersai/smithers/commit/9e30b7687cae3d422e2b08bafeb698873f5ee397))
+- **test(build-cli):** link installed tool launchers into fixtures ([9f3cbbef5f](https://github.com/smithersai/smithers/commit/9f3cbbef5ff21b6493eef0d71861dfbfcb0804b6))
+- **test(engine-store):** compare native restore destinations ([f276b23484](https://github.com/smithersai/smithers/commit/f276b234847326d4b7e070ad6af47904dae4f2cb))
+- **test(kernel):** use native paths in filesystem grant fixtures ([bc0e09fc62](https://github.com/smithersai/smithers/commit/bc0e09fc624a4581ce2be1d48330ce714de42a0d))
+- **test(testing):** use native file publication and crash probes ([ef928c53a2](https://github.com/smithersai/smithers/commit/ef928c53a2a4db28e1e374b0aaedd8e4ec88f1ff))
+- **test(testing):** follow export closure with native separators ([de5226fa5b](https://github.com/smithersai/smithers/commit/de5226fa5bb02820146f23615dafd390cfc91e6b))
+- **test(migrate):** exercise hostile argv with native Node fixtures ([f510c17177](https://github.com/smithersai/smithers/commit/f510c17177fb2856e5d603d213405b10e59db6d0))
+- **test(sandbox):** contain native container fixture processes ([3557e560d3](https://github.com/smithersai/smithers/commit/3557e560d388ad2ce3a3d829a196e99f15ff7821))
+- **test(testing):** emulate portable host contract probes ([78a1f55c3b](https://github.com/smithersai/smithers/commit/78a1f55c3b8df91aca17fd7b8a23de7acaed3afc))
 - **test(flows):** ignore Node warnings in legacy CLI notice test ([26c550bbb6](https://github.com/smithersai/smithers/commit/26c550bbb60676f957ef97c4a2ddf1f9dab88f41))
 - **test(migrate):** compare native command and module paths ([1e01990135](https://github.com/smithersai/smithers/commit/1e01990135b9df6533911ae7955495d1fb54e83c))
 - **test(flows):** compare canonical native coverage paths ([0f1eb4e4d1](https://github.com/smithersai/smithers/commit/0f1eb4e4d124528bb8f683b2675195e328bb29cb))
