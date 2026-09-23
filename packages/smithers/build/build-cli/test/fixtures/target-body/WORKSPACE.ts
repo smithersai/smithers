@@ -11,5 +11,6 @@ export const Workspace = S.Workspace("target-body-fixture", {
     lockfile: S.file("//pnpm-lock.yaml")
   }),
   nodeModules: S.Npm.NodeModules({ packageJson }),
+  host: S.Host({ bins: ["node"] }),
   sandboxes: S.Sandboxes({ default: S.Sandbox.None() })
 })

@@ -63,7 +63,11 @@ const dprint = S.Dprint({
   fix: false
 })
 const docs = S.DocsParity({ readme: S.file("README.md"), deps: [], minimumProseCharacters: 20 })
-const generate = S.Generate({ command: "printf 'generated\\n' > generated.txt", changes: ["generated.txt"] })
+const generate = S.Generate({
+  bin: S.Host.bin("node"),
+  args: ["-e", "require('node:fs').writeFileSync('generated.txt', 'generated\\n')"],
+  changes: ["generated.txt"]
+})
 const node = S.CiToolchain.Node({ runtime, release: "22.19.0" })
 const ci = S.GithubCiGen({
   packageManager,
