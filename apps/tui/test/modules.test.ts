@@ -162,6 +162,19 @@ describe("sessions", () => {
     expect(restored.transcript.items.map((item) => item.kind)).toEqual(["user", "shell", "shell"])
   })
 
+  it("restores flow runs, the last record per id winning", () => {
+    const run = { id: "r1", flow: "review", by: "user" as const, input: {}, requested: "{}", startedAt: 1 }
+    const restored = Session.restore([
+      { type: "flow", run: { ...run, status: "requested" } },
+      { type: "flow", run: { ...run, id: "r2", status: "done", answer: "ok" } },
+      { type: "flow", run: { ...run, status: "running", runId: "run-1" } }
+    ])
+    expect(restored.flows).toEqual([
+      { ...run, status: "running", runId: "run-1" },
+      { ...run, id: "r2", status: "done", answer: "ok" }
+    ])
+  })
+
   const seeded = () => {
     process.env.SMITHERS_TUI_SESSION_DIR = mkdtempSync(join(tmpdir(), "tui-sessions-"))
     const writer = Session.create("/work/repo")

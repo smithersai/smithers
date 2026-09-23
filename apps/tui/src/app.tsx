@@ -17,6 +17,8 @@ import * as Complete from "./complete.ts"
 import type * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
 import * as Files from "./files.ts"
+import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
+import * as Form from "./form.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import type * as Host from "./host.ts"
 import type { Model } from "./models.ts"
@@ -60,6 +62,8 @@ export interface AppProps {
   /** Open the session picker at start (`--resume`). */
   readonly pickSession?: boolean
   readonly branch?: string
+  /** The directory's file flows; absent where flows cannot run. */
+  readonly flows?: FlowPort
 }
 
 interface TurnState {
@@ -71,6 +75,7 @@ interface TurnState {
 type Picker =
   | { readonly kind: "model"; readonly query: string; readonly selected: number }
   | { readonly kind: "theme"; readonly query: string; readonly selected: number }
+  | { readonly kind: "flows"; readonly query: string; readonly selected: number }
   | { readonly kind: "filter"; readonly query: string; readonly selected: number }
   | {
     readonly kind: "resume"
@@ -101,6 +106,22 @@ interface TextSearch {
   readonly hits: ReadonlyArray<Search.Hit>
 }
 
+/** A flow run's inline form: its missing input, or the approval of an all-capabilities envelope. */
+interface FlowForm {
+  readonly id: string
+  readonly flow: string
+  readonly fields: ReadonlyArray<Form.Field>
+  readonly draft: Record<string, Form.Value>
+  readonly focus: number
+  readonly approve: boolean
+  readonly error?: string
+}
+
+const flowGlyph = (status: Run["status"]): string =>
+  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : "◌ "
+const flowActive = (status: Run["status"]): boolean =>
+  status !== "done" && status !== "failed" && status !== "cancelled"
+
 interface Toast {
   readonly text: string
   readonly tone: "info" | "warning" | "danger"
@@ -114,8 +135,17 @@ const pickerRows = (
   filter: Timeline.Filter,
   tabs: ReadonlyArray<Tab>,
   files: () => ReadonlyArray<string>,
-  hits: ReadonlyArray<Search.Hit>
+  hits: ReadonlyArray<Search.Hit>,
+  flows: ReadonlyArray<Listed>
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "flows") {
+    return Fuzzy.filter(flows, picker.query, (flow) => flow.name).map((flow) => ({
+      key: flow.name,
+      label: flow.name,
+      detail: flow.description,
+      value: flow.name
+    }))
+  }
   if (picker.kind === "palette") {
     const sources = { commands: Editor.commands, files, sessions: picker.sessions, tabs, hits, now: Date.now() }
     // The value is the JSON of a `Palette.Value`, so every dialog picks a string.
@@ -226,6 +256,19 @@ export function App(props: AppProps) {
     })
   )
   const [revision, setRevision] = useState(0)
+  const [runs, setRuns] = useState(() =>
+    new FlowRuns({ port: props.flows, persist: writer.current.append, restored: restored.current?.flows })
+  )
+  /** Runs the user started here; their form opens without a key. */
+  const userRuns = useRef(new Set<string>())
+  const formOpened = useRef(new Set<string>())
+  const [form, setForm] = useState<FlowForm | undefined>()
+  // Keys read the form through this, so typing then Enter never submits a stale draft.
+  const liveForm = useRef<FlowForm | undefined>(undefined)
+  const changeForm = useCallback((next: FlowForm | undefined) => {
+    liveForm.current = next
+    setForm(next)
+  }, [])
   const [surface, setSurface] = useState("chat")
   const [panelFocus, setPanelFocus] = useState(false)
   const [navigation, setNavigation] = useState(Panels.initial)
@@ -233,6 +276,40 @@ export function App(props: AppProps) {
   const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
+  useEffect(() => runs.subscribe(() => setRevision((value) => value + 1)), [runs])
+  useEffect(() => {
+    runs.refresh()
+    return () => runs.dispose()
+  }, [runs])
+  const flowRuns = runs.snapshot()
+  /** Opens a run's form: its missing input, or the approval its envelope needs. */
+  const openForm = useCallback((id: string) => {
+    const run = runs.get(id)
+    if (run?.status === "approval") {
+      setPanelFocus(false)
+      return changeForm({ id, flow: run.flow, fields: [], draft: {}, focus: 0, approve: true })
+    }
+    if (run?.status !== "input") return
+    const schema = runs.schema(id)
+    const fields = schema === undefined ? [] : Form.fields(schema)
+    setPanelFocus(false)
+    changeForm({ id, flow: run.flow, fields, draft: Form.draft(fields, run.input), focus: 0, approve: false })
+  }, [runs, changeForm])
+  useEffect(() => {
+    const open = liveForm.current
+    if (open !== undefined) {
+      const status = runs.get(open.id)?.status
+      if (status !== (open.approve ? "approval" : "input")) changeForm(undefined)
+      return
+    }
+    for (const run of flowRuns) {
+      const key = `${run.id}:${run.status}`
+      if (!userRuns.current.has(run.id) || (run.status !== "input" && run.status !== "approval")) continue
+      if (formOpened.current.has(key)) continue
+      formOpened.current.add(key)
+      return openForm(run.id)
+    }
+  }, [revision, runs, openForm, changeForm])
   const snapshot = workspace.snapshot()
   const surfaces = [
     { id: "chat", title: "Chat" },
@@ -249,12 +326,15 @@ export function App(props: AppProps) {
           : "■ "
       }${tab.title}`
     })),
+    ...flowRuns.map((run) => ({ id: `flow:${run.id}`, title: `${flowGlyph(run.status)}${run.flow}` })),
     ...snapshot.panels.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
   ]
   const panel = surface === "summary"
     ? Summary.panel(transcript)
     : surface.startsWith("tab:")
     ? workspace.panel(surface.slice(4))
+    : surface.startsWith("flow:")
+    ? runs.panel(surface.slice(5))
     : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
   const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tab.title, tone: lane(index) }]))
   const timeline = Timeline.merge(
@@ -292,8 +372,8 @@ export function App(props: AppProps) {
   const completion = useMemo(
     () => (menuDismissed
       ? undefined
-      : Complete.complete(draft, cursor, { models: props.models, files: () => files.current() })),
-    [draft, cursor, menuDismissed, props.models]
+      : Complete.complete(draft, cursor, { models: props.models, files: () => files.current(), flows: runs.listed })),
+    [draft, cursor, menuDismissed, props.models, runs, revision]
   )
   const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file")
     ? completion
@@ -313,6 +393,7 @@ export function App(props: AppProps) {
 
   // One clock drives foreground and background progress through real settlement.
   const clockRunning = turn !== undefined || shell !== undefined || undoing !== undefined || workspace.busy ||
+    runs.busy || flowRuns.some((run) => run.endedAt !== undefined && now - run.endedAt < 3000) ||
     search?.status === "running" ||
     snapshot.tabs.some((tab) => tab.endedAt !== undefined && now - tab.endedAt < 3000)
   useEffect(() => {
@@ -413,11 +494,12 @@ export function App(props: AppProps) {
 
   const quit = useCallback(() => {
     workspace.dispose()
+    runs.dispose()
     live.current.turn?.handle.cancel()
     live.current.shell?.cancel()
     renderer.destroy()
-    void props.host.dispose().finally(() => process.exit(0))
-  }, [renderer, props.host, workspace])
+    void Promise.allSettled([props.host.dispose(), props.flows?.dispose()]).finally(() => process.exit(0))
+  }, [renderer, props.host, props.flows, workspace, runs])
 
   const startTurn = useCallback((prompt: string) => {
     const steering = Steering.make()
@@ -431,12 +513,19 @@ export function App(props: AppProps) {
       history: entries.current,
       ...(live.current.seat.startsWith("replay:") ? {} : { role: "coordinator" as const }),
       workerSeat: props.workerSeat ?? props.seat,
-      background: workspace.context(),
+      background: `${workspace.context()}\nFlow runs: ${runs.context()}`,
       runtime: {
         publish: workspace.publish,
         delegate: workspace.request,
-        read: workspace.read,
-        list: () => workspace.snapshot().tabs
+        read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
+        list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
+        ...(props.flows === undefined ? {} : {
+          flows: {
+            list: () => runs.listed().filter((flow) => flow.modelInvocable),
+            run: (request: { id: string; flow: string; input?: Record<string, unknown> }) =>
+              runs.request({ id: request.id, flow: request.flow, input: request.input ?? {}, by: "agent" })
+          }
+        })
       },
       onCaption: (prose) => {
         writer.current.append({ type: "caption", prose })
@@ -478,7 +567,7 @@ export function App(props: AppProps) {
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
-  }, [props.host, workspace])
+  }, [props.host, props.flows, workspace, runs])
   const startTurnRef = useRef(startTurn)
   startTurnRef.current = startTurn
 
@@ -549,6 +638,8 @@ export function App(props: AppProps) {
   const newSession = useCallback(() => {
     writer.current = Session.create(props.host.cwd)
     entries.current = []
+    setRuns(new FlowRuns({ port: props.flows, persist: writer.current.append }))
+    setForm(undefined)
     setWorkspace(
       new Workspace({
         host: props.host,
@@ -570,6 +661,8 @@ export function App(props: AppProps) {
     writer.current = next
     entries.current = state.entries
     history.current = new Editor.History(state.prompts)
+    setRuns(new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows }))
+    setForm(undefined)
     setWorkspace(
       new Workspace({
         host: props.host,
@@ -584,7 +677,7 @@ export function App(props: AppProps) {
     setName(state.name)
     setTranscript(state.transcript)
     return state
-  }, [])
+  }, [props.flows])
 
   const openSession = useCallback((file: string) => {
     const state = adopt(Session.reopen(file), Session.load(file))
@@ -635,14 +728,40 @@ export function App(props: AppProps) {
         return true
       case "retry":
         try {
-          workspace.retry(argument)
+          if (runs.has(argument)) runs.retry(argument)
+          else workspace.retry(argument)
         } catch (error) {
-          setStatus(String(error), "warning")
+          setStatus(error instanceof Error ? error.message : String(error), "warning")
         }
         return true
       case "stop":
-        workspace.cancel(argument)
+        if (runs.has(argument)) runs.cancel(argument)
+        else workspace.cancel(argument)
         return true
+      case "flows":
+        runs.refresh()
+        setPicker({ kind: "flows", query: "", selected: 0 })
+        return true
+      case "flow": {
+        const space = argument.search(/\s/)
+        const flow = space < 0 ? argument : argument.slice(0, space)
+        if (flow === "") {
+          runs.refresh()
+          setPicker({ kind: "flows", query: "", selected: 0 })
+          return true
+        }
+        const parsed = Form.parseArgs(space < 0 ? "" : argument.slice(space + 1))
+        if ("error" in parsed) {
+          setStatus(parsed.error, "warning")
+          return true
+        }
+        try {
+          userRuns.current.add(runs.request({ flow, input: parsed.input, by: "user" }).id)
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), "warning")
+        }
+        return true
+      }
       case "ui": {
         const target = snapshot.panels.find((panel) => panel.id === argument) ?? snapshot.panels[0]
         if (target === undefined) setStatus("No custom views")
@@ -671,7 +790,7 @@ export function App(props: AppProps) {
         return true
       }
       case "new":
-        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
           setStatus("Stop running work first", "warning")
         } else newSession()
         return true
@@ -679,7 +798,7 @@ export function App(props: AppProps) {
         setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
         return true
       case "fork": {
-        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
           setStatus("Stop running work first", "warning")
           return true
         }
@@ -737,7 +856,7 @@ export function App(props: AppProps) {
         setStatus(`Unknown command /${verb}`, "warning")
         return true
     }
-  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd, workspace, revision])
+  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd, workspace, runs, revision])
 
   const submit = useCallback((followUp = false, typed?: string) => {
     const input = composer.current
@@ -811,7 +930,7 @@ export function App(props: AppProps) {
 
   /** `/new` and `/resume` wait for running work, from any door. */
   const resumeGuarded = (file: string) => {
-    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy) openSession(file)
+    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy && !runs.busy) openSession(file)
     else setStatus("Stop running work first", "warning")
   }
 
@@ -833,12 +952,16 @@ export function App(props: AppProps) {
     if (open.kind === "fork") {
       const turn = open.turns.find((each) => String(each.index) === value)
       if (turn === undefined) return
-      if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+      if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
         return setStatus("Stop running work first", "warning")
       }
       return forkSession(turn)
     }
     if (open.kind === "model") return switchSeat(value)
+    if (open.kind === "flows") {
+      command(`/flow ${value}`)
+      return
+    }
     if (open.kind === "theme") {
       if (!isTheme(value)) return
       setTheme(value)
@@ -881,11 +1004,53 @@ export function App(props: AppProps) {
       }
     }
     resumeGuarded(value)
-  }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, setText, submit])
+  }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, runs, setText, submit, command])
+
+  /** Keys while a flow form is open; its focused input takes the typing. */
+  const formKey = (key: KeyEvent, open: FlowForm) => {
+    const field = open.fields[open.focus]
+    const move = (step: number) => {
+      key.preventDefault()
+      if (open.fields.length > 0) changeForm({ ...open, focus: (open.focus + step + open.fields.length) % open.fields.length })
+    }
+    if (key.name === "escape") {
+      key.preventDefault()
+      changeForm(undefined)
+      if (userRuns.current.has(open.id)) runs.cancel(open.id)
+      return
+    }
+    if ((key.name === "tab" && !key.shift) || key.name === "down") return move(1)
+    if ((key.name === "tab" && key.shift) || key.name === "up") return move(-1)
+    if (key.name === "space" && field?.kind === "boolean") {
+      key.preventDefault()
+      return changeForm({ ...open, draft: { ...open.draft, [field.name]: open.draft[field.name] !== true }, error: undefined })
+    }
+    if ((key.name === "left" || key.name === "right") && field?.kind === "select" && field.options !== undefined) {
+      key.preventDefault()
+      const options = field.options
+      const at = options.indexOf(String(open.draft[field.name] ?? ""))
+      const next = options[(at + (key.name === "left" ? -1 : 1) + options.length) % options.length]!
+      return changeForm({ ...open, draft: { ...open.draft, [field.name]: next }, error: undefined })
+    }
+    if (key.name === "return" || key.name === "kpenter") {
+      key.preventDefault()
+      if (open.approve) {
+        changeForm(undefined)
+        return runs.approve(open.id)
+      }
+      const schema = runs.schema(open.id)
+      const run = runs.get(open.id)
+      if (schema === undefined || run === undefined) return changeForm(undefined)
+      const result = Form.payload(schema, open.fields, run.input, open.draft)
+      if ("error" in result) return changeForm({ ...open, error: result.error })
+      changeForm(undefined)
+      runs.fill(open.id, result.payload)
+    }
+  }
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
-    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs, files.current, search?.hits ?? [])
+    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed())
     const move = (step: number) => {
       key.preventDefault()
       if (rows.length > 0) setPicker((current) => current === undefined ? current : { ...current, selected: (current.selected + step + rows.length) % rows.length })
@@ -957,6 +1122,8 @@ export function App(props: AppProps) {
       setText("")
       return
     }
+    const filling = liveForm.current
+    if (filling !== undefined && open === undefined) return formKey(key, filling)
     if (key.ctrl && key.name === "k") {
       // Also keeps the composer's default Ctrl+K (delete to line end) from firing.
       key.preventDefault()
@@ -991,18 +1158,21 @@ export function App(props: AppProps) {
         setPanelFocus(false)
         return
       }
-      if (key.name === "r" && surface.startsWith("tab:")) {
+      if (key.name === "r" && (surface.startsWith("tab:") || surface.startsWith("flow:"))) {
         try {
-          workspace.retry(surface.slice(4))
+          if (surface.startsWith("flow:")) runs.retry(surface.slice(5))
+          else workspace.retry(surface.slice(4))
         } catch (error) {
-          setStatus(String(error), "warning")
+          setStatus(error instanceof Error ? error.message : String(error), "warning")
         }
         return
       }
-      if (key.name === "x" && surface.startsWith("tab:")) {
-        workspace.cancel(surface.slice(4))
+      if (key.name === "x" && (surface.startsWith("tab:") || surface.startsWith("flow:"))) {
+        if (surface.startsWith("flow:")) runs.cancel(surface.slice(5))
+        else workspace.cancel(surface.slice(4))
         return
       }
+      if (key.name === "a" && surface.startsWith("flow:")) return openForm(surface.slice(5))
       if (key.name === "u" && surface === "summary") {
         const current = live.current
         if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
@@ -1128,7 +1298,7 @@ export function App(props: AppProps) {
   const accent = bashMode ? color.success : working ? color.faint : color.brand
   const rows = picker === undefined
     ? []
-    : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [])
+    : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed())
   const tabCount = Math.max(2, Math.floor(width / 24))
   const firstTab = Math.max(
     0,
@@ -1167,7 +1337,7 @@ export function App(props: AppProps) {
               height={dimensions.height - 10}
               width={width}
               focused={panelFocus}
-              worker={surface.startsWith("tab:")}
+              worker={surface.startsWith("tab:") || surface.startsWith("flow:")}
               undo={surface === "summary"}
               scrollRef={panelScroll}
             />
@@ -1206,7 +1376,49 @@ export function App(props: AppProps) {
             <text fg={color.faint}>↳ alt+up to edit all queued messages</text>
           </box>
         )}
-        {menu === undefined || panelFocus ?
+        {form === undefined ? null : (
+          <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.brand} customBorderChars={View.bar}>
+            <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.element}>
+              <text fg={color.text} wrapMode="none">{form.approve ? `${form.flow} · all capabilities` : form.flow}</text>
+              {form.fields.map((field, index) => {
+                const value = form.draft[field.name]
+                const focused = index === form.focus
+                return (
+                  <box key={field.name} style={{ flexDirection: "row" }}>
+                    <text fg={focused ? color.brand : color.muted} wrapMode="none" style={{ width: 16, flexShrink: 0 }}>
+                      {field.label}
+                    </text>
+                    {focused && (field.kind === "text" || field.kind === "number")
+                      ? (
+                        <input
+                          focused
+                          value={value === undefined ? "" : String(value)}
+                          textColor={color.text}
+                          backgroundColor={color.surface}
+                          focusedBackgroundColor={color.surface}
+                          cursorColor={color.brand}
+                          style={{ flexGrow: 1 }}
+                          onInput={(text: string) => {
+                            const current = liveForm.current
+                            if (current !== undefined) {
+                              changeForm({ ...current, draft: { ...current.draft, [field.name]: text }, error: undefined })
+                            }
+                          }}
+                        />
+                      )
+                      : (
+                        <text fg={color.text} wrapMode="none">
+                          {field.kind === "boolean" ? (value === true ? "✓" : "✗") : value === undefined ? "" : String(value)}
+                        </text>
+                      )}
+                  </box>
+                )
+              })}
+              {form.error === undefined ? null : <text fg={color.danger}>{form.error}</text>}
+            </box>
+          </box>
+        )}
+        {menu === undefined || panelFocus || form !== undefined ?
           null :
           (
             <box
@@ -1251,7 +1463,7 @@ export function App(props: AppProps) {
           <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1 }} backgroundColor={color.surface}>
             <textarea
               ref={composer}
-              focused={picker === undefined && !panelFocus}
+              focused={picker === undefined && !panelFocus && form === undefined}
               placeholder={working
                 ? "Steer, or alt+enter to queue"
                 : "Ask Smithers to change this repository"}
@@ -1337,6 +1549,13 @@ export function App(props: AppProps) {
             }`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
+          ...flowRuns.filter((run) =>
+            now - run.startedAt >= 300 && (run.endedAt === undefined || now - run.endedAt < 3000)
+          ).map((run) => ({
+            id: `flow:${run.id}`,
+            text: `${flowActive(run.status) ? tick : run.status === "done" ? "✓" : "✗"} ${run.flow} · ${run.status}`,
+            tone: run.status === "failed" ? "danger" as const : "info" as const
+          })),
           ...(search?.status === "running" && now - search.startedAt >= 300
             ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
             : []),
@@ -1352,6 +1571,8 @@ export function App(props: AppProps) {
             ? "Select model"
             : picker.kind === "theme"
             ? "Select theme"
+            : picker.kind === "flows"
+            ? "Flows"
             : picker.kind === "filter"
             ? "Filter chat"
             : picker.kind === "palette"
@@ -1388,6 +1609,8 @@ export function App(props: AppProps) {
               background={color.surface}
               empty={picker.kind === "resume"
                 ? "No sessions in this directory"
+                : picker.kind === "flows"
+                ? "No flows"
                 : picker.kind === "palette"
                 ? search?.status === "running" ? "Searching" : "No matches"
                 : picker.kind === "fork"

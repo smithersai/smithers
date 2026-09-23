@@ -2,6 +2,8 @@
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
+import { Schema } from "effect"
+import type * as Flows from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
 const host: Host.Host = {
   cwd: process.cwd(),
@@ -38,7 +40,20 @@ const host: Host.Host = {
   }
 }
 let cancelled = () => {}
+/** One flow that needs `{title}`; its run settles only when stopped. */
+let settle = (_: Flows.Settled) => {}
+const flows: Flows.Port = {
+  discover: async () => [{ name: "review", description: "Review a change", modelInvocable: true }],
+  input: async () => Schema.Struct({ title: Schema.String }),
+  plan: async () => ({ all: false, raw: {} }),
+  start: async () => "run-1",
+  resume: async (runId) => ({ runId }),
+  watch: () => ({ done: new Promise((resolve) => { settle = resolve }), close: () => {} }),
+  events: async () => [],
+  cancel: async () => settle({ kind: "cancelled" }),
+  dispose: async () => {}
+}
 const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
 createRoot(renderer).render(
-  <App host={host} seat="test:chat" workerSeat="test:worker" models={[]} contextWindow={() => 128_000} />
+  <App host={host} seat="test:chat" workerSeat="test:worker" models={[]} contextWindow={() => 128_000} flows={flows} />
 )

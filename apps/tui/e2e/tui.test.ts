@@ -700,6 +700,48 @@ it(
   60_000
 )
 
+describe("flows", () => {
+  const ctrlRight = "\x1b[1;5C"
+  const open = async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-flows-"))
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    return { tui, sessions }
+  }
+
+  it("runs a flow from /flows through its form without blocking chat", async () => {
+    const { tui } = await open()
+    await tui.type("/flows")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Review a change"), 5_000, "flows dialog")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Title"), 5_000, "form field")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Needs: Title"), 5_000, "missing field")
+    await tui.type("x")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("review · running"), 5_000, "running toast")
+    await tui.type("hello")
+    await tui.until((screen) => /┃\s+hello/.test(screen), 5_000, "composer usable while the flow runs")
+    await tui.press(ctrlRight)
+    await tui.press(ctrlRight)
+    await tui.until((screen) => screen.includes("r retry"), 5_000, "flow tab")
+    await tui.type("x")
+    await tui.until((screen) => screen.includes("review · cancelled") && screen.includes("■ review"), 5_000, "settled from the watch")
+  }, 60_000)
+
+  it("offers the directory's flows in the / menu", async () => {
+    const { tui } = await open()
+    await tui.type("/rev")
+    await tui.until((screen) => screen.includes("/flow review") && screen.includes("Review a change"), 5_000, "flow in menu")
+  }, 30_000)
+})
+
 describe("approvals", () => {
   const prompt = "node check.mjs fails. Fix it and show it passes."
   const asking = /\? (bash|edit|write|apply_patch) .*y allow/

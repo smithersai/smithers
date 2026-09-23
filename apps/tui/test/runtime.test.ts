@@ -91,6 +91,32 @@ it("registers real catalog flows and validates before publishing without invokin
   expect(published).toHaveLength(1)
 })
 
+it("exposes flow.list and flow.run only with a flows port, and returns the run receipt at once", async () => {
+  const requests: Array<unknown> = []
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    flows: {
+      list: () => [{ name: "review", description: "Review a change" }],
+      run: (request) => {
+        requests.push(request)
+        return { id: request.id, status: "requested" }
+      }
+    }
+  }).bindings())
+  expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["ui.publish", "flow.list", "flow.run"])
+  const run = bindings.find((binding) => binding.descriptor.name === "flow.run")!
+  const call = (input: unknown) => run.run({ input } as Parameters<typeof run.run>[0])
+  const result = await Effect.runPromise(call({ id: "r1", flow: "review", input: { title: "x" } }))
+  expect(result).toMatchObject({ outcome: "success", value: { id: "r1", status: "requested" } })
+  expect(requests).toEqual([{ id: "r1", flow: "review", input: { title: "x" } }])
+  expect((await Effect.runPromise(call({ id: "r2" }))).outcome).toBe("failure")
+  const list = bindings.find((binding) => binding.descriptor.name === "flow.list")!
+  expect(await Effect.runPromise(list.run({ input: {} } as Parameters<typeof list.run>[0]))).toMatchObject({
+    outcome: "success",
+    value: [{ name: "review", description: "Review a change" }]
+  })
+})
+
 it("accepts only named models in the delegate flow", async () => {
   const requests: Array<unknown> = []
   const bindings = await Effect.runPromise(Runtime.source({

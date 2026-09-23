@@ -33,19 +33,32 @@ export interface Sources {
   readonly models: ReadonlyArray<{ readonly seat: string; readonly label: string; readonly provider: string }>
   /** Repository files, relative to the working directory; read only when `@` is typed. */
   readonly files: () => ReadonlyArray<string>
+  /** The directory's flows, from the last discovery. */
+  readonly flows?: () => ReadonlyArray<{ readonly name: string; readonly description: string }>
 }
 
 /** The most file suggestions offered at once (pi shows 20). */
 export const fileLimit = 20
 
-const commandItems = (typed: string): Array<Suggestion> =>
-  Fuzzy.filter(Editor.commands, typed, (command) => command.name).map((command) => ({
+const flowItems = (typed: string, sources: Sources): Array<Suggestion> =>
+  Fuzzy.filter(sources.flows?.() ?? [], typed, (flow) => flow.name).map((flow) => ({
+    label: `/flow ${flow.name}`,
+    hint: "flow",
+    detail: flow.description,
+    insert: `/flow ${flow.name}`,
+    submit: true
+  }))
+
+const commandItems = (typed: string, sources: Sources): Array<Suggestion> => [
+  ...Fuzzy.filter(Editor.commands, typed, (command) => command.name).map((command) => ({
     label: `/${command.name}`,
     ...(command.args === undefined ? {} : { hint: command.args }),
     detail: command.description,
     insert: Editor.takesArgument(command) ? `/${command.name} ` : `/${command.name}`,
     submit: !Editor.takesArgument(command)
-  }))
+  })),
+  ...flowItems(typed, sources)
+]
 
 const argumentItems = (name: string, typed: string, sources: Sources): Array<Suggestion> | undefined => {
   if (name === "model") {
@@ -63,6 +76,7 @@ const argumentItems = (name: string, typed: string, sources: Sources): Array<Sug
       submit: true
     }))
   }
+  if (name === "flow") return flowItems(typed, sources)
   return undefined
 }
 
@@ -92,7 +106,7 @@ export const complete = (text: string, cursor: number, sources: Sources): Comple
     const space = before.indexOf(" ")
     if (space < 0) {
       const end = /^\S*/.exec(text)![0].length
-      return { kind: "command", query: before.slice(1), start: 0, end, items: commandItems(before.slice(1)) }
+      return { kind: "command", query: before.slice(1), start: 0, end, items: commandItems(before.slice(1), sources) }
     }
     const name = before.slice(1, space)
     const typed = before.slice(space + 1)

@@ -13,6 +13,7 @@ import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
+import type * as Flows from "./flows.ts"
 import type * as Panels from "./panels.ts"
 import * as Shell from "./shell.ts"
 import * as Transcript from "./transcript.ts"
@@ -22,6 +23,7 @@ export type Record =
   | { readonly type: "caption"; readonly prose: string }
   | { readonly type: "panel"; readonly panel: Panels.Panel }
   | { readonly type: "tab"; readonly tab: Workspace.Tab }
+  | { readonly type: "flow"; readonly run: Flows.Run }
   | { readonly type: "patch"; readonly receipt: Changes.Receipt }
   | {
     readonly type: "session"
@@ -188,12 +190,14 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
 export const restore = (records: ReadonlyArray<Record>): {
   readonly transcript: Transcript.Transcript
   readonly workspace: Workspace.Snapshot
+  readonly flows: ReadonlyArray<Flows.Run>
   readonly entries: Array<Context.Entry>
   readonly prompts: Array<string>
   readonly name: string | undefined
 } => {
   const panels = new Map<string, Panels.Panel>()
   const tabs = new Map<string, Workspace.Tab>()
+  const flows = new Map<string, Flows.Run>()
   let transcript = Transcript.empty
   const entries: Array<Context.Entry> = []
   const prompts: Array<string> = []
@@ -208,6 +212,9 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       case "tab":
         tabs.set(record.tab.id, record.tab)
+        break
+      case "flow":
+        flows.set(record.run.id, record.run)
         break
       case "patch":
         transcript = Transcript.patched(transcript, record.receipt)
@@ -246,5 +253,12 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
     }
   }
-  return { transcript, entries, prompts, name, workspace: { tabs: [...tabs.values()], panels: [...panels.values()] } }
+  return {
+    transcript,
+    entries,
+    prompts,
+    name,
+    workspace: { tabs: [...tabs.values()], panels: [...panels.values()] },
+    flows: [...flows.values()]
+  }
 }

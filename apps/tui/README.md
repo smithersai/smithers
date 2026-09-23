@@ -56,7 +56,9 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | Tab | In a view: next tab |
 | Esc, i | In a view: focus the composer without stopping background work |
 | a | Activate the selected row's action, if present |
-| r, x | In a worker tab: retry / stop |
+| r, x | In a worker or flow tab: retry / stop |
+| a | In a flow tab: approve or fill in |
+| Tab, Shift+Tab, Space, Left/Right, Enter, Esc | In a flow form: move, toggle, choose, run, close (stops your run) |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
 | PageUp, PageDown | Scroll |
 | `!cmd` | Run a shell command; its output joins the next turn's context |
@@ -66,8 +68,9 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
-`/grep [text]`, `/ui [id]`, `/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model ` and
-`/thinking ` the menu completes the argument.
+`/grep [text]`, `/ui [id]`, `/flows`, `/flow <name> [json|key=value]`, `/retry <id>`, `/stop <id>`,
+`/hotkeys`, `/quit`. After `/model `, `/thinking ` and `/flow ` the menu completes the argument, and the
+`/` menu lists the directory's flows.
 
 ## Look
 
@@ -153,6 +156,25 @@ Workers run locally. Restarting the TUI restores their transcripts and marks
 unfinished workers interrupted, with an explicit retry; it does not claim to
 reconnect to a process that no longer exists. `/new`, `/resume`, and `/fork`
 require running work to finish or be stopped first.
+
+## Flows
+
+`/flows` lists the file flows in `<cwd>/flows/<name>/flow.ts` (a `Flow.make`
+default export) with their descriptions; Enter runs one. `/flow <name>` takes a
+JSON object or `key=value` arguments, as `smthrs up` does. A run starts in its
+own tab and runs through the same native control host as `smthrs up`: plan,
+approve for this run, run, watch. Missing required input opens a form built
+from the payload schema. A flow whose envelope grants every capability (`*`)
+waits for **a** (or Enter in its form) instead of starting. Its status settles
+only from the control plane's watch; **x** asks the control plane to cancel.
+
+Listing reads `flows/` without importing anything; the first run imports the
+flow modules and opens `<cwd>/.flows` (the store `smthrs runs` reads), so an
+edited `flow.ts` needs a restart. Markdown flows need an agent delegate and are
+refused. Do not run `smthrs` executors in the same directory at the same time.
+Restarting marks unfinished runs interrupted; retry resumes the durable run.
+The coordinator has `flow.list` and `flow.run` (model-invocable flows only);
+`flow.run` returns a `requested` receipt at once.
 
 ## Tests
 

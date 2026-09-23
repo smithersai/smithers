@@ -15,6 +15,7 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { App } from "./app.tsx"
 import * as Context from "./context.ts"
+import * as FlowControl from "./flow-control.ts"
 import * as Approvals from "./approvals.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
@@ -69,6 +70,8 @@ if (values.print !== undefined) {
   process.exit(1)
 }
 
+// Opens nothing until a flow runs; discovery alone never imports a flow module.
+const flows = FlowControl.make({ cwd, environment: available.environment })
 const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
 const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
 const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
@@ -81,6 +84,7 @@ createRoot(renderer).render(
     contextWindow={(id) => SeatResolver.contextWindowTokensFor(Seat.modelIdOf(id))}
     {...(resumeFile === undefined ? {} : { resume: resumeFile })}
     pickSession={values.resume === true}
+    flows={flows}
     {...(branch === undefined || branch === "" ? {} : { branch })}
   />
 )

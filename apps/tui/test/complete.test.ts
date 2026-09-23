@@ -35,6 +35,20 @@ describe("slash completion", () => {
     expect(Complete.complete("say /model", 10, sources)).toBeUndefined()
   })
 
+  it("lists the directory's flows after the built-in commands", () => {
+    const withFlows = { ...sources, flows: () => [{ name: "review", description: "Review a change" }] }
+    expect(labels(Complete.complete("/re", 3, withFlows))?.at(-1)).toBe("/flow review")
+    expect(Complete.complete("/rev", 4, withFlows)!.items[0]).toMatchObject({
+      label: "/flow review",
+      hint: "flow",
+      detail: "Review a change",
+      insert: "/flow review",
+      submit: true
+    })
+    expect(labels(Complete.complete("/flow re", 8, withFlows))).toEqual(["/flow review"])
+    expect(labels(Complete.complete("/rev", 4, sources))).toEqual([])
+  })
+
   it("runs a bare command on Enter and inserts one that takes an argument", () => {
     const resume = Complete.complete("/res", 4, sources)!.items[0]!
     expect(resume).toMatchObject({ insert: "/resume", submit: true })

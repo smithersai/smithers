@@ -72,8 +72,10 @@ export const commands: ReadonlyArray<Command> = [
   { name: "filter", description: "Show or hide workers and kinds of rows" },
   { name: "grep", args: "[text]", description: "Show only rows containing text" },
   { name: "ui", args: "[id]", description: "Open a custom view" },
-  { name: "retry", args: "<id>", description: "Retry a stopped worker" },
-  { name: "stop", args: "<id>", description: "Stop a worker" },
+  { name: "flows", description: "Run a flow" },
+  { name: "flow", args: "<name> [json|key=value]", description: "Run a flow" },
+  { name: "retry", args: "<id>", description: "Retry a stopped worker or flow" },
+  { name: "stop", args: "<id>", description: "Stop a worker or flow" },
   { name: "hotkeys", description: "Show the keys" },
   { name: "quit", description: "Quit" }
 ]
@@ -118,7 +120,8 @@ export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
   ["hjkl, arrows", "navigate a view; enter expands"],
   ["d, v", "toggle diff / split diff"],
   ["u", "undo a summary row's changes"],
-  ["r, x", "retry / stop selected worker"],
+  ["r, x", "retry / stop selected worker or flow"],
+  ["a", "in a flow tab: approve or fill in"],
   ["@", "mention a file"],
   ["ctrl+g", "edit the prompt in $EDITOR"],
   ["pageup, pagedown", "scroll"],

@@ -1,0 +1,40 @@
+import { expect, it } from "bun:test"
+import { Schema } from "effect"
+import * as Form from "../src/form.ts"
+
+const schema = Schema.Struct({
+  title: Schema.String,
+  count: Schema.optional(Schema.Number),
+  draft: Schema.Boolean,
+  mode: Schema.Literals(["a", "b"])
+})
+
+it("derives one field per payload property", () => {
+  expect(Form.fields(schema)).toEqual([
+    { name: "title", label: "Title", kind: "text", required: true },
+    { name: "count", label: "Count", kind: "number", required: false },
+    { name: "draft", label: "Draft", kind: "boolean", required: true },
+    { name: "mode", label: "Mode", kind: "select", required: true, options: ["a", "b"] }
+  ])
+})
+
+it("coerces given values and lists required blanks by label", () => {
+  const fields = Form.fields(schema)
+  const draft = Form.draft(fields, { count: "3" })
+  expect(draft).toEqual({ count: 3, draft: false })
+  expect(Form.missing(fields, draft)).toEqual(["Title", "Mode"])
+  expect(Form.payload(schema, fields, {}, draft)).toEqual({ error: "Needs: Title, Mode" })
+  const filled = Form.payload(schema, fields, { extra: 1 }, { ...draft, title: "x", mode: "b" })
+  expect(filled).toEqual({ payload: { extra: 1, title: "x", count: 3, draft: false, mode: "b" } })
+  expect(Form.payload(schema, fields, {}, { title: "x", mode: "a", count: "4" })).toMatchObject({ payload: { count: 4 } })
+  expect(Form.payload(schema, fields, {}, { title: "x", mode: "a", count: "four" })).toEqual({ error: "Count: not a number" })
+  expect(Form.valid(schema, { title: "x", count: 3, draft: false, mode: "b" })).toBe(true)
+})
+
+it("parses /flow arguments like smthrs up", () => {
+  expect(Form.parseArgs("")).toEqual({ input: {} })
+  expect(Form.parseArgs('{"a":1}')).toEqual({ input: { a: 1 } })
+  expect(Form.parseArgs("a=1 b")).toEqual({ input: { a: "1", b: true } })
+  expect(Form.parseArgs("[1]")).toEqual({ input: { data: [1] } })
+  expect(Form.parseArgs("{bad")).toEqual({ error: "Invalid JSON" })
+})
