@@ -1,8 +1,8 @@
 use std::io::Read as _;
 use std::path::Path;
 
-mod file_eligibility;
 mod atomic_fs;
+mod file_eligibility;
 mod source_create;
 mod source_import;
 mod source_publish;

@@ -15,7 +15,7 @@ fn invoke(request: Value) -> Value {
         .unwrap();
     {
         let mut stdin = child.stdin.take().unwrap();
-        write!(stdin, "flows-atomic/1 {} 10000 10000 10000\n", body.len()).unwrap();
+        writeln!(stdin, "flows-atomic/1 {} 10000 10000 10000", body.len()).unwrap();
         stdin.write_all(&body).unwrap();
     }
     let output = child.wait_with_output().unwrap();

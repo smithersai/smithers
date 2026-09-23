@@ -215,7 +215,7 @@ pub fn run(raw: &[u8]) -> Result<Value> {
             let byte_length = input
                 .get("byteLength")
                 .and_then(Value::as_u64)
-                .filter(|value| *value <= (1u64 << 53) - 1)
+                .filter(|value| *value < (1u64 << 53))
                 .ok_or_else(|| invalid("eligibility requires a nonnegative exact byte length"))?;
             let current = commit(repo, "@")?;
             let config =

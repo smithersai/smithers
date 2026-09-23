@@ -620,16 +620,20 @@ fn relative_pattern(pattern: &str, base: &str, exclusion: bool) -> String {
         .trim_start_matches("./");
     stripped.to_owned()
 }
+struct GlobWalk<'a> {
+    selected: &'a GlobRule,
+    excluded: &'a [GlobRule],
+    response_limit: usize,
+    base: &'a str,
+}
+
 fn glob_walk(
     dir: &File,
     prefix: &str,
-    selected: &GlobRule,
-    excluded: &[GlobRule],
-    response_limit: usize,
+    rules: &GlobWalk<'_>,
     budget: &mut usize,
     depth: usize,
     result: &mut Vec<String>,
-    base: &str,
 ) -> io::Result<()> {
     if depth > 512 {
         return Err(error(libc::EFBIG, "glob depth exceeded"));
@@ -642,39 +646,30 @@ fn glob_walk(
         };
         let is_directory = stat.st_mode & libc::S_IFMT == libc::S_IFDIR;
         *budget += relative.len() + 4;
-        if *budget > response_limit {
+        if *budget > rules.response_limit {
             return Err(error(libc::EFBIG, "glob listing exceeds response limit"));
         }
-        if excluded
+        if rules
+            .excluded
             .iter()
             .any(|rule| rule.matches(&relative, is_directory))
         {
             continue;
         }
-        if selected.matches(&relative, is_directory) {
-            result.push(format!("{base}/{relative}"));
+        if rules.selected.matches(&relative, is_directory) {
+            result.push(format!("{}/{relative}", rules.base));
             if result.len() > MAX_ENTRIES {
                 return Err(error(libc::EFBIG, "glob result too large"));
             }
         }
-        if is_directory && selected.below(&relative) {
+        if is_directory && rules.selected.below(&relative) {
             let child = open_at(
                 dir.as_raw_fd(),
                 OsStr::new(&name),
                 libc::O_RDONLY | libc::O_DIRECTORY,
                 0,
             )?;
-            glob_walk(
-                &child,
-                &relative,
-                selected,
-                excluded,
-                response_limit,
-                budget,
-                depth + 1,
-                result,
-                base,
-            )?;
+            glob_walk(&child, &relative, rules, budget, depth + 1, result)?;
         }
     }
     Ok(())
@@ -721,11 +716,11 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
                 .map(|part| part.to_string_lossy())
                 .collect::<Vec<_>>()
                 .join("/");
-            return Ok(json!(if relative.is_empty() {
+            Ok(json!(if relative.is_empty() {
                 boundary.to_owned()
             } else {
                 format!("{boundary}/{relative}")
-            }));
+            }))
         }
         "readFile" | "readFileString" => {
             if confined(request, field(request, "path")?)?.is_empty() {
@@ -1031,13 +1026,15 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
                 glob_walk(
                     &dir,
                     "",
-                    &selected,
-                    &excluded,
-                    response_limit,
+                    &GlobWalk {
+                        selected: &selected,
+                        excluded: &excluded,
+                        response_limit,
+                        base,
+                    },
                     &mut budget,
                     0,
                     &mut result,
-                    base,
                 )?;
             }
             Ok(json!(result))
@@ -1156,7 +1153,7 @@ pub fn serve() -> io::Result<()> {
         )?;
     }
     let mut stdout = io::stdout().lock();
-    write!(stdout, "{PROTOCOL} {}\n", body.len())?;
+    writeln!(stdout, "{PROTOCOL} {}", body.len())?;
     stdout.write_all(&body)?;
     stdout.flush()
 }
