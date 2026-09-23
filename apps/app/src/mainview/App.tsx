@@ -487,6 +487,7 @@ function AppContent() {
           })
           return
         }
+        if (event.key === "Escape" && event.target instanceof Element && event.target.closest(".input-mode-menu")) return
         if (event.key === "Escape" && session.paletteOpen === true) {
           event.preventDefault()
           dismissComposer()

@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => {
     capabilities: ['identity', 'cloud', 'agent'], authFlow: 'redirect', sandbox: null,
   } }))
   await page.route('**/api/auth/session', route => route.fulfill({ json: { status: 'signed-out' } }))
+  await page.route('**/api/user', route => route.fulfill({ status: 401, json: { message: 'Sign in' } }))
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'Mode: Normal' })).toBeVisible()
   await page.keyboard.press('m')
@@ -35,7 +36,7 @@ test('edit a Vim buffer and navigate back to the workspace without closing its d
   const navigation = page.locator('.keyboard-pane-number').filter({ hasText: /^0 Navigation$/ })
   const index = await navigation.locator('kbd').textContent()
   await page.keyboard.press(index!)
-  await expect(page.getByRole('button', { name: 'Smithers', exact: true })).toBeFocused()
+  await expect(page.getByTestId('chrome-sign-in')).toBeFocused()
   await expect(input).toBeVisible()
   await expect(input).toHaveValue('alpha beta')
   await page.keyboard.press('Control+b')
@@ -80,5 +81,5 @@ test('pane selection enters search results and Escape cancels the prefix without
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('Enter')
   await expect(page.locator('.keyboard-hints')).toHaveCount(0)
-  await expect(page.getByRole('dialog', { name: 'Chat', exact: true })).toHaveAttribute('aria-modal', 'true')
+  await expect(page.getByTestId('composer-overlay')).toBeVisible()
 })

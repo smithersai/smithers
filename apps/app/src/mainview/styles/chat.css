@@ -287,6 +287,12 @@
 	display: none;
 }
 
+/* Chat's mode controls stay reachable while its input is summoned. */
+.app-shell:has(.composer-overlay:not([hidden])) .app-chat-controls {
+	position: relative;
+	z-index: 81;
+}
+
 .composer-overlay .composer-wrap {
 	padding-top: 0;
 	padding-bottom: 0;

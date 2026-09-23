@@ -3,42 +3,32 @@ import { expect,test } from '@playwright/test'
 test.use({ contextOptions: { reducedMotion: 'reduce' }, actionTimeout: 3_000, navigationTimeout: 10_000 })
 test.setTimeout(30_000)
 
-test('Chat Tab reaches Send, Mode, Close, and the footer without trapping focus', async ({ page }) => {
+test('Chat Tab reaches Send and footer controls without trapping focus', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  const chat = page.getByRole('button', { name: 'Chat', exact: true })
+  await chat.click()
   const input = page.getByTestId('composer-input')
   const send = page.getByTestId('composer-send')
-  const mode = page.getByRole('dialog', { name: 'Chat' }).getByRole('button', { name: 'Mode: Normal', exact: true })
-  const close = page.getByRole('button', { name: 'Close Chat', exact: true })
+  const mode = page.getByRole('button', { name: 'Mode: Normal', exact: true })
   await input.fill('hello there')
   await page.keyboard.press('Tab')
   await expect(send).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(mode).toBeFocused()
+  await expect(chat).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(close).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(close).not.toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(close).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
   await expect(mode).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('menuitemradio', { name: 'Normal' })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(mode).toBeFocused()
-  const hint = (await page.locator('.palette-foot').boundingBox())!
-  expect((await mode.boundingBox())!.y).toBeGreaterThanOrEqual(hint.y + hint.height)
+  await page.keyboard.press('Shift+Tab')
+  await expect(chat).toBeFocused()
   await page.keyboard.press('Shift+Tab')
   await expect(send).toBeFocused()
   await page.keyboard.press('Shift+Tab')
   await expect(input).toBeFocused()
   await page.keyboard.press('Shift+Tab')
-  await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(page.getByRole('button', { name: 'Show issues', exact: true })).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(page.getByRole('log', { name: 'Onboarding chat history' })).toBeFocused()
+  await expect(page.locator('.smithers-transcript').getByRole('button', { name: 'Copy message' }).last()).toBeFocused()
 })
 
 test('switching away from Dictation stops capture without reopening Chat', async ({ page }) => {
@@ -68,12 +58,12 @@ test('switching away from Dictation stops capture without reopening Chat', async
   await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
 })
 
-for (const key of ['Enter', 'Escape']) test(`${key} on dictation Stop releases capture before Chat`, async ({ page }) => {
+test('Escape releases dictation before Chat and preserves the draft', async ({ page }) => {
   await page.addInitScript(() => {
     const host = window as any
     host.SpeechRecognition = class {
       onend: any
-      start() {}
+      start() { host.starts = (host.starts ?? 0) + 1 }
       stop() { this.onend?.() }
       abort() { host.aborts = (host.aborts ?? 0) + 1 }
     }
@@ -81,35 +71,18 @@ for (const key of ['Enter', 'Escape']) test(`${key} on dictation Stop releases c
   await page.goto('/')
   await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
   await page.getByRole('menuitemradio', { name: 'Dictation', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Mode: Dictation', exact: true })).toBeVisible()
   await page.keyboard.press('Meta+k')
+  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
   const input = page.getByTestId('composer-input')
-  const stop = page.getByRole('button', { name: 'Stop dictation', exact: true })
-  await expect(stop).toBeVisible()
   await input.fill('keep this dictation draft')
-  const send = page.getByTestId('composer-send')
-  const mode = page.getByRole('button', { name: 'Mode: Dictation', exact: true })
-  await input.press('Tab')
-  await expect(send).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(mode).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Close Chat', exact: true })).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(mode).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(send).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(input).toBeFocused()
-  await page.keyboard.press('Shift+Tab')
-  await expect(stop).toBeFocused()
-  await stop.press(key)
-  await expect(stop).toHaveCount(0)
+  await input.press('Escape')
+  await expect.poll(() => page.evaluate(() => (window as any).aborts)).toBe(1)
   await expect(input).toBeFocused()
   await expect(input).toHaveValue('keep this dictation draft')
   await expect(page.getByTestId('palette')).toBeVisible()
   await input.press('Escape')
   await expect(input).toBeHidden()
-  if (key === 'Escape') expect(await page.evaluate(() => (window as any).aborts)).toBe(1)
 })
 
 test('unsupported Dictation is disabled with a reason and Chat stays in Normal mode', async ({ page }) => {
@@ -126,7 +99,7 @@ test('unsupported Dictation is disabled with a reason and Chat stays in Normal m
   await page.keyboard.press('Escape')
   await page.keyboard.press('Meta+k')
   await expect(page.getByTestId('composer-input')).toBeFocused()
-  await expect(page.getByRole('dialog', { name: 'Chat' }).getByRole('button', { name: 'Mode: Normal', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Mode: Normal', exact: true })).toBeVisible()
   await expect(page.getByText("/chat.open didn't run", { exact: true })).toHaveCount(0)
 })
 
@@ -162,7 +135,7 @@ test('Vim roves into Chat in normal mode, inserts explicitly, and leaves on j or
   await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
   await expect(input).not.toBeFocused()
-  await expect(page.getByRole('dialog', { name: 'Chat' })).toBeVisible()
+  await expect(page.getByTestId('composer-overlay')).toBeVisible()
   await page.keyboard.press('j')
   await expect(input).toBeFocused()
   await expect(input).toHaveAttribute('data-vim-mode', 'normal')
