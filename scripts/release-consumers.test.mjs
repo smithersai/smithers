@@ -42,6 +42,10 @@ test("every library, adapter and migration profile selects the supplied candidat
       assert.ok(firstParty.length > 0, profile.name)
       for (const [name, range] of firstParty) assert.equal(range, version, `${profile.name}: ${name}`)
       assert.equal(profile.dependencies.effect, EXPECTED_EFFECT_VERSION)
+      if (profile.dependencies["@effect/platform-node"] !== undefined) {
+        assert.equal(profile.dependencies["@effect/platform-node-shared"], EXPECTED_EFFECT_VERSION,
+          `${profile.name}: the selected Node adapter and its shared package use the same Effect release`)
+      }
     }
   }
 })

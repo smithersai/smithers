@@ -91,7 +91,7 @@ export const adapterProfiles = (entries) => {
       name: "node",
       dependencies: {
         "@smthrs/flows": firstParty, "@smthrs/gateway": firstParty, "@smthrs/observability": firstParty,
-        "@smthrs/platform-node": firstParty, "@effect/platform-node": effect, "@effect/sql-sqlite-node": effect, effect,
+        "@smthrs/platform-node": firstParty, "@effect/platform-node": effect, "@effect/platform-node-shared": effect, "@effect/sql-sqlite-node": effect, effect,
         "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
         "@opentelemetry/exporter-trace-otlp-http": "0.222.0", "@opentelemetry/sdk-trace-base": "2.11.0",
         "@opentelemetry/sdk-trace-node": "2.11.0"
@@ -110,14 +110,14 @@ export const adapterProfiles = (entries) => {
     {
       name: "bun",
       dependencies: { "@smthrs/platform-bun": firstParty, "@smthrs/platform-node": firstParty,
-        "@effect/platform-bun": effect, "@effect/platform-node": effect, effect },
+        "@effect/platform-bun": effect, "@effect/platform-node": effect, "@effect/platform-node-shared": effect, effect },
       absent: [...runners, ...telemetryAdapters, "@effect/sql-sqlite-node", "@smthrs/platform-browser"],
       imports: ["@smthrs/platform-bun", "@smthrs/platform-bun/BunFileSystem", "@smthrs/platform-bun/BunHost"]
     },
     {
       name: "create-app-testing",
       dependencies: { "@smthrs/create-app": firstParty, "@smthrs/testing": firstParty,
-        "@effect/platform-node": effect, vitest: "5.0.0", effect },
+        "@effect/platform-node": effect, "@effect/platform-node-shared": effect, vitest: "5.0.0", effect },
       absent: ["@effect/platform-bun", "@smthrs/platform-bun", "@effect/sql-sqlite-node", ...telemetryAdapters],
       imports: [],
       vitest: true
@@ -130,7 +130,7 @@ export const migrationProfiles = (entries) => {
   return [
     {
       name: "migrate-scan",
-      dependencies: { "@smthrs/migrate": firstParty, "@effect/platform-node": effect, effect,
+      dependencies: { "@smthrs/migrate": firstParty, "@effect/platform-node": effect, "@effect/platform-node-shared": effect, effect,
         ["@typescript/typescript-" + process.platform + "-" + process.arch]: "7.0.2" },
       omitOptional: true,
       absent: [...runners, ...telemetryAdapters, ...browserAdapters, "@smthrs/agent", "@smthrs/engine",
@@ -139,7 +139,7 @@ export const migrationProfiles = (entries) => {
     },
     {
       name: "migrate-apply",
-      dependencies: { "@smthrs/migrate": firstParty, "@effect/platform-node": effect, effect },
+      dependencies: { "@smthrs/migrate": firstParty, "@effect/platform-node": effect, "@effect/platform-node-shared": effect, effect },
       required: ["@smthrs/agent", "@smthrs/engine", "@smthrs/harness", "@smthrs/registry", "@smthrs/platform-node"],
       absent: [...runners, ...telemetryAdapters, ...browserAdapters, "@smthrs/flows", "@effect/sql-sqlite-node"],
       imports: ["@smthrs/migrate/flow/Command", "@smthrs/migrate/flow/MigrateFlow", "@smthrs/migrate/flow/Layers"]
