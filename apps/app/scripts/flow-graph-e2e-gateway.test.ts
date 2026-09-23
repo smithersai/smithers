@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { Effect } from "effect"
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -134,7 +135,7 @@ test("the gateway answers a malformed relay call and removes its SQLite director
     const probePath = join(APP_DIR, "../..", probe)
     writeFileSync(probePath, "before\n")
     try {
-      const revision = SourceRevision.read(join(APP_DIR, "../.."))
+      const revision = await Effect.runPromise(SourceRevision.read(join(APP_DIR, "../..")))
       const at = (ref: string) =>
         request(`${address.relayUrl}/api/repos/${address.repo}/contents/${probe}?ref=${encodeURIComponent(ref)}`)
       if (revision === undefined) {
