@@ -9,10 +9,14 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2914 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2935 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **tui:** undo a Summary row's captured file changes with u ([1c780cc4e0](https://github.com/smithersai/smithers/commit/1c780cc4e00308db70bad380d6a0a68b6997b1a0))
+- **tui:** add /fork to start a new session before an earlier message ([a600ba8aaf](https://github.com/smithersai/smithers/commit/a600ba8aaf1339d96ff88d1f99af01bcf0429997))
+- **tui:** add Ctrl+K search palette over commands, files, rg text, sessions, and worker tabs ([e6e3def5d5](https://github.com/smithersai/smithers/commit/e6e3def5d513560d2e7d7903fef0dc283ad35be7))
+- **tui:** interleave worker rows in chat with log-style filters ([eff7305c4e](https://github.com/smithersai/smithers/commit/eff7305c4eb2c7b77bff16b06ccb42d186f9a080))
 - **tui:** condense runtime views and surface context assessments ([a02a48f2cd](https://github.com/smithersai/smithers/commit/a02a48f2cd5bcd6580f502774428f5bf1a0a64cb))
 - **tui:** persist selectable terminal themes ([606f3ed681](https://github.com/smithersai/smithers/commit/606f3ed681b3045c159365214da35441e194f7f1))
 - **evals:** replay supervisor judgments and account for their cost ([4bc18dd231](https://github.com/smithersai/smithers/commit/4bc18dd231ebcf3315b474cf54bc92e32788fdb3))
@@ -311,6 +315,13 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **evals:** support subscription Codex benchmark lanes ([0c0f69794f](https://github.com/smithersai/smithers/commit/0c0f69794fb12db893ed4ea3845425cb9cfd084b))
+- **app:** keep Chat mode controls reachable by pointer and keyboard ([879dcf3fea](https://github.com/smithersai/smithers/commit/879dcf3feaf2901abbf1f8abd6341a63343e279d))
+- **app:** prepare Chat input before command persistence ([c38583901f](https://github.com/smithersai/smithers/commit/c38583901f5a4cc8db4d1b6be63ff1b8f4bd223e))
+- **models:** limit probe reasoning setting to Cerebras ([b3d7f93795](https://github.com/smithersai/smithers/commit/b3d7f93795f717f374ed6a04eab90163ad7a1ae6))
+- **cli:** resolve packaged atomic filesystem helper ([faacb33568](https://github.com/smithersai/smithers/commit/faacb33568b16f2f1da9d33a96aadd99dcf24ccc))
+- **models:** make account model Test reliable for reasoning ([8401a37189](https://github.com/smithersai/smithers/commit/8401a37189ae73b8d8b65bf748912065fb974b3d))
+- **fs:** preserve Linux birthtime through descriptor-relative statx ([916fece6aa](https://github.com/smithersai/smithers/commit/916fece6aabaeb43fca99a25e2a430d64ca7d930))
 - **release:** clear RPC and Linux filesystem package gates ([e694115abc](https://github.com/smithersai/smithers/commit/e694115abc683b4783a37ad12b9fce838011e10d))
 - **cli:** probe revisions inside native registration scope ([f73f6a17b2](https://github.com/smithersai/smithers/commit/f73f6a17b21e025ad59ff73091999244d3671c8f))
 - **std:** a search root the host cannot inspect is reported as its own failure, not as a missing path ([312fbf65e3](https://github.com/smithersai/smithers/commit/312fbf65e33c1c37e1e9785854845a02b5cc0038))
@@ -1893,6 +1904,7 @@ the release notes at
 
 ### ⚡ Performance
 
+- **agent:** stop a ctx.done() answer waiting seconds on workspace walks ([685734ede1](https://github.com/smithersai/smithers/commit/685734ede1d56c1b7d76fd031cd01d71368b8af2))
 - **app:** the raise-site fallback reads every `new` site once, not once per class ([a44a3af78a](https://github.com/smithersai/smithers/commit/a44a3af78ade9953ef3c1d32ac7bdc6eca0cb8e2))
 - **site:** never inline font files into the app stylesheet ([998dbd5a62](https://github.com/smithersai/smithers/commit/998dbd5a625c4dba74770c4b00b41b1d25b8396d))
 - **site:** self-host Inter and IBM Plex Mono and inline the home stylesheet ([8de7073853](https://github.com/smithersai/smithers/commit/8de7073853e1fe9a99d9ab2428c8d1c7e84adc8b))
@@ -2437,6 +2449,15 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(release):** stabilize sandbox signal gate and cover atomic helper staging ([79f14061e2](https://github.com/smithersai/smithers/commit/79f14061e26278d368bd1e690736d3df28113df1))
+- **style(docs):** format model and notification API tables ([46b47a4df9](https://github.com/smithersai/smithers/commit/46b47a4df9c3ac68ed85675ec58124ac7efea5b2))
+- **test(app):** align browser fixtures with current cloud and composer contracts ([db42ad1685](https://github.com/smithersai/smithers/commit/db42ad1685d7e462a83b56748a87aa9887654c97))
+- **test(harness):** refresh teaching and replay prompt fixtures ([1d4b39d93a](https://github.com/smithersai/smithers/commit/1d4b39d93acc42c5a0d9e57bfeebb5a9109f942f))
+- **test(app):** verify health and authenticated bootstrap contracts ([88a9a38eb7](https://github.com/smithersai/smithers/commit/88a9a38eb7cea16cc289b8cf523e0051d184e796))
+- **test(app):** align sign-in checks with current onboarding ([723fbadf86](https://github.com/smithersai/smithers/commit/723fbadf861325e7e24e7d96f0df2ef962e10c2a))
+- **test(fs):** cover helper protocol and transport refusals ([508330c5cd](https://github.com/smithersai/smithers/commit/508330c5cd188d822c68bf29152cebb03b93904f))
+- **test(app):** await source revision effects in gateway fixture ([0d711d8a07](https://github.com/smithersai/smithers/commit/0d711d8a071f47ebe99edb3c4dd18afd83c9b11a))
+- **test(build):** isolate native toolchain fixture environment ([9c70cee7cb](https://github.com/smithersai/smithers/commit/9c70cee7cb3e8841a68944d646ea9841598e04fd))
 - **test(exports):** record landed runtime entrypoints ([158f59c27c](https://github.com/smithersai/smithers/commit/158f59c27c6f4c8e484811cc29975e14cadb83dc))
 - **test(ci):** align inventory contracts with declared runners ([baf2227ce8](https://github.com/smithersai/smithers/commit/baf2227ce8def0f4f54bd8828eb5b2b73a686ee3))
 - **test(app):** expect the native library for the current platform ([1becedbe43](https://github.com/smithersai/smithers/commit/1becedbe431ca688ae6c930ed3c9728fe74caad1))
