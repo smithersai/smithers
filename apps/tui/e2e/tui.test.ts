@@ -118,6 +118,26 @@ describe("ctrl+c and ctrl+d", () => {
   }, 60_000)
 })
 
+describe("tabs", () => {
+  it("switches Chat and Summary by clicking a tab title", async () => {
+    const { tui } = await start()
+    await tui.click("Summary")
+    await tui.until((screen) => screen.includes("esc chat"), 5_000, "summary focused")
+    await tui.click("Chat")
+    await tui.until((screen) => !screen.includes("esc chat") && !screen.includes("ctrl+s focus"), 5_000, "chat")
+  }, 60_000)
+
+  it("cycles tabs with ctrl+] and ctrl+\\", async () => {
+    const { tui } = await start()
+    await tui.press(key.ctrlBracket)
+    await tui.until((screen) => screen.includes("esc chat"), 5_000, "summary after ctrl+]")
+    await tui.press(key.ctrlBracket)
+    await tui.until((screen) => !screen.includes("esc chat") && !screen.includes("ctrl+s focus"), 5_000, "chat after ctrl+]")
+    await tui.press(key.ctrlBackslash)
+    await tui.until((screen) => screen.includes("esc chat"), 5_000, "summary after ctrl+\\")
+  }, 60_000)
+})
+
 describe("esc", () => {
   it("interrupts a running agent turn and returns to idle", async () => {
     const { tui } = await start({ holdMs: 60_000 })

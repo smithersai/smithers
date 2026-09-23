@@ -116,6 +116,7 @@ export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
   ["ctrl+t", "inspect run timeline"],
   ["ctrl+s", "summary / focus chat"],
   ["ctrl+left/right", "switch tabs"],
+  ["ctrl+], ctrl+\\", "next, previous tab"],
   ["/filter, /grep", "filter the chat like a log"],
   ["hjkl, arrows", "navigate a view; enter expands"],
   ["d, v", "toggle diff / split diff"],

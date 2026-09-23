@@ -336,6 +336,15 @@ export function App(props: AppProps) {
     ...flowRuns.map((run) => ({ id: `flow:${run.id}`, title: `${flowGlyph(run.status)}${run.flow}` })),
     ...snapshot.panels.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
   ]
+  const showTab = (id: string) => {
+    setSurface(id)
+    setPanelFocus(id !== "chat")
+    setNavigation(Panels.initial())
+  }
+  const clickTab = (id: string) => {
+    if (liveForm.current !== undefined) changeForm(undefined)
+    showTab(id)
+  }
   const panel = surface === "summary"
     ? Summary.panel(transcript)
     : surface.startsWith("tab:")
@@ -1160,7 +1169,7 @@ export function App(props: AppProps) {
     const filling = liveForm.current
     if (filling !== undefined && open === undefined) {
       // Palette, summary and tab switching still work: they close the form and leave the run parked.
-      if (!(key.ctrl && ["k", "s", "left", "right"].includes(key.name))) return formKey(key, filling)
+      if (!(key.ctrl && ["k", "s", "left", "right", "]", "\\"].includes(key.name))) return formKey(key, filling)
       changeForm(undefined)
     }
     if (key.ctrl && key.name === "k") {
@@ -1176,14 +1185,12 @@ export function App(props: AppProps) {
       return
     }
     if (
-      (key.ctrl && (key.name === "right" || key.name === "left")) || (key.name === "tab" && panelFocus && !key.shift)
+      (key.ctrl && ["right", "left", "]", "\\"].includes(key.name)) || (key.name === "tab" && panelFocus && !key.shift)
     ) {
       key.preventDefault()
       const index = surfaces.findIndex((tab) => tab.id === surface)
-      const next = surfaces[(index + (key.name === "left" ? -1 : 1) + surfaces.length) % surfaces.length]!
-      setSurface(next.id)
-      setPanelFocus(next.id !== "chat")
-      setNavigation(Panels.initial())
+      const back = key.name === "left" || key.name === "\\"
+      showTab(surfaces[(index + (back ? -1 : 1) + surfaces.length) % surfaces.length]!.id)
       return
     }
     const choice = Approvals.key(key.name, {
@@ -1363,7 +1370,8 @@ export function App(props: AppProps) {
         {showSidebar ? (
           <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>
             {activeTabs.map((tab) => (
-              <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}>
+              <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}
+                onMouseDown={() => clickTab(`tab:${tab.id}`)}>
                 {(tab.description ?? tab.title).length > 22 ? `${(tab.description ?? tab.title).slice(0, 21)}…` : (tab.description ?? tab.title)}
               </text>
             ))}
@@ -1371,11 +1379,11 @@ export function App(props: AppProps) {
         ) : null}
       <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
         <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
-          <text wrapMode="none">
-            {visibleTabs.map((tab) => (
-              <span key={tab.id} fg={surface === tab.id ? color.brand : color.faint}>{" "}{tab.title.length > 22 ? `${tab.title.slice(0, 21)}…` : tab.title}{" "}</span>
-            ))}
-          </text>
+          {visibleTabs.map((tab) => (
+            <text key={tab.id} wrapMode="none" fg={surface === tab.id ? color.brand : color.faint} onMouseDown={() => clickTab(tab.id)}>
+              {" "}{tab.title.length > 22 ? `${tab.title.slice(0, 21)}…` : tab.title}{" "}
+            </text>
+          ))}
           {Timeline.active(filter) && surface === "chat"
             ? <text fg={color.warning} wrapMode="none" style={{ flexShrink: 0 }}>{filter.query === "" ? " filtered" : ` grep ${filter.query}`}</text>
             : null}

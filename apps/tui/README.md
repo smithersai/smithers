@@ -60,7 +60,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | Ctrl+O | Expand cell code, output, diffs, and the key list |
 | Ctrl+T | Inspect the run timeline; arrows scrub, Home/End jump, Esc returns to live |
 | Ctrl+S | Open summary / switch focus between the view and chat |
-| Ctrl+Left, Ctrl+Right | Switch Chat, Summary, worker tabs, and custom views |
+| Ctrl+], Ctrl+\\, Ctrl+Right, Ctrl+Left | Next, previous tab: Chat, Summary, worker tabs, and custom views. Click a tab to open it |
 | hjkl or arrows | In a view: move between rows, collapse/expand details |
 | Enter | In a view: toggle the selected row's details |
 | d, v | In a view: toggle the selected turn's diff; toggle split/unified |
@@ -179,7 +179,7 @@ JSON object or `key=value` arguments, as `smthrs up` does. A run starts in its
 own tab and runs through the same native control host as `smthrs up`: plan,
 approve for this run, run, watch. Missing required input opens a form built
 from the payload schema once the composer is empty and no approval is pending;
-Esc, Ctrl+K, Ctrl+S and Ctrl+Left/Right close it and leave the run parked. A flow whose envelope grants every capability (`*`)
+Esc, Ctrl+K, Ctrl+S and the tab keys close it and leave the run parked. A flow whose envelope grants every capability (`*`)
 waits for **a** (or Enter in its form) instead of starting. Its status settles
 only from the control plane's watch; **x** asks the control plane to cancel.
 

@@ -33,6 +33,8 @@ export const key = {
   ctrlS: "\x13",
   ctrlK: "\x0b",
   ctrlA: "\x01",
+  ctrlBracket: "\x1d",
+  ctrlBackslash: "\x1c",
   up: "\x1b[A",
   down: "\x1b[B",
   tab: "\t",
@@ -150,6 +152,15 @@ export class Tui {
   async press(bytes: string): Promise<void> {
     await this.call("session.send", { sessionId: "tui", dataBase64: Buffer.from(bytes).toString("base64") })
     await sleep(150)
+  }
+
+  /** Clicks the first visible `text`, as an SGR mouse press and release. */
+  async click(text: string): Promise<void> {
+    const lines = this.screen().split("\n")
+    const row = lines.findIndex((line) => line.includes(text))
+    if (row < 0) throw new Error(`no "${text}" on screen:\n${lines.join("\n")}`)
+    const at = `${lines[row]!.indexOf(text) + 1};${row + 1}`
+    await this.press(`\x1b[<0;${at}M\x1b[<0;${at}m`)
   }
 
   /** Types text one character at a time, as a person does. */
