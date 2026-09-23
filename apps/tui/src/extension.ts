@@ -128,7 +128,18 @@ export const project = (source: Source): Descriptor => {
 
 export const isAgent = (descriptor: Descriptor): boolean => descriptor.kind === "markdown"
 
-/** `metadata.tui` in a flow's frontmatter. A key without an action runs its owner. */
+/**
+ * A frontmatter flag. The registry parses frontmatter with YAML's failsafe
+ * schema, so `status: true` arrives as the string `"true"`.
+ */
+const Flag = Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])])
+const flag = (value: boolean | "true" | "false" | undefined): boolean => value === true || value === "true"
+
+/**
+ * `metadata.tui` in a flow's frontmatter: a mapping, or the same mapping as a
+ * JSON string where `metadata` must map strings to strings (SKILL.md). A key
+ * without an action runs its owner.
+ */
 export const Manifest = Schema.Struct({
   keys: Schema.optional(Schema.Array(Schema.Struct({
     key: line(40),
@@ -137,9 +148,9 @@ export const Manifest = Schema.Struct({
     context: Schema.optional(Schema.Literals(["global", "panel"]))
   })).check(Schema.isMaxLength(8))),
   /** Show the owner's latest run or tab as a status item. */
-  status: Schema.optional(Schema.Boolean),
+  status: Schema.optional(Flag),
   /** Show the owner's runs as live transcript cards. */
-  card: Schema.optional(Schema.Boolean)
+  card: Schema.optional(Flag)
 })
 
 export interface Declared {
@@ -157,7 +168,9 @@ export const declared = (descriptor: Descriptor): Declared => {
   const none: Declared = { owner, keys: [], status: false, card: false, problems: [] }
   if (descriptor.tui === undefined) return none
   try {
-    const manifest = Schema.decodeUnknownSync(Manifest)(descriptor.tui)
+    const manifest = Schema.decodeUnknownSync(Manifest)(
+      typeof descriptor.tui === "string" ? JSON.parse(descriptor.tui) : descriptor.tui
+    )
     const own: Action = isAgent(descriptor)
       ? { kind: "agent", agent: descriptor.name }
       : { kind: "flow", flow: descriptor.name }
@@ -170,7 +183,7 @@ export const declared = (descriptor: Descriptor): Declared => {
         action: key.action ?? own
       })
     )
-    return { owner, keys, status: manifest.status ?? false, card: manifest.card ?? false, problems: [] }
+    return { owner, keys, status: flag(manifest.status), card: flag(manifest.card), problems: [] }
   } catch (error) {
     const message = error instanceof Error ? error.message.split("\n")[0] : String(error)
     return { ...none, problems: [`${descriptor.name}: ${message}`] }
