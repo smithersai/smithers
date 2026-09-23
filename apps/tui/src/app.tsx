@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Approvals from "./approvals.ts"
 import * as Clipboard from "./clipboard.ts"
 import * as Complete from "./complete.ts"
+import * as DragScroll from "./drag-scroll.ts"
 import type * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
 import * as Files from "./files.ts"
@@ -411,6 +412,7 @@ export function App(props: AppProps) {
   const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
+  const dragScroll = useMemo(() => DragScroll.make(() => renderer.getSelection()?.isDragging === true), [renderer])
   const lastCtrlC = useRef(0)
   const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
   /** The draft a palette command with an argument displaced; restored by the next submit. */
@@ -1407,7 +1409,7 @@ export function App(props: AppProps) {
   const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
 
   return (
-    <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page}>
+    <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
       <box style={{ flexDirection: "row", width: "100%", height: "100%", justifyContent: "center" }}>
         {showSidebar ? (
           <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>

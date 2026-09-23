@@ -1155,3 +1155,34 @@ describe("approvals", () => {
     expect(refused.ms).toBeLessThan(10_000)
   }, 400_000)
 })
+
+describe("transcript scrolling", () => {
+  /** An SGR mouse report: button code, 1-based column and row, press or release. */
+  const mouse = (button: number, column: number, row: number, release = false) =>
+    `\x1b[<${button};${column};${row}${release ? "m" : "M"}`
+  const fill = async (tui: Tui) => {
+    for (const block of ["b1", "b2", "b3"]) {
+      await tui.type(`!seq -f '${block}-%g' 1 40`)
+      await tui.press(key.enter)
+      await tui.until((screen) => screen.includes(`${block}-40`), 10_000, `${block} output`)
+    }
+    expect(tui.screen()).not.toContain("b2-24")
+  }
+
+  it("scrolls up under the mouse wheel", async () => {
+    const { tui } = await start()
+    await fill(tui)
+    for (let tick = 0; tick < 12; tick++) await tui.press(mouse(64, 20, 10))
+    await tui.until((screen) => screen.includes("b2-24") && !screen.includes("b3-40"), 5_000, "scrolled transcript")
+  }, 60_000)
+
+  it("scrolls up while a selection is dragged above the transcript", async () => {
+    const { tui } = await start()
+    await fill(tui)
+    await tui.press(mouse(0, 5, 14))
+    await tui.press(mouse(32, 5, 8))
+    await tui.press(mouse(32, 5, 1))
+    await tui.until((screen) => screen.includes("$ seq -f 'b1-%g' 1 40"), 5_000, "autoscrolled transcript")
+    await tui.press(mouse(0, 5, 1, true))
+  }, 60_000)
+})
