@@ -332,9 +332,15 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       const token = environment ? process.env[environment]?.trim() : undefined
       if (!token) throw new Error(`${environment ?? "application token"} is required.`)
       const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
-      await context.route(new URL("/api/**", baseURL).toString(), async (route) => {
-        await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${token}` } })
-      })
+      const origin = new URL(baseURL).origin
+      await context.addInitScript(({ origin, token }) => {
+        if (location.origin !== origin) return
+        sessionStorage.setItem("smithers.backend-target", JSON.stringify({
+          apiVersion: 1, mode: "web-plue", apiOrigin: "", auth: { kind: "bearer" },
+          cors: "same-origin", developerExternal: false
+        }))
+        sessionStorage.setItem("smithers.backend-token", token)
+      }, { origin, token })
       try { await use(context) } finally { await context.close() }
       return
     }
