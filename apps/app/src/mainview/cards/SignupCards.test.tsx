@@ -4,6 +4,9 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Signup } from "../state/Signup"
 import { initialSignup } from "../state/Signup"
+import { createAppStore } from "../state/AppStore"
+import { scopedControllers } from "../state/ControllerTestScope"
+import { memoryStorage, silentAgent, unavailableRepositories } from "../state/TestFixtures"
 import { SignupCardBody } from "./SignupCards"
 
 GlobalRegistrator.register()
@@ -27,6 +30,63 @@ const render = (signup: Signup, repos: ReadonlyArray<{ id: string }> = [], doors
 }
 
 describe("the signup cards", () => {
+  test("typing every signup field retains its latest text while command persistence is blocked", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const pending: Array<Promise<unknown>> = []
+    const controller = scopedControllers()({
+      ...store,
+      dispatch: transition => {
+        const transaction = store.dispatch(transition)
+        if (transition.type !== "command.intent.accepted") return transaction
+        return new Proxy(transaction, { get: (target, property, receiver) => property === "isPersisted"
+          ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) }
+          : Reflect.get(target, property, receiver) })
+      }
+    }, unavailableRepositories, silentAgent)
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    const project = () => flushSync(() => root.render(<SignupCardBody signup={store.session().signup ?? initialSignup()} repos={[]} onRunCommand={(name, args) => {
+      pending.push(controller.commands.run(name, args))
+    }} />))
+    const subscription = store.collections.sessions.subscribeChanges(project)
+    try {
+      const cases = [
+        { stage: "sign-in", field: "email", testId: "signup-email", value: "ada@acme.dev" },
+        { stage: "verify", field: "code", testId: "signup-code", value: "123456" },
+        { stage: "account", field: "name", testId: "signup-name", value: "Ada Park " },
+        { stage: "account", field: "account", testId: "signup-account", value: "ada park " },
+        { stage: "poll", field: "more", testId: "signup-more", value: "ship it " }
+      ] as const
+      for (const { stage, field, testId, value } of cases) {
+        controller.signupChange({ stage, ...(stage === "poll" ? { question: 6 } : {}) })
+        project()
+        const input = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-testid="${testId}"]`)!
+        input.focus()
+        for (let index = 1; index <= value.length; index++) {
+          input.value = value.slice(0, index)
+          input.dispatchEvent(new Event("input", { bubbles: true }))
+          project() // A stale session projection must not restore an old value.
+          expect(input.value).toBe(value.slice(0, index))
+        }
+        expect(store.session().signup?.draft[field]).not.toBe(value)
+      }
+      release()
+      await Promise.all(pending)
+      await store.settled?.()
+      for (const { field, value } of cases) expect(store.session().signup?.draft[field]).toBe(value)
+    } finally {
+      release()
+      subscription.unsubscribe()
+      flushSync(() => root.unmount())
+      host.remove()
+      await Promise.resolve(controller.dispose()).catch(() => {})
+      await Promise.resolve(store.dispose?.()).catch(() => {})
+    }
+  })
+
   test("the first card carries the title and offers GitHub through auth.sign-in, Google through signup.google, and the email form through signup.email", () => {
     const { host, flows, calls } = render({ ...initialSignup(), draft: { email: "ada@acme.dev" } })
     expect(host.querySelector("h1")?.textContent?.replace(/\s+/g, " ").trim()).toBe("Automate your codebase today")

@@ -1133,9 +1133,9 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "form.submit": (args) => required("cardId", args, "form.submit needs the card id"),
   /* The signup onboarding (entries/signup.ts): `set`'s value is the rest of the line (blank clears). */
   "signup.set": (args) => {
-    const [field, ...rest] = tokensOf(args)
-    if (field === undefined) return no("signup.set needs the field name")
-    return ok({ field, value: rest.length === 0 ? "" : trimmed(args).slice(field.length).trim() })
+    const match = /^\s*(\S+)(?:[ \t]([\s\S]*))?$/.exec(args ?? "")
+    if (match === null) return no("signup.set needs the field name")
+    return ok({ field: match[1]!, value: match[2] ?? "" })
   },
   "signup.email": (args) => required("email", args, "Type your company email"),
   "signup.verify": (args) => required("code", args, "Type the 6-digit code"),

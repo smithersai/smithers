@@ -24,10 +24,30 @@ const Receipt = ({ text, you }: { text: string; you?: boolean }) => <div classNa
 
 const HERO_WORDS = ["Automate", "your", "codebase", "today"]
 
+// Keep the editor's newest input while signup.set waits for its command receipt.
+// The session draft remains the authority once that exact value is projected.
+const pendingSignupValues = new WeakMap<HTMLInputElement | HTMLTextAreaElement, string>()
+const signupEditor = (value: string, field: string, onRunCommand: RunCommand) => ({
+  defaultValue: value,
+  onInput: (event: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
+    const typed = event.currentTarget.value
+    pendingSignupValues.set(event.currentTarget, typed)
+    onRunCommand("signup.set", `${field} ${typed}`)
+  },
+  ref: (node: HTMLInputElement | HTMLTextAreaElement | null) => {
+    if (node === null) return
+    const pending = pendingSignupValues.get(node)
+    if (pending !== undefined) {
+      if (pending !== value) return
+      pendingSignupValues.delete(node)
+    }
+    if (node.ownerDocument.activeElement !== node && node.value !== value) node.value = value
+  }
+})
+
 /** `doors` false paints the title alone: identity has not answered, so no door is offered yet. */
 export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { signup: Signup; repos: ReadonlyArray<SignupRepo>; onRunCommand: RunCommand; doors?: boolean }) {
   const draft = signup.draft
-  const set = (field: string) => (event: { currentTarget: { value: string } }) => onRunCommand("signup.set", `${field} ${event.currentTarget.value}`)
   const past = (stage: Signup["stage"]) => STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(signup.stage)
   const receipts = <>
     {past("sign-in") && signup.door !== undefined && <Receipt you text={signup.door === "email" ? signup.email ?? "Email" : signup.door === "google" ? "Signed in with Google" : "Signed in with GitHub"} />}
@@ -47,17 +67,17 @@ export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { 
         <button type="button" className="signup-door" data-testid="signup-google" {...flowAction(onRunCommand, "signup.google")}><GoogleMark />Continue with Google</button>
       </div>
       <div className="signup-or">or</div>
-      <form className="signup-row" {...flowProps("signup.email")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.email", draft.email ?? "") }}>
+      <form className="signup-row" {...flowProps("signup.email")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.email", event.currentTarget.querySelector<HTMLInputElement>('input[name="email"]')?.value ?? draft.email ?? "") }}>
         <label className="signup-field"><span>Company email</span>
-          <input type="email" name="email" autoComplete="email" inputMode="email" placeholder="you@company.com" value={draft.email ?? ""} onChange={set("email")} data-testid="signup-email" /></label>
+          <input type="email" name="email" autoComplete="email" inputMode="email" placeholder="you@company.com" {...signupEditor(draft.email ?? "", "email", onRunCommand)} data-testid="signup-email" /></label>
         <button type="submit" className="signup-primary" data-testid="signup-email-continue">Continue</button>
       </form>
     </section>}
     {signup.stage === "verify" && <section className="signup-card" aria-label="Verification code">
       <p className="signup-sent">Code sent to <b>{signup.email}</b></p>
-      <form className="signup-code-form" {...flowProps("signup.verify")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.verify", draft.code ?? "") }}>
-        <input className="signup-code" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" aria-label="6-digit code"
-          value={draft.code ?? ""} onChange={set("code")} data-testid="signup-code" />
+      <form className="signup-code-form" {...flowProps("signup.verify")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.verify", event.currentTarget.querySelector<HTMLInputElement>('input[name="code"]')?.value ?? draft.code ?? "") }}>
+        <input className="signup-code" type="text" name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" aria-label="6-digit code"
+          {...signupEditor(draft.code ?? "", "code", onRunCommand)} data-testid="signup-code" />
         <button type="submit" className="signup-primary" data-testid="signup-verify">Verify</button>
       </form>
     </section>}
@@ -65,11 +85,11 @@ export function SignupCardBody({ signup, repos, onRunCommand, doors = true }: { 
       <h2>Finish creating your account</h2>
       <form className="signup-stack" {...flowProps("signup.account")} onSubmit={event => { event.preventDefault(); onRunCommand("signup.account") }}>
         <label className="signup-field"><span>Full name</span>
-          <input type="text" name="name" autoComplete="name" value={draft.name ?? signup.name ?? ""} onChange={set("name")} data-testid="signup-name" /></label>
+          <input type="text" name="name" autoComplete="name" {...signupEditor(draft.name ?? signup.name ?? "", "name", onRunCommand)} data-testid="signup-name" /></label>
         <label className="signup-field"><span>Account</span>
           <span className="signup-url" data-valid={validAccountName(accountSlug(draft.account ?? signup.account ?? "")) || undefined}>
             <span className="signup-prefix">smithers.sh/</span>
-            <input type="text" name="account" autoComplete="off" spellCheck={false} value={draft.account ?? signup.account ?? ""} onChange={set("account")} data-testid="signup-account" />
+            <input type="text" name="account" autoComplete="off" spellCheck={false} {...signupEditor(draft.account ?? signup.account ?? "", "account", onRunCommand)} data-testid="signup-account" />
             {validAccountName(accountSlug(draft.account ?? signup.account ?? "")) && <Check />}
           </span></label>
         <div className="signup-actions"><button type="submit" className="signup-primary" data-testid="signup-account-continue">Continue</button></div>
@@ -117,8 +137,7 @@ function PollCard({ signup, repos, onRunCommand }: { signup: Signup; repos: Read
         : <button type="button" className="signup-door" {...flowAction(onRunCommand, "auth.sign-in")}><GitHubMark />Connect GitHub</button>}
       <button type="button" className="signup-tile" data-testid="signup-new-repo" {...flowAction(onRunCommand, "signup.repo", "new")}>+ Try Smithers on a new repo</button>
     </div>}
-    {question.kind === "free" && <textarea className="signup-free" aria-label={question.text} value={signup.draft.more ?? ""} data-testid="signup-more"
-      onChange={event => onRunCommand("signup.set", `more ${event.currentTarget.value}`)} />}
+    {question.kind === "free" && <textarea className="signup-free" aria-label={question.text} {...signupEditor(signup.draft.more ?? "", "more", onRunCommand)} data-testid="signup-more" />}
     <div className="signup-actions">{back}{skip}
       {question.kind === "multi" && <button type="button" className="signup-primary" disabled={chosen.length === 0} data-testid="signup-continue" {...flowAction(onRunCommand, "signup.next")}>Continue</button>}
       {question.kind === "free" && <button type="button" className="signup-primary" data-testid="signup-send" {...flowAction(onRunCommand, "signup.next")}>Send</button>}
