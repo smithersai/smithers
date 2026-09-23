@@ -1025,6 +1025,18 @@ describe("flows", () => {
     expect(tui.screen()).toContain("◌ review")
   }, 60_000)
 
+  it("/smithers opens a Smithers tab that closes once the user moves on", async () => {
+    const { tui } = await open()
+    const tabBar = (screen: string) => screen.split("\n").find((line) => line.includes("Chat  Summary")) ?? ""
+    expect(tabBar(tui.screen())).not.toContain("Smithers")
+    await tui.type("/smithers")
+    await tui.press(key.enter)
+    await tui.until((screen) => tabBar(screen).includes("Smithers") && screen.includes("1 flows · 0 active"), 5_000, "smithers tab")
+    await tui.press(key.ctrlBracket)
+    const chat = await tui.until((screen) => !screen.includes("1 flows · 0 active"), 5_000, "chat after ctrl+]")
+    expect(tabBar(chat)).not.toContain("Smithers")
+  }, 30_000)
+
   it("offers the directory's flows in the / menu", async () => {
     const { tui } = await open()
     await tui.type("/rev")

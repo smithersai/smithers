@@ -331,7 +331,8 @@ export function App(props: AppProps) {
   const surfaces = [
     { id: "chat", title: "Chat" },
     { id: "summary", title: "Summary" },
-    ...(props.flows === undefined && flowRuns.length === 0 ? [] : [{ id: "smithers", title: "Smithers" }]),
+    // Only /smithers opens it, and it closes once the user moves on: tab keys never stop on it.
+    ...(surface === "smithers" ? [{ id: "smithers", title: "Smithers" }] : []),
     ...snapshot.tabs.map((tab) => ({
       id: `tab:${tab.id}`,
       title: `${
