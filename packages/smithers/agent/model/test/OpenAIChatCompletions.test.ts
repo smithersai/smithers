@@ -148,7 +148,7 @@ describe("OpenAIChatCompletions.protocol.body", () => {
         params: Request.GenerationParams.make(reasoningEffort === undefined ? {} : { reasoningEffort })
       }))
 
-    for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh"] as const) {
+    for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const) {
       expect(withEffort(effort).reasoning_effort).toBe(effort)
     }
     expect(withEffort().reasoning_effort).toBeUndefined()

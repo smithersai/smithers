@@ -10,6 +10,9 @@ Configuration (environment variables of the harness host):
     PLUE_REPO        owner/name of the repository workspaces are created in
     SMITHERS_CLI     path to the smithers binary (default: "smithers" on PATH)
     PLUE_WAIT_SEC    workspace boot wait (default 900)
+    PLUE_CAPACITY_WAIT_SEC  how long a create waits for cluster capacity
+                     before failing (default 14400); a trial waiting for a
+                     slot has not started its agent clock
 
 Usage:
 
@@ -38,6 +41,8 @@ from typing import Any
 _DEFAULT_WAIT_SEC = 900
 _DEFAULT_EXEC_TIMEOUT_SEC = 8 * 3600
 _DEFAULT_USER = "root"
+_DEFAULT_CAPACITY_WAIT_SEC = 4 * 3600
+_CAPACITY_POLL_SEC = 60
 _DIRS = ("/logs/agent", "/logs/verifier", "/logs/artifacts", "/tests", "/solution")
 
 
@@ -52,6 +57,13 @@ class PlueError(RuntimeError):
 
 class PlueImageError(PlueError):
     """The task environment cannot be expressed as a prebuilt image."""
+
+
+def is_capacity_error(error: PlueError) -> bool:
+    """A create that found no room on the cluster; it will find some when a
+    neighbouring trial finishes, so the caller waits rather than fails."""
+    text = f"{error.code} {error}".lower()
+    return "no_capacity" in text or "no capacity" in text
 
 
 _COPY_RE = re.compile(r"^\s*COPY\s+(?:--chmod=\S+\s+)?(\S+)\s+(\S+)\s*$", re.I)
@@ -207,12 +219,18 @@ class _PlueOps:
             args += ["--disk", str(cfg.storage_mb)]
         for host in allow:
             args += ["--allow", host]
-        try:
-            result = await self._run(*args, timeout=_DEFAULT_WAIT_SEC + 120)
-        except PlueError:
-            # `create --wait` reported a failed boot; the row still exists.
-            await self._plue_delete_by_name(_sanitize_name(self.session_id))
-            raise
+        deadline = asyncio.get_event_loop().time() + float(os.environ.get("PLUE_CAPACITY_WAIT_SEC", _DEFAULT_CAPACITY_WAIT_SEC))
+        while True:
+            try:
+                result = await self._run(*args, timeout=_DEFAULT_WAIT_SEC + 120)
+                break
+            except PlueError as error:
+                # `create --wait` reported a failed boot; the row still exists.
+                await self._plue_delete_by_name(_sanitize_name(self.session_id))
+                if not is_capacity_error(error) or asyncio.get_event_loop().time() >= deadline:
+                    raise
+                self.logger.info("plue: no capacity, retrying in %ss", _CAPACITY_POLL_SEC)
+                await asyncio.sleep(_CAPACITY_POLL_SEC)
         data = _envelope(result.stdout.decode(errors="replace"))
         self._workspace_id = str(data.get("id") or data.get("data", {}).get("id") or "")
         if not self._workspace_id:

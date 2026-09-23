@@ -30,11 +30,24 @@ the ChatGPT subscription the CLI is started with `OPENAI_API_KEY` removed from
 its environment, so an api-key fallback cannot succeed silently, and the
 journal's `model-requested` binding is copied into `smithers-run.json`.
 
+On Smithers Cloud (`-e evals.harbor.plue_env:PlueEnvironment`) the task
+lives in a plue workspace instead of a local container. The "container" the
+prompt names is then the workspace id, and `plue_docker.py` is placed first on
+the CLI's PATH under the name `docker`, so the same `docker exec` seam reaches
+the workspace through the public `smithers workspace exec` command.
+
+The ChatGPT seat is drawn per trial from `accounts.Pool`: every logged-in
+Codex subscription on the host in round-robin (`CODEX_HOME` of the CLI), the
+label recorded in `smithers-run.json`, and an account that reports a usage
+limit taken out of rotation.
+
 Environment:
 
     SMITHERS_ROOT          the Smithers checkout to run; default: this file's
     SMITHERS_OPENAI_AUTH   `chatgpt` (default for openai seats) or `api-key`
     SMITHERS_BENCH_DOCKER  the docker CLI; default `docker`
+    SMITHERS_CLI, PLUE_REPO, SMITHERS_TOKEN, XDG_CONFIG_HOME
+                           the plue CLI and its account, on Smithers Cloud
 
 Agent kwargs (`--ak key=value`):
 
@@ -59,6 +72,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    from . import accounts
+except ImportError:  # imported by file path (fixtures)
+    import accounts  # type: ignore[no-redef]
 
 # Pier ships Harbor as a dependency, so under Pier both import; the runner
 # that calls `install_spec()` and `network_allowlist()` is Pier's, and its
@@ -95,6 +113,7 @@ except ImportError:
 
 HERE = Path(__file__).resolve().parent
 PROMPT_PATH = HERE / "prompt.md"
+PLUE_SHIM = HERE / "plue_docker.py"
 CLI_RELATIVE = Path("packages/smithers/bin/smithers.mjs")
 BUILT_RELATIVE = Path("packages/smithers/dist/esm/bin.js")
 SUBJECT_RELATIVE = Path("evals/swebench/lib/subject.mjs")
@@ -162,7 +181,20 @@ def helper_binary(root: Path, base: dict[str, str]) -> Path | None:
     return None
 
 
-def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None = None) -> dict[str, str]:
+def shim_directory(workspace: Path) -> Path:
+    """A directory whose `docker` is `plue_docker.py`, to go first on PATH."""
+    directory = workspace / "bin"
+    directory.mkdir(parents=True, exist_ok=True)
+    link = directory / "docker"
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(PLUE_SHIM)
+    PLUE_SHIM.chmod(PLUE_SHIM.stat().st_mode | 0o111)
+    return directory
+
+
+def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None = None,
+                    shim: Path | None = None, codex_home: Path | None = None) -> dict[str, str]:
     """The environment the CLI runs under.
 
     The chatgpt mode removes `OPENAI_API_KEY` so the seat can only be served by
@@ -181,6 +213,10 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
         env.pop("OPENAI_API_KEY", None)
     if helper is not None:
         env[HELPER_VARIABLE] = str(helper)
+    if shim is not None:
+        env["PATH"] = f"{shim}{os.pathsep}{env.get('PATH', '')}"
+    if codex_home is not None:
+        env["CODEX_HOME"] = str(codex_home)
     return env
 
 
@@ -252,6 +288,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     seat = None
     frames = model_calls = calls = 0
     bindings: list[Any] = []
+    efforts: list[str] = []
     status = None
     output = None
     for event in events:
@@ -270,6 +307,10 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
             }
             if binding and binding not in bindings:
                 bindings.append(binding)
+            params = payload.get("params")
+            effort = params.get("reasoningEffort") if isinstance(params, dict) else None
+            if isinstance(effort, str) and effort not in efforts:
+                efforts.append(effort)
         elif kind == "control.agent.model-settled":
             model_calls += 1
             counters = payload.get("usage") or {}
@@ -292,6 +333,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "calls": calls,
         "usage": usage,
         "bindings": bindings,
+        "efforts": efforts,
         "status": status,
         "output": output,
         "spanMillis": (events[-1]["at"] - events[0]["at"]) if events else 0,
@@ -438,6 +480,26 @@ def subject_fingerprint(root: Path) -> dict[str, Any] | None:
     return {"stamp": document.get("stamp"), "head": document.get("head"), "refusals": document.get("refusals", [])}
 
 
+def plue_workspace_of(environment: Any) -> str | None:
+    """The workspace id when `environment` is a running plue environment."""
+    kind = getattr(environment, "type", None)
+    if not callable(kind) or kind() != "plue":
+        return None
+    return str(getattr(environment, "_workspace_id", "") or "") or None
+
+
+def usage_limit_hit(log_text: str, events: list[dict[str, Any]]) -> str | None:
+    """The usage-limit line the run tripped over, if any: from the CLI's own
+    log, or a `quota_exceeded` retry in the journal."""
+    for line in log_text.splitlines():
+        if accounts.mentions_usage_limit(line):
+            return line.strip()[:500]
+    for event in events:
+        if event["type"] == "control.agent.model-retried" and event["payload"].get("code") == "quota_exceeded":
+            return f"journal: model-retried quota_exceeded (attempt {event['payload'].get('attempt')})"
+    return None
+
+
 class SmithersAgent(BaseAgent):
     """The Smithers flows harness, driven from the host against the task container."""
 
@@ -473,6 +535,8 @@ class SmithersAgent(BaseAgent):
         configured = os.environ.get("SMITHERS_OPENAI_AUTH", "").strip()
         self.auth_mode = configured or ("chatgpt" if provider == "openai" else "api-key")
         self._summary: dict[str, Any] | None = None
+        self._plue = False
+        self._account: accounts.Account | None = None
 
     @staticmethod
     def name() -> str:
@@ -509,11 +573,16 @@ class SmithersAgent(BaseAgent):
                 raise RuntimeError(f"SMITHERS_OPENAI_AUTH=chatgpt but {store} does not exist; run `codex login`")
 
     def container_of(self, environment: BaseEnvironment) -> str:
-        """The task container's id, found through the compose project Harbor
-        named after the environment's session id."""
+        """The task container's id: the plue workspace id on Smithers Cloud,
+        else the container found through the compose project Harbor named
+        after the environment's session id."""
         override = os.environ.get("SMITHERS_BENCH_CONTAINER")
         if override:
             return override
+        workspace_id = plue_workspace_of(environment)
+        if workspace_id:
+            self._plue = True
+            return workspace_id
         project = compose_project_name(environment.session_id)
         result = subprocess.run(
             [self.docker, "ps", "-q", "--filter", f"label=com.docker.compose.project={project}",
@@ -550,11 +619,19 @@ class SmithersAgent(BaseAgent):
             budget = max(60.0, self._agent_timeout_sec - 60.0) if self._agent_timeout_sec else 3600.0
 
         helper = helper_binary(self.root, dict(os.environ))
-        env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper)
+        shim = shim_directory(workspace) if self._plue else None
+        if self.auth_mode == "chatgpt" and self._account is None:
+            pool = accounts.Pool.from_environment()
+            if pool.accounts:
+                self._account = pool.lease(trial=self.logs_dir.parent.name)
+        env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
+                              codex_home=self._account.home if self._account else None)
         record: dict[str, Any] = {
             "framework": FRAMEWORK,
             "seat": self.seat,
             "authMode": self.auth_mode,
+            "account": self._account.label if self._account else None,
+            "transport": "plue" if self._plue else "docker",
             "openaiApiKeyInCliEnvironment": "OPENAI_API_KEY" in env,
             "helper": str(helper) if helper else None,
             "container": container,
@@ -575,7 +652,15 @@ class SmithersAgent(BaseAgent):
         journal = journal_path(workspace / ".flows")
         events = read_journal(journal) if journal is not None else []
         summary = summarize(events)
+        try:
+            log_text = (self.logs_dir / "smithers-run.log").read_text(errors="replace")
+        except OSError:
+            log_text = ""
+        limit = usage_limit_hit(log_text, events)
+        if limit is not None and self._account is not None:
+            accounts.Pool.from_environment().disable(self._account.label, limit)
         record.update({
+            "usageLimit": limit,
             "phase": phase,
             "exitStatus": exit_status,
             "wallSec": round(wall, 3),
@@ -609,6 +694,9 @@ class SmithersAgent(BaseAgent):
         context.metadata = {
             "seat": self.seat,
             "auth_mode": self.auth_mode,
+            "account": record["account"],
+            "transport": record["transport"],
+            "usage_limit": limit,
             "bindings": summary["bindings"],
             "harness_revision": record["harnessRevision"],
             "subject": (record["subject"] or {}).get("stamp"),

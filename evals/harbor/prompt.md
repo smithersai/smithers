@@ -1,6 +1,7 @@
 ---
 description: Complete one benchmark task in its own container.
 model: {{seat}}
+effort: max
 flows: ["bash"]
 ---
 You are completing a task in an environment you reach only through a running

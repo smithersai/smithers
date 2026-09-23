@@ -371,7 +371,9 @@ export class ToolDefinition extends Schema.Class<ToolDefinition>("flows/model/To
 
 /**
  * How much reasoning to spend on a request, in the provider-neutral
- * vocabulary the adapters map onto their own.
+ * vocabulary the adapters map onto their own. `max` is the top of the
+ * OpenAI Responses scale (the Codex CLI's `model_reasoning_effort = "max"`);
+ * the OpenAI lowerings pass it through unchanged.
  *
  * @category models
  * @since 0.1.0
@@ -383,7 +385,8 @@ export const ReasoningEffort = Schema.Literals([
   "low",
   "medium",
   "high",
-  "xhigh"
+  "xhigh",
+  "max"
 ])
 
 /**

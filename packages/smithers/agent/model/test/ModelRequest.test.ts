@@ -104,7 +104,7 @@ describe("ModelRequest", () => {
   })
 
   it("carries every reasoning effort, an unset effort, and mixed sampling knobs", () => {
-    const efforts = ["none", "minimal", "low", "medium", "high", "xhigh"] as const
+    const efforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
     for (const reasoningEffort of efforts) {
       const params = Request.GenerationParams.make({ reasoningEffort, maxTokens: 8, temperature: 0 })
       const decoded = Schema.decodeUnknownSync(Request.GenerationParams)(

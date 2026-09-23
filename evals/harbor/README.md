@@ -19,6 +19,10 @@ adapter's own logic and is the only thing here CI runs.
 | Path                      | What it is                                                             |
 | ------------------------- | ---------------------------------------------------------------------- |
 | `smithers_agent.py`       | `SmithersAgent`, the Harbor/Pier `BaseAgent` that drives the harness   |
+| `plue_env.py`             | `PlueEnvironment` / `PluePierEnvironment`: the task on a Smithers Cloud workspace, public CLI only |
+| `plue_docker.py`          | The `docker` the harness calls on Smithers Cloud: `exec` becomes `smithers workspace exec` |
+| `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial     |
+| `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool  |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim  |
 | `verify.sh`               | Offline check: prompt, environment, journal fold, trajectory, names    |
 | `fixtures/check_agent.py` | What `verify.sh` runs                                                  |
@@ -57,6 +61,27 @@ PYTHONPATH=$PWD harbor run -d terminal-bench/terminal-bench@4.0.0 \
 The oracle arm proves the sandbox and the verifier (`--agent oracle`); the
 stock Codex CLI arm is `-a codex -m openai/gpt-6-sol` with
 `--ae CODEX_FORCE_AUTH_JSON=1` to use the ChatGPT login instead of an API key.
+Every task runs at `effort: max` (`prompt.md`), the top of the OpenAI scale
+and what the Terminal-Bench leaderboard's Codex entries ran at; the journal's
+`model-requested` params say which effort each call was really made at and
+`smithers-run.json` folds them into `run.efforts`.
+
+### On Smithers Cloud
+
+Add `-e evals.harbor.plue_env:PlueEnvironment` and the task runs in a plue
+workspace through the public `smithers` CLI (`SMITHERS_CLI`, `PLUE_REPO`,
+`SMITHERS_TOKEN`; see `plue_env.py`). The harness still speaks `docker exec`:
+the adapter puts `plue_docker.py` first on the CLI's PATH as `docker`, and the
+workspace id is the container the prompt names. A create that finds no
+capacity waits (`PLUE_CAPACITY_WAIT_SEC`) instead of failing the trial.
+
+Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
+(label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in
+`SMITHERS_CODEX_POOL_STATE` shared across runner processes. The label is
+recorded per trial (`smithers-run.json` `account`, `codex-account.json` for
+the stock arm). An account that reports a usage limit leaves the rotation and
+the trial that hit it stays a recorded failure. The stock arm is
+`-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1 --ak reasoning_effort=max`.
 
 The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 `-o`: Harbor resolves a relative jobs directory against the task's `tests/`

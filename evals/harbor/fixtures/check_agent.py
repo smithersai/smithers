@@ -18,6 +18,10 @@ What is pinned, and why each one matters:
     the two validators ATIF enforces. When Harbor is importable the trajectory
     is validated by its own pydantic model as well, and the check says so.
   - The compose project name is sanitized the way Docker Compose does it.
+  - On Smithers Cloud: the plue `docker` shim translates the harness's
+    `docker exec` argv into one `smithers workspace exec` call, the workspace
+    id is the container, the shim goes first on PATH, and the account pool
+    rotates every login, drops one on a usage limit, and never invents one.
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
+import accounts  # noqa: E402
+import plue_docker  # noqa: E402
 import smithers_agent as agent  # noqa: E402
 
 DDL = """CREATE TABLE flows_journal_events (
@@ -41,8 +47,9 @@ DDL = """CREATE TABLE flows_journal_events (
   PRIMARY KEY (run_id, seq))"""
 
 INSTRUCTION = "Repair the storage engine under /app so recovery replays the log in order."
-ROUTE = {"routeId": "openai-chatgpt", "protocolId": "openai-responses-chatgpt", "modelId": "gpt-6-sol"}
-BINDING = dict(ROUTE)
+ROUTE = {"routeId": "openai-chatgpt", "protocolId": "openai-responses-chatgpt", "modelId": "gpt-6-sol",
+         "params": {"reasoningEffort": "max"}}
+BINDING = {key: ROUTE[key] for key in ("routeId", "protocolId", "modelId")}
 
 
 def synthetic_journal(path: Path) -> None:
@@ -82,6 +89,7 @@ def check_prompt() -> None:
     text = agent.render_prompt(INSTRUCTION, seat="openai:gpt-6-sol", container="abc123", cwd="/app", commit=False)
     assert text.startswith("---\n"), "the flow file opens with frontmatter"
     assert "model: openai:gpt-6-sol\n" in text, "the seat is the frontmatter model"
+    assert "\neffort: max\n" in text, "every task runs at the top reasoning effort"
     assert 'container: "abc123"' in text and 'cwd: "/app"' in text, "the container and cwd are taught"
     assert text.rstrip().endswith(INSTRUCTION), "the instruction is the last thing in the prompt, verbatim"
     assert "{{" not in text, "every placeholder is filled"
@@ -126,6 +134,7 @@ def check_journal() -> str:
     assert summary["seat"] == "openai:gpt-6-sol"
     assert summary["frames"] == 2 and summary["modelCalls"] == 2 and summary["calls"] == 3
     assert summary["bindings"] == [BINDING], f"one distinct route is recorded: {summary['bindings']}"
+    assert summary["efforts"] == ["max"], "the effort each call was made at is read off the journal"
     assert summary["status"] == "completed" and summary["output"] == "fixed recovery order"
     assert summary["spanMillis"] == 16_000
 
@@ -173,6 +182,96 @@ def check_helper() -> None:
         assert agent.helper_binary(root, {agent.HELPER_VARIABLE: str(root / "missing")}) in (built, agent.HELPER_DEFAULT)
 
 
+def check_plue_shim() -> None:
+    environ = {"SMITHERS_CLI": "/opt/plue", "PLUE_REPO": "acme/bench", "TOKEN": "t0", "PATH": "/bin"}
+    args, stdin = plue_docker.translate(
+        ["exec", "-i", "-w", "/app", "-e", "TOKEN", "-e", "MISSING", "--", "ws-1", "bash", "-lc", 'exec "$@"', "bash", "python3", "-"],
+        environ,
+    )
+    assert stdin is True
+    assert args[:4] == ["/opt/plue", "workspace", "exec", "ws-1"]
+    assert args[4:10] == ["--repo", "acme/bench", "--user", "root", "--timeout", "0"]
+    assert ["--cwd", "/app"] == args[args.index("--cwd"):args.index("--cwd") + 2]
+    assert args[args.index("--env") + 1] == "TOKEN=t0" and args.count("--env") == 1, "unset names are not forwarded"
+    assert args[-2] == "--command" and args[-1] == "exec bash -lc 'exec \"$@\"' bash python3 -", args[-1]
+    plain, stdin = plue_docker.translate(["exec", "--", "ws-1", "bash", "-lc", "ls"], environ)
+    assert stdin is False and "--cwd" not in plain and "--env" not in plain
+    for bad in (["ps"], ["exec", "--", "ws-1"], ["exec", "-t", "--", "ws-1", "true"]):
+        try:
+            plue_docker.translate(bad, environ)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"refused: {bad}")
+    try:
+        plue_docker.translate(["exec", "--", "ws-1", "true"], {"SMITHERS_CLI": "x"})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("PLUE_REPO is required")
+    assert plue_docker.envelope('note\n{"data": {"exit_code": 3}}') == {"data": {"exit_code": 3}}
+
+    class Plue:
+        _workspace_id = "ws-9"
+
+        @staticmethod
+        def type() -> str:
+            return "plue"
+
+    class Docker:
+        @staticmethod
+        def type() -> str:
+            return "docker"
+
+    assert agent.plue_workspace_of(Plue()) == "ws-9"
+    assert agent.plue_workspace_of(Docker()) is None
+    assert agent.plue_workspace_of(object()) is None
+    with tempfile.TemporaryDirectory() as directory:
+        shim = agent.shim_directory(Path(directory))
+        assert (shim / "docker").resolve() == agent.PLUE_SHIM.resolve() and os.access(shim / "docker", os.X_OK)
+        env = agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt", shim=shim, codex_home=Path("/h/codex-2"))
+        assert env["PATH"].startswith(str(shim) + os.pathsep) and env["CODEX_HOME"] == "/h/codex-2"
+        assert "CODEX_HOME" not in agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt")
+
+
+def check_accounts() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        home = Path(directory)
+        assert accounts.discover(home) == [], "no logins, no accounts"
+        (home / ".codex").mkdir()
+        (home / ".codex" / "auth.json").write_text("{}")
+        store = home / ".smithers" / "accounts"
+        for name in ("codex-2", "codex-3", "claude-1", "codex-empty"):
+            (store / name).mkdir(parents=True)
+            if name != "codex-empty":
+                (store / name / "auth.json").write_text("{}")
+        found = accounts.discover(home)
+        assert [a.label for a in found] == ["default", "codex-2", "codex-3"], found
+        assert found[1].auth == store / "codex-2" / "auth.json"
+
+        pool = accounts.Pool(found, home / "pool.json")
+        assert [pool.lease("t1").label, pool.lease("t2").label, pool.lease("t3").label, pool.lease("t4").label] == \
+            ["default", "codex-2", "codex-3", "default"], "round robin"
+        pool.disable("codex-2", "You've hit your usage limit")
+        assert [pool.lease().label, pool.lease().label] == ["default", "codex-3"], "a disabled account is skipped, the wheel keeps turning"
+        assert accounts.Pool(found, home / "pool.json").disabled()["codex-2"]["reason"].startswith("You've hit")
+        pool.disable("default", "x")
+        pool.disable("codex-3", "x")
+        try:
+            pool.lease()
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("an empty rotation is refused, never faked")
+    assert accounts.mentions_usage_limit("ERROR: You've hit your usage limit. Try again at 4pm")
+    assert accounts.mentions_usage_limit('{"type":"usage_limit_reached"}')
+    assert not accounts.mentions_usage_limit("rate limit exceeded, retrying"), "a transient 429 is not a usage limit"
+    assert agent.usage_limit_hit("ok\nerror: usage_limit_reached\n", []) == "error: usage_limit_reached"
+    assert agent.usage_limit_hit("", [{"type": "control.agent.model-retried", "payload": {"code": "quota_exceeded", "attempt": 2}}]) \
+        == "journal: model-retried quota_exceeded (attempt 2)"
+    assert agent.usage_limit_hit("fine", [{"type": "control.agent.model-retried", "payload": {"code": "rate_limited"}}]) is None
+
+
 def check_names() -> None:
     assert agent.compose_project_name("wal-recovery-ordering__gRvUHdP") == "wal-recovery-ordering__grvuhdp"
     assert agent.compose_project_name("_x.y") == "0_x-y"
@@ -193,4 +292,7 @@ if __name__ == "__main__":
     validation = check_journal()
     check_helper()
     check_names()
-    print(f"check_agent.py: prompt, environment, journal fold, helper lookup and names hold; trajectory {validation}.")
+    check_plue_shim()
+    check_accounts()
+    print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim and account pool hold; "
+          f"trajectory {validation}.")
