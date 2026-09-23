@@ -486,7 +486,7 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
           "print('ready', flush=True)",
           "while True: signal.pause()"
         ].join("\n")
-        const ready = yield* Deferred.make<void>()
+        const ready = yield* Deferred.make<void, Error>()
         const requests: Array<unknown> = []
         const original = Control.prototype.write
         // Observe the real wire policy without replacing delivery or outcomes.
@@ -529,11 +529,14 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
                 Effect.runSync(Deferred.succeed(ready, undefined))
               })
             ),
+            Effect.ensuring(Deferred.fail(ready, new Error("Python fixture exited before reporting readiness"))),
             Effect.exit,
             Effect.map((exit) => ({ exit, at: performance.now() })),
             Effect.forkChild
           )
-          yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
+          // The first Python launch on a macOS runner can outlast five seconds.
+          // Readiness precedes the grace clock; early EOF still fails immediately.
+          yield* Deferred.await(ready).pipe(Effect.timeout("15 seconds"))
           expect(group(target)).toBe(escaped ? target : prepared.handle.pid)
           expect(yield* prepared.handle.isRunning).toBe(true)
           const signalStart = process.hrtime.bigint()
