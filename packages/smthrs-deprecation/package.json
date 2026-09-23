@@ -31,6 +31,7 @@
   },
   "sideEffects": true,
   "bin": {
+    "smithers": "./bin/smthrs.mjs",
     "smthrs": "./bin/smthrs.mjs"
   },
   "dependencies": {

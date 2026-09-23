@@ -20,10 +20,10 @@ const manifest = JSON.parse(readFileSync(url("../package.json"), "utf8")) as {
 }
 
 describe("the published manifest", () => {
-  it("ships the smthrs command, so `npx smthrs <verb>` runs the CLI", () => {
+  it("ships the smthrs command and its smithers alias, so `npx smthrs <verb>` runs the CLI", () => {
     // The bin runs @smthrs/cli's own executable, so the two `smthrs` bins are
     // one program. `smithers-build` stays collision-free: no bin here takes it.
-    expect(manifest.bin).toEqual({ smthrs: "./bin/smthrs.mjs" })
+    expect(manifest.bin).toEqual({ smithers: "./bin/smthrs.mjs", smthrs: "./bin/smthrs.mjs" })
   })
 
   it("depends on the CLI alone, at the synchronized release version", () => {

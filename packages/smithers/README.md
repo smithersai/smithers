@@ -18,7 +18,7 @@ The public parser is **Incur**, with **Zod** argument and option schemas. **Effe
 ## Install
 
 ```sh
-npm install --global @smthrs/cli@1.0.0-rc.0
+npm install --global smthrs@1.0.0-rc.0
 ```
 
 Node 22.19+ (Node 22) or 24.11+ is required. The package installs one executable under two names, `smthrs` and its `smithers` alias.

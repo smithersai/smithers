@@ -30,7 +30,7 @@ Read the [migration guide](https://smithers.sh/migration/1.0), install the 1.0
 command line, and plan the migration from the project directory:
 
 ```sh
-npm install --global @smthrs/cli@next
+npm install --global smthrs@next
 smthrs migrate
 ```
 

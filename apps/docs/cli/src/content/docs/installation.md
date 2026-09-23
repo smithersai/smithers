@@ -11,11 +11,14 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/doc
 As checked on September 4, 2026, `1.0.0-rc.0` is not published to npm and the CLI has no `next` dist-tag. For now, use the [source-checkout installation](https://smithers.sh/docs/installation/#use-the-source-checkout-before-publication). The npm commands on this page apply after publication.
 
 ```bash
-npm install --global @smthrs/cli@1.0.0-rc.0
+npm install --global smthrs@1.0.0-rc.0
 ```
 
-The package installs one executable under two names, `smthrs` and its
-`smithers` alias. Both are the same file, `bin/smithers.mjs`.
+`smthrs` is the package to install. Its `smthrs` executable runs this package,
+`@smthrs/cli`, which it installs as a dependency. Inside a workspace,
+`@smthrs/cli` also provides `smthrs` and its `smithers` alias from
+`bin/smithers.mjs`. Do not install both packages globally: npm refuses the
+second `smthrs` link.
 
 The executable declares `@effect/sql-sqlite-node@4.0.0-rc.115` as a required
 peer because its default runtime opens SQLite. Modern npm and pnpm install
@@ -66,14 +69,11 @@ not supported on Bun. That makes every installation path run on Node:
 | Path | Command |
 | --- | --- |
 | Global install | `smthrs <verb>` |
-| One-off through npm | `npx smthrs@next <verb>` or `npx --package @smthrs/cli@next smthrs <verb>` |
-| One-off through Bun | `bun x --package @smthrs/cli@next smthrs <verb>` |
+| One-off through npm | `npx smthrs@next <verb>` |
+| One-off through Bun | `bun x smthrs@next <verb>` |
 
 Bun honours the shebang, so `bun x` starts Node. Running the CLI with
 `bun --bun` overrides the shebang and is not supported.
-
-The unscoped `smthrs` package ships a `smthrs` executable that runs
-`@smthrs/cli`, which is what makes `npx smthrs <verb>` work.
 
 ## The terminal UI
 
