@@ -35,7 +35,7 @@
  *
  * @since 0.1.0
  */
-import { DatabaseSync } from "node:sqlite"
+import { journalRows } from "./journal-rows.mjs"
 import * as NarrowedCheck from "../../../packages/smithers/agent/harness/src/NarrowedCheck.ts"
 import * as Sufficiency from "../../../packages/smithers/agent/harness/src/Sufficiency.ts"
 import * as UnresolvedFailure from "../../../packages/smithers/agent/harness/src/UnresolvedFailure.ts"
@@ -73,17 +73,12 @@ const probed = (value) => {
  * @since 0.1.0
  */
 export const read = (databasePath) => {
-  const database = new DatabaseSync(databasePath, { readOnly: true })
-  let rows
-  try {
-    rows = database.prepare(
-      "select seq, emitted_at_ms, event_type, payload_json from flows_journal_events"
-        + " where event_type like 'control.%' or event_type = 'flows.time-travel.effect-boundary'"
-        + " order by seq"
-    ).all()
-  } finally {
-    database.close()
-  }
+  // `control.db` beside the archived `engine.db` holds the `control.*` rows
+  // of a current run; `journalRows` reads both (see lib/journal-rows.mjs).
+  const rows = journalRows(
+    databasePath,
+    "event_type like 'control.%' or event_type = 'flows.time-travel.effect-boundary'"
+  )
 
   const frames = []
   const started = []

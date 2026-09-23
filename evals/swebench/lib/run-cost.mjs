@@ -25,23 +25,18 @@
  * `unknown: true`, so the budget cannot mistake absent accounting for zero.
  */
 import { existsSync, statSync } from "node:fs"
-import { DatabaseSync } from "node:sqlite"
 import { jevUsageOf } from "../jev-usage.ts"
+import { journalRows } from "./journal-rows.mjs"
 import { jevModel, usd } from "../prices.ts"
 
 const readJournalCost = (databasePath) => {
-  const database = new DatabaseSync(databasePath, { readOnly: true })
-  let rows
-  try {
-    rows = database.prepare(
-      "select emitted_at_ms, event_type, payload_json from flows_journal_events"
-        + " where event_type in ('control.agent.model-settled', 'control.agent.turn-opened',"
-        + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled')"
-        + " order by seq"
-    ).all()
-  } finally {
-    database.close()
-  }
+  // `control.db` beside the archived `engine.db` holds the `control.*` rows
+  // of a current run; `journalRows` reads both (see lib/journal-rows.mjs).
+  const rows = journalRows(
+    databasePath,
+    "event_type in ('control.agent.model-settled', 'control.agent.turn-opened',"
+      + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled')"
+  )
 
   const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }
   let seat

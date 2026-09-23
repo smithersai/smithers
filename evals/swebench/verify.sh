@@ -225,6 +225,9 @@ node "$S/fixtures/check-round3-evidence.mjs"
 echo "== the supervisor replay, rebuilt from a journal and scored offline"
 node "$S/fixtures/check-jev-replay.mjs"
 
+echo "== a run journaled into engine.db and control.db reads as one journal"
+node "$S/fixtures/check-split-journal.mjs"
+
 echo "== the realm evidence the REPL A/B reads off its journals"
 node "$S/fixtures/check-repl-evidence.mjs"
 

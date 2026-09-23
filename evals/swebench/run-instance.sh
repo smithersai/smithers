@@ -361,12 +361,15 @@ echo "[$RUN_ID] untracked files left out of the patch: $(wc -l < "$PATCH.untrack
 # ever existed inside a workspace the next wave overwrites. The selector reads
 # these and nothing else, so they outlive the tree they were written in.
 #
-# The write-ahead log and shared-memory files travel with the database. The run
-# process has exited by here, so the log is normally already folded in, and
-# copying all three costs nothing and cannot lose a tail that is not.
+# The CLI journals into two databases: `engine.db` holds the engine's events
+# and `control.db` every `control.agent.*` event, which is the run's frames,
+# calls and model usage. Both travel; `lib/journal-rows.mjs` reads them as one.
+# The write-ahead log and shared-memory files travel with each database. The
+# run process has exited by here, so the log is normally already folded in, and
+# copying them costs nothing and cannot lose a tail that is not.
 if [ -f "$WORK/.flows/engine.db" ]; then
   mkdir -p "$JOURNAL"
-  for FILE in engine.db engine.db-wal engine.db-shm; do
+  for FILE in engine.db engine.db-wal engine.db-shm control.db control.db-wal control.db-shm; do
     if [ -f "$WORK/.flows/$FILE" ]; then cp "$WORK/.flows/$FILE" "$JOURNAL/$FILE"; fi
   done
   echo "[$RUN_ID] journal archived to ${JOURNAL#"$S/"}"

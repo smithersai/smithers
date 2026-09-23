@@ -71,6 +71,7 @@ try {
     if (specifier.startsWith("node:")) return true
     const target = resolve(root, dirname(from), specifier)
     return target === join(root, "lib/journal-facts.mjs")
+      || target === join(root, "lib/journal-rows.mjs")
       || target === join(root, "prices.ts")
       || (dirname(target) === harnessSource && /^[A-Za-z]+\.ts$/u.test(basename(target)))
   }
@@ -107,7 +108,7 @@ try {
   }
   assert.ok(scanned.has(join(harnessSource, "Sufficiency.ts")), "the scan reaches the detectors")
 
-  for (const name of ["select-candidate.mjs", "lib/journal-facts.mjs", "prices.ts"]) {
+  for (const name of ["select-candidate.mjs", "lib/journal-facts.mjs", "lib/journal-rows.mjs", "prices.ts"]) {
     for (const specifier of importsOf(readFileSync(join(root, name), "utf8"))) {
       assert.ok(allowed(name, specifier), `${name} imports ${specifier}, which is not a journal, a detector or a price`)
     }
