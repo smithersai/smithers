@@ -742,9 +742,10 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
                 };
                 (stat, birthtime)
             } else {
-                let (dir, name) = parent(&root, request, path, false, 0)?;
-                let stat = match lstat_at(&dir, name) {
-                    Ok(stat) => stat,
+                let entry = parent(&root, request, path, false, 0)
+                    .and_then(|(dir, name)| lstat_at(&dir, name).map(|stat| (dir, name, stat)));
+                let (dir, name, stat) = match entry {
+                    Ok(entry) => entry,
                     Err(e) if operation == "exists" && e.raw_os_error() == Some(libc::ENOENT) => {
                         return Ok(json!(false))
                     }

@@ -2,6 +2,7 @@ use base64::Engine as _;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::symlink;
 use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 
@@ -96,4 +97,48 @@ fn packaged_stat_preserves_creation_time_for_roots_directories_and_files() {
             Err(_) => assert!(actual["value"]["birthtime"].is_null()),
         }
     }
+}
+
+#[test]
+fn packaged_exists_handles_missing_paths_without_hiding_refusals() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let info = fs::metadata(&root).unwrap();
+    let request = |path: &std::path::Path| {
+        json!({
+            "operation":"exists", "boundaryRoot":root, "logicalRoot":root,
+            "rootIdentity":format!("{}:{}", info.dev(), info.ino()), "path":path
+        })
+    };
+
+    assert_eq!(
+        invoke(request(&root.join("missing"))),
+        json!({"ok":true,"value":false})
+    );
+    assert_eq!(
+        invoke(request(&root.join("missing/child"))),
+        json!({"ok":true,"value":false})
+    );
+
+    let nested = root.join("nested");
+    fs::create_dir(&nested).unwrap();
+    assert_eq!(
+        invoke(request(&nested.join("missing"))),
+        json!({"ok":true,"value":false})
+    );
+
+    symlink(&nested, root.join("link")).unwrap();
+    assert_eq!(invoke(request(&root.join("link")))["code"], "ELOOP");
+    let through_link = invoke(request(&root.join("link/child")));
+    assert_eq!(through_link["ok"], false);
+    assert!(through_link["code"] == "ELOOP" || through_link["code"] == "ENOTDIR");
+
+    fs::write(root.join("file"), "data").unwrap();
+    assert_eq!(invoke(request(&root.join("file/child")))["code"], "ENOTDIR");
+    assert_eq!(invoke(request(&root.join("../outside")))["code"], "EPERM");
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(
+        invoke(request(&outside.path().join("missing")))["code"],
+        "EPERM"
+    );
 }
