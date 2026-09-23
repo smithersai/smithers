@@ -107,7 +107,13 @@ const fixture = async (): Promise<string> => {
       files: ["input.txt"]
     })
   )
-  await write(root, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+  // This manifest has no dependencies. Declare its complete lockfile without
+  // launching a package-manager shim merely to generate the empty importer.
+  await write(
+    root,
+    "pnpm-lock.yaml",
+    "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n"
+  )
   await write(root, "input.txt", "input")
   await write(root, "overlay/base.txt", "base")
   await write(root, "overlay/replacement.txt", "replacement")
@@ -195,10 +201,6 @@ export const Package = S.Package({ targets: { markdown, tutorial } })
     await write(root, `node_modules/.bin/${name}`, body)
     await Fs.chmod(NodePath.join(root, "node_modules", ".bin", name), 0o755)
   }
-  NodeChildProcess.execFileSync("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], {
-    cwd: root,
-    stdio: "ignore"
-  })
   NodeChildProcess.execFileSync("git", ["-C", root, "init", "-q"])
   NodeChildProcess.execFileSync("git", ["-C", root, "add", "-A"])
   NodeChildProcess.execFileSync("git", [
