@@ -25,6 +25,11 @@
       "snapshot": "migrations/0005_durable_release_tokens.sql",
       "upstream": "internal/clusterstorage/migrations/000004_durable_release_tokens.sql",
       "sha256": "3ddbb2a264e62e5228c934ee647536e2e337b9ef642d68d64602d040bde3150c"
+    },
+    {
+      "snapshot": "migrations/0006_coding_turn_reconciliation.sql",
+      "upstream": "db/migrations/20260921190000_coding_turn_reconciliation.sql",
+      "sha256": "c75f20e6360921cb1a534319f352a88e8dc35398e0ed469c2a1199e6dd9144a6"
     }
   ],
   "complete_upstream_directories": [

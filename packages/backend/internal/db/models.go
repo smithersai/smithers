@@ -2237,6 +2237,15 @@ type WorkflowRun struct {
 	CancelReason         string             `json:"cancel_reason"`
 }
 
+type WorkflowRunCodingHost struct {
+	WorkflowRunID int64     `json:"workflow_run_id"`
+	WorkspaceID   string    `json:"workspace_id"`
+	HostRunID     string    `json:"host_run_id"`
+	FlowID        string    `json:"flow_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type WorkflowRunLog struct {
 	ID             int64     `json:"id"`
 	WorkflowRunID  int64     `json:"workflow_run_id"`

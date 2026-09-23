@@ -970,13 +970,19 @@ type WorkflowLogBudgetInitialization = db.WorkflowLogBudgetInitialization
 
 type WorkflowRun = db.WorkflowRun
 
-type WorkflowRunCodingHost struct {
-	WorkflowRunID int64     `json:"workflow_run_id"`
-	WorkspaceID   string    `json:"workspace_id"`
-	HostRunID     string    `json:"host_run_id"`
-	FlowID        string    `json:"flow_id"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+type WorkflowRunCodingHost = db.WorkflowRunCodingHost
+
+type WorkflowRunCodingReconciliation struct {
+	WorkflowRunID        int64              `json:"workflow_run_id"`
+	SessionID            string             `json:"session_id"`
+	WorkspaceID          string             `json:"workspace_id"`
+	RunRequest           []byte             `json:"run_request"`
+	AttemptedAt          pgtype.Timestamptz `json:"attempted_at"`
+	LeaseOwner           string             `json:"lease_owner"`
+	LeaseExpiresAt       pgtype.Timestamptz `json:"lease_expires_at"`
+	NextAttemptAt        time.Time          `json:"next_attempt_at"`
+	CancelAcknowledgedAt pgtype.Timestamptz `json:"cancel_acknowledged_at"`
+	ReconciledAt         pgtype.Timestamptz `json:"reconciled_at"`
 }
 
 type WorkflowRunLog = db.WorkflowRunLog
