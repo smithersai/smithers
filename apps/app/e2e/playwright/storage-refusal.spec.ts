@@ -46,13 +46,13 @@ const trackDatabaseWorker = (page: Page) =>
   })
 
 /** Use the actual initialized worker, or reopen its raw database after boot refused/closed it. */
-const queryDatabase = (page: Page, sql: string, reopen = false) =>
-  page.evaluate(async ({ sql, reopen }) => {
+const queryDatabase = (page: Page, sql: string, reopen = false, executeTimeoutMs = 10_000) =>
+  page.evaluate(async ({ sql, reopen, executeTimeoutMs }) => {
     const probe = (window as ProbeWindow).sqliteProbe
     if (probe === undefined) throw new Error("The app never opened its SQLite worker")
     const worker = reopen ? new Worker(probe.url, probe.options) : probe.worker
     if (worker === undefined) throw new Error("The live app worker is closed; explicitly reopen the physical database")
-    const send = (request: Record<string, unknown>): Promise<unknown> =>
+    const send = (request: Record<string, unknown>, timeoutMs = 10_000): Promise<unknown> =>
       new Promise((resolve, reject) => {
         const requestId = `storage-test-${crypto.randomUUID()}`
         const cleanup = () => {
@@ -77,8 +77,8 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
         }
         const timer = setTimeout(() => {
           cleanup()
-          reject(new Error("SQLite test request timed out"))
-        }, 10_000)
+          reject(new Error(`SQLite test ${String(request.type)} request timed out after ${timeoutMs} ms`))
+        }, timeoutMs)
         worker.addEventListener("message", receive)
         worker.addEventListener("error", failed)
         worker.addEventListener("messageerror", unreadable)
@@ -95,7 +95,7 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
         await send({ type: "init", databaseName: "smithers-mvp.sqlite", vfsName: "opfs" })
         initialized = true
       }
-      return await send({ type: "execute", sql, params: [] })
+      return await send({ type: "execute", sql, params: [] }, executeTimeoutMs)
     } finally {
       if (reopen) {
         try {
@@ -105,7 +105,7 @@ const queryDatabase = (page: Page, sql: string, reopen = false) =>
         }
       }
     }
-  }, { sql, reopen })
+  }, { sql, reopen, executeTimeoutMs })
 
 /** End the app's writer lifetime before injecting a committed physical change.
  * Sending raw SQL to its live worker could accidentally join an app transaction
@@ -352,8 +352,10 @@ test("oversized physical event authority refuses without loading its bytes and t
   await expect(appPage.getByTestId("composer-input")).toBeAttached()
   const page = await closeAppForPhysicalMutation(appPage)
   const bytes = 64 * 1024 * 1024 + 1
+  // Writing the 64 MiB fixture can exceed a metadata request's budget on CI.
+  // Wait for its commit once; a timeout must never retry this physical mutation.
   await queryDatabase(page, `INSERT INTO smithers_collection_rows (collection_id, row_key, version_key, value)
-    VALUES ('app-events', 's:oversized-evidence', 'oversized-v1', CAST(zeroblob(${bytes}) AS TEXT))`, true)
+    VALUES ('app-events', 's:oversized-evidence', 'oversized-v1', CAST(zeroblob(${bytes}) AS TEXT))`, true, 30_000)
   const sizeQuery = "SELECT length(CAST(value AS BLOB)) AS bytes, version_key FROM smithers_collection_rows WHERE collection_id = 'app-events' AND row_key = 's:oversized-evidence'"
   expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
   await page.goto("/")
