@@ -784,36 +784,27 @@ export function App(props: AppProps) {
     setStatus(`Switched to ${props.models.find((model) => model.seat === next)?.label ?? next}`)
   }, [props.models, setStatus])
 
-  const newSession = useCallback(() => {
-    writer.current = Session.create(props.host.cwd)
-    entries.current = []
-    const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append })
-    setRuns(nextRuns)
-    setForm(undefined)
-    const nextWorkspace = new Workspace({
-      host: props.host,
-      workerSeat: props.workerSeat ?? props.seat,
-      history: () => entries.current,
-      persist: writer.current.append
-    })
-    setWorkspace(nextWorkspace)
-    setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append))
-    setSurface("chat")
-    setPanelFocus(false)
-    setName(undefined)
-    setTranscript(Transcript.empty)
-    setStatus("New session started")
-  }, [props.host.cwd, setStatus])
-
-  /** Switches the screen, context, history and workers to `next`, whose records are `records`. */
+  /**
+   * Switches the screen, context, workers and every per-session view state to
+   * `next`, whose records are `records`. Prompt history carries over when
+   * `records` has none (`/new`).
+   */
   const adopt = useCallback((next: Session.Writer, records: ReadonlyArray<Session.Record>) => {
     const state = Session.restore(records)
     writer.current = next
     entries.current = state.entries
-    history.current = new Editor.History(state.prompts)
+    if (records.length > 0) history.current = new Editor.History(state.prompts)
     const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows })
     setRuns(nextRuns)
-    setForm(undefined)
+    // Everything below belongs to one session; none of it may leak into the next.
+    changeForm(undefined)
+    userRuns.current = new Set()
+    formOpened.current = new Set()
+    setFollowUps([])
+    setFilter(Timeline.all)
+    setInspection(undefined)
+    setNavigation(Panels.initial())
+    setCompact(undefined)
     const nextWorkspace = new Workspace({
       host: props.host,
       workerSeat: props.workerSeat ?? props.seat,
@@ -828,7 +819,12 @@ export function App(props: AppProps) {
     setName(state.name)
     setTranscript(state.transcript)
     return state
-  }, [props.flows])
+  }, [props.flows, changeForm])
+
+  const newSession = useCallback(() => {
+    adopt(Session.create(props.host.cwd), [])
+    setStatus("New session started")
+  }, [adopt, props.host.cwd, setStatus])
 
   const openSession = useCallback((file: string) => {
     let records: ReadonlyArray<Session.Record>

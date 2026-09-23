@@ -504,6 +504,23 @@ describe("timeline scrubber", () => {
   }, 60_000)
 })
 
+describe("new session", () => {
+  it("starts with no filter, queued follow-up or form left from the last session", async () => {
+    const { tui } = await start()
+    await tui.type("!echo alpha-row")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("alpha-row") && screen.includes("exit 0") || /alpha-row[\s\S]*alpha-row/.test(screen), 10_000, "shell row")
+    await tui.type("/grep no-such-text")
+    await tui.press(key.enter)
+    await tui.until((screen) => !screen.includes("alpha-row"), 5_000, "filtered away")
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.type("!echo beta-row")
+    await tui.press(key.enter)
+    await tui.until((screen) => /beta-row[\s\S]*beta-row/.test(screen), 10_000, "new session shows its rows")
+  }, 60_000)
+})
+
 describe("fork", () => {
   it("forks before a picked message, puts it back in the editor, and keeps the original", async () => {
     const cwd = repository()
