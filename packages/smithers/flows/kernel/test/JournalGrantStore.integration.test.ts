@@ -67,7 +67,7 @@ describe("JournalGrantStore real SQL integration", () => {
       const filename = join(directory, "journal.sqlite")
       const workspace = join(directory, "workspace")
       const capability = new Capability({ action: "fs:read", resource: join(workspace, "readme.md") })
-      const pattern = new CapabilityPattern({ action: "fs:read", resource: `${workspace}/**` })
+      const pattern = new CapabilityPattern({ action: "fs:read", resource: join(workspace, "**") })
 
       yield* (
         Effect.scoped(
@@ -102,7 +102,7 @@ describe("JournalGrantStore real SQL integration", () => {
       const filename = join(directory, "journal.sqlite")
       const workspace = join(directory, "workspace")
       const capability = new Capability({ action: "fs:read", resource: join(workspace, "readme.md") })
-      const pattern = new CapabilityPattern({ action: "fs:read", resource: `${workspace}/**` })
+      const pattern = new CapabilityPattern({ action: "fs:read", resource: join(workspace, "**") })
 
       yield* (
         Effect.scoped(

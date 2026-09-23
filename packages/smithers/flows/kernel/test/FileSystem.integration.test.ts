@@ -1,8 +1,9 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
-import { Effect, Fiber, FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
+import { Effect, Fiber, FileSystem as EffectFileSystem, Layer } from "effect"
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -57,7 +58,7 @@ const withGuardedFileSystem = <A, E>(
       return yield* use(store).pipe(
         Effect.provide(FileSystem.layer),
         Effect.provide(isolatedHostLayer),
-        Effect.provide(EffectPath.layer),
+        Effect.provide(NodePath.layer),
         Effect.provideService(GrantStore.GrantStore, store)
       )
     })
@@ -66,7 +67,7 @@ const withGuardedFileSystem = <A, E>(
 const workspaceRules = (workspace: string): GrantStore.MakeOptions => ({
   attended: false,
   rules: [
-    new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "fs:*", resource: `${workspace}/**` }) })
+    new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "fs:*", resource: join(workspace, "**") }) })
   ]
 })
 
