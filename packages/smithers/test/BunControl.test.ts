@@ -27,7 +27,8 @@ it("defers Bun adapters until building either public layer and forwards each roo
   implementation.layerRegistry.mockReturnValue(Layer.effectDiscard(Effect.sync(() => {
     built.push("registry")
   })))
-  const control = BunControl.layerControl("/virtual/control")
+  const controlConfig = { root: "/virtual/control" }
+  const control = BunControl.layerControl(controlConfig)
   const registry = BunControl.layerRegistry("/virtual/registry")
   expect(implementation.loaded).not.toHaveBeenCalled()
   expect(implementation.layerControl).not.toHaveBeenCalled()
@@ -35,7 +36,7 @@ it("defers Bun adapters until building either public layer and forwards each roo
   expect(built).toEqual([])
 
   await Effect.runPromise(Effect.provide(Effect.void, control))
-  expect(implementation.layerControl).toHaveBeenCalledExactlyOnceWith("/virtual/control")
+  expect(implementation.layerControl).toHaveBeenCalledExactlyOnceWith(controlConfig)
   expect(implementation.layerRegistry).not.toHaveBeenCalled()
   expect(built).toEqual(["control"])
 
