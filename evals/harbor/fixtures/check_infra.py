@@ -264,6 +264,52 @@ def check_sidecars() -> None:
             raise AssertionError("a task with sidecars is unplaceable on plue")
 
 
+def check_trial_containment() -> None:
+    """Harbor's Trial constructor refuses a task whose artifacts name a
+    compose sidecar on a provider without compose (payments-pipeline-fix:
+    `kafka`). That raise is in Trial.create, outside the trial, and ended the
+    2026-09-23 10:3x oracle gate. It is deferred to _prepare()."""
+    class Trial:
+        def __init__(self):
+            self.prepared = False
+            self._validate_artifact_configuration()
+            self._validate_network_policy_modes()
+
+        def _validate_artifact_configuration(self):
+            raise ValueError("Task references compose sidecar services ['kafka'] ...")
+
+        def _validate_network_policy_modes(self):
+            pass
+
+        async def _prepare(self):
+            self.prepared = True
+
+    try:
+        Trial()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("the control: the unpatched constructor raises")
+    plue_env.install_trial_containment(Trial)
+    plue_env.install_trial_containment(Trial)  # idempotent
+    trial = Trial()
+    try:
+        asyncio.run(trial._prepare())
+    except plue_env.PlueUnplaceable as error:
+        assert "kafka" in str(error) and error.code == "unsupported", error
+    else:
+        raise AssertionError("the deferred refusal is raised inside the trial")
+    assert not trial.prepared
+
+    class Fine(Trial):
+        def _validate_artifact_configuration(self):
+            pass
+    plue_env.install_trial_containment(Fine)
+    fine = Fine()
+    asyncio.run(fine._prepare())
+    assert fine.prepared
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -420,6 +466,7 @@ if __name__ == "__main__":
     check_transport_and_containment()
     check_image_tmp()
     check_sidecars()
+    check_trial_containment()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

@@ -100,8 +100,12 @@ raises `PlueError` instead of passing the command a meaningless status.
 No plue failure ends the job: every environment method raises `PlueError`
 or a subclass, Harbor's constructor checks are deferred to `reserve()`
 (Harbor builds the environment in `Trial.create`, outside the trial's
-exception handling), and `stop()` never raises; a workspace it could not
-delete goes to `PLUE_LEAK_LOG`.
+exception handling), the Trial's own artifact and network-policy refusals
+are deferred to `_prepare()`, and `stop()` never raises; a workspace it could
+not delete goes to `PLUE_LEAK_LOG`. A task that needs a GPU, more than
+`PLUE_MAX_CPUS`, or compose sidecars is `PlueUnplaceable`: a plue workspace
+is one guest with no network to other workspaces, and running a sidecar in
+it would hand the agent the sidecar's files.
 
 Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
 (label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in

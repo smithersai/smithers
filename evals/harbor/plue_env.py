@@ -307,6 +307,45 @@ def install_untimed_reserve(trial_cls) -> None:
     trial_cls._start_agent_environment = _start_agent_environment
 
 
+def install_trial_containment(trial_cls) -> None:
+    """Keep Harbor's Trial-constructor refusals inside the trial.
+
+    `Trial.__init__` validates the artifact configuration and the network
+    policy, and a refusal there (payments-pipeline-fix names its `kafka`
+    sidecar in its artifacts; plue has no compose) raises from `Trial.create`,
+    outside the trial's exception handling, which ends the whole job. The
+    refusal is kept and raised by `_prepare()` as PlueUnplaceable, where the
+    trial records it."""
+    for name in ("_validate_artifact_configuration", "_validate_network_policy_modes"):
+        check = getattr(trial_cls, name, None)
+        if check is None or getattr(check, "_plue_contained", False):
+            continue
+
+        def deferred(self, _check=check):
+            try:
+                _check(self)
+            except Exception as error:  # noqa: BLE001
+                if getattr(self, "_plue_deferred_init", None) is None:
+                    self._plue_deferred_init = PlueUnplaceable(
+                        f"the plue workspace backend cannot hold this task: {error}", "unsupported")
+
+        deferred._plue_contained = True  # type: ignore[attr-defined]
+        setattr(trial_cls, name, deferred)
+
+    prepare = trial_cls._prepare
+    if getattr(prepare, "_plue_contained", False):
+        return
+
+    async def _prepare(self, _prepare=prepare):
+        deferred_error = getattr(self, "_plue_deferred_init", None)
+        if deferred_error is not None:
+            raise deferred_error
+        await _prepare(self)
+
+    _prepare._plue_contained = True  # type: ignore[attr-defined]
+    trial_cls._prepare = _prepare
+
+
 def install_untimed_verifier_reserve(trial_cls) -> bool:
     """The same pre-step for the separate verifier environment.
 
@@ -835,6 +874,7 @@ def _harbor_classes():
 
     install_untimed_reserve(Trial)
     install_untimed_verifier_reserve(Trial)
+    install_trial_containment(Trial)
 
     class PlueEnvironment(_Deferring, _PlueOps, BaseEnvironment):
         """Harbor environment on Smithers Cloud workspaces."""
