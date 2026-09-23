@@ -18,7 +18,7 @@ import { repoRoot as root } from "../workspace-packages.mjs"
 const subcommands = (source) => {
   const table = source.match(/export const shipped:[\s\S]*?= \[([\s\S]*?)\n\]/)?.[1]
   assert.ok(table, "packages/smithers/src/Verb.ts must declare the shipped verb table")
-  return [...table.matchAll(/verb\("([^"]+)"/g)]
+  return [...table.matchAll(/(?:verb|driver)\("([^"]+)"/g)]
     .filter((match) => match[1] !== "completions")
     .map((match) => match[1])
 }

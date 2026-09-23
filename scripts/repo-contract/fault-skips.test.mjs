@@ -46,6 +46,8 @@
  * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
  */
 import assert from "node:assert/strict"
+import ts from "typescript"
+import { parseWorkflow } from "../release-rehearsal.mjs"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, it } from "node:test"
@@ -392,11 +394,10 @@ describe("the fault matrix is wired to a gate", () => {
 
   it("selects the whole matrix from the generated CI workflow", () => {
     const ci = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8")
-    assert.match(
-      ci,
-      /^\s*run: pnpm exec smthrs test '\/\/packages\/\.\.\.:faults' --jobs 1(?: --verbose)?$/m,
-      "the generated workflow does not run the fault matrix serially over every package that declares one"
-    )
+    const workflow = parseWorkflow(ci)
+    const runs = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).flatMap((step) => step.run ? [step.run] : [])
+    assert.equal(runs.filter((run) => /^pnpm exec smthrs test '\/\/packages\/\.\.\.:faults' --jobs 1(?: --verbose)?$/.test(run)).length, 1,
+      "the generated workflow must run the fault matrix once, serially over every package that declares one")
   })
 
   it("keeps every fault tree inside a package the workspace typechecks", () => {
@@ -407,7 +408,9 @@ describe("the fault matrix is wired to a gate", () => {
     for (const name of faultPackages) {
       const testTsconfig = join(packagesRoot, name, "tsconfig.test.json")
       assert.ok(existsSync(testTsconfig), `packages/${name} has no tsconfig.test.json to typecheck its cases`)
-      const config = JSON.parse(readFileSync(testTsconfig, "utf8"))
+      const parsed = ts.parseConfigFileTextToJson(testTsconfig, readFileSync(testTsconfig, "utf8"))
+      assert.equal(parsed.error, undefined, testTsconfig)
+      const config = parsed.config
       assert.ok(
         config.include.some((pattern) => pattern === "test/**/*" || pattern === "test/**/*.ts"),
         `packages/${name}'s test tsconfig does not include test/**, so its fault cases are never typechecked`

@@ -37,6 +37,7 @@ describe("required PR selection", () => {
     assert.deepEqual(targets.map((step) => step.run), [
       "pnpm exec smthrs build '//apps/app:check' --verbose",
       "pnpm exec smthrs test '//apps/app:unitTests' --verbose",
+      "pnpm exec smthrs test '//apps/app:conformance' --verbose",
       "pnpm exec smthrs test '//apps/app:browserE2e' --verbose"
     ])
     for (const step of targets) {
