@@ -14,6 +14,13 @@ BASELINE = ROOT / "migrations" / "0001_product_baseline.sql"
 ADOPT = ROOT / "adopt.py"
 
 
+def latest_migration_version() -> int:
+    versions = [int(path.name[:4]) for path in (ROOT / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql")]
+    if not versions:
+        raise AssertionError("product migration directory is empty")
+    return max(versions)
+
+
 def database_url(admin_url: str, name: str) -> str:
     parts = urlsplit(admin_url)
     return urlunsplit((parts.scheme, parts.netloc, "/" + name, parts.query, parts.fragment))
@@ -77,7 +84,7 @@ class AdoptionTest(unittest.TestCase):
         latest = run("psql", "-X", "-At", "-d", self.target,
                      "-c", "SELECT max(version), (SELECT count(*) FROM public.users "
                            "WHERE username='before_adoption') FROM public.smithers_product_migrations")
-        self.assertEqual(latest.stdout.strip(), "12|1")
+        self.assertEqual(latest.stdout.strip(), f"{latest_migration_version()}|1")
 
     def test_preexisting_later_migration_is_verified_before_ledger_write(self) -> None:
         later = ROOT / "migrations" / "0010_branch_lock_and_workflow_invocations.sql"
@@ -97,7 +104,7 @@ class AdoptionTest(unittest.TestCase):
         self.assertEqual(migrated.returncode, 0, migrated.stderr)
         ledger = run("psql", "-X", "-At", "-d", self.target,
                      "-c", "SELECT count(*), max(version) FROM public.smithers_product_migrations")
-        self.assertEqual(ledger.stdout.strip(), "12|12")
+        self.assertEqual(ledger.stdout.strip(), f"{latest_migration_version()}|{latest_migration_version()}")
 
     def test_preexisting_coding_receipt_is_adopted(self) -> None:
         later = ROOT / "migrations" / "0012_workflow_run_coding_hosts.sql"
@@ -109,6 +116,17 @@ class AdoptionTest(unittest.TestCase):
                      "-c", "SELECT string_agg(version::text, ',' ORDER BY version) "
                            "FROM public.smithers_product_migrations")
         self.assertEqual(ledger.stdout.strip(), "1,12")
+
+    def test_preexisting_chat_turn_erasures_is_adopted(self) -> None:
+        later = ROOT / "migrations" / "0013_chat_turn_erasures.sql"
+        run("psql", "-X", "-1", "-v", "ON_ERROR_STOP=1", "-d", self.target, "-f", str(later))
+        result = self.adopt("--apply")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["preexisting_migrations"], [13])
+        ledger = run("psql", "-X", "-At", "-d", self.target,
+                     "-c", "SELECT string_agg(version::text, ',' ORDER BY version) "
+                           "FROM public.smithers_product_migrations")
+        self.assertEqual(ledger.stdout.strip(), "1,13")
 
     def test_partial_later_migration_refuses_ledger_write(self) -> None:
         run("psql", "-X", "-v", "ON_ERROR_STOP=1", "-d", self.target,

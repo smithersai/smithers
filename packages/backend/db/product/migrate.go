@@ -44,6 +44,7 @@ var migrationRegistry = []migrationSpec{
 	{10, "migrations/0010_branch_lock_and_workflow_invocations.sql"},
 	{11, "migrations/0011_onboarding_and_workspace_setup.sql"},
 	{12, "migrations/0012_workflow_run_coding_hosts.sql"},
+	{13, "migrations/0013_chat_turn_erasures.sql"},
 }
 
 type migration struct {
@@ -217,7 +218,9 @@ func adoptExistingCodingHostTable(ctx context.Context, tx pgx.Tx) (bool, error) 
 		= ARRAY['workflow_run_id:bigint:true:', 'workspace_id:uuid:true:', 'host_run_id:text:true:', 'flow_id:text:true:',
 			'created_at:timestamp with time zone:true:now()', 'updated_at:timestamp with time zone:true:now()']
 		AND ARRAY(SELECT conname || ':' || pg_get_constraintdef(oid)
-			FROM pg_constraint WHERE conrelid='public.workflow_run_coding_hosts'::regclass ORDER BY conname)
+			FROM pg_constraint
+			WHERE conrelid='public.workflow_run_coding_hosts'::regclass AND contype <> 'n'
+			ORDER BY conname)
 		= ARRAY['workflow_run_coding_hosts_flow_id_present:CHECK ((flow_id <> ''''::text))',
 			'workflow_run_coding_hosts_host_run_id_present:CHECK ((host_run_id <> ''''::text))',
 			'workflow_run_coding_hosts_pkey:PRIMARY KEY (workflow_run_id)',
