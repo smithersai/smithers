@@ -27,7 +27,7 @@
  *
  * @since 0.1.0
  */
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, posix, relative, resolve, sep } from "node:path"
 import { isRouteSegment, routeSegmentGrammar } from "./app.ts"
 import type { AppDirs, AppRoutes, FlowRoute, PageRoute, PaneRoute } from "./app.ts"
@@ -375,6 +375,63 @@ export interface RoutesReport {
   readonly counts: { readonly pages: number; readonly panes: number; readonly flows: number }
 }
 
+/** One generated table {@link writeRoutes} is about to replace. */
+interface PendingTable {
+  readonly file: string
+  readonly target: string
+  readonly next: string
+  /** The table's contents before this run, or `undefined` when it did not exist. */
+  readonly previous: string | undefined
+}
+
+const removeQuietly = (path: string): void => {
+  try {
+    rmSync(path, { force: true })
+  } catch {
+    // Cleanup of a staging file must not mask the failure being reported.
+  }
+}
+
+/**
+ * Replaces every pending table, or none of them.
+ *
+ * The Worker bundle imports one table and Vite the other, so a pair from two
+ * different trees is a broken app. Each table is written to a neighbouring
+ * staging file first; only when every staging write succeeded are they renamed
+ * into place. A rename is atomic per file, so a reader sees a whole module, and
+ * a failure on a later rename restores the tables already replaced from the
+ * contents read before the run. On any failure the staging files this run
+ * wrote are removed; a path it could not write is left alone.
+ */
+const publishTables = (pending: ReadonlyArray<PendingTable>): void => {
+  const staged: Array<PendingTable> = []
+  const committed: Array<PendingTable> = []
+  try {
+    for (const table of pending) {
+      writeFileSync(`${table.target}.tmp`, table.next)
+      staged.push(table)
+    }
+    for (const table of pending) {
+      renameSync(`${table.target}.tmp`, table.target)
+      committed.push(table)
+    }
+  } catch (cause) {
+    for (const table of staged) {
+      if (!committed.includes(table)) removeQuietly(`${table.target}.tmp`)
+    }
+    for (const table of committed.reverse()) {
+      try {
+        if (table.previous === undefined) rmSync(table.target, { force: true })
+        else writeFileSync(table.target, table.previous)
+      } catch {
+        // The original failure is the one reported; a restore that also fails
+        // leaves a table `smithers-routes --check` reports as stale.
+      }
+    }
+    throw cause
+  }
+}
+
 /**
  * Discovers an app root and writes the two generated files, or reports their
  * drift when `check` is set.
@@ -391,10 +448,13 @@ export const writeRoutes = (
   const routes = discover(options)
   const files: Record<string, RoutesFileStatus> = {}
   const stale: Array<string> = []
+  const pending: Array<PendingTable> = []
+  // Every current table is read before anything is written, so a target the
+  // router cannot read refuses the run with both tables untouched.
   for (const [file, next] of Object.entries(renderAll(routes))) {
     const target = resolve(options.root, file)
-    const current = existsSync(target) ? readFileSync(target, "utf8") : ""
-    if (current === next) {
+    const previous = existsSync(target) ? readFileSync(target, "utf8") : undefined
+    if (previous === next) {
       files[file] = "clean"
       continue
     }
@@ -403,15 +463,10 @@ export const writeRoutes = (
       stale.push(file)
       continue
     }
-    // Written through a neighbouring staging file and renamed, so a refused or
-    // interrupted write leaves the previous table whole rather than a
-    // truncated module the Worker bundle and Vite both import, and a failure
-    // between the two tables leaves both of them as they were.
-    const staging = `${target}.tmp`
-    writeFileSync(staging, next)
-    renameSync(staging, target)
-    files[file] = "written"
+    pending.push({ file, target, next, previous })
   }
+  publishTables(pending)
+  for (const table of pending) files[table.file] = "written"
   return {
     files,
     stale,

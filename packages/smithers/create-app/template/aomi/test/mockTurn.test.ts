@@ -82,6 +82,17 @@ describe("the real mock turn", () => {
     expect(sink.statuses).toEqual(["ready", "ready"])
   })
 
+  it("refuses a pipeline flow before it writes the transcript", async () => {
+    const sink = memorySession()
+    const frames = await turn(sink.session, "build")
+    expect(frames).toEqual([
+      { type: "error", message: '"build" is not a chat flow. Run it through /api/flows/run.' }
+    ])
+    expect(sink.statuses).toEqual(["failed"])
+    expect(sink.messages).toEqual([])
+    expect(sink.cards.size).toBe(0)
+  })
+
   it.each([false, true])("fails an unrouted flow once (empty routes: %s)", async (empty) => {
     // Exercise the generated registry's empty-app case as well as a bad id.
     const registry = flows as unknown as Array<(typeof flows)[number]>

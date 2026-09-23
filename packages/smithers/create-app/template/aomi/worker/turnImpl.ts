@@ -15,7 +15,7 @@
  * the live path will take.
  */
 import type { AgentSpec, AnyFlowSpec, SandboxSpec, ToolsSpec } from "@smthrs/create-app/app"
-import type { AppCard, FlowSummary, Message, SessionSummary, TurnFrame, TurnRequest } from "../src/api.ts"
+import { type AppCard, type FlowSummary, type Message, Routes, type SessionSummary, type TurnFrame, type TurnRequest } from "../src/api.ts"
 import { ChainBalanceProps } from "../src/ChainBalanceProps.ts"
 import { flows } from "../routes.gen.ts"
 import type { Env } from "./env.ts"
@@ -62,6 +62,20 @@ interface FlowRoute {
 
 const routeFor = (flowId: string): FlowRoute | undefined =>
   (flows as unknown as ReadonlyArray<FlowRoute>).find((flow) => flow.id === flowId)
+
+/**
+ * Throws, naming why, unless `flowId` is a routed chat flow.
+ *
+ * The router refuses the same ids with a 400 before waking the object; this
+ * copy is what holds for a direct Durable Object call.
+ */
+const requireChatRoute = (flowId: string): void => {
+  const route = routeFor(flowId)
+  if (route === undefined) throw new Error(`No flow is routed as "${flowId}".`)
+  if (route.spec.chat !== true) {
+    throw new Error(`"${flowId}" is not a chat flow. Run it through ${Routes.flowRun}.`)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The stream
@@ -112,6 +126,7 @@ export const runTurn = (options: TurnOptions): ReadableStream<Uint8Array> => {
         // The refusal is raised rather than returned, so it takes the same
         // `error` frame and `failed` row every other turn failure takes. The
         // shell needs no branch for it.
+        requireChatRoute(options.request.flowId)
         if (!mock) throw new Error(liveRuntimeUnsupported)
         await mockTurn(options, emit)
         options.session.settle(options.signal.aborted ? "idle" : "ready")
@@ -149,10 +164,6 @@ export const runTurn = (options: TurnOptions): ReadableStream<Uint8Array> => {
  */
 const mockTurn = async (options: TurnOptions, emit: (frame: TurnFrame) => void): Promise<void> => {
   const { request, session, signal } = options
-  const route = routeFor(request.flowId)
-  if (route === undefined) {
-    throw new Error(`No flow is routed as "${request.flowId}".`)
-  }
   const turnMessage = session.appendMessage("user", request.message)
 
   const deltas = [

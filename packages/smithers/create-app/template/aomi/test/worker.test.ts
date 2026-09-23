@@ -184,6 +184,20 @@ describe("POST /api/agent/turn", () => {
     expect(app.session("s2").turns).toEqual([])
   })
 
+  test("refuses a pipeline flow and names the route that does take it", async () => {
+    const response = await handle(post(Routes.turn, { sessionId: "s1", flowId: "build", message: "hi" }), app.env)
+    expect(response.status).toBe(400)
+    expect((await response.json() as { error: string }).error).toContain(Routes.flowRun)
+    expect(app.session("s1").turns).toEqual([])
+  })
+
+  test("refuses an unrouted flow without waking the session", async () => {
+    const response = await handle(post(Routes.turn, { sessionId: "s1", flowId: "saved/arb", message: "hi" }), app.env)
+    expect(response.status).toBe(400)
+    expect((await response.json() as { error: string }).error).toContain("saved/arb")
+    expect(app.session("s1").turns).toEqual([])
+  })
+
   test("refuses a body that is not a TurnRequest", async () => {
     const response = await handle(post(Routes.turn, { sessionId: "s1", flowId: "chat" }), app.env)
     expect(response.status).toBe(400)

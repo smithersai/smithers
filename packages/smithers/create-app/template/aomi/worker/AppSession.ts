@@ -421,7 +421,7 @@ export class AppSession extends DurableObject<Env> {
    * object alive for the writes that land after the response was sent.
    *
    * The router has already refused an unrouted flow and a chat flow
-   * (`worker/router.ts`, `flowRunRefusal`), so this only has to run it.
+   * (`worker/router.ts`, `flowRefusal`), so this only has to run it.
    */
   runFlow(request: FlowRunRequest): FlowRunResponse {
     const executionId = crypto.randomUUID()

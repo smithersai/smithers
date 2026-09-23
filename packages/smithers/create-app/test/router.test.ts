@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join, sep } from "node:path"
 import ts from "typescript"
 import type { AppRoutes } from "../src/app.ts"
@@ -605,4 +605,25 @@ describe("writeRoutes", () => {
       expect(readFileSync(join(root, "routes.ui.gen.ts"), "utf8")).toBe(before["routes.ui.gen.ts"])
     }
   )
+
+  // The second table used to be read, staged, and renamed only after the first
+  // was already replaced, so a failure on the second output left the Worker's
+  // table and Vite's table from different trees.
+  it.each([
+    ["the second target is a directory", "routes.ui.gen.ts"],
+    ["the second staging path is a directory", "routes.ui.gen.ts.tmp"]
+  ])("leaves the first table as it was when %s", (_, blocked) => {
+    const root = appTree({ ...layers, "app/page.tsx": "export default () => null\n" })
+    writeRoutes({ root, dirs })
+    const before = readFileSync(join(root, "routes.gen.ts"), "utf8")
+    if (blocked === "routes.ui.gen.ts") rmSync(join(root, blocked))
+    mkdirSync(join(root, blocked, "occupied"), { recursive: true })
+
+    mkdirSync(join(root, "app/panes"), { recursive: true })
+    writeFileSync(join(root, "app/panes/balances.tsx"), "export const Pane = {}\n")
+
+    expect(() => writeRoutes({ root, dirs })).toThrow(/EISDIR|EPERM|ENOTEMPTY/)
+    expect(readFileSync(join(root, "routes.gen.ts"), "utf8")).toBe(before)
+    expect(existsSync(join(root, "routes.gen.ts.tmp"))).toBe(false)
+  })
 })

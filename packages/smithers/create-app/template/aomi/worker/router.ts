@@ -94,17 +94,24 @@ const fileFlows = async (): Promise<Array<FlowSummary>> => {
 }
 
 /**
- * Why this flow cannot run through `POST /api/flows/run`, or `undefined` when
- * it can.
+ * Why this flow cannot run through `route`, or `undefined` when it can.
  *
- * The check is here rather than in the Durable Object because it needs the
- * routed flow list, and refusing before the object is woken keeps a typo from
- * creating a session.
+ * A chat flow runs only as a turn and a pipeline flow only as a flow run.
+ * The check is here rather than only in the Durable Object because it needs
+ * the routed flow list, and refusing before the object is woken keeps a typo
+ * from creating a session. The turn implementation repeats the chat half
+ * (`worker/turnImpl.ts`), so a direct object call cannot bypass it.
  */
-const flowRunRefusal = async (flowId: string): Promise<string | undefined> => {
+const flowRefusal = async (
+  flowId: string,
+  route: typeof Routes.turn | typeof Routes.flowRun
+): Promise<string | undefined> => {
   const routed = (await fileFlows()).find((flow) => flow.id === flowId)
   if (routed === undefined) {
     return `No flow is routed as "${flowId}". A saved flow has no file to execute; only routed flows run.`
+  }
+  if (route === Routes.turn) {
+    return routed.chat ? undefined : `"${flowId}" is not a chat flow. Run it through ${Routes.flowRun}.`
   }
   return routed.chat ? `"${flowId}" is a chat flow. Send it through ${Routes.turn}.` : undefined
 }
@@ -141,6 +148,8 @@ export const handle = async (request: Request, env: Env): Promise<Response> => {
     if (Option.isNone(decoded)) return fail(400, "Expected { sessionId, flowId, message }.")
     const turn = decoded.value
     if (!isSessionId(turn.sessionId)) return badSessionId(turn.sessionId)
+    const refusal = await flowRefusal(turn.flowId, Routes.turn)
+    if (refusal !== undefined) return fail(400, refusal)
     return sessionOf(env, turn.sessionId).turn(turn)
   }
 
@@ -184,7 +193,7 @@ export const handle = async (request: Request, env: Env): Promise<Response> => {
     if (Option.isNone(decoded)) return fail(400, "Expected { sessionId, flowId, payload }.")
     const run = decoded.value
     if (!isSessionId(run.sessionId)) return badSessionId(run.sessionId)
-    const refusal = await flowRunRefusal(run.flowId)
+    const refusal = await flowRefusal(run.flowId, Routes.flowRun)
     if (refusal !== undefined) return fail(400, refusal)
     return json(await sessionOf(env, run.sessionId).runFlow(run))
   }

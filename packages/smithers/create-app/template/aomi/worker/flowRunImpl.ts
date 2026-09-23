@@ -152,7 +152,7 @@ export const runFlowRun = async (options: FlowRunOptions): Promise<Phase> => {
   const routes = await (options.routes ?? generatedRoutes)()
   const route = routes.find((candidate) => candidate.id === options.request.flowId)
   // The router refuses an unrouted flow before the object is woken
-  // (`worker/router.ts`, `flowRunRefusal`). This repeats the check because
+  // (`worker/router.ts`, `flowRefusal`). This repeats the check because
   // `AppSession.runFlow` is also reachable from a Durable Object stub call,
   // which does not pass through the router.
   if (route === undefined) {

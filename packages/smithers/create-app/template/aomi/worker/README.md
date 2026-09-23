@@ -26,7 +26,7 @@ second deployable and no origin server.
 
 | Method and path | Answer |
 | --- | --- |
-| `POST /api/agent/turn` | NDJSON stream of `TurnFrame`, forwarded from the session object |
+| `POST /api/agent/turn` | NDJSON stream of `TurnFrame`, forwarded from the session object; 400 for a flow that is not routed or not a chat flow |
 | `POST /api/agent/turn/cancel` | `{ cancelled }` |
 | `GET /api/session?id=` | `SessionState` |
 | `GET /api/session` | `{ sessions: SessionSummary[] }`, newest first, read from the registry object; the shell's Recent column renders it. An object evicted mid-turn never reports its settle, so a `running` row can outlive its turn; `?id=` reads the session object itself |
