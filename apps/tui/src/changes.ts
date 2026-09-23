@@ -4,8 +4,9 @@ import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
 import { createTwoFilesPatch } from "diff"
 import { Effect } from "effect"
-import { readFile, stat } from "node:fs/promises"
-import { resolve } from "node:path"
+import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
 
 export interface Patch {
@@ -77,11 +78,16 @@ export const touched = (flow: string, input: unknown): string[] | undefined => {
   return []
 }
 export const paths = (flow: string, input: unknown): string[] => touched(flow, input) ?? []
-const command = async (program: string, cwd: string, args: string[]): Promise<string | undefined> => {
+const command = async (
+  program: string,
+  cwd: string,
+  args: string[],
+  env: Record<string, string> = {}
+): Promise<string | undefined> => {
   try {
     const child = Subprocess.spawn([program, ...args], {
       cwd,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", ...env }
     })
     const timer = setTimeout(() => child.kill(), 5000)
     try {
@@ -106,7 +112,7 @@ const command = async (program: string, cwd: string, args: string[]): Promise<st
     return undefined
   }
 }
-const git = (cwd: string, args: string[]) => command("git", cwd, args)
+const git = (cwd: string, args: string[], env?: Record<string, string>) => command("git", cwd, args, env)
 export const splitPatch = (diff: string): Patch[] =>
   diff.split(/(?=^diff --git )/m).filter((part) => part.trim() !== "").map((patch) => {
     const added = patch.match(/^\+\+\+ (?:b\/)?(.+)$/m)?.[1]
@@ -115,13 +121,99 @@ export const splitPatch = (diff: string): Patch[] =>
       patch.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1] ?? "Changes"
     return { path: path.replace(/\t.*$/, ""), patch }
   })
-const changed = async (cwd: string, revision: string): Promise<string[]> => {
-  const [tracked, untracked] = await Promise.all([
-    git(cwd, ["diff", "--name-only", "-z", revision, "--"]),
-    git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"])
-  ])
-  return [...new Set(`${tracked ?? ""}${untracked ?? ""}`.split("\0").filter(Boolean))]
+const unavailable: Patch = { path: "Changes", patch: "Diff unavailable or too large." }
+
+/**
+ * The working tree under `cwd` as a git tree, staged into a private copy of
+ * the repository's index: git's stat cache rereads only files that changed,
+ * and the real index and HEAD are untouched. `undefined` outside a repository.
+ */
+const gitSnapshot = async (cwd: string, index: string): Promise<string | undefined> => {
+  const env = { GIT_INDEX_FILE: index }
+  if ((await git(cwd, ["add", "-A", "--", "."], env)) === undefined) return undefined
+  const tree = (await git(cwd, ["write-tree"], env))?.trim()
+  return tree === "" ? undefined : tree
 }
+const gitIndex = async (cwd: string): Promise<{ readonly index: string; readonly dispose: () => Promise<void> } | undefined> => {
+  const real = (await git(cwd, ["rev-parse", "--git-path", "index"]))?.trim()
+  if (real === undefined || real === "") return undefined
+  const folder = await mkdtemp(join(tmpdir(), "smithers-capture-"))
+  const index = join(folder, "index")
+  try {
+    await copyFile(resolve(cwd, real), index)
+  } catch { /* A repository with nothing staged yet has no index. */ }
+  return { index, dispose: () => rm(folder, { recursive: true, force: true }) }
+}
+
+/** A bash call's changes: the VCS's own before/after diff, relative to `cwd`; no receipt outside a repository. */
+const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
+  Effect.gen(function*() {
+    const jj = Subprocess.which("jj") !== null
+      ? (yield* Effect.promise(() => command("jj", cwd, ["log", "--no-graph", "-r", "@", "-T", "commit_id"])))?.trim()
+      : undefined
+    if (jj) {
+      const result = yield* binding.run(call)
+      const diff = yield* Effect.promise(() => command("jj", cwd, ["diff", "--from", jj, "--git", "--color=never"]))
+      yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches: diff === undefined ? [unavailable] : splitPatch(diff) }))
+      return result
+    }
+    const scratch = yield* Effect.promise(() => gitIndex(cwd))
+    const before = scratch === undefined ? undefined : yield* Effect.promise(() => gitSnapshot(cwd, scratch.index))
+    if (scratch === undefined || before === undefined) {
+      if (scratch !== undefined) yield* Effect.promise(scratch.dispose)
+      return yield* binding.run(call)
+    }
+    return yield* binding.run(call).pipe(
+      Effect.tap(() =>
+        Effect.promise(async () => {
+          const after = await gitSnapshot(cwd, scratch.index)
+          const diff = after === undefined
+            ? undefined
+            : await git(cwd, ["diff", "--no-color", "--no-ext-diff", "--no-renames", "--relative", before, after])
+          onPatch({ call: identity(call.identity), patches: diff === undefined ? [unavailable] : splitPatch(diff) })
+        })
+      ),
+      Effect.ensuring(Effect.promise(scratch.dispose))
+    )
+  })
+
+/** A write flow's changes: the files its input names, read before and after. */
+const named = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
+  Effect.gen(function*() {
+    const files = paths(call.flowName, call.input)
+    const before = new Map(
+      yield* Effect.promise(() =>
+        Promise.all(files.slice(0, 200).map(async (path) => [path, await read(resolve(cwd, path))] as const))
+      )
+    )
+    const modes = new Map(
+      yield* Effect.promise(() =>
+        Promise.all(files.slice(0, 200).map(async (path) => [path, await mode(resolve(cwd, path))] as const))
+      )
+    )
+    const result = yield* binding.run(call)
+    const patches: Patch[] = []
+    for (const path of files.slice(0, 200)) {
+      const old = before.get(path)
+      const next = yield* Effect.promise(() => read(resolve(cwd, path)))
+      if (old === undefined || next === undefined || (old !== null && old.length > maxBytes)) {
+        patches.push({ path, patch: `Binary or large file: ${path}` })
+      } else {
+        const diff = patch(path, old, next, next !== null ? undefined : modes.get(path))
+        if (diff !== undefined) patches.push(diff)
+      }
+    }
+    if (files.length > 200) {
+      patches.push({
+        path: "More changes",
+        patch: `${files.length - 200} additional files; diff capture limited to 200 files.`
+      })
+    }
+    // Empty is meaningful: a rejected/no-op write must not show a proposed edit as real.
+    if (files.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+    return result
+  })
+
 /** Wrap the existing bindings, without introducing another tool or execution model. */
 export const capture = (
   source: FlowBinding.Source,
@@ -134,76 +226,7 @@ export const capture = (
       bindings.map((binding) => ({
         ...binding,
         run: (call: Cell.Call) =>
-          Effect.gen(function*() {
-            const jj = call.flowName === "bash" && Subprocess.which("jj") !== null
-              ? (yield* Effect.promise(() => command("jj", cwd, ["log", "--no-graph", "-r", "@", "-T", "commit_id"])))
-                ?.trim()
-              : undefined
-            const revision = call.flowName === "bash" && !jj
-              ? (yield* Effect.promise(() => git(cwd, ["rev-parse", "--verify", "HEAD"])))?.trim()
-              : undefined
-            const files = revision === undefined
-              ? paths(call.flowName, call.input)
-              : yield* Effect.promise(() => changed(cwd, revision))
-            const before = new Map(
-              yield* Effect.promise(() =>
-                Promise.all(files.slice(0, 200).map(async (path) => [path, await read(resolve(cwd, path))] as const))
-              )
-            )
-            const modes = new Map(
-              yield* Effect.promise(() =>
-                Promise.all(files.slice(0, 200).map(async (path) => [path, await mode(resolve(cwd, path))] as const))
-              )
-            )
-            const result = yield* binding.run(call)
-            if (jj) {
-              const diff = yield* Effect.promise(() =>
-                command("jj", cwd, ["diff", "--from", jj, "--git", "--color=never"])
-              )
-              yield* Effect.sync(() =>
-                onPatch({
-                  call: identity(call.identity),
-                  patches: diff === undefined
-                    ? [{ path: "Changes", patch: "Diff unavailable or too large." }]
-                    : splitPatch(diff)
-                })
-              )
-              return result
-            }
-            const afterFiles = revision === undefined
-              ? files
-              : [...new Set([...files, ...yield* Effect.promise(() => changed(cwd, revision))])]
-            const patches: Patch[] = []
-            for (const path of afterFiles.slice(0, 200)) {
-              const old = before.has(path)
-                ? before.get(path)
-                : yield* Effect.promise(async () => (await git(cwd, ["show", `${revision}:${path}`])) ?? null)
-              const next = yield* Effect.promise(() => read(resolve(cwd, path)))
-              if (old === undefined || next === undefined || (old !== null && old.length > maxBytes)) {
-                patches.push({ path, patch: `Binary or large file: ${path}` })
-              } else {
-                const deleted = next !== null ? undefined : modes.has(path) || revision === undefined
-                  ? modes.get(path)
-                  : yield* Effect.promise(async () => {
-                    const entry = await git(cwd, ["ls-tree", revision, "--", path])
-                    const bits = entry === undefined ? Number.NaN : parseInt(entry, 8)
-                    return Number.isNaN(bits) ? undefined : bits & 0o777
-                  })
-                const diff = patch(path, old, next, deleted)
-                if (diff !== undefined) patches.push(diff)
-              }
-            }
-            if (afterFiles.length > 200) {
-              patches.push({
-                path: "More changes",
-                patch: `${afterFiles.length - 200} additional files; diff capture limited to 200 files.`
-              })
-            }
-            // Empty is meaningful: a rejected/no-op write must not show a proposed edit as real,
-            // and a shell call observed by the VCS that changed nothing is captured, not unknown.
-            if (afterFiles.length > 0 || revision !== undefined) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
-            return result
-          })
+          call.flowName === "bash" ? shell(binding, call, cwd, onPatch) : named(binding, call, cwd, onPatch)
       }))
     ))
 })
