@@ -29,7 +29,21 @@ INFRA_EXCEPTIONS = (
     "PlueError", "VerifierTimeoutError", "CancelledError", "EnvironmentStartTimeoutError",
     "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError", "RuntimeError",
     "TimeoutError", "NoSeatLeft",
+    # Harbor's verifier plumbing: test.sh never got to write a grade.
+    "RewardFileNotFoundError", "RewardFileEmptyError", "VerifierOutputParseError",
+    "DownloadVerifierDirError", "AddTestsDirError", "HealthcheckError",
+    # Harbor installed-agent transport faults.
+    "NetworkConnectionError", "ApiConnectionClosedError", "ApiResponseStalledError",
+    "ApiInternalServerError", "ApiOverloadedError",
 )
+
+
+def retry_flags(retries: int = 3) -> str:
+    """`harbor run` arguments that re-run every infra exception in-process.
+
+        harbor run ... $(python3 -c 'import outcome; print(outcome.retry_flags())')
+    """
+    return " ".join([f"-r {retries}", *(f"--retry-include {name}" for name in INFRA_EXCEPTIONS)])
 
 # OpenSSH's own client messages and the workspace gateway's transport errors
 # (plue internal/ssh/server.go). Any of them in a command's output means the

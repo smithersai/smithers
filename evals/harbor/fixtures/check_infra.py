@@ -94,9 +94,15 @@ def check_classification() -> None:
     assert not any(outcome.is_healthy(k) for k in ("infra", "unplaceable", "running"))
     # The retry filter Harbor needs: every infra exception type seen above.
     for name in ("VerifierTimeoutError", "CancelledError", "PlueError", "EnvironmentStartTimeoutError",
-                 "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError"):
+                 "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError",
+                 # vba-userform-port, 2026-09-23: npm ECONNRESET through the egress
+                 # proxy aborted test.sh before it wrote a reward.
+                 "RewardFileNotFoundError", "RewardFileEmptyError", "VerifierOutputParseError",
+                 "DownloadVerifierDirError", "AddTestsDirError"):
         assert name in outcome.INFRA_EXCEPTIONS, name
     assert "PlueUnplaceable" not in outcome.INFRA_EXCEPTIONS
+    flags = outcome.retry_flags().split()
+    assert flags[:2] == ["-r", "3"] and flags.count("--retry-include") == len(outcome.INFRA_EXCEPTIONS)
     assert outcome.ssh_transport_error(SSH_READ) and outcome.ssh_transport_error(SSH_CONNECT)
     assert outcome.ssh_transport_error(AGENT_EXIT) is None
 
