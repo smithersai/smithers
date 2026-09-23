@@ -5,12 +5,11 @@
  * Smithers Ripgrep ASCII v1; `-F` (`fixedStrings`); `-i` (`ignoreCase`) and `-S`
  * (`smartCase`); ordered `-g` include/exclude globs; `-A`, `-B`, and `-C`
  * context; per-file `--max-count`; `--files-with-matches`; `--hidden`; and
- * deterministic path/line ordering. Root and nested .gitignore files apply by default, including outside git
- * repositories. `noIgnore: true` opts out. Parent/global ignore files,
- * .git/info/exclude, .ignore and .rgignore are not read. File-type registries
- * are outside v1, and there is no
- * `types` field to pass. Patterns are capped at 4096 ASCII bytes and counted
- * repetitions at 1000. Invalid UTF-8 is replacement-decoded; NUL-bearing
+ * deterministic path/line ordering. Root and nested .gitignore files apply by
+ * default, including outside git repositories. `noIgnore: true` opts out.
+ * Parent/global ignore files, .git/info/exclude, .ignore and .rgignore are not
+ * read. File-type registries are outside v1, and there is no `types` field to
+ * pass. Patterns are capped at 4096 ASCII bytes and counted repetitions at 1000. Invalid UTF-8 is replacement-decoded; NUL-bearing
  * files are skipped and counted, while an explicitly named binary file is a
  * typed failure.
  *
@@ -32,11 +31,11 @@
  * `root`*, a pattern without `/` matches the basename at any depth, and a
  * leading `/` or `./` anchors at the root rather than naming a filesystem
  * absolute path. A `root` that names one file is searched whatever the globs
- * say. See `Glob` for the full statement of the rules. A search that matched
+ * say. Caller globs filter after ignores; they never override them. See `Glob` for the full statement of the rules. A search that matched
  * nothing because a positive glob was unsatisfiable says so through `notice`
  * instead of returning a silent empty result.
  *
- * `filesSearched` counts every file the globs admitted, including the binaries
+ * `filesSearched` counts every file the walk and globs admitted, including the binaries
  * `skippedBinary` reports and any file the process could not open. A walk
  * skips what it cannot read rather than failing the call.
  *
@@ -104,7 +103,8 @@ export const Input = Schema.Struct({
     description: "Report the definition enclosing each returned hit; true by default."
   }),
   noIgnore: Schema.optional(Schema.Boolean).annotate({
-    description: "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
+    description:
+      "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
   }),
   limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({
     description: `Global result limit, capped at ${MAX_GREP_MATCHES}.`

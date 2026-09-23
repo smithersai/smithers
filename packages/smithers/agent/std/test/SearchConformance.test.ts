@@ -51,7 +51,8 @@ beforeAll(() => {
   file("src/.secret.ts", "needle secret")
   file("src/.git/objects/object.ts", "needle git")
   file("src/node_modules/pkg/index.ts", "needle dependency")
-  file("src/.gitignore", "nested/b.ts\n")
+  file("src/.gitignore", "nested/ignored.ts\n")
+  file("src/nested/ignored.ts", "needle ignored\n")
   file("edge/crlf.txt", "foo\r\nbar\r\n")
   file("edge/unicode.txt", "é\n😀\n")
   file("edge/invalid-utf8.txt", new Uint8Array([110, 101, 101, 100, 108, 101, 32, 0xff, 10]))
@@ -465,14 +466,14 @@ for (const [peer, implementation] of peers) {
         `No file under ${join(root, "src")} can match "missing/*.ts": there is no missing directory there. ` +
           `No file under ${join(root, "src")} can match "gone/*.ts": there is no gone directory there.`
       )
-      expect(searched.notice).toBeUndefined()
+      expect(searched.notice).toContain("noIgnore: true")
       expect(absolute).toMatchObject({ matches: [], files: [] })
       expect(absolute.notice).toBe(
         `No file under ${join(root, "src")} can match "${
           join(root, "src")
         }/*.ts": glob patterns are relative to the search root, so use "*.ts" instead.`
       )
-      expect(exclusionOnly.notice).toBeUndefined()
+      expect(exclusionOnly.notice).toContain("noIgnore: true")
     })
 
     it("searches a root that names one file whatever the globs say", async () => {
@@ -595,12 +596,6 @@ for (const [peer, implementation] of peers) {
         Grep.run({ pattern: "(?=needle)", root }),
         implementation
       )))
-      // `Grep.Input` no longer admits `noIgnore: false`; the refusal below is
-      // what a caller reaching `run` without decoding through it still gets.
-      const ignoreFiles = await Effect.runPromise(Effect.exit(Effect.provide(
-        Grep.run({ pattern: "needle", root, noIgnore: false } as unknown as typeof Grep.Input.Type),
-        implementation
-      )))
       const emptyExclusion = await Effect.runPromise(Effect.exit(Effect.provide(
         Glob.run({ pattern: "!", root }),
         implementation
@@ -613,7 +608,6 @@ for (const [peer, implementation] of peers) {
         code: "invalid_pattern",
         message: "Unsupported ripgrep pattern \"(?=needle)\": special groups and lookaround are not supported"
       })
-      expect(failure(ignoreFiles)?.code).toBe("invalid_input")
       expect(failure(emptyExclusion)?.code).toBe("invalid_pattern")
       expect(failure(oversizedRepetition)?.code).toBe("invalid_pattern")
     })
@@ -662,16 +656,31 @@ it("the native peer turns absence, non-zero exits, and malformed JSON into typed
   }
 })
 
-it("the native peer launches only cwd-rooted rg processes through the injected process layer", async () => {
+it.each([false, true])("the native peer confines rg configuration with noIgnore=%s", async (noIgnore) => {
   const commands: Array<ChildProcess.StandardCommand> = []
   const summary = JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } })
   await Effect.runPromise(Effect.provide(
-    Grep.run({ pattern: "absent", root: join(root, "src") }),
+    Grep.run({ pattern: "absent", root: join(root, "src"), noIgnore }),
     scriptedNative({ stdout: `${summary}\n`, commands })
   ))
-  expect(commands).toHaveLength(3)
+  expect(commands).toHaveLength(2)
   expect(commands.every((command) => command.command === "rg")).toBe(true)
   expect(commands.every((command) => command.options.cwd === join(root, "src"))).toBe(true)
+  for (const command of commands) {
+    expect(command.args.includes("--no-ignore")).toBe(noIgnore)
+    for (
+      const flag of [
+        "--no-config",
+        "--no-require-git",
+        "--no-ignore-global",
+        "--no-ignore-parent",
+        "--no-ignore-exclude",
+        "--no-ignore-dot"
+      ]
+    ) {
+      expect(command.args).toContain(flag)
+    }
+  }
 })
 
 it("the native peer keeps what rg produced when it only skipped what it could not read", async () => {

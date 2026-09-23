@@ -1,4 +1,8 @@
-/** Root-scoped gitignore rules, compiled once per visited directory. */
+/**
+ * Root-scoped gitignore rules, compiled once per visited directory.
+ *
+ * @since 1.0.0
+ */
 import { escapeRegex } from "./SearchContract.ts"
 
 interface Rule {
@@ -8,15 +12,22 @@ interface Rule {
   readonly byPath: boolean
 }
 
+/**
+ * Rules belonging to one visited directory.
+ *
+ * @private
+ * @since 1.0.0
+ */
 export interface Scope {
   readonly directory: string
   readonly rules: ReadonlyArray<Rule>
 }
 
 // Like the search glob contract, rg's globset matches UTF-8 bytes, not code points.
-const bytes = (value: string): string => /[^\x00-\x7f]/.test(value)
-  ? Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join("")
-  : value
+const bytes = (value: string): string =>
+  /[^\x20-\x7e]/.test(value)
+    ? Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join("")
+    : value
 
 // The caller-glob subset cannot parse ignore files: escapes and classes are
 // intentionally refused there. Keep their richer grammar here, including rg's
@@ -38,7 +49,7 @@ const expression = (pattern: string): RegExp => {
       if (end < 0) source += "\\["
       else {
         const content = pattern.slice(index + (negated ? 2 : 1), end)
-        source += `[${negated ? "^" : ""}${content.replace(/[\\\[\]^]/g, "\\$&")}]`
+        source += `[${negated ? "^" : ""}${content.replace(/[\\[\]^]/g, "\\$&")}]`
         index = end
       }
     } else if (character === "{") {
@@ -67,6 +78,12 @@ const expression = (pattern: string): RegExp => {
   return new RegExp(`^(?:${source})$`)
 }
 
+/**
+ * Parses gitignore lines without widening the caller-glob grammar.
+ *
+ * @private
+ * @since 1.0.0
+ */
 export const parse = (directory: string, content: string): Scope => {
   const rules: Array<Rule> = []
   for (let line of content.replace(/^\uFEFF/, "").split(/\r?\n/)) {
@@ -90,6 +107,12 @@ export const parse = (directory: string, content: string): Scope => {
   return { directory, rules }
 }
 
+/**
+ * Tests an entry before descent; deeper scopes and later rules take priority.
+ *
+ * @private
+ * @since 1.0.0
+ */
 export const ignored = (
   scopes: ReadonlyArray<Scope>,
   candidate: string,

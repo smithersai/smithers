@@ -59,6 +59,9 @@ const concurrency = 16
  * The walk therefore probes directories, where following a link would duplicate
  * a subtree or loop forever, and the callers probe the far smaller set of files
  * they are about to report — batched, never one at a time.
+ *
+ * @private
+ * @since 1.0.0
  */
 export const symbolicLinks = (
   fileSystem: FileSystem.FileSystem,
@@ -71,7 +74,10 @@ export const symbolicLinks = (
   )
 
 /**
- * One walk: the files under the root, and whether the root was one file.
+ * One walk: admitted files, explicit-root status, and ignore exclusions.
+ *
+ * @private
+ * @since 1.0.0
  */
 export interface Walked {
   readonly ignored: boolean
@@ -87,21 +93,30 @@ export interface Walked {
  * loop, a directory it may not list — is skipped and the walk continues, which
  * is what `rg --no-messages` does with the same tree. Turning one of those into
  * a typed failure would make a whole repository unsearchable because of one
- * link, and would answer differently from the native peer.
+ * link, and would answer differently from the native peer. Only .gitignore
+ * files within this root are read; ignored directories are never descended.
+ * `included` narrows the empty-result diagnostic without changing descent.
+ *
+ * @private
+ * @since 1.0.0
  */
 export const files = (
   fileSystem: FileSystem.FileSystem,
   path: Path.Path,
   root: string,
   hidden: boolean,
-  noIgnore = false
+  noIgnore = false,
+  included: (relative: string, basename: string) => boolean = () => true
 ): Effect.Effect<Walked, StdError.StdError> =>
   Effect.gen(function*() {
     const info = yield* fileSystem.stat(root).pipe(Effect.mapError(() => notFound(root)))
     if (info.type === "File") return { explicitFile: true, files: [path.normalize(root)], ignored: false }
     const files: Array<string> = []
     let excluded = false
-    const directories: Array<{ directory: string; scopes: ReadonlyArray<Ignore.Scope> }> = [{ directory: root, scopes: [] }]
+    const directories: Array<{ directory: string; scopes: ReadonlyArray<Ignore.Scope> }> = [{
+      directory: root,
+      scopes: []
+    }]
     while (directories.length > 0) {
       const next = directories.pop()
       if (next === undefined) continue
@@ -134,8 +149,19 @@ export const files = (
         ), { concurrency })
       const nested: Array<string> = []
       for (const entry of entries) {
-        if (entry.type !== undefined && Ignore.ignored(scopes, entry.candidate, path.basename(entry.candidate), entry.type === "Directory", path.relative)) {
-          excluded = true
+        if (
+          entry.type !== undefined &&
+          Ignore.ignored(
+            scopes,
+            entry.candidate,
+            path.basename(entry.candidate),
+            entry.type === "Directory",
+            path.relative
+          )
+        ) {
+          if (
+            entry.type === "Directory" || included(path.relative(root, entry.candidate), path.basename(entry.candidate))
+          ) excluded = true
           continue
         }
         if (entry.type === "Directory") nested.push(entry.candidate)
@@ -149,4 +175,3 @@ export const files = (
     }
     return { explicitFile: false, files: files.sort(), ignored: excluded }
   })
-

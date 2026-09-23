@@ -55,7 +55,9 @@ const grep = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
+    const includedByGlobs = (relative: string, basename: string) =>
+      Contract.includedByGlobs(input.globs, relative, basename)
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern))
     const regex = LinearRegex.compile(
       input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
@@ -213,7 +215,9 @@ const glob = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
+    const includedByGlobs = (relative: string, basename: string) =>
+      Contract.includedByGlobs([input.pattern], relative, basename)
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
     const included = yield* candidates(fileSystem, path, walked, input.root, [input.pattern])
     const matching = [...included].sort()
     const paths = matching.slice(0, input.limit)

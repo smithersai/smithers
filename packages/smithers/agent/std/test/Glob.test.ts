@@ -34,12 +34,12 @@ describe("Glob", () => {
     expect(result.notice).toBeDefined()
   })
 
-  it("admits only true for noIgnore", () => {
+  it("admits either boolean for noIgnore", () => {
     expect(Schema.decodeUnknownSync(Glob.Input)({ pattern: "*.ts", noIgnore: true })).toEqual({
       pattern: "*.ts",
       noIgnore: true
     })
-    expect(() => Schema.decodeUnknownSync(Glob.Input)({ pattern: "*.ts", noIgnore: false })).toThrow()
+    expect(Schema.decodeUnknownSync(Glob.Input)({ pattern: "*.ts", noIgnore: false }).noIgnore).toBe(false)
   })
 
   it("declares sealed hermetic effects and narrows to the root subtree", () => {

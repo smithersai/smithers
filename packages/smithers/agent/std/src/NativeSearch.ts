@@ -9,7 +9,6 @@ import { type Context, Effect, Layer } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Exec from "./internal/Exec.ts"
 import * as Grouping from "./internal/Grouping.ts"
-import { notFound } from "./internal/SearchContract.ts"
 import { notice, truncateBytes } from "./internal/Text.ts"
 import * as Walk from "./internal/Walk.ts"
 import * as Search from "./Search.ts"
@@ -17,7 +16,7 @@ import * as Contract from "./SearchContract.ts"
 import * as StdError from "./StdError.ts"
 
 /**
- * Maximum bytes captured from either stream of one `rg` invocation.
+ * Maximum bytes captured from either stream across one search operation.
  *
  * Native search refuses an overflow instead of truncating because a partial
  * ripgrep stream could make it disagree with the portable peer. The 64 MiB
@@ -50,9 +49,6 @@ const execute = (
       })
     )
   )
-
-const skipGlobs = [...Walk.skippedDirectories].map((directory) => `!**/${directory}/**`)
-const hiddenGlobs = ["!.*", "!**/.*", "!**/.*/**"]
 
 // Only .gitignore within the requested root participates. Disable user config,
 // parent/global rules and other ignore sources so the result is host independent.
@@ -104,13 +100,19 @@ const textAt = (record: Record<string, unknown> | undefined, key: string): strin
 const malformedJson = (): StdError.StdError =>
   new StdError.StdError({ code: "request_failed", message: "rg returned malformed JSON" })
 
+// rg releases differ on some gitignore grammar (for example BOMs and
+// unclosed character classes in 14 versus 15). Select paths through the same
+// walk as portable, then name them explicitly to rg. This also prevents a
+// positive caller glob from overriding ignore rules or scanning unrelated files.
 const resolveRoot = (
-  root: string
+  input: Search.GrepInput | Search.GlobInput,
+  globs: ReadonlyArray<string>
 ): Effect.Effect<
   {
     readonly cwd: string
-    readonly target: string
+    readonly targets: ReadonlyArray<string>
     readonly explicitFile: boolean
+    readonly ignored: boolean
     readonly absolute: (value: string) => string
   },
   StdError.StdError,
@@ -119,15 +121,81 @@ const resolveRoot = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const info = yield* fileSystem.stat(root).pipe(Effect.mapError(() => notFound(root)))
-    const cwd = info.type === "File" ? path.dirname(root) : root
-    const target = info.type === "File" ? path.basename(root) : "."
+    const included = (relative: string, basename: string) => Contract.includedByGlobs(globs, relative, basename)
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, included)
+    const cwd = walked.explicitFile ? path.dirname(input.root) : input.root
+    const selected = walked.explicitFile ?
+      walked.files :
+      walked.files.filter((file) => included(path.relative(input.root, file), path.basename(file)))
+    const links = walked.explicitFile ? [] : yield* Walk.symbolicLinks(fileSystem, selected)
     return {
       cwd,
-      target,
-      explicitFile: info.type === "File",
+      targets: selected.filter((_, index) => links[index] !== true).map((file) => path.relative(cwd, file)),
+      explicitFile: walked.explicitFile,
+      ignored: walked.ignored,
       absolute: (value: string) => path.normalize(path.join(cwd, value.replace(/^\.\//, "")))
     }
+  })
+
+// Stay well below OS argv limits, including on trees with long UTF-8 names.
+// Only one batch per operation is live, and the aggregate capture keeps the
+// same refusal bound as a single invocation.
+const executeFiles = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  targets: ReadonlyArray<string>,
+  environment: Readonly<Record<string, string>> | undefined
+): Effect.Effect<RgResult, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.gen(function*() {
+    if (targets.length === 0) {
+      return {
+        stdout: args.includes("--json")
+          ? `${JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } })}\n`
+          : "",
+        stderr: "",
+        exitCode: 0
+      }
+    }
+    const encoder = new TextEncoder()
+    const batches: Array<Array<string>> = []
+    let batch: Array<string> = []
+    let size = 0
+    for (const target of targets) {
+      const bytes = encoder.encode(target).length + 1
+      if (batch.length > 0 && (batch.length >= 256 || size + bytes > 32_768)) {
+        batches.push(batch)
+        batch = []
+        size = 0
+      }
+      batch.push(target)
+      size += bytes
+    }
+    if (batch.length > 0) batches.push(batch)
+    let stdout = ""
+    let stderr = ""
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let exitCode = 0
+    for (const batch of batches) {
+      const result = yield* execute(cwd, [...args, ...batch], environment)
+      if (rejection(result) !== undefined) return result
+      stdoutBytes += encoder.encode(result.stdout).length
+      stderrBytes += encoder.encode(result.stderr).length
+      if (stdoutBytes > MAX_CAPTURE_BYTES || stderrBytes > MAX_CAPTURE_BYTES) {
+        return yield* Effect.fail(
+          new StdError.StdError({
+            code: "command_failed",
+            message: `rg ${
+              stdoutBytes > MAX_CAPTURE_BYTES ? "stdout" : "stderr"
+            } exceeded the ${MAX_CAPTURE_BYTES}-byte capture cap`
+          })
+        )
+      }
+      stdout += result.stdout
+      stderr += result.stderr
+      exitCode = Math.max(exitCode, result.exitCode)
+    }
+    return { stdout, stderr, exitCode }
   })
 
 const pathOrder = (left: Search.GrepLine, right: Search.GrepLine): number =>
@@ -170,7 +238,7 @@ const grep = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* resolveRoot(input.root)
+    const root = yield* resolveRoot(input, input.globs)
     const args: Array<string> = [
       "--json",
       "--stats",
@@ -195,13 +263,7 @@ const grep = (
     if (input.beforeContext > 0) args.push("--before-context", String(input.beforeContext))
     if (input.afterContext > 0) args.push("--after-context", String(input.afterContext))
     if (input.maxCount !== undefined) args.push("--max-count", String(input.maxCount))
-    // Positive rg --glob flags override .gitignore. Apply caller globs to the
-    // admitted paths in-process instead, using the same matcher as portable.
-    const admitted = (file: string) => root.explicitFile ||
-      Contract.includedByGlobs(input.globs, path.relative(input.root, file), path.basename(file))
-    const globs = [...(input.hidden ? [] : hiddenGlobs), ...skipGlobs]
-    for (const glob of globs) args.push("--glob", glob)
-    args.push("--", input.pattern, root.target)
+    args.push("--", input.pattern)
 
     const binaryArgs: Array<string> = [
       "--files-with-matches",
@@ -213,33 +275,22 @@ const grep = (
       "path"
     ]
     if (input.hidden) binaryArgs.push("--hidden")
-    for (const glob of globs) binaryArgs.push("--glob", glob)
-    binaryArgs.push("--", "\\x00", root.target)
+    binaryArgs.push("--", "\\x00")
 
-    // `--json` reports `stats.searches` from the printer, so it counts only the
-    // files that produced output — the files with a match. The contract counts
-    // every file the search covered, which is what `--files` lists, and listing
-    // reads no file contents.
-    const listingArgs: Array<string> = ["--files", "--null", ...ignoreFlags(input.noIgnore), "--no-messages"]
-    if (input.hidden) listingArgs.push("--hidden")
-    for (const glob of globs) listingArgs.push("--glob", glob)
-    listingArgs.push("--", root.target)
-
-    const [result, binaryResult, listingResult] = yield* Effect.all(
+    const [result, binaryResult] = yield* Effect.all(
       [
-        execute(root.cwd, args, environment),
-        execute(root.cwd, binaryArgs, environment),
-        execute(root.cwd, listingArgs, environment)
+        executeFiles(root.cwd, args, root.targets, environment),
+        executeFiles(root.cwd, binaryArgs, root.targets, environment)
       ],
       { concurrency: "unbounded" }
     )
-    for (const outcome of [result, binaryResult, listingResult]) {
+    for (const outcome of [result, binaryResult]) {
       const message = rejection(outcome)
       if (message !== undefined) {
         return yield* Effect.fail(new StdError.StdError({ code: "request_failed", message }))
       }
     }
-    const binaryFiles = new Set(nulSeparated(binaryResult.stdout).map(root.absolute).filter(admitted))
+    const binaryFiles = new Set(nulSeparated(binaryResult.stdout).map(root.absolute))
     if (root.explicitFile && binaryFiles.size > 0) {
       return yield* Effect.fail(
         new StdError.StdError({
@@ -274,7 +325,6 @@ const grep = (
           return yield* Effect.fail(malformedJson())
         }
         const absolute = root.absolute(file)
-        if (!admitted(absolute)) continue
         files.add(absolute)
         lines.push({ file: absolute, line, text: preview(text), kind: type })
       } else if (type === "begin") {
@@ -315,12 +365,13 @@ const grep = (
       root: input.root,
       globs: input.globs,
       hidden: input.hidden,
-      noIgnore: input.noIgnore
+      noIgnore: input.noIgnore,
+      ignored: root.ignored
     })
     return {
       matches: Grouping.annotate(shown, contents),
       files: input.filesWithMatches ? [...files].sort().slice(0, input.limit) : [],
-      filesSearched: nulSeparated(listingResult.stdout).map(root.absolute).filter(admitted).length,
+      filesSearched: root.targets.length,
       skippedBinary: binaryFiles.size,
       truncated,
       ...(truncated
@@ -341,17 +392,17 @@ const glob = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* resolveRoot(input.root)
+    const root = yield* resolveRoot(input, [input.pattern])
     const args: Array<string> = ["--files", "--null", ...ignoreFlags(input.noIgnore), "--no-messages", "--sort", "path"]
     if (input.hidden) args.push("--hidden")
-    for (const glob of [...(input.hidden ? [] : hiddenGlobs), ...skipGlobs]) args.push("--glob", glob)
-    args.push("--", root.target)
-    const result = yield* execute(root.cwd, args, environment)
+    args.push("--")
+    const result = yield* executeFiles(root.cwd, args, root.targets, environment)
     const rejected = rejection(result)
     if (rejected !== undefined) {
       return yield* Effect.fail(new StdError.StdError({ code: "invalid_pattern", message: rejected }))
     }
-    const paths = nulSeparated(result.stdout).map(root.absolute).filter((file) => root.explicitFile ||
+    const paths = nulSeparated(result.stdout).map(root.absolute).filter((file) =>
+      root.explicitFile ||
       Contract.includedByGlobs([input.pattern], path.relative(input.root, file), path.basename(file))
     ).sort()
     const shown = paths.slice(0, input.limit)
@@ -361,7 +412,8 @@ const glob = (
       root: input.root,
       globs: [input.pattern],
       hidden: input.hidden,
-      noIgnore: input.noIgnore
+      noIgnore: input.noIgnore,
+      ignored: root.ignored
     })
     return {
       paths: shown,

@@ -5,8 +5,8 @@
  * canonicalize them through {@link canonicalGlob}, so the two implementations
  * cannot drift on what a pattern means, and an external peer binding its own
  * `Search` builds on the same functions. {@link unsatisfiableNotice} is the
- * shared explanation for the one honest empty answer: a pattern no file under
- * the root could ever match.
+ * shared explanation for empty answers caused by impossible globs or ignore
+ * exclusions.
  *
  * @since 1.0.0
  */
@@ -344,7 +344,9 @@ const unsatisfiedReason = (
  * the pattern may be unsatisfiable — an absolute path written where a
  * root-relative one belongs, a directory that does not exist, a skipped
  * directory, a hidden path with `hidden` left false. Callers attach the result
- * to `notice` when they produced no entries, so the two cases stay
+ * to `notice` when they produced no entries. Ignore exclusions name the
+ * `noIgnore: true` escape hatch, while impossible globs explain the correction.
+ * This keeps the cases
  * distinguishable. Exclusion globs are ignored: excluding what is not there
  * changes nothing.
  *
@@ -384,11 +386,18 @@ export const unsatisfiableNotice = (options: {
         }.`
       )
     }
+    // An impossible glob cannot be repaired by opting out of ignores.
+    if (sentences.length > 0 && sentences.length === options.globs.filter((glob) => !glob.startsWith("!")).length) {
+      return sentences.join(" ")
+    }
+    const included = (relative: string, basename: string) => includedByGlobs(options.globs, relative, basename)
     const ignored = options.noIgnore ? false : options.ignored ??
-      (yield* Walk.files(options.fileSystem, options.path, options.root, options.hidden).pipe(
+      (yield* Walk.files(options.fileSystem, options.path, options.root, options.hidden, false, included).pipe(
         Effect.map((walked) => walked.ignored),
         Effect.orElseSucceed(() => false)
       ))
-    if (ignored) sentences.push("No results; ignore files excluded paths. Retry with noIgnore: true to include them.")
+    if (ignored) {
+      sentences.push("No results; ignore files excluded paths. Retry with noIgnore: true to include them.")
+    }
     return sentences.length === 0 ? undefined : sentences.join(" ")
   })

@@ -12,7 +12,7 @@ describe("Grep", () => {
       pattern: "a",
       noIgnore: true
     })
-    expect(() => Schema.decodeUnknownSync(Grep.Input)({ pattern: "a", noIgnore: false })).toThrow()
+    expect(Schema.decodeUnknownSync(Grep.Input)({ pattern: "a", noIgnore: false }).noIgnore).toBe(false)
   })
 
   it("searches regexes and literal text with 1-based line numbers", async () => {

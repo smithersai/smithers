@@ -150,6 +150,26 @@ export const plan = (options: {
     files.push({ path, content: `${body.join("\n")}${chance(next, 0.8) ? "\n" : ""}` })
   }
 
+  // Always exercise precedence, anchoring, directory pruning and nested
+  // negation alongside each seed's generated content (without a git repo).
+  if (fileCount > 0) {
+    files.push(
+      { path: ".gitignore", content: "*.ignored\n!keep.ignored\n/root-only.ts\ncache/\n" },
+      { path: "drop.ignored", content: "needle\n" },
+      { path: "keep.ignored", content: "needle\n" },
+      { path: "root-only.ts", content: "needle\n" },
+      { path: "cache/a.ts", content: "needle\n" },
+      { path: "nested/.gitignore", content: "!keep.ignored\n/anchored.ts\nframes/\n" },
+      { path: "nested/keep.ignored", content: "needle\n" },
+      { path: "nested/drop.ignored", content: "needle\n" },
+      { path: "nested/anchored.ts", content: "needle\n" },
+      { path: "nested/deep/anchored.ts", content: "needle\n" },
+      { path: "nested/root-only.ts", content: "needle\n" },
+      { path: "nested/frames/a.ts", content: "needle\n" },
+      { path: "other/frames", content: "needle\n" }
+    )
+  }
+
   const roots = [options.root, ...files.map((entry) => `${options.root}/${entry.path}`)]
   const grep: Array<Search.GrepInput> = []
   for (let index = 0; index < callCount; index++) {
@@ -170,6 +190,7 @@ export const plan = (options: {
       ...(chance(next, 0.3) ? { maxCount: 1 + Math.floor(next() * 2) } : {}),
       filesWithMatches: chance(next, 0.25),
       hidden: chance(next, 0.5),
+      noIgnore: chance(next, 0.25),
       symbols: chance(next, 0.3),
       limit: 1 + Math.floor(next() * 40)
     })
@@ -181,6 +202,7 @@ export const plan = (options: {
       pattern: pick(next, globPatterns),
       root: options.root,
       hidden: chance(next, 0.5),
+      noIgnore: chance(next, 0.25),
       limit: 1 + Math.floor(next() * 20)
     })
   }

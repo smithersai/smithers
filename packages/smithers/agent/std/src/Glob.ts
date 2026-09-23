@@ -1,14 +1,13 @@
 /**
  * The `glob` projection of Smithers Ripgrep Subset v1.
  *
- * It has the same two peer implementations as `grep` and corresponds to
- * `rg --files -g`: `*`, `**`, `?`, and brace alternatives are supported;
+ * It has the same two peer implementations as `grep` and supports the
+ * `rg --files -g` pattern subset: `*`, `**`, `?`, and brace alternatives;
  * results are path sorted; hidden files are opt-in; root and nested .gitignore
  * files apply by default (even outside git repositories). `noIgnore: true` opts
  * out. Parent/global ignore files, .git/info/exclude, .ignore and .rgignore
- * are not read. Caller globs filter the remaining files without overriding ignores;
- * and the fixed skip-directory convention still permits an explicitly named
- * skipped directory as the root.
+ * are not read. Caller globs filter the remaining files without overriding
+ * ignores. An explicitly named ignored or skipped directory is still searched.
  *
  * **Patterns are relative to `root`, never to the filesystem.** A candidate is
  * matched by the path it has *relative to the search root*, so `tests/**\/*.py`
@@ -54,7 +53,7 @@ import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { MAX_ENTRIES } from "./internal/Text.ts"
 import * as Search from "./Search.ts"
 import * as Contract from "./SearchContract.ts"
-import * as StdError from "./StdError.ts"
+import type * as StdError from "./StdError.ts"
 
 /**
  * The registry name for glob.
@@ -86,7 +85,8 @@ export const Input = Schema.Struct({
   }),
   hidden: Schema.optional(Schema.Boolean).annotate({ description: "Ripgrep --hidden." }),
   noIgnore: Schema.optional(Schema.Boolean).annotate({
-    description: "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
+    description:
+      "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
   }),
   limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({
     description: `Maximum paths, capped at ${MAX_ENTRIES}.`
