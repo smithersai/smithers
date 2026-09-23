@@ -9,7 +9,7 @@ import { RECOMMENDATION_ID } from "./AppState"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { RECOMMEND_OUTCOME_PATH,RECOMMEND_PATH } from "./Recommend"
-import { json,memoryStorage,nativeRepositories,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { json,memoryStorage,repositoryHttpFixture,nativeRepositories,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -509,16 +509,19 @@ describe("recommend: the flow", () => {
 
 test("a background repository check regenerates suggestions using hidden observations", async () => {
   const worker = recorder([answer("repo-check", ["issues.list"])])
-  const { store, controller } = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, true)
-  controller.selectRepo("practice:smithersai/hello-server")
-  await controller.commands.run("repo.update", "practice:smithersai/hello-server")
+  const http = repositoryHttpFixture()
+  const { store, controller } = await boot({ fetchImpl: (url, init) => String(url).includes("/api/recommend") ? worker.fetchImpl(url, init) : http(String(url), init) })
+  await signIn(store).isPersisted.promise
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "owner/repo", org: "owner", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
+  controller.selectRepo("owner/repo")
+  await controller.commands.run("repo.update", "owner/repo")
   await settle(12)
   const request = worker.recommends().at(-1)?.body
   expect(request).toBeDefined()
-  expect(request!.repo).toBeNull()
-  expect(store.session().activeRepoKey).toBe("practice:smithersai/hello-server")
+  expect(request!.repo).toBe("owner/repo")
+  expect(store.session().activeRepoKey).toBe("owner/repo")
   const tail = request!.tail as { role: string; text: string }[]
-  expect(tail.some(entry => entry.role === "system" && entry.text.includes('"repo":"practice:smithersai/hello-server"'))).toBe(true)
+  expect(tail.some(entry => entry.role === "system" && entry.text.includes('"repo":"owner/repo"'))).toBe(true)
   expect(tail.some(entry => entry.role === "system" && entry.text.includes('"openIssues":2'))).toBe(true)
   expect(row(store)?.suggestions.some(suggestion => suggestion.flow === "issues.list")).toBe(true)
   expect([...store.collections.cards.values()].some(card => card.kind === "repo-update")).toBe(false)

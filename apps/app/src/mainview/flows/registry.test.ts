@@ -529,8 +529,8 @@ describe("command registry bindings", () => {
     })
     const localNames = local.controller.commands.all().map((command) => command.name)
     expect(localNames).not.toContain("auth.sign-in")
-    /* issues.list also reads an adopted local repository (tutorial stage 3), so it registers here. */
-    expect(localNames).toContain("issues.list")
+    /* Repository tracker reads require a backend capability. */
+    expect(localNames).not.toContain("issues.list")
     expect(localNames).not.toContain("flow.run")
     expect(localNames).not.toContain("browser.open")
 

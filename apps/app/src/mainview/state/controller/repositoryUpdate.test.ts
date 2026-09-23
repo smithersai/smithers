@@ -3,32 +3,32 @@ import { CardSchema } from "../AppState"
 import { createAppStore } from "../AppStore"
 import { projectRepositoryUpdate } from "../CardProjection"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { memoryStorage } from "../TestFixtures"
-import { PRACTICE_REPO } from "../practice/PracticeRepository"
+import { memoryStorage, repositoryHttpFixture } from "../TestFixtures"
+const REPO = "owner/repo"
 import { createIssuesSeam } from "../seams/IssuesSeam"
 import { createLandingsSeam } from "../seams/LandingsSeam"
 import type { SeamContext } from "../seams/SeamContext"
 import { createRepositoryUpdate } from "./repositoryUpdate"
-async function setup(storage = memoryStorage(), http: SeamContext["http"] = async () => { throw new Error("offline") }) {
+async function setup(storage = memoryStorage(), http: SeamContext["http"] = repositoryHttpFixture()) {
   const store = await createAppStore({ kind: "localStorage", storage })
   const ctx: SeamContext = { store, dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => 1, baseUrl: "", http }
   return { store, ctx, actions: createRepositoryUpdate(ctx), storage }
 }
 test("repository update receipts survive reload; refresh preserves unread items and read is version-specific", async () => {
   const { store, actions, storage } = await setup()
-  expect(await actions.showRepoOverview(PRACTICE_REPO)).toEqual({ value: expect.stringContaining("2 issue updates, 1 PR update") })
+  expect(await actions.showRepoOverview(REPO)).toEqual({ value: expect.stringContaining("2 issue updates, 1 PR update") })
   const first = [...store.collections.cards.values()].find(card => card.kind === "repo-update")!
   if (first.kind !== "repo-update") throw Error("missing update")
   expect(first.payload.items).toHaveLength(3)
   const restored = await setup(storage)
-  expect(await restored.actions.showRepoOverview(PRACTICE_REPO)).toEqual({ value: expect.stringContaining("No new issue or PR updates") })
+  expect(await restored.actions.showRepoOverview(REPO)).toEqual({ value: expect.stringContaining("No new issue or PR updates") })
   let card = restored.store.collections.cards.get(first.id)!
   if (card.kind !== "repo-update") throw Error("missing update")
   expect(card.payload.items).toHaveLength(3)
   await restored.actions.tagNotification(card.payload.items[0]!.id, "follow-up")
   expect(restored.store.collections.repositoryNotifications.get(card.payload.items[0]!.id)?.tags).toContain("follow-up")
   await restored.actions.markUpdateRead(card.id)
-  await restored.actions.showRepoOverview(PRACTICE_REPO)
+  await restored.actions.showRepoOverview(REPO)
   card = restored.store.collections.cards.get(first.id)!
   expect(card.kind === "repo-update" && card.payload.items).toEqual([])
   const row = [...restored.store.collections.repositoryNotifications.values()][0]!
@@ -47,20 +47,20 @@ test("failed sources are a partial update, never an empty successful check", asy
 
 test("background reads persist observations without announcing or displaying them", async () => {
   const { store, actions, storage } = await setup()
-  const result = await actions.updateRepo(PRACTICE_REPO)
+  const result = await actions.updateRepo(REPO)
   expect(typeof result).toBe("object")
   const data = JSON.parse((result as { value: string }).value)
-  expect(data).toMatchObject({ repo: PRACTICE_REPO, openIssues: 2, openPrs: 1, problems: [] })
+  expect(data).toMatchObject({ repo: REPO, openIssues: 2, openPrs: 1, problems: [] })
   expect(data.items.some((item: { number: number; kind: string }) => item.kind === "issue" && item.number === 3)).toBe(true)
   expect(store.collections.cards.size).toBe(0)
   expect(store.collections.messages.size).toBe(0)
   expect([...store.collections.repositoryNotifications.values()].every(row => row.announcedVersion === undefined)).toBe(true)
   const restored = await setup(storage)
   expect([...restored.store.collections.repositoryContexts.values()][0]?.data).toEqual(data)
-  await restored.actions.showRepoOverview(PRACTICE_REPO)
+  await restored.actions.showRepoOverview(REPO)
   const overview = [...restored.store.collections.cards.values()][0]
   expect(overview?.kind === "repo-update" && overview.payload.items).toHaveLength(3)
-  await restored.actions.updateRepo(PRACTICE_REPO)
+  await restored.actions.updateRepo(REPO)
   expect([...restored.store.collections.cards.values()]).toEqual([overview])
 })
 
@@ -69,22 +69,22 @@ test("startup's repository read discards its pending result once its controller 
   let disposed = false
   const actions = createRepositoryUpdate(ctx, () => disposed)
   const before = store.session().revision
-  const pending = actions.updateRepo(PRACTICE_REPO)
+  const pending = actions.updateRepo(REPO)
   disposed = true
   await store.dispose?.()
   expect(await pending).toBe("The controller is closed.")
   expect(store.session().revision).toBe(before)
   expect(store.collections.repositoryContexts.size).toBe(0)
   expect(store.collections.repositoryNotifications.size).toBe(0)
-  expect(await actions.updateRepo(PRACTICE_REPO)).toBe("The controller is closed.")
+  expect(await actions.updateRepo(REPO)).toBe("The controller is closed.")
 })
 
 
 test("successful issue and PR navigation marks their exact versions read, including Back and reload", async () => {
   const { store, ctx, actions, storage } = await setup()
-  await actions.showRepoOverview(PRACTICE_REPO)
+  await actions.showRepoOverview(REPO)
   const overview = [...store.collections.cards.values()][0]!
-  await createIssuesSeam(ctx).viewIssue(3, PRACTICE_REPO)
+  await createIssuesSeam(ctx).viewIssue(3, REPO)
   const issue = [...store.collections.repositoryNotifications.values()].find(row => row.kind === "issue" && row.number === 3)!
   expect(issue.readVersion).toBe(issue.version)
   await store.dispatch({ type: "card.history.moved", actor: "user", id: overview.id, delta: -1 }).isPersisted.promise
@@ -92,7 +92,7 @@ test("successful issue and PR navigation marks their exact versions read, includ
   const returned = saved?.kind === "repo-update" ? projectRepositoryUpdate(saved, [...store.collections.repositoryNotifications.values()], [...store.collections.notificationReceipts.values()]) : saved
   expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 3)?.read).toBe(true)
   expect(returned?.kind === "repo-update" && returned.payload.items.find(item => item.number === 2)?.read).toBe(false)
-  await createLandingsSeam(ctx).viewLanding(4, PRACTICE_REPO)
+  await createLandingsSeam(ctx).viewLanding(4, REPO)
   const pr = [...store.collections.repositoryNotifications.values()].find(row => row.kind === "pr" && row.number === 4)!
   expect(pr.readVersion).toBe(pr.version)
   const restored = await setup(storage)

@@ -1907,19 +1907,6 @@ describe("workspace-bound run cards", () => {
 
 })
 
-test("anonymous live tutorial logs use actual saved events and reject a mismatched source without a gateway", async () => {
-  const store=await webStore(),double=relay({})
-  const runId="actual-live-run",cardId="live-research-card"
-  await store.dispatch({type:"card.upsert",actor:"system",card:{id:cardId,kind:"run-trace",title:"Live research",status:"active",createdAt:1,ordinal:1,payload:{repo:"practice:smithersai/hello-server",runId,workflow:"issue.research",kind:"research",phase:"completed",steps:[],result:null,lastSeq:1,input:{liveTutorial:{operation:"research",playthrough:0,idempotencyKey:"live-request"},liveTutorialSnapshot:{sessionId:"session",runId,operation:"research",phase:"completed",createdAt:1,updatedAt:2,events:[{id:"test",label:"Run protected regression tests",status:"completed",startedAt:1,finishedAt:2,detail:"ACTUAL stdout: missing name failed at hello.ts:2"}]}}}}}).isPersisted.promise
-  const controller=createAppController(store,unavailableRepositories,silentAgent,double.services)
-  expect((await controller.commands.run("runs.logs",`sourceCard=${cardId} ${runId}`)).status).toBe("executed")
-  const card=store.collections.cards.get(cardId)
-  expect(card?.kind==="run-trace"&&card.payload.transcriptRows?.map(row=>row.text)).toEqual(["Run protected regression tests\nACTUAL stdout: missing name failed at hello.ts:2"])
-  expect(said(await controller.commands.run("runs.logs",`sourceCard=${cardId} unrelated-run`))).toContain("does not record")
-  expect(double.calls.filter(call=>call.path.startsWith("/api/workflow/"))).toHaveLength(0)
-})
-
-
 test("a normalized approval waits for its own decision receipt; failed storage starts no submission", async () => {
   const backing = memoryStorage()
   let fail = false

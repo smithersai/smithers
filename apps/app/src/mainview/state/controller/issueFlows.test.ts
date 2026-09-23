@@ -3,45 +3,32 @@ import { createAppStore } from "../AppStore"
 import { createIssueFlowsController } from "./issueFlows"
 import { createIssuesSeam } from "../seams/IssuesSeam"
 import type { SeamContext } from "../seams/SeamContext"
-import { PRACTICE_REPO } from "../practice/PracticeRepository"
+import { repositoryHttpFixture } from "../TestFixtures"
+const REPO = "owner/repo"
 async function setup() {
   const data = new Map<string, string>()
   const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k,v) }, removeItem: (k: string) => { data.delete(k) } }
   const store = await createAppStore({ kind: "localStorage", storage })
-  const ctx: SeamContext = { store, http: async () => { throw new Error("Practice must not fetch") }, baseUrl: "", dispatch: store.dispatch, actor: () => "user", nextOrdinal: store.nextOrdinal }
+  const ctx: SeamContext = { store, http: repositoryHttpFixture(), baseUrl: "", dispatch: store.dispatch, actor: () => "user", nextOrdinal: store.nextOrdinal }
   return { store, ctx, storage }
 }
-test("inspect repro, then research in the same official flow card before implementation", async () => {
-  const {store,ctx} = await setup()
-  const flows = createIssueFlowsController(ctx, { listWorkspaceWorkflows: async () => { throw Error("offline") }, runWorkflow: async () => { throw Error("offline") } })
-  expect(await flows.inspectIssueFlows(3,PRACTICE_REPO)).toEqual({ value: expect.stringContaining("Do not implement the fix") })
-  const id = "practice-issue-flows-3"
-  const first = store.collections.cards.get(id)
-  expect(first?.kind).toBe("workflow-list")
-  expect(await flows.runIssueFlow("repro",3,PRACTICE_REPO)).toEqual({ value: expect.stringContaining("not a fresh test run") })
-  const researched = store.collections.cards.get(id)
-  expect(researched?.ordinal).toBe(first?.ordinal)
-  expect(researched?.kind === "workflow-list" && researched.payload.research).toContain("empty name")
-  expect([...store.collections.cards.values()].some(card => card.kind === "run-trace")).toBe(false)
-  await store.dispose?.()
-})
-test("practice comments and state survive reopening and reload", async () => {
+test("remote comments and state survive reopening and reload", async () => {
   const {store,ctx,storage} = await setup()
   const issues = createIssuesSeam(ctx)
-  await issues.listIssues("open",PRACTICE_REPO)
-  await issues.viewIssue(3,PRACTICE_REPO)
-  expect(await issues.commentOnIssue(3,"Reproduced with an empty name",PRACTICE_REPO)).toBeUndefined()
-  expect(await issues.setIssueState(3,"closed",PRACTICE_REPO)).toBeUndefined()
-  await issues.viewIssue(2,PRACTICE_REPO)
-  await issues.viewIssue(3,PRACTICE_REPO)
+  await issues.listIssues("open",REPO)
+  await issues.viewIssue(3,REPO)
+  expect(await issues.commentOnIssue(3,"Reproduced with an empty name",REPO)).toBeUndefined()
+  expect(await issues.setIssueState(3,"closed",REPO)).toBeUndefined()
+  await issues.viewIssue(2,REPO)
+  await issues.viewIssue(3,REPO)
   const issue = [...store.collections.cards.values()].find(c => c.kind === "issue" && c.payload.number === 3)
   expect(issue?.kind === "issue" && issue.payload.state).toBe("closed")
   expect(issue?.kind === "issue" && issue.payload.comments.at(-1)?.commentBody).toBe("Reproduced with an empty name")
   await store.dispose?.()
   const restored = await createAppStore({kind:"localStorage",storage})
   const restoredIssues = createIssuesSeam({...ctx,store:restored,dispatch:restored.dispatch})
-  await restoredIssues.listIssues("open",PRACTICE_REPO)
-  let list = restored.collections.cards.get("practice-issues")
+  await restoredIssues.listIssues("open",REPO)
+  let list = [...restored.collections.cards.values()].find(card => card.kind === "issue-list")
   expect(list?.kind === "issue-list" && list.payload.issues.map(i=>i.number)).toEqual([2])
   await restored.dispose?.()
 })

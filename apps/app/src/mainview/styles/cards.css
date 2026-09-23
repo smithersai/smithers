@@ -2554,23 +2554,6 @@
 .repo-update-actions svg { margin-right: 4px; }
 .repo-update-items > li:last-child > .ghc-row-btn { border-radius: 0; }
 
-.live-tutorial-run { text-align: left; display: grid; gap: 20px; font-size: var(--fs-body); line-height: 1.6; }
-.live-tutorial-run p { margin: 0; }
-.live-tutorial-run > button { justify-self: start; }
-.live-tutorial-plan { display: grid; gap: 16px; }
-.live-tutorial-plan ol { list-style: decimal; margin: 0; padding-left: 24px; display: grid; gap: 10px; }
-.live-tutorial-plan > button { justify-self: start; }
-.live-tutorial-files { display: flex; flex-wrap: wrap; gap: 12px; font-size: var(--fs-small); color: var(--muted); }
-.live-tutorial-progress, .live-tutorial-outcome { color: var(--muted); }
-.live-tutorial-check[data-passed="true"] { color: var(--brand); }
-.live-tutorial-check code { margin-left: 12px; color: var(--muted); font-size: var(--fs-small); }
-.live-tutorial-events { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
-.live-tutorial-events > li { border-bottom: 1px solid var(--border); }
-.live-tutorial-events button { display: grid; grid-template-columns: 20px minmax(0,1fr) auto; gap: 12px; align-items: start; width: 100%; text-align: left; padding: 14px 0; color: inherit; background: transparent; border: 0; font: inherit; cursor: pointer; }
-.live-tutorial-events time { color: var(--muted); font-size: var(--fs-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.live-event-mark { color: var(--brand); }
-.live-tutorial-events pre { max-height: 260px; overflow: auto; padding: 16px; margin: 0 0 16px 32px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-small); }
-.live-tutorial-error, .live-tutorial-events [data-status="failed"] .live-event-mark { color: var(--danger); }
 
 @media (pointer: coarse) {
 	.palette-foot { display: none; }}
@@ -2586,7 +2569,6 @@
 .smithers-card[data-kind="account"] .secrets-table { table-layout: fixed; }
 .smithers-card[data-kind="account"] .secrets-table th { width: 35%; overflow-wrap: anywhere; }
 .smithers-card[data-kind="account"] .secrets-table td { overflow-wrap: anywhere; }
-.live-tutorial-limit { color: var(--warning); }
 /* Current status and recorded goals use the card's reading column. */
 .run-outcome-condition { color: var(--warning); font-size: var(--fs-small); }
 .run-goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

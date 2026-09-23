@@ -2,7 +2,6 @@ import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "./TestFixtures"
-import { PRACTICE_CARD, PRACTICE_REPO } from "./practice/PracticeRepository"
 
 const createAppController = scopedControllers()
 const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImpl"]) => {
@@ -24,7 +23,7 @@ const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImp
   return { store, controller, redirects, requests }
 }
 
-// A repository read parks on repo-read, which the bundled practice source alone widens; everything else on signed-in.
+// A repository read parks on repo-read, which an advertised public repository can satisfy; everything else on signed-in.
 for (const [name, args, requirement] of [["flow.run", "review smithersai/smithers", "signed-in"], ["secrets.list", undefined, "signed-in"], ["issues.view", "3", "repo-read"]] as const) {
   test(`${name} signed out parks silently with exactly one sign-in prompt per click, without starting OAuth`, async () => {
     const { controller, store, requests, redirects } = await setup()
@@ -91,7 +90,7 @@ test("a repository launch names its human summary and repository for both actors
  * name the flow the user asked for, never the generic fallback.
  */
 for (const [name, args] of [["issues.view", "3"], ["issues.comment", "3 Looks right to me"]] as const) {
-  test(`${name} signed out on a non-practice repository names its own summary in the sign-in line`, async () => {
+  test(`${name} signed out on a private repository names its own summary in the sign-in line`, async () => {
     const { controller, store } = await setup()
     await controller.commands.run(name, args)
     await settle()
@@ -100,12 +99,5 @@ for (const [name, args] of [["issues.view", "3"], ["issues.comment", "3 Looks ri
     expect(prompts.at(-1)?.text).toBe(`Sign in with GitHub to ${summary[0]!.toLowerCase()}${summary.slice(1).replace(/[.!?]$/, "")}.`)
     expect([...store.collections.cards.values()].filter(card => card.kind === "issue")).toEqual([])
 
-    // The bundled practice source needs no account: the same line asks for nothing.
-    await store.dispatch({ type: "repo.selected", actor: "user", id: PRACTICE_REPO }).isPersisted.promise
-    await store.dispatch({ type: "command.deferral.cleared", actor: "system" }).isPersisted.promise
-    await controller.commands.run(name, args)
-    await settle()
-    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(prompts.length)
-    expect(store.collections.cards.get(PRACTICE_CARD.issue(3))?.status).toBe("active")
   })
 }

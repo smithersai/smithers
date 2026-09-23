@@ -10,7 +10,7 @@ import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { createControllerContext } from "./controller/context"
 import { scopedControllers } from "./ControllerTestScope"
 import { readEntityRecoveries } from "./EntityRecovery"
-import { memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage,repositoryHttpFixture,silentAgent,unavailableRepositories } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -201,9 +201,10 @@ describe("durable command intent at the active shared door", () => {
   test("automatic and named form doors preserve their attribution and drafts survive reload", async () => {
     const bytes = memoryStorage()
     const store = await open(bytes)
-    const controller = controllerFor(store)
-    expect((await controller.commands.run("repo.update", "practice:smithersai/hello-server", "automatic")).status).toBe("executed")
-    expect((await controller.commands.submit({ name: "repo.update", actor: "user", payload: { repo: "practice:smithersai/hello-server" } })).status).toBe("executed")
+    const http = repositoryHttpFixture()
+    const controller = controllerFor(store, { fetchImpl: (url, init) => http(String(url), init) })
+    expect((await controller.commands.run("repo.update", "owner/repo", "automatic")).status).toBe("executed")
+    expect((await controller.commands.submit({ name: "repo.update", actor: "user", payload: { repo: "owner/repo" } })).status).toBe("executed")
     controller.renderFlowForm({ name: "repo.tree", args: undefined, via: "user", input: Schema.Struct({ purpose: Schema.optional(Schema.String), id: Schema.String }) })
     await controller.setFormField("form-repo.tree", "purpose", "A durable purpose")
     await controller.setFormField("form-repo.tree", "id", "my-agent")

@@ -92,7 +92,7 @@ describe("/retry re-runs the last turn", () => {
     expect(launches.every((launch) => launch.runId === turnId)).toBe(true)
   })
 
-  for (const practice of [false, true]) test(`the failed answer makes way for the re-run in ${practice ? "visible practice" : "the workspace"}`, async () => {
+  for (const practice of [false, true]) test(`the failed answer makes way for the re-run in ${practice ? "a retained legacy selection" : "the workspace"}`, async () => {
     const store = await signedInStore()
     const { agent, launches, fail } = recordingAgent()
     const controller = createAppController(store, unavailableRepositories, agent, {
@@ -110,12 +110,9 @@ describe("/retry re-runs the last turn", () => {
     await settled()
     expect(store.collections.messages.get(`message-${turnId}-smithers`)).toBeUndefined()
     const retried = launches[1]
-    // Only the visible practice lesson supplies practice facts. A repository
-    // workspace never inherits them from a seeded or previously started guide.
-    if (practice) expect(JSON.stringify(retried?.messages[0])).toContain("practice:smithersai/hello-server")
-    else expect(JSON.stringify(retried?.messages)).not.toContain("practice:smithersai/hello-server")
+    expect(JSON.stringify(retried?.messages)).not.toContain("practice:smithersai/hello-server")
     expect(
-      retried?.messages.slice(practice ? 1 : 0).map((message) => ("content" in message ? message.content : message.type))
+      retried?.messages.map((message) => ("content" in message ? message.content : message.type))
     ).toEqual(["what is my balance?"])
   })
 

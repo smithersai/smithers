@@ -195,13 +195,14 @@ test("new arguments share a cold catalog request while keeping the latest exact 
     await h.controller.commands.run("files.list", `old ${repo}`)
     const requestId = h.store.session().repositoryCommandEntry!.requestId
     await h.controller.commands.run("files.list", `new ${repo}`)
-    await h.store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" }).isPersisted.promise
+    await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "selected/repo", org: "selected", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
+    await h.store.dispatch({ type: "repo.selected", actor: "user", id: "selected/repo" }).isPersisted.promise
     expect(h.store.session().repositoryCommandEntry?.requestId).toBe(requestId)
     release(json(200, { repos: [{ name: repo }] }))
     await until(() => h.store.collections.cards.get(`files-${repo}-new`)?.status === "active")
     expect(catalogs).toBe(1)
     expect(reads).toEqual([`/api/repos/${repo}/contents/new`])
-    expect(h.store.session().activeRepoKey).toBe("practice:smithersai/hello-server")
+    expect(h.store.session().activeRepoKey).toBe("selected/repo")
   } finally { release(json(503, {})); await h.close() }
 })
 
@@ -575,13 +576,16 @@ for (const scope of ["account", "selection", "entry"] as const) {
       await catalogFailed(h.store)
       await h.controller.commands.run("files.list", `docs ${repo}`)
       if (scope === "account") await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-      if (scope === "selection") await h.store.dispatch({ type: "repo.selected", actor: "user", id: "practice:smithersai/hello-server" }).isPersisted.promise
+      if (scope === "selection") {
+        await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "selected/repo", org: "selected", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
+        await h.store.dispatch({ type: "repo.selected", actor: "user", id: "selected/repo" }).isPersisted.promise
+      }
       if (scope === "entry") beginRepositoryEntry(h.store, "beta/two")
       release(json(200, { repos: [{ name: repo }] }))
       await pause(50)
       expect(reads.filter(path => path.includes("contents/docs"))).toEqual([])
       expect(h.store.collections.repositories.get(repo)).toBeUndefined()
-      if (scope === "selection") expect(h.store.session().activeRepoKey).toBe("practice:smithersai/hello-server")
+      if (scope === "selection") expect(h.store.session().activeRepoKey).toBe("selected/repo")
       if (scope === "entry") expect(h.store.session().repositoryEntry?.repo).toBe("beta/two")
     } finally { release(json(200, { repos: [] })); await h.close() }
   })

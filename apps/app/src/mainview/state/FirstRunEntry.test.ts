@@ -3,7 +3,6 @@ import { expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { json,memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
-import { PRACTICE_CARD,PRACTICE_REPO } from "./practice/PracticeRepository"
 import { resolveTargetRepo } from "./RepoContext"
 
 /* Every controller this file builds is disposed even when an assertion fails. */
@@ -27,19 +26,19 @@ test("a bare repository command during first-run selection parks instead of aski
 
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
     selectFirstRunRepository(store, controller.settleFirstRunTarget)
-    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    await until(() => store.session().pendingCommand?.requirement === "repo-source")
     expect(forms()).toEqual([])
-    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
-    expect(store.session().pendingCommand ?? null).toBeNull()
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(0)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
   } finally { await controller.dispose() }
 })
 
-test("signed-out entry selects the practice repository for bare flows", async () => {
+test("signed-out entry leaves repository selection empty", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: (() => { const data = new Map<string, string>(); return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } } })() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   selectFirstRunRepository(store)
-  expect(store.session().activeRepoKey).toBe(PRACTICE_REPO)
-  expect(resolveTargetRepo(store, undefined)).toEqual({ repo: PRACTICE_REPO })
+  expect(store.session().activeRepoKey ?? null).toBeNull()
+  expect(resolveTargetRepo(store, undefined)).toEqual({ error: expect.stringContaining("No repository is loaded") })
   await store.dispose?.()
 })
 
@@ -108,9 +107,9 @@ test("a first-run-target park resumes exactly once when the selection settles", 
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
     selectFirstRunRepository(store, controller.settleFirstRunTarget)
     selectFirstRunRepository(store, controller.settleFirstRunTarget)
-    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
-    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
-    expect(store.session().pendingCommand ?? null).toBeNull()
+    await until(() => store.session().pendingCommand?.requirement === "repo-source")
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(0)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
   } finally { await controller.dispose() }
 })
 
@@ -130,7 +129,7 @@ test("a first-run-target park whose choice settles with no target renders the re
 
 /*
  * The real first-run order: the identity row persists inside dispatchSignedOut,
- * and the practice selection only lands after it. A command typed in that gap
+ * and the first-run target settles after it. A command typed in that gap
  * must still wait for the target, not be told to name one.
  */
 test("a command issued after signed-out but before the selection settles parks and resumes once", async () => {
@@ -145,10 +144,10 @@ test("a command issued after signed-out but before the selection settles parks a
     expect(store.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "first-run-target" })
 
     selectFirstRunRepository(store, controller.settleFirstRunTarget)
-    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    await until(() => store.session().pendingCommand?.requirement === "repo-source")
     expect(forms()).toEqual([])
-    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
-    expect(store.session().pendingCommand ?? null).toBeNull()
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(0)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
   } finally { await controller.dispose() }
 })
 
@@ -172,7 +171,7 @@ test("a signed-in entry with no persisted target keeps today's behaviour: it ask
  * FAILED card was already gone; the form was what was left. Every other
  * other list door — `files.list` — already declares `repo-source`, which is
  * the app's one rule for an anonymous context: a signed-out visitor with no
- * open repository, no public catalog repository and no practice source parks
+ * open repository, no public catalog repository  parks
  * on it and gets the sign-in step in the form's place, while a public catalog
  * repository still reads without an account.
  */

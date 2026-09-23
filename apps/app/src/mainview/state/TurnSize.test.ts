@@ -48,7 +48,7 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
     expect(textOf(last?.messages[0])).toContain("dropped to fit this turn's size limit")
   })
 
-  for (const practice of [false, true]) test(`a short conversation in ${practice ? "visible practice" : "the workspace"} is sent whole, with no notice invented`, async () => {
+  for (const practice of [false, true]) test(`a short conversation in ${practice ? "a retained legacy selection" : "the workspace"} is sent whole, with no notice invented`, async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
@@ -57,12 +57,10 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
     controller.send("hello")
     await settled()
 
-    // Practice facts belong only to the visible lesson, never a seeded guide.
-    expect(requests[0]?.messages).toHaveLength(practice ? 2 : 1)
-    if (practice) expect(textOf(requests[0]?.messages[0])).toContain("practice:smithersai/hello-server")
-    else expect(textOf(requests[0]?.messages[0])).not.toContain("practice:smithersai/hello-server")
+    expect(requests[0]?.messages).toHaveLength(1)
+    expect(textOf(requests[0]?.messages[0])).not.toContain("practice:smithersai/hello-server")
     expect(requests[0]?.messages.map(textOf).join("\n")).not.toContain("dropped to fit")
-    expect(textOf(requests[0]?.messages[practice ? 1 : 0])).toBe("hello")
+    expect(textOf(requests[0]?.messages[0])).toBe("hello")
   })
 })
 

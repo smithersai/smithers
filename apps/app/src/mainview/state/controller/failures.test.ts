@@ -342,13 +342,3 @@ test("a seam's sign-in notice uses human summaries and dismisses even with an ac
 })
 
 
-test("a typed practice refusal already shown in its run card has no second command-failure toast", async () => {
-  const { ctx, store } = await fakeContext()
-  const reason = "This practice run did not start because agent runs are temporarily limited."
-  await store.dispatch({ type: "card.upsert", actor: "system", card: { id: "live-tutorial-research", kind: "run-trace", title: "Research", status: "active", createdAt: 1, ordinal: 1,
-    payload: { repo: "practice:smithersai/hello-server", runId: "pending", workflow: "issue.research", phase: "stopped", steps: [], result: null, lastSeq: 0, observationError: reason,
-      input: { liveTutorial: { playthrough: 0 }, liveTutorialLimit: { kind: "rate-limit" } } } } }).isPersisted.promise
-  createFailureController(ctx).surfaceCommandFailure("issue.repro", { status: "failed", error: reason })
-  expect([...store.collections.toasts.values()]).toEqual([])
-  await store.dispose?.()
-})

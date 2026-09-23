@@ -11,7 +11,6 @@ import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { selectFirstRunRepository } from "./FirstRunRepository"
-import { PRACTICE_CARD } from "./practice/PracticeRepository"
 import { backend,json,memoryStorage,settled,silentAgent,unavailableRepositories,waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
@@ -225,7 +224,7 @@ describe("auth is a conversation state — the chat is the only page", () => {
    * repository form. The choice is boot's (ControllerBoot.client.ts); the seam
    * settles the latch, and makes the choice only for the park that waits on it.
    */
-  test("signed-out on the web: the identity seam settles the first-run latch without binding a repository, and a command parked through a raced read still lands on the practice list", async () => {
+  test("signed-out on the web: the identity seam settles the first-run latch without binding a repository, and a command parked through a raced read still offers sign-in", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       bootstrap: WEB,
@@ -266,9 +265,9 @@ describe("auth is a conversation state — the chat is the only page", () => {
     void waiting.loadSession()
     release()
 
-    await waitFor(() => parked.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    await waitFor(() => parked.session().pendingCommand?.requirement === "repo-source")
     expect([...parked.collections.cards.values()].filter((card) => card.kind === "flow-form")).toEqual([])
-    expect(parked.session().pendingCommand ?? null).toBeNull()
+    expect(parked.session().pendingCommand).toMatchObject({ name: "issues.list", requirement: "repo-source" })
   })
 
   for (const repo of ["nope/nope", "smithersai/smithres", "Some-Owner/repo_name", "cached/selection"]) {

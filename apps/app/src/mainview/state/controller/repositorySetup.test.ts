@@ -9,7 +9,6 @@ import { applySetupEdit, createRepositorySetupController, projectRecoveredSetup,
 import { cardContainsRun, runScopeFromCard } from "../RunReference"
 import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
 import { RECEIPT_CODES, setupFailureSentence } from "../RunFailure"
-import { PRACTICE_REPO } from "../practice/PracticeRepository"
 
 type Body = { requestId: string; repo: string; job: string; revision: number; digest: string; draft: SetupDraft; workspaceId?: string; manual?: SetupManualRequest }
 const workspaceId = "de29f26b-e593-4ec2-99fc-583d4711f20a"
@@ -250,16 +249,6 @@ test("signed-out setup stays editable and offers the sign-in door without inspec
     expect(signIns).toBe(1)
     expect(t.calls).toEqual([])
     expect(card.kind === "repository-setup" && card.payload.request).toBeUndefined()
-  } finally { await t.close() }
-})
-
-test("signed-in practice setup offers the real repository chooser without provisioning practice", async () => {
-  let choices = 0
-  const t = await fixture(async body => response(body), memoryStorage(), doors({ chooseRepository: async () => { choices++ } }))
-  try {
-    await t.setup.openRepositorySetup("ci", PRACTICE_REPO)
-    expect(choices).toBe(1)
-    expect(t.calls).toEqual([])
   } finally { await t.close() }
 })
 

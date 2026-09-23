@@ -511,7 +511,12 @@ describe("host parity — the web and native catalogs against the servers' own c
   })
 
   test("drift: every capability the schema knows has a host row", () => {
+    const productSource = readFileSync(fileURLToPath(new URL("../../../../../packages/backend/internal/compose/bootstrap.go", import.meta.url)), "utf8")
+    const productCapabilities = [...productSource.matchAll(/result\.Capabilities = append\(result\.Capabilities, "([^"]+)"\)/g)]
+      .flatMap(match => { const parsed = RuntimeCapabilitySchema.safeParse(match[1]); return parsed.success ? [parsed.data] : [] })
+    expect(productCapabilities.length).toBeGreaterThan(0)
     const everything = new Set<RuntimeCapability>([
+      ...productCapabilities,
       ...cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }),
       ...localCapabilities({ agent: true, identity: true, cloud: true, browser: true })
     ])

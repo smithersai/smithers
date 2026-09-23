@@ -772,10 +772,10 @@ describe("the change card", () => {
     host.remove()
   })
 
-  test("a practice Change's Full diff names its receipt through the practice flow", () => {
+  test("a retained legacy Change opens its recorded change through the shared diff flow", () => {
     const { host, commands } = renderChange(changeCard({ repo: "practice:smithersai/hello-server", stack: null, changeId: "live-change" }))
     click(host, "Open the full diff card")
-    expect(commands).toEqual([{ name: "files.implementation-diff", args: "live-change" }])
+    expect(commands).toEqual([{ name: "change.diff", args: "live-change" }])
     host.remove()
   })
 

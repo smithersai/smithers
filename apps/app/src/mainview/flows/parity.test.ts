@@ -174,11 +174,13 @@ const PRESENTATION_ONLY = [
 const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // Pre-boot browser navigation: no writable store/controller exists here.
   // Choosing this document's writer is a human tab gesture, not an app command.
+  // The human credential continuation opened by auth.sign-in. Passwords stay
+  // in the form and its auth controller, outside the command journal.
+  "../LocalAuthPanel.tsx": ["onSubmit={submit}", "close(event.currentTarget.ownerDocument)"],
   "../StartupError.tsx": ["onClick={useSmithersHere}", "onClick={() => window.location.reload()}"],
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
-  "../cards/LiveTutorialRunBody.tsx": ["scoped("], // runSourceCommand(card.id, onRunCommand) keeps the source frame
   "../cards/WorkflowCards.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
   "../cards/FlowFormCards.tsx": ["cancel.onClick()"], // card.dismiss after the keyboard focus handoff; the full submit handler is inspected
   "../cards/RepositorySetupCard.tsx": ["run(", "set(", "view("], // typed setup.run/configure/view wrappers, pinned below
@@ -227,12 +229,13 @@ describe("launch-law parity: every affordance is a command", () => {
   })
 
   test("the focused guide and run-card indirections retain their bindings", () => {
+    expect(files["../LocalAuthPanel.tsx"]).toContain("void auth.submit({")
+    expect(files["../LocalAuthPanel.tsx"]).toContain("auth.close()")
     expect(files["../HelpBubble.tsx"]).toContain("onDismiss()")
     expect(files["../InputModeMenu.tsx"]).toContain('data-flow="input.mode"')
     for (const file of ["../App.tsx"]) {
       expect(files[file]).toContain('onChange={mode => controller.runCommand("input.mode", mode)}')
     }
-    expect(files["../cards/LiveTutorialRunBody.tsx"]).toContain("const scoped=runSourceCommand(card.id,onRunCommand)")
     expect(files["../cards/WorkflowCards.tsx"]).toContain("onRunCommand: sendRunCommand")
     const form = files["../cards/FlowFormCards.tsx"]!
     expect(form).toContain('onRunCommand("form.submit", card.id)')
@@ -303,6 +306,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../App.tsx": 4, // -1: the shell has four handlers; main's five-count baseline was already stale.
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
+      "../LocalAuthPanel.tsx": 3,
       "../StartupError.tsx": 3, // Held: takeover/reload; moved: takeover.
       "../StorageRecoveryButton.tsx": 1,
       "../FlowsSurface.tsx": 2,
@@ -315,7 +319,6 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/SetupChecklist.tsx": 2, // The shared step button and the shared job button; each one's flow is data, not a handler.
       "../cards/SignupCards.tsx": 14, // The signup onboarding: three doors, three submits, poll choice/back/skip/continue/send/repo/new-repo, finish.
       "../cards/CodingVibeCard.tsx": 1,
-      "../cards/LiveTutorialRunBody.tsx": 6, // -1: removed the tutorial restart/skip action.
       "../cards/RepositoryUpdateCard.tsx": 3,
       /*
        * The Library (the `plugins` surface and the guided introduction share
@@ -375,7 +378,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/FileCards.tsx": 3,
       /* A row's Test, Edit, Remove and select; New; and the attention row's Assign, Test or Edit. */
       "../cards/ModelCallCard.tsx": 10,
-      "../cards/ModelCards.tsx": 15,
+      "../cards/ModelCards.tsx": 17,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
       /* The account card's Sign out door (auth.sign-out through onRunCommand). */
@@ -384,7 +387,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/RepoImportCard.tsx": 2,
       // The tutorial's ranked chooser: one row button plus Skip.
       "../cards/RepositoryChoiceCard.tsx": 2,
-      "../cards/RepositorySetupCard.tsx": 20,
+      "../cards/RepositorySetupCard.tsx": 19,
       
       "../cards/SyncCards.tsx": 5,
       /* The /theme picker: nine swatches, one shared handler through onRunCommand. */

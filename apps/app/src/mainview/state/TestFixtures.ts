@@ -127,3 +127,38 @@ export const backend = (
     return (routes[path] ?? json(404, { status: "error" })).clone()
   }
 })
+
+/** Stateful HTTP fixture for repository navigation and persisted read receipts. */
+export const repositoryHttpFixture = (): import("./seams/SeamContext").SeamContext["http"] => {
+  const issues = [2, 3].map(number => ({ number, title: `Issue ${number}`, state: "open", body: "Details", author: { login: "ada" }, updated_at: "2026-09-13T00:00:00Z" }))
+  const comments = new Map<number, Array<{ body: string; commenter: string; created_at: string }>>()
+  const landing = { number: 4, title: "Review", state: "open", body: "Changes", author: { login: "ada" }, updated_at: "2026-09-13T00:00:00Z", change_ids: [] }
+  return async (input, init) => {
+    const url = new URL(input, "https://app.test")
+    if (url.pathname.startsWith("/api/user/github-repos/") || url.pathname === "/api/notifications/list") return Response.json([])
+    const path = url.pathname.replace("/api/repos/owner/repo", "")
+    if (path === "/issues") return Response.json(issues.filter(issue => url.searchParams.get("state") === "all" || issue.state === (url.searchParams.get("state") ?? "open")))
+    const match = /^\/issues\/(\d+)(\/comments)?$/.exec(path)
+    if (match) {
+      const number = Number(match[1])
+      const issue = issues.find(row => row.number === number)
+      if (!issue) return Response.json({ message: `No issue #${number}`, code: "not_found" }, { status: 404 })
+      if (match[2]) {
+        const rows = comments.get(number) ?? []
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { body: string }
+          rows.push({ body: body.body, commenter: "ada", created_at: "2026-09-13T01:00:00Z" })
+          comments.set(number, rows)
+          return Response.json(rows.at(-1), { status: 201 })
+        }
+        return Response.json(rows)
+      }
+      if (init?.method === "PATCH") issue.state = (JSON.parse(String(init.body)) as { state: string }).state
+      return Response.json(issue)
+    }
+    if (path === "/landings") return Response.json([landing])
+    if (path === "/landings/4") return Response.json(landing)
+    if (path === "/landings/4/reviews" || path === "/landings/4/comments") return Response.json([])
+    throw new Error(`Unexpected repository fixture request: ${input}`)
+  }
+}

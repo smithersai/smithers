@@ -4,7 +4,6 @@ import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { selectFirstRunRepository } from "./FirstRunRepository"
 import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
-import { PRACTICE_CARD } from "./practice/PracticeRepository"
 
 const createAppController = scopedControllers()
 
@@ -50,7 +49,7 @@ const bootIdentityRead = (
   void controller.loadSession().then(settle, settle)
 }
 
-test("a focus re-read during the boot identity read still lands the parked command on the practice list", async () => {
+test("a focus re-read during the boot identity read still offers sign-in for the parked command", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const identity = heldIdentity()
   const controller = createAppController(store, unavailableRepositories, silentAgent, {
@@ -66,10 +65,10 @@ test("a focus re-read during the boot identity read still lands the parked comma
     void controller.loadSession()
     identity.release()
 
-    await until(() => store.collections.cards.get(PRACTICE_CARD.issues)?.status === "active")
+    await until(() => store.session().pendingCommand?.requirement === "repo-source")
     expect(forms(store)).toEqual([])
-    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(1)
-    expect(store.session().pendingCommand ?? null).toBeNull()
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue-list")).toHaveLength(0)
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "auth.sign-in")).toHaveLength(1)
   } finally { await controller.dispose() }
 })
 
