@@ -54,14 +54,10 @@ describe("the published manifest", () => {
     expect(manifest.publishConfig?.tag).toBe("next")
   })
 
-  it("declares the repository Node floor the contract says every package declares", () => {
-    // Contract section 1 states the supported Node minimum as `>=22.19.0` and
-    // cites "every `packages/*/package.json` `engines.node`" as the evidence;
-    // docs/pages/release/support-matrix.md republishes that sentence. A lower
-    // floor here would make both statements false, so relaxing it to reach an
-    // unmigrated 0.x project on older Node is a contract amendment, not a
-    // manifest edit.
-    expect(manifest.engines?.node).toBe(">=22.19.0")
+  it("declares the repository's supported Node versions", () => {
+    // This command runs the CLI directly, so the compatibility entry must
+    // carry the CLI's supported versions, including its Node 24 floor.
+    expect(manifest.engines?.node).toBe("^22.19.0 || >=24.11.0")
   })
 })
 
