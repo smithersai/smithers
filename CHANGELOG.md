@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3069 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3077 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** distinguish source-helper smoke from publishable packs ([fa0d750228](https://github.com/smithersai/smithers/commit/fa0d7502287deaafe38fb15a32845e647ec856c1))
+- **engine-store:** confine native Windows canonical paths ([2d8eea73d8](https://github.com/smithersai/smithers/commit/2d8eea73d86b8d50a9afc8e6940475d3356789ea))
 - **release:** account for pre-helper smoke rehearsal ([b04d286f29](https://github.com/smithersai/smithers/commit/b04d286f2968d32bcd277c30828de0c0f37c6508))
 - **engine-store:** normalize workspace roots with transaction paths ([2ee17a00d8](https://github.com/smithersai/smithers/commit/2ee17a00d8fb9f4fb942df7726376219268b1adc))
 - allow standalone coding gateway and bound preparation ([b6a35dbbbe](https://github.com/smithersai/smithers/commit/b6a35dbbbe2c850283f4e26f9510db573bccc02b))
@@ -2516,6 +2518,12 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(release):** bind an offline evaluator for migration host acquisition ([9ceb72bb8e](https://github.com/smithersai/smithers/commit/9ceb72bb8e5b8eb6c5f8599ddd601d8dd81489ef))
+- **test(release):** pin the selected native Effect adapter family ([eadfc25ab6](https://github.com/smithersai/smithers/commit/eadfc25ab6848ac0ec2b1d074ee0553e5b581a24))
+- **test(registry):** select explicit path conventions for file URL oracles ([59f8e31ca2](https://github.com/smithersai/smithers/commit/59f8e31ca2f853f0aa8929e09d556ae9ece5bb57))
+- **test(create-app):** accept native tar listing line endings ([f3001986ca](https://github.com/smithersai/smithers/commit/f3001986ca66978915ef0bcabc63cfc0bd277150))
+- **test(release):** forward the configured native helper to CLI fixtures ([e71b734b3d](https://github.com/smithersai/smithers/commit/e71b734b3dda1f6aca5731c63815525c673122ca))
+- **test(platform-bun):** check coverage cleanup across native hosts ([aa3ba1780c](https://github.com/smithersai/smithers/commit/aa3ba1780c0c896c03b505dcfd8f0e84eb5a792a))
 - **test(platform):** exercise startup refusals with native executables ([80ac93a8c3](https://github.com/smithersai/smithers/commit/80ac93a8c31a5bf470f889910a58f415a34d9be3))
 - **test(matrix):** authenticate Plue browser modes with canary application token ([457d4729d7](https://github.com/smithersai/smithers/commit/457d4729d7c47f2667a1b66452ac4f634cff9ff1))
 - **test(kernel):** run host process contracts through the native runtime ([5eda77174a](https://github.com/smithersai/smithers/commit/5eda77174a6cea09dc1cd8f2d10c20c31246e2e3))
