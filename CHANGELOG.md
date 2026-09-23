@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3190 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3191 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -2590,6 +2590,7 @@ the release notes at
 
 ### 📦 Other changes
 
+- fix ci package runtime gates ([d6e4f583d6](https://github.com/smithersai/smithers/commit/d6e4f583d677c14566e3a69aef26686a531751ce))
 - fix chat footer keyboard order ([5f150c4c28](https://github.com/smithersai/smithers/commit/5f150c4c28dc2c50cb6e4015f60a1ff2479c2080))
 - fix terminal journal page retries ([8fdc0e6fa2](https://github.com/smithersai/smithers/commit/8fdc0e6fa20c591b3af759f9e1b1cc417e8b74f0))
 - **ci:** rerun release gates ([689280e979](https://github.com/smithersai/smithers/commit/689280e979a504bd13092dfcc5d86c54f1ee83ca))
