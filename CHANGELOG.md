@@ -9,10 +9,13 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3155 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3179 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **tui:** GUI-grade timeline scrubber with jump-to-step ([b6ea3a2679](https://github.com/smithersai/smithers/commit/b6ea3a26794ab3c8b84c0a5b5b0cbd5da478283b))
+- **tui:** Smithers plugin for the core agent ([0a296794c8](https://github.com/smithersai/smithers/commit/0a296794c880d754cccf73fd5598ab943ace21b8))
+- **evals:** durable plue exec and the image's WORKDIR, as docker exec has ([e8e72fad42](https://github.com/smithersai/smithers/commit/e8e72fad4208af8ac791f0a4d9fd8715212b73e6))
 - **app:** interleave subagent transcripts in chat with a durable filter ([5154fbcf8a](https://github.com/smithersai/smithers/commit/5154fbcf8af8c12408c2aede7e32d9df705101a4))
 - **tui:** run on Node >= 26.4 and Bun ([0964530dfd](https://github.com/smithersai/smithers/commit/0964530dfda4142f6974bd4d3bbe3c5b08bbf5e2))
 - **app:** show the supervisor's needs-help reading as a dot on the run header ([f716a9de9f](https://github.com/smithersai/smithers/commit/f716a9de9f6ad9b9e52f62e23bc56e9ddf8eff49))
@@ -327,6 +330,22 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **tui:** name undelegated requests when the coordinator's frames run out ([856f878b0a](https://github.com/smithersai/smithers/commit/856f878b0ac192d2d2a362878c75f5b11e049ae0))
+- **tui:** hide in-frame cell re-asks and model-facing rejection text ([519cb19981](https://github.com/smithersai/smithers/commit/519cb19981a873a5f5ea0f6a2bdbde68cf68fa9f))
+- **harness:** accept an omitted ctx.call input for all-optional flows ([4a10fc7e77](https://github.com/smithersai/smithers/commit/4a10fc7e771af022049a34291824b4ea800b6506))
+- **tui:** queue delegations over the three-seat cap instead of refusing them ([bb1f8da89e](https://github.com/smithersai/smithers/commit/bb1f8da89ee76d443c4d2bbebe8e64eb0f7980df))
+- **tui:** return plain JSON from runtime flows ([0d205fe5a6](https://github.com/smithersai/smithers/commit/0d205fe5a66fe8118da2a0e63603656149d12ba4))
+- **tui:** autoscroll the transcript while a selection is dragged past its edge ([b5de84be23](https://github.com/smithersai/smithers/commit/b5de84be237c2f4d064d9f544f9b6a1fe971d0e0))
+- **tui:** settle failed and orphaned workers as failed everywhere ([39212905f5](https://github.com/smithersai/smithers/commit/39212905f506f2eae597fa682041009ccc9202bd))
+- **tui:** click or key to switch tabs ([e24e1cca64](https://github.com/smithersai/smithers/commit/e24e1cca642acfcf36eabc9981cd0e2f421c21fd))
+- **tui:** show the composer mode only in shell mode ([70949fbd5b](https://github.com/smithersai/smithers/commit/70949fbd5bc8cea36eec1d449a4037316c093b27))
+- **evals:** run plue execs under docker exec's umask 0022 ([423644ba2d](https://github.com/smithersai/smithers/commit/423644ba2d0f4f9de2425b015c2511bdac351d03))
+- **app:** harden Explainer journal lifecycle ([d7a915218a](https://github.com/smithersai/smithers/commit/d7a915218a09238b4b82bc695a18b1ce8dbabcb6))
+- **backend:** serve owner-scoped model test through packaged host ([9337563a6d](https://github.com/smithersai/smithers/commit/9337563a6d9f2e5f19e3799b8fdba3a32c8ca9c7))
+- **evals:** default KMP_AFFINITY=disabled in plue guests ([5502a7681c](https://github.com/smithersai/smithers/commit/5502a7681c3b87c1bb63d9915e2d381fd6e7389a))
+- **backend:** register product migration 0013 and guard the registry ([b8b9e40ec3](https://github.com/smithersai/smithers/commit/b8b9e40ec311fb80beb26f58d306833a9048be74))
+- **tui:** show a ctx.done-only turn's answer once ([cd2d631e8b](https://github.com/smithersai/smithers/commit/cd2d631e8bab17180f6ab3c12afe9c541404470f))
+- **app:** bound native terminal relay handshake queue ([1d7fa5e032](https://github.com/smithersai/smithers/commit/1d7fa5e0327318e0da984d1cdf773401e4588dac))
 - **build:** run cache postgres test through native runtime ([1d1cf4f7dd](https://github.com/smithersai/smithers/commit/1d1cf4f7dda849a21612a8a68dc08b7dc7b85a5f))
 - **evals:** re-run a trial whose verifier never wrote a grade ([ebe1773fa4](https://github.com/smithersai/smithers/commit/ebe1773fa407bed29827cd39865270e958489670))
 - return false for missing atomic exists ancestors ([e20c99c833](https://github.com/smithersai/smithers/commit/e20c99c833b5c03cd91d50340e9ac0636b5c89ef))
@@ -2227,6 +2246,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- raise Max sandbox capacity to 64 ([1681507b4d](https://github.com/smithersai/smithers/commit/1681507b4d7ea05b7b66e0c485e20ed4bafc56cc))
 - **cli:** install the smthrs package; it ships smthrs and smithers ([16588f84cb](https://github.com/smithersai/smithers/commit/16588f84cb68978d725824ebbc1b674f3344de13))
 - **platform-node:** sync kernel vacancy API reference ([b15e70c10a](https://github.com/smithersai/smithers/commit/b15e70c10a2cf8d6b03fdc0c17338634077c9862))
 - **site:** refresh CLI and runtime references ([bbba6ca15b](https://github.com/smithersai/smithers/commit/bbba6ca15b3ea70adeb77be086c2a4463785933f))
@@ -2559,6 +2579,10 @@ the release notes at
 
 ### 📦 Other changes
 
+- fix chat footer keyboard order ([5f150c4c28](https://github.com/smithersai/smithers/commit/5f150c4c28dc2c50cb6e4015f60a1ff2479c2080))
+- fix terminal journal page retries ([8fdc0e6fa2](https://github.com/smithersai/smithers/commit/8fdc0e6fa20c591b3af759f9e1b1cc417e8b74f0))
+- **ci:** rerun release gates ([689280e979](https://github.com/smithersai/smithers/commit/689280e979a504bd13092dfcc5d86c54f1ee83ca))
+- fix workflow observation and fault harness stability ([49f16eca0e](https://github.com/smithersai/smithers/commit/49f16eca0e5e864dc7fca94010040effd4f3b058))
 - **test(build):** pass macOS SDK root to sandboxed cgo fixture ([6739fbb84d](https://github.com/smithersai/smithers/commit/6739fbb84d41db94e7f6b04d883f3e9e2b677c11))
 - **test:** use native host paths and OS-specific process assertions ([eac3e679ad](https://github.com/smithersai/smithers/commit/eac3e679ad71106ee95027d2c8817a437bc05b73))
 - **test(workspace):** cover simultaneous writes with matching basenames ([d2fdf6ada4](https://github.com/smithersai/smithers/commit/d2fdf6ada4679ad0aeb6db7e81fb6d4e48009b96))
