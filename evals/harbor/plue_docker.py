@@ -11,7 +11,11 @@ under the name `docker` and every exec becomes one public CLI call:
         [--env KEY=VALUE …] --timeout 0 --format json --command 'exec <file> <args…>'
 
 Standard input is forwarded when `-i` was asked for, the command's stdout and
-stderr are replayed, and its exit code is this process's. Any other docker
+stderr are replayed, and its exit code is this process's. An exec without
+stdin carries a durable `--exec-id` (plue CLI 71c3ed6a+): when OpenSSH or the
+gateway loses the transport, the same id is reattached, so the command is
+neither lost nor run twice. An exec with stdin stays one connection. Without
+`-w` the command runs in `workdir` from the config (the image's WORKDIR). Any other docker
 verb is refused with exit 125: nothing but exec is expected here.
 
 Configuration comes from `plue-docker.json` beside the invoked `docker` link,
@@ -32,7 +36,13 @@ import os
 import shlex
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import outcome  # noqa: E402
+import plue_env  # noqa: E402
 
 CONFIG_NAME = "plue-docker.json"
 
@@ -103,6 +113,7 @@ def translate(argv: list[str], environ: dict[str, str], config: dict) -> tuple[l
         "workspace", "exec", container, "--repo", repo, "--user", "root",
         "--timeout", "0", "--format", "json",
     ]
+    cwd = cwd or config.get("workdir") or None
     if cwd is not None:
         args += ["--cwd", cwd]
     for pair in env:
@@ -125,29 +136,47 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(f"{error}\n")
         return 125
     extra = config.get("env") or {}
-    result = subprocess.run(
-        args,
-        stdin=None if stdin else subprocess.DEVNULL,
-        capture_output=True,
-        env={**os.environ, **{str(k): str(v) for k, v in extra.items()}},
-    )
-    try:
-        data = envelope(result.stdout.decode(errors="replace"))
-    except ValueError:
-        data = {}
-    if "error" in data and "exit_code" not in data.get("data", data):
-        error = data["error"]
-        sys.stderr.write(f"plue exec failed: {error.get('code', '')} {error.get('message', '')}\n")
-        return 126
-    payload = data.get("data", data)
-    if not payload and result.returncode != 0:
-        sys.stderr.write(result.stderr.decode(errors="replace"))
-        return result.returncode or 126
-    sys.stdout.write(payload.get("stdout") or "")
-    sys.stderr.write(payload.get("stderr") or "")
-    sys.stdout.flush()
-    sys.stderr.flush()
-    return int(payload.get("exit_code", result.returncode))
+    waits: list = [None]
+    if not stdin:
+        args = args[:-2] + ["--exec-id", f"shim-{uuid.uuid4().hex[:16]}"] + args[-2:]
+        waits = [*config.get("reattach_backoff_sec", plue_env._EXEC_REATTACH_BACKOFF_SEC), None]
+    for wait in waits:
+        result = subprocess.run(
+            args,
+            stdin=None if stdin else subprocess.DEVNULL,
+            capture_output=True,
+            env={**os.environ, **{str(k): str(v) for k, v in extra.items()}},
+        )
+        try:
+            data = envelope(result.stdout.decode(errors="replace"))
+        except ValueError:
+            data = {}
+        payload = data.get("data", data) if isinstance(data, dict) else {}
+        stderr = (payload.get("stderr") or "") + "\n" + result.stderr.decode(errors="replace")
+        lost = None
+        if "error" in data and "exit_code" not in payload:
+            error = data["error"]
+            lost = plue_env.PlueError(error.get("message", ""), error.get("code", ""))
+            if wait is None or not plue_env.reattachable(lost):
+                sys.stderr.write(f"plue exec failed: {error.get('code', '')} {error.get('message', '')}\n")
+                return 126
+        elif int(payload.get("exit_code", result.returncode)) == 255 and outcome.ssh_transport_error(stderr):
+            if wait is None:
+                sys.stderr.write(stderr.strip() + "\n")
+                return 255
+            lost = True
+        if lost is not None:
+            time.sleep(wait)
+            continue
+        if not payload and result.returncode != 0:
+            sys.stderr.write(result.stderr.decode(errors="replace"))
+            return result.returncode or 126
+        sys.stdout.write(payload.get("stdout") or "")
+        sys.stderr.write(payload.get("stderr") or "")
+        sys.stdout.flush()
+        sys.stderr.flush()
+        return int(payload.get("exit_code", result.returncode))
+    return 255
 
 
 if __name__ == "__main__":

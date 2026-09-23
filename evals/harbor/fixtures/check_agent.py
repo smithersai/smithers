@@ -504,6 +504,7 @@ def check_plue_env() -> None:
         cli.chmod(0o755)
         os.environ["SMITHERS_CLI"] = str(cli)
         os.environ["PLUE_REPO"] = "acme/bench"
+        plue_env._EXEC_REATTACH_BACKOFF_SEC = (0,)  # a lost session reattaches once, then fails
         ops = plue_env._PlueOps()
         ops._workspace_id = "ws-1"
         ops.logger = logging.getLogger("check")

@@ -187,7 +187,7 @@ def helper_binary(root: Path, base: dict[str, str]) -> Path | None:
 SHIM_ENV_NAMES = ("SMITHERS_TOKEN", "XDG_CONFIG_HOME", "HOME")
 
 
-def shim_config(base: dict[str, str]) -> dict[str, Any]:
+def shim_config(base: dict[str, str], workdir: str | None = None) -> dict[str, Any]:
     """Everything `plue_docker.py` needs, taken from the harness host's
     environment now, because the harness spawns the shim with a
     least-authority environment that drops PLUE_REPO, SMITHERS_CLI and the
@@ -201,7 +201,10 @@ def shim_config(base: dict[str, str]) -> dict[str, Any]:
     if cli is None:
         raise RuntimeError(f"SMITHERS_CLI {name!r} does not resolve to an executable")
     env = {key: base[key] for key in SHIM_ENV_NAMES if base.get(key)}
-    return {"repo": repo, "cli": os.path.abspath(cli), "env": env}
+    config: dict[str, Any] = {"repo": repo, "cli": os.path.abspath(cli), "env": env}
+    if workdir:
+        config["workdir"] = workdir  # the image's WORKDIR: `docker exec` without -w runs there
+    return config
 
 
 def shim_directory(directory: Path, config: dict[str, Any]) -> Path:
@@ -694,7 +697,8 @@ class SmithersAgent(BaseAgent):
             return self._cwd_override
         config = getattr(environment, "task_env_config", None)
         workdir = getattr(config, "workdir", None)
-        return workdir or "/app"
+        # On plue the environment read the image's WORKDIR from its registry.
+        return workdir or getattr(environment, "_plue_workdir", None) or "/app"
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         container = self.container_of(environment)
@@ -728,7 +732,8 @@ class SmithersAgent(BaseAgent):
                 encoding="utf-8",
             )
             shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
-            shim = shim_directory(shim_home, shim_config(dict(os.environ))) if shim_home else None
+            shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
+                if shim_home else None
             env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
                                   codex_home=self._account.home if self._account else None,
                                   container=container)

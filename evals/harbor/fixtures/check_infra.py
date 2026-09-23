@@ -175,6 +175,7 @@ def check_transport_and_containment() -> None:
         cli.chmod(0o755)
         leaks = Path(directory) / "leaks.log"
         os.environ["PLUE_LEAK_LOG"] = str(leaks)
+        plue_env._EXEC_REATTACH_BACKOFF_SEC = (0, 0)  # reattach twice, then give up
         try:
             ops = fake_ops(cli)
             for command in ("connectfail", "dropped"):
@@ -233,6 +234,7 @@ def check_image_tmp() -> None:
         try:
             ops = fake_ops(cli)
             ops._plue_reserved = True
+            ops._plue_image = ""
             ops._plue_copies, ops._plue_chmods = [], []
             asyncio.run(ops._plue_start())
         finally:
@@ -314,6 +316,121 @@ def check_trial_containment() -> None:
     fine = Fine()
     asyncio.run(fine._prepare())
     assert fine.prepared
+
+
+def check_durable_exec_and_workdir() -> None:
+    """Every exec carries a unique --exec-id and a lost transport reattaches
+    to the same id instead of relaunching (plue durable exec, CLI 71c3ed6a+);
+    a VM that is gone is not retried. Commands run in the image's WORKDIR, as
+    `docker exec` does (ontology-kg-querying's oracle writes ./pipeline.py and
+    ran in /root on plue)."""
+    import image_config
+    with tempfile.TemporaryDirectory() as directory:
+        calls, count = Path(directory) / "calls", Path(directory) / "count"
+        cli = Path(directory) / "smithers"
+        # 1st exec call: transport lost; 2nd: reattached result. `vmgone`: 409.
+        cli.write_text("#!/bin/sh\n"
+                       f"printf '%s\\n' \"$*\" >> {calls}\n"
+                       f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
+                       "case \"$*\" in\n"
+                       "  *vmgone*) printf '%s' '{\"error\":{\"code\":\"UNKNOWN\",\"message\":\"workspace x did not become SSH-ready within 2m0s: GET ... -> 409: workspace VM no longer exists\"}}'; exit 1;;\n"
+                       "esac\n"
+                       "if [ $n = 1 ]; then printf 'Connection to ssh.jjhub.tech closed by remote host.\\r\\n' >&2; "
+                       "printf '%s' '{\"exit_code\":255,\"stdout\":\"\",\"stderr\":\"\"}'; exit 255; fi\n"
+                       "printf '%s' '{\"exit_code\":0,\"stdout\":\"done\\n\",\"stderr\":\"\"}'\n")
+        cli.chmod(0o755)
+        plue_env._EXEC_REATTACH_BACKOFF_SEC = (0,)
+        try:
+            ops = fake_ops(cli)
+            ops._plue_workdir = "/workspace"
+            assert asyncio.run(ops._plue_exec("long job")) == ("done\n", "", 0)
+            lines = calls.read_text().splitlines()
+            assert len(lines) == 2, lines
+            ids = [line.split("--exec-id ")[1].split()[0] for line in lines]
+            assert ids[0] == ids[1] and ids[0].startswith("t1-env-"), ids
+            assert all("--cwd /workspace" in line for line in lines), lines
+            calls.write_text("")
+            asyncio.run(ops._plue_exec("pwd", cwd="/tmp"))
+            assert "--cwd /tmp" in calls.read_text(), "an explicit cwd wins"
+            second = asyncio.run(ops._plue_exec("again"))
+            assert second == ("done\n", "", 0)
+            used = [line.split("--exec-id ")[1].split()[0] for line in calls.read_text().splitlines()]
+            assert len(set(used)) == 2, "every exec has its own id"
+            calls.write_text("")
+            try:
+                asyncio.run(ops._plue_exec("vmgone"))
+            except plue_env.PlueError as error:
+                assert "no longer exists" in str(error)
+            else:
+                raise AssertionError("a lost VM is a PlueError")
+            assert len(calls.read_text().splitlines()) == 1, "a lost VM is not reattached"
+        finally:
+            for name in ("SMITHERS_CLI", "PLUE_REPO"):
+                os.environ.pop(name, None)
+
+        # WORKDIR from the image config, cached by reference.
+        cache = Path(directory) / "images.json"
+        fetched = []
+        def fetch(image):
+            fetched.append(image)
+            return {"config": {"WorkingDir": "/app", "User": "agent"}}
+        assert image_config.working_dir("r/x@sha256:1", cache=cache, fetch=fetch) == "/app"
+        assert image_config.working_dir("r/x@sha256:1", cache=cache, fetch=fetch) == "/app"
+        assert fetched == ["r/x@sha256:1"], "the second lookup is cached"
+        assert image_config.working_dir("r/y@sha256:2", cache=cache, fetch=lambda i: {"config": {}}) is None
+        def broken(image):
+            raise OSError("registry down")
+        assert image_config.working_dir("r/z@sha256:3", cache=cache, fetch=broken) is None, "a lookup failure is no WORKDIR"
+        assert image_config.parse("harborframework/terminal-bench:t@sha256:ab") == ("registry-1.docker.io", "harborframework/terminal-bench", "sha256:ab")
+        assert image_config.parse("ubuntu:24.04") == ("registry-1.docker.io", "library/ubuntu", "24.04")
+        assert image_config.parse("ghcr.io/o/r:1") == ("ghcr.io", "o/r", "1")
+
+    import smithers_agent
+    env = types.SimpleNamespace(task_env_config=types.SimpleNamespace(workdir=None), _plue_workdir="/task")
+    agent = object.__new__(smithers_agent.SmithersAgent)
+    agent._cwd_override = None
+    assert agent.container_cwd(env) == "/task", "the arm-A prompt names the image WORKDIR"
+    env._plue_workdir = None
+    assert agent.container_cwd(env) == "/app"
+
+
+def check_shim_durable_exec() -> None:
+    """Arm A's `docker exec` shim: an exec without stdin carries a durable
+    exec id and reattaches after a lost transport; with stdin it stays one
+    connection (plue cannot detach a streamed stdin). No -w means the image
+    WORKDIR the adapter wrote into the shim config."""
+    import subprocess as sp
+    import plue_docker
+    with tempfile.TemporaryDirectory() as directory:
+        calls, count = Path(directory) / "calls", Path(directory) / "count"
+        cli = Path(directory) / "smithers"
+        cli.write_text("#!/bin/sh\n"
+                       f"printf '%s\\n' \"$*\" >> {calls}\n"
+                       f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
+                       "if [ $n = 1 ]; then printf 'ssh: connect to host ssh.jjhub.tech port 22: Operation timed out\\r\\n' >&2; exit 255; fi\n"
+                       "printf '%s' '{\"exit_code\":7,\"stdout\":\"out\",\"stderr\":\"\"}'; exit 7\n")
+        cli.chmod(0o755)
+        bin_dir = Path(directory) / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "docker").symlink_to(HERE.parent / "plue_docker.py")
+        (bin_dir / plue_docker.CONFIG_NAME).write_text(json.dumps(
+            {"repo": "acme/bench", "cli": str(cli), "env": {}, "workdir": "/workspace", "reattach_backoff_sec": [0]}))
+        run = sp.run([sys.executable, str(bin_dir / "docker"), "exec", "--", "ws-1", "sh", "-c", "make"],
+                     capture_output=True, text=True, stdin=sp.DEVNULL)
+        assert run.returncode == 7 and run.stdout == "out", (run.returncode, run.stdout, run.stderr)
+        lines = calls.read_text().splitlines()
+        assert len(lines) == 2, lines
+        ids = [line.split("--exec-id ")[1].split()[0] for line in lines]
+        assert ids[0] == ids[1], "the reattach reuses the exec id"
+        assert all("--cwd /workspace" in line for line in lines), lines
+
+        calls.write_text("")
+        count.write_text("0")
+        run = sp.run([sys.executable, str(bin_dir / "docker"), "exec", "-i", "-w", "/src", "--", "ws-1", "cat"],
+                     capture_output=True, text=True, input="x")
+        lines = calls.read_text().splitlines()
+        assert run.returncode == 255 and len(lines) == 1, (run.returncode, lines)
+        assert "--exec-id" not in lines[0] and "--cwd /src" in lines[0], lines
 
 
 def check_requeue_and_health() -> None:
@@ -473,6 +590,8 @@ if __name__ == "__main__":
     check_image_tmp()
     check_sidecars()
     check_trial_containment()
+    check_durable_exec_and_workdir()
+    check_shim_durable_exec()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

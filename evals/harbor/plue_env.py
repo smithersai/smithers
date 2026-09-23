@@ -31,6 +31,9 @@ Configuration (environment variables of the harness host):
                      deferred to reserve(), inside the trial.
     A task whose docker-compose file adds services beside `main` is
     unplaceable too (see compose_sidecars).
+    PLUE_IMAGE_CONFIG_CACHE  where the image's WORKDIR is cached (see
+                     image_config.py): commands run there unless the caller
+                     names a cwd, as `docker exec` does.
     PLUE_LEAK_LOG    where stop() records a workspace it could not delete
                      (default ~/.cache/plue-leaks.log); stop() never raises.
 
@@ -76,12 +79,14 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
-    from . import outcome
+    from . import image_config, outcome
 except ImportError:  # run as a top-level module (fixtures)
+    import image_config  # type: ignore[no-redef]
     import outcome  # type: ignore[no-redef]
 
 _DEFAULT_WAIT_SEC = 900
@@ -97,6 +102,10 @@ _SLOT_POLL_SEC = 5
 # verifier workspace. Harbor stops one and creates the other seconds apart.
 _HEIR_TTL_SEC = 180
 _DELETE_ATTEMPTS = 3
+# A lost exec transport reattaches to the same durable exec id (plue CLI
+# 71c3ed6a+ detaches the command in the guest and keeps its output); the CLI
+# already reconnects on its own, so these are the waits after it gives up.
+_EXEC_REATTACH_BACKOFF_SEC = (10, 30, 60, 120, 240)
 _DELETE_BACKOFF_SEC = 10
 # Harbor versions whose Trial._separate_verifier_env is copied below.
 _VERIFIER_PATCH_HARBOR = ("0.23.0",)
@@ -145,6 +154,18 @@ class PlueImageError(PlueError):
 class PlueUnplaceable(PlueError):
     """The task asks for a bigger guest than any sandbox worker can hold
     (PLUE_MAX_CPUS). An infrastructure limit: never scored, never retried."""
+
+
+def reattachable(error: "PlueError") -> bool:
+    """A failure after which the same durable exec id may still be running or
+    finished in the guest: a lost SSH transport, a gateway or API that was
+    briefly away. A VM that no longer exists, or a refused plan limit, is not."""
+    if error.code in ("ssh_transport", "ssh_session_failed"):
+        return True
+    text = str(error).lower()
+    if "no longer exists" in text or "plan allows" in text or "not found" in text:
+        return False
+    return bool(re.search(r"did not become ssh-ready|-> 5\d\d|timed out|connection reset|connection refused|eof", text))
 
 
 def transport_failure(stderr: str) -> str | None:
@@ -577,6 +598,8 @@ class _PlueOps:
     # A check Harbor runs in the constructor that this backend fails (GPU,
     # an image plue cannot build, …), raised by reserve() inside the trial.
     _plue_deferred: PlueError | None = None
+    # The image's WORKDIR: the default cwd of every exec, as under Docker.
+    _plue_workdir: str | None = None
 
     def _plue_ledger(self) -> SlotLedger | None:
         return SlotLedger.from_environment()
@@ -642,6 +665,8 @@ class _PlueOps:
 
     async def _plue_start(self) -> None:
         await self._plue_reserve()
+        if self._plue_image:
+            self._plue_workdir = await asyncio.to_thread(image_config.working_dir, self._plue_image)
         await self._plue_exec(f"{IMAGE_TMP}; mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
         for src, dst in self._plue_copies:
             await self._plue_upload(Path(self.environment_dir) / src, dst)
@@ -748,15 +773,29 @@ class _PlueOps:
 
     async def _plue_exec(self, command: str, cwd: str | None = None, env: dict[str, str] | None = None,
                          timeout_sec: int | None = None, user: str | int | None = None) -> tuple[str, str, int]:
+        """Run `command` durably: one exec id for its whole life, reattached
+        after a lost transport; a guest that is gone is a PlueError."""
         timeout = int(timeout_sec or _DEFAULT_EXEC_TIMEOUT_SEC)
+        exec_id = f"{_sanitize_name(str(getattr(self, 'session_id', '')))[:40]}-{uuid.uuid4().hex[:12]}"
         args = ["workspace", "exec", *self._ws(), "--user", str(user or _DEFAULT_USER),
-                "--timeout", str(timeout), "--format", "json"]
-        workdir = cwd or getattr(self.task_env_config, "workdir", None)
+                "--timeout", str(timeout), "--format", "json", "--exec-id", exec_id]
+        workdir = cwd or getattr(self.task_env_config, "workdir", None) or self._plue_workdir
         if workdir:
             args += ["--cwd", workdir]
         for key, value in (env or {}).items():
             args += ["--env", f"{key}={value}"]
         args += ["--command", with_egress(command)]
+        for wait in (*_EXEC_REATTACH_BACKOFF_SEC, None):
+            try:
+                return await self._plue_exec_once(args, timeout)
+            except PlueError as error:
+                if wait is None or not reattachable(error):
+                    raise
+                self.logger.info("plue: exec %s lost its transport (%s); reattaching in %ss", exec_id, error, wait)
+                await asyncio.sleep(wait)
+        raise AssertionError("unreachable")
+
+    async def _plue_exec_once(self, args: list[str], timeout: int) -> tuple[str, str, int]:
         result = await self._run(*args, timeout=timeout + 60, check=False)
         try:
             data = _envelope(result.stdout.decode(errors="replace"))
