@@ -115,6 +115,15 @@ describe("context", () => {
     expect(files.slice(-2)).toEqual([join(root, "CLAUDE.md"), join(root, "a", "AGENTS.md")])
   })
 
+  it("tells a turn in a jj checkout to use jj, and says nothing of jj elsewhere", () => {
+    const root = mkdtempSync(join(tmpdir(), "tui-jj-"))
+    const nested = join(root, "apps", "tui")
+    mkdirSync(nested, { recursive: true })
+    expect(Context.system(nested, [])).not.toContain(Context.jjRule)
+    mkdirSync(join(root, ".jj"))
+    expect(Context.system(nested, [])).toContain(Context.jjRule)
+  })
+
   it("tells the next turn about earlier exchanges and shell commands", () => {
     const [, ...rest] = Context.system("/nowhere-at-all", [
       { kind: "exchange", user: "fix it", answer: "fixed" },

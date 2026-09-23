@@ -381,7 +381,7 @@ export const callFailureHint: Readonly<Record<CallFailureCode, string>> = Object
   unimplemented: "This host cannot run that flow. Choose another one from ctx.flows.",
   timeout: "Narrow the call — a smaller root, a tighter pattern, a shorter command — and issue it again in this cell.",
   checkpoint_unavailable:
-    "This host pins no checkpoint you can run against. Drop at and take the reading on the live tree.",
+    "This host pins no checkpoint you can run against. Drop at; for a baseline, run the check before your edit, then again after it.",
   checkpoint_exhausted: "Reuse a checkpoint you already hold, or ctx.base, instead of minting another one.",
   checkpoint_readonly:
     "A checkpoint is a read-only view of a tree that has already been. Drop at and make the change on the live tree.",

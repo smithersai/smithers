@@ -58,7 +58,15 @@ there is no `types` field, and no option enables either.
 names the construct: lookaround and special groups, backreferences and shorthand
 classes such as `\d`, nested or empty character classes, class set operations,
 non-ASCII characters, a pattern above 4,096 bytes, or a repetition count above
-1,000.
+1,000. For a pattern that does not parse, it names the character and its column
+and the escape that makes it literal:
+
+```text
+Unsupported ripgrep pattern "Rule({": "{" at column 6 is not a repetition count; write \{ for a literal brace
+```
+
+The standard `grep` and `glob` flows pass these messages to the cell verbatim.
+A peer's own `invalid_pattern` text, such as `rg` stderr, stays private.
 
 **What to change.** Rewrite the pattern inside the subset, or set
 `fixedStrings: true` to search the text literally. The subset is the

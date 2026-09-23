@@ -20,6 +20,7 @@
 import * as Flow from "@smthrs/core/Flow"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import { DEFAULT_READ_LIMIT, MAX_LINE_CHARS, MAX_OUTPUT_BYTES, notice, slice, truncateBytes } from "./internal/Text.ts"
@@ -184,6 +185,57 @@ const fileError = (path: string) =>
     path
   })
 
+const sharedPrefix = (left: string, right: string): number => {
+  let index = 0
+  while (index < left.length && index < right.length && left[index] === right[index]) index++
+  return index
+}
+
+/**
+ * Where a guessed relative path stops existing, and what is there instead.
+ *
+ * A worker that guesses `packages/smithers/flow/src/Flow.ts` learns nothing
+ * from "not found" and guesses again. Naming the nearest directory that exists
+ * and its entries, closest name first, turns the next call into a choice.
+ * Absolute paths and paths that climb out with `..` get no listing: the call
+ * declared one file, and the working tree is the only place a listing is
+ * already the caller's to read.
+ */
+const nearest = (
+  fileSystem: FileSystem.FileSystem,
+  path: string
+): Effect.Effect<string> =>
+  Effect.gen(function*() {
+    const segments = path.split("/").filter((segment) => segment !== "" && segment !== ".")
+    if (path.startsWith("/") || segments.includes("..")) return ""
+    for (let depth = segments.length - 1; depth >= 0; depth--) {
+      const directory = segments.slice(0, depth).join("/")
+      const entries = yield* fileSystem.readDirectory(directory === "" ? "." : directory).pipe(Effect.option)
+      if (Option.isNone(entries)) continue
+      const missing = segments[depth]!.toLowerCase()
+      const ranked = entries.value
+        .filter((entry) => !entry.startsWith("."))
+        .map((entry) => ({ entry, score: sharedPrefix(entry.toLowerCase(), missing) }))
+        .sort((left, right) => right.score - left.score)
+        .map(({ entry }) => entry)
+      if (ranked.length === 0) return ""
+      const shown = ranked.slice(0, 12).join(", ")
+      const more = ranked.length > 12 ? ` and ${ranked.length - 12} more` : ""
+      return `. ${directory === "" ? "The working directory" : directory} holds: ${shown}${more}.`
+    }
+    return ""
+  })
+
+const missingFile = (fileSystem: FileSystem.FileSystem, path: string) =>
+  Effect.flatMap(nearest(fileSystem, path), (hint) =>
+    Effect.fail(
+      new StdError.StdError({
+        code: "not_found",
+        message: `File not found: ${path}${hint}`,
+        path
+      })
+    ))
+
 /**
  * Reads, validates, and renders one page of a UTF-8 text file.
  *
@@ -197,7 +249,13 @@ export const run = Effect.fn("Read.run")(function*(
   input: typeof Input.Type
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem> {
   const fileSystem = yield* FileSystem.FileSystem
-  const info = yield* fileSystem.stat(input.path).pipe(Effect.mapError(() => fileError(input.path)))
+  const info = yield* fileSystem.stat(input.path).pipe(
+    Effect.catchTag(
+      "PlatformError",
+      (error) =>
+        error.reason._tag === "NotFound" ? missingFile(fileSystem, input.path) : Effect.fail(fileError(input.path))
+    )
+  )
   if (info.type === "Directory") {
     return yield* Effect.fail(
       new StdError.StdError({

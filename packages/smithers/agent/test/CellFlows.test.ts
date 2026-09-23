@@ -435,6 +435,42 @@ ctx.done(page.content + "|" + ran.stdout + "|" + kept.key)`
     expect(requests[0]).toContain("remember")
   })
 
+  it("runs a bash call that names no mode, the shape the cell contract's example writes", async () => {
+    const commands: Array<string> = []
+    const spawner = ChildProcessSpawner.makeNoop({
+      spawn: (command) =>
+        Effect.sync(() => {
+          const line = CommandLine.render(command)
+          commands.push(line)
+          return makeHandle({
+            pid: ProcessId(1),
+            exitCode: Effect.succeed(ExitCode(0)),
+            isRunning: Effect.succeed(false),
+            kill: () => Effect.void,
+            stdin: Sink.drain,
+            stdout: Stream.empty,
+            stderr: Stream.empty,
+            all: Stream.empty,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.empty,
+            unref: Effect.succeed(Effect.void)
+          })
+        })
+    })
+    const outcome = await drive(collect({
+      flows: [
+        StandardFlows.shell(
+          Context.merge(Context.make(ChildProcessSpawner.ChildProcessSpawner, spawner), pathServices)
+        )
+      ],
+      cells: [`const ran = await ctx.call("bash", { command: "bun run typecheck" })
+ctx.done(ran.ok === false ? ran.error.message : String(ran.exitCode))`]
+    }))
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.result.outcome)).toEqual(["success"])
+    expect(commands).toEqual(["bun run typecheck"])
+  })
+
   it("re-reads a file a write changed inside one cell instead of replaying the sealed read", async () => {
     // A sealed call is content-addressed, and `read` is sealed: the same path
     // asked twice is one boundary. But "the same path against the tree as it
@@ -864,7 +900,10 @@ ctx.done(caught)`
       ctx.done("done")`]
     }))
     const settled = settledCalls(eventsOf(outcome))
-    expect(settled[0]?.result.message).toContain("Unsupported ripgrep pattern")
+    // The contract's own rejection names what broke; a peer's raw text never passes.
+    expect(settled[0]?.result.message).toBe(
+      "Flow grep failed: Unsupported ripgrep pattern \"(?=a)\": special groups and lookaround are not supported"
+    )
     expect(settled[1]?.result.message).toBe("Flow grep failed.")
     expect(settled[2]?.result.message).toContain("Unsupported ripgrep pattern")
     expect(settled[3]?.result.message).toBe("Flow grep failed.")

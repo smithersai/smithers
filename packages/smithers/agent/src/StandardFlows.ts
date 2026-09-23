@@ -55,6 +55,7 @@ import * as Ls from "@smthrs/std/Ls"
 import * as PortableSearch from "@smthrs/std/PortableSearch"
 import * as Read from "@smthrs/std/Read"
 import * as Search from "@smthrs/std/Search"
+import * as SearchContract from "@smthrs/std/SearchContract"
 import type { StdError } from "@smthrs/std/StdError"
 import * as TestRun from "@smthrs/std/TestRun"
 import type * as TestRunner from "@smthrs/std/TestRunner"
@@ -75,8 +76,12 @@ const publicExecutionError = (error: StdError): string | undefined => {
   return error.code === "command_failed" || error.code === "request_failed" ? undefined : error.message
 }
 
-/** Native search may report raw stderr; publish only its corrective contract. */
+/**
+ * Native search may report raw stderr, so only the contract's own rejection,
+ * which names the construct that broke, is published verbatim.
+ */
 const publicSearchError = (error: StdError): string | undefined => {
+  if (SearchContract.isContractRejection(error)) return error.message
   if (error.code === "invalid_pattern") {
     return "Unsupported ripgrep pattern. Use printable ASCII without special groups, lookaround, or backreferences."
   }

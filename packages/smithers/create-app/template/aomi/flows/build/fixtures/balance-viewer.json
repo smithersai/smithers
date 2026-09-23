@@ -62,6 +62,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nApp: balance-viewer\nSource: new\n\nRequest:\nA page that shows the ETH balance of an address the user types."
           }
         ],
@@ -328,6 +332,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -799,6 +807,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -4253,6 +4265,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nApp: balance-viewer\nSource: new\n\nRequest:\nA page that shows the ETH balance of an address the user types."
           }
         ],
@@ -4561,6 +4577,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -4957,6 +4977,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -5563,6 +5587,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -6413,6 +6441,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",
@@ -12597,6 +12629,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nApp: balance-viewer\nSource: new\n\nRequest:\nA page that shows the ETH balance of an address the user types."
           }
         ],
@@ -13335,6 +13371,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"name\": {\n      \"type\": \"string\",\n      \"description\": \"The app's name, slug-safe\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One paragraph: what was built and what it does\"\n    },\n    \"files\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": {\n            \"type\": \"string\",\n            \"description\": \"App-root relative path\"\n          },\n          \"purpose\": {\n            \"type\": \"string\",\n            \"description\": \"One line: what this file is for\"\n          }\n        },\n        \"required\": [\n          \"path\",\n          \"purpose\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\",\n            \"description\": \"Stage name: describe, plan, generate, validate, fix, smoke, or ship\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"pending\",\n              \"running\",\n              \"done\",\n              \"failed\",\n              \"cached\"\n            ]\n          }\n        },\n        \"required\": [\n          \"name\",\n          \"status\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"shipUrl\": {\n      \"type\": \"string\",\n      \"description\": \"Deployed URL; present only after the ship stage was approved and ran\"\n    }\n  },\n  \"required\": [\n    \"name\",\n    \"summary\",\n    \"files\",\n    \"steps\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",

@@ -95,7 +95,10 @@ pinned tree checked out as a directory, and the directory is given back when
 the call ends. Without one, the runner is wrapped in `Checkpointed.unpinned`,
 which refuses every `at`-carrying call with `checkpoint_unavailable`: a call
 that names a tree must never quietly read the live tree instead, because a
-fails-before proof built on that reading would be a proof of nothing.
+fails-before proof built on that reading would be a proof of nothing. `Agent.run`
+also adds `Checkpointed.unpinnedFact` to the opening context of such a run, so
+the model learns before its first cell that `ctx.base` is refused and that a
+baseline is taken by running the check before the edit.
 
 The relocation refusals are catchable call failures with remedies in their
 messages: a flow that names what it touches rather than where it runs

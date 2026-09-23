@@ -234,6 +234,21 @@ it("bounds expanded repetitions and nesting in the shared validator", () => {
   expect(SearchContract.validatePattern("(a+)+$", false)).toBeUndefined()
 })
 
+it("names the construct and column a malformed pattern breaks on", () => {
+  const reason = (pattern: string) => SearchContract.validatePattern(pattern, false)?.message
+  // A worker searched for this and was told only that the pattern was unsupported.
+  expect(reason("layerRules|Rule({|rules:")).toBe(
+    "Unsupported ripgrep pattern \"layerRules|Rule({|rules:\": \"{\" at column 17 is not a repetition count; write \\{ for a literal brace"
+  )
+  expect(reason("foo(bar")).toContain("\"(\" at column 4 is never closed; write \\( for a literal parenthesis")
+  expect(reason("a)b")).toContain("\")\" at column 2 closes nothing; write \\) for a literal parenthesis")
+  expect(reason("*.ts")).toContain("\"*\" at column 1 repeats nothing; write \\* for a literal *")
+  expect(reason("x|+y")).toContain("\"+\" at column 3 repeats nothing; write \\+ for a literal +")
+  expect(reason("[abc")).toContain("\"[\" at column 1 is never closed; write \\[ for a literal bracket")
+  expect(reason("Rule\\(\\{")).toBeUndefined()
+  expect(reason("a{2,3}(b)?")).toBeUndefined()
+})
+
 it("agrees with the shared expression on generated short strings", () => {
   const patterns = [
     "(a|b)*abb",

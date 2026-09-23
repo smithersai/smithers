@@ -20,6 +20,32 @@ describe("Read", () => {
     expect(result.content).toBe("alpha\nbeta\ngamma")
   })
 
+  it("names the nearest directory that exists when a guessed relative path does not", async () => {
+    // Workers guessed apps/tui/src/commands.ts and packages/smithers/flow/src/Flow.ts
+    // and spent a call each learning only that the file was absent.
+    const files = {
+      "/apps/tui/src/complete.ts": "",
+      "/apps/tui/src/app.tsx": "",
+      "/apps/tui/package.json": "{}",
+      "/packages/smithers/flows/flow/src/Flow.ts": "",
+      "/packages/smithers/agent/package.json": "{}"
+    }
+    const failure = async (path: string) => {
+      const exit = await Effect.runPromiseExit(Effect.provide(Read.run({ path }), layer({ files })))
+      return Exit.isFailure(exit) ? Cause.squash(exit.cause) as { code: string; message: string } : undefined
+    }
+    expect(await failure("apps/tui/src/commands.ts")).toMatchObject({
+      code: "not_found",
+      message: "File not found: apps/tui/src/commands.ts. apps/tui/src holds: complete.ts, app.tsx."
+    })
+    expect((await failure("packages/smithers/flow/src/Flow.ts"))?.message).toBe(
+      "File not found: packages/smithers/flow/src/Flow.ts. packages/smithers holds: flows, agent."
+    )
+    // Absolute paths and paths that climb out are answered without a listing.
+    expect((await failure("/apps/tui/src/commands.ts"))?.message).toBe("File not found: /apps/tui/src/commands.ts")
+    expect((await failure("../elsewhere/x.ts"))?.message).toBe("File not found: ../elsewhere/x.ts")
+  })
+
   it("pages from a 1-based offset", async () => {
     const result = await execute(Effect.provide(
       Read.run({ path: "/a.txt", offset: 2, limit: 1 }),

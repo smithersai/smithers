@@ -19,7 +19,15 @@ import * as StdError from "../StdError.ts"
  * @since 1.0.0
  */
 export const invalidPattern = (pattern: string, detail: string): StdError.StdError =>
-  new StdError.StdError({ code: "invalid_pattern", message: `Unsupported ripgrep pattern "${pattern}": ${detail}` })
+  new StdError.StdError({ code: "invalid_pattern", message: `${rejectionPrefix}"${pattern}": ${detail}` })
+
+/**
+ * How every rejection {@link invalidPattern} writes begins.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const rejectionPrefix = "Unsupported ripgrep pattern "
 
 /**
  * Constructs the common invalid-options failure.

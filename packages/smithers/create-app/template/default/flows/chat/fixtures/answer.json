@@ -42,6 +42,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nWhat does durable execution buy me?"
           }
         ],

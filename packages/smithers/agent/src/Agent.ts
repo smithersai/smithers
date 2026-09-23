@@ -68,6 +68,7 @@ import type { PluginError } from "@smthrs/plugin/PluginError"
 import type * as Plugins from "@smthrs/plugin/Plugins"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
+import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -334,9 +335,15 @@ const supervisorMemory = (options: Options): Effect.Effect<Supervisor.Memory> =>
  */
 const opening = (
   options: Options,
-  flows: ReadonlyArray<Descriptor.FlowDescriptor>
+  flows: ReadonlyArray<Descriptor.FlowDescriptor>,
+  pinned: boolean
 ): ContextWindow.ContextWindow => {
-  const declared: Array<ContextWindow.SegmentInput> = (options.system ?? []).map((text) => ({
+  // A host fact rather than a contract edit: the contract is measured and
+  // shared by every host, while only a host with no store refuses `at`.
+  const declared: Array<ContextWindow.SegmentInput> = [
+    ...(options.system ?? []),
+    ...(pinned ? [] : [Checkpointed.unpinnedFact])
+  ].map((text) => ({
     kind: "system",
     zone: "prefix",
     content: [ModelRequest.SystemPart.make({ text })]
@@ -571,7 +578,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             layers,
             capabilityEnvelope: options.capabilityEnvelope ?? [],
             placement: options.placement ?? Option.none(),
-            contextWindow: opening(options, []),
+            contextWindow: opening(options, [], Option.isSome(yield* Effect.serviceOption(Checkpoints.Checkpoints))),
             contextWindowTokens: options.seat.contextWindowTokens,
             maxFrames: options.maxFrames,
             readOnlyCap: options.readOnlyCap,

@@ -35,10 +35,26 @@ export const instructionFiles = (cwd: string, home = homedir()): ReadonlyArray<s
   return found
 }
 
+/**
+ * Said to every turn inside a jj checkout. A colocated repository still
+ * answers git, but git writes there race jj's own snapshots of the tree.
+ */
+export const jjRule =
+  "This repository is managed by jj. Reading with git is fine, but never run git commands that write the index, refs or history (add, commit, stash, reset, rebase, checkout, restore); use jj instead, such as jj restore <path> to restore a file."
+
+/** Whether `cwd` sits inside a jj workspace. */
+export const jjManaged = (cwd: string): boolean => {
+  for (let directory = resolve(cwd); ; directory = dirname(directory)) {
+    if (existsSync(join(directory, ".jj"))) return true
+    if (dirname(directory) === directory) return false
+  }
+}
+
 export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string> => {
   const parts = [
     `You are a coding agent working in ${cwd}. Read before you change, keep edits small, and verify with the repository's own commands. Paths are relative to ${cwd}.`
   ]
+  if (jjManaged(cwd)) parts.push(jjRule)
   const files = instructionFiles(cwd)
   if (files.length > 0) {
     parts.push(

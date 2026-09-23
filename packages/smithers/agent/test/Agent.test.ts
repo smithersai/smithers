@@ -34,11 +34,13 @@ import type { FlowsConfig } from "@smthrs/plugin/Config"
 import type { PluginError } from "@smthrs/plugin/PluginError"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
+import * as Checkpoints from "@smthrs/std/Checkpoints"
 import { Cause, Deferred, Effect, Exit, Layer, Logger, Metric, Option, References, Schema, Scope, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as Budget from "../src/Budget.ts"
+import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import type * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
@@ -281,6 +283,8 @@ const collect = (options: {
   readonly observe?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly supervisor?: Agent.Options["supervisor"]
+  /** Where the host pins trees; absent means it pins none. */
+  readonly checkpoints?: Checkpoints.Checkpoints | undefined
 }) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
@@ -311,7 +315,11 @@ const collect = (options: {
           options.sink?.push(event)
         }).pipe(Effect.andThen(options.observe?.(event) ?? Effect.void))
       ),
-      Effect.provide(Layer.merge(Agent.layerDefaults, options.evaluator ?? scriptedCompletionJudge))
+      Effect.provide(Layer.merge(Agent.layerDefaults, options.evaluator ?? scriptedCompletionJudge)),
+      (effect) =>
+        options.checkpoints === undefined
+          ? effect
+          : Effect.provideService(effect, Checkpoints.Checkpoints, options.checkpoints)
     )
     if (options.activeSeatSamples !== undefined) {
       const state = yield* Metric.value(ObservabilityMetric.activeSeats)
@@ -551,6 +559,27 @@ describe("Agent.run", () => {
     expect(resolved?._tag === "resolved" ? resolved.message.content : []).toEqual([
       { type: "text", text: "wrote alpha.md" }
     ])
+  })
+
+  it("tells a run on a host that pins no trees that ctx.base is refused, and how to take a baseline", async () => {
+    // Workers copied the contract's `{ at: ctx.base }` baseline eleven times on
+    // a host with no store and were refused every time.
+    const opening = async (checkpoints?: Checkpoints.Checkpoints) => {
+      const requests: Array<string> = []
+      await drive(collect({
+        registry: registryOf(flows),
+        model: recorded(requests),
+        implementations: implementations([]),
+        checkpoints
+      }))
+      return requests[0] ?? ""
+    }
+    expect(await opening()).toContain(Checkpointed.unpinnedFact)
+    const store = Checkpoints.make({
+      capture: (id) => Effect.succeed(new Checkpoints.Snapshot({ id, ref: "0".repeat(40) })),
+      materialize: () => Effect.die("unused")
+    })
+    expect(await opening(store)).not.toContain(Checkpointed.unpinnedFact)
   })
 
   it("hides a flow the registry does not disclose, and refuses it catchably at the boundary", async () => {

@@ -145,6 +145,21 @@ export const checkpointed = (
 })
 
 /**
+ * What a run on a host that pins no trees is told before its first frame.
+ *
+ * The cell contract teaches a baseline taken with `{ at: ctx.base }` after the
+ * edit, because a host with a store makes that free. A host without one
+ * refuses it, and workers in the TUI copied the example anyway: eleven
+ * refused baselines across nine worker runs on 2026-09-23. This names the
+ * refusal before the model writes it and gives the ordering that still works.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const unpinnedFact =
+  "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+
+/**
  * Refuses any call that names a tree, for a composition that pins none.
  *
  * A call carrying an `at` on a host with no store must never simply run: it
@@ -163,7 +178,7 @@ export const unpinned = (
     call.at === undefined ? runner.run(call) : Effect.succeed(
       refused(
         "checkpoint_unavailable",
-        `This host pins no trees, so there is no ${call.at} to run ${call.flowName} against and nothing ran. Drop at and take the reading on the live tree.`
+        `This host pins no trees, so there is no ${call.at} to run ${call.flowName} against and nothing ran. Drop at. For a baseline, run the check before your edit, then again after it.`
       )
     )
 })

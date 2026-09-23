@@ -201,6 +201,7 @@ cannot drift on what a pattern means.
 | `includedByGlobs`     | `(globs: ReadonlyArray<string>, relative: string, basename: string) => boolean`       | Ordered include and exclude.                     |
 | `expression`          | `(pattern: string, fixedStrings: boolean, insensitive: boolean) => RegExp`            | Compiles a validated pattern.                    |
 | `unsatisfiableNotice` | `(options: { fileSystem, path, root, globs, hidden }) => Effect<string \| undefined>` | Explains globs no file under the root can match. |
+| `isContractRejection` | `(error: StdError) => boolean`                                                        | Whether this contract wrote the rejection.       |
 
 ## SearchConformance
 

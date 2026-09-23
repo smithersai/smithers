@@ -1948,6 +1948,17 @@ read the live tree instead, so `unpinned` refuses it with
 `checkpoint_unavailable`. A store that cannot hand the tree back is also a
 catchable `checkpoint_unavailable` refusal, not a failed run.
 
+### Checkpointed.unpinnedFact
+
+```ts
+const unpinnedFact: string
+```
+
+The system text `Agent.run` adds to a run whose composition has no
+`Checkpoints` store. It says that `ctx.base`, `ctx.checkpoint()` and every
+`at`-carrying call are refused, and that a baseline is taken by running the
+check before the edit.
+
 ### Checkpointed.unsupported, Checkpointed.absolute, Checkpointed.outside
 
 ```ts

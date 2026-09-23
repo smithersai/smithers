@@ -57,7 +57,14 @@ Reads a text file by 1-based offset and limit.
 | `notice`     | string, optional | The truncation disclosure.                 |
 
 Fails with `not_found`, `is_directory`, `binary_file` (a NUL byte or invalid
-UTF-8), or `offset_out_of_range`.
+UTF-8), or `offset_out_of_range`. For a missing relative path, `not_found` names
+the nearest directory that exists and its entries, closest name first:
+
+```text
+File not found: apps/tui/src/commands.ts. apps/tui/src holds: complete.ts, app.tsx.
+```
+
+An absolute path, or one that climbs out with `..`, gets no listing.
 
 ## write
 
@@ -202,11 +209,12 @@ when the root exists but the host cannot inspect it, or a peer failure.
 ## bash
 
 Runs a shell command line, or a script delivered to an interpreter as data.
-`Input` is a union on `mode`.
+`Input` is a union on `mode`. An omitted `mode` decodes as `"unhermetic"`, the
+envelope `bash` declares for every call.
 
 | Input         | Type                           | Meaning                                           |
 | ------------- | ------------------------------ | ------------------------------------------------- |
-| `mode`        | `"hermetic"` or `"unhermetic"` | Whether the call declares an envelope.            |
+| `mode`        | `"hermetic"` or `"unhermetic"` | Whether the call declares an envelope. Optional.  |
 | `command`     | string, optional               | Shell command line. Give this or `script`.        |
 | `script`      | string, optional               | Program text delivered on standard input.         |
 | `interpreter` | string, optional               | Program that reads `script`. Defaults to `bash`.  |

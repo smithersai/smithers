@@ -14,7 +14,7 @@ import type * as Path from "@smthrs/kernel/Path"
 import { Effect } from "effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as LinearRegex from "./internal/LinearRegex.ts"
-import { escapeRegex, invalidPattern } from "./internal/SearchContract.ts"
+import { escapeRegex, invalidPattern, rejectionPrefix } from "./internal/SearchContract.ts"
 import * as Walk from "./internal/Walk.ts"
 import type * as StdError from "./StdError.ts"
 
@@ -86,8 +86,8 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
   }
   try {
     new RegExp(pattern, "u")
-  } catch {
-    return invalidPattern(pattern, "invalid Smithers Ripgrep ASCII v1 expression")
+  } catch (error) {
+    return invalidPattern(pattern, malformed(pattern) ?? engineReason(error))
   }
   try {
     LinearRegex.compile(pattern, false)
@@ -96,6 +96,91 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
     return invalidPattern(pattern, error instanceof Error ? error.message : "pattern compilation exceeds its budget")
   }
 }
+
+const countedRepetition = /^\{\d+(,\d*)?\}/
+
+/**
+ * Names the first construct that keeps `pattern` from parsing, with its
+ * 1-based column and the escape that makes it literal.
+ *
+ * A caller told only that a pattern is unsupported guesses at which character
+ * broke it; `Rule({` reads as a literal search to its author and as an unclosed
+ * group plus a count with no digits to the parser. Only the syntax errors a
+ * search author commonly makes are named here; anything else falls back to the
+ * engine's own reason.
+ */
+const malformed = (pattern: string): string | undefined => {
+  const open: Array<number> = []
+  let repeatable = false
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index]!
+    const at = `"${character}" at column ${index + 1}`
+    if (character === "\\") {
+      index++
+      repeatable = true
+      continue
+    }
+    if (character === "[") {
+      let end = index + 1
+      if (pattern[end] === "^") end++
+      if (pattern[end] === "]") end++
+      while (end < pattern.length && pattern[end] !== "]") end += pattern[end] === "\\" ? 2 : 1
+      if (end >= pattern.length) return `${at} is never closed; write \\[ for a literal bracket`
+      index = end
+      repeatable = true
+      continue
+    }
+    if (character === "(") {
+      open.push(index)
+      repeatable = false
+      continue
+    }
+    if (character === ")") {
+      if (open.pop() === undefined) return `${at} closes nothing; write \\) for a literal parenthesis`
+      repeatable = true
+      continue
+    }
+    if (character === "{") {
+      const count = countedRepetition.exec(pattern.slice(index))
+      if (count === null) return `${at} is not a repetition count; write \\{ for a literal brace`
+      if (!repeatable) return `${at} repeats nothing; write \\{ for a literal brace`
+      index += count[0].length - 1
+      continue
+    }
+    if (character === "}" || character === "]") {
+      return `${at} closes nothing; write \\${character} for a literal ${character === "}" ? "brace" : "bracket"}`
+    }
+    if (character === "*" || character === "+" || character === "?") {
+      if (!repeatable) return `${at} repeats nothing; write \\${character} for a literal ${character}`
+      continue
+    }
+    repeatable = character !== "|" && character !== "^" && character !== "$"
+  }
+  const unclosed = open.at(-1)
+  return unclosed === undefined
+    ? undefined
+    : `"(" at column ${unclosed + 1} is never closed; write \\( for a literal parenthesis`
+}
+
+/** The JavaScript engine's reason, without its prefix or its echo of the pattern. */
+const engineReason = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : ""
+  const reason = message.replace(/^Invalid regular expression: (\/.*\/[a-z]*: )?/, "").trim()
+  return reason === "" ? "invalid Smithers Ripgrep ASCII v1 expression" : `invalid expression: ${reason}`
+}
+
+/**
+ * Whether `error` is a pattern or glob rejection this contract wrote.
+ *
+ * Those messages are host-authored and name the construct that broke, so a
+ * caller may show them to a model. A peer's `invalid_pattern` built from
+ * `rg`'s stderr is not one of them and stays private.
+ *
+ * @category validation
+ * @since 1.0.0
+ */
+export const isContractRejection = (error: StdError.StdError): boolean =>
+  error.code === "invalid_pattern" && error.message.startsWith(`${rejectionPrefix}"`)
 
 /**
  * Validates the portable `-g` grammar before either peer sees it.

@@ -223,6 +223,7 @@ describe("Checkpointed.decorate", () => {
     const refused = await run(decorated, call("read", { path: "mod.py" }, "base"))
     expect(seen).toEqual([])
     expect(refused.code).toBe("checkpoint_unavailable")
+    expect(refused.message).toContain("For a baseline, run the check before your edit, then again after it.")
 
     // A call that names no tree is untouched, so nothing about an unpinned host
     // changes for the calls that were always going to run on the live tree.

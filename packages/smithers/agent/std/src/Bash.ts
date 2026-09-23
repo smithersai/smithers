@@ -121,9 +121,11 @@ export const Input = Schema.Union([
     timeoutMs: TimeoutMs
   }),
   Schema.Struct({
+    // Omitted means unhermetic: it is the envelope `effects` already declares
+    // for every call, so the default grants nothing a named mode would not.
     mode: Schema.Literal("unhermetic").annotate({
-      description: "Run without a declared filesystem envelope as an irreversible effect"
-    }),
+      description: "Run without a declared filesystem envelope as an irreversible effect; the default"
+    }).pipe(Schema.optionalKey, Schema.withDecodingDefaultKey(Effect.succeed("unhermetic" as const))),
     command: Command,
     script: Script,
     interpreter: Interpreter,

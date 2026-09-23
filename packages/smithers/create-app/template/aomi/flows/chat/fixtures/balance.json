@@ -50,6 +50,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nWhat is vitalik.eth's ETH balance on mainnet?"
           }
         ],
@@ -1115,6 +1119,10 @@
           },
           {
             "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
+          },
+          {
+            "type": "text",
             "text": "The task for this run:\n\nWhat is vitalik.eth's ETH balance on mainnet?\n\n## Your previous answer did not validate\n\nThe output you returned could not be decoded against the required schema.\nReturn the same information again as ONE JSON document that validates.\n\nValidation issues:\n- Expected string\n- at [\"cards\"][0]"
           }
         ],
@@ -2067,6 +2075,10 @@
           {
             "type": "text",
             "text": "## Required output shape\n\nWhen you return `{ intent: \"complete\", ... }`, the `output` field must be a\nstring holding exactly ONE JSON document that validates against this JSON\nSchema. No prose, no explanation, and no code fence around it.\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"answer\": {\n      \"type\": \"string\",\n      \"description\": \"The prose answer; cards carry the data, so keep it short\"\n    },\n    \"cards\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Card ids emitted this turn, in order\"\n    }\n  },\n  \"required\": [\n    \"answer\",\n    \"cards\"\n  ],\n  \"additionalProperties\": false\n}\n```"
+          },
+          {
+            "type": "text",
+            "text": "This host pins no trees: ctx.base, ctx.checkpoint() and every call with at are refused and run nothing. For a baseline, run the check in the same cell before your edit, then run it again after."
           },
           {
             "type": "text",

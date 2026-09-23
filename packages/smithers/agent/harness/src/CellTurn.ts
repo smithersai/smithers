@@ -1672,7 +1672,7 @@ const minter = (
     if (Option.isNone(snapshot)) {
       return refusal(
         "checkpoint_unavailable",
-        "This host pins no trees, so nothing was checkpointed. Take your readings on the live tree instead."
+        "This host pins no trees, so nothing was checkpointed. For a baseline, run the check before your edit, then again after it."
       )
     }
     minted.push(id)

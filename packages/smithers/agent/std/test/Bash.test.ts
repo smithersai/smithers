@@ -683,6 +683,16 @@ describe("Bash", () => {
     ).toThrow()
   })
 
+  it("reads an omitted mode as unhermetic, the envelope it declares anyway", () => {
+    const decoded = Schema.decodeUnknownSync(Bash.Input)({ command: "cd apps/tui && bun run typecheck" })
+    expect(decoded).toEqual({ mode: "unhermetic", command: "cd apps/tui && bun run typecheck" })
+    expect(Bash.effectsFor(decoded)).toEqual(Bash.effects)
+  })
+
+  it("still requires declarations when hermetic is named", () => {
+    expect(() => Schema.decodeUnknownSync(Bash.Input)({ mode: "hermetic", command: "ls" })).toThrow()
+  })
+
   it("hands a script to its interpreter as data, never as a quoted line", async () => {
     const spawns: Array<Spawned> = []
     const script = "import sys\nprint('single ' + \"double\" + `back` + '''triple''')\n"
