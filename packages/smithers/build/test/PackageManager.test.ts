@@ -590,6 +590,81 @@ describe("PackageManager.storeRoot", () => {
     })
   })
 
+  it.each(["%~dp0\\", "%dp0%\\"])("follows a pnpm self-update shim (%s) without invoking a shell", async (prefix) => {
+    await withFixture("package-manager-updated & %PATH% ^", async (root) => {
+      const bin = NodePath.join(root, "bin")
+      const entry = NodePath.join(root, ".tools/pnpm/11.25.0/node_modules/pnpm/bin/pnpm.mjs")
+      await Fs.mkdir(NodePath.dirname(entry), { recursive: true })
+      await Fs.mkdir(NodePath.join(bin, "node_modules/pnpm/bin"), { recursive: true })
+      await Fs.writeFile(NodePath.join(bin, "node_modules/pnpm/bin/pnpm.cjs"), "throw new Error('stale adjacent pnpm')")
+      await Fs.writeFile(entry, "process.stdout.write('11.25.0')")
+      const target = `${prefix}..\\.tools\\pnpm\\11.25.0\\node_modules\\pnpm\\bin\\pnpm.mjs`
+      await Fs.writeFile(
+        NodePath.join(bin, "pnpm.cmd"),
+        [
+          "@SETLOCAL",
+          `@IF EXIST "${prefix}node.exe" (`,
+          `  "${prefix}node.exe"  "${target}" %*`,
+          ") ELSE (",
+          "  @SET PATHEXT=%PATHEXT:;.JS;=;%",
+          `  node  "${target}" %*`,
+          ")"
+        ].join("\r\n")
+      )
+      const version = await Effect.runPromise(
+        PackageManager.makePnpm({
+          requirement: "11.25.0",
+          projectRoot: root,
+          environment: { Path: `"${bin}"` }
+        }).pipe(
+          Effect.flatMap((manager) => manager.verify),
+          Effect.provide(NodeServices.layer),
+          Effect.provide(
+            Runtime.layerNoop("node", {
+              requirement: ">=22.19.0",
+              version: "24.9.0",
+              executable: process.execPath,
+              platform: { ...platform, os: "win32" }
+            })
+          )
+        )
+      )
+      expect(version).toBe("11.25.0")
+    })
+  })
+
+  it.each(["missing", "directory", "ambiguous"])(
+    "refuses a %s target on the first shim instead of using a later version",
+    async (kind) => {
+      await withFixture("package-manager-first-shim", async (root) => {
+        const later = NodePath.join(root, "later")
+        await Fs.mkdir(later)
+        await Fs.writeFile(NodePath.join(later, "pnpm.cmd"), "@node \"%~dp0\\pnpm.mjs\" %*")
+        await Fs.writeFile(NodePath.join(later, "pnpm.mjs"), "process.stdout.write('11.25.0')")
+        await Fs.writeFile(
+          NodePath.join(root, "pnpm.cmd"),
+          "@node \"%~dp0\\pnpm.mjs\" %*" +
+            (kind === "ambiguous" ? "\n@node \"%~dp0\\other/pnpm.mjs\" %*" : "")
+        )
+        if (kind === "directory") await Fs.mkdir(NodePath.join(root, "pnpm.mjs"))
+        const error = await Effect.runPromise(
+          PackageManager.makePnpm({
+            requirement: "11.25.0",
+            projectRoot: root,
+            environment: { Path: `${root};${later}` }
+          }).pipe(
+            Effect.flatMap((manager) => manager.version),
+            Effect.flip,
+            Effect.provide(NodeServices.layer),
+            Effect.provide(windowsRuntimeLayer)
+          )
+        )
+        expect(error.code).toBe("environment_mismatch")
+        expect(error.message).toContain(`${root}/pnpm.cmd`)
+      })
+    }
+  )
+
   it.each(["fetch", "link"] as const)("verifies before a direct public %s can mutate", async (operation) => {
     await withFixture("package-manager-direct-verify", async (root) => {
       const executable = NodePath.join(root, "pnpm.mjs")

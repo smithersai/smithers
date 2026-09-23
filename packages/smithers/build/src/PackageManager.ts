@@ -914,8 +914,7 @@ const pnpmInvocation = (
     const mismatch = (shim: string) =>
       new PackageManagerError({
         code: "environment_mismatch",
-        message:
-          `cannot resolve ${shim} to adjacent node_modules/pnpm/bin/pnpm.cjs; provide a native executable override`
+        message: `cannot resolve ${shim} to one pnpm JavaScript entrypoint; provide a native executable override`
       })
     const path = Validate.sourceValue(options.environment, "PATH", true) ?? ""
     for (const component of path.split(";")) {
@@ -929,7 +928,18 @@ const pnpmInvocation = (
       if (!present) continue
       // Honor the first shim on PATH. A different layout must be explicit,
       // rather than silently selecting a different pnpm later on PATH.
-      const entry = `${absolute}/node_modules/pnpm/bin/pnpm.cjs`
+      // pnpm 11's self-update links PNPM_HOME/bin to a versioned store, and
+      // its entrypoint is pnpm.mjs. Read the shim's literal target rather than
+      // assuming the npm global layout or selecting a stale adjacent version.
+      // These are paths only: no command text, arguments, or environment
+      // expansions from the batch file are passed to a shell.
+      const source = yield* fs.readFileString(shim).pipe(Effect.mapError(() => mismatch(shim)))
+      const entries = new Set(
+        [...source.matchAll(/"(?:%~dp0[\\/]|%dp0%[\\/]?)([^"\r\n]*pnpm\.(?:cjs|mjs))"[ \t]+%\*[ \t]*$/gim)]
+          .map((match) => `${absolute}/${match[1]!.replaceAll("\\", "/")}`)
+      )
+      if (entries.size > 1) return yield* Effect.fail(mismatch(shim))
+      const entry = entries.values().next().value ?? `${absolute}/node_modules/pnpm/bin/pnpm.cjs`
       const info = yield* fs.stat(entry).pipe(Effect.mapError(() => mismatch(shim)))
       if (info.type !== "File") return yield* Effect.fail(mismatch(shim))
       return { executable: runtimeExecutable, prefix: [entry] }
