@@ -30,11 +30,6 @@ describe("History", () => {
 })
 
 describe("commands", () => {
-  it("offers the commands a typed prefix names, until an argument starts", () => {
-    expect(Editor.matching("/re").map((command) => command.name)).toEqual(["resume"])
-    expect(Editor.matching("/model gpt")).toEqual([])
-    expect(Editor.matching("hello")).toEqual([])
-  })
 
   it("parses a command and its argument", () => {
     expect(Editor.parseCommand("/model  gpt 6 ")).toEqual({ name: "model", argument: "gpt 6" })

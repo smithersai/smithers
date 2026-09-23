@@ -31,10 +31,12 @@ The default seat is `openai:gpt-6-sol` on the ChatGPT subscription
 | Ctrl+C | Clear the editor; twice within 500 ms to exit |
 | Ctrl+D | Exit when the editor is empty |
 | Up, Down | Prompt history |
-| Ctrl+L | Pick a model |
+| `/` | Commands: Up/Down choose, Tab inserts, Enter runs, Esc closes the menu |
+| `@` | Mention a file (`git ls-files`, else `rg --files`), fuzzy-matched |
+| Ctrl+L | Model dialog; type to filter |
 | Ctrl+P, Shift+Ctrl+P | Next, previous model |
 | Shift+Tab | Cycle reasoning effort |
-| Ctrl+O | Expand cells, output and the key list |
+| Ctrl+O | Expand cell code, output, diffs, and the key list |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
 | PageUp, PageDown | Scroll |
 | `!cmd` | Run a shell command; its output joins the next turn's context |
@@ -43,7 +45,17 @@ The default seat is `openai:gpt-6-sol` on the ChatGPT subscription
 ## Commands
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/session`,
-`/name <name>`, `/copy`, `/hotkeys`, `/quit`.
+`/name <name>`, `/copy`, `/hotkeys`, `/quit`. After `/model ` and
+`/thinking ` the menu completes the argument.
+
+## Look
+
+Night Owl dark surfaces from the Smithers app (`apps/app/.../tokens.css`),
+layered page, panel, element. Your messages are right-aligned brand-tinted
+bubbles, as in the app's chat. Each cell is a left bar colored by status with
+one row per flow call (`→ read`, `$ ran`, `← edited`); an edit draws its diff.
+Cell code folds to a line count once settled. Panels, dialogs, and the
+completion menu follow opencode's shapes; fuzzy matching is pi's.
 
 ## Context and sessions
 

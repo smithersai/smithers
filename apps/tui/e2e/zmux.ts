@@ -161,7 +161,7 @@ export class Tui {
       }
       rows.push(`<div>${html}</div>`)
     }
-    return `<!doctype html><meta charset="utf-8"><body style="margin:0;background:${background}"><pre style="margin:0;padding:8px;font:13px/1.25 'JetBrains Mono','SF Mono',Menlo,monospace;color:${foreground}">${rows.join("")}</pre></body>`
+    return `<!doctype html><meta charset="utf-8"><style>div{height:17px;white-space:pre}span{display:inline-block;height:17px;vertical-align:top}</style><body style="margin:0;background:${background}"><pre style="margin:0;padding:8px;font:13px/17px 'JetBrains Mono','SF Mono',Menlo,monospace;color:${foreground}">${rows.join("")}</pre></body>`
   }
 
   /** The visible screen, one string per row, trailing spaces trimmed. */

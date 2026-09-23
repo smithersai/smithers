@@ -68,12 +68,8 @@ export const commands: ReadonlyArray<Command> = [
   { name: "quit", description: "Quit" }
 ]
 
-/** Commands whose name starts with what follows `/`, while no argument is typed. */
-export const matching = (text: string): ReadonlyArray<Command> => {
-  if (!text.startsWith("/") || text.includes(" ") || text.includes("\n")) return []
-  const typed = text.slice(1)
-  return commands.filter((command) => command.name.startsWith(typed))
-}
+/** Tab and Enter insert `/name ` for these, so the argument can be typed or completed. */
+export const takesArgument = (command: Command): boolean => command.args?.startsWith("<") === true || command.name === "thinking"
 
 /** `/model gpt` → `{ name: "model", argument: "gpt" }`. */
 export const parseCommand = (text: string): { readonly name: string; readonly argument: string } | undefined => {
@@ -104,6 +100,7 @@ export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
   ["ctrl+p, shift+ctrl+p", "next, previous model"],
   ["shift+tab", "cycle reasoning effort"],
   ["ctrl+o", "expand cells and output"],
+  ["@", "mention a file"],
   ["ctrl+g", "edit the prompt in $EDITOR"],
   ["pageup, pagedown", "scroll"],
   ["!cmd, !!cmd", "run a shell command; !! keeps it out of context"],

@@ -2,28 +2,29 @@
  * The terminal UI: a transcript of cells above a composer.
  *
  * Keys and commands follow pi (`badlogic/pi-mono` coding-agent) wherever the
- * cell harness has the same idea; `editor.ts` lists them.
+ * cell harness has the same idea; `editor.ts` lists them. `view.tsx` draws.
  */
 import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
-import { useKeyboard, useRenderer } from "@opentui/react"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Clipboard from "./clipboard.ts"
+import * as Complete from "./complete.ts"
 import type * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
+import * as Files from "./files.ts"
+import * as Fuzzy from "./fuzzy.ts"
 import type * as Host from "./host.ts"
 import type { Model } from "./models.ts"
 import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
-import { color, spinner, syntax } from "./theme.ts"
+import { color, spinner } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
-
-type Cell = Extract<Transcript.Item, { kind: "cell" }>
-type ShellItem = Extract<Transcript.Item, { kind: "shell" }>
+import * as View from "./view.tsx"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -32,19 +33,10 @@ const composerKeys: Array<KeyBinding> = [
   { name: "linefeed", action: "newline" }
 ]
 
-/** A settled cell shows this many lines of code until expanded. */
-const foldedLines = 12
-/** Printed output shows its tail until expanded: this many lines, at most `printedChars`. */
-const printedLines = 6
-const printedChars = 480
-/** A shell block shows its last lines until expanded (pi's `PREVIEW_LINES`). */
-const shellLines = 20
-
-/** The tail of printed output; one long line (a JSON dump) is cut by characters. */
-const fold = (text: string): string => {
-  const tail = text.split("\n").slice(-printedLines).join("\n")
-  return tail.length > printedChars ? tail.slice(-printedChars) : tail
-}
+/** The transcript and composer never grow wider than this, like the app's chat column. */
+const columnWidth = 120
+/** Completion rows shown at once. */
+const menuRows = 8
 
 export interface AppProps {
   readonly host: Host.Host
@@ -65,8 +57,43 @@ interface TurnState {
 }
 
 type Picker =
-  | { readonly kind: "model"; readonly query: string }
-  | { readonly kind: "resume"; readonly sessions: ReadonlyArray<Session.Summary> }
+  | { readonly kind: "model"; readonly query: string; readonly selected: number }
+  | { readonly kind: "resume"; readonly query: string; readonly selected: number; readonly sessions: ReadonlyArray<Session.Summary> }
+
+interface Toast {
+  readonly text: string
+  readonly tone: "info" | "warning" | "danger"
+}
+
+/** A dialog's rows and the value each one picks. */
+const pickerRows = (
+  picker: Picker,
+  models: ReadonlyArray<Model>,
+  seat: string
+): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "model") {
+    const listed = Fuzzy.filter(models, picker.query, (model) => `${model.label} ${model.seat} ${model.provider}`)
+    const custom = picker.query.includes(":") && !models.some((model) => model.seat === picker.query)
+    return [
+      ...(custom ? [{ key: picker.query, label: picker.query, hint: "any seat", value: picker.query }] : []),
+      ...listed.map((model) => ({
+        key: model.seat,
+        label: model.label,
+        hint: model.provider,
+        detail: model.seat,
+        current: model.seat === seat,
+        value: model.seat
+      }))
+    ]
+  }
+  const now = Date.now()
+  return Fuzzy.filter(picker.sessions, picker.query, (session) => `${session.name ?? ""} ${session.firstPrompt}`).map((session) => ({
+    key: session.file,
+    label: (session.name ?? session.firstPrompt).split("\n")[0]!.slice(0, 60),
+    detail: View.ago(session.modified, now),
+    value: session.file
+  }))
+}
 
 export function App(props: AppProps) {
   const renderer = useRenderer()
@@ -78,11 +105,14 @@ export function App(props: AppProps) {
   const [shell, setShell] = useState<Shell.Running | undefined>()
   const [followUps, setFollowUps] = useState<ReadonlyArray<string>>([])
   const [picker, setPicker] = useState<Picker | undefined>(
-    props.pickSession === true ? { kind: "resume", sessions: Session.list(props.host.cwd) } : undefined
+    props.pickSession === true ? { kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) } : undefined
   )
   const [expanded, setExpanded] = useState(false)
-  const [status, setStatus] = useState<string | undefined>()
+  const [toast, setToast] = useState<Toast | undefined>()
   const [draft, setDraft] = useState("")
+  const [cursor, setCursor] = useState(0)
+  const [menuIndex, setMenuIndex] = useState(0)
+  const [menuDismissed, setMenuDismissed] = useState(false)
   const [name, setName] = useState(restored.current?.name)
   const [now, setNow] = useState(Date.now())
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
@@ -93,9 +123,21 @@ export function App(props: AppProps) {
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const lastCtrlC = useRef(0)
+  const files = useRef(Files.lister(props.host.cwd))
+  const dimensions = useTerminalDimensions()
+  const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
+
+  const completion = useMemo(
+    () => (menuDismissed ? undefined : Complete.complete(draft, cursor, { models: props.models, files: () => files.current() })),
+    [draft, cursor, menuDismissed, props.models]
+  )
+  const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file") ? completion : undefined
+  const menuIdentity = menu === undefined ? "" : `${menu.kind}:${menu.query}`
+  useEffect(() => setMenuIndex(0), [menuIdentity])
+
   // Key handlers read the latest values through these, never a stale render.
-  const live = useRef({ turn, shell, followUps, seat, thinking, picker })
-  live.current = { turn, shell, followUps, seat, thinking, picker }
+  const live = useRef({ turn, shell, followUps, seat, thinking, picker, menu, menuIndex })
+  live.current = { turn, shell, followUps, seat, thinking, picker, menu, menuIndex }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -111,17 +153,19 @@ export function App(props: AppProps) {
   }, [turn, shell])
 
   useEffect(() => {
-    if (status === undefined) return
-    const timer = setTimeout(() => setStatus(undefined), 3000)
+    if (toast === undefined) return
+    const timer = setTimeout(() => setToast(undefined), 3000)
     return () => clearTimeout(timer)
-  }, [status])
+  }, [toast])
 
-  const setText = useCallback((text: string) => {
+  const setText = useCallback((text: string, at?: number) => {
     const input = composer.current
     if (input === null) return
     input.setText(text)
-    input.gotoBufferEnd()
+    if (at === undefined) input.gotoBufferEnd()
+    else input.cursorOffset = at
     setDraft(text)
+    setCursor(input.cursorOffset)
   }, [])
 
   const quit = useCallback(() => {
@@ -177,7 +221,7 @@ export function App(props: AppProps) {
 
   const runShell = useCallback((command: string, excluded: boolean) => {
     if (live.current.shell !== undefined) {
-      setStatus("A shell command is already running. Press esc to cancel it first.")
+      setStatus("A shell command is already running. Press esc to cancel it first.", "warning")
       return
     }
     let id = ""
@@ -197,12 +241,12 @@ export function App(props: AppProps) {
       setTranscript((current) => Transcript.shellDone(current, id, result))
       setShell(undefined)
     })
-  }, [props.host.cwd])
+  }, [props.host.cwd, setStatus])
 
   const switchSeat = useCallback((next: string) => {
     setSeat(next)
     setStatus(`Switched to ${props.models.find((model) => model.seat === next)?.label ?? next}`)
-  }, [props.models])
+  }, [props.models, setStatus])
 
   const newSession = useCallback(() => {
     writer.current = Session.create(props.host.cwd)
@@ -210,7 +254,7 @@ export function App(props: AppProps) {
     setName(undefined)
     setTranscript(Transcript.empty)
     setStatus("New session started")
-  }, [props.host.cwd])
+  }, [props.host.cwd, setStatus])
 
   const openSession = useCallback((file: string) => {
     const state = Session.restore(Session.load(file))
@@ -220,7 +264,7 @@ export function App(props: AppProps) {
     setName(state.name)
     setTranscript(state.transcript)
     setStatus(`Resumed ${state.name ?? basename(file)}`)
-  }, [])
+  }, [setStatus])
 
   const command = useCallback((text: string): boolean => {
     const parsed = Editor.parseCommand(text)
@@ -228,12 +272,13 @@ export function App(props: AppProps) {
     const { name: verb, argument } = parsed
     switch (verb) {
       case "model":
-        setPicker({ kind: "model", query: argument })
+        if (argument.includes(":")) switchSeat(argument)
+        else setPicker({ kind: "model", query: argument, selected: 0 })
         return true
       case "thinking": {
         const level = argument === "" || argument === "default" ? undefined : argument
         if (level !== undefined && !(Editor.thinkingLevels as ReadonlyArray<string>).includes(level)) {
-          setStatus(`Thinking levels: default, ${Editor.thinkingLevels.join(", ")}`)
+          setStatus(`Thinking levels: default, ${Editor.thinkingLevels.join(", ")}`, "warning")
           return true
         }
         setThinking(level as Editor.Thinking)
@@ -241,11 +286,11 @@ export function App(props: AppProps) {
         return true
       }
       case "new":
-        if (live.current.turn !== undefined) setStatus("Stop the running turn first (esc)")
+        if (live.current.turn !== undefined) setStatus("Stop the running turn first (esc)", "warning")
         else newSession()
         return true
       case "resume":
-        setPicker({ kind: "resume", sessions: Session.list(props.host.cwd) })
+        setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
         return true
       case "session": {
         const usage = transcript.usage
@@ -268,7 +313,7 @@ export function App(props: AppProps) {
       case "copy": {
         const answer = transcript.items.findLast((item) => item.kind === "answer")
         if (answer === undefined || answer.kind !== "answer") {
-          setStatus("No answer to copy")
+          setStatus("No answer to copy", "warning")
           return true
         }
         setStatus(Clipboard.write(answer.text) ? "Copied the last answer" : "No clipboard command")
@@ -284,15 +329,15 @@ export function App(props: AppProps) {
         quit()
         return true
       default:
-        setStatus(`Unknown command /${verb}`)
+        setStatus(`Unknown command /${verb}`, "warning")
         return true
     }
-  }, [transcript, name, newSession, quit, props.host.cwd])
+  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd])
 
-  const submit = useCallback((followUp = false) => {
+  const submit = useCallback((followUp = false, typed?: string) => {
     const input = composer.current
     if (input === null) return
-    const text = input.plainText.trim()
+    const text = (typed ?? input.plainText).trim()
     if (text === "") return
     const shellLine = Shell.parse(text)
     history.current.add(text)
@@ -313,6 +358,18 @@ export function App(props: AppProps) {
     setTranscript((current) => Transcript.user(current, text, true))
   }, [setText, runShell, command, startTurn])
 
+  /** Tab inserts the selected completion; Enter also runs it when it is a whole command. */
+  const acceptCompletion = useCallback((run: boolean) => {
+    const { menu: open, menuIndex: index } = live.current
+    const input = composer.current
+    if (open === undefined || input === null) return
+    const suggestion = open.items[index]
+    if (suggestion === undefined) return
+    const next = Complete.apply(input.plainText, open, suggestion)
+    if (run && suggestion.submit) return submit(false, next.text)
+    setText(next.text, next.cursor)
+  }, [setText, submit])
+
   /** pi's restore: queued messages go back into the editor, above the draft. */
   const restoreQueued = useCallback((extra: ReadonlyArray<string> = []) => {
     const queued = [...extra, ...live.current.followUps]
@@ -321,7 +378,7 @@ export function App(props: AppProps) {
     const current = composer.current?.plainText ?? ""
     setText([...queued, ...(current === "" ? [] : [current])].join("\n\n"))
     setStatus(`Restored ${queued.length} queued message${queued.length === 1 ? "" : "s"} to editor`)
-  }, [setText])
+  }, [setText, setStatus])
 
   const externalEditor = useCallback(() => {
     const file = join(mkdtempSync(join(tmpdir(), "smithers-editor-")), "prompt.md")
@@ -335,16 +392,71 @@ export function App(props: AppProps) {
 
   const cycleModel = useCallback((step: number) => {
     if (props.models.length < 2) {
-      setStatus("Only one model available")
+      setStatus("Only one model available", "warning")
       return
     }
     const at = props.models.findIndex((model) => model.seat === live.current.seat)
     const next = props.models[(at + step + props.models.length) % props.models.length]!
     switchSeat(next.seat)
-  }, [props.models, switchSeat])
+  }, [props.models, switchSeat, setStatus])
+
+  const pick = useCallback((open: Picker, value: string) => {
+    setPicker(undefined)
+    if (open.kind === "model") return switchSeat(value)
+    if (live.current.turn === undefined) openSession(value)
+    else setStatus("Stop the running turn first (esc)", "warning")
+  }, [switchSeat, openSession, setStatus])
+
+  /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
+  const dialogKey = (key: KeyEvent, open: Picker) => {
+    const rows = pickerRows(open, props.models, live.current.seat)
+    const move = (step: number) => {
+      key.preventDefault()
+      if (rows.length > 0) setPicker({ ...open, selected: (open.selected + step + rows.length) % rows.length })
+    }
+    if (key.name === "escape") return setPicker(undefined)
+    if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
+    if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
+    if (key.name === "pageup") return move(-Math.min(10, open.selected))
+    if (key.name === "pagedown") return move(Math.min(10, rows.length - 1 - open.selected))
+    if (key.name === "return" || key.name === "kpenter") {
+      key.preventDefault()
+      const row = rows[open.selected]
+      if (row !== undefined) pick(open, row.value)
+    }
+  }
+
+  /** Keys while the completion menu is open; true when the menu took the key. */
+  const menuKey = (key: KeyEvent, open: Complete.Completion): boolean => {
+    const count = open.items.length
+    const move = (step: number) => {
+      key.preventDefault()
+      if (count > 0) setMenuIndex((index) => (index + step + count) % count)
+      return true
+    }
+    if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
+    if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
+    if (key.name === "escape") {
+      key.preventDefault()
+      setMenuDismissed(true)
+      return true
+    }
+    if (count === 0) return false
+    if (key.name === "tab" && !key.shift) {
+      key.preventDefault()
+      acceptCompletion(false)
+      return true
+    }
+    if ((key.name === "return" || key.name === "kpenter") && !key.shift && !key.meta && !key.option) {
+      key.preventDefault()
+      acceptCompletion(true)
+      return true
+    }
+    return false
+  }
 
   useKeyboard((key: KeyEvent) => {
-    const { turn: running, shell: shellRunning, picker: open } = live.current
+    const { turn: running, shell: shellRunning, picker: open, menu: completing } = live.current
     const text = composer.current?.plainText ?? ""
     if (key.ctrl && key.name === "c") {
       key.preventDefault()
@@ -355,10 +467,8 @@ export function App(props: AppProps) {
       setText("")
       return
     }
-    if (open !== undefined) {
-      if (key.name === "escape") setPicker(undefined)
-      return
-    }
+    if (open !== undefined) return dialogKey(key, open)
+    if (completing !== undefined && menuKey(key, completing)) return
     if (key.name === "escape") {
       if (running !== undefined) {
         restoreQueued(running.steering.take())
@@ -390,11 +500,7 @@ export function App(props: AppProps) {
       setStatus(`Thinking level: ${next ?? "default"}`)
       return
     }
-    if (key.name === "tab" && Editor.matching(text).length > 0) {
-      key.preventDefault()
-      return setText(`/${Editor.matching(text)[0]!.name} `)
-    }
-    if (key.ctrl && key.name === "l") return setPicker({ kind: "model", query: "" })
+    if (key.ctrl && key.name === "l") return setPicker({ kind: "model", query: "", selected: 0 })
     if (key.ctrl && key.name === "p") return cycleModel(key.shift ? -1 : 1)
     if (key.ctrl && key.name === "o") return setExpanded((value) => !value)
     if (key.ctrl && key.name === "g") return externalEditor()
@@ -420,358 +526,156 @@ export function App(props: AppProps) {
 
   const working = turn !== undefined
   const tick = spinner[Math.floor(now / 100) % spinner.length]!
-  const label = props.models.find((model) => model.seat === seat)?.label ??
-    (seat.startsWith("replay:") ? `replay ${basename(seat)}` : seat)
+  const model = props.models.find((each) => each.seat === seat)
+  const label = model?.label ?? (seat.startsWith("replay:") ? `replay ${basename(seat)}` : seat)
   const bashMode = draft.startsWith("!")
-  const menu = Editor.matching(draft)
   const window = props.contextWindow(seat)
   const percent = window > 0 ? (transcript.usage.context / window) * 100 : 0
   const usage = transcript.usage
+  const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2))
+  const accent = bashMode ? color.success : working ? color.faint : color.brand
+  const rows = picker === undefined ? [] : pickerRows(picker, props.models, seat)
 
   return (
-    <box style={{ flexDirection: "column", flexGrow: 1, paddingLeft: 1, paddingRight: 1 }}>
-      <scrollbox ref={scroll} stickyScroll stickyStart="bottom" style={{ flexGrow: 1 }}>
-        <Header expanded={expanded} />
-        {transcript.items.map((item) => <Entry key={item.id} item={item} now={now} tick={tick} expanded={expanded} />)}
-        {working && transcript.thinking ? <text fg={color.muted}>{tick} thinking</text> : null}
-      </scrollbox>
-      {followUps.length === 0 ? null : (
-        <box style={{ marginTop: 1 }}>
-          {followUps.map((text, index) => (
-            <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>
-          ))}
-          <text fg={color.faint}>↳ alt+up to edit all queued messages</text>
-        </box>
-      )}
-      {menu.length === 0 ? null : (
-        <box style={{ marginTop: 1 }}>
-          {menu.map((entry) => (
-            <text key={entry.name}>
-              <span fg={color.brand}>/{entry.name}</span>
-              <span fg={color.faint}>{entry.args === undefined ? "" : ` ${entry.args}`}  {entry.description}</span>
-            </text>
-          ))}
-        </box>
-      )}
-      {status === undefined ? null : <text fg={color.warning}>{status}</text>}
-      <box
-        style={{ border: true, borderStyle: "rounded", marginTop: 1, minHeight: 3 }}
-        borderColor={bashMode ? color.success : working ? color.faint : color.brand}
-      >
-        <textarea
-          ref={composer}
-          focused={picker === undefined}
-          placeholder={working ? "enter steers the next cell · alt+enter queues · esc stops" : "Ask Smithers to change this repository"}
-          placeholderColor={color.faint}
-          textColor={color.text}
-          focusedTextColor={color.text}
-          keyBindings={composerKeys}
-          onSubmit={() => submit(false)}
-          onContentChange={() => setDraft(composer.current?.plainText ?? "")}
-          style={{ minHeight: 1, maxHeight: 10 }}
-        />
-      </box>
-      <text fg={color.faint}>
-        {props.host.cwd.replace(homedir(), "~")}
-        {props.branch === undefined ? "" : ` (${props.branch})`}
-        {name === undefined ? "" : ` • ${name}`}
-      </text>
-      <box style={{ flexDirection: "row", justifyContent: "space-between", height: 1 }}>
-        <text>
-          {working ? <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}  </span> : null}
-          <span fg={color.faint}>
-            ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)} R{Editor.tokens(usage.cached)}
-          </span>
-          {window > 0
-            ? (
-              <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>
-                {"  "}{percent.toFixed(1)}%/{Editor.tokens(window)}
-              </span>
-            )
-            : null}
-        </text>
-        <text>
-          <span fg={color.muted}>{label}</span>
-          <span fg={color.faint}> • {thinking === undefined ? "thinking default" : `thinking ${thinking}`}</span>
-        </text>
-      </box>
-      {picker?.kind === "model"
-        ? (
-          <ModelPicker
-            seat={seat}
-            models={props.models}
-            query={picker.query}
-            onPick={(picked) => {
-              switchSeat(picked)
-              setPicker(undefined)
-            }}
-          />
-        )
-        : null}
-      {picker?.kind === "resume"
-        ? (
-          <SessionPicker
-            sessions={picker.sessions}
-            onPick={(file) => {
-              setPicker(undefined)
-              if (live.current.turn === undefined) openSession(file)
-              else setStatus("Stop the running turn first (esc)")
-            }}
-          />
-        )
-        : null}
-    </box>
-  )
-}
-
-function Header(props: { readonly expanded: boolean }) {
-  return (
-    <box style={{ paddingTop: 1, paddingBottom: 1 }}>
-      <text fg={color.brand}>
-        <strong>smithers</strong>
-      </text>
-      {props.expanded
-        ? Editor.keys.map(([key, action]) => (
-          <text key={key}>
-            <span fg={color.muted}>{key.padEnd(22)}</span>
-            <span fg={color.faint}>{action}</span>
-          </text>
-        ))
-        : (
-          <text fg={color.faint}>
-            esc interrupt · ctrl+c clear · ctrl+c twice exit · / commands · ! bash · ctrl+o more
-          </text>
+    <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page}>
+      <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
+        {transcript.items.length === 0
+          ? <View.Home expanded={expanded} />
+          : (
+            <scrollbox
+              ref={scroll}
+              stickyScroll
+              stickyStart="bottom"
+              style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, scrollbarOptions: { visible: false } }}
+            >
+              {transcript.items.map((item) => (
+                <View.Entry key={item.id} item={item} now={now} tick={tick} expanded={expanded} />
+              ))}
+              {working && transcript.thinking ? <text fg={color.muted} style={{ paddingLeft: 2 }}>{tick} thinking</text> : null}
+            </scrollbox>
+          )}
+        {followUps.length === 0 ? null : (
+          <box style={{ marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
+            {followUps.map((text, index) => (
+              <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>
+            ))}
+            <text fg={color.faint}>↳ alt+up to edit all queued messages</text>
+          </box>
         )}
-    </box>
-  )
-}
-
-function Entry(props: { readonly item: Transcript.Item; readonly now: number; readonly tick: string; readonly expanded: boolean }) {
-  const { item } = props
-  switch (item.kind) {
-    case "user":
-      return (
-        <box
-          style={{ border: ["left"], paddingLeft: 1, marginTop: 1, marginBottom: 1 }}
-          borderColor={item.queued === true ? color.faint : color.brand}
-          customBorderChars={bar}
+        {menu === undefined ? null : (
+          <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.element} customBorderChars={View.bar}>
+            <box style={{ paddingTop: 0 }} backgroundColor={color.element}>
+              <View.List
+                rows={menu.items.map((item, index) => ({
+                  key: `${index}:${item.label}`,
+                  label: item.label,
+                  ...(item.hint === undefined ? {} : { hint: item.hint }),
+                  ...(item.detail === undefined ? {} : { detail: item.detail }),
+                  ...(menu.kind === "argument" &&
+                      (item.insert === `/model ${seat}` || item.insert === `/thinking ${thinking ?? "default"}`)
+                    ? { current: true }
+                    : {})
+                }))}
+                selected={menuIndex}
+                height={Math.min(menuRows, Math.max(1, menu.items.length))}
+                background={color.element}
+                empty={menu.kind === "command" ? "No matching commands" : "No matches"}
+              />
+            </box>
+          </box>
+        )}
+        <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={accent} customBorderChars={View.bar}>
+          <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1 }} backgroundColor={color.surface}>
+            <textarea
+              ref={composer}
+              focused={picker === undefined}
+              placeholder={working ? "enter steers the next cell · alt+enter queues · esc stops" : "Ask Smithers to change this repository"}
+              placeholderColor={color.faint}
+              textColor={color.text}
+              focusedTextColor={color.text}
+              backgroundColor={color.surface}
+              focusedBackgroundColor={color.surface}
+              cursorColor={color.brand}
+              keyBindings={composerKeys}
+              onSubmit={() => submit(false)}
+              onContentChange={() => {
+                setDraft(composer.current?.plainText ?? "")
+                setCursor(composer.current?.cursorOffset ?? 0)
+                setMenuDismissed(false)
+              }}
+              onCursorChange={() => setCursor(composer.current?.cursorOffset ?? 0)}
+              style={{ minHeight: 1, maxHeight: Math.max(6, Math.floor(dimensions.height / 3)) }}
+            />
+            <text style={{ marginTop: 1, marginBottom: 1 }}>
+              <span fg={bashMode ? color.success : color.brand}>{bashMode ? "shell" : "code"}</span>
+              <span fg={color.faint}>  ·  </span>
+              <span fg={color.text}>{label}</span>
+              {model === undefined ? null : <span fg={color.faint}> {model.provider}</span>}
+              {thinking === undefined ? null : <span fg={color.warning}>  {thinking}</span>}
+            </text>
+          </box>
+        </box>
+        <box style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}>
+          <text wrapMode="none" style={{ flexShrink: 1 }}>
+            {working
+              ? (
+                <>
+                  <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
+                  <span fg={color.text}>  esc</span>
+                  <span fg={color.faint}> interrupt</span>
+                </>
+              )
+              : (
+                <span fg={color.faint}>
+                  {props.host.cwd.replace(homedir(), "~")}
+                  {props.branch === undefined ? "" : ` (${props.branch})`}
+                  {name === undefined ? "" : ` • ${name}`}
+                </span>
+              )}
+          </text>
+          <text wrapMode="none" style={{ flexShrink: 0 }}>
+            <span fg={color.faint}>↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)} R{Editor.tokens(usage.cached)}</span>
+            {window > 0
+              ? (
+                <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>
+                  {"  "}{percent.toFixed(1)}%/{Editor.tokens(window)}
+                </span>
+              )
+              : null}
+          </text>
+        </box>
+      </box>
+      {toast === undefined ? null : <View.Toast text={toast.text} tone={toast.tone} />}
+      {picker === undefined ? null : (
+        <View.Dialog
+          title={picker.kind === "model" ? "Select model" : "Resume session"}
+          width={Math.min(72, dimensions.width - 4)}
+          height={dimensions.height}
         >
-          <text fg={item.queued === true ? color.muted : color.text}>{item.text}</text>
-          {item.queued === true ? <text fg={color.faint}>steering · delivered before the next cell</text> : null}
-        </box>
-      )
-    case "cell":
-      return <CellView cell={item} now={props.now} tick={props.tick} expanded={props.expanded} />
-    case "shell":
-      return <ShellView item={item} tick={props.tick} expanded={props.expanded} />
-    case "answer":
-      return (
-        <box style={{ marginTop: 1, marginBottom: 1 }}>
-          <markdown content={item.text} syntaxStyle={syntax} />
-        </box>
-      )
-    case "error":
-      return <text fg={color.danger}>✗ {item.text}</text>
-    case "note":
-      return item.text === "" ? null : <text fg={color.faint}>{item.text}</text>
-  }
-}
-
-const bar = {
-  topLeft: " ",
-  topRight: " ",
-  bottomLeft: " ",
-  bottomRight: " ",
-  horizontal: " ",
-  vertical: "┃",
-  topT: " ",
-  bottomT: " ",
-  leftT: " ",
-  rightT: " ",
-  cross: " "
-}
-
-const statusColor: Record<Transcript.CellStatus, string> = {
-  writing: color.brand,
-  running: color.info,
-  done: color.success,
-  failed: color.danger,
-  rejected: color.warning
-}
-
-function ShellView(props: { readonly item: ShellItem; readonly tick: string; readonly expanded: boolean }) {
-  const { item } = props
-  const lines = item.output.replace(/\n+$/, "").split("\n")
-  const hidden = props.expanded ? 0 : Math.max(0, lines.length - shellLines)
-  const shown = lines.slice(hidden).join("\n")
-  const result = item.result
-  return (
-    <box
-      style={{ border: true, borderStyle: "rounded", paddingLeft: 1, paddingRight: 1, marginBottom: 1 }}
-      borderColor={item.excluded ? color.faint : color.success}
-      title={` $ ${item.command.split("\n")[0]} `}
-    >
-      {hidden > 0 ? <text fg={color.faint}>... {hidden} more lines (ctrl+o to expand)</text> : null}
-      {shown === "" ? null : <text fg={color.muted}>{shown}</text>}
-      {result === undefined ? <text fg={color.info}>{props.tick} Running... (esc to cancel)</text> : null}
-      {result?.cancelled === true ? <text fg={color.warning}>(cancelled)</text> : null}
-      {result !== undefined && !result.cancelled && result.exitCode !== 0
-        ? <text fg={color.warning}>(exit {result.exitCode ?? "?"})</text>
-        : null}
-      {result?.fullOutputPath === undefined ? null : (
-        <text fg={color.faint}>Output truncated. Full output: {result.fullOutputPath}</text>
+          <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: 1 }}>
+            <input
+              focused
+              value={picker.query}
+              placeholder="Search"
+              placeholderColor={color.faint}
+              textColor={color.text}
+              backgroundColor={color.surface}
+              focusedBackgroundColor={color.surface}
+              cursorColor={color.brand}
+              onInput={(query: string) => setPicker((current) => (current === undefined ? current : { ...current, query, selected: 0 }))}
+            />
+          </box>
+          <box style={{ paddingLeft: 2, paddingRight: 2 }}>
+            <View.List
+              rows={rows}
+              selected={picker.selected}
+              height={Math.min(rows.length, Math.max(3, Math.floor(dimensions.height / 2) - 6))}
+              background={color.surface}
+              empty={picker.kind === "model" ? `No model matches "${picker.query}"` : "No sessions in this directory"}
+            />
+          </box>
+        </View.Dialog>
       )}
     </box>
-  )
-}
-
-function CellView(props: { readonly cell: Cell; readonly now: number; readonly tick: string; readonly expanded: boolean }) {
-  const { cell } = props
-  const live = cell.status === "writing" || cell.status === "running"
-  const elapsed = (cell.endedAt ?? props.now) - cell.startedAt
-  const lines = cell.source.split("\n")
-  const folded = !props.expanded && !live && lines.length > foldedLines
-  const source = folded ? lines.slice(0, foldedLines).join("\n") : cell.source
-  const printed = cell.printed.trimEnd().split("\n")
-  const shownPrinted = props.expanded ? printed.join("\n") : fold(cell.printed.trimEnd())
-  return (
-    <box
-      style={{ border: ["left"], paddingLeft: 1, marginBottom: 1 }}
-      borderColor={statusColor[cell.status]}
-      customBorderChars={bar}
-    >
-      <text>
-        <span fg={statusColor[cell.status]}>{live ? props.tick : cell.status === "done" ? "●" : "✗"} </span>
-        <span fg={color.muted}>cell {cell.index}</span>
-        <span fg={color.faint}>  {cell.status === "writing" ? "writing" : cell.status === "running" ? "running" : ""}{live ? " " : ""}{Transcript.duration(elapsed)}</span>
-      </text>
-      {cell.prose === "" ? null : <text fg={color.muted}><em>{cell.prose}</em></text>}
-      {cell.source === "" ? null : (
-        <box style={{ backgroundColor: color.surface, paddingLeft: 1, paddingRight: 1, marginTop: 1 }}>
-          <code content={source} filetype="javascript" syntaxStyle={syntax} streaming={cell.status === "writing"} />
-          {folded ? <text fg={color.faint}>… +{lines.length - foldedLines} lines</text> : null}
-        </box>
-      )}
-      {cell.calls.length === 0 ? null : (
-        <box style={{ marginTop: 1 }}>
-          {cell.calls.map((call, index) => <CallLine key={index} call={call} now={props.now} tick={props.tick} />)}
-        </box>
-      )}
-      {cell.printed.trim() === "" ? null : (
-        <box style={{ marginTop: 1 }}>
-          {!props.expanded && shownPrinted.length < cell.printed.trimEnd().length
-            ? <text fg={color.faint}>… +{printed.length > printedLines ? `${printed.length - printedLines} lines` : "more"}</text>
-            : null}
-          <text fg={color.muted}>{shownPrinted}</text>
-        </box>
-      )}
-      {cell.error === undefined ? null : <text fg={cell.status === "rejected" ? color.warning : color.danger}>{cell.error}</text>}
-    </box>
-  )
-}
-
-function CallLine(props: { readonly call: Transcript.Call; readonly now: number; readonly tick: string }) {
-  const { call } = props
-  const mark = call.status === "running" ? props.tick : call.status === "ok" ? "✓" : "✗"
-  const tone = call.status === "running" ? color.info : call.status === "ok" ? color.success : color.danger
-  const subject = call.subject.split("\n")[0]!
-  return (
-    <text>
-      <span fg={tone}>{mark} </span>
-      <span fg={color.text}>{call.flow} </span>
-      <span fg={color.muted}>{subject.length > 80 ? `${subject.slice(0, 79)}…` : subject}</span>
-      <span fg={color.faint}>  {Transcript.duration((call.endedAt ?? props.now) - call.startedAt)}</span>
-      {call.exit === undefined ? null : <span fg={color.warning}>  exit {call.exit}</span>}
-      {call.message === undefined ? null : <span fg={color.danger}>  {call.message.split("\n")[0]}</span>}
-    </text>
-  )
-}
-
-function Dialog(props: { readonly title: string; readonly children: React.ReactNode }) {
-  return (
-    <box
-      style={{
-        position: "absolute",
-        top: 2,
-        left: 4,
-        right: 4,
-        border: true,
-        borderStyle: "rounded",
-        padding: 1,
-        backgroundColor: color.surface,
-        zIndex: 10
-      }}
-      borderColor={color.brand}
-      title={` ${props.title} `}
-    >
-      {props.children}
-    </box>
-  )
-}
-
-const selectColors = {
-  backgroundColor: color.surface,
-  focusedBackgroundColor: color.surface,
-  textColor: color.text,
-  selectedBackgroundColor: color.brand,
-  selectedTextColor: color.surface,
-  descriptionColor: color.faint,
-  selectedDescriptionColor: color.surface
-} as const
-
-function ModelPicker(props: {
-  readonly seat: string
-  readonly query: string
-  readonly models: ReadonlyArray<Model>
-  readonly onPick: (seat: string) => void
-}) {
-  const query = props.query.toLowerCase()
-  const listed = props.models.filter((model) =>
-    `${model.label} ${model.seat} ${model.provider}`.toLowerCase().includes(query)
-  )
-  const custom = props.query.includes(":") && !listed.some((model) => model.seat === props.query)
-  const options = [
-    ...(custom ? [{ name: props.query, description: "any seat", value: props.query }] : []),
-    ...listed.map((model) => ({ name: model.label, description: `${model.provider} · ${model.seat}`, value: model.seat }))
-  ]
-  const selected = Math.max(0, options.findIndex((option) => option.value === props.seat))
-  return (
-    <Dialog title="model">
-      {options.length === 0 ? <text fg={color.faint}>No model matches "{props.query}"</text> : (
-        <select
-          focused
-          options={options}
-          selectedIndex={selected}
-          onSelect={(_, option) => option !== null && props.onPick(String(option.value))}
-          style={{ height: Math.min(options.length * 2, 20) }}
-          {...selectColors}
-        />
-      )}
-      <text fg={color.faint}>/model provider:id for any other seat</text>
-    </Dialog>
-  )
-}
-
-function SessionPicker(props: {
-  readonly sessions: ReadonlyArray<Session.Summary>
-  readonly onPick: (file: string) => void
-}) {
-  const options = props.sessions.map((session) => ({
-    name: (session.name ?? session.firstPrompt).split("\n")[0]!.slice(0, 80),
-    description: new Date(session.modified).toLocaleString(),
-    value: session.file
-  }))
-  return (
-    <Dialog title="resume">
-      {options.length === 0 ? <text fg={color.faint}>No sessions in this directory</text> : (
-        <select
-          focused
-          options={options}
-          onSelect={(_, option) => option !== null && props.onPick(String(option.value))}
-          style={{ height: Math.min(options.length * 2, 20) }}
-          {...selectColors}
-        />
-      )}
-    </Dialog>
   )
 }

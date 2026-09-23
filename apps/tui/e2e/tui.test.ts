@@ -13,7 +13,7 @@ import { key, Tui } from "./zmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const fixture = join(app, "test", "fixtures", "fix-add.jsonl")
-const idle = (screen: string) => screen.includes("thinking default") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
+const idle = (screen: string) => screen.includes("code  ·") && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
 let tui: Tui | undefined
 afterEach(async () => {
@@ -47,7 +47,7 @@ const start = async (options: { readonly holdMs?: number; readonly args?: string
       SMITHERS_TUI_SESSION_DIR: sessions
     }
   })
-  await tui.until((screen) => screen.includes("thinking default"), 20_000, "first draw")
+  await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
   return { tui, cwd, sessions }
 }
 
@@ -109,7 +109,7 @@ describe("esc", () => {
     await tui.until((screen) => screen.includes("steering · delivered before the next cell"), 5_000, "steer")
     await tui.press(key.escape)
     await tui.until((screen) => screen.includes("Restored 1 queued message") && idle(screen), 5_000, "restored")
-    expect(tui.screen()).toMatch(/│also check the tests/)
+    expect(tui.screen()).toMatch(/┃\s+also check the tests/)
   }, 60_000)
 })
 
@@ -142,7 +142,7 @@ describe("turns", () => {
     const { tui, cwd } = await start()
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("cell 1"), 20_000, "first cell")
+    await tui.until((screen) => /[●⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] (writing|cell)/.test(screen), 20_000, "first cell")
     await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
   }, 180_000)
@@ -153,7 +153,7 @@ describe("turns", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("$ echo first"))
     await tui.press(key.up)
-    await tui.until((screen) => /│!echo first/.test(screen), 3_000, "recalled prompt")
+    await tui.until((screen) => /┃\s+!echo first/.test(screen), 3_000, "recalled prompt")
   }, 60_000)
 
   it("continues the latest session with -c", async () => {
@@ -174,4 +174,56 @@ describe("turns", () => {
     })
     await tui.until((screen) => screen.includes("remembered-output"), 20_000, "restored transcript")
   }, 90_000)
+})
+
+describe("completion", () => {
+  it("moves through / commands with the arrows and runs the chosen one with enter", async () => {
+    const { tui } = await start()
+    await tui.type("/")
+    await tui.until((screen) => screen.includes("/hotkeys") || screen.includes("/model"), 5_000, "command menu")
+    await tui.type("se")
+    await tui.until((screen) => /\/session\s+Show the session file/.test(screen), 5_000, "filtered menu")
+    await tui.press(key.enter)
+    await tui.until((screen) => /exchanges · ↑0/.test(screen), 5_000, "session note")
+  }, 60_000)
+
+  it("completes an argument: /thinking hi, down, enter picks xhigh", async () => {
+    const { tui } = await start()
+    await tui.type("/thinking hi")
+    await tui.until((screen) => screen.includes("xhigh"), 5_000, "levels")
+    await tui.press(key.down)
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Thinking level: xhigh"), 5_000, "level set")
+  }, 60_000)
+
+  it("inserts an @file mention with tab and leaves the draft unsent", async () => {
+    const { tui } = await start()
+    await tui.type("look at @chk")
+    await tui.until((screen) => screen.includes("check.mjs"), 5_000, "file menu")
+    await tui.press(key.tab)
+    await tui.until((screen) => /┃\s+look at @check\.mjs/.test(screen), 5_000, "mention")
+    await tui.type("please")
+    await tui.until((screen) => screen.includes("@check.mjs please"), 5_000, "typing continues")
+  }, 60_000)
+
+  it("esc closes the menu without clearing the draft", async () => {
+    const { tui } = await start()
+    await tui.type("/mod")
+    await tui.until((screen) => screen.includes("Pick a model"), 5_000, "menu")
+    await tui.press(key.escape)
+    await tui.until((screen) => !screen.includes("Pick a model") && /┃\s+\/mod/.test(screen), 5_000, "closed menu")
+  }, 60_000)
+})
+
+describe("model dialog", () => {
+  it("filters as you type and picks with enter", async () => {
+    const { tui } = await start()
+    await tui.type("/model")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Select model"), 5_000, "dialog")
+    await tui.type("zzzz-none")
+    await tui.until((screen) => screen.includes('No model matches "zzzz-none"'), 5_000, "empty filter")
+    await tui.press(key.escape)
+    await tui.until((screen) => !screen.includes("Select model"), 5_000, "closed dialog")
+  }, 60_000)
 })

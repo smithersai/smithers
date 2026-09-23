@@ -1,18 +1,46 @@
 /**
- * Night Owl, the palette the Smithers app uses (`apps/app/.../tokens.css`).
+ * Night Owl dark, the palette the Smithers app uses
+ * (`apps/app/src/mainview/styles/tokens.css`, `:root[data-theme="dark"]`).
+ * Surfaces layer the way the app's do: the page, a panel, an element on it.
  */
 import { RGBA, SyntaxStyle } from "@opentui/core"
 
+/** `color-mix(in srgb, a percent%, b)`. */
+export const mix = (a: string, percent: number, b: string): string => {
+  const channel = (hex: string, at: number) => Number.parseInt(hex.slice(1 + at * 2, 3 + at * 2), 16)
+  const weight = percent / 100
+  return `#${[0, 1, 2]
+    .map((at) => Math.round(channel(a, at) * weight + channel(b, at) * (1 - weight)).toString(16).padStart(2, "0"))
+    .join("")}`
+}
+
+const page = "#011627"
+const surface = "#0b253a"
+const brand = "#c792ea"
+
 export const color = {
-  surface: "#0b253a",
+  /** `--bg`: the page. */
+  page,
+  /** `--surface`: panels, the composer, dialogs. */
+  surface,
+  /** `--surface-2`: menus, hovered and nested elements. */
+  element: "#1d3b53",
+  /** `--surface-3`. */
+  raised: "#234d70",
+  /** `--border-solid`. */
+  border: "#122d42",
   text: "#d6deeb",
-  muted: "#7e97ac",
-  faint: "#4b6479",
-  brand: "#c792ea",
+  muted: "#8badc1",
+  faint: "#748fa5",
+  brand,
   success: "#addb67",
   warning: "#ecc48d",
   danger: "#ef5350",
-  info: "#82aaff"
+  info: "#82aaff",
+  /** `--bubble-outgoing` (dark): the user's messages. */
+  bubble: mix(brand, 24, surface),
+  addedBg: mix("#addb67", 14, page),
+  removedBg: mix("#ef5350", 16, page)
 } as const
 
 const fg = (hex: string, extra: { bold?: boolean; italic?: boolean; underline?: boolean } = {}) => ({

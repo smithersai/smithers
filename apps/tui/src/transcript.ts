@@ -18,8 +18,20 @@ export interface Call {
   readonly message?: string
   /** A command's nonzero exit status; the call itself still succeeded. */
   readonly exit?: number
+  /** The flow's own words for the call: `reading`, `read`, `failed to read`. */
+  readonly verb?: { readonly pending: string; readonly success: string; readonly failure: string }
+  /** What an `edit` or `write` changes, for the screen to draw as a diff. */
+  readonly change?: Change
   readonly startedAt: number
   readonly endedAt?: number
+}
+
+export interface Change {
+  readonly path: string
+  readonly removed: string
+  readonly added: string
+  /** First line of the change, once the flow reports it. */
+  readonly line?: number
 }
 
 export type Item =
@@ -220,6 +232,50 @@ export const subject = (input: unknown): string => {
   return JSON.stringify(input)
 }
 
+const text = (record: Record<string, unknown>, key: string): string | undefined =>
+  typeof record[key] === "string" ? record[key] : undefined
+
+/** The change an `edit` (`oldString` → `newString`) or `write` (`content`) call makes. */
+export const change = (flow: string, input: unknown): Change | undefined => {
+  if (typeof input !== "object" || input === null) return undefined
+  const record = input as Record<string, unknown>
+  const path = text(record, "path")
+  if (path === undefined) return undefined
+  if (flow === "edit") {
+    const removed = text(record, "oldString")
+    const added = text(record, "newString")
+    return removed === undefined || added === undefined ? undefined : { path, removed, added }
+  }
+  if (flow === "write") {
+    const added = text(record, "content")
+    return added === undefined ? undefined : { path, removed: "", added, line: 1 }
+  }
+  return undefined
+}
+
+/**
+ * A unified diff of one change, for opentui's `<diff>`. The hunk header uses
+ * the reported start line, or 1 before the flow has reported it.
+ */
+export const unified = (change: Change): string => {
+  const lines = (value: string) => (value === "" ? [] : value.replace(/\n$/, "").split("\n"))
+  const removed = lines(change.removed)
+  const added = lines(change.added)
+  const line = change.line ?? 1
+  return [
+    `--- a/${change.path}`,
+    `+++ b/${change.path}`,
+    `@@ -${removed.length === 0 ? 0 : line},${removed.length} +${line},${added.length} @@`,
+    ...removed.map((each) => `-${each}`),
+    ...added.map((each) => `+${each}`)
+  ].join("\n")
+}
+
+const startLine = (value: unknown): number | undefined =>
+  typeof value === "object" && value !== null && "startLine" in value && typeof value.startLine === "number"
+    ? value.startLine
+    : undefined
+
 const exitCode = (value: unknown): number | undefined =>
   typeof value === "object" && value !== null && "exitCode" in value && typeof value.exitCode === "number"
     ? value.exitCode
@@ -233,6 +289,19 @@ const outcomeError = (outcome: AgentEvent.CellSettled["outcome"]): string | unde
       return `${outcome.name}: ${outcome.message}`
     case "rejected":
       return outcome.message
+  }
+}
+
+const started = (call: AgentEvent.CellCallStarted["call"], at: number): Call => {
+  const verb = call.presentation?.verb
+  const changed = change(call.flowName, call.input)
+  return {
+    flow: call.flowName,
+    subject: subject(call.input),
+    status: "running",
+    ...(verb === undefined ? {} : { verb }),
+    ...(changed === undefined ? {} : { change: changed }),
+    startedAt: at
   }
 }
 
@@ -284,7 +353,7 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
     case "cell-call-started":
       return updateCell(transcript, (cell) => ({
         ...cell,
-        calls: [...cell.calls, { flow: event.call.flowName, subject: subject(event.call.input), status: "running", startedAt: at }]
+        calls: [...cell.calls, started(event.call, at)]
       }))
     case "cell-call-settled":
       return updateCell(transcript, (cell) => {
@@ -298,6 +367,9 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
           status: ok ? "ok" : "failed",
           ...(ok || event.result.message === undefined ? {} : { message: event.result.message }),
           ...(exit === undefined || exit === 0 ? {} : { exit }),
+          ...(calls[at_]!.change === undefined || startLine(event.result.value) === undefined
+            ? {}
+            : { change: { ...calls[at_]!.change!, line: startLine(event.result.value)! } }),
           endedAt: at
         }
         return { ...cell, calls }
