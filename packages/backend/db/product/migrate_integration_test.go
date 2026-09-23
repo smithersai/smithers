@@ -83,6 +83,36 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err := Apply(ctx, pool); err != nil {
 		t.Fatalf("idempotent product migration: %v", err)
 	}
+	// A hosted database can contain the canonical coding-host table from the
+	// earlier Plue lineage while its product ledger ends at version 11.
+	if _, err := pool.Exec(ctx, `DELETE FROM smithers_product_migrations WHERE version=12`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, pool); err != nil {
+		t.Fatalf("adopt existing coding-host table: %v", err)
+	}
+	var adopted bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM smithers_product_migrations WHERE version=12)`).Scan(&adopted); err != nil {
+		t.Fatal(err)
+	}
+	if !adopted {
+		t.Fatal("canonical coding-host table was not recorded as applied")
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM smithers_product_migrations WHERE version=12`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DROP INDEX idx_workflow_run_coding_hosts_workspace`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, pool); err == nil || !strings.Contains(err.Error(), "differs from canonical product migration 12") {
+		t.Fatalf("changed coding-host table should block adoption, got %v", err)
+	}
+	if _, err := pool.Exec(ctx, `CREATE INDEX idx_workflow_run_coding_hosts_workspace ON public.workflow_run_coding_hosts (workspace_id, workflow_run_id)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, pool); err != nil {
+		t.Fatalf("adopt restored coding-host table: %v", err)
+	}
 	var infraMissing, placementColumnMissing bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.repo_storage_sets') IS NULL,
 		NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'

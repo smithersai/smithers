@@ -173,6 +173,18 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 		if applied[item.version] {
 			continue
 		}
+		if item.version == 12 {
+			adopted, err := adoptExistingCodingHostTable(ctx, tx)
+			if err != nil {
+				return fmt.Errorf("adopt product migration 12: %w", err)
+			}
+			if adopted {
+				if _, err := tx.Exec(ctx, `INSERT INTO public.smithers_product_migrations(version, checksum) VALUES ($1, $2)`, item.version, item.checksum); err != nil {
+					return fmt.Errorf("record adopted product migration 12: %w", err)
+				}
+				continue
+			}
+		}
 		if _, err := tx.Exec(ctx, item.sql, pgx.QueryExecModeSimpleProtocol); err != nil {
 			return fmt.Errorf("apply product migration %d: %w", item.version, err)
 		}
@@ -184,4 +196,42 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("commit product migration: %w", err)
 	}
 	return nil
+}
+
+// Plue's former mixed lineage already installed migration 12's table before
+// Smithers owned the product ledger. Adopt only the exact canonical shape;
+// a partial or different table must stop the rollout.
+func adoptExistingCodingHostTable(ctx context.Context, tx pgx.Tx) (bool, error) {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT to_regclass('public.workflow_run_coding_hosts') IS NOT NULL`).Scan(&exists); err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	var matches bool
+	err := tx.QueryRow(ctx, `SELECT
+		ARRAY(SELECT a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull || ':' || COALESCE(pg_get_expr(d.adbin, d.adrelid), '')
+			FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+			WHERE a.attrelid='public.workflow_run_coding_hosts'::regclass AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum)
+		= ARRAY['workflow_run_id:bigint:true:', 'workspace_id:uuid:true:', 'host_run_id:text:true:', 'flow_id:text:true:',
+			'created_at:timestamp with time zone:true:now()', 'updated_at:timestamp with time zone:true:now()']
+		AND ARRAY(SELECT conname || ':' || pg_get_constraintdef(oid)
+			FROM pg_constraint WHERE conrelid='public.workflow_run_coding_hosts'::regclass ORDER BY conname)
+		= ARRAY['workflow_run_coding_hosts_flow_id_present:CHECK ((flow_id <> ''''::text))',
+			'workflow_run_coding_hosts_host_run_id_present:CHECK ((host_run_id <> ''''::text))',
+			'workflow_run_coding_hosts_pkey:PRIMARY KEY (workflow_run_id)',
+			'workflow_run_coding_hosts_workflow_run_id_fkey:FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE',
+			'workflow_run_coding_hosts_workspace_id_fkey:FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE']
+		AND ARRAY(SELECT indexname || ':' || indexdef FROM pg_indexes
+			WHERE schemaname='public' AND tablename='workflow_run_coding_hosts' ORDER BY indexname)
+		= ARRAY['idx_workflow_run_coding_hosts_workspace:CREATE INDEX idx_workflow_run_coding_hosts_workspace ON public.workflow_run_coding_hosts USING btree (workspace_id, workflow_run_id)',
+			'workflow_run_coding_hosts_pkey:CREATE UNIQUE INDEX workflow_run_coding_hosts_pkey ON public.workflow_run_coding_hosts USING btree (workflow_run_id)']`).Scan(&matches)
+	if err != nil {
+		return false, err
+	}
+	if !matches {
+		return false, errors.New("preexisting workflow_run_coding_hosts differs from canonical product migration 12")
+	}
+	return true, nil
 }
