@@ -328,11 +328,12 @@ export type Snapshot = typeof Snapshot.Type
 const fixedQuestions = {
   thrashing: Classifier.boolean({
     instructions:
-      "Is the run repeating itself without converging? Read signals.repeatFrames, signals.readOnlyFrames, signals.checksFailing, signals.failuresUnanswered and whether the newest frames re-run the same check or re-edit the same place.",
+      "Is the run going in circles rather than converging? Compare the newest frames with each other and with signals.checksFailing, signals.failuresUnanswered, signals.readOnlyFrames and signals.repeatFrames. Any one sign below is enough.",
     criteria: {
       true:
-        "the same check keeps failing across frames, edits are reverted or redone, repeat or read-only streaks are long, and nothing in the newest frames is new",
-      false: "each newest frame does something the previous did not, or a failing check has since passed"
+        "a check fails again after an edit meant to fix it, an edit is redone or reverted, or the newest frames re-read or re-run what earlier frames already saw without learning anything new",
+      false:
+        "the newest frames learn something new or make progress: a failing check now passes, or a new cause is found and acted on"
     }
   }),
   on_target: Classifier.boolean({
