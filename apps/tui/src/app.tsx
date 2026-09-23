@@ -514,7 +514,13 @@ export function App(props: AppProps) {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
   }, [renderer, props.host.cwd])
 
-  useEffect(() => Clipboard.copyOnSelect(renderer, Clipboard.write, () => setStatus("Copied")), [renderer])
+  useEffect(() =>
+    Clipboard.copyOnSelect(
+      renderer,
+      (text) => Clipboard.write(text),
+      () => setStatus("Copied"),
+      () => setStatus("Copy failed: no pbcopy, wl-copy, xclip or xsel", "warning")
+    ), [renderer])
 
   // One clock drives foreground and background progress through real settlement.
   const clockRunning = turn !== undefined || shell !== undefined || undoing !== undefined || workspace.busy ||
@@ -994,7 +1000,11 @@ export function App(props: AppProps) {
           setStatus("No answer to copy", "warning")
           return true
         }
-        setStatus(Clipboard.write(answer.text) ? "Copied the last answer" : "No clipboard command")
+        void Clipboard.write(answer.text).then((copied) =>
+          copied
+            ? setStatus("Copied the last answer")
+            : setStatus("Copy failed: no pbcopy, wl-copy, xclip or xsel", "warning")
+        )
         return true
       }
       case "hotkeys":
