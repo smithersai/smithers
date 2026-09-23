@@ -455,6 +455,27 @@ def check_guest_prelude() -> None:
     assert umask in ("0022", "022"), umask
 
 
+def check_storage_limit() -> None:
+    """takens-embedding-lean asks for a 50 GiB disk; with suspended
+    workspaces' disks counted, the best sandbox host had 38.2 GB free and
+    the create waited on no_capacity for an hour. A disk over
+    PLUE_MAX_STORAGE_MB is unplaceable at once, like PLUE_MAX_CPUS."""
+    os.environ["PLUE_MAX_STORAGE_MB"] = "32768"
+    try:
+        ops = plue_env._PlueOps()
+        ops.logger = logging.getLogger("check")
+        ops.session_id = "t__x__env"
+        ops.task_env_config = types.SimpleNamespace(cpus=4, storage_mb=51200)
+        try:
+            asyncio.run(ops._plue_reserve())
+        except plue_env.PlueUnplaceable as error:
+            assert "51200" in str(error) and error.code == "unplaceable", error
+        else:
+            raise AssertionError("a 50 GiB disk is unplaceable on 38 GB hosts")
+    finally:
+        os.environ.pop("PLUE_MAX_STORAGE_MB", None)
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -615,6 +636,7 @@ if __name__ == "__main__":
     check_durable_exec_and_workdir()
     check_shim_durable_exec()
     check_guest_prelude()
+    check_storage_limit()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

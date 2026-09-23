@@ -29,6 +29,9 @@ Configuration (environment variables of the harness host):
                      task that needs a GPU, a TPU or anything else the
                      workspace backend lacks: Harbor's constructor check is
                      deferred to reserve(), inside the trial.
+    PLUE_MAX_STORAGE_MB  the largest disk a sandbox host can give one guest
+                     (free host disk, suspended workspaces' disks counted).
+                     A task asking for more is unplaceable at once.
     A task whose docker-compose file adds services beside `main` is
     unplaceable too (see compose_sidecars).
     PLUE_IMAGE_CONFIG_CACHE  where the image's WORKDIR is cached (see
@@ -623,6 +626,12 @@ class _PlueOps:
         if limit and float(cpus) > float(limit):
             raise PlueUnplaceable(
                 f"task asks for {cpus} vCPU; the largest guest a sandbox worker can place is {limit} vCPU",
+                "unplaceable")
+        storage = getattr(self.task_env_config, "storage_mb", None)
+        disk_limit = os.environ.get("PLUE_MAX_STORAGE_MB", "").strip()
+        if storage and disk_limit and float(storage) > float(disk_limit):
+            raise PlueUnplaceable(
+                f"task asks for a {storage} MB disk; the sandbox hosts hold at most {disk_limit} MB for one guest",
                 "unplaceable")
         ledger = self._plue_ledger()
         if ledger is not None:
