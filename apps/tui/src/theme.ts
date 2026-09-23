@@ -4,6 +4,9 @@
  * Surfaces layer the way the app's do: the page, a panel, an element on it.
  */
 import { RGBA, SyntaxStyle } from "@opentui/core"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 /** `color-mix(in srgb, a percent%, b)`. */
 export const mix = (a: string, percent: number, b: string): string => {
@@ -16,7 +19,25 @@ export const mix = (a: string, percent: number, b: string): string => {
 
 const page = "#011627"
 const surface = "#0b253a"
-const brand = "#c792ea"
+export const themes = {
+  purple: "#c792ea",
+  blue: "#82aaff",
+  green: "#addb67",
+  orange: "#f78c6c"
+} as const
+export type Theme = keyof typeof themes
+const file = () => join(homedir(), ".smithers", "tui", "theme")
+export const isTheme = (value: string): value is Theme => Object.hasOwn(themes, value)
+export const loadTheme = (): Theme => {
+  try {
+    const saved = readFileSync(file(), "utf8").trim()
+    return isTheme(saved) ? saved : "purple"
+  } catch {
+    return "purple"
+  }
+}
+let current: Theme = "purple"
+const brand: string = themes.purple
 
 export const color = {
   /** `--bg`: the page. */
@@ -41,14 +62,27 @@ export const color = {
   bubble: mix(brand, 24, surface),
   addedBg: mix("#addb67", 14, page),
   removedBg: mix("#ef5350", 16, page)
-} as const
+}
+
+export const activeTheme = (): Theme => current
+export const setTheme = (theme: Theme): void => {
+  current = theme
+  color.brand = themes[theme]
+  color.bubble = mix(color.brand, 24, color.surface)
+  syntax = makeSyntax()
+}
+
+export const saveTheme = (theme: Theme): void => {
+  mkdirSync(join(homedir(), ".smithers", "tui"), { recursive: true })
+  writeFileSync(file(), theme + "\n")
+}
 
 const fg = (hex: string, extra: { bold?: boolean; italic?: boolean; underline?: boolean } = {}) => ({
   fg: RGBA.fromHex(hex),
   ...extra
 })
 
-export const syntax = SyntaxStyle.fromStyles({
+const makeSyntax = () => SyntaxStyle.fromStyles({
   default: fg(color.text),
   keyword: fg(color.brand, { italic: true }),
   "keyword.return": fg(color.brand, { italic: true }),
@@ -79,6 +113,7 @@ export const syntax = SyntaxStyle.fromStyles({
   "markup.list": fg(color.brand),
   "markup.quote": fg(color.muted, { italic: true })
 })
+export let syntax = makeSyntax()
 
 /** Braille spinner frames, advanced by the app's clock. */
 export const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const

@@ -25,7 +25,7 @@ import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
 import * as Summary from "./summary.ts"
-import { color, spinner } from "./theme.ts"
+import { activeTheme, color, isTheme, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
 import * as View from "./view.tsx"
 import { Workspace } from "./workspace.ts"
@@ -63,6 +63,7 @@ interface TurnState {
 
 type Picker =
   | { readonly kind: "model"; readonly query: string; readonly selected: number }
+  | { readonly kind: "theme"; readonly query: string; readonly selected: number }
   | {
     readonly kind: "resume"
     readonly query: string
@@ -81,6 +82,9 @@ const pickerRows = (
   models: ReadonlyArray<Model>,
   seat: string
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "theme") return Fuzzy.filter(Object.keys(themes), picker.query, (name) => name).map((name) => ({
+    key: name, label: name, current: name === activeTheme(), value: name
+  }))
   if (picker.kind === "model") {
     const listed = Fuzzy.filter(models, picker.query, (model) => `${model.label} ${model.seat} ${model.provider}`)
     const custom = picker.query.includes(":") && !models.some((model) => model.seat === picker.query)
@@ -109,6 +113,8 @@ const pickerRows = (
 
 export function App(props: AppProps) {
   const renderer = useRenderer()
+  const [, refreshTheme] = useState(0)
+  useState(() => setTheme(loadTheme()))
   const [restored] = useState(() => ({
     current: props.resume === undefined ? undefined : Session.restore(Session.load(props.resume))
   }))
@@ -411,6 +417,9 @@ export function App(props: AppProps) {
         if (argument.includes(":")) switchSeat(argument)
         else setPicker({ kind: "model", query: argument, selected: 0 })
         return true
+      case "theme":
+        setPicker({ kind: "theme", query: "", selected: 0 })
+        return true
       case "thinking": {
         const level = argument === "" || argument === "default" ? undefined : argument
         if (level !== undefined && !(Editor.thinkingLevels as ReadonlyArray<string>).includes(level)) {
@@ -542,6 +551,13 @@ export function App(props: AppProps) {
   const pick = useCallback((open: Picker, value: string) => {
     setPicker(undefined)
     if (open.kind === "model") return switchSeat(value)
+    if (open.kind === "theme") {
+      if (!isTheme(value)) return
+      setTheme(value)
+      refreshTheme((count) => count + 1)
+      try { saveTheme(value) } catch { setStatus("Could not save theme", "warning") }
+      return
+    }
     if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy) openSession(value)
     else setStatus("Stop running work first", "warning")
   }, [switchSeat, openSession, setStatus, workspace])
@@ -864,7 +880,8 @@ export function App(props: AppProps) {
           </text>
           <text wrapMode="none" style={{ flexShrink: 0 }}>
             <span fg={color.faint}>
-              ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)} R{Editor.tokens(usage.cached)}
+              ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)}
+              {usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`}
             </span>
             {window > 0
               ? (
@@ -893,7 +910,7 @@ export function App(props: AppProps) {
       />
       {picker === undefined ? null : (
         <View.Dialog
-          title={picker.kind === "model" ? "Select model" : "Resume session"}
+          title={picker.kind === "model" ? "Select model" : picker.kind === "theme" ? "Select theme" : "Resume session"}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
         >
@@ -917,7 +934,7 @@ export function App(props: AppProps) {
               selected={picker.selected}
               height={Math.min(rows.length, Math.max(3, Math.floor(dimensions.height / 2) - 6))}
               background={color.surface}
-              empty={picker.kind === "model" ? `No model matches "${picker.query}"` : "No sessions in this directory"}
+              empty={picker.kind === "resume" ? "No sessions in this directory" : `No ${picker.kind} matches "${picker.query}"`}
             />
           </box>
         </View.Dialog>
