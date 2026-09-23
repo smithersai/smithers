@@ -101,7 +101,7 @@ const withoutLiterals = (source: string): string => {
 const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.ts"
 
 /** How many `console.*` lines the teaching text is expected to spell. */
-const TEACHING_LINES = 2
+const TEACHING_LINES = 3
 
 /**
  * The one file the guard still skips whole.
