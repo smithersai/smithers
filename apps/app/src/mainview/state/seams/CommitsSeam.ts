@@ -14,11 +14,9 @@
  * newest first, capped at COMMIT_WALK_CAP. plue names authors by name and
  * email only; a GitHub noreply email is the one place a login and avatar can
  * be read without a guess. Signatures are never reported, so no row claims
- * "verified". The practice repository answers from an adapter the tutorial
- * owns (PracticeCommits); without one, a practice read is refused by name.
+ * "verified".
  */
 import type { Card } from "../AppState"
-import { isPracticeRepo } from "../practice/PracticeRepository"
 import { resolveTargetRepo } from "../RepoContext"
 import { fetchAllBookmarks } from "./BookmarksSeam"
 import type { BookmarkRow } from "./BookmarksSeam"
@@ -39,28 +37,12 @@ export interface CommitsSeam {
   readonly readCommit: (ref: string, repo?: string) => Promise<Answer>
 }
 
-/**
- * What the practice repository must supply for the tutorial's commits beat.
- * The onboarding lane owns the adapter; this seam only renders its answers.
- */
-export interface PracticeCommits {
-  readonly list: (branch?: string) => { readonly branch: string; readonly commits: ReadonlyArray<CommitSummary> } | string
-  readonly read: (ref: string) => CommitPayload | string
-}
-
-export interface CommitsSeamDeps {
-  readonly practice?: PracticeCommits
-}
-
 /** The most commits one list card walks; the card says when it stopped short. */
 export const COMMIT_WALK_CAP = 50
 /** Listing pages read before the walk falls back to one GET per missing change. */
 const LIST_PAGE_CAP = 3
 /** One-by-one reads allowed per walk after the listing, so a sparse listing cannot become 50 requests. */
 const MISS_READ_CAP = 10
-
-export const PRACTICE_COMMITS_REFUSAL =
-  "The practice repository's commits are not bundled in this build yet."
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -195,7 +177,7 @@ export const commitValue = (payload: CommitPayload): string =>
 export const commitListCardId = (repo: string, branch: string | null): string => `commits-${repo}-${branch ?? "default"}`
 export const commitCardId = (repo: string, ref: string): string => `commit-${repo}-${ref}`
 
-export const createCommitsSeam = (ctx: SeamContext, deps: CommitsSeamDeps = {}): CommitsSeam => {
+export const createCommitsSeam = (ctx: SeamContext): CommitsSeam => {
   const root = (repo: string): string => {
     const [owner = "", name = ""] = repo.split("/")
     return `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
@@ -293,12 +275,6 @@ export const createCommitsSeam = (ctx: SeamContext, deps: CommitsSeamDeps = {}):
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
       const repo = target.repo
-      if (isPracticeRepo(repo)) {
-        const answer = deps.practice?.list(branchName) ?? PRACTICE_COMMITS_REFUSAL
-        if (typeof answer === "string") return answer
-        upsert(listCard(repo, answer.branch, { commits: [...answer.commits] }))
-        return readResult(listValue(repo, answer.branch, answer.commits))
-      }
       const bookmarks = await fetchAllBookmarks(ctx, repo)
       if ("error" in bookmarks) return bookmarks.error
       const bookmark = branchName === undefined
@@ -321,12 +297,6 @@ export const createCommitsSeam = (ctx: SeamContext, deps: CommitsSeamDeps = {}):
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
       const repo = target.repo
-      if (isPracticeRepo(repo)) {
-        const answer = deps.practice?.read(ref) ?? PRACTICE_COMMITS_REFUSAL
-        if (typeof answer === "string") return answer
-        upsert(commitCard(answer, ref))
-        return readResult(commitValue(answer))
-      }
       const change = await readChange(repo, ref)
       if ("error" in change) return change.error
       const [diff, statuses, parents] = await Promise.all([

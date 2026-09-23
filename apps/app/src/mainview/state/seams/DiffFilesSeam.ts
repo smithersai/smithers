@@ -1,23 +1,9 @@
-import { LiveTutorialRunSchema } from "@smthrs/rpc/LiveTutorial"
-import { isPracticeRepo,PRACTICE_CARD,PRACTICE_REPO,practiceImplementation } from "../practice/PracticeRepository"
 import { CARD_CONTENT_CAP,encodeRepoPath,unsafePath } from "./FilesSeam"
 import type { SeamContext } from "./SeamContext"
 import { readErrorMessage,readResult } from "./SeamContext"
 
-export const PRACTICE_DIFF_CARD = "practice-implementation-diff"
 export const createDiffFilesSeam = (ctx: SeamContext) => {
   return {
-    showPracticeDiff: async () => {
-      const implementation = practiceImplementation()
-      const existing = ctx.store.collections.cards.get(PRACTICE_DIFF_CARD)
-      await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
-        id: PRACTICE_DIFF_CARD, kind: "diff", title: "Implementation diff · hello-server", status: "active",
-        ordinal: existing?.ordinal ?? ctx.nextOrdinal(), createdAt: existing?.createdAt ?? Date.now(),
-        payload: { repo: PRACTICE_REPO, changeId: implementation.changeId, from: implementation.base, to: implementation.commitId,
-          pin: { changeId: implementation.changeId, seq: null, commitId: implementation.commitId }, files: implementation.files }
-      } }).isPersisted.promise
-      return readResult(implementation.files.map(file => `${file.path}\n${file.patch}`).join("\n\n"))
-    },
     openDiffFile: async (cardId: string, path: string) => {
       const card = ctx.store.collections.cards.get(cardId)
       if (card?.kind !== "diff") return "Open the diff before selecting a file."
@@ -28,18 +14,7 @@ export const createDiffFilesSeam = (ctx: SeamContext) => {
       const commitId = card.payload.pin.commitId
       if (!commitId) return "This diff has no pinned commit to read. Refresh the diff first."
       let content: string
-      if (isPracticeRepo(card.payload.repo)) {
-        const implementationCard = ctx.store.collections.cards.get(PRACTICE_CARD.run)
-        const live = LiveTutorialRunSchema.safeParse(implementationCard?.kind === "run-trace" ? implementationCard.payload.input?.liveTutorialSnapshot : undefined)
-        if (live.success) {
-          if (live.data.commits?.at(-1)?.commitId !== commitId || live.data.files?.[path] === undefined) return "The live file is not available at this revision."
-          content = live.data.files[path]!
-        } else {
-          const implementation = practiceImplementation()
-          if (commitId !== implementation.commitId || implementation.contents[path] === undefined) return "The recorded file is not available at this revision."
-          content = implementation.contents[path]!
-        }
-      } else {
+      {
         const [owner, repo] = card.payload.repo.split("/")
         try {
           const response = await ctx.http(`${ctx.baseUrl}/api/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/contents/${encodeRepoPath(path)}?ref=${encodeURIComponent(commitId)}`)

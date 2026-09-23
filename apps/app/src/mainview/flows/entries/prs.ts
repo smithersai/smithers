@@ -20,7 +20,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
     hidden: true,
     grammar: args => payloadFor("prs.list", args),
     summary: "List a repository's pull requests",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: RepoTarget,
@@ -30,7 +30,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "prs.list",
     summary: "List a repository's pull requests",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: RepoTarget,
@@ -40,8 +40,7 @@ export const prsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "prs.view",
     summary: "Open a pull request with reviews and checks",
-    /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<number> [owner/repo]",
     requires: ["repo-read"],
     input: NumberedTarget,

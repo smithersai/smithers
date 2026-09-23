@@ -17,8 +17,7 @@ export const commitsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     /* A lone token with a slash is the repository (deterministic, like files.*); name both to list a slashed branch. */
     name: "commits.list",
     summary: "List a branch's commits, newest first",
-    /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[branch] [owner/repo]",
     requires: ["repo-read"],
     input: Schema.Struct({ branch: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
@@ -27,8 +26,7 @@ export const commitsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
   flow({
     name: "commits.read",
     summary: "Show one commit: its message, parents and diff",
-    /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<change-id> [owner/repo]",
     requires: ["repo-read"],
     input: Schema.Struct({ ref: Schema.String, repo: Schema.optional(Schema.String) }),

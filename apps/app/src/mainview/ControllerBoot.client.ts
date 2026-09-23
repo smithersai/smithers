@@ -107,9 +107,9 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
        * as the upstream took. It runs beside the other inventory loads, never
        * on the paint path: identity "unknown" is a first-class state the app
        * already renders, and the answer lands in the store whenever it comes.
-       * A fresh anonymous entry is public practice content: its
-       * real controls need not wait on identity. Retained content/account
-       * ownership keep the cloud identity barrier.
+       * A fresh anonymous entry is public content: its real controls need
+       * not wait on identity. Retained content/account ownership keep the
+       * cloud identity barrier.
        */
       yield* Effect.sync(() => {
         // A failed read is an answer too (FirstRunRepository.ts): both sides

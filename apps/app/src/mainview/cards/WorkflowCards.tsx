@@ -1,7 +1,6 @@
 import { ViewSkeleton } from "../ViewSkeleton"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { workflowLaunchOf } from "../state/WorkflowLaunch"
-import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
 /*
  * The workflow cards: the embedded run card (run-trace) with its trace body
  * and steer row, the which-repository chooser (workflow-repo), and the
@@ -9,9 +8,8 @@ import { LiveTutorialLimitSchema } from "../state/LiveTutorialLimit"
  * exported because the Flows pane and the runs tests mount them directly: one
  * list with two mounts, never a second implementation of the same listing.
  */
-import { LiveTutorialRunBody } from "./LiveTutorialRunBody"
 import { runSourceCommand } from "../flows/RunCommand"
-import { Button, Markdown } from "@smthrs/ui"
+import { Button, Input, Markdown } from "@smthrs/ui"
 import { useState } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card, FlowDurationsRow } from "../state/AppState"
@@ -53,7 +51,6 @@ export const WorkflowRunCardBody = ({
   readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
-  if (card.payload.input?.liveTutorial) return <LiveTutorialRunBody card={card} onRunCommand={sendRunCommand} />
   const request = workflowLaunchOf(card)
   if (request && request.runId === undefined) return <div className="flow-run-card">
     <p className={request.error ? "sui-approval-error" : "smithers-card-note"} role={request.error ? "alert" : "status"}>
@@ -284,7 +281,7 @@ const RunSteerRow = ({
   return (
     <div className="flow-run-steer" data-testid={`flow-run-steer-${runId}`}>
       <div className="flow-run-actions">
-        <input
+        <Input
           className="flow-run-steer-input"
           aria-label="Steer this run"
           placeholder="Steer this run — a message for the next turn"
@@ -294,7 +291,6 @@ const RunSteerRow = ({
           onKeyDown={onEnter(sendMessage)}
         />
         <Button
-          size="sm"
           variant="outline"
           {...flowProps("runs.steer")}
           disabled={message.trim() === ""}
@@ -308,7 +304,7 @@ const RunSteerRow = ({
         </Button>
       </div>
       <div className="flow-run-actions flow-run-steer-strip">
-        <input
+        <Input
           className="flow-run-steer-input flow-run-steer-small"
           aria-label="Move the run to a seat"
           placeholder="seat — provider:model"
@@ -317,7 +313,7 @@ const RunSteerRow = ({
           onKeyDown={onEnter(sendSeat)}
         />
         <select
-          className="flow-run-steer-select"
+          className="sui-input flow-run-steer-select"
           aria-label="Change the thinking level"
           data-testid={`flow-run-thinking-${runId}`}
           value=""
@@ -335,7 +331,7 @@ const RunSteerRow = ({
             </option>
           ))}
         </select>
-        <input
+        <Input
           className="flow-run-steer-input flow-run-steer-small"
           aria-label="Add tools to the run"
           placeholder="tools — comma-separated"
@@ -467,8 +463,6 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
       />
     ),
     pill: (card) => {
-      if (LiveTutorialLimitSchema.safeParse(card.payload.input?.liveTutorialLimit).success) return "paused"
-      if (card.payload.input?.liveTutorial && card.payload.observationError) return "disconnected"
       /* A tutorial plan card wears the plan's state, not a run phase: pending until started, done once it is. */
       if (card.payload.kind === "change-plan") return card.status === "acted" ? "done" : "pending"
       if (card.payload.phase === "completed") return "done"

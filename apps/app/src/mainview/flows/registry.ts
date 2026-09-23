@@ -226,17 +226,12 @@ export const itemOf = (entry: FlowEntry): CatalogItem => ({
     entry.input.ast.propertySignatures.length > 0 || entry.input.ast.indexSignatures.length > 0
 })
 
-/**
- * A door a flow may name in `runtimeAny`: a host capability from the
- * bootstrap, or `practice` — the bundled practice repository
- * (state/practice/PracticeRepository.ts), which ships inside the client, so
- * every host holds it and no bootstrap ever names it.
- */
-export type FlowCapability = RuntimeCapability | "practice"
+/** A door a flow may name in `runtimeAny`: a host capability from the bootstrap. */
+export type FlowCapability = RuntimeCapability
 
-/** Whether this bootstrap holds a flow door; `practice` is always held. */
+/** Whether this bootstrap holds a flow door. */
 export const flowCapabilityHeld = (bootstrap: Pick<AppBootstrap, "capabilities">, capability: FlowCapability): boolean =>
-  capability === "practice" || bootstrap.capabilities.includes(capability)
+  bootstrap.capabilities.includes(capability)
 
 /**
  * A door only the native host opens: the host-held Smithers Cloud PAT session.
@@ -253,10 +248,9 @@ const nativeDoor = (capability: FlowCapability): boolean => capability === "clou
  * the web app's honest refusal (docs/web-mode/PLAN.md §1).
  *
  * A `runtime` entry that is a native door settles it. An either/or flow
- * (`runtimeAny`) is native-only only when EVERY alternative is a native door:
- * `files.list` names Smithers Cloud OR the bundled practice repository, and
- * the web has both. A flow that names its `hosts` without the cloud is
- * native-only by declaration.
+ * (`runtimeAny`) is native-only only when EVERY alternative is a native door.
+ * A flow that names its `hosts` without the cloud is native-only by
+ * declaration.
  */
 export const nativeOnly = (metadata: FlowMetadata): boolean =>
   (metadata.runtime ?? []).some(nativeDoor) ||
@@ -375,8 +369,6 @@ export interface CommandState {
   readonly hasOpenRepos?: boolean
   /** The selected repository came from the public catalog: readable signed out. Optional like hasOpenRepos. */
   readonly publicRepo?: boolean
-  /** The resolved target — the file's repository, else the command's — is the bundled practice repository. */
-  readonly practiceRepo?: boolean
   /** First run has not finished choosing the starting repository: a bare repository command waits, it does not ask. */
   readonly firstRunTargetPending?: boolean
   /** A named repository still needs a catalog answer before authorization. */

@@ -10,13 +10,10 @@ import type { Repo } from "@smthrs/rpc/LocalApp"
 import { activeRepoOf, parseRepoSelection } from "./AppState"
 import type { CloudRepository } from "./AppState"
 import type { AppStore } from "./AppStore"
-import { isPracticeRepo } from "./practice/PracticeRepository"
 import { cardContainsRun, runScopeFromCard, sameRunScope, type RunScope } from "./RunReference"
 
 /** The `owner/repo` shape; exported for the grammars that take a LEADING repo token (agent.session.new). */
 export const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/
-/* The bundled practice repository's key (state/practice/PracticeRepository.ts): a target, never a hosted repo. */
-const PRACTICE_TOKEN = /^practice:[\w.-]+\/[\w.-]+$/
 
 /**
  * The repositories a trailing token may name in argument text: every
@@ -59,9 +56,9 @@ export const splitTrailingRepo = (
   if (text === "") return { rest: "" }
   const parts = text.split(/\s+/)
   const last = parts[parts.length - 1] ?? ""
-  if (parts.length > 0 && (REPO_TOKEN.test(last) || PRACTICE_TOKEN.test(last))) {
+  if (parts.length > 0 && REPO_TOKEN.test(last)) {
     const rest = parts.slice(0, -1).join(" ")
-    if (known !== undefined && !PRACTICE_TOKEN.test(last) && !known.has(last)) return { rest: text }
+    if (known !== undefined && !known.has(last)) return { rest: text }
     return { rest, repo: last }
   }
   return { rest: text }
@@ -114,7 +111,7 @@ export const resolveTargetRepo = (
   explicit: string | undefined
 ): { readonly repo: string } | { readonly error: string } => {
   if (explicit !== undefined && explicit !== "") {
-    if (!REPO_TOKEN.test(explicit) && !PRACTICE_TOKEN.test(explicit)) {
+    if (!REPO_TOKEN.test(explicit)) {
       return { error: `"${explicit}" is not an owner/repo name` }
     }
     return { repo: explicit }
@@ -126,7 +123,6 @@ export const resolveTargetRepo = (
    * repository, the selected repository, or a local-only checkout. A
    * single loaded repository is the target when nothing is selected.
    */
-  if (store.session().activeRepoKey === "practice:smithersai/hello-server") return { repo: store.session().activeRepoKey! }
   const active = activeRepositoryId(store)
   if (active !== null) return { repo: active }
   const loaded = [...store.collections.repositories.values()]
@@ -148,9 +144,9 @@ export const resolveTargetRepo = (
 export const repositorySource = (
   store: AppStore,
   explicit: string | undefined
-): { readonly repo?: string; readonly practice: boolean } => {
+): { readonly repo?: string } => {
   const target = resolveTargetRepo(store, explicit)
-  return "error" in target ? { practice: false } : { repo: target.repo, practice: isPracticeRepo(target.repo) }
+  return "error" in target ? {} : { repo: target.repo }
 }
 
 /**

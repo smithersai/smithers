@@ -396,7 +396,7 @@ describe("the live store's authoritative event path", () => {
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "chainEvents", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "harnesses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
-      "notificationReceipts", "pinnedRepos", "practiceIssues", "recommendations", "repoTree", "repos", "repositories",
+      "notificationReceipts", "pinnedRepos", "recommendations", "repoTree", "repos", "repositories",
       "repositoryContexts", "repositoryFlows", "repositoryNotifications", "retiredChainLineages", "runtimeApprovals",
       "runtimeRuns", "seats", "sessions", "starredTargets", "tabs", "toasts", "toolCalls", "transitions", "workingCopies",
       "workspaces", "worldDocuments"

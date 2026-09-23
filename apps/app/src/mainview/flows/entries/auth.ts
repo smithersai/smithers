@@ -36,23 +36,22 @@ export const requirements: ReadonlyArray<FlowRequirement> = [
   },
   {
     /*
-     * Repository reads use the resolved local, public, bundled practice or
-     * signed-in source. An unrelated selection cannot authorize the target.
+     * Repository reads use the resolved local, public or signed-in source.
+     * An unrelated selection cannot authorize the target.
      */
     id: "repo-source",
-    satisfied: (state) => !state.signedOut || state.hasOpenRepos === true || state.publicRepo === true || state.practiceRepo === true,
+    satisfied: (state) => !state.signedOut || state.hasOpenRepos === true || state.publicRepo === true,
     fulfill: "auth.prompt",
     reason: "Sign in with GitHub, or open a local repository first"
   },
   {
     /*
      * A repository's issues, pull requests and commits read from the resolved
-     * target: the bundled practice repository answers without an account,
-     * every other target still signs in. Narrower than repo-source on
-     * purpose — an open local checkout authorizes no hosted read.
+     * target, which signs in. Narrower than repo-source on purpose — an open
+     * local checkout authorizes no hosted read.
      */
     id: "repo-read",
-    satisfied: (state) => !state.signedOut || state.practiceRepo === true,
+    satisfied: (state) => !state.signedOut,
     fulfill: "auth.prompt",
     reason: "Sign in with GitHub first"
   }

@@ -19,8 +19,6 @@
  * NO INVENTION: a mode whose index does not exist yet (symbols, text, people,
  * the Librarian's ask) refuses with the exact reason, never with rows.
  */
-import { isPracticeContext } from "../practice/PracticeContext"
-import { PRACTICE_REPO, practiceFilePaths } from "../practice/PracticeRepository"
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { SearchArgs } from "../../flows/entries/search"
 import { actionsFor, itemsValue, parseQuery, prefixRow, PREFIXES, rankItems } from "../../flows/SearchQuery"
@@ -147,10 +145,6 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       flow, args: fileArgs(path, target), role: "open",
       label: flow === "files.read" ? "Read a file from a repository" : "Read one file out of a cloud workspace"
     })
-    if (isPracticeContext(ctx.store)) return practiceFilePaths().map(path => ({
-      kind: "file", ref: path, title: path, subtitle: PRACTICE_REPO,
-      actions: [read("files.read", path, PRACTICE_REPO)]
-    }))
     const seen = new Map<string, Fact>()
     const add = (kind: "shared" | "local" | "workspace", target: string, path: string, subtitle: string): void => {
       const relative = path.replace(/^\/+/, "")

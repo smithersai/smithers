@@ -467,10 +467,6 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
   }
 
   const selectRepo: TabsController["selectRepo"] = async (repoKey) => {
-    if (repoKey === "practice:smithersai/hello-server") {
-      store.dispatch({ type: "repo.selected", actor: "user", id: repoKey })
-      return
-    }
     /*
      * Lane piper: `org/repo` and `org/repo#copyId` tokens select from the
      * inventory — the reducer validates them. A local checkout key can reopen

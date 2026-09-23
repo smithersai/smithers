@@ -5,7 +5,6 @@ import { readRepositoryUpdate } from "../seams/RepositoryUpdateSource"
 import { processRepositoryEvents } from "../RepositoryNotifications"
 import { conversationTabIdOf, type Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
-import { isPracticeRepo, PRACTICE_REPO } from "../practice/PracticeRepository"
 
 type UpdateCard = Extract<Card, { kind: "repo-update" }>
 export function repositoryUpdateScope(ctx: SeamContext, repo: string): string {
@@ -15,7 +14,7 @@ export function createRepositoryUpdate(ctx: SeamContext, disposed: () => boolean
   const pending = new Map<string, Promise<string | { value: string }>>()
   const readUpdate = async (explicit?: string, show = false): Promise<string | { value: string }> => {
     if (disposed()) return "The controller is closed."
-    const target = isPracticeRepo(explicit) ? { repo: PRACTICE_REPO } : resolveTargetRepo(ctx.store, explicit)
+    const target = resolveTargetRepo(ctx.store, explicit)
     if ("error" in target) return target.error
     const { repo } = target
     const scope = repositoryUpdateScope(ctx, repo)

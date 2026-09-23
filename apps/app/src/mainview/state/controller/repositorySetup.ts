@@ -8,7 +8,6 @@ import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
 import { browserWriteRefusal } from "../BrowserWriteFailure"
-import { isPracticeRepo } from "../practice/PracticeRepository"
 import { resolveTargetRepo } from "../RepoContext"
 import { setupTrialPr } from "../RepositorySetupTrial"
 import { setupFailureSentence } from "../RunFailure"
@@ -680,10 +679,6 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       }
       if (!identity.allowlisted) return "This account is not in the alpha yet."
     }
-    if (isPracticeRepo(card.payload.repo)) {
-      await dependencies?.chooseRepository()
-      return { value: "Choose a repository for this setup. The practice repository is unchanged." }
-    }
     /*
      * The app's first question is asked about the exact candidate an evaluate,
      * a trial and an apply submit, and its answer edits that candidate. A press
@@ -773,7 +768,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       // A selected computer may run an older host. First setup lets the server
       // select a compatible workspace; its returned binding remains exact.
       const payload = initialSetup(target.repo, job, login)
-      if (login && !isPracticeRepo(target.repo)) payload.recovery = { id: crypto.randomUUID(), baseRevision: payload.revision, baseDigest: setupCandidate(payload), adoptDraft: true, state: "requested", registrationState: "unknown" }
+      if (login) payload.recovery = { id: crypto.randomUUID(), baseRevision: payload.revision, baseDigest: setupCandidate(payload), adoptDraft: true, state: "requested", registrationState: "unknown" }
       const card: SetupCard = existing ?? { id, kind: "repository-setup", title: REPOSITORY_JOB_TITLES[job], status: "active", createdAt: Date.now(), ordinal: ctx.store.nextOrdinal(), payload }
       return writeOrRefuse(card)
       })
@@ -785,10 +780,6 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (!card) return
       if (owner() === null) {
         return { value: `${REPOSITORY_JOB_TITLES[job]} preview is open. Sign in to configure your repository.` }
-      }
-      if (isPracticeRepo(target.repo)) {
-        await dependencies?.chooseRepository()
-        return { value: "Choose a repository for this setup." }
       }
       if (card.payload.inspectedAt === undefined && ctx.commandActor === "user") await requestGuidance(id, false)
       return requestRecovery(id)
@@ -937,7 +928,6 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (card.payload.owner !== null && card.payload.owner !== owner()) return "This setup belongs to a different account."
       if (ctx.commandActor === "smithers") return { value: setupGuidance(card) }
       if (owner() === null) { dependencies?.promptSignIn(); return { value: "Sign in to configure your repository." } }
-      if (isPracticeRepo(card.payload.repo)) { await dependencies?.chooseRepository(); return { value: "Choose a repository for this setup." } }
       await requestGuidance(id, true)
       if (card.payload.inspectedAt === undefined && (!card.payload.recovery || card.payload.recovery.state !== "completed")) return requestRecovery(id)
       if (card.payload.inspectedAt === undefined && !["requested", "running"].includes(card.payload.request?.state ?? "")) return runRepositorySetup(id, "inspect")
@@ -953,7 +943,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       }
       for (const card of ctx.store.collections.cards.values()) {
         if (card.kind === "repository-setup" && card.payload.owner === owner()) {
-          if (!owner() || isPracticeRepo(card.payload.repo)) continue
+          if (!owner()) continue
           if (card.payload.recovery?.state === "requested") void recover(card.id)
           else if (!shared.resumed.has(`${owner()}:${epoch()}:${card.id}`)) void requestRecovery(card.id)
           else {

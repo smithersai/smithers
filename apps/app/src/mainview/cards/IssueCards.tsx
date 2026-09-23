@@ -46,7 +46,7 @@ type PersonRow = { readonly login: string; readonly avatar?: string | undefined 
 /**
  * GitHub facts the cards render when a read carries them. They are not in the
  * rpc card schema today (a zod parse strips them), so live cards fall back to
- * what the schema has; the practice bundle and any future read can supply them.
+ * what the schema has; any read can supply them.
  */
 interface IssueExtras {
   readonly createdAt?: string | null

@@ -1,5 +1,4 @@
 import type { AppStore } from "./AppStore"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
 
 /**
  * Anonymous app entry; explicit repository URLs and retained selections win.
@@ -16,10 +15,5 @@ export function selectFirstRunRepository(store: AppStore, settled?: () => void):
    * the first-run target decided while it is still being fetched.
    */
   if (identity === undefined || identity === "unknown") return
-  if (identity === "signed-out" && !store.session().activeRepoKey) {
-    const selected = store.dispatch({ type: "repo.selected", actor: "system", id: PRACTICE_REPO })
-    if (settled !== undefined) void selected.isPersisted.promise.then(settled, settled)
-    return
-  }
   settled?.()
 }

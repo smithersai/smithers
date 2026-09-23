@@ -57,7 +57,6 @@ export const APP_TRANSITION_SCHEMAS = {
   "http.turn.interrupted": z.object({ type: z.literal("http.turn.interrupted"), actor: z.enum(["user", "system"]), attemptId: z.string(), status: z.enum(["failed", "cancelled", "ambiguous"]), detail: z.string(), silent: z.boolean().optional() }).strict(),
   "command.intent.accepted": z.object({ type: z.literal("command.intent.accepted"), actor: ActorSchema, id: z.string().min(1), name: z.string().min(1), source: CommandIntentSourceSchema, invocationKey: z.string().regex(/^[0-9a-f]{64}$/).optional() }).strict(),
   "command.intent.settled": z.object({ type: z.literal("command.intent.settled"), actor: ActorSchema, id: z.string().min(1), outcome: CommandIntentOutcomeSchema, retryable: z.boolean().optional() }).strict(),
-  "practice.issue.updated": z.object({ "type": z.literal("practice.issue.updated"), "actor": ActorSchema, "id": z.string(), "card": cardOf("issue") }).strict(),
   "repo.update.observed": z.object({ "type": z.literal("repo.update.observed"), "actor": ActorSchema, "context": RepositoryContextSchema, "notifications": z.array(RepositoryNotificationSchema) }).strict(),
   "repo.update.published": z.object({ "type": z.literal("repo.update.published"), "actor": ActorSchema, "card": cardOf("repo-update"), "notifications": z.array(RepositoryNotificationSchema) }).strict(),
   "notifications.read": z.object({ "type": z.literal("notifications.read"), "actor": ActorSchema, "receipts": z.array(z.object({ "id": z.string(), "version": z.string() }).strict()) }).strict(),

@@ -218,8 +218,8 @@ describe("nativeOnly — the flows the web host can never have", () => {
   })
 
   test("an either/or flow is native-only only when EVERY alternative is a native door", () => {
-    // files.list serves a Cloud repository OR the bundled practice one: the web has both.
-    expect(nativeOnly({ summary: "", runtimeAny: ["cloud", "practice"] })).toBe(false)
+    // An either/or flow with a cloud door is reachable on the web.
+    expect(nativeOnly({ summary: "", runtimeAny: ["cloud", "cloud.pat"] })).toBe(false)
     expect(nativeOnly({ summary: "", runtimeAny: ["cloud.pat"] })).toBe(true)
     // A native `runtime` beside a cloud `runtimeAny` still needs the native door.
     expect(nativeOnly({ summary: "", runtime: ["cloud.pat"], runtimeAny: ["cloud"] })).toBe(

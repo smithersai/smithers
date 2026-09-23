@@ -123,7 +123,7 @@ const initials = (name: string): string => {
 
 /** A round avatar: the forge's image on its own host, else initials on a hashed hue. */
 export const Avatar = ({ person, size = 20 }: { readonly person: Person; readonly size?: number }) => {
-  /* A data: image (the practice bundle's avatars) or an https image on GitHub's avatar host; nothing else is fetched. */
+  /* A data: image or an https image on GitHub's avatar host; nothing else is fetched. */
   const src = person.avatarUrl == null ? null :
     person.avatarUrl.startsWith("data:image/") ? person.avatarUrl :
     trustedHttpsUrl(person.avatarUrl, "avatars.githubusercontent.com")
@@ -225,5 +225,4 @@ export const SideSection = ({
 export const people = (rows: ReadonlyArray<{ readonly login: string; readonly avatar?: string | undefined }> | undefined): ReadonlyArray<Person> =>
   (rows ?? []).map((row) => ({ login: row.login, avatarUrl: row.avatar ?? null }))
 
-/** The practice key reads as its repository name. */
-export const repoLabel = (repo: string): string => repo.replace(/^practice:/, "")
+export const repoLabel = (repo: string): string => repo

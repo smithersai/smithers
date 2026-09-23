@@ -1,5 +1,4 @@
 import type { RepositoryEvent } from "../RepositoryNotifications";
-import { isPracticeRepo,practiceIssueList,practicePrList } from "../practice/PracticeRepository";
 import type { SeamContext } from "./SeamContext";
 
 type Section = { events: RepositoryEvent[]; problems: string[]; available: boolean }
@@ -34,11 +33,6 @@ const section = (result: Awaited<ReturnType<typeof pages>>, source: string, kind
   return { events, available: result.available, problems: [...result.problems, ...(events.length !== selected.length ? ["Some activity rows could not be read."] : [])] }
 }
 export async function readRepositoryUpdate(ctx: SeamContext, repo: string): Promise<RepositoryUpdateSnapshot> {
-  if (isPracticeRepo(repo)) return {
-    issues: { events: practiceIssueList("all").issues.flatMap(row => { const item = activity(row, "practice", "issue"); return item ? [item] : [] }), problems: [], available: true },
-    prs: { events: practicePrList().landings.flatMap(row => { const item = activity(row, "practice", "pr"); return item ? [item] : [] }), problems: [], available: true },
-    notifications: { events: [], problems: [], available: true }, branch: "main"
-  }
   const path = repo.split("/").map(encodeURIComponent).join("/")
   const results = await Promise.allSettled([
     (async () => {

@@ -15,8 +15,6 @@ export const namespace: Namespace = { id: "files", label: "Files", summary: "Rea
 
 /** `files.list` and `files.read`. */
 export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
-  flow({ name: "files.implementation-diff", summary: "View the tutorial implementation diff", args: "[changeId]",
-    input: Schema.Struct({ changeId: Schema.optional(Schema.String) }), handler: ({ changeId }) => actions.showPracticeDiff(changeId) }),
   flow({ name: "files.open-diff", summary: "Read a file at the diff revision in its frame", args: "<cardId> <path>",
     input: Schema.Struct({ cardId: Schema.String, path: Schema.String }), handler: ({ cardId, path }) => actions.openDiffFile(cardId, path) }),
   flow({
@@ -28,7 +26,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "files.list",
     form: { args: (payload) => fileArgs(text(payload, "path") ?? "/", text(payload, "repo")) },
     summary: "List a repository directory",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[path] [owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({ path: Schema.String, repo: Schema.optional(Schema.String) }),
@@ -49,7 +47,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
       args: (payload) => fileArgs([text(payload, "path"), text(payload, "line"), text(payload, "column")].filter((part) => part !== undefined).join(":"), text(payload, "repo"))
     },
     summary: "Read a file from a repository",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     /* `:line[:col]` (docs/code-intel/PLAN.md §1): the card scrolls to and marks the line; the parser strips it off the path token. */
     args: "<path>[:<line>[:<col>]] [owner/repo]",
     requires: ["first-run-target", "repo-source"],

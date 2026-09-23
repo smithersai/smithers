@@ -23,7 +23,6 @@ import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 import { timeLabel, durationLabel } from "../Timestamps"
 import { shortId } from "../state/ids"
-import { isPracticeRepo } from "../state/practice/PracticeRepository"
 import { flowArgs } from "../flows/FlowArgs"
 import type { FlowName } from "../flows/FlowName"
 
@@ -229,6 +228,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
         (
           <div className="world-card-row change-pins">
             <select
+              className="sui-input"
               aria-label="Diff from"
               {...flowProps("change.pins")}
               value={from}
@@ -239,6 +239,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
             </select>
             <span className="world-card-path">→</span>
             <select
+              className="sui-input"
               aria-label="Diff to"
               {...flowProps("change.pins")}
               value={to}
@@ -338,6 +339,7 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
           <div className="world-card-row change-pins">
             <span className="world-card-path">at</span>
             <select
+              className="sui-input"
               aria-label="Checks at revision"
               {...flowProps("change.checks")}
               value={at === null ? "" : String(at)}
@@ -807,11 +809,10 @@ export const ChangeStackView = ({ payload, stack }: { readonly payload: ChangeCa
       <p className="change-stack-header" data-testid="change-stack-header">
         Change #{stack.landingNumber} · stack of {stack.size} · target {stack.targetBookmark}
         {checksOk ? " · checks ✓" : ""}
-        {payload.repo.startsWith("practice:") ? " · Practice" : ""}
       </p>
-      <ol className="change-stack-rows" aria-label="Commits, top of the stack first">
+      <ol className="commit-rows change-stack-rows" aria-label="Commits, top of the stack first">
         {rows.map((row, index) => ({ row, position: index + 1 })).reverse().map(({ row, position }) => (
-          <li key={row.changeId} className="change-stack-row" data-stack-row={position} data-change-id={row.changeId}
+          <li key={row.changeId} className="commit-row change-stack-row" data-stack-row={position} data-change-id={row.changeId}
             data-rebased={row.rebased !== undefined} style={{ "--stack-delay": `${(rows.length - position) * 90}ms` } as React.CSSProperties}>
             <code className="change-stack-id">{shortId(row.commitId)}</code>
             <span className="change-stack-message">{row.message}</span>
@@ -869,7 +870,7 @@ export const ChangeCardBody = ({
 }: { readonly card: ChangeCard } & ChangeCardActions) => {
   const { payload } = card
   const stackRows = payload.stack?.rows
-  /* Nothing but the stack was read (the practice Change): the stack view is the whole card. */
+  /* Nothing but the stack was read: the stack view is the whole card. */
   if (payload.stack !== null && stackRows !== undefined && payload.revisions.length === 0 && payload.diff === null) {
     return <ChangeStackView payload={payload} stack={{ ...payload.stack, rows: stackRows }} />
   }
@@ -1067,7 +1068,7 @@ export const ChangeCardBody = ({
           size="sm"
           variant="outline"
           aria-label="Open the full diff card"
-          {...flowAction(onRunCommand, isPracticeRepo(payload.repo) ? "files.implementation-diff" : "change.diff", payload.changeId)}
+          {...flowAction(onRunCommand, "change.diff", payload.changeId)}
         >
           <GitPullRequest size={12} aria-hidden="true" /> Full diff
         </Button>

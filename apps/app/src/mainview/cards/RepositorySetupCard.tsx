@@ -4,7 +4,6 @@ import { flowArgs } from "../flows/FlowArgs"
 import { repositoryCiConfigured, repositoryJobState } from "../state/RepositoryJobs"
 import { setupFailureSentence } from "../state/RunFailure"
 import { setupTrialPr } from "../state/RepositorySetupTrial"
-import { isPracticeRepo } from "../state/practice/PracticeRepository"
 import type { CardFamily, CardOf, CardProjectionAuthority, RunCommand } from "./CardFamily"
 import "./RepositorySetupCard.css"
 
@@ -31,8 +30,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const state = card.payload
   const draft = state.draft
   const preview = signedOut ?? state.owner === null
-  const practice = isPracticeRepo(state.repo)
-  const canRun = !preview && !practice
+  const canRun = !preview
   const labels = jobActions[state.job]
   const needsTrialPr = state.job === "review" || state.job === "ci"
   const trialPr = setupTrialPr(draft.trialBody)
@@ -148,7 +146,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
     {receipt && runAccess(receipt)}
     {(state.request?.state === "failed" || state.recovery?.state === "failed") && <div role="alert" className="setup-error"><p>{state.recovery?.error ?? setupFailureSentence(state.request?.error) ?? state.request?.error}</p>{canRun && <button type="button" disabled={recovering} onClick={() => onRunCommand("setup.retry", card.id)}>{receipt && !["completed", "failed", "stopped"].includes(receipt.phase) ? "Reconnect" : "Retry"}</button>}</div>}
     <footer className="setup-actions" aria-live="polite">
-      {preview ? <button type="button" onClick={() => onRunCommand("auth.prompt")}>Sign in</button> : practice ? <button type="button" onClick={() => onRunCommand("repo.choose")}>Choose repository</button> : <>
+      {preview ? <button type="button" onClick={() => onRunCommand("auth.prompt")}>Sign in</button> : <>
         {pending && <span>{recovering ? "Requested" : receipt?.phase === "waiting" ? "Waiting" : receipt?.phase === "running" ? "Running" : receipt?.phase === "queued" ? "Queued" : "Requested"}</span>}
         {owned && !unknown && state.active?.enabled && <button type="button" disabled={pending} onClick={() => run("pause")}>Pause</button>}
         {drafted && <button type="button" disabled={pending} onClick={() => onRunCommand("setup.discard", card.id)}>Discard draft</button>}

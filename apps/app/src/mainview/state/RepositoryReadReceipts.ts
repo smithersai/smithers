@@ -1,6 +1,5 @@
 import { conversationTabIdOf } from "./AppState"
 import { repositoryScope } from "./RepositoryContext"
-import { isPracticeRepo } from "./practice/PracticeRepository"
 import type { SeamContext } from "./seams/SeamContext"
 
 /** Capture the versions before loading; a later update must remain unread. */
@@ -11,7 +10,7 @@ export async function readRepositoryDetail(
 ): Promise<string | void | { readonly value: string }> {
   const scope = repositoryScope(ctx.store, repo)
   const conversation = conversationTabIdOf(ctx.store.session())
-  const source = isPracticeRepo(repo) ? "practice" : origin
+  const source = origin
   const receipts = [...ctx.store.collections.repositoryNotifications.values()]
     .filter(row => row.scope === scope && row.repo === repo && row.source === source && row.kind === kind && row.number === number)
     .map(row => ({ id: row.id, version: row.version }))

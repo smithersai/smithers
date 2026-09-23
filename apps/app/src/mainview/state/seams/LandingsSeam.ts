@@ -1,8 +1,7 @@
 import { preparedView, type ViewAction, type ViewResult, invalidatePreparedViews } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
-import { practiceViewLanding, tutorialRepositoryRead, readRepositoryListError, type RepositoryForm } from "./tutorial2-issues_prs"
+import { readRepositoryListError, repositoryListRead, type RepositoryForm } from "./RepositoryListSeam"
 import { publishRepoView, repoPaneCard } from "../EmbeddedHistory"
-import { isPracticeRepo } from "../practice/PracticeRepository"
 /*
  * The landings seam ("PRs"): /api/repos/{owner}/{repo}/landings* through the
  * product Worker's platform proxy. Landing a PR QUEUES it (202 Accepted) — the
@@ -424,7 +423,6 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   }
 
   const listView = preparedView(ctx, (repoArg?: string) => {
-    if (isPracticeRepo(repoArg)) return { run: async () => {} }
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
@@ -472,7 +470,6 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
-    if (isPracticeRepo(repo)) return { run: async () => {} }
     return { id: `pr-${repo}-${number}`, title: `Pull request #${number} · ${repo}`, pane: repo,
       key: JSON.stringify(["pr", repo, number, stateOverride]), read: () => readLanding(repo, number, stateOverride) }
   })
@@ -487,12 +484,11 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       if (card?.kind !== "pr") return "That pull request card is no longer available."
       await ctx.dispatch({ type: "card.updated", actor: ctx.actor(), id: cardId, patch: { payload: { tab } } }).isPersisted.promise
     },
-    listLandings: Object.assign((repoArg?: string) => tutorialRepositoryRead(ctx, "prs", repoArg, "all", renderRepositoryForm, repo => listView(repo)), { preload: listView.preload }),
+    listLandings: Object.assign((repoArg?: string) => repositoryListRead(ctx, "prs", repoArg, "all", renderRepositoryForm, repo => listView(repo)), { preload: listView.preload }),
 
     viewLanding: Object.assign(async (number: number, repoArg?: string) => {
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
-      if (isPracticeRepo(target.repo)) return readRepositoryDetail(ctx, target.repo, "pr", number, () => practiceViewLanding(ctx, number))
       return readRepositoryDetail(ctx, target.repo, "pr", number, () => landingView(number, target.repo))
     }, { preload: landingView.preload }),
 

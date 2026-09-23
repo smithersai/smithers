@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client"
 import { act } from "react"
 import { CardView, type CardViewProps } from "./ChatCards"
 import { CardSchema } from "@smthrs/rpc/Cards"
-import { practiceIssue } from "./state/practice/PracticeRepository"
 import { createAppStore } from "./state/AppStore"
 
 GlobalRegistrator.register()
@@ -13,7 +12,7 @@ afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); awa
 const cleanups: Array<() => void> = []
 afterEach(() => { while (cleanups.length) cleanups.pop()!() })
 const noop = () => {}
-const issue = CardSchema.parse({ id: "issue", kind: "issue", title: "Issue", status: "active", ordinal: 1, createdAt: 1, payload: practiceIssue(3) })
+const issue = CardSchema.parse({ id: "issue", kind: "issue", title: "Issue", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "smithersai/hello-server", number: 3, title: "Greet the world", state: "open", author: "Ada", issueBody: "Body", labels: [], comments: [] } })
 const props: CardViewProps = { card: issue, maximized: false, onMaximize: noop, onMinimize: noop, onOpenInTab: noop,
   onDecideApproval: noop, onGrantConfirm: noop, onGrantCancel: noop, onQueueApprove: noop, onConnectGitHub: noop,
   onRunWorkflow: noop, onStopRun: noop, onRetryRun: noop, onChooseWorkflowRepo: noop,
@@ -76,7 +75,7 @@ test("an Open issue has no internal DONE details; completed runs retain their De
   expect(host.textContent).toContain("Open")
   expect(host.querySelector(".smithers-card-details")).toBeNull()
   const run = CardSchema.parse({ id: "run", kind: "run-trace", title: "Run", status: "active", ordinal: 1, createdAt: 1,
-    payload: { repo: "practice:smithersai/hello-server", runId: "run", workflow: "issue.research", kind: "research", phase: "completed", steps: [], result: null, lastSeq: 0 } })
+    payload: { repo: "smithersai/hello-server", runId: "run", workflow: "issue.research", kind: "research", phase: "completed", steps: [], result: null, lastSeq: 0 } })
   render({ card: run })
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Status")
   expect(host.querySelector(".smithers-card-details")?.textContent).toContain("Created")

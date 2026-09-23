@@ -202,7 +202,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
   )
 }
 
-/** The commits the plan intends, in order. The practice plan tags each one (optional / required / recommended); a real plan carries none. */
+/** The commits the plan intends, in order. */
 const PlannedCommits = ({ card, atoms }: { readonly card: RunCard; readonly atoms: ReadonlyArray<{ readonly message: string; readonly writes: ReadonlyArray<string> }> }) => {
   const tags = card.payload.input?.atomTags as ReadonlyArray<string> | undefined
   return (

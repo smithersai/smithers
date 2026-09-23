@@ -29,7 +29,7 @@ export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({
     name: "runs.graph.select",
     summary: "Open one node of a run's graph, or close the one that is open",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> [nodeId]",
     input: Schema.Struct({
@@ -42,7 +42,7 @@ export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({
     name: "runs.graph.tab",
     summary: "Show one tab of the node a run's graph has open",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: `[sourceCard=id] <runId> <${GRAPH_DRAWER_TABS.join("|")}>`,
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, tab: Tab }),
@@ -51,7 +51,7 @@ export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({
     name: "flow.plan.select",
     summary: "Open one node of a plan's graph, or close the one that is open",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "<cardId> [nodeId]",
     input: Schema.Struct({ cardId: Schema.String, nodeId: Schema.optional(Schema.String) }),
@@ -60,7 +60,7 @@ export const graphFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   flow({
     name: "flow.plan.tab",
     summary: "Show one tab of the node a plan's graph has open",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: `<cardId> <${GRAPH_DRAWER_TABS.join("|")}>`,
     input: Schema.Struct({ cardId: Schema.String, tab: Tab }),

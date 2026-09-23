@@ -17,7 +17,6 @@ import type { PointerEvent as ReactPointerEvent } from "react"
 import { useMemo,useRef } from "react"
 import { AVAILABLE_REPOS } from "smithers-server/publicRepoCatalog"
 import { cardActions } from "./cards/CardActions"
-import { isPracticeRepo } from "./state/practice/PracticeRepository"
 import { FirstRunActions } from "./cards/FirstRunActions"
 import { SetupChecklist } from "./cards/SetupChecklist"
 import { SignupCards } from "./cards/SignupCards"
@@ -238,7 +237,7 @@ function AppContent() {
   // The signup onboarding owns the transcript until its stage is done (state/Signup.ts).
   // A repository URL is a page about that repository; the signup meets the landing entry, or resumes wherever its row is.
   const signingUp = cloudHost && (session.signup !== undefined || controller.repositoryApp === null) && signupOpening(session.signup, identity?.state, identity?.accountOwnerLogin) !== false
-  const authMessage: Message | undefined = signingUp || isPracticeRepo(session.activeRepoKey) ? undefined : identity?.state === "signed-out" && cloudHost
+  const authMessage: Message | undefined = signingUp ? undefined : identity?.state === "signed-out" && cloudHost
     ? bootPending ? undefined : bootUnavailable
       ? {
         id: "repository-state",

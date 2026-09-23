@@ -19,12 +19,10 @@ import { refusalOf } from "@smthrs/rpc/Refusal"
 import type { Card } from "../AppState"
 import { parseRepoSelection,repoIdFromRemote,repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
-import { isPracticeRepo,practiceFilePaths } from "../practice/PracticeRepository"
 import { resolveOpenRepo,resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
 import { readContentsPages } from "./ContentsPages"
 import { errorMessage,errorText,readErrorMessage,unreachableSentence } from "./SeamContext"
-import { practiceReadFile } from "./tutorial2-file_open"
 
 /*
  * Both commands answer a `value` beside the card: the card is what the human
@@ -435,20 +433,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       const label = normalized === "" ? "/" : normalized
 
       let body: unknown
-      if (isPracticeRepo(repo)) {
-        const paths = practiceFilePaths()
-        if (paths.includes(normalized)) return `${normalized} in ${repo} is a file — run /files.read ${normalized} instead`
-        const prefix = normalized ? `${normalized}/` : ""
-        const children = new Map<string, { name: string; type: "file" | "dir" }>()
-        for (const path of paths) {
-          if (!path.startsWith(prefix)) continue
-          const parts = path.slice(prefix.length).split("/")
-          const name = parts[0]!
-          children.set(name, { name, type: parts.length > 1 ? "dir" : "file" })
-        }
-        if (normalized && children.size === 0) return `Path not found: ${label} in ${repo}`
-        body = [...children.values()]
-      } else {
+      {
         let response: Response
         try {
           const answer = await readContentsPages(ctx.http, contentsUrl(repo, normalized))
@@ -485,7 +470,7 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
         status: "active",
         createdAt: Date.now(),
         ordinal: ctx.nextOrdinal(),
-        payload: { repo, path: normalized, entries, ...(isPracticeRepo(repo) ? {} : cloudAddressing(ctx.store, repo, normalized)) }
+        payload: { repo, path: normalized, entries, ...cloudAddressing(ctx.store, repo, normalized) }
       }
       return { card, value: listingValue(repo, normalized, entries) }
     },
@@ -506,10 +491,6 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
       }
       const { repo, path: normalized } = target
       if (normalized === "") return "files.read needs a file path"
-      if (ref !== undefined && isPracticeRepo(repo)) {
-        return `${normalized} in ${repo} cannot be read at ${ref}: the practice repository has no revisions.`
-      }
-
       let response: Response
       try {
         response = await ctx.http(contentsUrl(repo, normalized, ref))
@@ -609,9 +590,6 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
   const plan = (kind: "file" | "files", path: string, repo?: string, anchor?: FileAnchor, ref?: string) => {
     const target = resolveFileTarget(ctx.store, path, repo)
     if ("error" in target) return target.error
-    if (kind === "file" && target.kind === "cloud" && isPracticeRepo(target.repo) && ref === undefined) {
-      return { run: () => practiceReadFile(ctx, target.path, anchor) }
-    }
     if (kind === "file" && !target.path) return "files.read needs a file path"
     const repoId = target.kind === "local" ? target.repo.id : target.repo
     const label = target.kind === "local" ? target.repo.name : target.repo
@@ -636,4 +614,49 @@ export const createFilesSeam = (ctx: SeamContext): FilesSeam => {
     listFiles: preparedView(ctx, (path: string, repo?: string) => plan("files", path, repo)),
     readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => plan("file", path, repo, anchor, ref)),
   }
+}
+
+export const fileTargetKey = (store: AppStore, repo?: string): string | undefined => {
+  const target = resolveFileTarget(store, "", repo)
+  return "error" in target ? undefined : target.kind === "local" ? target.repo.id : target.repo
+}
+
+/** Bounded breadth-first inventory, using the same local/cloud contents routes as files.read. No cards. */
+export const fileOptions = async (
+  ctx: Pick<SeamContext, "store" | "http" | "baseUrl">,
+  repo?: string,
+): Promise<{ options: Array<{ value: string; label: string }>; error?: string }> => {
+  const target = resolveFileTarget(ctx.store, "", repo)
+  if ("error" in target) return { options: [], error: target.error }
+  const options: Array<{ value: string; label: string }> = []
+  const queue = [""]
+  const seen = new Set<string>()
+  for (let index = 0; index < queue.length && index < 32 && options.length < 200; index++) {
+    const path = queue[index]!
+    if (seen.has(path)) continue
+    seen.add(path)
+    let entries: ReadonlyArray<{ name: string; kind: "file" | "dir" }>
+    if (target.kind === "local") {
+      const answer = await requestLocalFiles(ctx, target.repo, path, path || "/", "list")
+      if ("error" in answer) return { options, error: answer.error }
+      if (answer.body.kind !== "dir") return { options, error: "The file chooser expected a directory." }
+      entries = answer.body.entries
+    } else {
+      const [owner, name] = target.repo.split("/")
+      try {
+        const response = await ctx.http(`${ctx.baseUrl}/api/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(name!)}/contents${path ? `/${encodeRepoPath(path)}` : ""}`)
+        if (!response.ok) return { options, error: await readErrorMessage(response, `Could not list files in ${target.repo} (${response.status}).`) }
+        const body: unknown = await response.json()
+        if (!Array.isArray(body)) return { options, error: "The file chooser expected a directory." }
+        entries = body.flatMap(row => { const entry = parseEntry(row); return entry ? [entry] : [] })
+      } catch (error) { return { options, error: error instanceof Error ? error.message : String(error) } }
+    }
+    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (unsafePath(entry.name) || entry.name.includes("/")) continue
+      const child = path ? `${path}/${entry.name}` : entry.name
+      if (entry.kind === "dir") { if (queue.length < 32) queue.push(child) }
+      else if (options.length < 200) options.push({ value: child, label: child })
+    }
+  }
+  return { options }
 }

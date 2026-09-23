@@ -28,7 +28,7 @@ export const loadControllerBootInputs = async <Bootstrap, Store extends { dispos
   return { bootstrap: bootstrap.value, store: store.value }
 }
 
-/** Only an empty anonymous practice entry may paint before cloud identity answers. */
+/** Only an empty anonymous entry may paint before cloud identity answers. */
 export const canPaintAppBeforeIdentity = (entry: {
   requestedRepo?: string | null
   hasTranscript: boolean

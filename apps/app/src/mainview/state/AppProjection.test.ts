@@ -8,7 +8,6 @@ type AppProjectionSnapshot
 import type { ConfiguredModel,ModelTestRecord } from "@smthrs/rpc/ConfiguredModel"
 import type { AppTransition,Card,CloudWorkspaceInput } from "./AppState"
 import { cardFrameId,DEFAULT_BRANCH_ID,parseRepoSelection,repoKeyOf } from "./AppState"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { RepositoryNotification } from "./RepositoryNotifications"
 import { workspaceCardFacts } from "./WorkspaceViews"
 
@@ -187,14 +186,13 @@ describe("pure app event projection", () => {
     expect(state.frames.find(row => row.id === frameId)!.snapshot!.cards[0]!.payload).toMatchObject({ name: "Computer", snapshot: true })
   })
 
-  test("the exact bundled repository can be selected through the shared grammar", () => {
-    expect(parseRepoSelection(PRACTICE_REPO)).toEqual({ repoId: PRACTICE_REPO })
-    expect(parseRepoSelection("practice:another/repo")).toBeNull()
-    expect(parseRepoSelection(`${PRACTICE_REPO}#unknown-copy`)).toBeNull()
+  test("a repository can be selected through the shared grammar", () => {
+    expect(parseRepoSelection("smithersai/hello-server")).toEqual({ repoId: "smithersai/hello-server" })
+    expect(parseRepoSelection("practice:smithersai/hello-server")).toBeNull()
     const observed = apply(boot(), { type: "repositories.loaded", actor: "system", repositories: [
-      { id: PRACTICE_REPO, org: "practice:smithersai", name: "hello-server", ownerKind: "user", head: null }
+      { id: "smithersai/hello-server", org: "smithersai", name: "hello-server", ownerKind: "user", head: null }
     ] })
-    expect(apply(observed, { type: "repo.selected", actor: "user", id: PRACTICE_REPO }).sessions[0]!.activeRepoKey).toBe(PRACTICE_REPO)
+    expect(apply(observed, { type: "repo.selected", actor: "user", id: "smithersai/hello-server" }).sessions[0]!.activeRepoKey).toBe("smithersai/hello-server")
   })
 
   test("approval authority survives presentation attacks and answers cannot be replayed twice", () => {

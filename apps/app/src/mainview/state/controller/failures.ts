@@ -1,7 +1,6 @@
 import type { CommandOutcome } from "../../flows/Commands"
 import type { Toast } from "../AppState"
 import { spokenLostAct } from "../BrowserWriteFailure"
-import { activeLiveTutorialLimit } from "../LiveTutorialLimit"
 import type { ControllerContext } from "./context"
 import { claimedSpokenLines,claimSpokenLine, forgetVanishedClaims,latestOrdinal } from "./spokenLines"
 
@@ -282,15 +281,6 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
           ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
           return
       }
-    }
-    /*
-     * A refused live tutorial launch already states itself inside its own run
-     * card (cards/LiveTutorialRunBody.tsx), with the reset time and the way
-     * on; a toast would say the same sentence a second time.
-     */
-    for (const card of ctx.store.collections.cards.values()) {
-      if (card.kind === "run-trace" && activeLiveTutorialLimit(card)
-        && card.payload.observationError === outcome.error) return
     }
     /*
      * A lost write is never silent. `writeRefused` means this browser would

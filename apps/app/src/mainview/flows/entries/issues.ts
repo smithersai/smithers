@@ -22,7 +22,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     hidden: true,
     grammar: args => payloadFor("issues.list", args),
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[open|closed|all] [owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({
@@ -35,7 +35,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.list",
     summary: "List a repository's issues",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[open|closed|all] [owner/repo]",
     requires: ["first-run-target", "repo-source"],
     input: Schema.Struct({
@@ -49,8 +49,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     name: "issues.view",
     summary: "Open an issue with its comments; use source github for GitHub rows",
     form: { partial: issueViewParts, args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
-    /* The practice repository (state/practice) answers without the cloud; its key also skips the sign-in gate. */
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
     input: Schema.Struct({
@@ -73,7 +72,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.close",
     summary: "Close an issue",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<number> [owner/repo]",
     requires: ["repo-read"],
     input: NumberedTarget,
@@ -82,7 +81,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   flow({
     name: "issues.reopen",
     summary: "Reopen a closed issue",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<number> [owner/repo]",
     requires: ["repo-read"],
     input: NumberedTarget,
@@ -92,7 +91,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     name: "issues.comment",
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },
     summary: "Comment on an issue",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "<number> <text> [owner/repo]",
     requires: ["repo-read"],
     input: Schema.Struct({

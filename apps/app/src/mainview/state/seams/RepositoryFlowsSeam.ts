@@ -61,7 +61,6 @@ export const createRepositoryFlowsSeam = (ctx: SeamContext): RepositoryFlowsSeam
   let disposed = false
 
   const load: RepositoryFlowsSeam["load"] = async (repo) => {
-    if (repo.startsWith("practice:")) return
     read.add(repo)
     const answer = await readFactoryProjection(ctx, repo)
     if (disposed) return

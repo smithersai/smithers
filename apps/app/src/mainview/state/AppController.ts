@@ -34,7 +34,7 @@ import type { InputMode } from "./InputMode"
 import { knowledgeCardAvailable } from "./KnowledgeFeatures"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { KnownRepositories } from "./RepoContext"
-import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,repositorySource,resolveTargetRepo } from "./RepoContext"
+import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import { createLocalAuthController } from "./LocalAuth"
 import type { LocalAuthController } from "./LocalAuth"
@@ -65,7 +65,6 @@ import { createInputModeController } from "./controller/inputMode"
 import { createIssueFlowsController,type IssueFlowsController } from "./controller/issueFlows"
 import { createRepositorySetupController, type RepositorySetupController } from "./controller/repositorySetup"
 import { createLibrarianRunsController,type LibrarianRunsController } from "./controller/librarianRuns"
-import { createLiveTutorialController } from "./controller/liveTutorial"
 import { createModelCallController, type ModelCallController } from "./controller/modelCall"
 import { createModelsController,type ModelsController } from "./controller/models"
 import type { OnboardingController } from "./controller/onboarding"
@@ -91,7 +90,6 @@ import { createWorkflowPumpController } from "./controller/workflow-pump"
 import { createWorkflowController,type WorkflowController } from "./controller/workflows"
 import type { WikiEditorHandle } from "./controller/world"
 import { createWorldController } from "./controller/world"
-import { isPracticeRepo,practiceCommitsSource } from "./practice/PracticeRepository"
 import type { AgentSessionSeam } from "./seams/AgentSessionSeam"
 import { createAgentSessionSeam } from "./seams/AgentSessionSeam"
 import type { BillingSeam } from "./seams/BillingSeam"
@@ -248,8 +246,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    */
   readonly answerApproval: (id: string, answer: unknown, question?: string) => void
   readonly retryLastTurn: () => string | void
-  readonly inspectLiveTutorial: (cardId: string, eventId: string) => Promise<string | void>
-  readonly retryLiveTutorial: (cardId: string) => Promise<string | { value: string }>
   /** The guide shell reports mount ownership; this is a system observation, not a user command. */
   readonly toggleTheme: () => void
   /** Wear a color theme (/theme) — the axis orthogonal to light/dark. */
@@ -545,7 +541,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly listCommits: CommitsSeam["listCommits"]
   readonly readCommit: CommitsSeam["readCommit"]
   readonly listFiles: FilesSeam["listFiles"]
-  readonly showPracticeDiff: (changeId?: string) => Promise<string | { value: string }>
   readonly openDiffFile: ReturnType<typeof createDiffFilesSeam>["openDiffFile"]
   readonly readFile: FilesSeam["readFile"]
   /* Code intelligence (docs/code-intel/PLAN.md §4): the three code.* reads against the local language server (seams/CodeIntelSeam.ts). */
@@ -889,8 +884,7 @@ export const createAppController = (
   }))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
   const bookmarksSeam = actors.pair(seamCtx, (context) => createBookmarksSeam(context))
-  /* The practice repository answers the commits views from its bundle (state/practice). */
-  const commitsSeam = actors.pair(seamCtx, (context) => createCommitsSeam(context, { practice: practiceCommitsSource }))
+  const commitsSeam = actors.pair(seamCtx, (context) => createCommitsSeam(context))
   const diffFilesSeam = actors.pair(seamCtx, createDiffFilesSeam)
   const filesSeam = actors.pair(seamCtx, (context) => createFilesSeam(context))
   const repoTreeSeam = actors.pair(seamCtx, (context) => createRepoTreeSeam(context))
@@ -1156,7 +1150,6 @@ export const createAppController = (
   const retryRunWatch = (cardId: string): string | void => {
     if (!workflowController.retryWorkflowRequest(cardId)) return retryObservedRun(cardId)
   }
-  const liveTutorial = actors.pair(ctx, context => createLiveTutorialController(context, store.nextOrdinal))
   const repositorySetup = actors.pair(ctx, (context, select) => createRepositorySetupController(context, {
     promptSignIn: () => promptSignIn(),
     chooseRepository: () => select(tutorialRepository).chooseTutorialRepository(),
@@ -1169,26 +1162,10 @@ export const createAppController = (
       resolveToast(key, { status: "failed", detail: error, autoDismissMs: ctx.toastAutoDismissMs })
     }
   }))
-  const tutorialChange = actors.pair(ctx, (context, select) => {
-    const original = createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm))
-    const live = select(liveTutorial)
-    return { ...original,
-      suggestTutorialChange: (repo?: string, feature?: string) => isPracticeRepo(repo ?? store.session().activeRepoKey) ? live.plan() : original.suggestTutorialChange(repo, feature),
-      startTutorialChange: (cardId: string) => {
-        const card = store.collections.cards.get(cardId)
-        return card?.kind === "run-trace" && isPracticeRepo(card.payload.repo) ? live.implement(cardId) : original.startTutorialChange(cardId)
-      },
-      openChange: (repo: string, commits: readonly string[]) => isPracticeRepo(repo) ? live.createChange(commits) : original.openChange(repo, commits),
-    }
-  })
-  const issueFlows = actors.pair(seamCtx, (context, select) => {
-    const original = createIssueFlowsController(context, select(workflowController))
-    return { ...original,
-      runIssueImplementation: (number: number, repo?: string) => isPracticeRepo(repo ?? store.session().activeRepoKey)
-        ? select(liveTutorial).plan() : original.runIssueImplementation(number, repo),
-      runIssueFlow: (name: "repro" | "poc", number: number, repo?: string) =>
-      isPracticeRepo(repo ?? store.session().activeRepoKey) ? number !== 3 ? Promise.resolve("Open issue #3 to run this example.") : name === "poc" ? select(liveTutorial).poc() : select(liveTutorial).research() : original.runIssueFlow(name, number, repo) }
-  })
+  const tutorialChange = actors.pair(ctx, (context, select) =>
+    createTutorialChangeController(context, select(workflowController), store.nextOrdinal, select(renderFlowForm)))
+  const issueFlows = actors.pair(seamCtx, (context, select) =>
+    createIssueFlowsController(context, select(workflowController)))
   ctx.finishTutorialChange = tutorialChange.finishTutorialChange
   /* A change run that settled while the app was closed still owes its receipt check. */
   for (const card of store.collections.cards.values()) {
@@ -1569,11 +1546,9 @@ export const createAppController = (
   ctx.settleFirstRunTarget = (): void => {
     if (firstRunTargetSettled) return
     /*
-     * The seam announces; boot chooses. Binding the practice repository here
-     * would bind it for every signed-out web visitor and take away the opening
-     * sign-in message, which App.tsx drops once the practice key is active. The
-     * park is the exception: it is already waiting on the target boot would
-     * have chosen, and without one it resumes into a repository form.
+     * The seam announces; boot chooses. The park is the exception: it is
+     * already waiting on the target boot would have chosen, and without one
+     * it resumes into a repository form.
      */
     if (services.repositoryApp !== undefined || store.session().pendingCommand?.requirement !== "first-run-target") {
       settleFirstRunTarget()
@@ -1682,8 +1657,6 @@ export const createAppController = (
     ...tutorialChange,
     ...issueFlows,
     ...repositorySetup,
-    retryLiveTutorial: liveTutorial.retry,
-    inspectLiveTutorial: liveTutorial.inspect,
     createWorkflow,
     listWorkspaceWorkflows,
     listTriggers,
@@ -1867,7 +1840,6 @@ export const createAppController = (
     readCommit: commitsSeam.readCommit,
     listFiles: filesSeam.listFiles,
     ...diffFilesSeam,
-    showPracticeDiff: liveTutorial.showDiff,
     readFile: filesSeam.readFile,
     codeHover,
     codeDefinition,
@@ -2003,9 +1975,6 @@ export const createAppController = (
           store.session().activeRepoKey == null && routeEntry == null &&
           (identity === undefined || identity.state === "unknown" || identity.state === "signed-out"),
         hasOpenRepos: fileTarget === undefined ? repo === undefined && store.collections.repos.size > 0 : "kind" in fileTarget && fileTarget.kind === "local",
-        practiceRepo: fileTarget !== undefined
-          ? "kind" in fileTarget && fileTarget.kind === "cloud" && isPracticeRepo(fileTarget.repo)
-          : repositorySource(store, repo).practice,
         publicRepo: !catalogRefused && (requestedRepo === undefined
           ? activeCatalogRepositoryId(store) !== null
           : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())),
@@ -2058,7 +2027,6 @@ export const createAppController = (
     if (card.loading) store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, loading: false, status: "error", body: "Loading was interrupted. Open this view again to retry." } })
   }
 
-  liveTutorial.resume()
   repoImportSeam.resume()
   workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()

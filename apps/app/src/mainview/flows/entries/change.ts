@@ -144,11 +144,9 @@ export const changeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
 ]
 
 /*
- * Onboarding SCRIPT v4 beat 8: open a Change from picked commits. The picker
- * card's button, the M pill and the agent all call `change.open`; `change.pick`
- * is the picker's checkbox. The practice repository answers from its
- * precomputed stacks; a hosted repository needs the rebase in the box first
- * (SCRIPT.md §4 "What plue has and lacks"), and says so.
+ * Open a Change from picked commits. The picker card's button, the M pill and
+ * the agent all call `change.open`; `change.pick` is the picker's checkbox. A
+ * hosted repository needs the rebase in the box first, and says so.
  */
 export const changeOpenFlows = (actions: import("../../state/controller/tutorialChange").TutorialChangeController): ReadonlyArray<FlowEntry> => [
   flow({

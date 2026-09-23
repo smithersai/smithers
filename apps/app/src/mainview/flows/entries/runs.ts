@@ -157,10 +157,9 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: ({ runId, toolNames, sourceCard }) => actions.steerRunTools(runId, toolNames, sourceCard)
   }),
   flow({
-    /* The practice run's transcript is its bundled journal; every other run's is the gateway's projection. */
     name: "runs.logs",
     summary: "Show a run's transcript on its card (--follow keeps it live)",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[sourceCard=id] <runId> [--follow]",
     requires: ["signed-in"],
     input: Schema.Struct({
@@ -170,11 +169,10 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: ({ runId, follow, sourceCard }) => actions.showRunLogs(runId, follow, sourceCard)
   }),
   flow({
-    /* The tutorial and the run card share this embedded inspection door. */
     name: "runs.steps",
     summary: "Show a run's steps on its card",
     form: { fields: { runId: { label: "Run", kind: "text" } } },
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     args: "[sourceCard=id] <runId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String }),
     handler: ({ runId, sourceCard }) => actions.showRunSteps(runId, sourceCard)
@@ -186,12 +184,12 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
    * registry, and the state they change lives in the card payload (§5), never
    * in the component. These reads are available to the agent in the same
    * embedded card; they never maximize a surface. Each reads the journal
-   * already on the card, so the bundled practice run answers them too.
+   * already on the card.
    */
   flow({
     name: "runs.trace.filter",
     summary: "Filter a run's trace: all, running, failed, model, flow, forks or messages",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> <all|running|failed|model|flow|forks|messages>",
     input: Schema.Struct({
@@ -203,8 +201,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.select",
     summary: "Select a node of a run's trace, optionally scrubbing to a journal seq",
-    /* Selection reads the journal already on the card; the practice run's card is bundled. */
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> <nodeId> [seq]",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, nodeId: Schema.String, seq: Schema.optional(Schema.Number) }),
@@ -213,7 +210,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.coding.select",
     summary: "Inspect or collapse a predicted Change in a coding run",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> <changeId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, changeId: Schema.String }),
@@ -222,7 +219,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.view",
     summary: "Show a run's turn explanations, full execution timeline or graph in its embedded card",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> <turns|timeline|graph>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, view: Schema.Literals(["turns", "timeline", "graph"]) }),
@@ -232,7 +229,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     /* Pan and zoom stay userOnly gestures (AGENTS.md:35); which node the camera chases is a fact on the card. */
     name: "runs.graph.follow",
     summary: "Keep a run graph's camera on the running node, or let it be",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId> <on|off>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String, follow: Schema.Literals(["on", "off"]) }),
@@ -241,7 +238,7 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   flow({
     name: "runs.trace.live",
     summary: "Return a run's trace to its latest recorded turn",
-    runtimeAny: ["cloud", "practice"],
+    runtimeAny: ["cloud"],
     hidden: true,
     args: "[sourceCard=id] <runId>",
     input: Schema.Struct({ sourceCard: Schema.optional(Schema.String), runId: Schema.String }),

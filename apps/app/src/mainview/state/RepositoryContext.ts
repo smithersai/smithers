@@ -3,8 +3,6 @@ import { z } from "zod"
 import { conversationTabIdOf } from "./AppState"
 import type { AppStore } from "./AppStore"
 import { resolveTargetRepo } from "./RepoContext"
-import { isPracticeContext } from "./practice/PracticeContext"
-import { isPracticeRepo,PRACTICE_REPO } from "./practice/PracticeRepository"
 
 /** Durable background observations are separate from presentation and human read receipts. */
 export const RepositoryContextSchema = z.object({
@@ -12,16 +10,14 @@ export const RepositoryContextSchema = z.object({
 })
 export type RepositoryContext = z.infer<typeof RepositoryContextSchema>
 
-export function repositoryScope(store: AppStore, repo: string): string {
-  if (isPracticeRepo(repo)) return `practice:${0}`
+export function repositoryScope(store: AppStore, _repo: string): string {
   const identity = store.collections.identitySessions.get("identity")
   return identity?.state === "signed-in" ? `github:${identity.login}` : "anonymous"
 }
 
-/** Never carry observations from another account, conversation, or tutorial playthrough. */
+/** Never carry observations from another account or conversation. */
 export function currentRepositoryUpdate(store: AppStore): AgentRepositoryUpdate | undefined {
-  const target = isPracticeContext(store)
-    ? { repo: PRACTICE_REPO } : resolveTargetRepo(store, undefined)
+  const target = resolveTargetRepo(store, undefined)
   if ("error" in target) return undefined
   const repo = target.repo
   const conversation = conversationTabIdOf(store.session())

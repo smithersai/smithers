@@ -34,7 +34,6 @@ import { toolActLine } from "../ToolActLine"
 import { WORLD_BODY_BUDGET,worldContextDocuments } from "../WorldContext"
 import { knowledgeCardAvailable } from "../KnowledgeFeatures"
 import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
-import { isPracticeContext,PRACTICE_CONTEXT_INSTRUCTION,practiceContextMessage } from "../practice/PracticeContext"
 import { readDesktopStream } from "../seams/DesktopStream"
 import { currentAgentRoles } from "./agents"
 import { downloadUrlOf } from "./app"
@@ -189,8 +188,7 @@ export const createTurnController = (
    * question, live, 2026-09-18.
    */
   const contextMessages = (): ReadonlyArray<AgentChatMessage> => {
-    const practice = practiceContextMessage(store)
-    return [...(practice === undefined ? [] : [{ role: "assistant" as const, content: practice }]), ...store
+    return [...store
       .agentContextSnapshot()
       .messages.filter((message) => (message.act === undefined || message.answersTurn === true) && message.text.trim() !== "")
       .map((message) => ({
@@ -249,8 +247,7 @@ export const createTurnController = (
      * with a public catalog repository selected, the visitor reads and asks
      * about it; anything that writes is one sign-in away.
      */
-    const practice = isPracticeContext(store)
-    const exploring = !practice && identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
+    const exploring = identity?.state === "signed-out" ? activeCatalogRepositoryId(store) : null
     const selected = ctx.services.features?.wiki !== true || current.selectedWorldDocumentId === null
       ? undefined
       : store.collections.worldDocuments.get(current.selectedWorldDocumentId)
@@ -395,7 +392,6 @@ export const createTurnController = (
         }
       }),
       capabilities: [
-        ...(practice ? [PRACTICE_CONTEXT_INSTRUCTION] : []),
         "Hold a streaming conversation in this chat and read its visible transcript.",
         ...(snapshot.tabs.length > 1
           ? ["Read any other open tab's recent output (a terminal, a running agent, a card) with the tab.read <tabId> command — the tab ids are listed above."]

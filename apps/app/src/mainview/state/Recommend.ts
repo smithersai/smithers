@@ -81,7 +81,7 @@ export interface RecommendInput {
   readonly state: CommandState
   readonly catalog: ReadonlyArray<CatalogItem>
   readonly repoStep: RepoStep
-  /** The active target, including a practice key, or null when none is selected. */
+  /** The active target, or null when none is selected. */
   readonly repo: string | null
   readonly messages: ReadonlyArray<Pick<Message, "role" | "text" | "act">>
   readonly cards: ReadonlyArray<Pick<Card, "kind" | "title" | "status">>
@@ -162,7 +162,7 @@ export const repositoryRecommendationTail = (input: Pick<RecommendInput, "messag
   return [...tail, { role: "system", text }]
 }
 
-/** Practice/local identities stay in local state and observation data; the wire repo names only a hosted repository. */
+/** The wire repo names only a hosted repository; a local checkout stays in local state and observation data. */
 export const recommendRequest = (input: Pick<RecommendInput, "repo" | "messages" | "catalog" | "repositoryUpdate">): RecommendRequest => ({
   repo: input.repo !== null && REPO_TOKEN.test(input.repo) ? input.repo : null,
   tail: repositoryRecommendationTail(input),

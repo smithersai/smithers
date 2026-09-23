@@ -54,7 +54,6 @@ LocalRepositoryConnectorSchema,
 MAIN_TAB_ID,
 MessageSchema,
 PinnedRepoSchema,
-PracticeIssueSchema,
 RECOMMENDATION_ID,
 RecommendationSchema,
 RepoSchema,
@@ -96,7 +95,6 @@ import { canonicalEventValue } from "./EventValue"
 import { acceptStatus,exitedStatus,expireStatus } from "./HealthStatus"
 import { HttpTurnLegSchema,HttpTurnSchema,httpToolLegCount,projectHttpFrame,settleHttpClaims,verifyHttpBatch } from "./HttpTurn"
 import { pendingRecoveryScope,sameRecoveryScope } from "./PendingRecovery"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import { initialSignup, signupAfterIdentity } from "./Signup"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema,notificationReadVersion,notificationReceiptKey,type RepositoryNotification } from "./RepositoryNotifications"
@@ -131,7 +129,6 @@ export const APP_PROJECTION_SCHEMAS = {
   connectorOperations: ConnectorOperationSchema,
   worldDocuments: WorldDocumentSchema,
   cards: CardSchema,
-  practiceIssues: PracticeIssueSchema,
   repositoryContexts: RepositoryContextSchema,
   repositoryNotifications: RepositoryNotificationSchema,
   notificationReceipts: NotificationReadReceiptSchema,
@@ -248,7 +245,6 @@ export const APP_TRANSITION_TYPES = {
   "connector.access.changed": true,
   "connector.removal.asked": true,
   "connector.removed": true,
-  "practice.issue.updated": true,
   "card.recovered": true,
   "card.view.loaded": true,
   "card.navigated": true,
@@ -937,7 +933,7 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
   // Legacy cards establish a captured baseline only. They do not establish
   // missing gateway lifecycle events, cursors, or server approval timestamps.
   for (const card of [...collections.cards.values()].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
-    if (card.kind !== "run-trace" || card.runtimeView?.revision !== undefined || card.payload.repo.startsWith("practice:") || card.payload.input?.liveTutorial) continue
+    if (card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) continue
     // An authoring launch intent is not a gateway run until its receipt names one.
     if (card.payload.authoring !== undefined && card.payload.runId === "") continue
     const id = runtimeRunKey(card.payload)
@@ -2232,12 +2228,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           })
           break
 
-        case "practice.issue.updated": {
-          const row = { id: transition.id, card: transition.card }
-          if (collections.practiceIssues.has(row.id)) collections.practiceIssues.update(row.id, draft => { Object.assign(draft, row) })
-          else collections.practiceIssues.insert(row)
-          break
-        }
         case "card.navigated": {
           const currentCard = collections.cards.get(transition.card.id)
           if (!currentCard || isApprovalRequest(currentCard) || isApprovalRequest(transition.card) || approvalRequest(currentCard.id)) return
@@ -3343,7 +3333,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             if (entry?.phase !== "pending") return
             const selected = draft.activeRepoKey == null ? null : parseRepoSelection(draft.activeRepoKey)
             // Keep the same repository's selected working copy across reload.
-            // A different entry must not inherit practice or a saved checkout.
+            // A different entry must not inherit a saved checkout.
             if (selected === null || !("repoId" in selected) || selected.repoId.toLowerCase() !== entry.repo.toLowerCase()) {
               draft.activeRepoKey = null
             }
@@ -3351,10 +3341,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           break
         }
         case "repo.selected": {
-          if (transition.id === PRACTICE_REPO) {
-            collections.sessions.update(SESSION_ID, draft => { draft.activeRepoKey = PRACTICE_REPO })
-            break
-          }
           /*
            * Lane piper grammar: `org/repo` selects the repository (its
            * head), `org/repo#copyId` one working copy, and `local:/path` a

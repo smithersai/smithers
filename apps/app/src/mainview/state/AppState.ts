@@ -29,7 +29,6 @@ import { CloudWikiState } from "../wiki/CloudWikiState"
 import type { CommandIntent } from "./CommandIntent"
 import { INPUT_MODES,type InputMode } from "./InputMode"
 import type { PendingRecoveryScope } from "./PendingRecovery"
-import { PRACTICE_REPO } from "./practice/PracticeRepository"
 import type { RuntimeApprovalSubmission,RuntimeRunObservation,RuntimeScope } from "./RuntimeProjection"
 
 export type {
@@ -462,9 +461,6 @@ export const repoIdFromRemote = (remote: string | null | undefined): string | nu
 export const parseRepoSelection = (
   token: string
 ): { readonly repoId: string; readonly copyId?: string } | { readonly localCopyId: string } | null => {
-  // The bundled repository is a real context source outside onboarding too.
-  // Other namespaced values are not repository identifiers or native paths.
-  if (token === PRACTICE_REPO) return { repoId: token }
   const hash = token.indexOf("#")
   const head = hash === -1 ? token : token.slice(0, hash)
   if (/^[\w.-]+\/[\w.-]+$/.test(head)) {
@@ -1154,8 +1150,6 @@ export const BillingAccountSchema = z.object({
 })
 export type BillingAccount = z.infer<typeof BillingAccountSchema>
 
-export const PracticeIssueSchema = z.object({ id: z.string(), card: CardSchema })
-
 export const CardHistorySchema = z.object({ id: z.string(), index: z.number().int().nonnegative(), entries: z.array(CardSchema) })
 export type CardHistory = z.infer<typeof CardHistorySchema>
 
@@ -1174,7 +1168,6 @@ export type AppTransition =
   | { type: "http.turn.interrupted"; actor: "user" | "system"; attemptId: string; status: "failed" | "cancelled" | "ambiguous"; detail: string; silent?: boolean }
   | { type: "command.intent.accepted"; actor: Actor; id: string; name: string; source: CommandIntent["source"]; invocationKey?: string }
   | { type: "command.intent.settled"; actor: Actor; id: string; outcome: NonNullable<CommandIntent["outcome"]>; retryable?: boolean }
-  | { type: "practice.issue.updated"; actor: Actor; id: string; card: Extract<Card, { kind: "issue" }> }
   | { type: "repo.update.observed"; actor: Actor; context: import("./RepositoryContext").RepositoryContext; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
   | { type: "repo.update.published"; actor: Actor; card: Extract<Card, { kind: "repo-update" }>; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
   | { type: "notifications.read"; actor: Actor; receipts: Array<{ id: string; version: string }> }
