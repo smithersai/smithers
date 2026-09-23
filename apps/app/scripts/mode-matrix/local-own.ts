@@ -128,6 +128,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     const bootstrapToken = randomUUID()
     const username = `matrix${randomUUID().replaceAll("-", "").slice(0, 12)}`
     const password = `${randomUUID()}-Aa1!`
+    const gatewayApiKey = fixtureProtocolId(`matrix-flow-${randomUUID()}`)
     const backendEnv = {
       ...process.env,
       PORT: String(backendPort),
@@ -136,7 +137,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
       SMITHERS_FLOW_HOST_MANIFEST: manifest,
       SMITHERS_MODEL_HOST_BUNDLE: join(hostDir, "smithers-model-host"),
       SMITHERS_NODE_BINARY: nodeBinary,
-	  AI_GATEWAY_API_KEY: `matrix-flow-${randomUUID()}`,
+      AI_GATEWAY_API_KEY: gatewayApiKey,
       SMITHERS_FFI_LIBRARY_PATH: ffiLibrary,
       SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: join(dirname(ffiLibrary), "smithers-jj-export"),
       SMITHERS_AUTH_BOOTSTRAP_TOKEN: bootstrapToken,
