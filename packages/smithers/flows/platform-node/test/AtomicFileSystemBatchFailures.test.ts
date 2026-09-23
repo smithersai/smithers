@@ -277,23 +277,27 @@ describe("batch helper admission", () => {
   it("cancels an active helper and releases its process permit", async () => {
     const root = await temporary()
     const marker = join(await temporary(), "pid")
+    // A file exists before writeFileSync fills it. Keep that window open so
+    // readiness cannot mistake Number("") === 0 for the helper's PID.
     const binary = await executable(
-      `require('node:fs').writeFileSync(${JSON.stringify(marker)},String(process.pid));setInterval(()=>{},1000)`
+      `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'');
+       setTimeout(()=>fs.writeFileSync(${JSON.stringify(marker)},String(process.pid)),100);setInterval(()=>{},1000)`
     )
+    const helperPid = async () => {
+      for (let attempt = 0; attempt < 500; attempt++) {
+        const pid = Number(await readFile(marker, "utf8").catch(() => undefined))
+        if (Number.isInteger(pid) && pid > 0) return pid
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      throw new Error("helper did not report its pid")
+    }
     await Effect.runPromise(
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const pending = yield* KernelFileSystem.batch(fs)!.execute([{ operation: "stat", path: "a" }]).pipe(
           Effect.forkChild
         )
-        const pid = yield* Effect.promise(async () => {
-          for (let attempt = 0; attempt < 500; attempt++) {
-            const text = await readFile(marker, "utf8").catch(() => undefined)
-            if (text !== undefined) return Number(text)
-            await new Promise((resolve) => setTimeout(resolve, 10))
-          }
-          throw new Error("helper did not start")
-        })
+        const pid = yield* Effect.promise(helperPid)
         yield* Fiber.interrupt(pending)
         yield* Effect.promise(async () => {
           for (let attempt = 0; attempt < 500; attempt++) {
@@ -312,13 +316,7 @@ describe("batch helper admission", () => {
         const next = yield* KernelFileSystem.batch(fs)!.execute([{ operation: "stat", path: "b" }]).pipe(
           Effect.forkChild
         )
-        yield* Effect.promise(async () => {
-          for (let attempt = 0; attempt < 500; attempt++) {
-            if (await readFile(marker, "utf8").then(() => true, () => false)) return
-            await new Promise((resolve) => setTimeout(resolve, 10))
-          }
-          throw new Error("process permit was not released")
-        })
+        yield* Effect.promise(helperPid)
         yield* Fiber.interrupt(next)
       }).pipe(Effect.provide(guarded(root, AtomicFileSystem.layerWith({ executable: binary, concurrency: 1 }))))
     )
