@@ -34,7 +34,7 @@ import * as Supervision from "../src/internal/supervision.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
-import { descriptor, emits, of, run } from "./fixtures/cellTurn.ts"
+import { descriptor, emits, of, prose, run } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -53,8 +53,9 @@ const window = ContextWindow.make({
   ]
 })
 
-const state = (maxFrames: number) =>
+const state = (maxFrames: number, revalidations?: number) =>
   CellTurn.make({
+    revalidations,
     session: "session-1",
     seat: "anthropic:test-model",
     modelParams: ModelRequest.GenerationParams.make(),
@@ -194,10 +195,11 @@ describe("Supervisor", () => {
     expect(failure).toBeUndefined()
     expect(of(events, "resolved")).toHaveLength(1)
     expect(of(events, "turn-closed")).toHaveLength(3)
-    // Contacted, so the fiber ran; never settled, so nothing was journaled.
+    // Contacted, so the fiber ran; never settled, so the one reading in
+    // flight at the end is journaled as interrupted and nothing else is.
     expect(contacted.length).toBeGreaterThanOrEqual(1)
     expect(of(events, "supervisor-settled")).toEqual([])
-    expect(of(events, "supervisor-unjudged")).toEqual([])
+    expect(of(events, "supervisor-unjudged").map((event) => event.reason)).toEqual(["interrupted"])
     expect(Date.now() - started).toBeLessThan(4_000)
   })
 
@@ -232,7 +234,7 @@ describe("Supervisor", () => {
     expect(snapshot.signals.frame).toBe(0)
     expect(snapshot.signals.readOnlyFrames).toBe(1)
     expect(snapshot.recalled).toEqual([])
-    // The model fixture's prose is one candidate, so one per-item question follows the nine.
+    // The model fixture's prose is one candidate, so one per-item question follows the eleven.
     expect(snapshot.candidates).toEqual(["Here is the next step."])
     expect(Object.keys(first.questions)).toEqual([
       "thrashing",
@@ -293,7 +295,8 @@ describe("Supervisor", () => {
     })
     expect(failure).toBeUndefined()
     expect(contacted.length).toBeGreaterThanOrEqual(2)
-    const drained = of(events, "steering-drained").flatMap((event) => event.messages)
+    expect(of(events, "steering-drained").flatMap((event) => event.messages)).toEqual([])
+    const drained = of(events, "steering-drained").flatMap((event) => event.supervisor ?? [])
     const texts = drained.flatMap((message) =>
       message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
     )
@@ -422,7 +425,7 @@ describe("Supervisor", () => {
     expect(Object.keys(first.questions).filter((key) => key.startsWith("remember_") || key.startsWith("insert_")))
       .toEqual(["remember_0", "remember_1", "insert_0", "insert_1"])
     expect(remembered).toEqual(["The suite is invoked through tox, never pytest directly."])
-    const texts = of(events, "steering-drained").flatMap((event) => event.messages).flatMap((message) =>
+    const texts = of(events, "steering-drained").flatMap((event) => event.supervisor ?? []).flatMap((message) =>
       message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
     )
     expect(texts).toEqual([Supervisor.recalledInsert({ key: "tests", text: "Tests run with `python -m pytest -q`." })])
@@ -493,7 +496,7 @@ describe("Supervisor", () => {
       expect(again.contacted).toEqual([])
       const inserts = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
         of(events, "steering-drained").map((event) =>
-          event.messages.flatMap((message) =>
+          [...event.messages, ...(event.supervisor ?? [])].flatMap((message) =>
             message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
           )
         )
@@ -861,6 +864,39 @@ describe("Supervisor", () => {
       }
     })
 
+    it("names the frame its counts describe", () => {
+      const text = Supervisor.nudge(snapshot, reading({ thrashing: 0.9 }))
+      expect(text).toContain("Evidence at frame 2:")
+      expect(text).toContain("through frame 2")
+    })
+
+    it("decides crossing by one shared rule that names each trigger", () => {
+      const cases: ReadonlyArray<readonly [Partial<Supervisor.Reading>, ReadonlyArray<Supervisor.Trigger>]> = [
+        [{}, []],
+        [{ thrashing: 0.5 }, ["thrashing"]],
+        [{ thrashing: 0.49 }, []],
+        [{ onTarget: 0.5 }, ["off_target"]],
+        [{ onTarget: 0.51 }, []],
+        [{ suspect: 0.5 }, ["suspect"]],
+        [{ outdatedContext: 0.5 }, ["outdated_context"]],
+        [{ irrelevantContext: 0.5 }, ["irrelevant_context"]],
+        [{ thrashing: 0.9, irrelevantContext: 0.9 }, ["thrashing", "irrelevant_context"]]
+      ]
+      for (const [overrides, fired] of cases) {
+        const read = reading(overrides)
+        expect(Supervisor.triggered(read)).toEqual(fired)
+        expect(Supervisor.crosses(read)).toBe(fired.length > 0)
+        expect(Supervisor.judge(snapshot, read, { steer: false, remember: false }).crossed).toBe(fired.length > 0)
+      }
+      expect(Object.keys(Supervisor.triggers)).toEqual([
+        "thrashing",
+        "off_target",
+        "suspect",
+        "outdated_context",
+        "irrelevant_context"
+      ])
+    })
+
     it("names only the evidence the counts hold", () => {
       const quiet: Supervisor.Snapshot = {
         ...snapshot,
@@ -912,5 +948,202 @@ describe("Supervisor", () => {
         inserts: []
       })
     })
+  })
+})
+
+describe("Supervisor inserts on the transcript", () => {
+  const textOf = (message: ModelRequest.Message): string =>
+    message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n")
+
+  /** An evaluator that crosses on frame 0's reading, is calm after it, and records every request. */
+  const crossingOnce = () => {
+    const supervisor: Array<Evaluator.Request> = []
+    const completion: Array<Evaluator.Request> = []
+    const layer = Evaluator.layerScripted((request) => {
+      if (!isSupervisor(request)) {
+        completion.push(request)
+        return confident
+      }
+      supervisor.push(request)
+      const declined = Object.fromEntries(
+        Object.keys(request.questions)
+          .filter((key) => key.startsWith("remember_") || key.startsWith("insert_"))
+          .map((key) => [key, { probability: 0.1 }] as const)
+      )
+      return { ...declined, ...(supervisor.length === 1 ? calm({ thrashing: { probability: 0.9 } }) : calm()) }
+    })
+    return { layer, supervisor, completion }
+  }
+
+  it("keeps a supervisor nudge out of the completion task and later snapshots while the model reads it", async () => {
+    const read = untilRead()
+    const evaluator = crossingOnce()
+    const { engine, events, failure } = await run({
+      // A frame to spare, so the completing boundary waits for frame 2's reading.
+      state: state(5),
+      script: [
+        emits(`console.log("a")`),
+        emits(`console.log("b")`),
+        emits(`console.log("c")`),
+        emits(`ctx.done("done")`)
+      ],
+      evaluator: evaluator.layer,
+      ...read,
+      supervisor: { steer: true, remember: false }
+    })
+    expect(failure).toBeUndefined()
+    // The model read the nudge.
+    const transcript = engine.recorder.sealStep.flatMap((step) => step.request.messages.map(textOf))
+    expect(transcript.filter((text) => text.includes("Supervisor"))).not.toEqual([])
+    // The drain names it as the supervisor's, not the person's.
+    expect(of(events, "steering-drained").flatMap((event) => event.messages)).toEqual([])
+    expect(of(events, "steering-drained").flatMap((event) => event.supervisor ?? []).map(textOf).join())
+      .toContain("Supervisor")
+    // The completion brake's task and every later snapshot's task carry none of it.
+    expect(evaluator.completion).toHaveLength(1)
+    const claimed = evaluator.completion[0]!.state as { readonly task: string }
+    expect(claimed.task).toContain(task)
+    expect(claimed.task).not.toContain("Supervisor")
+    expect(claimed.task).not.toContain("The person now says")
+    expect(evaluator.supervisor.length).toBeGreaterThanOrEqual(3)
+    for (const request of evaluator.supervisor) {
+      const snapshot = Schema.decodeUnknownSync(Supervisor.Snapshot)(request.state)
+      expect(snapshot.task).not.toContain("Supervisor")
+    }
+  })
+
+  const pathsToTheAsk = [
+    { name: "a raised cell", frame: emits(`throw new Error("boom")`), ask: "The cell threw" },
+    { name: "a parse rejection", frame: prose("I will think about it first."), ask: "No cell was found" },
+    { name: "a refused park", frame: emits(`ctx.park("waiting-input", "which branch?")`), ask: "No human is available" }
+  ] as const
+
+  it.each(pathsToTheAsk)("puts a supervisor insert above the ask on $name", async ({ ask, frame }) => {
+    // Only frame 1's boundary waits, for frame 0's reading: a rejected frame
+    // is never offered, so no later boundary has a reading of its own to wait for.
+    const settled = Effect.runSync(Deferred.make<void>())
+    const read = {
+      observer: (event: AgentEvent.AgentEvent) =>
+        event._tag === "supervisor-settled" && event.frame === 0
+          ? Effect.asVoid(Deferred.succeed(settled, undefined))
+          : Effect.void,
+      steering: steeringAfter((boundary) => boundary.startsWith("1:") ? Deferred.await(settled) : Effect.void)
+    }
+    const evaluator = crossingOnce()
+    const { engine, failure } = await run({
+      // No in-frame re-ask, so a cell-less answer takes the rejection exit.
+      state: state(4, 0),
+      script: [emits(`console.log("a")`), frame, emits(`console.log("c")`), emits(`ctx.done("done")`)],
+      evaluator: evaluator.layer,
+      ...read,
+      supervisor: { steer: true, remember: false }
+    })
+    expect(failure).toBeUndefined()
+    // Frame 1's boundary delivers frame 0's reading; frame 2 is the first to read it.
+    const messages = engine.recorder.sealStep[2]!.request.messages.map(textOf)
+    const lastIndex = (needle: string): number =>
+      messages.reduce((found, text, index) => text.includes(needle) ? index : found, -1)
+    const nudge = lastIndex("Supervisor")
+    const asked = lastIndex(ask)
+    expect(nudge).toBeGreaterThanOrEqual(0)
+    expect(asked).toBeGreaterThan(nudge)
+  })
+
+  it("journals an unreachable reading with the jev flow's masked text, never the transport's own", async () => {
+    const read = untilRead()
+    const { layer } = scripted(() =>
+      Effect.fail(
+        new Evaluator.EvaluatorError({
+          code: "unreachable",
+          message: "connect ECONNREFUSED https://judge.internal.example:8443/v4?token=abc"
+        })
+      )
+    )
+    const { failure } = await run({ state: state(3), script: threeFrames, evaluator: layer, ...read })
+    expect(failure).toBeUndefined()
+    const unjudged = of(read.seen, "supervisor-unjudged")
+    expect(unjudged.length).toBeGreaterThanOrEqual(1)
+    expect(unjudged[0]).toMatchObject({ reason: "unreachable", detail: Evaluator.unreachableMessage })
+    expect(JSON.stringify(unjudged)).not.toContain("judge.internal")
+  })
+
+  it("journals a reading still in flight when the run ends as interrupted, within the bound", async () => {
+    const { contacted, layer } = scripted(() => Effect.never)
+    const started = Date.now()
+    const { events, failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      steering: steeringAfter(() => Effect.sleep("5 millis"))
+    })
+    const elapsed = Date.now() - started
+    expect(failure).toBeUndefined()
+    expect(of(events, "resolved")).toHaveLength(1)
+    expect(contacted.length).toBeGreaterThanOrEqual(1)
+    // Exactly the reading that was asked and never answered, typed, and nothing settled.
+    const unjudged = of(events, "supervisor-unjudged")
+    expect(unjudged).toHaveLength(1)
+    expect(unjudged[0]).toMatchObject({ scope: "session-1", reason: "interrupted" })
+    expect(of(events, "supervisor-settled")).toEqual([])
+    // The grace is bounded: the run ends however long the reading would have taken.
+    expect(elapsed).toBeLessThan(Supervisor.closeGraceMs + 3_000)
+  })
+
+  it("lets a reading in flight when the run ends settle inside the grace", async () => {
+    const { contacted, layer } = scripted(() => Effect.as(Effect.sleep("150 millis"), calm()))
+    const { events, failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      steering: steeringAfter(() => Effect.sleep("5 millis"))
+    })
+    expect(failure).toBeUndefined()
+    expect(contacted.length).toBeGreaterThanOrEqual(1)
+    // Every reading the fiber took settled; none was cut off by the run's end.
+    expect(of(events, "supervisor-unjudged")).toEqual([])
+    expect(of(events, "supervisor-settled")).toHaveLength(contacted.length)
+  })
+
+  it.each([false, true])("stamps every reading with the steer it ran under (steer: %s)", async (steer) => {
+    const read = untilRead()
+    const { layer } = scripted(() => calm())
+    const { failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      ...read,
+      supervisor: { steer, remember: false }
+    })
+    expect(failure).toBeUndefined()
+    const settled = of(read.seen, "supervisor-settled")
+    expect(settled.length).toBeGreaterThanOrEqual(1)
+    // `discipline-armed` is written once, at frame 0; a resumed run armed
+    // differently is only on the record through the readings it takes.
+    expect(settled.map((event) => event.steer)).toEqual(settled.map(() => steer))
+  })
+
+  it("journals a typed memory failure for a recall or a write the store refused", async () => {
+    const memory: Supervisor.Memory = {
+      bound: true,
+      recall: () => Effect.fail({ detail: "database is locked" }),
+      remember: () => Effect.fail({ detail: "database is locked" })
+    }
+    const read = untilRead()
+    const { layer } = scripted(() => calm({ remember_0: { probability: 0.9 } }))
+    const { failure } = await run({
+      state: state(3),
+      script: threeFrames,
+      evaluator: layer,
+      ...read,
+      supervisor: { steer: false, remember: true },
+      memory
+    })
+    expect(failure).toBeUndefined()
+    const failed = of(read.seen, "supervisor-memory-failed")
+    expect(failed.filter((event) => event.operation === "recall").length).toBeGreaterThanOrEqual(1)
+    expect(failed.filter((event) => event.operation === "remember").length).toBeGreaterThanOrEqual(1)
+    expect(failed[0]).toMatchObject({ scope: "session-1", frame: 0, detail: "database is locked" })
+    // The reading itself still settles: a memory fault is not a supervisor fault.
+    expect(of(read.seen, "supervisor-settled").length).toBeGreaterThanOrEqual(1)
   })
 })

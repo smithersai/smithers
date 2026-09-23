@@ -178,7 +178,15 @@ const ThinkingChangeRecord = Schema.Struct({
 export const DrainRecord = Schema.Struct({
   inserts: Schema.Array(ModelRequest.Message),
   seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),
-  queued: Schema.Boolean
+  queued: Schema.Boolean,
+  /**
+   * Messages the run's supervisor delivers at this boundary, kept apart from
+   * `inserts` because they are not the person's words: the model reads them,
+   * and the completion brake's task never does. Absent from records written
+   * before the supervisor had a field of its own, and from boundaries it
+   * delivered nothing at.
+   */
+  supervisor: Schema.optional(Schema.Array(ModelRequest.Message))
 })
 
 /**

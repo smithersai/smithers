@@ -66,6 +66,29 @@ export class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/
   message: Schema.String
 }) {}
 
+/**
+ * What an `unreachable` failure says wherever it is shown or journaled.
+ *
+ * The transport's own message for that code is the HTTP client's, and it can
+ * name hosts, ports and query strings. So the code carries this fixed
+ * sentence instead, and every surface says the same thing.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const unreachableMessage = "Jev was unavailable: the judge this host binds did not answer."
+
+/**
+ * The text of an evaluator failure that is safe to journal or hand a model:
+ * the fixed {@link unreachableMessage} for `unreachable`, the failure's own
+ * message for every other code.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const publicMessage = (error: { readonly code: EvaluatorErrorCode; readonly message: string }): string =>
+  error.code === "unreachable" ? unreachableMessage : error.message
+
 const criteriaKeyCount = Schema.makeFilter(
   (criteria: Readonly<Record<string, string>>) => {
     const count = Object.keys(criteria).length

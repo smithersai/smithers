@@ -53,6 +53,8 @@ import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as Supervisor from "@smthrs/harness/Supervisor"
+import * as Redaction from "@smthrs/journal/Redaction"
+import * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import type * as MemorySource from "@smthrs/memory/Source"
@@ -66,6 +68,7 @@ import type { PluginError } from "@smthrs/plugin/PluginError"
 import type * as Plugins from "@smthrs/plugin/Plugins"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
+import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
@@ -240,9 +243,12 @@ export interface Options {
    * Verdicts are journaled whenever an `Evaluator` is bound, whatever this
    * says. `steer` arms nudges and memory insertion, and is off until the
    * offline replay has measured their precision. `remember` writes accepted
-   * sentences to the bound memory store and is on by default; a host with no
-   * store bound writes nothing. `namespace` is the memory bank read from and
-   * written to, one per project or repository, `supervisor` when unnamed.
+   * sentences to the bound memory store, redacted the way the journal
+   * redacts; it is off unless the host opts in, and a host with no store
+   * bound writes nothing. `namespace` is the memory bank read from and
+   * written to, one per project or repository. With no namespace the
+   * supervisor reads and writes no memory at all: there is no global bank a
+   * run of one repository could share with another's.
    */
   readonly supervisor?: {
     readonly steer?: boolean | undefined
@@ -252,19 +258,35 @@ export interface Options {
 }
 
 /**
+ * What a memory fault says on the journal: the store's code and message for a
+ * typed `MemoryError`, a fixed sentence for anything else.
+ */
+const memoryDetail = (cause: Cause.Cause<unknown>): string => {
+  const error = Cause.squash(cause)
+  return error instanceof MemoryError.MemoryError
+    ? `${error.code}: ${error.message}`
+    : "The memory store failed unexpectedly"
+}
+
+/**
  * The supervisor's memory port over whatever memory the host bound.
  *
- * Optional on both sides: a composition with no `MemoryStore` recalls nothing
- * and writes nothing, and says so through `bound`. A store or recall that
- * fails is logged and answered with nothing, because the supervisor runs off
- * the loop's hot path and a memory fault must not become a run fault.
+ * Optional on both sides: a composition with no `MemoryStore`, or a run with
+ * no namespace, recalls nothing and writes nothing, and says so through
+ * `bound`. A store or recall that fails is logged and fails typed, and the
+ * supervisor journals it and carries on: it runs off the loop's hot path, and
+ * a memory fault must not become a run fault.
+ *
+ * A written sentence passes the journal's secret redaction first. It came
+ * from the model's prose, which can quote a key it read, and memory outlives
+ * the run that wrote it.
  */
 const supervisorMemory = (options: Options): Effect.Effect<Supervisor.Memory> =>
   Effect.gen(function*() {
     const store = yield* Effect.serviceOption(MemoryStore.MemoryStore)
     const recall = yield* Effect.serviceOption(Recall.Recall)
-    const namespace = options.supervisor?.namespace ?? "supervisor"
-    if (Option.isNone(store)) return Supervisor.memoryNone
+    const namespace = options.supervisor?.namespace
+    if (Option.isNone(store) || namespace === undefined) return Supervisor.memoryNone
     return {
       bound: true,
       recall: (query, limit) =>
@@ -275,21 +297,31 @@ const supervisorMemory = (options: Options): Effect.Effect<Supervisor.Memory> =>
         }).pipe(
           Effect.map((rows) => rows.slice(0, limit).map((row) => ({ key: row.key, text: row.text }))),
           Effect.catchCause((cause) =>
-            Effect.as(Effect.logWarning("The supervisor could not recall memory", cause), [])
+            Effect.andThen(
+              Effect.logWarning("The supervisor could not recall memory", cause),
+              Effect.fail({ detail: memoryDetail(cause) })
+            )
           )
         ),
-      remember: (text) =>
-        store.value.putNote({
+      remember: (text) => {
+        const redacted = String(Redaction.redact(text))
+        return store.value.putNote({
           namespace: { kind: "agent", id: namespace },
-          id: Digest.digest(text),
-          text,
+          id: Digest.digest(redacted),
+          text: redacted,
           tags: ["source:supervisor"],
           provenance: { runId: options.session },
           status: "accepted"
         }).pipe(
           Effect.asVoid,
-          Effect.catchCause((cause) => Effect.logWarning("The supervisor could not write memory", cause))
+          Effect.catchCause((cause) =>
+            Effect.andThen(
+              Effect.logWarning("The supervisor could not write memory", cause),
+              Effect.fail({ detail: memoryDetail(cause) })
+            )
+          )
         )
+      }
     }
   })
 
@@ -562,7 +594,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             contextWindowTokensFor: options.contextWindowTokensFor,
             supervisor: {
               steer: options.supervisor?.steer ?? false,
-              remember: options.supervisor?.remember ?? true
+              remember: options.supervisor?.remember ?? false
             }
           }).pipe(
             Stream.provideService(EngineLike.EngineLike, withRequestPlugins(port, kernel.plugins)),

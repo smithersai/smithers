@@ -2406,17 +2406,19 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
       execute: Frame.hasNextFrame(state)
         ? settling.steering.drain({ boundary: `${state.frame}:${boundary}`, wouldIdle }).pipe(
           Effect.map(Steering.drainRecord),
-          // The supervisor's nudge rides the same recorded drain, ahead of
-          // the operator's messages and only at a boundary the run continues
-          // through: a boundary that would idle is a completion or the last
-          // frame, and a nudge there would turn a finished answer into a
-          // follow-up. Inside the record, so a replayed boundary delivers
-          // what it delivered the first time. See `internal/supervision`.
+          // The supervisor's nudge rides the same recorded drain, in a field
+          // of its own and only at a boundary the run continues through: a
+          // boundary that would idle is a completion or the last frame, and a
+          // nudge there would turn a finished answer into a follow-up. Inside
+          // the record, so a replayed boundary delivers what it delivered the
+          // first time. Apart from `inserts`, because those are the person's
+          // words and the completion brake reads them as the task; a nudge is
+          // not. See `internal/supervision`.
           Effect.flatMap((record) =>
             wouldIdle
               ? Effect.succeed(record)
               : settling.supervision.take(state.frame).pipe(
-                Effect.map((messages) => ({ ...record, inserts: [...messages, ...record.inserts] }))
+                Effect.map((messages) => messages.length === 0 ? record : { ...record, supervisor: messages })
               )
           ),
           // Executed, not replayed: the one fact that says this frame is the
@@ -2426,7 +2428,13 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
         : Effect.succeed({ inserts: [], seatChanges: [], queued: false })
     })
     yield* settling.emit(
-      new AgentEvent.SteeringDrained({ eventType: eventType.steeringDrained, messages: drained.inserts })
+      new AgentEvent.SteeringDrained({
+        eventType: eventType.steeringDrained,
+        messages: drained.inserts,
+        ...(drained.supervisor === undefined || drained.supervisor.length === 0
+          ? {}
+          : { supervisor: drained.supervisor })
+      })
     )
     // The frame is offered to the supervisor from here, after its own take
     // and only from a live boundary the run continues through, so the
@@ -2483,23 +2491,42 @@ const continuing = (settling: Settling, changes: Frame.StateChanges): Continue =
   })
 })
 
-/** Continues the run on the frame's own pair and whatever steering it was sent. */
+/**
+ * Everything a drain delivers to the model, in the order it reads them: the
+ * supervisor's messages, then the person's.
+ */
+const delivered = (drained: Steering.DrainRecord): ReadonlyArray<ModelRequest.Message> => [
+  ...(drained.supervisor ?? []),
+  ...drained.inserts
+]
+
+/**
+ * Continues the run on the frame's own pair and whatever steering it was sent.
+ *
+ * `ask` is what the frame demands of the next one, when it demands anything.
+ * It goes last, below whatever the drain delivered, because a run answers the
+ * last message it read: an insert after the ask is what gets answered. With
+ * nothing delivered the observation and the ask stay one message, as they
+ * always were.
+ */
 const resumed = (
   settling: Settling,
   drained: Steering.DrainRecord,
   changes: Frame.StateChanges = {},
   text: string = settling.printed,
-  echo: number = liveCellEcho
+  echo: number = liveCellEcho,
+  ask?: string
 ): Effect.Effect<Continue, HarnessError> =>
   Effect.gen(function*() {
     const { state } = settling
     const settings = yield* steered(state, drained.seatChanges, settling.input.contextWindowTokensFor)
-    const context = appended(
-      settling.contextWindow,
-      settling.answer,
-      [ModelRequest.Message.user(text), ...drained.inserts],
-      echo
-    )
+    const inserts = delivered(drained)
+    const messages = ask === undefined
+      ? [ModelRequest.Message.user(text), ...inserts]
+      : inserts.length === 0
+      ? [ModelRequest.Message.user(text === "" ? ask : `${text}\n\n${ask}`)]
+      : [...(text === "" ? [] : [ModelRequest.Message.user(text)]), ...inserts, ModelRequest.Message.user(ask)]
+    const context = appended(settling.contextWindow, settling.answer, messages, echo)
     return continuing(settling, {
       ...settings,
       contextWindow: windowOn(state, settings.seat, context),
@@ -2518,13 +2545,7 @@ const observe = (
     const next = Frame.hasNextFrame(settling.state)
     const drained = yield* drain(settling, !next)
     return next
-      ? yield* resumed(
-        settling,
-        drained,
-        changes,
-        settling.printed === "" ? note : `${settling.printed}\n\n${note}`,
-        echo
-      )
+      ? yield* resumed(settling, drained, changes, settling.printed, echo, note)
       : { _tag: "Done" }
   })
 
@@ -3007,7 +3028,7 @@ const frame = (
     const context = appended(
       contextWindow,
       answer,
-      [ModelRequest.Message.user(printed), ...drained.inserts, ...disciplined.messages],
+      [ModelRequest.Message.user(printed), ...delivered(drained), ...disciplined.messages],
       liveCellEcho
     )
     return continuing(exit, {

@@ -18,12 +18,15 @@
  * of rows recalled from memory that might be worth showing the run. One Jev
  * call per snapshot answers every question at once.
  *
- * Three questions are about the run: whether it is thrashing, whether it is
- * still on the task, and whether its evidence is suspect. Five are operational
- * states a person would recognise in a colleague, each scored `none`, `mild`
- * or `strong` against evidence the snapshot names, and `needs_help` is the
- * one word a person is shown. A boolean per candidate sentence and per
- * recalled row decides what is written to memory and what is inserted.
+ * Eleven questions are fixed. Five are about the run: whether it is
+ * thrashing, whether it is still on the task, whether its evidence is
+ * suspect, and whether it carries outdated or irrelevant context. Five are
+ * operational states a person would recognise in a colleague, each scored
+ * `none`, `mild` or `strong` against evidence the snapshot names, and
+ * `needs_help` is the one word a person is shown. The five about the run are
+ * the {@link triggers}: any one past its threshold crosses. A boolean per
+ * candidate sentence and per recalled row decides what is written to memory
+ * and what is inserted.
  *
  * It is a supervisor and not a brake: nothing here ends a run, refuses a
  * completion, or decides anything on the cell loop's hot path. `CellTurn`
@@ -42,8 +45,10 @@
  *
  * Nudges and memory insertion are behind {@link Options.steer}, off until an
  * offline replay of archived journals has measured their precision
- * (`evals/swebench/lib/jev-replay.mjs`). The verdict is journaled whenever an
- * `Evaluator` is bound. Remembering is on whenever a {@link Memory} is bound.
+ * (`evals/swebench/lib/jev-replay.mjs`, which scores {@link triggers} itself
+ * rather than a copy of it). The verdict is journaled whenever an `Evaluator`
+ * is bound. Remembering is behind {@link Options.remember}, off unless the
+ * host opts in, and writes nothing unless a {@link Memory} is bound.
  *
  * @since 1.0.0-rc.0
  */
@@ -100,6 +105,17 @@ export const recalledLimit = 6
  * @since 1.0.0-rc.0
  */
 export const taskBytes = 4096
+
+/**
+ * How long a run that ends with a reading in flight waits for it to settle
+ * and journal, in milliseconds. A reading still unanswered then is interrupted
+ * and journaled `supervisor-unjudged` with reason `interrupted`; the run never
+ * waits longer than this for its supervisor.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const closeGraceMs = 1_500
 
 /**
  * At or above this probability of `thrashing`, a nudge is issued.
@@ -444,7 +460,7 @@ const declare = (candidates: number, recalled: number) =>
  *
  * The fixed questions are the same for every snapshot and the per-item
  * booleans are added by index, so a snapshot with no candidates and nothing
- * recalled asks the nine fixed questions and no others. Declared once per
+ * recalled asks the eleven fixed questions and no others. Declared once per
  * shape, because the digest is the canonical hash of the questions and the
  * journal names it.
  *
@@ -461,7 +477,7 @@ export const classifierFor = (candidates: number, recalled: number): ReturnType<
 }
 
 /**
- * The classifier over a bare snapshot: the nine fixed questions and no
+ * The classifier over a bare snapshot: the eleven fixed questions and no
  * per-item booleans. Its id is the id every shape shares.
  *
  * @category classifiers
@@ -499,13 +515,14 @@ export interface Reading {
 }
 
 /**
- * Why one snapshot went unjudged: the host bound no `Evaluator`, or the
+ * Why one snapshot went unjudged: the host bound no `Evaluator`, the run
+ * ended with the reading in flight past {@link closeGraceMs}, or the
  * transport's own word for what went wrong.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
-export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
+export type UnjudgedReason = "unconfigured" | "interrupted" | Evaluator.EvaluatorErrorCode
 
 /**
  * The typed failure a snapshot nobody could judge settles with. Never thrown:
@@ -552,7 +569,9 @@ export const read = (snapshot: Snapshot): Effect.Effect<Reading, Unjudged, Evalu
     const [elapsed, answers] = yield* declared.evaluate(snapshot).pipe(
       Effect.provideService(Evaluator.Evaluator, metered),
       Effect.timed,
-      Effect.mapError((error): Unjudged => ({ reason: error.code, detail: error.message }))
+      // The same masked text the `jev` flow shows a cell: an unreachable
+      // transport's own message can name hosts and URLs.
+      Effect.mapError((error): Unjudged => ({ reason: error.code, detail: Evaluator.publicMessage(error) }))
     )
     const all = answers as Readonly<Record<string, Classifier.Answer>>
     // Every declared question is answered or the decode above failed, and a
@@ -601,19 +620,19 @@ export interface Options {
   readonly steer: boolean
   /**
    * Whether a candidate Jev accepts is written to the bound {@link Memory}.
-   * On by default; a host with no memory bound writes nothing whatever this
-   * says.
+   * Off by default: a host opts in. A host with no memory bound writes
+   * nothing whatever this says.
    */
   readonly remember: boolean
 }
 
 /**
- * Verdicts journaled, nudges off, memory writes on.
+ * Verdicts journaled, nudges off, memory writes off.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultOptions: Options = { steer: false, remember: true }
+export const defaultOptions: Options = { steer: false, remember: false }
 
 /**
  * The memory a supervisor reads rows from and writes accepted sentences to.
@@ -629,9 +648,22 @@ export interface Memory {
   /** Whether anything is behind this port; false is the default. */
   readonly bound: boolean
   /** Rows relevant to the query, most relevant first, bounded by the caller. */
-  readonly recall: (query: string, limit: number) => Effect.Effect<ReadonlyArray<Recalled>>
-  /** Writes one accepted sentence; a store that refuses it is logged, never raised. */
-  readonly remember: (text: string) => Effect.Effect<void>
+  readonly recall: (query: string, limit: number) => Effect.Effect<ReadonlyArray<Recalled>, MemoryFailure>
+  /**
+   * Writes one accepted sentence. A store that refuses it fails typed, and
+   * the supervisor journals `supervisor-memory-failed` and carries on.
+   */
+  readonly remember: (text: string) => Effect.Effect<void, MemoryFailure>
+}
+
+/**
+ * What a {@link Memory} fails with: the store's own account, safe to journal.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface MemoryFailure {
+  readonly detail: string
 }
 
 /**
@@ -674,6 +706,55 @@ export interface Verdict {
 }
 
 /**
+ * The five readings that cross, by name, each with the inequality that fires
+ * it. The one rule: {@link judge} crosses on it, {@link nudge} names from it,
+ * and the offline replay scores it, so the three cannot drift apart.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const triggers = {
+  thrashing: (reading: Triggerable): boolean => reading.thrashing >= thrashingAt,
+  off_target: (reading: Triggerable): boolean => reading.onTarget <= offTargetAt,
+  suspect: (reading: Triggerable): boolean => reading.suspect >= suspectAt,
+  outdated_context: (reading: Triggerable): boolean => reading.outdatedContext >= acceptAt,
+  irrelevant_context: (reading: Triggerable): boolean => reading.irrelevantContext >= acceptAt
+} as const
+
+/**
+ * The fields of a {@link Reading} the triggers read.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Triggerable = Pick<Reading, "thrashing" | "onTarget" | "suspect" | "outdatedContext" | "irrelevantContext">
+
+/**
+ * One of {@link triggers}.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Trigger = keyof typeof triggers
+
+/**
+ * The triggers one reading fires, in declaration order.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const triggered = (reading: Triggerable): ReadonlyArray<Trigger> =>
+  (Object.keys(triggers) as Array<Trigger>).filter((name) => triggers[name](reading))
+
+/**
+ * Whether one reading crosses: any trigger fires.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.0
+ */
+export const crosses = (reading: Triggerable): boolean => triggered(reading).length > 0
+
+/**
  * The nudge a crossed reading puts in front of the run, naming its evidence.
  *
  * Concise on purpose, and built from counts rather than from the model's
@@ -685,16 +766,15 @@ export interface Verdict {
  */
 export const nudge = (snapshot: Snapshot, reading: Reading): string => {
   const { signals } = snapshot
-  const found: Array<string> = []
-  if (reading.thrashing >= thrashingAt) found.push(`repeating itself (thrashing ${reading.thrashing.toFixed(2)})`)
-  if (reading.onTarget <= offTargetAt) found.push(`drifting from the task (on target ${reading.onTarget.toFixed(2)})`)
-  if (reading.suspect >= suspectAt) found.push(`standing on suspect evidence (suspect ${reading.suspect.toFixed(2)})`)
-  if (reading.outdatedContext >= acceptAt) {
-    found.push(`carrying outdated context (${reading.outdatedContext.toFixed(2)})`)
+  const said: Record<Trigger, string> = {
+    thrashing: `repeating itself (thrashing ${reading.thrashing.toFixed(2)})`,
+    off_target: `drifting from the task (on target ${reading.onTarget.toFixed(2)})`,
+    suspect: `standing on suspect evidence (suspect ${reading.suspect.toFixed(2)})`,
+    outdated_context: `carrying outdated context (${reading.outdatedContext.toFixed(2)})`,
+    irrelevant_context: `carrying irrelevant context (${reading.irrelevantContext.toFixed(2)})`
   }
-  if (reading.irrelevantContext >= acceptAt) {
-    found.push(`carrying irrelevant context (${reading.irrelevantContext.toFixed(2)})`)
-  }
+  const fired = triggered(reading)
+  const found = fired.map((name) => said[name])
   const evidence: Array<string> = []
   if (signals.checksFailing > 0) {
     evidence.push(`${signals.checksFailing} check${signals.checksFailing === 1 ? "" : "s"} last reported failing`)
@@ -710,12 +790,14 @@ export const nudge = (snapshot: Snapshot, reading: Reading): string => {
   if (signals.readOnlyFrames > 0) evidence.push(`${signals.readOnlyFrames} consecutive frames changed nothing`)
   if (signals.callsFailed > 0) evidence.push(`${signals.callsFailed} of ${signals.callsSettled} calls failed`)
   evidence.push(`${signals.mutations} frame${signals.mutations === 1 ? "" : "s"} changed the workspace`)
-  const compact = reading.outdatedContext >= acceptAt || reading.irrelevantContext >= acceptAt
+  const compact = fired.includes("outdated_context") || fired.includes("irrelevant_context")
     ? " Consider compacting the obsolete material while preserving the task, reusable source material, decisions, and the stable cache prefix."
     : ""
-  return `Supervisor — a reading of this run's last ${snapshot.frames.length} frames finds it ${
+  // The counts are the ones the run held when frame N closed; by the time the
+  // run reads this it has written at least one frame more, so the frame is named.
+  return `Supervisor: a reading of this run's last ${snapshot.frames.length} frames, through frame ${signals.frame}, finds it ${
     found.join(", ")
-  }. Evidence: ${
+  }. Evidence at frame ${signals.frame}: ${
     evidence.join("; ")
   }.${compact} Before the next call, state in one sentence which mechanism you now believe is wrong and which single call would show it; then make that call. Do not re-run a check over an unchanged tree, and do not edit a test to make it pass.`
 }
@@ -735,8 +817,7 @@ export const recalledInsert = (row: Recalled): string => `From memory of this re
  * @since 1.0.0-rc.0
  */
 export const judge = (snapshot: Snapshot, reading: Reading, options: Options): Verdict => {
-  const crossed = reading.thrashing >= thrashingAt || reading.onTarget <= offTargetAt || reading.suspect >= suspectAt ||
-    reading.outdatedContext >= acceptAt || reading.irrelevantContext >= acceptAt
+  const crossed = crosses(reading)
   return {
     crossed,
     nudge: options.steer && crossed ? nudge(snapshot, reading) : undefined,

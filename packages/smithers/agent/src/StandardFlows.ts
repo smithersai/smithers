@@ -373,17 +373,15 @@ class JevRefused extends Schema.TaggedError<JevRefused>()(
 
 /**
  * The public text of a `jev` failure: the refusal's own message, or the
- * evaluator's code first so a cell can branch on it. An `unreachable`
- * transport message is the HTTP client's and may name hosts or URLs, so that
- * one code carries a fixed sentence instead.
+ * evaluator's code first so a cell can branch on it. The message is
+ * `Evaluator.publicMessage`, the text the supervisor journals for the same
+ * failure: an `unreachable` transport message is the HTTP client's and may
+ * name hosts or URLs, so that code carries a fixed sentence instead. It says
+ * Jev was unavailable and nothing more; what the run does next is its own
+ * decision, and this text does not make it.
  */
-const jevPublicError = (error: Evaluator.EvaluatorError | Classifier.ClassifierError | JevRefused): string => {
-  if (error instanceof JevRefused) return error.message
-  if (error.code === "unreachable") {
-    return "unreachable: the judge this host binds did not answer. Retry once; if it fails again, decide without it and say so."
-  }
-  return `${error.code}: ${error.message}`
-}
+const jevPublicError = (error: Evaluator.EvaluatorError | Classifier.ClassifierError | JevRefused): string =>
+  error instanceof JevRefused ? error.message : `${error.code}: ${Evaluator.publicMessage(error)}`
 
 /**
  * Jev, as one ordinary flow.

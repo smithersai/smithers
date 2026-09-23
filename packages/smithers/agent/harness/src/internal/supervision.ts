@@ -5,9 +5,12 @@
  *
  * The loop never awaits any of it. `offer` is a sliding enqueue and returns
  * at once; `take` is a `Ref` swap. Everything Jev is asked, and everything
- * that comes back, happens on the forked fiber, and a run that ends with a
- * reading in flight ends without it: the scope closes, the fiber is
- * interrupted, and nothing is journaled for a snapshot nobody read.
+ * that comes back, happens on the forked fiber. A run that ends with a
+ * reading in flight gives it `Supervisor.closeGraceMs` to settle and journal
+ * as the scope closes, and no longer: a reading still unanswered then is
+ * interrupted and journaled `supervisor-unjudged` with reason `interrupted`,
+ * so a Jev call that was made is never missing from the record. A snapshot
+ * the fiber never took is dropped and journals nothing: nobody asked.
  *
  * The reading is taken through `EngineLike.record`, keyed on the session,
  * the frame and the cell digest, so a resumed run is handed the reading its
@@ -22,7 +25,7 @@
  */
 import { ModelRequest } from "@smthrs/model"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, Option, Queue, Ref, Schema, type Scope } from "effect"
+import { Deferred, Effect, Fiber, Option, Queue, Ref, Schema, type Scope } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import type { State } from "../CellTurn.ts"
 import type * as EngineLike from "../EngineLike.ts"
@@ -157,6 +160,25 @@ export const open = (input: {
     // carry them. A resumed run's first snapshots see fewer frames, which is
     // the honest reading of a past this process did not witness.
     const recent: Array<Supervisor.Frame> = []
+    // The frame whose reading the fiber is taking, and a latch released when
+    // that reading is done, whatever it came to. Read only by the scope's
+    // closing grace below.
+    const inFlight = yield* Ref.make<Option.Option<{ readonly frame: number; readonly done: Deferred.Deferred<void> }>>(
+      Option.none()
+    )
+
+    // A store that refused a read or a write is journaled, typed, and the
+    // reading goes on: memory is the supervisor's aid, not its evidence.
+    const memoryFailed = (frame: number, operation: "recall" | "remember", failure: Supervisor.MemoryFailure) =>
+      emit(
+        new AgentEvent.SupervisorMemoryFailed({
+          eventType: eventType.supervisorMemoryFailed,
+          scope: session,
+          frame,
+          operation,
+          detail: failure.detail
+        })
+      )
 
     const supervise = (offer: Offer & { readonly frames: ReadonlyArray<Supervisor.Frame> }): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -166,7 +188,9 @@ export const open = (input: {
           success: Recorded,
           execute: Effect.gen(function*() {
             const recalled = memory.bound
-              ? yield* memory.recall(offer.snapshot.task, Supervisor.recalledLimit)
+              ? yield* memory.recall(offer.snapshot.task, Supervisor.recalledLimit).pipe(
+                Effect.catch((failure) => Effect.as(memoryFailed(offer.frame, "recall", failure), []))
+              )
               : []
             const snapshot: Supervisor.Snapshot = {
               ...offer.snapshot,
@@ -207,6 +231,7 @@ export const open = (input: {
                 needsHelp: reading.needsHelp,
                 crossed: verdict.crossed,
                 nudged: verdict.nudge !== undefined,
+                steer: options.steer,
                 inserted: snapshot.recalled.flatMap((_, index) =>
                   reading.insert[index] === true && options.steer ? [index] : []
                 ),
@@ -248,7 +273,11 @@ export const open = (input: {
         // Written before the reading is journaled, and idempotent by
         // construction: a note is keyed on its own text, so a frame that
         // writes what it wrote the first time writes nothing new.
-        for (const text of recorded.remembers) yield* memory.remember(text)
+        for (const text of recorded.remembers) {
+          yield* memory.remember(text).pipe(
+            Effect.catch((failure) => memoryFailed(offer.frame, "remember", failure))
+          )
+        }
         // The verdict is the last thing this fiber does with a reading: the
         // full decision goes ahead of it, so a host that acts on the verdict
         // the moment it is checkpointed never finds the record behind it
@@ -270,7 +299,43 @@ export const open = (input: {
       capacity: 1,
       strategy: "sliding"
     })
-    yield* Effect.forkScoped(Effect.forever(Effect.flatMap(Queue.take(offers), supervise)))
+    // The reading the fiber was taking when it was interrupted, if it was.
+    const cut = yield* Ref.make<Option.Option<number>>(Option.none())
+    const serve = (offer: Offer & { readonly frames: ReadonlyArray<Supervisor.Frame> }) =>
+      Effect.gen(function*() {
+        const done = yield* Deferred.make<void>()
+        yield* Ref.set(inFlight, Option.some({ frame: offer.frame, done }))
+        yield* supervise(offer).pipe(
+          Effect.onInterrupt(() => Ref.set(cut, Option.some(offer.frame))),
+          Effect.ensuring(Ref.set(inFlight, Option.none()).pipe(Effect.andThen(Deferred.succeed(done, undefined))))
+        )
+      })
+    const fiber = yield* Effect.forkScoped(Effect.forever(Effect.flatMap(Queue.take(offers), serve)))
+    // Registered after the fork, so it runs before the fork's own interruption:
+    // a finalizer added later runs earlier. A reading in flight gets the grace
+    // to settle and journal itself; one still unanswered after it is
+    // interrupted and journaled as such. Nothing here waits past the grace.
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function*() {
+        const held = yield* Ref.get(inFlight)
+        if (Option.isSome(held)) {
+          yield* Deferred.await(held.value.done).pipe(Effect.timeoutOption(Supervisor.closeGraceMs))
+        }
+        yield* Fiber.interrupt(fiber)
+        const interrupted = yield* Ref.get(cut)
+        if (Option.isNone(interrupted)) return
+        yield* emit(
+          new AgentEvent.SupervisorUnjudged({
+            eventType: eventType.supervisorUnjudged,
+            scope: session,
+            frame: interrupted.value,
+            reason: "interrupted",
+            detail:
+              `The run ended with this reading in flight; it was interrupted after a ${Supervisor.closeGraceMs} ms grace.`
+          })
+        )
+      })
+    )
 
     return {
       offer: (offer) =>

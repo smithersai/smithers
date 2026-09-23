@@ -876,6 +876,13 @@ export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
   crossed: Schema.Boolean,
   /** Whether a nudge was handed to the next boundary. */
   nudged: Schema.Boolean,
+  /**
+   * Whether steering was armed for this reading. `discipline-armed` states it
+   * once, at a run's first frame; a resumed run may be armed differently, and
+   * this is where the journal says what the reading actually ran under.
+   * Absent from readings journaled before it existed.
+   */
+  steer: Schema.optional(Schema.Boolean),
   /** Indexes of recalled rows handed to the next boundary. */
   inserted: Schema.Array(Schema.Int),
   /** Indexes of candidates written to memory. */
@@ -891,9 +898,11 @@ export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
  *
  * Written instead of {@link SupervisorSettled}, never beside it: no
  * evaluator on the host, a refusal, a deadline, an answer that does not
- * decode. `reason` is `unconfigured` or the transport's own error code. A
- * reading that fails inserts nothing, remembers nothing and reports no level,
- * so a wave counting calm runs counts only runs Jev read.
+ * decode, a run that ended with the reading in flight. `reason` is
+ * `unconfigured`, `interrupted`, or the transport's own error code. A reading
+ * that fails inserts nothing, remembers nothing and reports no level, so a
+ * wave counting calm runs counts only runs Jev read. An `interrupted` reading
+ * was asked and may have cost a call, so a wave counting Jev's cost counts it.
  *
  * @category events
  * @since 1.0.0-rc.0
@@ -906,9 +915,36 @@ export class SupervisorUnjudged extends Schema.TaggedClass<SupervisorUnjudged>(
   scope: Schema.String,
   /** The frame the snapshot was built from. */
   frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  /** `unconfigured`, or the transport's own error code. */
-  reason: Schema.Literals(["unconfigured", ...Evaluator.EvaluatorErrorCode.literals]),
-  /** The transport's own message. */
+  /** `unconfigured`, `interrupted`, or the transport's own error code. */
+  reason: Schema.Literals(["unconfigured", "interrupted", ...Evaluator.EvaluatorErrorCode.literals]),
+  /** What went wrong, safe to journal: see `Evaluator.publicMessage`. */
+  detail: Schema.String
+}) {}
+
+/**
+ * A memory read or write the supervisor asked for and the store refused.
+ *
+ * Written by the supervisor fiber beside the reading it belongs to, never
+ * instead of it: a memory fault is not a supervisor fault, and the reading
+ * still settles. `operation` says which side failed; `detail` is the store's
+ * own account. A wave counts these rather than reading a log, because a
+ * concurrent writer that loses a lock looks exactly like a run that
+ * remembered nothing.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class SupervisorMemoryFailed extends Schema.TaggedClass<SupervisorMemoryFailed>(
+  "flows/harness/AgentEvent/SupervisorMemoryFailed"
+)("supervisor-memory-failed", {
+  eventType: Schema.Literal("flows.harness.supervisor-memory-failed.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame whose reading asked. */
+  frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** `recall` for a read, `remember` for a write. */
+  operation: Schema.Literals(["recall", "remember"]),
+  /** The store's own account of the failure. */
   detail: Schema.String
 }) {}
 
@@ -1118,7 +1154,14 @@ export class SteeringDrained extends Schema.TaggedClass<SteeringDrained>(
   "flows/harness/AgentEvent/SteeringDrained"
 )("steering-drained", {
   eventType: Schema.Literal("flows.harness.steering-drained.v1"),
-  messages: Schema.Array(ModelRequest.Message)
+  /** What the person sent, in admission order. */
+  messages: Schema.Array(ModelRequest.Message),
+  /**
+   * What the run's supervisor delivered at the same boundary: a nudge or a
+   * recalled row. The model reads these above the person's messages; they
+   * never join the task the completion brake or the supervisor reads.
+   */
+  supervisor: Schema.optional(Schema.Array(ModelRequest.Message))
 }) {}
 
 /**
@@ -1212,6 +1255,7 @@ export const AgentEvent = Schema.Union([
   DecisionSettled,
   SupervisorSettled,
   SupervisorUnjudged,
+  SupervisorMemoryFailed,
   SufficiencyObserved,
   VacuousVerificationObserved,
   Suspended,
@@ -1275,6 +1319,7 @@ export const eventType = {
   sufficiencyObserved: "flows.harness.sufficiency-observed.v1",
   supervisorSettled: "flows.harness.supervisor-settled.v1",
   supervisorUnjudged: "flows.harness.supervisor-unjudged.v1",
+  supervisorMemoryFailed: "flows.harness.supervisor-memory-failed.v1",
   suspended: "flows.harness.suspended.v1",
   transitionApplied: "flows.harness.transition-applied.v1",
   turnClosed: "flows.harness.turn-closed.v1",

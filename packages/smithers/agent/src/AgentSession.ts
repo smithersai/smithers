@@ -305,7 +305,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["control.agent.cell-rejected-in-frame", new Set(["attempt", "code", "message"])],
   ["control.agent.narrow-only-demanded", new Set(["flow", "check", "targets", "currentDigest", "nextFrame"])],
   ["control.agent.read-only-demand-issued", new Set(["streak", "cap", "nextFrame"])],
-  ["control.agent.steering-drained", new Set(["messages"])],
+  ["control.agent.steering-drained", new Set(["messages", "supervisor"])],
   ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])],
   // `refused` separates the reading that ended a run from the one that let a
   // claim stand, and it was added to an event type journals already carried.
@@ -341,7 +341,8 @@ const unordered: ReadonlySet<string> = new Set([
   // ordinal the frame has reached when Jev answers; `scope` and `frame` are
   // the coordinates, and no two readings of one run share them.
   "control.agent.supervisor-settled",
-  "control.agent.supervisor-unjudged"
+  "control.agent.supervisor-unjudged",
+  "control.agent.supervisor-memory-failed"
 ])
 
 /** The exclusion set for an event type that has never been enriched. */
@@ -1014,6 +1015,7 @@ export const trace = (
           needsHelp: event.needsHelp,
           crossed: event.crossed,
           nudged: event.nudged,
+          ...(event.steer === undefined ? {} : { steer: event.steer }),
           inserted: event.inserted,
           remembered: event.remembered,
           latencyMs: event.latencyMs,
@@ -1024,6 +1026,13 @@ export const trace = (
       return {
         eventType: "control.agent.supervisor-unjudged",
         payload: { scope: event.scope, frame: event.frame, reason: event.reason, detail: event.detail }
+      }
+    case "supervisor-memory-failed":
+      // Counted by a wave's scorecard: a write lost to a locked store must
+      // not read as a run that remembered nothing.
+      return {
+        eventType: "control.agent.supervisor-memory-failed",
+        payload: { scope: event.scope, frame: event.frame, operation: event.operation, detail: event.detail }
       }
     case "decision-settled": {
       // The state, the questions and the answers, because a decision is the
@@ -1137,7 +1146,15 @@ export const trace = (
           messages: event.messages.map((message) => ({
             role: message.role,
             text: tracedField(messageText(message))
-          }))
+          })),
+          // The supervisor's nudge or recalled rows, delivered at the same
+          // boundary and kept apart from the person's words.
+          ...(event.supervisor === undefined ? {} : {
+            supervisor: event.supervisor.map((message) => ({
+              role: message.role,
+              text: tracedField(messageText(message))
+            }))
+          })
         }
       }
     case "turn-closed":

@@ -1758,8 +1758,12 @@ ctx.done(judged.ok === false ? judged.error.code + " " + judged.error.message : 
       })
     )
     expect(outcome._tag).toBe("completed")
+    // A typed failure that says Jev was unavailable, and no instruction to
+    // substitute the model's own judgment for it.
     expect(completionOf(outcome)).toBe(
-      "flow_failed Flow jev failed: unreachable: the judge this host binds did not answer. Retry once; if it fails again, decide without it and say so."
+      `flow_failed Flow jev failed: unreachable: ${Evaluator.unreachableMessage}`
     )
+    expect(completionOf(outcome)).toContain("Jev was unavailable")
+    expect(completionOf(outcome)).not.toMatch(/decide without|without it|yourself/)
   })
 })

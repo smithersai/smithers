@@ -431,7 +431,7 @@ describe("the jev flow", () => {
     {
       label: "no transport at all",
       layer: Evaluator.layerUnavailable(),
-      expected: "unreachable: the judge this host binds did not answer"
+      expected: `unreachable: ${Evaluator.unreachableMessage}`
     },
     {
       label: "an answer of the wrong shape",

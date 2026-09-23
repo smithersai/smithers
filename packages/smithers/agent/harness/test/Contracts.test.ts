@@ -224,6 +224,13 @@ describe("AgentEvent", () => {
         reason: "timeout",
         detail: "The gateway did not answer within 1500 ms"
       }),
+      new AgentEvent.SupervisorMemoryFailed({
+        eventType: "flows.harness.supervisor-memory-failed.v1",
+        scope: "session-1",
+        frame: 4,
+        operation: "remember",
+        detail: "database is locked"
+      }),
       new AgentEvent.Resolved({
         eventType: "flows.harness.resolved.v1",
         message: assistantMessage

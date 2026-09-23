@@ -320,14 +320,26 @@ const collect = (options: {
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
 describe("supervisor memory through Agent.run", () => {
-  it.each(["recall", "absent", "failed"] as const)("binds the host memory port when recall is %s", async (mode) => {
+  it.each(
+    [
+      { mode: "recall", options: { namespace: "repository", steer: false, remember: true } },
+      { mode: "absent", options: { namespace: "repository", steer: false, remember: true } },
+      { mode: "failed", options: { namespace: "repository", steer: false, remember: true } },
+      // No namespace: no bank is read or written, never one global bank.
+      { mode: "unnamed", options: { steer: false, remember: true } },
+      // A namespace but no opt-in: recalled, never written.
+      { mode: "unopted", options: { namespace: "repository", steer: false } }
+    ] as const
+  )("binds the host memory port when recall is $mode", async ({ mode, options }) => {
     const settled = Deferred.makeUnsafe<void>()
     const notes: Array<MemoryStore.PutNoteInput> = []
     const recalls: Array<Recall.Input> = []
     const snapshots: Array<Supervisor.Snapshot> = []
     const warnings: Array<string> = []
-    const namespace = mode === "recall" ? "repository" : "supervisor"
-    const sentence = "The repository runs its checks with tox."
+    const failures: Array<AgentEvent.SupervisorMemoryFailed> = []
+    const namespace = "repository"
+    const sentence = "The repository runs its checks with tox and the key sk-live-abcdefghijklmnop."
+    const stored = "The repository runs its checks with tox and the key [REDACTED_API_KEY]."
     const store = MemoryStore.makeNoop({
       putNote: (input) =>
         Effect.suspend(() => {
@@ -389,11 +401,14 @@ describe("supervisor memory through Agent.run", () => {
         registry: registryOf([]),
         model,
         evaluator,
-        supervisor: mode === "recall" ? { namespace, steer: false, remember: true } : undefined,
+        supervisor: options,
         observe: (event) =>
-          event._tag === "supervisor-settled" && event.frame === 0
-            ? Deferred.succeed(settled, undefined).pipe(Effect.asVoid) :
-            Effect.void
+          Effect.suspend(() => {
+            if (event._tag === "supervisor-memory-failed") failures.push(event)
+            return event._tag === "supervisor-settled" && event.frame === 0
+              ? Deferred.succeed(settled, undefined).pipe(Effect.asVoid) :
+              Effect.void
+          })
       }).pipe(
         Effect.provideService(MemoryStore.MemoryStore, store),
         mode === "absent" ? (effect) => effect : Effect.provideService(Recall.Recall, recall),
@@ -405,28 +420,34 @@ describe("supervisor memory through Agent.run", () => {
     expect(outcome._tag).toBe("completed")
     expect(snapshots[0]?.candidates).toEqual([sentence])
     expect(snapshots[0]?.recalled).toEqual(
-      mode === "recall"
+      mode === "recall" || mode === "unopted"
         ? Array.from(
           { length: Supervisor.recalledLimit },
           (_, index) => ({ key: `note-${index}`, text: `Fact ${index}` })
         ) :
         []
     )
-    expect(notes).toEqual([{
-      namespace: { kind: "agent", id: namespace },
-      id: expect.stringMatching(/^[0-9a-f]{64}$/),
-      text: sentence,
-      tags: ["source:supervisor"],
-      provenance: { runId: "session-1" },
-      status: "accepted"
-    }])
+    // Written only when a namespace names the bank and the host opted in, and
+    // then through the journal's secret redaction.
+    expect(notes).toEqual(
+      mode === "unnamed" || mode === "unopted" ? [] : [{
+        namespace: { kind: "agent", id: namespace },
+        id: expect.stringMatching(/^[0-9a-f]{64}$/),
+        text: stored,
+        tags: ["source:supervisor"],
+        provenance: { runId: "session-1" },
+        status: "accepted"
+      }]
+    )
     expect(recalls).toEqual(
-      mode === "absent" ? [] : [{
+      mode === "absent" || mode === "unnamed" ? [] : [{
         banks: [`agent-${namespace}`],
         query: "The task for this run:\n\nwrite the first file",
         maxTokens: Supervisor.recalledLimit * 256
       }]
     )
+    // A store that failed is journaled, typed, for a scorecard to count.
+    expect(failures.map((event) => event.operation)).toEqual(mode === "failed" ? ["recall", "remember"] : [])
     expect(warnings.filter((message) => message.includes("supervisor could not"))).toEqual(
       mode === "failed"
         ? ["The supervisor could not recall memory", "The supervisor could not write memory"] :
