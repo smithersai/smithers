@@ -174,6 +174,12 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 			"repo": "l3bowner/flow-http-integration", "procedure": "List", "payload": map[string]string{"_tag": "flows"},
 		})
 		require.Contains(t, string(catalog), `"flowId":"librarian/history"`)
+		missing := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
+			"repo": "l3bowner/flow-http-integration", "procedure": "Plan",
+			"payload": map[string]any{"flowId": "missing/flow", "input": map[string]any{}},
+		})
+		require.Contains(t, string(missing), `"ok":false`)
+		require.Contains(t, string(missing), `No flow`)
 		flowRPC := func(procedure string, payload any) map[string]any {
 			result := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
 				"repo": "l3bowner/flow-http-integration", "procedure": procedure, "payload": payload,

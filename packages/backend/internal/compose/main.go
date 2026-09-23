@@ -1531,7 +1531,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		flowAccess := []func(http.Handler) http.Handler{
 			cors.Handler(apiCORSOptions(cfg)), middleware.JSONTimeout(4 * time.Minute),
 			middleware.JSONAllowContentType("application/json"), middleware.MaxBodySize(middleware.MaxRequestBodySize),
-			authLoader(queries, cfg.Auth), apiCSRFMiddleware,
+			authLoader(queries, cfg.Auth), apiCSRFMiddleware, middleware.GlobalAPIRateLimit(queries),
 			middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository),
 		}
 		router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)

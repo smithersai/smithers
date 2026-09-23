@@ -118,9 +118,59 @@ func (c *Client) CallRPC(ctx context.Context, procedure string, payload json.Raw
 		}{false, struct {
 			Message string          `json:"message"`
 			Detail  json.RawMessage `json:"detail"`
-		}{"The workspace refused the call.", exit.Exit.Cause}})
+		}{rpcFailureMessage(exit.Exit.Cause), exit.Exit.Cause}})
 	}
 	return nil, &Error{Code: "invalid_response", Message: "runtime RPC response was not a gateway outcome"}
+}
+
+func rpcFailureMessage(cause json.RawMessage) string {
+	var reasons []struct {
+		Tag    string          `json:"_tag"`
+		Error  json.RawMessage `json:"error"`
+		Defect json.RawMessage `json:"defect"`
+	}
+	if json.Unmarshal(cause, &reasons) == nil {
+		for _, reason := range reasons {
+			if reason.Tag != "Fail" {
+				continue
+			}
+			var typed struct {
+				Tag     string `json:"_tag"`
+				Code    string `json:"code"`
+				FlowID  string `json:"flowId"`
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(reason.Error, &typed) == nil {
+				if (typed.Tag == "/control/FlowNotFound" || typed.Code == "flow_not_found") && typed.FlowID != "" {
+					return fmt.Sprintf("No flow %q is registered on this workspace.", typed.FlowID)
+				}
+				if typed.Message != "" {
+					return typed.Message
+				}
+				if typed.Tag != "" {
+					return typed.Tag
+				}
+				if typed.Code != "" {
+					return typed.Code
+				}
+			}
+		}
+		for _, reason := range reasons {
+			switch reason.Tag {
+			case "Interrupt":
+				return "The workspace cancelled the call."
+			case "Die":
+				var defect struct {
+					Message string `json:"message"`
+				}
+				if json.Unmarshal(reason.Defect, &defect) == nil && defect.Message != "" {
+					return "The workspace crashed: " + defect.Message
+				}
+				return "The workspace crashed."
+			}
+		}
+	}
+	return "The workspace refused the call."
 }
 
 func New(config Config) (*Client, error) {
