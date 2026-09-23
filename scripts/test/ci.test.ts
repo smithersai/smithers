@@ -268,6 +268,7 @@ describe("ci conformance", () => {
       "release:status": "node --experimental-strip-types flows/release-support/main.ts status",
       "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
+      tui: "bun apps/tui/src/main.tsx",
       "test:e2e": "bun apps/app/e2e/packaged/run.ts",
       "test:examples": "pnpm --filter @smthrs/examples run test",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"
