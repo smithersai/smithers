@@ -432,6 +432,21 @@ def check_shim_durable_exec() -> None:
         assert run.returncode == 255 and len(lines) == 1, (run.returncode, lines)
         assert "--exec-id" not in lines[0] and "--cwd /src" in lines[0], lines
 
+        # An SSH gateway denial is waited out, not handed to the agent.
+        calls.write_text("")
+        count.write_text("0")
+        cli.write_text("#!/bin/sh\n"
+                       f"printf '%s\\n' \"$*\" >> {calls}\n"
+                       f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
+                       "if [ $n -le 2 ]; then echo 'x@ssh.jjhub.tech: Permission denied (password,publickey).' >&2; exit 1; fi\n"
+                       "printf '%s' '{\"exit_code\":0,\"stdout\":\"ok\",\"stderr\":\"\"}'\n")
+        config = json.loads((bin_dir / plue_docker.CONFIG_NAME).read_text())
+        (bin_dir / plue_docker.CONFIG_NAME).write_text(json.dumps({**config, "auth_poll_sec": 0.05}))
+        run = sp.run([sys.executable, str(bin_dir / "docker"), "exec", "--", "ws-1", "true"],
+                     capture_output=True, text=True, stdin=sp.DEVNULL)
+        assert run.returncode == 0 and run.stdout == "ok", (run.returncode, run.stdout, run.stderr)
+        assert len(calls.read_text().splitlines()) == 3
+
 
 def check_guest_prelude() -> None:
     """Every exec runs under `docker exec`'s umask, 0022. Intel OpenMP asserts in kmp_affinity.cpp(642) on the plue guest's CPU
@@ -547,6 +562,42 @@ def check_guest_restart_watchdog() -> None:
             assert asyncio.run(ops._plue_exec("short", timeout_sec=28800))[0] == "late"
         finally:
             plue_env._WATCH_EVERY_SEC, plue_env._WATCH_MIN_SEC = saved
+            for name in ("SMITHERS_CLI", "PLUE_REPO"):
+                os.environ.pop(name, None)
+
+
+def check_auth_denial_waits() -> None:
+    """The SSH gateway bans this host's IP for 15 min (doubling) after 5
+    workspace logins it could not validate, e.g. while VMs restart; every
+    exec and copy then gets `Permission denied (password,publickey)`. That
+    is not the trial's failure: exec and cp wait it out (polls during a ban
+    do not extend it), then fail as infra."""
+    with tempfile.TemporaryDirectory() as directory:
+        count = Path(directory) / "count"
+        cli = Path(directory) / "smithers"
+        cli.write_text("#!/bin/sh\n"
+                       f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
+                       "if [ $n -le 3 ]; then echo 'msb_1+root:tok@ssh.jjhub.tech: Permission denied (password,publickey).' >&2; exit 1; fi\n"
+                       "case \"$*\" in *\" cp \"*|cp\ *) printf '%s' '{\"ok\":true}';; *) printf '%s' '{\"exit_code\":0,\"stdout\":\"in\",\"stderr\":\"\"}';; esac\n")
+        cli.chmod(0o755)
+        saved = (plue_env._AUTH_WAIT_SEC, plue_env._AUTH_POLL_SEC)
+        plue_env._AUTH_WAIT_SEC, plue_env._AUTH_POLL_SEC = 30, 0.05
+        try:
+            ops = fake_ops(cli)
+            assert asyncio.run(ops._plue_exec("true"))[0] == "in", "an exec waits out the denial"
+            count.write_text("0")
+            asyncio.run(ops._plue_upload(__file__, "/tmp/x"))  # a copy waits too
+            assert int(count.read_text()) == 4
+            count.write_text("-100")
+            plue_env._AUTH_WAIT_SEC = 0.2
+            try:
+                asyncio.run(ops._plue_exec("true"))
+            except plue_env.PlueError as error:
+                assert plue_env.auth_denied(error), error
+            else:
+                raise AssertionError("a denial past the wait is a PlueError")
+        finally:
+            plue_env._AUTH_WAIT_SEC, plue_env._AUTH_POLL_SEC = saved
             for name in ("SMITHERS_CLI", "PLUE_REPO"):
                 os.environ.pop(name, None)
 
@@ -719,6 +770,7 @@ if __name__ == "__main__":
     check_storage_limit()
     check_retried_attempts_are_kept()
     check_guest_restart_watchdog()
+    check_auth_denial_waits()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

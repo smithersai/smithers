@@ -140,7 +140,11 @@ def main(argv: list[str]) -> int:
     if not stdin:
         args = args[:-2] + ["--exec-id", f"shim-{uuid.uuid4().hex[:16]}"] + args[-2:]
         waits = [*config.get("reattach_backoff_sec", plue_env._EXEC_REATTACH_BACKOFF_SEC), None]
-    for wait in waits:
+    auth_poll = float(config.get("auth_poll_sec", plue_env._AUTH_POLL_SEC))
+    auth_deadline = time.monotonic() + float(config.get("auth_wait_sec", plue_env._AUTH_WAIT_SEC))
+    waits = list(waits)
+    while waits:
+        wait = waits[0]
         result = subprocess.run(
             args,
             stdin=None if stdin else subprocess.DEVNULL,
@@ -153,6 +157,11 @@ def main(argv: list[str]) -> int:
             data = {}
         payload = data.get("data", data) if isinstance(data, dict) else {}
         stderr = (payload.get("stderr") or "") + "\n" + result.stderr.decode(errors="replace")
+        if "exit_code" not in payload and plue_env.auth_denied(json.dumps(data) + stderr) \
+                and time.monotonic() < auth_deadline:
+            # The SSH gateway refused the login (an IP ban); not the command's result.
+            time.sleep(auth_poll)
+            continue
         lost = None
         if "error" in data and "exit_code" not in payload:
             error = data["error"]
@@ -166,6 +175,7 @@ def main(argv: list[str]) -> int:
                 return 255
             lost = True
         if lost is not None:
+            waits.pop(0)
             time.sleep(wait)
             continue
         if not payload and result.returncode != 0:

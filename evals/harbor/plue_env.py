@@ -116,6 +116,12 @@ _EXEC_REATTACH_BACKOFF_SEC = (10, 30, 60, 120, 240)
 _WATCH_MIN_SEC = 600
 _WATCH_EVERY_SEC = 300
 BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
+# The SSH gateway bans an IP for 15 min (doubling to 24 h) after 5 workspace
+# logins it could not validate, and every harness process on this host
+# shares that IP. A denial is waited out, polled once a minute (a poll
+# during a ban does not extend it), before it fails as infra.
+_AUTH_WAIT_SEC = 1200
+_AUTH_POLL_SEC = 60
 _DELETE_BACKOFF_SEC = 10
 # Harbor versions whose Trial._separate_verifier_env is copied below.
 _VERIFIER_PATCH_HARBOR = ("0.23.0",)
@@ -171,6 +177,13 @@ class PlueImageError(PlueError):
 class PlueUnplaceable(PlueError):
     """The task asks for a bigger guest than any sandbox worker can hold
     (PLUE_MAX_CPUS). An infrastructure limit: never scored, never retried."""
+
+
+def auth_denied(error: BaseException) -> bool:
+    """The SSH gateway refused the login (an IP ban or a login it could not
+    validate), not the command."""
+    text = str(error).lower()
+    return "permission denied (" in text or "ip banned" in text
 
 
 def reattachable(error: "PlueError") -> bool:
@@ -858,17 +871,39 @@ class _PlueOps:
         for key, value in (env or {}).items():
             args += ["--env", f"{key}={value}"]
         args += ["--command", with_egress(command)]
-        for wait in (*_EXEC_REATTACH_BACKOFF_SEC, None):
+        waits = list(_EXEC_REATTACH_BACKOFF_SEC)
+
+        async def attempt():
+            if self._plue_boot_id and timeout > _WATCH_MIN_SEC:
+                return await self._plue_exec_watched(args, timeout)
+            return await self._plue_exec_once(args, timeout)
+
+        while True:
             try:
-                if self._plue_boot_id and timeout > _WATCH_MIN_SEC:
-                    return await self._plue_exec_watched(args, timeout)
-                return await self._plue_exec_once(args, timeout)
+                return await self._plue_auth_patient(attempt)
             except PlueError as error:
-                if wait is None or not reattachable(error):
+                if not waits or not reattachable(error):
                     raise
+                wait = waits.pop(0)
                 self.logger.info("plue: exec %s lost its transport (%s); reattaching in %ss", exec_id, error, wait)
                 await asyncio.sleep(wait)
-        raise AssertionError("unreachable")
+
+    async def _plue_auth_patient(self, call):
+        """`call()`, re-tried while the SSH gateway denies this host's logins
+        (up to _AUTH_WAIT_SEC), then its PlueError."""
+        deadline = None
+        while True:
+            try:
+                return await call()
+            except PlueError as error:
+                if not auth_denied(error):
+                    raise
+                now = asyncio.get_event_loop().time()
+                deadline = deadline if deadline is not None else now + _AUTH_WAIT_SEC
+                if now >= deadline:
+                    raise
+                self.logger.info("plue: SSH gateway denied the login (%s); retrying in %ss", error, _AUTH_POLL_SEC)
+                await asyncio.sleep(_AUTH_POLL_SEC)
 
     async def _plue_exec_watched(self, args: list[str], timeout: int) -> tuple[str, str, int]:
         """_plue_exec_once, failed as guest_restarted when the guest's
@@ -913,7 +948,8 @@ class _PlueOps:
         except ValueError as error:
             raise PlueError(f"unreadable workspace exec reply: {error}", "cli_reply", result.args) from error
         if not isinstance(data, dict) or not data:
-            raise PlueError(f"empty workspace exec reply (exit {result.returncode})", "cli_reply", result.args)
+            detail = result.stderr.decode(errors="replace").strip()[-300:]
+            raise PlueError(f"empty workspace exec reply (exit {result.returncode}): {detail}", "cli_reply", result.args)
         if "error" in data and "exit_code" not in data:
             error = data["error"]
             raise PlueError(error.get("message", "exec failed"), error.get("code", ""), result.args)
@@ -936,9 +972,9 @@ class _PlueOps:
 
     async def _plue_upload(self, source: Path | str, target: str) -> None:
         self._ws()  # refuse to let the CLI auto-detect some other workspace
-        await self._run("workspace", "cp", str(source), f"{self._workspace_id}:{target}",
-                        "--repo", self._repo(), "--user", "root", "--timeout", "1800",
-                        "--format", "json", timeout=1900)
+        await self._plue_auth_patient(lambda: self._run(
+            "workspace", "cp", str(source), f"{self._workspace_id}:{target}",
+            "--repo", self._repo(), "--user", "root", "--timeout", "1800", "--format", "json", timeout=1900))
 
     async def _plue_upload_contents(self, source_dir: Path | str, target_dir: str) -> None:
         # pathlib drops a trailing "." segment, so build the docker-cp style
@@ -949,9 +985,9 @@ class _PlueOps:
     async def _plue_download(self, source: str, target: Path | str) -> None:
         self._ws()
         Path(target).parent.mkdir(parents=True, exist_ok=True)
-        await self._run("workspace", "cp", f"{self._workspace_id}:{source}", str(target),
-                        "--repo", self._repo(), "--user", "root", "--timeout", "1800",
-                        "--format", "json", timeout=1900)
+        await self._plue_auth_patient(lambda: self._run(
+            "workspace", "cp", f"{self._workspace_id}:{source}", str(target),
+            "--repo", self._repo(), "--user", "root", "--timeout", "1800", "--format", "json", timeout=1900))
 
     async def _plue_download_dir(self, source: str, target: Path | str) -> None:
         target = Path(target)
