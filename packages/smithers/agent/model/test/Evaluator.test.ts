@@ -17,6 +17,20 @@ import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
 
+describe("public evaluator failures", () => {
+  it("replaces unreachable transport details with the public sentence", () => {
+    expect(Evaluator.publicMessage({
+      code: "unreachable",
+      message: "ECONNREFUSED https://private.invalid:9443?token=fixture-secret"
+    })).toBe("Jev was unavailable: the judge this host binds did not answer.")
+  })
+
+  it("preserves the judge's explanation when it answered with a refusal", () => {
+    expect(Evaluator.publicMessage({ code: "refused", message: "This model does not support choice questions." }))
+      .toBe("This model does not support choice questions.")
+  })
+})
+
 /**
  * The Vercel AI Gateway's answer to one evaluation, as recorded on 2026-09-17
  * against `typesafe-ai/jev`. Probabilities round to two decimals on the wire.
