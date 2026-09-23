@@ -74,14 +74,14 @@ const fixture = (key: string | undefined = VAULT_KEY) => {
 describe("account credential vault through the Worker router", () => {
   test("a reasoning model passes the fixed Test on its first call", async () => {
     const f = fixture()
-    await f.mutate("enroll")
+    await f.mutate("enroll", "alice", { origin: "https://api.cerebras.ai" })
     f.provider(async request => {
       const sent = await request.json() as { max_tokens?: number; reasoning_effort?: string }
       return sent.max_tokens === 128 && sent.reasoning_effort === "low"
         ? completion("ok")
         : Response.json({ choices: [{ finish_reason: "length", message: { content: "\n\n", reasoning: "thinking" } }] })
     })
-    const tested = await f.request("/api/model/test", "alice", { model: { ...model, id: "video-demo-cerebras", modelId: "qwen-3.8-27b" } })
+    const tested = await f.request("/api/model/test", "alice", { model: { ...model, id: "video-demo-cerebras", baseUrl: "https://api.cerebras.ai", modelId: "qwen-3.8-27b" } })
     expect(ModelTestResultSchema.parse(tested.body)).toMatchObject({ ok: true, sample: "ok" })
     expect(f.calls).toHaveLength(1)
     expect(await f.calls[0]!.json()).toMatchObject({
@@ -112,6 +112,7 @@ describe("account credential vault through the Worker router", () => {
     expect(f.spent).toEqual(["alice", "alice"])
     expect(f.calls.map(call => [new URL(call.url).origin, call.redirect, call.headers.get("authorization") === `Bearer ${VALUE}`]))
       .toEqual([[ORIGIN, "manual", true], [ORIGIN, "manual", true]])
+    expect(await f.calls[0]!.json()).not.toHaveProperty("reasoning_effort")
     expect(JSON.stringify([f.responses, f.internal, [...f.stores.values()].map(s => [...s.data])])).not.toContain(VALUE)
   })
 

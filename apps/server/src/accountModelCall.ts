@@ -40,7 +40,8 @@ export const accountModelCall = (
     const temperature = body.temperature === undefined ? {} : { temperature: body.temperature }
     switch (plan.protocol) {
       case "openai-chat": payload = { model: plan.modelId, stream: false, max_tokens: body.maxTokens,
-        ...(input === undefined ? { reasoning_effort: "low" } : {}), ...temperature, messages: turns }; break
+        ...(input === undefined && new URL(plan.url).origin === "https://api.cerebras.ai" ? { reasoning_effort: "low" } : {}),
+        ...temperature, messages: turns }; break
       case "openai-responses": payload = { model: plan.modelId, stream: false, max_output_tokens: body.maxTokens, ...temperature, input: turns }; break
       case "anthropic-messages":
         headers = { "content-type": "application/json", "x-api-key": value, "anthropic-version": "2023-06-01" }
