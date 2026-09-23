@@ -13,11 +13,11 @@ describe("shared backend client route contract", () => {
         router.includes(`${route.method === "GET" ? "Get" : "Post"}(\"/${path}\"`)
       expect(mounted, `${route.method} ${route.path} is not mounted in packages/backend/internal/compose/router.go`)
         .toBe(true)
-      if (route.capability === "recommend") {
+      if ("capability" in route && route.capability === "recommend") {
         expect(router).toContain("if extras.Recommender != nil")
         expect(bootstrap).toContain("\"recommend\"")
       }
-      if (route.capability === "model.turn") {
+      if ("capability" in route && route.capability === "model.turn") {
         expect(router).toContain("if extras.ModelStream != nil")
         expect(bootstrap).toContain("\"model.turn\"")
       }
