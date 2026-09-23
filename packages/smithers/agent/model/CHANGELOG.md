@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `Evaluator.layerVercelGateway` asks again after a 429 or 503, up to
+  `attempts` requests (`Evaluator.defaultAttempts`, 3) with a pause of
+  `Evaluator.retryBackoffMs` (100 ms) that doubles each time. `typesafe-ai/jev`
+  shed about one request in seven with a fast 503 on 2026-09-23, which failed
+  11 of 45 benchmark runs as `completion_unjudged`. A request shed on every
+  attempt still fails `refused`. `timeoutMs` still bounds the whole
+  evaluation, retries included; its default is now 3000 ms.
+
 ### Added
 
 - `Evaluator.layerFromEnvironment(environment, host)` and `Evaluator.environmentKey`:

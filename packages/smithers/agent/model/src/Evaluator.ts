@@ -414,13 +414,33 @@ export const defaultBaseUrl = "https://ai-gateway.vercel.sh/v4/ai/evaluation-mod
 export const defaultModel = "typesafe-ai/jev"
 
 /**
- * The deadline over one whole gateway call, headers and body, when an option
- * names none.
+ * The deadline over one whole evaluation when an option names none: every
+ * attempt, headers and body, and the pauses between them. Three attempts
+ * that each take the median ~350 ms, plus the two pauses, fit inside it with
+ * room for a slow answer.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultTimeoutMs = 1500
+export const defaultTimeoutMs = 3000
+
+/**
+ * How many requests one evaluation may send when an option names none. Only
+ * a 429 or a 503 is asked again; see {@link layerVercelGateway}.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultAttempts = 3
+
+/**
+ * The pause before the second attempt, in milliseconds. Each later pause
+ * doubles it.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const retryBackoffMs = 100
 
 /**
  * The gateway wire protocol this transport speaks, sent as
@@ -445,8 +465,9 @@ export const specificationVersion = "4"
  *
  * `apiKey` is the Vercel AI Gateway key, either in hand or as a `Config` read
  * when the layer is built. Every other option has a default: `model` is
- * {@link defaultModel}, `timeoutMs` is {@link defaultTimeoutMs},
- * `zeroDataRetention` is on, and `baseUrl` is {@link defaultBaseUrl}.
+ * {@link defaultModel}, `timeoutMs` is {@link defaultTimeoutMs}, `attempts`
+ * is {@link defaultAttempts}, `zeroDataRetention` is on, and `baseUrl` is
+ * {@link defaultBaseUrl}.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -455,6 +476,7 @@ export interface VercelGatewayOptions {
   readonly apiKey: Redacted.Redacted<string> | Effect.Effect<Redacted.Redacted<string>, Config.ConfigError>
   readonly model?: string
   readonly timeoutMs?: number
+  readonly attempts?: number
   readonly zeroDataRetention?: boolean
   readonly baseUrl?: string
 }
@@ -497,10 +519,24 @@ const usageOf = (body: Record<string, unknown>): Usage | undefined => {
 const invalidQuestionStatuses = new Set([400, 422])
 
 /**
+ * The statuses that say "not now" rather than "not this": the provider shed
+ * the request or the caller is over its rate. The same request may be
+ * answered a moment later, so these alone are asked again.
+ */
+const retryStatuses = new Set([429, 503])
+
+/**
  * Jev through the Vercel AI Gateway, over the kernel `HttpClient`.
  *
- * One POST per evaluation, one deadline over the whole call, no retries: the
- * caller decides whether a failure is worth a second request. Every request
+ * One POST per attempt and one deadline over the whole evaluation. A 429 or a
+ * 503 is asked again, up to `attempts` requests in all, after a pause of
+ * {@link retryBackoffMs} that doubles each time; the answer is still Jev's,
+ * and a request shed on every attempt fails `refused` with the last status.
+ * On 2026-09-23 `typesafe-ai/jev` shed about one request in seven with a 503
+ * in ~125 ms, with no `retry-after` and no fallback behind the gateway; the
+ * same body sent again was answered. The deadline bounds the retries too: no
+ * attempt starts, and no pause runs, past it. Every other status fails at
+ * once. Every request
  * runs as a `model:call` on the gateway host for the configured model, so a
  * grant for the gateway is a grant for this model and not for the rest. The
  * wire protocol is the AI SDK gateway provider's own, as recorded on
@@ -546,6 +582,7 @@ export function layerVercelGateway(
       const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : yield* options.apiKey
       const model = options.model ?? defaultModel
       const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
+      const attempts = Math.max(1, Math.floor(options.attempts ?? defaultAttempts))
       const zeroDataRetention = options.zeroDataRetention ?? true
       const baseUrl = options.baseUrl ?? defaultBaseUrl
 
@@ -598,16 +635,24 @@ export function layerVercelGateway(
             },
             body: HttpBody.text(serializedBody, "application/json")
           })
-          const response = yield* http.execute(wire).pipe(
+          const send = http.execute(wire).pipe(
             KernelHttpClient.withModelCall(model),
             Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message }))
           )
+          let response = yield* send
+          for (let attempt = 1; attempt < attempts && retryStatuses.has(response.status); attempt++) {
+            yield* Effect.sleep(retryBackoffMs * 2 ** (attempt - 1))
+            response = yield* send
+          }
           if (response.status !== 200) {
+            const retried = attempts > 1 && retryStatuses.has(response.status)
             return yield* Effect.fail(
               new EvaluatorError({
                 code: invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
                 status: response.status,
-                message: `The gateway answered ${response.status}`
+                message: retried
+                  ? `The gateway answered ${response.status} on all ${attempts} attempts`
+                  : `The gateway answered ${response.status}`
               })
             )
           }

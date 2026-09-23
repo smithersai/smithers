@@ -367,7 +367,6 @@ describe("Evaluator.layerVercelGateway", () => {
   it.each(
     [
       [401, "refused"],
-      [429, "refused"],
       [529, "refused"],
       [400, "invalid_question"],
       [422, "invalid_question"]
@@ -381,6 +380,112 @@ describe("Evaluator.layerVercelGateway", () => {
 
     expect(error).toBeInstanceOf(Evaluator.EvaluatorError)
     expect(error).toMatchObject({ code, status, message: `The gateway answered ${status}` })
+  })
+
+  it.each([401, 500, 529])("asks once when the gateway answers %s", async (status) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer(sent, () => json({ error: "no" }, status)))
+    )
+
+    expect(failure(await evaluate(layer))).toMatchObject({ code: "refused", status })
+    expect(sent).toHaveLength(1)
+  })
+
+  /**
+   * The body `typesafe-ai/jev` answered on 2026-09-23 to one request in about
+   * seven over the gateway, whatever the concurrency: the provider shed the
+   * request in about 125 ms and the gateway had no fallback to route to.
+   */
+  const shed = {
+    error: {
+      message: "Service temporarily unavailable. Please try again shortly.",
+      type: "service_unavailable_error"
+    }
+  }
+
+  it.each([503, 429])("asks again after a %s and answers what the next attempt answers", async (status) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer(sent, () => sent.length === 1 ? json(shed, status) : json(recorded)))
+    )
+
+    const response = success(await evaluate(layer))
+
+    expect(response.answers).toEqual(recorded.answers)
+    expect(sent).toHaveLength(2)
+    expect(sent[1]!.body).toBe(sent[0]!.body)
+  })
+
+  it("fails a gateway that sheds every attempt as refused, after the last attempt and before the deadline", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), timeoutMs: 3000 }).pipe(
+      Layer.provide(httpLayer(sent, () => json(shed, 503)))
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const evaluator = yield* Evaluator.Evaluator
+        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.result, Effect.forkChild)
+        yield* Effect.yieldNow
+        expect(sent).toHaveLength(1)
+        yield* TestClock.adjust(Evaluator.retryBackoffMs - 1)
+        expect(sent).toHaveLength(1)
+        yield* TestClock.adjust(1)
+        expect(sent).toHaveLength(2)
+        yield* TestClock.adjust(2 * Evaluator.retryBackoffMs)
+        return yield* Fiber.join(fiber)
+      }).pipe(
+        Effect.provide(layer),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+      )
+    )
+
+    expect(sent).toHaveLength(Evaluator.defaultAttempts)
+    expect(failure(result)).toMatchObject({
+      code: "refused",
+      status: 503,
+      message: `The gateway answered 503 on all ${Evaluator.defaultAttempts} attempts`
+    })
+  })
+
+  it("never waits past its deadline for another attempt", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), timeoutMs: 150, attempts: 5 }).pipe(
+      Layer.provide(httpLayer(sent, () => json(shed, 503)))
+    )
+
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const evaluator = yield* Evaluator.Evaluator
+        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.result, Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* TestClock.adjust(150)
+        return yield* Fiber.join(fiber)
+      }).pipe(
+        Effect.provide(layer),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+      )
+    )
+
+    expect(failure(result)).toMatchObject({ code: "timeout" })
+    expect(sent).toHaveLength(2)
+  })
+
+  it("asks exactly once when told to make one attempt", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), attempts: 1 }).pipe(
+      Layer.provide(httpLayer(sent, () => json(shed, 503)))
+    )
+
+    expect(failure(await evaluate(layer))).toMatchObject({
+      code: "refused",
+      status: 503,
+      message: "The gateway answered 503"
+    })
+    expect(sent).toHaveLength(1)
   })
 
   it.each([
