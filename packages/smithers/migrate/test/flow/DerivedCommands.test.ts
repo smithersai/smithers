@@ -27,7 +27,8 @@ import * as Units from "@smthrs/migrate/Units"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { copyFixture, nodeLayer } from "../fixtures/helpers.ts"
 
@@ -49,6 +50,9 @@ const hostileProject = (): { readonly root: string; readonly paths: ReadonlyArra
   const root = copyFixture("jsx-single")
   const paths: Array<string> = []
   for (const name of hostileNames) {
+    // Windows cannot create these names. Their literal bytes still run
+    // through the renderer and the real argv child below on every host.
+    if (process.platform === "win32" && /[<>"|\u0000-\u001f]/.test(name)) continue
     writeFileSync(join(root, name), "{}\n")
     paths.push(name)
   }
@@ -125,50 +129,40 @@ describe("derived typecheck commands over hostile tsconfig names", () => {
   it.live("spawn the executable with the name as one argument and run nothing else", () =>
     Effect.gen(function*() {
       const { paths, root } = hostileProject()
-      // A `tsc` that records what it was handed, first on the PATH for the
-      // length of this test. `Verify` spawns with the process environment, so
-      // the derived command resolves to it exactly as a project's would.
-      const bin = join(root, "fake-bin")
-      mkdirSync(bin, { recursive: true })
       const record = join(root, "argv.txt")
+      const recorder = join(root, "record-argv.cjs")
       writeFileSync(
-        join(bin, "tsc"),
-        // Octal, not hex. `\\x1f` is a bash extension to printf: `/bin/sh` is
-        // bash on macOS and accepts it, and dash on Debian and Ubuntu, where it
-        // emits the five literal characters `\\x1f` instead of the byte. The
-        // separators then never appear, the split below finds one field
-        // holding every argument of every call, and the case failed only on
-        // Linux. POSIX printf takes `\\0ooo`, which both shells read the same.
-        `#!/bin/sh\nfor arg in "$@"; do printf '%s\\037' "$arg" >> ${JSON.stringify(record)}; done\nprintf '\\036' >> ${
-          JSON.stringify(record)
-        }\n`
+        recorder,
+        `require("node:fs").appendFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)) + "\\n")`
       )
-      chmodSync(join(bin, "tsc"), 0o755)
-      const previous = process.env.PATH
-      process.env.PATH = `${bin}:${previous ?? ""}`
-      try {
-        const scanned = yield* Scan.scan(root).pipe(Effect.provide(nodeLayer))
-        const commands = Layers.commandsFor(scanned.detection, {}, "flows")
-        const result = yield* Verify.run({
-          root,
-          commands: { ...commands, install: undefined, format: undefined, test: undefined },
-          expectFlows: false
-        }, { command: 30_000 }).pipe(
-          Effect.provide(NodeServices.layer)
-        )
+      // Resolve only the fixture's tsc to a real Node child. Preserve the
+      // derived argv and spawn options without relying on a POSIX shim.
+      const native = yield* ChildProcessSpawner.pipe(Effect.provide(NodeServices.layer))
+      const recording = makeSpawner((command) => {
+        expect(command._tag).toBe("StandardCommand")
+        if (command._tag !== "StandardCommand") return native.spawn(command)
+        expect(command.command).toBe("tsc")
+        expect(command.options.shell).not.toBe(true)
+        return native.spawn(ChildProcess.make(process.execPath, [recorder, ...command.args], command.options))
+      })
+      const scanned = yield* Scan.scan(root).pipe(Effect.provide(nodeLayer))
+      const commands = Layers.commandsFor(scanned.detection, {}, "flows")
+      const result = yield* Verify.run({
+        root,
+        commands: { ...commands, install: undefined, format: undefined, test: undefined },
+        expectFlows: false
+      }, { command: 30_000 }).pipe(
+        Effect.provideService(ChildProcessSpawner, recording),
+        Effect.provide(NodeServices.layer)
+      )
 
-        expect(result.typecheck.map((entry) => entry.exitCode)).toEqual(result.typecheck.map(() => 0))
-        const calls = readFileSync(record, "utf8").split("\u001e").filter((call) => call !== "").map((call) =>
-          call.split("\u001f").filter((arg) => arg !== "")
-        )
-        for (const path of paths) expect(calls).toContainEqual(["--noEmit", "-p", path])
-        expect(calls).toHaveLength(commands.typecheck.length)
-        // None of the markers the names name were touched.
-        expect(existsSync(join(root, "pwned"))).toBe(false)
-        expect(existsSync(join(root, "tsconfig.>pwned.json"))).toBe(true)
-      } finally {
-        process.env.PATH = previous
-      }
+      expect(result.typecheck.map((entry) => entry.exitCode)).toEqual(result.typecheck.map(() => 0))
+      const calls = readFileSync(record, "utf8").trimEnd().split("\n").map((call) => JSON.parse(call))
+      for (const path of paths) expect(calls).toContainEqual(["--noEmit", "-p", path])
+      expect(calls).toHaveLength(commands.typecheck.length)
+      // None of the markers the names name were touched.
+      expect(existsSync(join(root, "pwned"))).toBe(false)
+      for (const path of paths) expect(existsSync(join(root, path))).toBe(true)
     }))
 })
 
@@ -177,6 +171,7 @@ describe("Verify over an argv command", () => {
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       const hostile = [
+        ...hostileNames,
         "a b",
         "'q'",
         "\"d\"",
