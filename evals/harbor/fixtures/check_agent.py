@@ -416,6 +416,122 @@ def check_accounts() -> None:
         assert codex_pool.usage_limit_in("all done, 3 files changed") is None
 
 
+def check_plue_env() -> None:
+    """The capacity wait runs outside Harbor's start timer, the host ledger is
+    FIFO across processes, an oversized guest fails at once, and a lost SSH
+    session is a PlueError, not the command's exit status."""
+    import asyncio
+    import logging
+    import types
+    import plue_env
+
+    assert [plue_env.slots_for(c) for c in (None, 1, 2, 3, 4, 8)] == [1, 1, 1, 2, 2, 4]
+
+    # The timer control: without the pre-step, a slow reserve inside start()
+    # is killed by the timer; with it, the same reserve completes untimed.
+    class Env:
+        def __init__(self):
+            self.order = []
+
+        async def reserve(self):
+            await asyncio.sleep(0.2)
+            self.order.append("reserve")
+
+        async def start(self, force_build=False):
+            self.order.append("start")
+
+    def trial_class():
+        class Trial:
+            def __init__(self, env):
+                self.agent_environment = env
+
+            async def _start_agent_environment(self):
+                await asyncio.wait_for(self.agent_environment.start(), timeout=0.05)
+        return Trial
+
+    class InsideTimer(Env):
+        async def start(self, force_build=False):
+            await self.reserve()
+            self.order.append("start")
+
+    slow = trial_class()(InsideTimer())
+    try:
+        asyncio.run(slow._start_agent_environment())
+    except (asyncio.TimeoutError, TimeoutError):
+        pass
+    else:
+        raise AssertionError("the control: a wait inside start() must hit the timer")
+    Patched = trial_class()
+    plue_env.install_untimed_reserve(Patched)
+    plue_env.install_untimed_reserve(Patched)  # idempotent
+    env = Env()
+    asyncio.run(Patched(env)._start_agent_environment())
+    assert env.order == ["reserve", "start"], env.order
+
+    with tempfile.TemporaryDirectory() as directory:
+        ledger = plue_env.SlotLedger(Path(directory) / "slots.json", capacity=3)
+        ledger.enqueue("a", 2)
+        ledger.enqueue("b", 2)
+        ledger.enqueue("c", 1)
+        assert ledger.try_grant("c") is False, "only the head waiter is granted"
+        assert ledger.try_grant("a") is True
+        assert ledger.try_grant("b") is False, "2 + 2 exceeds 3 slots"
+        assert ledger.try_grant("c") is False, "c waits behind b: first come, first served"
+        ledger.release("a")
+        assert ledger.try_grant("b") is True and ledger.try_grant("c") is True
+        state = json.loads((Path(directory) / "slots.json").read_text())
+        assert state["used"] == 3 and not state["waiters"], state
+        dead = 2 ** 22 + 7
+        while plue_env._pid_alive(dead):
+            dead += 1
+        ledger.release("b")
+        ledger.release("c")
+        ledger.enqueue("ghost", 3, pid=dead)
+        ledger.enqueue("d", 3)
+        assert ledger.try_grant("d") is True, "a dead process's entry is dropped"
+        ledger.release("d")
+        ledger.enqueue("huge", 4)
+        assert ledger.try_grant("huge") is True, "an oversized request runs alone rather than never"
+
+        # A fake CLI: `exec` prints the gateway's transport error, or a
+        # plain failing command, as the CLI's JSON envelope.
+        cli = Path(directory) / "smithers"
+        cli.write_text("#!/bin/sh\n"
+                       "case \"$*\" in\n"
+                       "  *lost*) printf '%s' '{\"data\":{\"stdout\":\"partial\",\"stderr\":\"ERROR: workspace SSH session failed\\n\",\"exit_code\":1}}'; exit 1;;\n"
+                       "  *) printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"grep: no match\\n\",\"exit_code\":1}}'; exit 1;;\n"
+                       "esac\n")
+        cli.chmod(0o755)
+        os.environ["SMITHERS_CLI"] = str(cli)
+        os.environ["PLUE_REPO"] = "acme/bench"
+        ops = plue_env._PlueOps()
+        ops._workspace_id = "ws-1"
+        ops.logger = logging.getLogger("check")
+        ops.task_env_config = types.SimpleNamespace(workdir=None, cpus=8)
+        ops.session_id = "t1"
+        try:
+            asyncio.run(ops._plue_exec("codex exec lost"))
+        except plue_env.PlueError as error:
+            assert error.code == "ssh_session_failed", error.code
+        else:
+            raise AssertionError("a lost SSH session is a PlueError")
+        assert asyncio.run(ops._plue_exec("grep x")) == ("", "grep: no match\n", 1), "a command's own failure is its exit"
+        assert plue_env.transport_failure("warning\nERROR: workspace SSH session failed\n")
+        assert plue_env.transport_failure("ERROR: workspace SSH session failed\nthen the command went on") is None
+
+        os.environ["PLUE_MAX_CPUS"] = "7"
+        try:
+            asyncio.run(ops._plue_reserve())
+        except plue_env.PlueUnplaceable as error:
+            assert error.code == "unplaceable" and not ops._plue_ledger_key
+        else:
+            raise AssertionError("an 8-vCPU guest on 7-vCPU workers fails at once")
+        finally:
+            for name in ("SMITHERS_CLI", "PLUE_REPO", "PLUE_MAX_CPUS"):
+                os.environ.pop(name, None)
+    assert plue_env.is_capacity_error(plue_env.PlueError("no healthy Microsandbox worker has sufficient capacity", "WORKSPACE_NO_CAPACITY"))
+
+
 def check_names() -> None:
     assert agent.compose_project_name("wal-recovery-ordering__gRvUHdP") == "wal-recovery-ordering__grvuhdp"
     assert agent.compose_project_name("_x.y") == "0_x-y"
@@ -437,7 +553,8 @@ if __name__ == "__main__":
     check_helper()
     check_names()
     check_plue_shim()
+    check_plue_env()
     check_container_gate()
     check_accounts()
-    print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim and account pool hold; "
+    print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "
           f"trajectory {validation}.")

@@ -12,10 +12,23 @@ Configuration (environment variables of the harness host):
     PLUE_WAIT_SEC    workspace boot wait (default 900)
     PLUE_CAPACITY_WAIT_SEC  how long a create waits for a slot (cluster
                      capacity or the plan's concurrent-workspace cap) before
-                     failing (default 1500, under Harbor's 1800 s environment
-                     start timeout); a trial waiting for a slot has not
-                     started its agent clock, and the PlueError it fails with
-                     is retried by `harbor run -r N --retry-include PlueError`
+                     failing (default 14400); the PlueError it fails with is
+                     retried by `harbor run -r N --retry-include PlueError`
+    PLUE_SLOTS       host-wide slot count shared by every harness process on
+                     this machine through PLUE_SLOT_LEDGER (default
+                     ~/.cache/plue-slots.json). A slot is 2 vCPU, so a 4-vCPU
+                     task holds 2. Grants are first come, first served across
+                     processes, so two arms launched with the same -n share
+                     the cluster evenly. Unset: no ledger.
+    PLUE_MAX_CPUS    the largest guest a sandbox worker can place. A task
+                     asking for more raises PlueUnplaceable at once instead
+                     of waiting for capacity that cannot appear.
+
+Capacity waits happen before Harbor's environment-start timer. Harbor wraps
+`environment.start()` in `asyncio.wait_for(build_timeout_sec)`; importing
+PlueEnvironment installs a pre-step (`install_untimed_reserve`) that awaits
+`environment.reserve()` first: the slot, the capacity wait and the workspace
+boot. `start()` then does only the in-guest setup under the timer.
 
 Usage:
 
@@ -31,24 +44,35 @@ and `RUN chmod` lines (the DeepSWE verifier shape); plue does not build images.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
+import math
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 _DEFAULT_WAIT_SEC = 900
 _DEFAULT_EXEC_TIMEOUT_SEC = 8 * 3600
 _DEFAULT_USER = "root"
-# Under Harbor's environment-start timeout (the task's build_timeout_sec,
-# 1800 s on TB4), so a wait that runs out is a PlueError the runner can
-# retry, not a killed trial.
-_DEFAULT_CAPACITY_WAIT_SEC = 1500
+# The wait runs before Harbor's environment-start timer (see
+# install_untimed_reserve), so it is bounded only by this.
+_DEFAULT_CAPACITY_WAIT_SEC = 14400
 _CAPACITY_POLL_SEC = 60
+_SLOT_VCPUS = 2
+_SLOT_POLL_SEC = 5
+# What the workspace SSH gateway prints on the session's stderr when the
+# transport, not the command, failed (plue internal/ssh/server.go). The
+# command's exit status is then meaningless.
+TRANSPORT_ERRORS = (
+    "ERROR: workspace SSH session failed",
+    "ERROR: workspace SSH is unavailable",
+)
 _DIRS = ("/logs/agent", "/logs/verifier", "/logs/artifacts", "/tests", "/solution")
 # The worker writes the sandbox's egress proxy and CA trust to this file and
 # hands it to the services it starts; an SSH exec session does not read it,
@@ -73,6 +97,127 @@ class PlueError(RuntimeError):
 
 class PlueImageError(PlueError):
     """The task environment cannot be expressed as a prebuilt image."""
+
+
+class PlueUnplaceable(PlueError):
+    """The task asks for a bigger guest than any sandbox worker can hold
+    (PLUE_MAX_CPUS). An infrastructure limit: never scored, never retried."""
+
+
+def transport_failure(stderr: str) -> str | None:
+    """The gateway's transport error when it is the last thing on stderr."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if lines and lines[-1] in TRANSPORT_ERRORS:
+        return lines[-1]
+    return None
+
+
+def slots_for(cpus: float | int | None) -> int:
+    """Ledger slots a guest of `cpus` vCPU holds: one per 2 vCPU."""
+    return max(1, math.ceil(float(cpus or 1) / _SLOT_VCPUS))
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+class SlotLedger:
+    """Workspace slots shared by every harness process on one host.
+
+    State is one JSON file guarded by flock: `holders` {key: {pid, slots}}
+    and `waiters`, a FIFO list. Only the head waiter can be granted, and only
+    when its slots fit, so a 2-slot task is not starved by 1-slot ones and
+    two arms with the same -n get the same share. Entries of dead processes
+    are dropped on every update.
+    """
+
+    def __init__(self, path: Path | str, capacity: int):
+        self.path = Path(path)
+        self.capacity = capacity
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _update(self, change):
+        with open(self.path.with_suffix(self.path.suffix + ".lock"), "a+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                state = json.loads(self.path.read_text())
+            except (OSError, ValueError):
+                state = {}
+            holders = {k: v for k, v in (state.get("holders") or {}).items() if _pid_alive(int(v["pid"]))}
+            waiters = [w for w in (state.get("waiters") or []) if _pid_alive(int(w["pid"]))]
+            state = {"capacity": self.capacity, "holders": holders, "waiters": waiters}
+            result = change(state)
+            state["used"] = sum(int(v["slots"]) for v in state["holders"].values())
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(state, indent=2))
+            tmp.replace(self.path)
+            return result
+
+    def enqueue(self, key: str, slots: int, pid: int | None = None) -> None:
+        pid = pid or os.getpid()
+
+        def change(state):
+            if key in state["holders"] or any(w["key"] == key for w in state["waiters"]):
+                return
+            state["waiters"].append({"key": key, "slots": slots, "pid": pid, "since": time.time()})
+        self._update(change)
+
+    def try_grant(self, key: str) -> bool:
+        def change(state):
+            if key in state["holders"]:
+                return True
+            if not state["waiters"] or state["waiters"][0]["key"] != key:
+                return False
+            head = state["waiters"][0]
+            used = sum(int(v["slots"]) for v in state["holders"].values())
+            if used + int(head["slots"]) > self.capacity and state["holders"]:
+                return False
+            state["waiters"].pop(0)
+            state["holders"][key] = {"pid": head["pid"], "slots": head["slots"], "since": time.time()}
+            return True
+        return self._update(change)
+
+    def release(self, key: str) -> None:
+        def change(state):
+            state["holders"].pop(key, None)
+            state["waiters"] = [w for w in state["waiters"] if w["key"] != key]
+        self._update(change)
+
+    @classmethod
+    def from_environment(cls) -> "SlotLedger | None":
+        capacity = int(os.environ.get("PLUE_SLOTS", "0") or 0)
+        if capacity <= 0:
+            return None
+        path = os.environ.get("PLUE_SLOT_LEDGER") or str(Path.home() / ".cache" / "plue-slots.json")
+        return cls(path, capacity)
+
+
+def install_untimed_reserve(trial_cls) -> None:
+    """Make Harbor await `environment.reserve()` before its timed start.
+
+    Harbor's `Trial._start_agent_environment` is `wait_for(start(),
+    build_timeout_sec)`. Waiting for a plue slot is not building the
+    environment, and inside that timer it turned a full cluster into
+    EnvironmentStartTimeoutError. Environments without `reserve` are
+    untouched."""
+    original = trial_cls._start_agent_environment
+    if getattr(original, "_plue_untimed_reserve", False):
+        return
+
+    async def _start_agent_environment(self) -> None:
+        reserve = getattr(self.agent_environment, "reserve", None)
+        if reserve is not None:
+            await reserve()
+        await original(self)
+
+    _start_agent_environment._plue_untimed_reserve = True  # type: ignore[attr-defined]
+    trial_cls._start_agent_environment = _start_agent_environment
 
 
 def is_capacity_error(error: PlueError) -> bool:
@@ -217,7 +362,61 @@ class _PlueOps:
 
     # --- lifecycle ---------------------------------------------------------
 
+    _plue_reserved: bool = False
+    _plue_ledger_key: str = ""
+
+    def _plue_ledger(self) -> SlotLedger | None:
+        return SlotLedger.from_environment()
+
+    async def _plue_reserve(self) -> None:
+        """Hold a host slot, then create the workspace and wait for it to run.
+        Harbor awaits this before its environment-start timer."""
+        if self._plue_reserved:
+            return
+        cpus = getattr(self.task_env_config, "cpus", None) or 1
+        limit = os.environ.get("PLUE_MAX_CPUS", "").strip()
+        if limit and float(cpus) > float(limit):
+            raise PlueUnplaceable(
+                f"task asks for {cpus} vCPU; the largest guest a sandbox worker can place is {limit} vCPU",
+                "unplaceable")
+        ledger = self._plue_ledger()
+        if ledger is not None:
+            key = f"{os.getpid()}:{self.session_id}"
+            slots = slots_for(cpus)
+            await asyncio.to_thread(ledger.enqueue, key, slots)
+            self._plue_ledger_key = key
+            try:
+                while not await asyncio.to_thread(ledger.try_grant, key):
+                    await asyncio.sleep(_SLOT_POLL_SEC)
+            except BaseException:
+                await asyncio.to_thread(ledger.release, key)
+                self._plue_ledger_key = ""
+                raise
+            self.logger.info("plue: holding %s slot(s) of %s", slots, ledger.capacity)
+        try:
+            await self._plue_create()
+        except BaseException:
+            await self._plue_release()
+            raise
+        self._plue_reserved = True
+
+    async def _plue_release(self) -> None:
+        if not self._plue_ledger_key:
+            return
+        ledger = self._plue_ledger()
+        if ledger is not None:
+            await asyncio.to_thread(ledger.release, self._plue_ledger_key)
+        self._plue_ledger_key = ""
+
     async def _plue_start(self) -> None:
+        await self._plue_reserve()
+        await self._plue_exec(f"mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
+        for src, dst in self._plue_copies:
+            await self._plue_upload(Path(self.environment_dir) / src, dst)
+        for mode_bits, target in self._plue_chmods:
+            await self._plue_exec(f"chmod {mode_bits} {target}", user="root", timeout_sec=120)
+
+    async def _plue_create(self) -> None:
         cfg = self.task_env_config
         mode, allow = self._plue_network()
         args = [
@@ -257,11 +456,6 @@ class _PlueOps:
         status = data.get("status") or data.get("data", {}).get("status")
         if status != "running":
             raise PlueError(f"workspace {self._workspace_id} is {status}: {data.get('failure_message', '')}")
-        await self._plue_exec(f"mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
-        for src, dst in self._plue_copies:
-            await self._plue_upload(Path(self.environment_dir) / src, dst)
-        for mode_bits, target in self._plue_chmods:
-            await self._plue_exec(f"chmod {mode_bits} {target}", user="root", timeout_sec=120)
 
     async def _plue_delete_by_name(self, name: str) -> None:
         try:
@@ -276,12 +470,13 @@ class _PlueOps:
                                 timeout=300, check=False)
 
     async def _plue_stop(self) -> None:
-        if not self._workspace_id:
-            return
         try:
-            await self._run("workspace", "delete", *self._ws(), "--format", "json", timeout=300)
+            if self._workspace_id:
+                await self._run("workspace", "delete", *self._ws(), "--format", "json", timeout=300)
         finally:
             self._workspace_id = ""
+            self._plue_reserved = False
+            await self._plue_release()
 
     # --- exec --------------------------------------------------------------
 
@@ -302,11 +497,14 @@ class _PlueOps:
             error = data["error"]
             raise PlueError(error.get("message", "exec failed"), error.get("code", ""), result.args)
         payload = data.get("data", data)
-        return (
-            payload.get("stdout", "") or "",
-            payload.get("stderr", "") or "",
-            int(payload.get("exit_code", result.returncode)),
-        )
+        stderr = payload.get("stderr", "") or ""
+        code = int(payload.get("exit_code", result.returncode))
+        failure = transport_failure(stderr) or transport_failure(result.stderr.decode(errors="replace"))
+        if code != 0 and failure:
+            # The gateway lost the session; the command may still be running
+            # or may never have started. Not the command's exit status.
+            raise PlueError(failure, "ssh_session_failed", result.args)
+        return payload.get("stdout", "") or "", stderr, code
 
     # --- files -------------------------------------------------------------
 
@@ -353,6 +551,9 @@ def _harbor_classes():
         EnvironmentResourceCapabilities,
     )
     from harbor.models.task.config import NetworkMode
+    from harbor.trial.trial import Trial
+
+    install_untimed_reserve(Trial)
 
     class PlueEnvironment(_PlueOps, BaseEnvironment):
         """Harbor environment on Smithers Cloud workspaces."""
@@ -388,6 +589,9 @@ def _harbor_classes():
             if policy.network_mode == NetworkMode.ALLOWLIST:
                 return "allowlist", list(policy.allowed_hosts)
             return "proxy", []
+
+        async def reserve(self) -> None:
+            await self._plue_reserve()
 
         async def start(self, force_build: bool) -> None:
             await self._plue_start()

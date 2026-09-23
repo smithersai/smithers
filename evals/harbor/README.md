@@ -78,8 +78,17 @@ workspace id is the container the prompt names. The harness spawns that
 TMPDIR, SHELL), so the adapter writes the repository, the CLI's absolute path,
 `SMITHERS_TOKEN` and `XDG_CONFIG_HOME` into an owner-only `plue-docker.json`
 beside the shim in a per-attempt temporary directory, deleted when the attempt
-ends. A create that finds no
-capacity waits (`PLUE_CAPACITY_WAIT_SEC`) instead of failing the trial.
+ends.
+
+Waiting for capacity is not building the environment, so it happens before
+Harbor's environment-start timer: importing `PlueEnvironment` makes Harbor
+await `environment.reserve()` (slot, capacity wait, workspace boot) ahead of
+the timed `start()`. A create that finds no capacity waits
+(`PLUE_CAPACITY_WAIT_SEC`) instead of failing the trial. Two arms on one host
+share `PLUE_SLOTS` first come, first served (a slot is 2 vCPU), and a task
+bigger than `PLUE_MAX_CPUS` raises `PlueUnplaceable` at once. A workspace SSH
+session the gateway lost raises `PlueError` (`ssh_session_failed`) instead of
+passing the command a meaningless exit 1.
 
 Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
 (label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in
@@ -107,7 +116,10 @@ the stock arm). The stock arm is
   `command_execution` item in `codex.txt` exited 0. The count is
   `containerCommands` in `smithers-run.json` / `codex-account.json`.
 - Run with `-r 2 --retry-include ModelRouteError --retry-include PlueError
-  --retry-include ContainerUnreachable` to re-run those trials.
+  --retry-include ContainerUnreachable --retry-include EnvironmentStartTimeoutError
+  --retry-include AgentSetupTimeoutError` to re-run those trials. All five are
+  infrastructure faults and are excluded from scoring until a retry grades.
+  `PlueUnplaceable` is not retried: the guest cannot fit this cluster.
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
