@@ -114,6 +114,11 @@ describe("self-hosted cache service targets", () => {
   it("runs postgres_test.js against a pinned Postgres service with the URL it skips without", () => {
     const attrs = attrsOf<(typeof Shell.TestAttrs)["Type"]>(Package.cacheServicePostgres)
     expect(attrs.shell).toContain("terraform/modules/cache/service/test/postgres_test.js")
+    if (process.platform !== "linux") {
+      expect(attrs.services).toHaveLength(0)
+      expect(attrs.env).toEqual({})
+      return
+    }
     expect(attrs.services).toHaveLength(1)
     const service = attrs.services![0]!
     expect(Target.metadata(service).target).toBe("Docker.Service")

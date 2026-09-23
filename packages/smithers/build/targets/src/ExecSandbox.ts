@@ -105,6 +105,8 @@ export interface Request {
  */
 export interface Host {
   readonly platform: NodeJS.Platform
+  /** Selected Xcode developer tree on a macOS runner. */
+  readonly developerDirectory?: string | undefined
   /** The real host home, used to mask credentials and locate runtime caches. */
   readonly home?: string | undefined
   /** Resolves an executable name on `PATH` to an absolute path, or nothing. */
@@ -260,6 +262,7 @@ export const host = (env: Readonly<Record<string, string | undefined>> = process
   const extensions = platform === "win32" ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT").split(";") : [""]
   return {
     platform,
+    developerDirectory: env["DEVELOPER_DIR"],
     home: NodeOs.homedir(),
     executable: (name) => {
       if (NodePath.isAbsolute(name)) return isExecutable(name) ? name : undefined
@@ -767,6 +770,11 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
     "/etc/resolv.conf",
     "/etc/nsswitch.conf"
   ]
+  const developerDirectory = hostFacts.developerDirectory
+  if (hostFacts.platform === "darwin" && developerDirectory !== undefined &&
+    /^\/Applications\/Xcode[^/]*\.app\/Contents\/Developer$/.test(developerDirectory)) {
+    paths.push(developerDirectory)
+  }
   if (hostFacts.home !== undefined) paths.push(NodePath.join(hostFacts.home, ".cache/node/corepack"))
   for (const name of ["node", "bun"]) {
     const executable = hostFacts.executable(name)

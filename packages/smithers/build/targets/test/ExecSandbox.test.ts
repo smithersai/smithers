@@ -923,6 +923,20 @@ describe("folding declared files into directories", () => {
 })
 
 describe("seatbelt profile", () => {
+  it("reads the selected Xcode tree without opening arbitrary Applications paths", () => {
+    const developerDirectory = "/Applications/Xcode_26.6.app/Contents/Developer"
+    const selected: ExecSandbox.Host = {
+      ...darwin,
+      developerDirectory,
+      exists: (path) => path === developerDirectory || darwin.exists(path)
+    }
+    const profile = ExecSandbox.seatbelt(planned(darwin), selected)
+    expect(profile).toContain(`(subpath "${developerDirectory}")`)
+    expect(profile).not.toContain('(subpath "/Applications")')
+    const untrusted = ExecSandbox.seatbelt(planned(darwin), { ...selected, developerDirectory: "/Users/owner/.ssh" })
+    expect(untrusted).not.toContain('(subpath "/Users/owner/.ssh")')
+  })
+
   it("denies network and writes, closes reads under the workspace, and reopens the declared set", () => {
     const profile = ExecSandbox.seatbelt(planned(darwin), linux)
     expect(profile.startsWith("(version 1)(allow default)")).toBe(true)
