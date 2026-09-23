@@ -7,7 +7,11 @@ import { build } from "esbuild"
 const root = fileURLToPath(new URL("../../", import.meta.url))
 const output = resolve(process.argv[2] ?? resolve(root, "dist/model-host/smithers.mjs"))
 const result = await build({
-  alias: { "@smthrs/model-host": resolve(root, "packages/smithers/agent/model-host/src/index.ts") },
+  alias: {
+    "@smthrs/model-host": resolve(root, "packages/smithers/agent/model-host/src"),
+    "@smthrs/model": resolve(root, "packages/smithers/agent/model/src"),
+    "@smthrs/rpc": resolve(root, "packages/rpc/src")
+  },
   entryPoints: [fileURLToPath(new URL("./src/serve.ts", import.meta.url))],
   write: false,
   bundle: true,

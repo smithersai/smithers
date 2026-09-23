@@ -21,6 +21,7 @@ import (
 type OwnerModels struct {
 	Pool  *pgxpool.Pool
 	Codec webhook.SecretCodec
+	Tester ModelTester
 }
 
 type credentialRow struct {

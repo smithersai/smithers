@@ -76,6 +76,7 @@ func mountModelPublic(router chi.Router, models modelhost.OwnerModels, queries *
 		r.Get("/api/model/credential/receipt", models.CredentialReceipt)
 		r.Get("/api/model/default", models.Default)
 		r.Put("/api/model/default", models.SetDefault)
+		r.Post("/api/model/test", models.Test)
 	})
 }
 

@@ -4,10 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/model-test.test.mjs"
   },
   "dependencies": {
     "@smthrs/model-host": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
     "effect": "4.0.0-rc.115"
   },
   "devDependencies": {

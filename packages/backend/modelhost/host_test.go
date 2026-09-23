@@ -25,7 +25,7 @@ type testLease struct {
 }
 
 func (lease *testLease) Endpoint() (string, *http.Client, string) {
-	return lease.origin, nil, "private-token"
+	return lease.origin, http.DefaultClient, "private-token"
 }
 
 func (lease *testLease) Close(context.Context) error {
