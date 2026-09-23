@@ -4632,6 +4632,50 @@
       }
     },
     {
+      "name": "tui",
+      "description": "Open the terminal coding agent; requires Bun",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "description": "Working directory; defaults to cwd",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "description": "Chat seat as provider:model",
+              "type": "string"
+            },
+            "continue": {
+              "default": false,
+              "description": "Continue the latest session in the directory",
+              "type": "boolean"
+            },
+            "resume": {
+              "default": false,
+              "description": "Pick a session to continue",
+              "type": "boolean"
+            },
+            "print": {
+              "description": "Answer one prompt, print it, and exit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "continue",
+            "resume"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "update",
       "description": "Check the registry for newer CLI versions; does not install them",
       "schema": {

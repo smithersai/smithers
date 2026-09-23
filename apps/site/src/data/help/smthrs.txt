@@ -1,4 +1,4 @@
-smthrs@1.0.0-rc.0 — Build workspace targets and operate durable agent workflows
+smthrs@1.0.0-rc.1 — Build workspace targets and operate durable agent workflows
 
 Usage: smthrs <command>
 
@@ -42,6 +42,7 @@ Commands:
   targets       List available targets with their kinds and summaries
   test          Execute test targets; wildcards omit exclusive tiers unless --include-exclusive is set
   triggers      Manage durable schedules and manually queued occurrences
+  tui           Open the terminal coding agent; requires Bun
   update        Check the registry for newer CLI versions; does not install them
   watch         Replan and rerun a target graph when workspace files change
 

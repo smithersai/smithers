@@ -29,8 +29,15 @@ test("the support reference states every released Node engine range and current 
     assert.ok(row.source.includes(`${directory}/package.json`), `${manifest.name}: manifest citation`)
   }
   const ci = read(".github/workflows/ci.yml")
-  for (const [, pin] of ci.matchAll(/(?:node|bun)-version: ([\d.]+)/g)) {
-    assert.ok(page.includes(`\`${pin}\``), `CI pin ${pin}`)
+  const steps = Object.values(parseWorkflow(ci).jobs).flatMap((job) => job.steps ?? [])
+  for (const step of steps) {
+    const inputs = step.with ?? {}
+    const versionFile = inputs["node-version-file"]
+    const pins = [inputs["node-version"], inputs["bun-version"],
+      typeof versionFile === "string" ? read(versionFile).trim() : undefined]
+    for (const pin of pins) {
+      if (pin !== undefined) assert.ok(page.includes(`\`${pin}\``), `CI pin ${pin}`)
+    }
   }
   for (
     const term of [
