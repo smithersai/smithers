@@ -1,29 +1,32 @@
 import { expect, test } from "@playwright/test"
+import { signedOutVisitor } from "./identity"
+import { fillComposer } from "./composer"
 
 for (const path of ["/", "/smithersai/smithers/"]) {
   for (const modal of [false, true]) {
   for (const trigger of ["click", "shortcut", "Tab and Enter"] as const) {
     test(`sign-in toast starts OAuth by ${trigger} on ${path}${modal ? " inside a native modal" : " with Chat open"}`, async ({ page }) => {
+      await signedOutVisitor(page)
       await page.route("**/api/bootstrap", route => route.fulfill({ json: {
         apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
         capabilities: ["identity", "cloud", "agent"], authFlow: "redirect", sandbox: null
       } }))
-      await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
       await page.route("**/api/auth/github/start**", route => route.fulfill({ contentType: "text/html", body: "Sign-in started" }))
       await page.goto(path)
-      await page.getByRole("button", { name: "Chat", exact: true }).click()
       let input = page.getByTestId("composer-input")
-      // A seam can expire before identity learns it: requirement refusals are
-      // transcript prompts now, while explicit seam failures retain a toast.
-      await page.route("**/api/repos/smithersai/smithers/contents/README.md", route => route.fulfill({
-        status: 403, json: { message: "Use /auth.sign-in to read this repository." },
+      // A refused identity door offers GitHub through the real flow-failure
+      // toast, independently of embedded repository read failures.
+      await page.route("**/api/auth/google/start", route => route.fulfill({
+        status: 403, json: { message: "Use /auth.sign-in to continue with GitHub." },
       }))
-      await input.fill("/files.read README.md smithersai/smithers")
+      await fillComposer(page, "/signup.google")
       await input.press("Enter")
       const stack = page.getByLabel("Notifications", { exact: true })
-      const signIn = stack.getByRole("button", { name: "Sign in with GitHub", exact: true })
+      const signIn = stack.getByRole("button", { name: "Sign in", exact: true })
       await expect(signIn).toBeVisible()
       await expect(signIn).toHaveAttribute("aria-keyshortcuts", "Meta+Shift+G Control+Shift+G")
+      if (!(await input.isVisible())) await page.keyboard.press("Control+k")
+      await expect(input).toBeVisible()
       if (modal) {
         await page.evaluate(() => {
           const dialog = document.createElement("dialog")
