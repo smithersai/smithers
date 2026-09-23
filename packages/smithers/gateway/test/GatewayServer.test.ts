@@ -1638,14 +1638,20 @@ describe("the Watch keepalive", () => {
   test("preserves a partial cursor on a keepalive before and after source delivery", () =>
     Effect.gen(function*() {
       const original = yield* Control
-      for (const deliver of [false, true]) {
+      for (const deliver of [false, true, "legacy"]) {
         const cursor = { sequence: 7, offset: 0 }
         const control = {
           ...original,
           watch: () =>
             deliver
               ? Stream.concat(
-                Stream.make({ sequence: 7, cursor, kind: "source", occurredAt: 1, payload: null }),
+                Stream.make({
+                  sequence: 7,
+                  ...(deliver === "legacy" ? {} : { cursor }),
+                  kind: "source",
+                  occurredAt: 1,
+                  payload: null
+                }),
                 Stream.never
               )
               : Stream.never
@@ -1663,7 +1669,7 @@ describe("the Watch keepalive", () => {
         ))
         expect(frames.at(-1)).toMatchObject({
           sequence: deliver ? 7 : 6,
-          cursor: deliver ? cursor : { sequence: 6, offset: 1 }
+          cursor: deliver === "legacy" ? { sequence: 7 } : deliver ? cursor : { sequence: 6, offset: 1 }
         })
       }
     }).pipe(Effect.provide(stack())))

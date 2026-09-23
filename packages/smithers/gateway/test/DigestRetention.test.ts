@@ -3,6 +3,7 @@ import type { Service as ControlService } from "@smthrs/control/Control"
 import type { ControlEvent, RunSummary } from "@smthrs/control/ControlSchema"
 import { Effect, Stream } from "effect"
 import * as Diagnosis from "../src/Diagnosis.ts"
+import { encodedBytes, retainedDigestBytes } from "../src/internal/digestMemory.ts"
 import * as Projections from "../src/Projections.ts"
 import { moduleRunJournal } from "./fixtures/module-run-journal.ts"
 
@@ -79,6 +80,46 @@ const control = (events: ReadonlyArray<ControlEvent>): ControlService =>
   }) as unknown as ControlService
 
 describe("diagnosis retention", () => {
+  it("reconciles mixed replay, changed refusals and plain aggregate digests", () => {
+    const failure = (sequence: number, id: string, message: string): ControlEvent => {
+      const native = committed(sequence)
+      const envelope = native.payload as Record<string, any>
+      return {
+        ...native,
+        payload: {
+          ...envelope,
+          sourceId: `call-fact-v1:${id}:settled`,
+          payload: { ...envelope.payload, callId: id, outcome: "failure", message }
+        }
+      }
+    }
+    const second = `cell-call-v1:${"b".repeat(64)}`
+    const history = [
+      event(0, "control.agent.turn-opened", {}),
+      event(0, "control.agent.resolved", { step: { executionId: "child" }, text: "child output" }),
+      event(1, "control.agent.cell-call-settled", { outcome: "failure" }),
+      event(2, "control.agent.cell-call-settled", { outcome: "failure", message: "same" }),
+      event(3, "control.agent.cell-call-settled", { callId, outcome: "failure", message: "same" }),
+      event(4, "control.agent.cell-call-settled", { callId: second, outcome: "failure", message: "same" }),
+      failure(5, callId, "different"),
+      failure(6, second, "same"),
+      ...moduleRunJournal
+    ]
+    for (let split = 0; split <= history.length; split++) {
+      const left = Diagnosis.digest(history.slice(0, split))
+      const right = Diagnosis.digest(history.slice(split))
+      expect(Diagnosis.combine(left, right)).toEqual(Diagnosis.digest(history))
+      // The incoming window repeats old identities and introduces new ones.
+      expect(Diagnosis.combine(left, Diagnosis.digest(history)))
+        .toEqual(Diagnosis.digest([...history.slice(0, split), ...history]))
+    }
+    const plain = { ...Diagnosis.digest(history) }
+    expect(Diagnosis.combine(plain, Diagnosis.emptyDigest())).toEqual(plain)
+    expect(Diagnosis.combine(Diagnosis.emptyDigest(), plain)).toEqual(plain)
+    expect(Diagnosis.combine({ ...Diagnosis.emptyDigest() }, plain)).toEqual(plain)
+    expect(retainedDigestBytes(plain)).toBe(encodedBytes(plain))
+  })
+
   it("reconciles duplicate calls and native upgrades across every digest boundary", () => {
     const history = [
       event(0, "control.agent.turn-opened", { seat: "first" }),

@@ -526,12 +526,6 @@ describe("coverage conformance", () => {
       // it built from those values; the original is never rewritten. Its
       // admission, Proxy refusal and freezing paths are covered without hints.
       // Plan's former walk no longer carries a hint.
-      // Graph's guards defend invariants established by the same build:
-      // every node has key material, recorded dependency targets exist, and
-      // reachability suppresses duplicate dependencies before conflict edges
-      // are added. They remain hard failures if a future pass breaks those
-      // invariants.
-      "smithers/flows/core/src/Graph.ts": 3,
       // The YAML parser always attaches a position to parser issues and a
       // mapping always converts to a non-null object. Both guards keep the
       // redacted diagnostic path total across future parser upgrades.
@@ -570,10 +564,8 @@ describe("coverage conformance", () => {
       // runs enter its Set, admission sets their observed position, and no
       // source is removed until that Set is refreshed once per run. Cache
       // eviction removes verdicts only, never followed sources.
-      // Retention adds two guards: finite encoded string lengths cannot
-      // overflow a safe integer, and an over-budget window cannot be empty
-      // because evicting its last event clamps encodedBytes to two.
-      "smithers/gateway/src/Projections.ts": 7,
+      // Finite encoded string lengths cannot overflow a safe integer.
+      "smithers/gateway/src/Projections.ts": 6,
       // The event switch exhausts its discriminated union and assigns its
       // default to `never`; typed journal events cannot enter that fallback.
       "smithers/agent/src/AgentSession.ts": 1,

@@ -28,6 +28,21 @@ const check = (tree: DigestIndex.Index | undefined, expected: ReadonlyMap<number
 }
 
 describe("diagnosis scalar indexes", () => {
+  it("rebalances double rotations and removes nodes with a single left child", () => {
+    for (const order of [[3, 1, 2], [1, 3, 2], [2, 1]]) {
+      let tree: DigestIndex.Index | undefined
+      const expected = new Map<number, Value>()
+      for (const ordinal of order) {
+        tree = DigestIndex.set(tree, ordinal, ordinal, ordinal)
+        expected.set(ordinal, [ordinal, ordinal])
+      }
+      check(tree, expected)
+      tree = DigestIndex.remove(tree, 2)
+      expected.delete(2)
+      check(tree, expected)
+    }
+  })
+
   const ascending = Array.from({ length: 64 }, (_, ordinal) => ordinal)
   for (const order of [ascending, [...ascending].reverse(), ascending.map((value) => (value * 37) % 64)]) {
     it(`retains exact extrema through ordered inserts, replacements and removals starting ${order[0]}`, () => {

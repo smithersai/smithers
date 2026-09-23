@@ -454,8 +454,8 @@ const indexContribution = (indexes: Indexes, previous: Contribution | undefined,
   let refusalBytes = indexes.refusalBytes
   for (const refusal of previous?.value.refusals ?? []) {
     if (next.value.refusals?.some((member) => member.message === refusal.message)) continue
-    const old = HashMap.get(refusals, refusal.message)
-    const oldTree = old._tag === "Some" ? old.value : undefined
+    // Every previous refusal was indexed when its contribution was retained.
+    const oldTree = HashMap.getUnsafe(refusals, refusal.message)
     const tree = DigestIndex.remove(oldTree, next.ordinal)
     refusalBytes += refusalIndexBytes(refusal.message, tree) - refusalIndexBytes(refusal.message, oldTree)
     refusals = tree === undefined
@@ -661,6 +661,11 @@ export const render = (subject: Subject, value: Digest): string => {
  */
 export const emptyDigest = (): Digest => digest([])
 
+const earliest = (left: number | undefined, right: number | undefined): number | undefined =>
+  left === undefined ? right : right === undefined ? left : Math.min(left, right)
+const latest = (left: number | undefined, right: number | undefined): number | undefined =>
+  left === undefined ? right : right === undefined ? left : Math.max(left, right)
+
 /**
  * Folds two digests of adjacent event ranges into the digest of both.
  *
@@ -683,10 +688,6 @@ const combinePlain = (earlier: Digest, later: Digest, writes: DigestState["write
   for (const refusal of [...earlier.refusals, ...later.refusals]) {
     counts.set(refusal.message, (counts.get(refusal.message) ?? 0) + refusal.count)
   }
-  const earliest = (left: number | undefined, right: number | undefined): number | undefined =>
-    left === undefined ? right : right === undefined ? left : Math.min(left, right)
-  const latest = (left: number | undefined, right: number | undefined): number | undefined =>
-    left === undefined ? right : right === undefined ? left : Math.max(left, right)
   return {
     status: later.status ?? earlier.status,
     cause: writes.cause ? later.cause : earlier.cause,
@@ -731,7 +732,7 @@ const combinedFacts = (state: DigestState): Digest => {
   let seatOrdinal = state.baseSeatOrdinal ?? -1
   const refusals = new Map(state.base.refusals.map((refusal) => [refusal.message, {
     count: refusal.count,
-    ordinal: state.baseRefusals.get(refusal.message) ?? 0
+    ordinal: state.baseRefusals.get(refusal.message)!
   }]))
   for (const [, contribution] of state.contributions) {
     const value = contribution.value
@@ -740,8 +741,8 @@ const combinedFacts = (state: DigestState): Digest => {
       result.seat = value.seat
       seatOrdinal = contribution.ordinal
     }
-    if (value.startedAt !== undefined) result.startedAt = Math.min(result.startedAt ?? value.startedAt, value.startedAt)
-    if (value.endedAt !== undefined) result.endedAt = Math.max(result.endedAt ?? value.endedAt, value.endedAt)
+    result.startedAt = earliest(result.startedAt, value.startedAt)
+    result.endedAt = latest(result.endedAt, value.endedAt)
     for (const refusal of value.refusals ?? []) {
       const previous = refusals.get(refusal.message)
       refusals.set(refusal.message, {
@@ -773,7 +774,6 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
   let contributionBytes = left.contributionBytes
   let accepted = HashMap.empty<string, Contribution>()
   const corrected = { ...earlier }
-  let rebuild = false
   for (const [key, value] of right.contributions) {
     const previous = HashMap.get(contributions, key)
     if (previous._tag === "Some" && (previous.value.authoritative || !value.authoritative)) continue
@@ -781,9 +781,6 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
       const old = previous.value.value
       const next = value.value
       for (const counter of counters) corrected[counter] += (next[counter] ?? 0) - (old[counter] ?? 0)
-      // Current native upgrades are call facts, which never own a seat. Keep
-      // a full scalar fallback if a future identity-bearing handler adds one.
-      if (old.seat !== next.seat) rebuild = true
     } else accepted = HashMap.set(accepted, key, value)
     const contribution = {
       ...value,
@@ -818,7 +815,7 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
   // incoming range, not re-fold the entire retained ledger on every eviction.
   // Indexed timestamps and refusal positions handle native corrections without
   // re-scanning all identities. Refusal rendering costs distinct messages.
-  const value = { ...(rebuild ? combinedFacts(state) : combinePlain(corrected, incoming, right.writes)) }
+  const value = { ...combinePlain(corrected, incoming, right.writes) }
   value.startedAt = state.base.startedAt
   value.endedAt = state.base.endedAt
   if (indexes.timings?.min !== undefined) {
@@ -829,7 +826,7 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
   }
   const refusals = new Map(state.base.refusals.map((refusal) => [refusal.message, {
     count: refusal.count,
-    ordinal: baseRefusals.get(refusal.message) ?? 0
+    ordinal: baseRefusals.get(refusal.message)!
   }]))
   for (const [message, tree] of indexes.refusals) {
     const previous = refusals.get(message)
