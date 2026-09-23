@@ -45,10 +45,8 @@
     "./GatewayServer": "./src/GatewayServer.ts",
     "./Projections": "./src/Projections.ts",
     "./RuntimeBridge": "./src/RuntimeBridge.ts",
-    "./SuperviseRuntime": "./src/SuperviseRuntime.ts",
     "./index": "./src/index.ts",
     "./node/NodeGateway": "./src/node/NodeGateway.ts",
-    "./test/TestSuperviseRuntime": "./src/test/TestSuperviseRuntime.ts",
     "./bun/BunGateway": "./src/bun/BunGateway.ts",
     "./RunTrace": "./src/RunTrace.ts",
     "./EngineTrace": "./src/EngineTrace.ts"
@@ -162,16 +160,6 @@
           "default": "./dist/cjs/RuntimeBridge.js"
         }
       },
-      "./SuperviseRuntime": {
-        "import": {
-          "types": "./dist/esm/SuperviseRuntime.d.ts",
-          "default": "./dist/esm/SuperviseRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/SuperviseRuntime.d.ts",
-          "default": "./dist/cjs/SuperviseRuntime.js"
-        }
-      },
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",
@@ -190,16 +178,6 @@
         "require": {
           "types": "./dist/cjs/node/NodeGateway.d.ts",
           "default": "./dist/cjs/node/NodeGateway.js"
-        }
-      },
-      "./test/TestSuperviseRuntime": {
-        "import": {
-          "types": "./dist/esm/test/TestSuperviseRuntime.d.ts",
-          "default": "./dist/esm/test/TestSuperviseRuntime.js"
-        },
-        "require": {
-          "types": "./dist/cjs/test/TestSuperviseRuntime.d.ts",
-          "default": "./dist/cjs/test/TestSuperviseRuntime.js"
         }
       },
       "./bun/BunGateway": {

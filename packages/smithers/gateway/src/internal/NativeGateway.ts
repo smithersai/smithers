@@ -87,6 +87,14 @@ export const bindRefusal = (options: ServerOptions): GatewayError | undefined =>
   const setting = settingRefusal("The gateway keepalive cadence", options.heartbeatMillis) ??
     settingRefusal("The gateway request body limit", options.maxRequestBodyBytes)
   if (setting !== undefined) return setting
+  // The bridge authenticates only with the bearer credential, even on
+  // loopback, so a bridge without one would answer 401 to every request.
+  if (options.runtimeBridge !== undefined && (options.credential === undefined || options.credential === "")) {
+    return new GatewayError({
+      code: "bind_failed",
+      message: "Refusing to enable the runtime bridge without a bearer credential"
+    })
+  }
   const host = options.host ?? "127.0.0.1"
   if (isLoopbackHost(host)) return undefined
   if (options.listen !== true) {

@@ -199,7 +199,10 @@ recover.
 `GatewayError.cause` carries a redacted summary of an internal failure: its tag
 and its stable code, never its message, its nested cause, or the SQL and file
 paths a `PersistenceError` carries. Projection logs contain only an
-allowlisted operation identifier and known control error tag/code pairs.
+allowlisted operation identifier and known control error tag/code pairs. The
+runtime bridge answers with a stable code and logs the full cause of any failure
+the caller did not cause to the host log, so a failed launch can be diagnosed
+from the host.
 
 The reason is the error's reach. `GatewayError` is the RPC error schema, so
 anything left on it is serialized to every bearer holder and forwarded to a

@@ -2,9 +2,8 @@
  * The assembled workspace gateway: one HTTP surface carrying the control
  * plane, the sync read path, the served projections, and a health probe.
  *
- * The package also declares the wire schemas those mounts speak, the pure
- * folds that compute every served row from control-plane facts, and the host
- * seam a supervisor would implement.
+ * The package also declares the wire schemas those mounts speak and the pure
+ * folds that compute every served row from control-plane facts.
  *
  * @since 0.1.0
  */
@@ -58,11 +57,6 @@ export * as Projections from "./Projections.ts"
  * @since 1.0.0 @category runtime bridge
  */
 export * as RuntimeBridge from "./RuntimeBridge.ts"
-
-/**
- * @since 0.1.0 @category services
- */
-export * as SuperviseRuntime from "./SuperviseRuntime.ts"
 
 /**
  * The canonical durable journal synchronization package.

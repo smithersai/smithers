@@ -1,7 +1,7 @@
 /** Fault injection at the Bun server boundary; the real runtime is covered by BunGateway.test. */
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import { createServer } from "node:http"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -42,11 +42,21 @@ it("serves the gateway through the supplied Bun address options", async () => {
 for (const code of ["EADDRINUSE", "EACCES", "EADDRNOTAVAIL"]) {
   it(`sanitizes Bun's ${code} bind defect`, async () => {
     server.mockReturnValue(Layer.effect(HttpServer.HttpServer, Effect.die({ code, message: "private socket details" })))
+    const logged: Array<unknown> = []
     const failure = await Effect.runPromise(
-      Layer.build(served({ host: "localhost", port: 0 })).pipe(Effect.flip, Effect.scoped)
+      Layer.build(served({ host: "localhost", port: 0 })).pipe(
+        Effect.flip,
+        Effect.scoped,
+        Effect.provide(Logger.layer([Logger.make(({ message }) => {
+          logged.push(message)
+        })]))
+      )
     )
     expect(failure).toMatchObject({ code: "bind_failed", message: "The gateway socket could not be bound" })
     expect(JSON.stringify(failure)).not.toContain("private socket details")
+    expect(JSON.stringify(failure)).not.toContain(code)
+    // The operator log keeps the operating-system cause the wire error omits.
+    expect(JSON.stringify(logged)).toContain(code)
     expect(server).toHaveBeenCalledWith({ hostname: "localhost", port: 0 })
   })
 }

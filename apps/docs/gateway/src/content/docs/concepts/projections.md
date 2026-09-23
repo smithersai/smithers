@@ -211,7 +211,7 @@ A projection reads one journal per run, so the read is bounded on purpose:
 
 | Bound                            | Value  | What it caps                                                                |
 | -------------------------------- | ------ | --------------------------------------------------------------------------- |
-| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds                                         |
+| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds, newest first                           |
 | `Projections.maxEventsPerRun`    | 10,000 | retained events per run                                                     |
 | `Projections.maxEventsPerPage`   | 1,000  | events per `run-events` page                                                |
 | `Projections.maxEventBytes`      | 16 KiB | retained event size before clipping                                         |
@@ -219,7 +219,7 @@ A projection reads one journal per run, so the read is bounded on purpose:
 
 `maxWorkspaceRuns` equals `ControlSchema.maxPageSize`, so the control plane can
 satisfy the whole gateway allowance in one page when it can. A workspace with
-more runs is answered as its first 500. Older retained events are folded into
+more runs is answered with its newest 500. Older retained events are folded into
 a carried digest. Compact scalar contributions retain call and checkpoint
 identities so replay is counted once and committed native facts can correct
 earlier telemetry across the window boundary. These contributions share the

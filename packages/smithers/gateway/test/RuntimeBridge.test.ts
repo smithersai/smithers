@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Control from "@smthrs/control/Control"
 import * as ControlError from "@smthrs/control/ControlError"
 import type { PlanCard, Principal, RunSummary } from "@smthrs/control/ControlSchema"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Logger, Schema, Stream } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
@@ -575,27 +575,54 @@ describe("RuntimeBridge", () => {
       }))
   }
 
-  it.effect("keeps the bridge authenticated when a loopback gateway has no credential", () =>
+  it.effect("logs the full cause of a failed launch on the host while the wire stays sanitized", () =>
     Effect.gen(function*() {
-      const server = yield* HttpServer.HttpServer
-      if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
-      const port = server.address.port
-      const response = yield* Effect.promise(() =>
-        fetch(`http://127.0.0.1:${port}/runtime/v1/command`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(launch)
+      const logged: Array<unknown> = []
+      const failure = new ControlError.PersistenceError({ operation: "read", message: privateMessage })
+      const result = yield* Effect.gen(function*() {
+        const server = yield* HttpServer.HttpServer
+        if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
+        const port = server.address.port
+        return yield* Effect.promise(async () => {
+          const response = await fetch(`http://127.0.0.1:${port}/runtime/v1/command`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(launch)
+          })
+          return { status: response.status, body: await response.json() }
         })
+      }).pipe(
+        Effect.provide(
+          directBridge(service({ plan: () => Effect.fail(failure) })).pipe(
+            Layer.provide(Logger.layer([Logger.make(({ message }) => {
+              logged.push(message)
+            })]))
+          )
+        ),
+        Effect.scoped
       )
-      expect(response.status).toBe(401)
-    }).pipe(
-      Effect.provide(
-        NodeGateway.layer({ workspaceHash: "fixture", gatewayId: "gateway", protocolVersion: "1", version: "test" }, {
-          host: "127.0.0.1",
-          port: 0,
-          runtimeBridge: { runtimeArtifactDigest: digest, sourceRevision: revision, ownerGeneration: 7 }
-        }).pipe(Layer.provideMerge(stack()))
-      ),
-      Effect.scoped
-    ))
+      expect(JSON.stringify(result)).not.toContain(privateMessage)
+      expect(logged).toHaveLength(1)
+      expect(logged[0]).toMatchObject([{
+        operation: "runtime-bridge.command",
+        code: "persistence_failed",
+        cause: failure
+      }])
+    }))
+
+  it.effect("refuses to bind a runtime bridge without a credential, including on loopback", () =>
+    Effect.gen(function*() {
+      const failure = yield* Effect.flip(
+        Effect.scoped(Layer.build(
+          NodeGateway.layer({ workspaceHash: "fixture", gatewayId: "gateway", protocolVersion: "1", version: "test" }, {
+            host: "127.0.0.1",
+            port: 0,
+            runtimeBridge: { runtimeArtifactDigest: digest, sourceRevision: revision, ownerGeneration: 7 }
+          }).pipe(Layer.provideMerge(stack()))
+        ))
+      )
+      // A bridge with no credential would answer 401 to every request, so the
+      // host fails at start instead of advertising a bridge nobody can call.
+      expect(failure).toMatchObject({ code: "bind_failed", message: expect.stringContaining("runtime bridge") })
+    }))
 })

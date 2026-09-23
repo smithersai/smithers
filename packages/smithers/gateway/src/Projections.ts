@@ -57,7 +57,7 @@ import { retainedDigestBytes } from "./internal/digestMemory.ts"
 export const heartbeatIntervalMillis = 30_000
 
 /**
- * The most runs one workspace projection folds.
+ * The most runs one workspace projection folds, newest first.
  *
  * A workspace projection reads one full journal per run, so the number of
  * runs it folds is bounded on purpose. This is the gateway's own ceiling, not
@@ -69,6 +69,10 @@ export const heartbeatIntervalMillis = 30_000
  * @category models
  */
 export const maxWorkspaceRuns = 500
+
+/** Whether `run` was created after `other`, ties broken by run id. */
+const createdAfter = (run: ControlSchema.RunSummary, other: ControlSchema.RunSummary): boolean =>
+  run.createdAt !== other.createdAt ? run.createdAt > other.createdAt : run.runId > other.runId
 
 /**
  * The most journal events one run projection retains in its window.
@@ -917,7 +921,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
       // for one flow's runs rather than for the workspace's.
       selector._tag === "flow-durations"
         ? durationRunsOf(selector.flowId)
-        : runsMatching(selector._tag === "approvals" ? { status: "waiting-approval" } : {}),
+        : runsMatching(selector._tag === "approvals" ? { status: "waiting-approval" } : {}, maxWorkspaceRuns),
       (runs) =>
         Effect.map(
           Effect.forEach(runs, (run) => consistentRunSource(run), { concurrency: 8 }),
@@ -1232,6 +1236,14 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         makeRoom()
         judged.set(runId, { lastPosition, observed })
       }
+      /** The followed run created first, the one a newer run displaces at the ceiling. */
+      const oldestFollowed = (): FollowedSource | undefined => {
+        let oldest: FollowedSource | undefined
+        for (const followed of sources.values()) {
+          if (oldest === undefined || createdAfter(oldest.source.run, followed.source.run)) oldest = followed
+        }
+        return oldest
+      }
       const noFrames: ReadonlyArray<GatewaySchema.GatewayFrame> = []
       const delta = (): Effect.Effect<ReadonlyArray<GatewaySchema.GatewayFrame>, GatewayError> =>
         Effect.flatMap(
@@ -1295,7 +1307,16 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
               return "unchanged"
             }
           }
-          if (sources.size >= maxWorkspaceRuns) return "unchanged"
+          // At the ceiling a run newer than the oldest followed run displaces
+          // it, so the workspace keeps the newest runs as the snapshot does.
+          const displaced = sources.size >= maxWorkspaceRuns ? oldestFollowed() : undefined
+          if (displaced !== undefined) {
+            const newer = yield* runOf(runId).pipe(
+              Effect.map((run) => createdAfter(run, displaced.source.run)),
+              Effect.catchIf((failure) => failure.code === "run_not_found", () => Effect.succeed(false))
+            )
+            if (!newer) return "unchanged"
+          }
           return yield* runSourceOf(runId).pipe(
             Effect.flatMap((source) => {
               const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
@@ -1310,6 +1331,9 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                   return "unchanged"
                 }
                 judged.delete(runId)
+                if (displaced !== undefined && sources.size >= maxWorkspaceRuns) {
+                  sources.delete(displaced.source.run.runId)
+                }
                 makeRoom()
                 sources.set(runId, { source: complete, observed: position, rows: rowsOfSource(complete) })
                 return "fresh"

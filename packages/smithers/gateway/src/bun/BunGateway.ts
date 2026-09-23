@@ -31,10 +31,13 @@ const native = NativeGateway.makeLayer((options) =>
     if (Cause.hasInterruptsOnly(cause) || !["EADDRINUSE", "EACCES", "EADDRNOTAVAIL"].includes(String(code))) {
       return Layer.effectContext<HttpServer, ServeError | GatewayError, never>(Effect.failCause(cause))
     }
+    // The errno is safe to keep: NativeGateway logs it for the operator and
+    // strips it from the refusal every bearer holder sees.
     return Layer.effectContext<HttpServer, ServeError | GatewayError, never>(Effect.fail(
       new GatewayError({
         code: "bind_failed",
-        message: "The gateway socket could not be bound"
+        message: "The gateway socket could not be bound",
+        cause: { _tag: "BunServeError", code: String(code) }
       })
     ))
   }))

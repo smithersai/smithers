@@ -126,19 +126,17 @@ For a gateway you can probe and read within a minute, start with the
 The root entry point exports one namespace per module, and each is also
 importable from `@smthrs/gateway/<Module>`:
 
-| Namespace                   | What it is                                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GatewayServer`             | The whole HTTP surface as one application layer: seven mounts, the ingress guard, and the keepalives.           |
-| `node/NodeGateway`          | The Node host that binds that surface to a socket under the bind and credential policy.                         |
-| `Projections`               | The served read path: a snapshot of any selector, or a snapshot followed by a live tail.                        |
-| `GatewaySchema`             | The wire vocabulary: selectors, cursors, snapshots, and the five subscription frames.                           |
-| `GatewayProjection`         | The served row types and the pure folds that compute them from control events.                                  |
-| `GatewayRpcs`               | The remote procedures this package adds: the read path, and the composite approval mutation.                    |
-| `Diagnosis`                 | What happened to a run, folded from its own events and rendered as a verdict line and a card.                   |
-| `GatewayError`              | Every stable failure code the gateway answers with, from a refused bind to a refused read.                      |
-| `SuperviseRuntime`          | The host seam a supervisor implements to discover and resume abandoned work.                                    |
-| `Sync`                      | [`@smthrs/sync`](https://smithers-sync.smithers.sh/reference/api/) re-exported whole, so a host mounts the journal read path from one import. |
-| `test/TestSuperviseRuntime` | A controllable supervision runtime for tests.                                                                   |
+| Namespace           | What it is                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GatewayServer`     | The whole HTTP surface as one application layer: seven mounts, the ingress guard, and the keepalives.           |
+| `node/NodeGateway`  | The Node host that binds that surface to a socket under the bind and credential policy.                         |
+| `Projections`       | The served read path: a snapshot of any selector, or a snapshot followed by a live tail.                        |
+| `GatewaySchema`     | The wire vocabulary: selectors, cursors, snapshots, and the five subscription frames.                           |
+| `GatewayProjection` | The served row types and the pure folds that compute them from control events.                                  |
+| `GatewayRpcs`       | The remote procedures this package adds: the read path, and the composite approval mutation.                    |
+| `Diagnosis`         | What happened to a run, folded from its own events and rendered as a verdict line and a card.                   |
+| `GatewayError`      | Every stable failure code the gateway answers with, from a refused bind to a refused read.                      |
+| `Sync`              | [`@smthrs/sync`](https://smithers-sync.smithers.sh/reference/api/) re-exported whole, so a host mounts the journal read path from one import. |
 
 Every export, with its signature, is on the [API reference](/reference/api/).
 

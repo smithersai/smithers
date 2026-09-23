@@ -323,16 +323,14 @@ in one page.
 
 **Fix** Read the runs you care about individually with `run-summary`. There is
 no paging on the workspace projection: a workspace with more runs is answered
-as its first 500.
+with its newest 500, and a newly created run displaces the oldest one.
 
 ## Recovery
 
 ### An abandoned run is never resumed
 
-**Cause** `SuperviseRuntime` is a declared host seam, not an installed feature.
-This release ships `make`, `makeNoop`, and `layerNoop` only, and the no-ops are
-what a composition gets unless it passes its own `Service`: scanning returns no
-candidates and resuming performs no work.
+**Cause** The gateway does not supervise runs, so nothing it serves discovers
+or resumes a run whose owner died.
 
 **Fix** Recovery is a reclaim rather than a supervisor. A run becomes
 reclaimable once the heartbeat its owner stopped renewing is older than 30

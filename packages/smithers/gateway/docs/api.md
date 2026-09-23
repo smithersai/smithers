@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/gateway: the assembled server and its Node host, the served read path, the wire schemas and folds, the RPC group, the diagnosis renderer, the failure vocabulary, and the supervision port."
+description: "Every public export of @smthrs/gateway: the assembled server and its Node host, the served read path, the wire schemas and folds, the RPC group, the diagnosis renderer, and the failure vocabulary."
 ---
 
 The gateway declares `effect`, `@effect/platform-node`,
@@ -165,7 +165,7 @@ The read path, served as bounded snapshots and followed deltas.
 | `layer`                   | `Layer<Projections, GatewayError, Control>`                                                                    | The read path over the ambient control plane, at the default cadence.                                              |
 | `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                         | The same under an explicit keepalive cadence.                                                                      |
 | `heartbeatIntervalMillis` | `30_000`                                                                                                       | How often an idle subscription emits a keepalive frame.                                                            |
-| `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
+| `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds, newest first. Equals `ControlSchema.maxPageSize`.                    |
 | `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events retained per run; older events enter the carried digest.                                   |
 | `maxEventsPerPage`        | `1_000`                                                                                                        | The most events one `run-events` page returns.                                                                     |
 | `maxEventBytes`           | `16 * 1024`                                                                                                    | Retained event size before clipping. Native engine events on `run-events` pages are exempt.                        |
@@ -398,35 +398,6 @@ tag and its stable code. Projection warnings log an allowlisted operation
 identifier and known control error tag/code pairs. Backend messages, nested
 causes, SQL, and file paths are omitted from projection logs.
 
-## `SuperviseRuntime`
-
-The host seam a supervisor would implement to recover abandoned work.
-
-| Export                  | Signature                                                                                                                | Meaning                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `StaleRunningCandidate` | `{ _tag: "stale-running", run, livenessEvidence }`                                                                       | A running run whose owner is proven dead.                  |
-| `QuotaDueCandidate`     | `{ _tag: "quota-due", run, resetAtMs }`                                                                                  | A quota-parked run whose reset time has arrived.           |
-| `StaleClaimCandidate`   | `{ _tag: "stale-claim", run, claimantDeathEvidence }`                                                                    | A run whose unactivated claim holder is proven dead.       |
-| `Candidate`             | the union of the three                                                                                                   | A run supervision may recover or resume.                   |
-| `ResumeLease`           | `{ runId, claimant, candidate }`                                                                                         | A fenced request to resume one candidate.                  |
-| `ResumeErrorCode`       | `"claim_lost" \| "resume_failed"`                                                                                        | Stable resume failures.                                    |
-| `ResumeError`           | `Schema.TaggedError` tagged `@smthrs/gateway/ResumeError`                                                                | `{ code, message, cause }`.                                |
-| `Service`               | `{ scan: (now: number) => Effect<ReadonlyArray<Candidate>>; resume: (lease: ResumeLease) => Effect<void, ResumeError> }` | Engine-facing supervision operations.                      |
-| `SuperviseRuntime`      | `Context.Service` tagged `@smthrs/gateway/SuperviseRuntime`                                                              | The service tag.                                           |
-| `make`                  | `(service: Service) => Service`                                                                                          | Constructs a supervision runtime.                          |
-| `makeNoop`              | `(overrides?: Partial<Service>) => Service`                                                                              | No candidates, successful resumes, overridable per member. |
-| `layerNoop`             | `(overrides?: Partial<Service>) => Layer<SuperviseRuntime>`                                                              | Provides that no-op.                                       |
-
-A candidate names a run by its `@smthrs/control` `RunSummary` rather than by a
-store row, which keeps the promise the rest of the package makes: a projection
-is the contract and a store row is an implementation detail.
-
-This release ships `make`, `makeNoop`, and `layerNoop` only. Nothing in the
-package implements the seam, so unless a host passes its own `Service` the port
-does nothing. Recovery is a reclaim rather than a supervisor: a running engine
-process with the flow registered takes over a run whose owner stopped renewing
-its heartbeat. See [Recovery](./troubleshooting.md#recovery).
-
 ## `Sync`
 
 The root entry re-exports [`@smthrs/sync`](/api/smithers-sync) whole, so a gateway host
@@ -436,19 +407,6 @@ gets the read-only journal replication protocol from the same import:
 
 Sync is read-only in both senses: a follower cannot mutate a run, and it cannot
 resume one. See [Sync and read-only followers](/docs/concepts/sync/).
-
-## `test/TestSuperviseRuntime`
-
-A controllable in-memory supervision runtime for tests.
-
-| Export                        | Signature                                                                                                         | Meaning                                                |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `TestSuperviseRuntimeOptions` | `{ candidates?: ReadonlyArray<Candidate>; resumeError?: ResumeError }`                                            | Its initial configuration.                             |
-| `TestSuperviseRuntime`        | `{ runtime, resumes, setCandidates, setResumeError }`                                                             | The runtime plus the recorded leases and the controls. |
-| `make`                        | `(options?: TestSuperviseRuntimeOptions) => TestSuperviseRuntime`                                                 | Constructs one.                                        |
-| `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
-
-See [Test against a real gateway](./guides/testing.md).
 
 ## `RunTrace`
 

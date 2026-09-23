@@ -303,26 +303,30 @@ describe("Projections read-path failures", () => {
 })
 
 describe("Projections resource bounds", () => {
-  it.effect("stops reading at the scan ceiling instead of refusing a long journal", () =>
-    Effect.gen(function*() {
-      let produced = 0
-      const projections = make(control({
-        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
-        watch: () =>
-          Stream.iterate(1, (sequence) => sequence + 1).pipe(
-            Stream.take(Projections.maxEventsScanned + 50),
-            Stream.map((sequence) => {
-              produced += 1
-              return event(sequence, "control.agent.turn-opened", { seat: "s" })
-            })
-          )
-      }))
+  it.effect(
+    "stops reading at the scan ceiling instead of refusing a long journal",
+    () =>
+      Effect.gen(function*() {
+        let produced = 0
+        const projections = make(control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: () =>
+            Stream.iterate(1, (sequence) => sequence + 1).pipe(
+              Stream.take(Projections.maxEventsScanned + 50),
+              Stream.map((sequence) => {
+                produced += 1
+                return event(sequence, "control.agent.turn-opened", { seat: "s" })
+              })
+            )
+        }))
 
-      const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
-      expect(produced).toBe(Projections.maxEventsScanned)
-      // Every scanned turn is counted, including the ones the window dropped.
-      expect((snapshot.rows[0] as { readonly turns: number }).turns).toBe(Projections.maxEventsScanned)
-    }))
+        const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: run.runId })
+        expect(produced).toBe(Projections.maxEventsScanned)
+        // Every scanned turn is counted, including the ones the window dropped.
+        expect((snapshot.rows[0] as { readonly turns: number }).turns).toBe(Projections.maxEventsScanned)
+      }), // Folding the real 100,000-event ceiling takes most of the default 30 s on a loaded runner.
+    120_000
+  )
 
   it.effect("pages run-events rather than answering one response per journal", () =>
     Effect.gen(function*() {
@@ -807,42 +811,61 @@ describe("Projections subscriptions", () => {
       expect(deltas[0]?.delta).toMatchObject([{ runId: "run-2" }])
     }))
 
-  it.effect("keeps followed workspace rows within the workspace ceiling", () =>
+  it.effect("reads the newest runs and admits a new run at the workspace ceiling by evicting the oldest", () =>
     Effect.gen(function*() {
-      const initial = Array.from({ length: Projections.maxWorkspaceRuns }, (_, index) => numberedRun(index + 1))
-      const extra = numberedRun(Projections.maxWorkspaceRuns + 1)
-      const accepted: ControlEvent = {
-        ...event(1, "control.run.accepted", { runId: extra.runId }),
-        runId: extra.runId
-      }
+      const dated = (ordinal: number): RunSummary => ({ ...numberedRun(ordinal), createdAt: ordinal })
+      // The listing is newest first, as the control plane answers order: "newest".
+      const initial = Array.from(
+        { length: Projections.maxWorkspaceRuns },
+        (_, index) => dated(Projections.maxWorkspaceRuns + 1 - index)
+      )
+      const extra = dated(Projections.maxWorkspaceRuns + 2)
+      const older = dated(1)
+      const acceptedOf = (runId: string): ControlEvent => ({
+        ...event(1, "control.run.accepted", { runId }),
+        runId
+      })
+      const orders: Array<string | undefined> = []
       const projections = make(
         control({
           list: (request) => {
             const named = request._tag === "runs" ? request.filters?.runId : undefined
+            if (request._tag === "runs" && named === undefined) orders.push(request.order)
             return Effect.succeed({
               _tag: "runs",
               items: named === extra.runId
                 ? [extra]
+                : named === older.runId
+                ? [older]
                 : named === undefined
                 ? initial
                 : initial.filter((run) => run.runId === named)
             })
           },
           watch: (filter) =>
-            filter.follow === true || filter.runId === extra.runId ? Stream.fromIterable([accepted]) : Stream.empty
+            filter.follow === true
+              ? Stream.fromIterable([acceptedOf(older.runId), acceptedOf(extra.runId)])
+              : filter.runId === extra.runId
+              ? Stream.fromIterable([acceptedOf(extra.runId)])
+              : filter.runId === older.runId
+              ? Stream.fromIterable([acceptedOf(older.runId)])
+              : Stream.empty
         }),
         { heartbeatMillis: 60_000 }
       )
 
       const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "workspace-runs" }))
-      const rowIds = frames.flatMap((frame) =>
-        frame._tag === "row" ? [(frame.row as { readonly runId: string }).runId] : []
-      )
-      // Admitting beyond the documented ceiling makes one long-lived stream
-      // consume more journals than the bounded snapshot contract allows.
-      expect(rowIds).toHaveLength(Projections.maxWorkspaceRuns)
-      expect(rowIds).not.toContain(extra.runId)
-      expect(frames.filter((frame) => frame._tag === "delta")).toEqual([])
+      // Folding the oldest page would hide every run launched after it.
+      expect(orders).toEqual(["newest"])
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      expect(deltas).toHaveLength(1)
+      const ids = (deltas[0]?.delta as ReadonlyArray<{ readonly runId: string }>).map((row) => row.runId)
+      // The ceiling still bounds the followed runs, and a new run displaces
+      // the oldest one while a run older than every followed run stays out.
+      expect(ids).toHaveLength(Projections.maxWorkspaceRuns)
+      expect(ids).toContain(extra.runId)
+      expect(ids).not.toContain(older.runId)
+      expect(ids).not.toContain("run-2")
     }))
 
   it.effect("delivers new gates to an unscoped approvals inbox", () =>
@@ -1160,7 +1183,7 @@ describe("Projections subscriptions", () => {
       expect(deltas[0]?.delta).toMatchObject([{ runId: waiting.runId, requestId: "gate", status: "pending" }])
     }))
 
-  it.effect("keeps the approvals inbox at its ceiling when every admitted run is relevant", () =>
+  it.effect("keeps the approvals inbox at its ceiling and shows the newest gate when every run is relevant", () =>
     Effect.gen(function*() {
       const requestFor = (runId: string): ControlEvent => ({
         sequence: 1,
@@ -1214,7 +1237,11 @@ describe("Projections subscriptions", () => {
 
       const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "approvals" }))
       expect(frames.filter((frame) => frame._tag === "row")).toHaveLength(Projections.maxWorkspaceRuns)
-      expect(frames.filter((frame) => frame._tag === "delta")).toEqual([])
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      expect(deltas).toHaveLength(1)
+      const ids = (deltas[0]?.delta as ReadonlyArray<{ readonly runId: string }>).map((row) => row.runId)
+      expect(ids).toHaveLength(Projections.maxWorkspaceRuns)
+      expect(ids).toContain(extra.runId)
     }))
 
   it.effect("resumes after a run cursor without emitting snapshot frames", () =>

@@ -26,8 +26,6 @@ import * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.ts"
 import * as Projections from "../src/Projections.ts"
 import * as RuntimeBridge from "../src/RuntimeBridge.ts"
-import * as SuperviseRuntime from "../src/SuperviseRuntime.ts"
-import * as TestSuperviseRuntime from "../src/test/TestSuperviseRuntime.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -55,9 +53,7 @@ const modules = [
   ["GatewayServer", GatewayServer, declaredTypes("GatewayServer.ts")],
   ["Projections", Projections, declaredTypes("Projections.ts")],
   ["RuntimeBridge", RuntimeBridge, declaredTypes("RuntimeBridge.ts")],
-  ["SuperviseRuntime", SuperviseRuntime, declaredTypes("SuperviseRuntime.ts")],
-  ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.ts")],
-  ["test/TestSuperviseRuntime", TestSuperviseRuntime, declaredTypes("test/TestSuperviseRuntime.ts")]
+  ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.ts")]
 ] as const
 
 describe("the README export table", () => {

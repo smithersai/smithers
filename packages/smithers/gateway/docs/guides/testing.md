@@ -144,24 +144,3 @@ This is the same code the served projection runs, so a fold test and an
 end-to-end test cannot disagree about what a row means. Reach for the full
 stack when what you are pinning is the _serving_: a status the run row owns, a
 cursor, a refusal, or an HTTP status.
-
-## Control the supervision port
-
-`@smthrs/gateway/test/TestSuperviseRuntime` provides a controllable
-`SuperviseRuntime` for a host that needs the port without a supervisor:
-
-```ts
-import * as TestSuperviseRuntime from "@smthrs/gateway/test/TestSuperviseRuntime"
-
-let controls: TestSuperviseRuntime.TestSuperviseRuntime
-const supervision = TestSuperviseRuntime.layer({ candidates: [] }, (ready) => {
-  controls = ready
-})
-
-// Later, inside the test:
-await Effect.runPromise(controls.setCandidates([candidate]))
-// controls.resumes records every lease the code under test took.
-```
-
-`setResumeError` makes the next resume fail with a `ResumeError`, which is how
-a host's recovery branch gets exercised without a dead process to reclaim.

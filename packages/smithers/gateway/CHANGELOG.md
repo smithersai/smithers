@@ -12,6 +12,19 @@
 
 ### Changed
 
+- The `workspace-runs` and `approvals` projections fold the newest 500 runs
+  instead of the oldest 500, and a followed workspace admits a run created
+  after its oldest followed run by displacing that run. Before, a workspace
+  past 500 runs never showed a newly launched run.
+- The runtime bridge logs the full cause of every failure the caller did not
+  cause, and runs each handler in a `runtime-bridge.command` or
+  `runtime-bridge.observe` span. The wire response is unchanged.
+- A gateway that enables the runtime bridge without a bearer credential now
+  refuses to bind with `bind_failed`, including on loopback. It used to start
+  and answer 401 to every bridge request.
+- The Bun host keeps the operating-system errno on its bind refusal, so the
+  operator log names `EADDRINUSE`, `EACCES`, or `EADDRNOTAVAIL` as the Node
+  host's does. The wire refusal still omits it.
 - `GatewaySchema` derives `ProjectionSelector`, `ProjectionName`,
   `rowSchemaFor`, `ProjectionSnapshot`, `RowFrame`, and `DeltaFrame` from one
   selector-to-row table instead of five hand-kept lists. The wire format is
@@ -25,6 +38,9 @@
 
 ### Removed
 
+- Removed `SuperviseRuntime` and `test/TestSuperviseRuntime`. No host
+  implemented the port, so it shipped as a stub that scanned nothing and
+  resumed nothing. Recovery remains the heartbeat reclaim.
 - Removed `GatewaySchema.Workspace`, `GatewayConfig`, `GatewayStatus`,
   `SingletonRecord`, `TokenScope`, and `TokenRecord`, and the API and
   trust-boundary passages that had to disclaim them: nothing minted, read,

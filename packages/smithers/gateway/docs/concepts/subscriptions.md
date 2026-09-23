@@ -170,7 +170,8 @@ journal reads; later events reconsider the run. Missing run partitions,
 including `plan:` partitions, are skipped after the first lookup failure while
 the verdict is retained. New entries evict the oldest exclusion verdict and
 its cursor state. An evicted run may require another read. At 500 admitted
-sources, unseen runs are skipped.
+sources, a run created after the oldest followed run displaces it, so the
+tail keeps the newest runs the snapshot folded. An older run stays out.
 
 ## Heartbeats
 
