@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
@@ -12,7 +15,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	stripewebhook "github.com/stripe/stripe-go/v86/webhook"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -667,8 +669,14 @@ func (s *BillingService) HandleStripeWebhook(ctx context.Context, payload []byte
 	if secret == "" {
 		return pkgerrors.BadRequest("stripe billing webhooks are not configured")
 	}
-	event, err := stripewebhook.ConstructEvent(payload, signature, secret)
-	if err != nil {
+	var event struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+		Data struct {
+			Raw json.RawMessage `json:"object"`
+		} `json:"data"`
+	}
+	if !verifyStripeWebhookSignature(payload, signature, secret) || json.Unmarshal(payload, &event) != nil {
 		return pkgerrors.BadRequest("invalid stripe webhook signature")
 	}
 
@@ -677,7 +685,7 @@ func (s *BillingService) HandleStripeWebhook(ctx context.Context, payload []byte
 		return pkgerrors.BadRequest("stripe webhook event id is required")
 	}
 	if txq, ok := s.queries.(billingTxQuerier); ok {
-		return s.processStripeEventTx(ctx, txq, eventID, string(event.Type), event.Data.Raw)
+		return s.processStripeEventTx(ctx, txq, eventID, event.Type, event.Data.Raw)
 	}
 	// Non-transactional querier (test fakes): claim first, then release the
 	// claim if processing fails so Stripe's retry can reprocess the event.
@@ -688,7 +696,7 @@ func (s *BillingService) HandleStripeWebhook(ctx context.Context, payload []byte
 	if !claimed {
 		return nil
 	}
-	if err := s.handleStripeEvent(ctx, eventID, string(event.Type), event.Data.Raw); err != nil {
+	if err := s.handleStripeEvent(ctx, eventID, event.Type, event.Data.Raw); err != nil {
 		_ = s.queries.DeleteStripeProcessedEvent(context.Background(), eventID)
 		return err
 	}
@@ -2511,4 +2519,32 @@ func (s *BillingService) enforceMetricLimit(limit int64, usage BillingUsageSumma
 		return nil
 	}
 	return pkgerrors.Forbidden(fmt.Sprintf("%s quota exceeded for the current billing plan", label))
+}
+
+func verifyStripeWebhookSignature(payload []byte, header, secret string) bool {
+	var timestamp, provided string
+	for _, part := range strings.Split(header, ",") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "t":
+			timestamp = value
+		case "v1":
+			provided = value
+		}
+	}
+	if timestamp == "" || provided == "" || secret == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write(payload)
+	expected, err := hex.DecodeString(provided)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(mac.Sum(nil), expected)
 }

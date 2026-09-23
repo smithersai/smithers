@@ -107,7 +107,6 @@ func run(ctx context.Context, args []string) (runErr error) {
 	}
 
 	appConfig := app.Config{
-		Role:             app.RoleLocal,
 		Args:             args,
 		Repository:       local.Client(),
 		Workspace:        workspaceRuntime,

@@ -57,6 +57,7 @@ func NewBillingComposition(q BillingBaseQuerier, cfg BillingCompositionConfig, o
 		policy := NewUnlimitedBillingPolicy()
 		return BillingComposition{Policy: policy}, nil
 	case BillingModeStripe:
+		return BillingComposition{}, fmt.Errorf("billing: stripe mode is provided by Plue")
 		if q == nil {
 			return BillingComposition{}, fmt.Errorf("billing: stripe mode requires the billing store")
 		}

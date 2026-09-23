@@ -93,9 +93,6 @@ func NewCLI() *incur.Cli {
 func newCLIWithFeatureFlags(flags featureFlags) *incur.Cli {
 	version := strings.TrimSpace(os.Getenv("SMITHERS_CLI_VERSION"))
 	if version == "" {
-		version = strings.TrimSpace(os.Getenv("PLUE_CLI_VERSION"))
-	}
-	if version == "" {
 		version = cliVersion
 	}
 	cli := incur.New("smithers",

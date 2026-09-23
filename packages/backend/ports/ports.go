@@ -81,21 +81,6 @@ type RepositoryEndpointResolver = repository.StorageSetResolver
 // storage set. Plue owns its placement table; product repository rows do not.
 type RepositoryPlacement = services.RepoPlacementLookup
 
-// HostedMutationFences is the deployment-owned state of the legacy hosted
-// storage/deletion rollout. Product migrations do not install these controls.
-type HostedMutationFences struct {
-	RepositoryStorageEnforced bool
-	ReleaseDeletionEnabled    bool
-}
-
-// HostedRollout is supplied by the private deployment database. The shared
-// product composition must never read these controls from its product pool.
-type HostedRollout interface {
-	ConfigureRepositoryProvisioningEnforcement(context.Context, bool) (bool, error)
-	ConfigureLegacyMutationFences(context.Context, bool) (HostedMutationFences, error)
-	IsLegacyFinalKeyPurgeAllowed(context.Context) (bool, error)
-}
-
 // BlobStore is the actual product blob contract consumed by the extracted
 // services. The alias prevents a second storage model from drifting away from
 // the routes and artifact/LFS semantics. The local adapter implements signed

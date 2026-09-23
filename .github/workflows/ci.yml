@@ -782,6 +782,9 @@ jobs:
             fi
           fi
         shell: "bash"
+      - name: "Check public backend boundary"
+        run: "./scripts/check-public-backend-boundary.sh"
+
       - name: "Build and test shared backend"
         run: "pnpm exec smthrs test '//:backendGo' --verbose"
         env:

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,54 +21,13 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/hostedadapter"
 )
-
-// startReplica boots a full run() instance with the real SSE broker so a
-// redeemed ticket can open a live notification stream. It mirrors startRun
-// minus stubSSEBroker; two replicas share the lane database exactly like two
-// API pods behind the production Service.
-func startReplica(t *testing.T, env map[string]string) *runHarness {
-	t.Helper()
-	applyEnv(t, env)
-	preserveSlog(t)
-	privatePool, err := database.NewPool(context.Background(), config.DatabaseConfig{
-		URL: env["SMITHERS_DATABASE_URL"], MaxConns: 4, MaxConnLifetime: 3600, MaxConnIdleTime: 1800,
-	})
-	require.NoError(t, err)
-	t.Cleanup(privatePool.Close)
-
-	lnCh := make(chan net.Listener, 1)
-	swapVar(t, &onListen, func(ln net.Listener) { lnCh <- ln })
-
-	logs := &syncBuffer{}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- RunWithOptions(ctx, nil, io.Discard, logs, Options{
-			Role: RoleHostedAPI, HostedRollout: hostedadapter.PrivateRollout{Pool: privatePool},
-		})
-	}()
-
-	select {
-	case ln := <-lnCh:
-		return &runHarness{t: t, ln: ln, errCh: errCh, cancel: cancel, logs: logs}
-	case err := <-errCh:
-		t.Fatalf("replica returned before listening: %v\nlogs:\n%s", err, logs.String())
-	case <-time.After(15 * time.Second):
-		t.Fatalf("replica did not start listening within 15s\nlogs:\n%s", logs.String())
-	}
-	return nil
-}
 
 type sseTicketReplicaPrincipal struct {
 	userID   int64
 	rawToken string
 }
 
-// seedSSETicketReplicaPAT inserts a user and a read:user PAT straight into the
-// shared database, the way a real account and token row look to both replicas.
 func seedSSETicketReplicaPAT(t *testing.T, dsn string) sseTicketReplicaPrincipal {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -151,65 +109,6 @@ func assertSSETicketNotHS256JWT(t *testing.T, path, ticket string) {
 	t.Helper()
 	assert.False(t, strings.HasPrefix(ticket, "eyJ"), "%s issued an HS256 JWT ticket: %s", path, ticket)
 	assert.NotEqual(t, 3, len(strings.Split(ticket, ".")), "%s issued a three-segment JWT ticket: %s", path, ticket)
-}
-
-// TestRun_SSETicketsRedeemAcrossReplicas boots two real API instances over
-// one database. A ticket minted on one replica must redeem on the other
-// (the production Service has no session affinity) and must be single-use
-// across both; that holds for the canonical route and the retained alias.
-func TestRun_SSETicketsRedeemAcrossReplicas(t *testing.T) {
-	env := baseRunEnv(t)
-	env["SMITHERS_AUTH_MODE"] = "multitenant"
-	env["SMITHERS_FEATURE_FLAGS_NOTIFICATIONS"] = "true"
-	seedHostedRolloutControls(t, env["SMITHERS_DATABASE_URL"])
-
-	replicaA := startReplica(t, env)
-	secondEnv := make(map[string]string, len(env))
-	for key, value := range env {
-		secondEnv[key] = value
-	}
-	secondEnv["SMITHERS_BLOB_DATA_DIR"] = t.TempDir()
-	replicaB := startReplica(t, secondEnv)
-	principal := seedSSETicketReplicaPAT(t, env["SMITHERS_DATABASE_URL"])
-
-	for _, tc := range []struct {
-		name   string
-		path   string
-		minter *runHarness
-		other  *runHarness
-	}{
-		{name: "alias v1", path: "/api/v1/sse/ticket", minter: replicaA, other: replicaB},
-		{name: "canonical", path: "/api/auth/sse-ticket", minter: replicaB, other: replicaA},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			issued := mintSSETicketOnReplica(t, tc.minter, tc.path, principal.rawToken)
-			assertSSETicketNotHS256JWT(t, tc.path, issued.Ticket)
-			assert.False(t, issued.ExpiresAt.IsZero(), "%s must keep the documented expires_at field", tc.path)
-
-			status := redeemSSETicketOnReplica(t, tc.other, issued.Ticket)
-			require.NotEqual(t, http.StatusUnauthorized, status, "%s: ticket minted on %s was rejected on %s", tc.path, tc.minter.addr(), tc.other.addr())
-			require.Equal(t, http.StatusOK, status, "%s: redemption on the other replica must open the stream", tc.path)
-
-			replay := redeemSSETicketOnReplica(t, tc.minter, issued.Ticket)
-			require.Equal(t, http.StatusUnauthorized, replay, "%s: a redeemed ticket must not be accepted again on any replica", tc.path)
-		})
-	}
-
-	replicaB.shutdownAndWaitNil()
-	replicaA.shutdownAndWaitNil()
-}
-
-func seedHostedRolloutControls(t *testing.T, dsn string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	conn, err := pgx.Connect(ctx, dsn)
-	require.NoError(t, err)
-	defer conn.Close(ctx)
-	_, err = conn.Exec(ctx, `INSERT INTO repository_provisioning_control (singleton, enforce_insert_fence) VALUES (TRUE, TRUE) ON CONFLICT (singleton) DO NOTHING`)
-	require.NoError(t, err)
-	_, err = conn.Exec(ctx, `INSERT INTO legacy_mutation_fence_control (singleton, enforce_repository_storage, enforce_release_deletion) VALUES (TRUE, TRUE, TRUE) ON CONFLICT (singleton) DO NOTHING`)
-	require.NoError(t, err)
 }
 
 // sseTicketRouterQueries opens the production-configured pool for the router

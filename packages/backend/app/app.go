@@ -23,9 +23,6 @@ import (
 // routes, services, jobs, and database are assembled by the common
 // implementation. A deployment can pass its configuration file using Args.
 type Config struct {
-	// Role selects local combined operation or hosted API/worker replicas.
-	// The zero value is a single-owner combined app.
-	Role   Role
 	Args   []string
 	Stdout io.Writer
 	Stderr io.Writer
@@ -44,8 +41,6 @@ type Config struct {
 	// RepositoryPlacement is supplied by a hosted deployment and keyed by the
 	// canonical repository ID. Single-owner installations leave it nil.
 	RepositoryPlacement ports.RepositoryPlacement
-	// HostedRollout reads and enforces private deployment migration controls.
-	HostedRollout ports.HostedRollout
 	// Workspace supplies the common execution boundary. The app closes it after
 	// requests and workers stop. Local deployments supply a trusted process
 	// runtime; hosted deployments supply an isolated runtime.
@@ -71,14 +66,6 @@ type Config struct {
 	RecommendationLog   ports.RecommendationLog
 	ModelStreamHost     ports.ModelStreamHost
 }
-
-type Role = compose.Role
-
-const (
-	RoleLocal        Role = compose.RoleLocal
-	RoleHostedAPI    Role = compose.RoleHostedAPI
-	RoleHostedWorker Role = compose.RoleHostedWorker
-)
 
 // Instance is one running product composition. Its handler is the real shared
 // route set; callers can mount it on their own HTTP server while the bounded
@@ -122,14 +109,12 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	stdout, stderr := writers(cfg)
 	go func() {
 		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-			Role:                  cfg.Role,
 			TraceExporter:         cfg.TraceExporter,
 			Blobs:                 cfg.Blobs,
 			AgentLogs:             cfg.AgentLogs,
 			MetricsDoer:           cfg.MetricsDoer,
 			Repository:            cfg.Repository,
 			RepositoryPlacement:   cfg.RepositoryPlacement,
-			HostedRollout:         cfg.HostedRollout,
 			Workspace:             cfg.Workspace,
 			FlowHostRegistry:      cfg.FlowHostRegistry,
 			FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
@@ -167,14 +152,12 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
 	return closeWorkspace(cfg.Workspace, compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-		Role:                  cfg.Role,
 		TraceExporter:         cfg.TraceExporter,
 		Blobs:                 cfg.Blobs,
 		AgentLogs:             cfg.AgentLogs,
 		MetricsDoer:           cfg.MetricsDoer,
 		Repository:            cfg.Repository,
 		RepositoryPlacement:   cfg.RepositoryPlacement,
-		HostedRollout:         cfg.HostedRollout,
 		Workspace:             cfg.Workspace,
 		FlowHostRegistry:      cfg.FlowHostRegistry,
 		FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,

@@ -55,7 +55,7 @@ func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	instance, err := app.Start(ctx, app.Config{Role: app.RoleLocal, Stdout: io.Discard, Stderr: io.Discard})
+	instance, err := app.Start(ctx, app.Config{Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil {
 		t.Fatal(err)
 	}

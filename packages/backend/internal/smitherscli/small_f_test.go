@@ -269,7 +269,6 @@ func TestRun_F_RunNormalPathAndServeExit(t *testing.T) {
 }
 
 func TestRun_F_NewCLIVersionFallback(t *testing.T) {
-	t.Setenv("PLUE_CLI_VERSION", "")
 	t.Setenv("SMITHERS_CLI_VERSION", "")
 	cli := newCLIWithFeatureFlags(nil)
 	if cli == nil {

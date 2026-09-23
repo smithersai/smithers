@@ -647,7 +647,7 @@ func apiCORSOptions(cfg *config.Config) cors.Options {
 }
 
 // initEmailTransport creates an email transport from config using the factory.
-// Precedence: SendGrid (if API key set) > SMTP (if host set) > SES (if region set) > Noop.
+// SMTP is the only public email transport; hosted providers live in Plue.
 func initEmailTransport(cfg config.EmailConfig) (email.Transport, error) {
 	from := cfg.From
 	if from == "" {
@@ -656,21 +656,7 @@ func initEmailTransport(cfg config.EmailConfig) (email.Transport, error) {
 	if from == "" {
 		from = cfg.SESFrom
 	}
-	var sesClient email.SESAPI
-	if cfg.SendGridAPIKey == "" && cfg.SMTPHost == "" && cfg.SESRegion != "" {
-		sesCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		client, err := newSESClient(sesCtx, cfg.SESRegion)
-		if err != nil {
-			return nil, fmt.Errorf("initialize SES email client: %w", err)
-		}
-		sesClient = client
-	}
 	return email.NewTransport(email.TransportConfig{
-		SendGrid: email.SendGridConfig{
-			APIKey: cfg.SendGridAPIKey,
-			From:   from,
-		},
 		SMTP: email.SMTPConfig{
 			Host: cfg.SMTPHost,
 			Port: cfg.SMTPPort,
@@ -678,11 +664,6 @@ func initEmailTransport(cfg config.EmailConfig) (email.Transport, error) {
 			Pass: cfg.SMTPPass,
 			From: cfg.SMTPFrom,
 		},
-		SES: email.SESConfig{
-			Region: cfg.SESRegion,
-			From:   cfg.SESFrom,
-		},
-		SESClient: sesClient,
 	})
 }
 

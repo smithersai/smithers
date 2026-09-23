@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -107,7 +106,6 @@ type Options struct {
 	MetricsDoer           services.GMPDoer
 	Repository            *repohost.Client
 	RepositoryPlacement   services.RepoPlacementLookup
-	HostedRollout         ports.HostedRollout
 	Workspace             workspace.WorkspaceRuntime
 	FlowHostRegistry      *flowmanifest.Registry
 	FlowHostProductAPIURL string
@@ -146,8 +144,18 @@ type runOptions struct {
 }
 
 func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) (runErr error) {
-	if !options.Role.valid() {
-		return fmt.Errorf("unknown backend role %q", options.Role)
+	if options.Role == "" {
+		switch strings.TrimSpace(os.Getenv("PLUE_BACKEND_ROLE")) {
+		case string(RoleHostedWorker):
+			options.Role = RoleHostedWorker
+		case string(RoleHostedAPI):
+			options.Role = RoleHostedAPI
+		default:
+			options.Role = RoleLocal
+			if options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed {
+				options.Role = RoleHostedAPI
+			}
+		}
 	}
 	if options.Workspace != nil {
 		switch isolation := options.Workspace.Isolation(); isolation {
@@ -256,39 +264,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	defer pool.Close()
 	slog.Info("connected to database")
 
-	provisioningEnforced := false
-	if options.Role.hosted() {
-		if options.HostedRollout == nil {
-			return errors.New("hosted role requires a private rollout adapter")
-		}
-		provisioningEnforcementRequested := false
-		if raw := strings.TrimSpace(os.Getenv("SMITHERS_REPOSITORY_PROVISIONING_ENFORCE")); raw != "" {
-			provisioningEnforcementRequested, err = strconv.ParseBool(raw)
-			if err != nil {
-				return fmt.Errorf("parse SMITHERS_REPOSITORY_PROVISIONING_ENFORCE: %w", err)
-			}
-		}
-		provisioningEnforced, err = options.HostedRollout.ConfigureRepositoryProvisioningEnforcement(ctx, provisioningEnforcementRequested)
-		if err != nil {
-			return err
-		}
-		if provisioningEnforced {
-			slog.Info("repository provisioning insert fence is enforced")
-		} else {
-			slog.Error("REPOSITORY PROVISIONING LEGACY INSERT COMPATIBILITY IS ENABLED",
-				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
-		}
-		legacyMutationFences, fenceErr := options.HostedRollout.ConfigureLegacyMutationFences(ctx, provisioningEnforcementRequested)
-		if fenceErr != nil {
-			return fenceErr
-		}
-		if legacyMutationFences.RepositoryStorageEnforced && legacyMutationFences.ReleaseDeletionEnabled {
-			slog.Info("post-drain repository storage and release deletion protocols are enforced")
-		} else {
-			slog.Error("LEGACY REPOSITORY STORAGE AND RELEASE DELETION COMPATIBILITY IS ENABLED",
-				"remediation", "drain old API pods, set SMITHERS_REPOSITORY_PROVISIONING_ENFORCE=true, and restart one API pod")
-		}
-	}
+	provisioningEnforced := options.Role.hosted()
 
 	// Start background DB pool stats collector (reports every 15s).
 	poolStatsCtx, poolStatsCancel := context.WithCancel(ctx)
@@ -630,26 +606,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		defer func() { _ = gcsClient.Close() }()
 	}
 	transferStore := blobStore
-	if _, canPurge := blobStore.(blob.GenerationPurger); options.Role.hosted() && canPurge {
-		legacyFinalKeyPurgeAllowed, gateErr := options.HostedRollout.IsLegacyFinalKeyPurgeAllowed(ctx)
-		if gateErr != nil {
-			return fmt.Errorf("load legacy final-key capability horizon: %w", gateErr)
-		}
-		fencedStore, fenceErr := blob.NewLegacyFinalKeyPurgeFencedStore(
-			blobStore,
-			func(gateCtx context.Context) (bool, error) {
-				return options.HostedRollout.IsLegacyFinalKeyPurgeAllowed(gateCtx)
-			},
-		)
-		if fenceErr != nil {
-			return fmt.Errorf("initialize legacy final-key purge fence: %w", fenceErr)
-		}
-		blobStore = fencedStore
-		if !legacyFinalKeyPurgeAllowed {
-			slog.Error("FINAL-KEY BLOB PURGE IS FAIL-CLOSED FOR LEGACY UPLOAD CAPABILITIES",
-				"remediation", "follow docs/runbooks/legacy-blob-upload-capability-drain.md after every legacy signer is drained")
-		}
-	}
+
 	lfsVerifyTokenManager, err := lfsauth.NewManager(cfg.Auth.LFSSigningSecret)
 	if err != nil {
 		slog.Error("failed to initialize lfs verify credentials", "error", err)

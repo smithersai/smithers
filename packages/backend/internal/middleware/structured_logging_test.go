@@ -491,7 +491,6 @@ func TestOpenTelemetry_SDKContract(t *testing.T) {
 		"go.opentelemetry.io/otel/trace",
 		"go.opentelemetry.io/otel/sdk",
 		"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
-		"github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace",
 	}
 
 	for _, mod := range requiredOTelModules {

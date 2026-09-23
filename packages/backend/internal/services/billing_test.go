@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,8 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stripe/stripe-go/v86"
-	stripewebhook "github.com/stripe/stripe-go/v86/webhook"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
@@ -451,7 +452,7 @@ func signedStripeEvent(t *testing.T, eventID string, eventType string, object ma
 	eventPayload := map[string]any{
 		"id":          eventID,
 		"object":      "event",
-		"api_version": stripe.APIVersion,
+		"api_version": "2025-06-30.basil",
 		"type":        eventType,
 		"data": map[string]any{
 			"object": object,
@@ -459,12 +460,18 @@ func signedStripeEvent(t *testing.T, eventID string, eventType string, object ma
 	}
 	raw, err := json.Marshal(eventPayload)
 	require.NoError(t, err)
-	signed := stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
-		Payload: raw,
-		Secret:  "whsec_test_secret",
-	})
-	return signed.Payload, signed.Header
+	return signedStripePayload(raw), stripeTestHeader(raw)
 }
+
+func stripeTestHeader(payload []byte) string {
+	timestamp := "1700000000"
+	mac := hmac.New(sha256.New, []byte("whsec_test_secret"))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(payload)
+	return "t=" + timestamp + ",v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func signedStripePayload(payload []byte) []byte { return payload }
 
 func TestBillingService_CreateUserCheckout_CreatesCustomerAndCheckout(t *testing.T) {
 	t.Parallel()
@@ -1071,7 +1078,7 @@ func TestBillingService_HandleStripeWebhook_UpsertsSubscriptionProjection(t *tes
 	eventPayload := map[string]any{
 		"id":          "evt_test_123",
 		"object":      "event",
-		"api_version": stripe.APIVersion,
+		"api_version": "2025-06-30.basil",
 		"type":        "customer.subscription.updated",
 		"data": map[string]any{
 			"object": map[string]any{
@@ -1103,12 +1110,8 @@ func TestBillingService_HandleStripeWebhook_UpsertsSubscriptionProjection(t *tes
 	}
 	raw, err := json.Marshal(eventPayload)
 	require.NoError(t, err)
-	signed := stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
-		Payload: raw,
-		Secret:  "whsec_test_secret",
-	})
-
-	err = svc.HandleStripeWebhook(context.Background(), signed.Payload, signed.Header)
+	signed := signedStripePayload(raw)
+	err = svc.HandleStripeWebhook(context.Background(), signed, stripeTestHeader(signed))
 	require.NoError(t, err)
 	assert.Equal(t, "org", gotAccount.OwnerType)
 	assert.Equal(t, int64(77), gotAccount.OwnerID)
