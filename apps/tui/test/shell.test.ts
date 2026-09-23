@@ -32,6 +32,18 @@ describe("shell output", () => {
     expect(result.output.endsWith(String(2999).padStart(200, "0"))).toBe(true)
   }, 20_000)
 
+  it("settles with the kept tail when the full-output file cannot be written", async () => {
+    const result = await Shell.run({
+      command: "i=0; while [ $i -lt 3000 ]; do printf '%0200d\\n' $i; i=$((i+1)); done",
+      cwd: tmpdir(),
+      spillDir: "/nonexistent-smithers-spill-dir",
+      onOutput: () => {}
+    }).done
+    expect(result.exitCode).toBe(0)
+    expect(result.fullOutputPath).toBeUndefined()
+    expect(result.output.endsWith(String(2999).padStart(200, "0"))).toBe(true)
+  }, 20_000)
+
   it("batches a burst of output into few screen updates", async () => {
     let updates = 0
     let text = ""

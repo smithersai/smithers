@@ -85,6 +85,8 @@ export const run = (options: {
   readonly cwd: string
   readonly onOutput: (text: string) => void
   readonly env?: NodeJS.ProcessEnv
+  /** Where over-limit output goes; the temp directory unless a test says otherwise. */
+  readonly spillDir?: string
 }): Running => {
   const env = options.env ?? process.env
   const shell = env.SHELL ?? "/bin/bash"
@@ -97,9 +99,20 @@ export const run = (options: {
   let kept = ""
   let bytes = 0
   let spill: string | undefined
+  let unwritable = false
   let pending = ""
   let timer: ReturnType<typeof setTimeout> | undefined
   let cancelled = false
+  const spillDir = options.spillDir ?? tmpdir()
+  /** A full-output file that cannot be written costs only the file; the command and its tail go on. */
+  const written = (write: () => void): boolean => {
+    try {
+      write()
+      return true
+    } catch {
+      return false
+    }
+  }
   const flush = () => {
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
@@ -111,10 +124,14 @@ export const run = (options: {
   const receive = (chunk: Buffer | string) => {
     const text = redact(clean(chunk.toString()), env)
     bytes += Buffer.byteLength(text)
-    if (spill === undefined && bytes > maxBytes) {
-      spill = join(tmpdir(), `smithers-bash-${randomUUID()}.log`)
-      writeFileSync(spill, kept + text, { mode: 0o600 })
-    } else if (spill !== undefined) appendFileSync(spill, text)
+    if (spill === undefined && bytes > maxBytes && !unwritable) {
+      const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
+      if (written(() => writeFileSync(path, kept + text, { mode: 0o600 }))) spill = path
+      else unwritable = true
+    } else if (spill !== undefined && !written(() => appendFileSync(spill!, text))) {
+      spill = undefined
+      unwritable = true
+    }
     kept = (kept + text).slice(-memory)
     pending += text
     timer ??= setTimeout(flush, flushMs)
@@ -129,9 +146,9 @@ export const run = (options: {
       flush()
       const cut = tail(kept)
       let fullOutputPath = spill
-      if (cut.truncated && fullOutputPath === undefined) {
-        fullOutputPath = join(tmpdir(), `smithers-bash-${randomUUID()}.log`)
-        writeFileSync(fullOutputPath, kept, { mode: 0o600 })
+      if (cut.truncated && fullOutputPath === undefined && !unwritable) {
+        const path = join(spillDir, `smithers-bash-${randomUUID()}.log`)
+        if (written(() => writeFileSync(path, kept, { mode: 0o600 }))) fullOutputPath = path
       }
       resolve({
         command: options.command,
