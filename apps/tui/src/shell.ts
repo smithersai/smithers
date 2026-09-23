@@ -6,7 +6,7 @@
  */
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { writeFileSync } from "node:fs"
+import { appendFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -58,38 +58,84 @@ export const tail = (text: string): { readonly text: string; readonly truncated:
   return { text: kept, truncated }
 }
 
+/** An environment variable whose value is a credential by its name. */
+const secretName = /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH/i
+
+/**
+ * Masks the values of credential-named environment variables. The command
+ * runs with the person's own environment, but its output is shown, saved to
+ * the session and, for `!`, sent to the model.
+ */
+export const redact = (text: string, env: NodeJS.ProcessEnv = process.env): string => {
+  let masked = text
+  const secrets = Object.entries(env)
+    .flatMap(([name, value]) => (secretName.test(name) && value !== undefined && value.length >= 8 ? [[name, value] as const] : []))
+    .sort((a, b) => b[1].length - a[1].length)
+  for (const [name, value] of secrets) masked = masked.split(value).join(`[redacted $${name}]`)
+  return masked
+}
+
+/** Output kept in memory while a command runs; past it, only the tail stays and the rest streams to a file. */
+const memory = 4 * maxBytes
+/** Output reaches the screen at most this often. */
+export const flushMs = 50
+
 export const run = (options: {
   readonly command: string
   readonly cwd: string
   readonly onOutput: (text: string) => void
+  readonly env?: NodeJS.ProcessEnv
 }): Running => {
-  const shell = process.env.SHELL ?? "/bin/bash"
+  const env = options.env ?? process.env
+  const shell = env.SHELL ?? "/bin/bash"
   const child = spawn(shell, ["-c", options.command], {
     cwd: options.cwd,
-    env: { ...process.env, TERM: "dumb" },
+    env: { ...env, TERM: "dumb" },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true
   })
-  let full = ""
+  let kept = ""
+  let bytes = 0
+  let spill: string | undefined
+  let pending = ""
+  let timer: ReturnType<typeof setTimeout> | undefined
   let cancelled = false
-  const receive = (chunk: Buffer) => {
-    const text = clean(chunk.toString("utf8"))
-    full += text
+  const flush = () => {
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    if (pending === "") return
+    const text = pending
+    pending = ""
     options.onOutput(text)
+  }
+  const receive = (chunk: Buffer | string) => {
+    const text = redact(clean(chunk.toString()), env)
+    bytes += Buffer.byteLength(text)
+    if (spill === undefined && bytes > maxBytes) {
+      spill = join(tmpdir(), `smithers-bash-${randomUUID()}.log`)
+      writeFileSync(spill, kept + text, { mode: 0o600 })
+    } else if (spill !== undefined) appendFileSync(spill, text)
+    kept = (kept + text).slice(-memory)
+    pending += text
+    timer ??= setTimeout(flush, flushMs)
   }
   child.stdout.on("data", receive)
   child.stderr.on("data", receive)
   const done = new Promise<Result>((resolve) => {
+    let settled = false
     const settle = (exitCode: number | null) => {
-      const kept = tail(full)
-      let fullOutputPath: string | undefined
-      if (kept.truncated) {
+      if (settled) return
+      settled = true
+      flush()
+      const cut = tail(kept)
+      let fullOutputPath = spill
+      if (cut.truncated && fullOutputPath === undefined) {
         fullOutputPath = join(tmpdir(), `smithers-bash-${randomUUID()}.log`)
-        writeFileSync(fullOutputPath, full)
+        writeFileSync(fullOutputPath, kept, { mode: 0o600 })
       }
       resolve({
         command: options.command,
-        output: kept.text.replace(/\n+$/, ""),
+        output: cut.text.replace(/\n+$/, ""),
         exitCode,
         cancelled,
         ...(fullOutputPath === undefined ? {} : { fullOutputPath })
@@ -97,7 +143,7 @@ export const run = (options: {
     }
     child.on("close", (code) => settle(code))
     child.on("error", (error) => {
-      full += `${error.message}\n`
+      receive(`${error.message}\n`)
       settle(127)
     })
   })
@@ -113,6 +159,13 @@ export const run = (options: {
       }
     }
   }
+}
+
+/** What a session file keeps: a `!!` command's output stays out, like it stays out of the context. */
+export const persisted = (result: Result, excluded: boolean): Result => {
+  if (!excluded) return result
+  const { fullOutputPath: _path, ...rest } = result
+  return { ...rest, output: "" }
 }
 
 /** What the agent reads about a `!` command (pi's `bashExecution` template). */

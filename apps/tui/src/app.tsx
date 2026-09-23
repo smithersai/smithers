@@ -718,7 +718,7 @@ export function App(props: AppProps) {
     })
     setShell(running)
     void running.done.then((result) => {
-      writer.current.append({ type: "shell", at: Date.now(), result, excluded })
+      writer.current.append({ type: "shell", at: Date.now(), result: Shell.persisted(result, excluded), excluded })
       if (!excluded) entries.current.push({ kind: "shell", text: Shell.contextText(result) })
       setTranscript((current) => Transcript.shellDone(current, id, result))
       setShell(undefined)
