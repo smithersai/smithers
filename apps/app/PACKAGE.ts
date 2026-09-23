@@ -177,6 +177,7 @@ const conformance = Smithers.NodeTest({
  */
 const browserE2e = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("scripts/run-pr-e2e.mjs")),
+  timeout: "20m",
   srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.graph.config.ts"),
     Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],

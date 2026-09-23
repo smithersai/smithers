@@ -66,6 +66,7 @@ const openNode = async (page: Page, id: string): Promise<void> => {
   await node.focus()
   await expect.poll(() => framed(page, id)).toBe(true)
   await node.click()
+  await expect(drawer(page)).toHaveAttribute("data-node", id)
 }
 
 /** The zoom the canvas is at, read off the transform React Flow writes. */
