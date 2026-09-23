@@ -67,7 +67,17 @@ const selectedBase = nativeCDPEndpoint === undefined || nativeCDPEndpoint === ""
     if (!nativeWindowUrl || !nativeTargetId) {
       throw new Error("Native CDP attachment requires the packaged window URL and CDP target ID.")
     }
-    await use((await nativeTarget([context], nativeWindowUrl, nativeTargetId)).page)
+    const { page } = await nativeTarget([context], nativeWindowUrl, nativeTargetId)
+    const cdp = await context.newCDPSession(page)
+    try {
+      // The packaged matrix window stays hidden and non-activating. Its OS
+      // window cannot receive focus, but Chromium must still dispatch focus to
+      // the input used by the same keyboard scenarios as the browser modes.
+      await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true })
+      await use(page)
+    } finally {
+      await cdp.detach()
+    }
   }
 })
 

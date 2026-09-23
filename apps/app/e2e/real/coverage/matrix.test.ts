@@ -281,6 +281,10 @@ describe("deployment mode matrix", () => {
       ...row, status: state.status === "not-configured" ? "not-configured" as const : "passed" as const
     })))
     expect(matrixPasses(readiness, rows, true, false)).toBe(true)
+    expect(matrixPasses(readiness, rows, true, false, DEPLOYMENT_MODES, [
+      { tier: "deterministic", status: "passed", exitCode: 0 },
+      { tier: "local-infrastructure", status: "failed", exitCode: 1 }
+    ])).toBe(false)
     expect(matrixPasses(readiness, rows, true, true)).toBe(false)
     expect(matrixPasses(readiness, rows.slice(1), true, false)).toBe(false)
   })

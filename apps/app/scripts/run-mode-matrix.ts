@@ -129,7 +129,7 @@ for (const mode of selectedModes) {
 
 const scenarios: MatrixScenarioReceipt[] = readiness.flatMap((state) => scenarioReceipts(state, config.revision, runs))
 const report = {
-  ok: matrixPasses(readiness, scenarios, deterministicPassed, Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL), selectedModes),
+  ok: matrixPasses(readiness, scenarios, deterministicPassed, Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL), selectedModes, commands),
   generatedAt: new Date().toISOString(),
   revision: config.revision,
   command,

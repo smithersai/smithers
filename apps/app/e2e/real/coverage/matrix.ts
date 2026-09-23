@@ -345,8 +345,10 @@ export const matrixPasses = (
   scenarios: readonly MatrixScenarioReceipt[],
   deterministicPassed: boolean,
   plueConfigured: boolean,
-  requiredModes: readonly DeploymentMode[] = DEPLOYMENT_MODES
+  requiredModes: readonly DeploymentMode[] = DEPLOYMENT_MODES,
+  commands: readonly { readonly tier: string; readonly status: "passed" | "failed" | "unavailable"; readonly exitCode?: number }[] = []
 ): boolean => deterministicPassed &&
+  commands.every(({ status, exitCode }) => status === "passed" && exitCode === 0) &&
   requiredModes.length > 0 &&
   new Set(requiredModes).size === requiredModes.length &&
   requiredModes.every((mode) => DEPLOYMENT_MODES.includes(mode)) &&
