@@ -44,6 +44,8 @@ it("plans, starts and settles a run from the watch", async () => {
   expect(settled).toEqual({ kind: "done", answer: "hi" })
   expect(events).toContain("control.run.completed")
   expect((await port.events(runId)).length).toBeGreaterThan(0)
+  // A retry that finds the run already completed reads its answer from the journal.
+  expect(await port.resume(runId)).toEqual({ kind: "done", answer: "hi" })
 }, 120_000)
 
 it("marks a * envelope for approval", async () => {
@@ -54,13 +56,17 @@ it("settles a run whose input the payload schema rejects as failed", async () =>
   // Planning accepts it (the body cannot be walked); the run itself fails, and the watch says so.
   const runId = await port.start(await port.plan("echo", { text: 3 }))
   const settled = await port.watch(runId, () => {}).done
-  expect(settled.kind).toBe("failed")
+  // The cause's first line only, never its stack.
+  expect(settled).toEqual({ kind: "failed", message: "Schema validation failed" })
 }, 60_000)
 
 it("stops a running run through the control plane", async () => {
   const runId = await port.start(await port.plan("echo", { text: "stop" }))
-  await port.cancel(runId).catch(() => undefined)
-  const settled = await port.watch(runId, () => {}).done
-  // A run this small can finish before the cancel lands; either way the watch settles it.
-  expect(["cancelled", "done"]).toContain(settled.kind)
+  // `start` returns before the engine drives the run, so the stop lands first.
+  await port.cancel(runId)
+  expect(await port.watch(runId, () => {}).done).toEqual({ kind: "cancelled" })
+  expect((await port.events(runId)).map((event) => event.kind)).toContain("control.run.cancel-requested")
+  const error = await port.cancel("missing").catch((error: unknown) => error)
+  expect(error).toBeInstanceOf(FlowError)
+  expect((error as FlowError).code).toBe("control")
 }, 60_000)

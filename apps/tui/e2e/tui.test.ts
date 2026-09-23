@@ -857,6 +857,27 @@ describe("flows", () => {
     await tui.until((screen) => screen.includes("review · cancelled") && screen.includes("■ review"), 5_000, "settled from the watch")
   }, 60_000)
 
+  it("a flow form yields to chat: Esc and Ctrl+Right close it and the run stays parked", async () => {
+    const { tui } = await open()
+    await tui.type("/flow review")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form")
+    await tui.press(key.escape)
+    await tui.type("hello")
+    await tui.until((screen) => /┃\s+hello/.test(screen), 5_000, "composer after Esc")
+    await tui.press(key.ctrlC)
+    await tui.press(ctrlRight)
+    await tui.press(ctrlRight)
+    await tui.until((screen) => screen.includes("r retry"), 5_000, "flow tab")
+    await tui.type("a")
+    await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form reopened")
+    await tui.press(ctrlRight)
+    await tui.type("again")
+    await tui.until((screen) => /┃\s+again/.test(screen), 5_000, "composer after Ctrl+Right")
+    expect(tui.screen()).not.toContain("cancelled")
+    expect(tui.screen()).toContain("◌ review")
+  }, 60_000)
+
   it("offers the directory's flows in the / menu", async () => {
     const { tui } = await open()
     await tui.type("/rev")

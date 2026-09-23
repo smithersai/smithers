@@ -22,13 +22,13 @@ const pending = <A>(): Pending<A> => {
 }
 
 /** Every method records its call; the test resolves each promise or leaves it pending. */
-const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top } = {}) => {
+const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top; refuseCancel?: boolean } = {}) => {
   const calls: Array<string> = []
   const inputs: Array<Pending<Schema.Top | undefined>> = []
   const plans: Array<Pending<Card>> = []
   const starts: Array<Pending<string>> = []
   const resumes: Array<Pending<{ runId: string } | Settled>> = []
-  const watches: Array<{ done: Pending<Settled | { kind: "waiting" }>; emit: (event: unknown) => void }> = []
+  const watches: Array<{ done: Pending<Settled>; emit: (event: unknown) => void }> = []
   const auto = { input: true, plan: true, start: true }
   const listed = options.listed ?? [{ name: "review", description: "Review a change", modelInvocable: true }]
   const port: Port = {
@@ -65,7 +65,7 @@ const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top } =
     },
     watch: (runId, onEvent) => {
       calls.push(`watch:${runId}`)
-      const done = pending<Settled | { kind: "waiting" }>()
+      const done = pending<Settled>()
       watches.push({ done, emit: (event) => onEvent(event as Parameters<typeof onEvent>[0]) })
       return { done: done.promise, close: () => calls.push(`close:${runId}`) }
     },
@@ -75,6 +75,7 @@ const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top } =
     },
     cancel: async (runId) => {
       calls.push(`cancel:${runId}`)
+      if (options.refuseCancel === true) throw new Error("Cancel refused")
     },
     dispose: async () => {}
   }
@@ -166,10 +167,7 @@ describe("flow runs", () => {
     expect(f.runs.get("r1")?.status).toBe("running")
     f.watches[0]!.emit(call("control.agent.cell-call-started", 1))
     f.watches[0]!.emit(call("control.agent.cell-call-settled", 2))
-    f.watches[0]!.done.resolve({ kind: "waiting" })
-    await tick()
-    expect(f.runs.get("r1")?.status).toBe("waiting")
-    expect(f.runs.busy).toBe(true)
+    expect(f.runs.get("r1")?.status).toBe("running")
 
     const done = setup()
     done.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
@@ -204,6 +202,67 @@ describe("flow runs", () => {
     await tick()
     expect(f.runs.get("r1")?.status).toBe("cancelled")
     expect(f.runs.panel("r1").summary).toBe("Stopped.")
+  })
+
+  it("a run parked for approval keeps its watch: resumes, and a stop settles it", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.emit(call("control.run.waiting-approval", 1))
+    expect(f.runs.get("r1")?.status).toBe("waiting")
+    expect(f.runs.busy).toBe(true)
+    // Repeated approval events cannot report a resume.
+    f.watches[0]!.emit(call("control.run.waiting-approval", 2))
+    expect(f.runs.get("r1")?.status).toBe("waiting")
+    // Approved elsewhere: the same watch sees the run move on.
+    f.watches[0]!.emit(call("control.run.running", 3))
+    expect(f.runs.get("r1")?.status).toBe("running")
+    f.watches[0]!.emit(call("control.run.waiting-approval", 4))
+    expect(f.runs.get("r1")?.status).toBe("waiting")
+    f.runs.cancel("r1")
+    await tick()
+    expect(f.calls).toEqual(["discover", "input:review", "plan:review:{}", "start", "watch:run-1", "cancel:run-1"])
+    f.watches[0]!.done.resolve({ kind: "cancelled" })
+    await tick()
+    expect(f.runs.get("r1")?.status).toBe("cancelled")
+    expect(f.runs.busy).toBe(false)
+  })
+
+  it("a stop while start is in flight stops the run start launched", async () => {
+    const f = setup()
+    f.auto.start = false
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    expect(f.calls.at(-1)).toBe("start")
+    f.runs.cancel("r1")
+    expect(f.runs.get("r1")?.status).toBe("cancelled")
+    f.starts[0]!.resolve("run-1")
+    await tick()
+    expect(f.calls).toContain("cancel:run-1")
+    expect(f.calls).not.toContain("watch:run-1")
+    expect(f.runs.get("r1")?.status).toBe("cancelled")
+  })
+
+  it("a refused late stop stays visible on the cancelled run", async () => {
+    const f = setup({ refuseCancel: true })
+    f.auto.start = false
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.runs.cancel("r1")
+    f.starts[0]!.resolve("run-1")
+    await tick()
+    await tick()
+    expect(f.runs.get("r1")).toMatchObject({ status: "cancelled", runId: "run-1", message: "Cancel refused" })
+  })
+
+  it("the coordinator context bounds a run's message", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.done.resolve({ kind: "failed", message: "x".repeat(5000) })
+    await tick()
+    const [run] = JSON.parse(f.runs.context()) as Array<{ message: string }>
+    expect(run!.message.length).toBeLessThanOrEqual(500)
   })
 
   it("restore marks interrupted and retry resumes the same durable run", async () => {

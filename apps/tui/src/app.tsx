@@ -301,9 +301,12 @@ export function App(props: AppProps) {
     const open = liveForm.current
     if (open !== undefined) {
       const status = runs.get(open.id)?.status
-      if (status !== (open.approve ? "approval" : "input")) changeForm(undefined)
+      // A pending tool approval takes the keys; the run stays parked and `a` in its tab reopens the form.
+      if (status !== (open.approve ? "approval" : "input") || approvals.length > 0) changeForm(undefined)
       return
     }
+    // Never pull the keyboard away from a draft, a dialog or an approval; a later render opens it.
+    if (draft !== "" || picker !== undefined || approvals.length > 0) return
     for (const run of flowRuns) {
       const key = `${run.id}:${run.status}`
       if (!userRuns.current.has(run.id) || (run.status !== "input" && run.status !== "approval")) continue
@@ -311,7 +314,7 @@ export function App(props: AppProps) {
       formOpened.current.add(key)
       return openForm(run.id)
     }
-  }, [revision, runs, openForm, changeForm])
+  }, [revision, runs, openForm, changeForm, approvals, picker, draft])
   const snapshot = workspace.snapshot()
   const surfaces = [
     { id: "chat", title: "Chat" },
@@ -1043,10 +1046,9 @@ export function App(props: AppProps) {
       if (open.fields.length > 0) changeForm({ ...open, focus: (open.focus + step + open.fields.length) % open.fields.length })
     }
     if (key.name === "escape") {
+      // Closes only; the run stays parked (`a` in its tab reopens, `x` stops it).
       key.preventDefault()
-      changeForm(undefined)
-      if (userRuns.current.has(open.id)) runs.cancel(open.id)
-      return
+      return changeForm(undefined)
     }
     if ((key.name === "tab" && !key.shift) || key.name === "down") return move(1)
     if ((key.name === "tab" && key.shift) || key.name === "up") return move(-1)
@@ -1151,7 +1153,11 @@ export function App(props: AppProps) {
       return
     }
     const filling = liveForm.current
-    if (filling !== undefined && open === undefined) return formKey(key, filling)
+    if (filling !== undefined && open === undefined) {
+      // Palette, summary and tab switching still work: they close the form and leave the run parked.
+      if (!(key.ctrl && ["k", "s", "left", "right"].includes(key.name))) return formKey(key, filling)
+      changeForm(undefined)
+    }
     if (key.ctrl && key.name === "k") {
       // Also keeps the composer's default Ctrl+K (delete to line end) from firing.
       key.preventDefault()

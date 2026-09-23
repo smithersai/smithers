@@ -30,7 +30,8 @@ export type Settled =
   | { readonly kind: "failed"; readonly message: string }
   | { readonly kind: "cancelled" }
 export interface Watch {
-  readonly done: Promise<Settled | { readonly kind: "waiting" }>
+  /** Settles only at a terminal event; a run parked for approval keeps it open. */
+  readonly done: Promise<Settled>
   readonly close: () => void
 }
 export interface Port {
@@ -77,6 +78,8 @@ export interface Request {
 }
 
 export const interrupted = "Interrupted; retry to continue."
+/** Events the watch settles on; they never move a parked run back to running. */
+export const terminal: ReadonlySet<string> = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled", "control.run.pending"])
 const active = (run: Run) =>
   run.status === "requested" || run.status === "input" || run.status === "approval" || run.status === "running" ||
   run.status === "waiting"
@@ -231,8 +234,18 @@ export class FlowRuns {
   }
   private async launch(id: string, attempt: number, card: Card) {
     const runId = await this.options.port!.start(card)
+    if (this.attempts.get(id) !== attempt && !this.closed) return this.stopLate(id, runId)
     if (this.update(id, attempt, { status: "running", runId, message: undefined }) === undefined) return
     this.follow(id, attempt, runId)
+  }
+  /** A stop landed while `start` was in flight: stop the run it launched too. */
+  private stopLate(id: string, runId: string) {
+    this.options.port!.cancel(runId).catch((error) => {
+      const current = this.runs.get(id)
+      if (current?.status === "cancelled" && !this.closed) {
+        this.save({ ...current, runId, message: error instanceof Error ? error.message : String(error) })
+      }
+    })
   }
   private follow(id: string, attempt: number, runId: string) {
     this.events.set(id, [])
@@ -240,14 +253,13 @@ export class FlowRuns {
     const watch = this.options.port!.watch(runId, (event) => {
       if (this.attempts.get(id) !== attempt) return
       this.events.get(id)?.push(event)
-      this.changed()
+      const status = this.runs.get(id)?.status
+      if (event.kind === "control.run.waiting-approval" && status === "running") this.update(id, attempt, { status: "waiting" })
+      else if (status === "waiting" && event.kind !== "control.run.waiting-approval" && !terminal.has(event.kind)) this.update(id, attempt, { status: "running" })
+      else this.changed()
     })
     this.watches.set(id, watch)
     watch.done.then((settled) => {
-      if (settled.kind === "waiting") {
-        this.update(id, attempt, { status: "waiting" })
-        return
-      }
       this.watches.delete(id)
       this.settle(id, attempt, settled)
     }, (error) => {
@@ -382,7 +394,7 @@ export class FlowRuns {
         flow,
         status,
         answer: answer?.slice(0, 6000),
-        message
+        message: message?.slice(0, 500)
       }))
     )
   dispose = (): void => {

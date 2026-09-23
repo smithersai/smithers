@@ -58,7 +58,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | a | Activate the selected row's action, if present |
 | r, x | In a worker or flow tab: retry / stop |
 | a | In a flow tab: approve or fill in |
-| Tab, Shift+Tab, Space, Left/Right, Enter, Esc | In a flow form: move, toggle, choose, run, close (stops your run) |
+| Tab/Down, Shift+Tab/Up, Space, Left/Right, Enter, Esc | In a flow form: next, previous field, toggle, choose, run, close (the run stays parked) |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
 | PageUp, PageDown | Scroll |
 | `!cmd` | Run a shell command; its output joins the next turn's context |
@@ -166,7 +166,8 @@ default export) with their descriptions; Enter runs one. `/flow <name>` takes a
 JSON object or `key=value` arguments, as `smthrs up` does. A run starts in its
 own tab and runs through the same native control host as `smthrs up`: plan,
 approve for this run, run, watch. Missing required input opens a form built
-from the payload schema. A flow whose envelope grants every capability (`*`)
+from the payload schema once the composer is empty and no approval is pending;
+Esc, Ctrl+K, Ctrl+S and Ctrl+Left/Right close it and leave the run parked. A flow whose envelope grants every capability (`*`)
 waits for **a** (or Enter in its form) instead of starting. Its status settles
 only from the control plane's watch; **x** asks the control plane to cancel.
 

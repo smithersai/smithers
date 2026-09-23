@@ -12,15 +12,13 @@ import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Stream } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { FlowError, type Port, type Settled } from "./flows.ts"
+import { FlowError, type Port, type Settled, terminal } from "./flows.ts"
 
 type ControlEvent = ControlSchema.ControlEvent
 interface Opened {
   readonly runtime: ManagedRuntime.ManagedRuntime<Control.Control, never>
   readonly catalog: Executable.Catalog
 }
-
-const terminal = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled", "control.run.pending"])
 
 /** A control-plane or host failure as the typed error the tab shows. */
 const typed = (error: unknown): FlowError => {
@@ -92,6 +90,9 @@ export const make = (options: {
     throw typed(Cause.squash(exit.cause))
   }
 
+  const events = (runId: string): Promise<ReadonlyArray<ControlEvent>> =>
+    control((service) => service.watch({ runId, follow: false }).pipe(Stream.runCollect)).then((events) => [...events])
+
   return {
     discover: () =>
       Effect.runPromise(
@@ -146,19 +147,15 @@ export const make = (options: {
           )
         })
       ),
-    resume: (runId) =>
-      control((service) => service.resume({ runId, idempotencyKey: `tui:resume:${runId}:${Date.now()}` })).then(
-        (receipt): { runId: string } | Settled =>
-          receipt._tag === "Terminal"
-            ? receipt.status === "completed"
-              ? { kind: "done", answer: "null" }
-              : receipt.status === "cancelled"
-              ? { kind: "cancelled" }
-              : { kind: "failed", message: `Run ${receipt.status}` }
-            : "runId" in receipt && receipt.runId !== undefined
-            ? { runId: receipt.runId }
-            : { runId }
-      ),
+    resume: async (runId): Promise<{ runId: string } | Settled> => {
+      const receipt = await control((service) =>
+        service.resume({ runId, idempotencyKey: `tui:resume:${runId}:${Date.now()}` })
+      )
+      if (receipt._tag !== "Terminal") return "runId" in receipt && receipt.runId !== undefined ? { runId: receipt.runId } : { runId }
+      // The engine finished before the TUI recorded it; the answer is in the journal.
+      if (receipt.status === "completed") return { kind: "done", answer: answerOf(await events(runId)) }
+      return receipt.status === "cancelled" ? { kind: "cancelled" } : { kind: "failed", message: `Run ${receipt.status}` }
+    },
     watch: (runId, onEvent) => {
       const seen: Array<ControlEvent> = []
       let fiber: Fiber.Fiber<unknown, unknown> | undefined
@@ -174,24 +171,25 @@ export const make = (options: {
                   onEvent(event)
                 })
               ),
-              Stream.filter((event) => terminal.has(event.kind) || event.kind === "control.run.waiting-approval"),
+              Stream.filter((event) => terminal.has(event.kind)),
               Stream.runHead
             )
           )
         )
         fiber = runtime.runFork(program)
         return Effect.runPromise(Fiber.await(fiber))
-      }).then((exit): Settled | { kind: "waiting" } => {
+      }).then((exit): Settled => {
         if (Exit.isFailure(exit)) throw new FlowError("control", `Control watch failed: ${typed(Cause.squash(exit.cause)).message}`)
         const last = exit.value as { _tag: string; value?: ControlEvent }
         const event = last._tag === "Some" ? last.value : undefined
         if (event === undefined) throw new FlowError("control", "Control watch ended")
         if (event.kind === "control.run.completed") return { kind: "done", answer: answerOf(seen) }
         if (event.kind === "control.run.cancelled") return { kind: "cancelled" }
-        if (event.kind === "control.run.waiting-approval") return { kind: "waiting" }
         if (event.kind === "control.run.pending") return { kind: "failed", message: "Declined" }
         const payload = payloadOf(event)
-        return { kind: "failed", message: String(payload["cause"] ?? payload["message"] ?? "Failed") }
+        // The cause carries a stack; the tab and the coordinator get its first line.
+        const cause = Diagnosis.firstLine(String(payload["cause"] ?? payload["message"] ?? "")).trim()
+        return { kind: "failed", message: Diagnosis.clip(cause === "" ? "Failed" : cause, 200) }
       })
       return {
         done,
@@ -201,8 +199,7 @@ export const make = (options: {
         }
       }
     },
-    events: (runId) =>
-      control((service) => service.watch({ runId, follow: false }).pipe(Stream.runCollect)).then((events) => [...events]),
+    events,
     cancel: (runId) =>
       control((service) => service.cancel({ runId, idempotencyKey: `tui:cancel:${runId}`, reason: "Stopped" })).then(
         () => undefined
