@@ -16,6 +16,17 @@ export interface Model {
   readonly provider: string
 }
 
+export const delegateModels = {
+  quince: "openai:gpt-5.6-quince",
+  cerebras: Providers.defaultSeat.cerebras,
+  chat: "openai:gpt-5.6-chat",
+  gpt: "openai:gpt-5.6",
+  luna: "openai:gpt-5.6-luna",
+  sol: "openai:gpt-6-sol",
+  astra: "openai:gpt-6-astra"
+} as const
+export type DelegateModel = keyof typeof delegateModels
+
 const subscription: ReadonlyArray<Omit<Model, "provider">> = [
   { seat: "openai:gpt-6-sol", label: "GPT-6 Sol" },
   { seat: "openai:gpt-6-astra", label: "GPT-6 Astra" },

@@ -1,6 +1,7 @@
 /** Background work outlives a chat turn. Each tab has its own durable transcript. */
 import type * as Context from "./context.ts"
 import type * as Host from "./host.ts"
+import { delegateModels, type DelegateModel } from "./models.ts"
 import * as Panels from "./panels.ts"
 import * as Session from "./session.ts"
 import * as Summary from "./summary.ts"
@@ -9,6 +10,7 @@ import * as Transcript from "./transcript.ts"
 export interface Tab {
   readonly id: string
   readonly title: string
+  readonly description?: string
   readonly prompt: string
   readonly seat: string
   readonly file: string
@@ -22,6 +24,7 @@ export interface Request {
   readonly id: string
   readonly title: string
   readonly prompt: string
+  readonly model?: DelegateModel
 }
 export interface Snapshot {
   readonly tabs: ReadonlyArray<Tab>
@@ -91,7 +94,9 @@ export class Workspace {
     if (this.closed) throw new Error("Session closed")
     const existing = this.tabs.get(request.id)
     if (existing !== undefined) {
-      if (existing.prompt !== request.prompt) throw new Error("Request id already belongs to another task")
+      if (existing.prompt !== request.prompt || existing.seat !== (request.model === undefined
+        ? this.options.workerSeat
+        : delegateModels[request.model])) throw new Error("Request id already belongs to another task")
       return { id: existing.id, status: existing.status }
     }
     if ([...this.tabs.values()].filter((tab) => tab.status === "running" || tab.status === "requested").length >= 3) {
@@ -100,16 +105,27 @@ export class Workspace {
     const writer = Session.create(this.options.host.cwd, "worker")
     const tab: Tab = {
       ...request,
-      seat: this.options.workerSeat,
+      seat: request.model === undefined ? this.options.workerSeat : delegateModels[request.model],
       file: writer.file,
       status: "requested",
       startedAt: Date.now()
     }
     // Persist FIRST; a receipt here acknowledges only the request, not the launch.
     this.save(tab)
+    void this.describe(tab)
     const history = [...this.options.history()]
     queueMicrotask(() => this.launch(tab, writer, history))
     return { id: tab.id, status: "requested" }
+  }
+  private async describe(tab: Tab): Promise<void> {
+    let description = tab.title.replace(/\s+/g, " ").trim().slice(0, 80)
+    try {
+      const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, model: "luna" })
+      description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
+    } catch { /* Keep the title when Luna is unavailable. */ }
+    const current = this.tabs.get(tab.id)
+    if (current === undefined || current.file !== tab.file || this.closed) return
+    this.save({ ...current, description })
   }
   private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>) {
     if (this.closed || this.tabs.get(tab.id)?.status !== "requested") return
@@ -146,7 +162,7 @@ export class Workspace {
         }
       })
       this.handles.set(tab.id, handle)
-      this.save({ ...tab, status: "running" })
+      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "running" })
       void handle.done.then((outcome) => {
         this.handles.delete(tab.id)
         const at = Date.now()
@@ -156,7 +172,7 @@ export class Workspace {
           this.transcripts.set(tab.id, transcript)
         }
         this.save({
-          ...tab,
+          ...(this.tabs.get(tab.id) ?? tab),
           status: outcome._tag,
           endedAt: at,
           ...(outcome._tag === "done"
@@ -165,9 +181,9 @@ export class Workspace {
             ? { message: outcome.message }
             : {})
         })
-      }).catch((error) => this.save({ ...tab, status: "failed", endedAt: Date.now(), message: String(error) }))
+      }).catch((error) => this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: Date.now(), message: String(error) }))
     } catch (error) {
-      this.save({ ...tab, status: "failed", endedAt: Date.now(), message: String(error) })
+      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: Date.now(), message: String(error) })
     }
   }
   /** A worker's own transcript, for the chat timeline to interleave. */

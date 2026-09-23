@@ -9,6 +9,7 @@ import { type Tab, Workspace } from "../src/workspace.ts"
 const host: Host.Host = {
   cwd: "/work/repo",
   judged: false,
+  compaction: async () => undefined,
   dispose: async () => {},
   run: () => ({ done: new Promise(() => {}), cancel: () => {} })
 }

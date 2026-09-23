@@ -185,6 +185,7 @@ export function App(props: AppProps) {
     current: props.resume === undefined ? undefined : Session.restore(Session.load(props.resume))
   }))
   const [transcript, setTranscript] = useState(restored.current?.transcript ?? Transcript.empty)
+  const [compact, setCompact] = useState<number | undefined>()
   const [seat, setSeat] = useState(props.seat)
   const [thinking, setThinking] = useState<Editor.Thinking>(undefined)
   const [turn, setTurn] = useState<TurnState | undefined>()
@@ -887,7 +888,7 @@ export function App(props: AppProps) {
     const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs, files.current, search?.hits ?? [])
     const move = (step: number) => {
       key.preventDefault()
-      if (rows.length > 0) setPicker({ ...open, selected: (open.selected + step + rows.length) % rows.length })
+      if (rows.length > 0) setPicker((current) => current === undefined ? current : { ...current, selected: (current.selected + step + rows.length) % rows.length })
     }
     if (key.name === "escape") return setPicker(undefined)
     if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
@@ -1112,8 +1113,18 @@ export function App(props: AppProps) {
   const bashMode = draft.startsWith("!")
   const window = props.contextWindow(seat)
   const percent = window > 0 ? (transcript.usage.context / window) * 100 : 0
+  useEffect(() => {
+    let active = true
+    setCompact(undefined)
+    void props.host.compaction(transcript.usage.context, window).then((amount) => {
+      if (active) setCompact(amount)
+    })
+    return () => { active = false }
+  }, [props.host, transcript.usage.context, window, writer.current.file])
   const usage = transcript.usage
-  const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2))
+  const activeTabs = snapshot.tabs.filter((tab) => tab.status === "requested" || tab.status === "running")
+  const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
+  const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
   const rows = picker === undefined
     ? []
@@ -1127,6 +1138,16 @@ export function App(props: AppProps) {
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page}>
+      <box style={{ flexDirection: "row", width: "100%", height: "100%", justifyContent: "center" }}>
+        {showSidebar ? (
+          <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>
+            {activeTabs.map((tab) => (
+              <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}>
+                {(tab.description ?? tab.title).length > 22 ? `${(tab.description ?? tab.title).slice(0, 21)}…` : (tab.description ?? tab.title)}
+              </text>
+            ))}
+          </box>
+        ) : null}
       <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
         <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
           <text wrapMode="none">
@@ -1295,11 +1316,13 @@ export function App(props: AppProps) {
                 <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>
                   {"  "}
                   {percent.toFixed(1)}%/{Editor.tokens(window)}
+                  {compact === undefined ? "" : ` · compact ${Editor.tokens(compact)}`}
                 </span>
               )
               : null}
           </text>
         </box>
+      </box>
       </box>
       <View.ToastStack
         rows={[

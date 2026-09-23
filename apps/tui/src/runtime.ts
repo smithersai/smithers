@@ -4,10 +4,11 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as Panels from "./panels.ts"
+import type { DelegateModel } from "./models.ts"
 
 export interface Ports {
   readonly publish: (panel: Panels.Panel) => void
-  readonly delegate?: (request: { id: string; title: string; prompt: string }) => unknown
+  readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel }) => unknown
   readonly read?: (id: string) => unknown
   readonly list?: () => unknown
 }
@@ -60,7 +61,8 @@ export const source = (ports: Ports): FlowBinding.Source =>
         Schema.Struct({
           id: short,
           title: short,
-          prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_000))
+          prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_000)),
+          model: Schema.optional(Schema.Literals(["quince", "cerebras", "chat", "gpt", "luna", "sol", "astra"]))
         }),
         (input) => ports.delegate!(input)
       ),

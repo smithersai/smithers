@@ -91,6 +91,25 @@ it("registers real catalog flows and validates before publishing without invokin
   expect(published).toHaveLength(1)
 })
 
+it("accepts only named models in the delegate flow", async () => {
+  const requests: Array<unknown> = []
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    delegate: (value) => { requests.push(value); return { status: "requested" } },
+    read: () => ({}),
+    list: () => []
+  }).bindings())
+  const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
+  const input = { id: "test", title: "Test", prompt: "Test work" }
+  const call = (value: unknown) => delegate.run({ input: value } as Parameters<typeof delegate.run>[0])
+  for (const model of Object.keys(Models.delegateModels)) {
+    expect((await Effect.runPromise(call({ ...input, model }))).outcome).toBe("success")
+  }
+  expect((await Effect.runPromise(call(input))).outcome).toBe("success")
+  expect((await Effect.runPromise(call({ ...input, model: "unknown" }))).outcome).toBe("failure")
+  expect(requests).toHaveLength(8)
+})
+
 it("produces contextual hunks, preserves unchanged lines, and captures patch rename paths", () => {
   const patch = Changes.patch("math.js", "// addition\nreturn a - b\n// end\n", "// addition\nreturn a + b\n// end\n")!
   expect(patch.patch).toContain(" // addition")
@@ -146,6 +165,7 @@ const setup = (run?: Host.Host["run"]) => {
   const host: Host.Host = {
     cwd: mkdtempSync(join(tmpdir(), "tui-worker-")),
     judged: false,
+    compaction: async () => undefined,
     dispose: async () => {},
     run: run ?? ((value) => {
       launched++
@@ -183,6 +203,53 @@ const tick = async () => {
 const request = { id: "fix", title: "Fix addition", prompt: "Fix addition and run the checks." }
 
 describe("background work", () => {
+  it("caches one Luna description per tab and falls back to the title on failure", async () => {
+    const f = setup()
+    let finish!: (text: string) => void
+    const calls: Array<{ title: string; prompt: string; model: string }> = []
+    ;(f.host as { describe?: Host.Host["describe"] }).describe = (input) => {
+      calls.push(input)
+      return new Promise((resolve) => { finish = resolve })
+    }
+    f.workspace.request(request)
+    expect(f.workspace.snapshot().tabs[0]?.description).toBeUndefined()
+    f.workspace.request(request)
+    expect(calls).toEqual([{ title: request.title, prompt: request.prompt, model: "luna" }])
+    finish("  Fix   addition\n and verify " + "x".repeat(90))
+    await tick()
+    const description = f.workspace.snapshot().tabs[0]?.description
+    expect(description).toStartWith("Fix addition and verify")
+    expect(description?.includes("\n")).toBe(false)
+    expect(description?.length).toBe(80)
+    expect(Session.restore(f.records).workspace.tabs[0]?.description).toBe(description)
+    expect(calls).toHaveLength(1)
+    f.complete({ _tag: "done", answer: "Done" })
+    await tick()
+
+    const failed = setup()
+    ;(failed.host as { describe?: Host.Host["describe"] }).describe = async () => { throw new Error("Luna unavailable") }
+    failed.workspace.request(request)
+    await tick()
+    expect(failed.workspace.snapshot().tabs[0]?.description).toBe(request.title)
+    failed.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
+  it("uses the named delegate model for the worker and preserves the default seat", async () => {
+    const named = setup()
+    named.workspace.request({ ...request, model: "astra" })
+    expect(named.workspace.snapshot().tabs[0]?.seat).toBe(Models.delegateModels.astra)
+    await tick()
+    expect(named.input().seat).toBe("openai:gpt-6-astra")
+    named.complete({ _tag: "done", answer: "Done" })
+    await tick()
+
+    const defaultWorker = setup()
+    defaultWorker.workspace.request(request)
+    await tick()
+    expect(defaultWorker.input().seat).toBe("worker:test")
+    defaultWorker.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
   it("persists and acknowledges before launch, keeps running through unresolved execution, and deduplicates", async () => {
     const f = setup()
     expect(f.workspace.request(request)).toEqual({ id: "fix", status: "requested" })
@@ -225,6 +292,7 @@ describe("background work", () => {
     const f = setup()
     f.workspace.request(request)
     expect(() => f.workspace.request({ ...request, prompt: "Different work" })).toThrow("another task")
+    expect(() => f.workspace.request({ ...request, model: "sol" })).toThrow("another task")
     f.workspace.cancel("fix")
     await tick()
     expect(f.launched()).toBe(0)

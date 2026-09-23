@@ -25,8 +25,11 @@ import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Classifier from "@smthrs/model/Classifier"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
+import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import { delegateModels, type DelegateModel } from "./models.ts"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
@@ -76,6 +79,8 @@ export interface Turn {
 
 export interface Host {
   readonly cwd: string
+  readonly compaction: (used: number, window: number) => Promise<number | undefined>
+  readonly describe?: (input: { title: string; prompt: string; model: DelegateModel }) => Promise<string>
   /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
   readonly judged: boolean
   readonly run: (input: TurnInput) => Turn
@@ -156,6 +161,42 @@ export const make = (options: {
   )
   const runtime = ManagedRuntime.make(layer)
   let turns = 0
+
+  const compaction: Host["compaction"] = async (used, window) => {
+    if (!judged || used <= 0 || window <= 0) return undefined
+    const questions = {
+      amount: Classifier.choice({
+        instructions: "How much of the used context should be compacted? Choose 0 if no compaction is needed. Consider the current occupancy and leave enough context for the next turn.",
+        criteria: { "0": "none", "25": "a quarter", "50": "half", "75": "three quarters" }
+      })
+    }
+    try {
+      const response = await runtime.runPromise(Effect.gen(function*() {
+        const evaluator = yield* Evaluator.Evaluator
+        return yield* evaluator.evaluate({ state: { used, window }, questions })
+      }))
+      const answers = await Effect.runPromise(Classifier.decodeAnswers(questions, response.answers))
+      return Math.round(used * Number(answers.amount.value) / 100)
+    } catch {
+      return undefined
+    }
+  }
+
+  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, model }) => runtime.runPromise(
+    Effect.gen(function*() {
+      const seat = yield* (yield* SeatResolver.SeatResolver).resolve(delegateModels[model])
+      const events = Array.from(yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
+        modelId: delegateModels[model],
+        system: [ModelRequest.SystemPart.make({ text: "Summarize this background agent task in one short line (at most 80 characters). Reply with only the description." })],
+        messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: `Title: ${title}\nTask: ${prompt}` })])],
+        tools: [],
+        toolChoice: "none",
+        params: ModelRequest.GenerationParams.make({ maxTokens: 80 })
+      }))))
+      if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Description incomplete")
+      return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
+    })
+  )
 
   const run = (input: TurnInput): Turn => {
     const index = ++turns
@@ -272,7 +313,15 @@ export const make = (options: {
       }))
   }
 
-  return { cwd: options.cwd, judged, run, approvals, dispose: () => runtime.dispose() }
+  return {
+    cwd: options.cwd,
+    judged,
+    compaction,
+    run,
+    approvals,
+    describe: describeTab,
+    dispose: () => runtime.dispose()
+  }
 }
 
 /**
