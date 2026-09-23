@@ -90,7 +90,6 @@ interface Reactor {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface BrowserJjOptions {
   /**
@@ -335,7 +334,6 @@ const assertNoSymlinks = (fs: SyncFsLike, root: string): void => {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (options: BrowserJjOptions): Jj => create(options).jj
 
@@ -629,7 +627,6 @@ const create = (options: BrowserJjOptions): {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.succeed(Jj)(make(options))
 
@@ -641,7 +638,6 @@ export const layer = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.succe
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerScoped = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.effect(Jj)(makeScoped(options))
 
@@ -651,7 +647,6 @@ export const layerScoped = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeScoped = (options: BrowserJjOptions): Effect.Effect<Jj, never, Scope.Scope> =>
   Effect.map(
@@ -704,13 +699,11 @@ const fail = (method: string, command: string) =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerUnsupported: Layer.Layer<Jj> = Layer.succeed(Jj)({
-  // The commands named are the ones `NodeJj` would have run, so a reader of the
-  // failure sees the operation that was refused rather than a jj subcommand
-  // this package never invokes.
-  snapshot: () => fail("snapshot", "jj describe"),
+  // The commands named are the ones `layer` reports for the same operation,
+  // so a refused operation journals the same command with or without wasm.
+  snapshot: () => fail("snapshot", "jj snapshot"),
   restore: () => fail("restore", "jj restore"),
   diff: () => fail("diff", "jj diff"),
   workspaceAdd: () => fail("workspaceAdd", "jj workspace add"),

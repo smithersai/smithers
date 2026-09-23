@@ -316,7 +316,7 @@ fi
       })
     ))
 
-  it.live("holds snapshot, restore and diff together across separately built layers", () =>
+  it.live("holds snapshot, restore, diff and revert together across separately built layers", () =>
     fixture((root) =>
       Effect.gen(function*() {
         const first = yield* Effect.provide(Jj, NodeJj.layerAt(root))
@@ -324,9 +324,11 @@ fi
         yield* Effect.promise(() => writeFile(join(root, "hold"), ""))
         const snapshot = yield* Effect.forkChild(first.snapshot("held"), { startImmediately: true })
         yield* until(async () => existsSync(join(root, "started")))
-        const followers = yield* Effect.forkChild(Effect.all([second.restore("saved"), second.diff("saved", "@")], {
-          concurrency: "unbounded"
-        }))
+        const followers = yield* Effect.forkChild(
+          Effect.all([second.restore("saved"), second.diff("saved", "@"), second.revert!("saved")], {
+            concurrency: "unbounded"
+          })
+        )
         yield* Effect.sleep("100 millis")
         expect((yield* Effect.promise(() => readFile(join(root, "calls"), "utf8"))).trim().split("\n")).toHaveLength(1)
         yield* Effect.promise(() => rm(join(root, "hold")))

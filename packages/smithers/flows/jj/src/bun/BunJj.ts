@@ -17,7 +17,6 @@ import * as NodeJj from "../node/NodeJj.ts"
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<Jj, JjError> = NodeJj.layer
 

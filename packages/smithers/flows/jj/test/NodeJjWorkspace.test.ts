@@ -26,6 +26,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { isJjError, Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { budgeted } from "./budgeted.ts"
 
 const jjInstalled = (() => {
   try {
@@ -40,7 +41,7 @@ describe.skipIf(!jjInstalled)("NodeJj workspaces and restore", () => {
   let repository: string
   let previousCwd: string
 
-  const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, NodeJj.layer)
+  const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, budgeted(NodeJj.layer))
   const workspaces = () => execFileSync("jj", ["workspace", "list"], { cwd: repository, encoding: "utf8" })
 
   beforeAll(async () => {

@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { isJjError, Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { budgeted } from "./budgeted.ts"
 
 const jjInstalled = (() => {
   try {
@@ -47,7 +48,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
   let editorDirectory: string
   let editorMarker: string
 
-  const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, NodeJj.layer)
+  const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, budgeted(NodeJj.layer))
 
   beforeAll(async () => {
     previousCwd = process.cwd()
@@ -146,7 +147,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
         }),
         (target) =>
           Effect.gen(function*() {
-            const jj = yield* Effect.provide(Jj, NodeJj.layerAt(target))
+            const jj = yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(target)))
             switch (operation) {
               case "restore":
                 yield* jj.restore("@-")
@@ -215,7 +216,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
               [jj.snapshot("fiber one"), jj.snapshot("fiber two")],
               { concurrency: "unbounded" }
             )
-          }).pipe(Effect.provide(NodeJj.layerAt(target)))
+          }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
 
           expect(snapshots[0].changeId).not.toBe(snapshots[1].changeId)
 
@@ -223,7 +224,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
             const jj = yield* Jj
             yield* jj.restore(snapshots[0].changeId)
             yield* jj.restore(snapshots[1].changeId)
-          }).pipe(Effect.provide(NodeJj.layerAt(target)))
+          }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
         }),
       (target) => Effect.promise(() => rm(target, { recursive: true, force: true }))
     ))
@@ -277,7 +278,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
               yield* jj.restore(snapshot.changeId)
               expect(readFileSync(join(target, "shared.txt"), "utf8")).toBe("one state\n")
             }
-          }).pipe(Effect.provide(NodeJj.layerAt(target)))
+          }).pipe(Effect.provide(budgeted(NodeJj.layerAt(target))))
         }),
       (target) => Effect.promise(() => rm(target, { recursive: true, force: true }))
     ))
@@ -294,7 +295,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       (target) =>
         Effect.gen(function*() {
           const snapshot = yield* Effect.flatMap(Jj, (jj) => jj.snapshot("after stale lock")).pipe(
-            Effect.provide(NodeJj.layerAt(target))
+            Effect.provide(budgeted(NodeJj.layerAt(target)))
           )
 
           expect(snapshot.changeId).not.toBe("")
@@ -323,7 +324,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
           const targetBefore = current(target)
 
           yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound target")).pipe(
-            Effect.provide(NodeJj.layerAt(target))
+            Effect.provide(budgeted(NodeJj.layerAt(target)))
           )
 
           expect(current(repository)).toBe(callerBefore)
@@ -353,14 +354,14 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
           const lane = `relative-lane-${process.pid}`
 
           yield* Effect.flatMap(Jj, (jj) => jj.workspaceAdd("relative", lane)).pipe(
-            Effect.provide(NodeJj.layerAt(target))
+            Effect.provide(budgeted(NodeJj.layerAt(target)))
           )
 
           expect(existsSync(join(target, lane))).toBe(true)
           expect(existsSync(join(repository, lane))).toBe(false)
 
           yield* Effect.flatMap(Jj, (jj) => jj.workspaceForget("relative")).pipe(
-            Effect.provide(NodeJj.layerAt(target))
+            Effect.provide(budgeted(NodeJj.layerAt(target)))
           )
         }),
       (target) => Effect.promise(() => rm(target, { recursive: true, force: true }))

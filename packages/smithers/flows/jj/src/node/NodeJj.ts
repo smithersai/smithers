@@ -564,11 +564,13 @@ const operations = (run: Run, repositoryRoot?: string) => {
   const inRepository = (method: string, args: ReadonlyArray<string>) => {
     // jj can snapshot on any repository command. Keep global options before
     // the positional delimiter used to protect opaque workspace names.
+    // `--color=never` overrides a user's `ui.color = "always"`, which would
+    // otherwise wrap change ids and diffs in ANSI escapes.
     const delimiter = args.indexOf("--")
     const at = delimiter === -1 ? args.length : delimiter
     return run(
       method,
-      [...args.slice(0, at), "--config", "snapshot.max-new-file-size=0", ...args.slice(at)],
+      [...args.slice(0, at), "--color=never", "--config", "snapshot.max-new-file-size=0", ...args.slice(at)],
       repositoryRoot
     )
   }
@@ -661,7 +663,7 @@ const operations = (run: Run, repositoryRoot?: string) => {
   const root = (from: string) =>
     Effect.flatMap(
       Effect.sync(() => directoryOf(from)),
-      (directory) => Effect.map(run("root", ["root"], directory), stripLineEnding)
+      (directory) => Effect.map(run("root", ["root", "--color=never"], directory), stripLineEnding)
     )
 
   /**
@@ -678,17 +680,21 @@ const operations = (run: Run, repositoryRoot?: string) => {
     Effect.flatMap(
       requireRevision("revert", "jj revert", changeId),
       (revision) =>
-        inRepository("revert", ["diff", "-r", revision, "--name-only"]).pipe(
-          Effect.flatMap((names) =>
-            Effect.as(
-              inRepository("revert", ["revert", "-r", revision, "--insert-before", "@"]),
-              {
-                // Split on line endings only. `jj diff --name-only` emits raw
-                // unquoted bytes, so a tracked file named " lead.txt" or
-                // "trail .txt" comes back with its spaces, and trimming each
-                // line would report paths that do not exist.
-                reverted: names.split(/\r?\n/).filter((line) => line.length > 0)
-              }
+        // One fenced unit: the paths read and the revert see the same graph.
+        repositoryCritical(
+          "revert",
+          inRepository("revert", ["diff", "-r", revision, "--name-only"]).pipe(
+            Effect.flatMap((names) =>
+              Effect.as(
+                inRepository("revert", ["revert", "-r", revision, "--insert-before", "@"]),
+                {
+                  // Split on line endings only. `jj diff --name-only` emits raw
+                  // unquoted bytes, so a tracked file named " lead.txt" or
+                  // "trail .txt" comes back with its spaces, and trimming each
+                  // line would report paths that do not exist.
+                  reverted: names.split(/\r?\n/).filter((line) => line.length > 0)
+                }
+              )
             )
           )
         )
@@ -710,6 +716,11 @@ const checkedOperations = (
 ): Effect.Effect<Jj, JjError> =>
   Effect.gen(function*() {
     const binary = resolveJjBinary()
+    if (binary.ignored !== undefined) {
+      yield* Effect.logWarning(
+        `${binary.ignored.variable} names ${binary.ignored.path}, which does not exist; using ${binary.path}`
+      ).pipe(Effect.annotateLogs({ variable: binary.ignored.variable, path: binary.ignored.path }))
+    }
     const startupTimeoutMs = yield* StartupTimeoutMs
     if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0 || startupTimeoutMs > 2_147_483_647) {
       return yield* Effect.fail(

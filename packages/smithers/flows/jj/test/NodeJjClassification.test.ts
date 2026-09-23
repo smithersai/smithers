@@ -20,6 +20,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { isJjError, Jj, type JjError } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { budgeted } from "./budgeted.ts"
 
 const script = `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "jj 0.39.0"; exit 0; fi
@@ -86,7 +87,7 @@ const waitForExit = (pid: number) =>
 
 let directory: string
 
-const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, NodeJj.layerAt(directory))
+const run = <A, E>(effect: Effect.Effect<A, E, Jj>) => Effect.provide(effect, budgeted(NodeJj.layerAt(directory)))
 
 /** `Jj`'s channel names the kernel's failures too; an undecorated layer produces only jj's own. */
 const asJjError = (error: unknown): JjError => {
@@ -128,7 +129,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
       const error = yield* status("refused")
       expect(error.code).toBe("snapshot_refused")
       expect(error.message).toContain("artifact.bin")
-      expect(asJjError(error).command).toBe("jj status --config snapshot.max-new-file-size=0")
+      expect(asJjError(error).command).toBe("jj status --color=never --config snapshot.max-new-file-size=0")
     }))
 
   it.live("classifies conflict vocabulary as `conflict`", () =>
@@ -276,7 +277,9 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
       // reports a missing binary, so a bound layer pointed at a directory that
       // is gone used to answer `not_installed` with jj sitting on PATH.
       const missing = join(directory, "gone")
-      const error = yield* Effect.flip(Effect.provide(Effect.flatMap(Jj, (jj) => jj.status()), NodeJj.layerAt(missing)))
+      const error = yield* Effect.flip(
+        Effect.provide(Effect.flatMap(Jj, (jj) => jj.status()), budgeted(NodeJj.layerAt(missing)))
+      )
 
       expect(error.code).toBe("unknown")
       expect(error.message).toBe(`jj status: cannot run in ${missing}: not a directory`)
@@ -338,7 +341,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
       expect(error).toMatchObject({
         module: "NodeJj",
         method: "status",
-        command: "jj status --config snapshot.max-new-file-size=0"
+        command: "jj status --color=never --config snapshot.max-new-file-size=0"
       })
       // Refusing the output is only half the answer: the child has to be gone,
       // not left filling a pipe nobody reads.
@@ -367,7 +370,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
           expect(existsSync(started)).toBe(true)
           expect(existsSync(marker)).toBe(false)
           yield* Fiber.interrupt(fiber)
-        }).pipe(Effect.provide(NodeJj.layer))
+        }).pipe(Effect.provide(budgeted(NodeJj.layer)))
       )
       // A fixed sleep sized the absence window against an unloaded machine, so a
       // delayed write from an unkilled child could land after the window closed
@@ -409,7 +412,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
           expect(existsSync(started)).toBe(true)
           expect(existsSync(marker)).toBe(false)
           yield* Fiber.interrupt(fiber)
-        }).pipe(Effect.provide(NodeJj.layer))
+        }).pipe(Effect.provide(budgeted(NodeJj.layer)))
       )
       yield* (waitFor(marker))
 

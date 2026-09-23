@@ -3,6 +3,8 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Logger from "effect/Logger"
+import * as References from "effect/References"
 import * as TestClock from "effect/testing/TestClock"
 import { execFileSync, spawn } from "node:child_process"
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
@@ -221,6 +223,35 @@ describe("NodeJj version requirement", () => {
         const error = yield* Effect.flip(jj.status())
         expect(error).toMatchObject({ code: "unknown", method: "status" })
         expect(error.cause).toMatchObject({ code: "EACCES" })
+      })))
+
+  it.effect("warns when SMITHERS_JJ_PATH names nothing and PATH supplies jj", () =>
+    withVersion("jj 0.39.0", (root) =>
+      Effect.gen(function*() {
+        const previousPath = process.env.PATH
+        const logs: Array<{ level: string; message: string; annotations: unknown }> = []
+        const capture = Logger.make((entry) =>
+          void logs.push({
+            level: entry.logLevel,
+            message: String(entry.message),
+            annotations: entry.fiber.getRef(References.CurrentLogAnnotations)
+          })
+        )
+        try {
+          process.env.SMITHERS_JJ_PATH = join(root, "absent")
+          process.env.PATH = root
+          yield* Effect.provide(Jj, NodeJj.layer).pipe(
+            Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
+          )
+        } finally {
+          if (previousPath === undefined) delete process.env.PATH
+          else process.env.PATH = previousPath
+        }
+        expect(logs).toEqual([{
+          level: "Warn",
+          message: `SMITHERS_JJ_PATH names ${join(root, "absent")}, which does not exist; using ${join(root, "jj")}`,
+          annotations: { variable: "SMITHERS_JJ_PATH", path: join(root, "absent") }
+        }])
       })))
 
   it.effect("does not reuse an unresolved command's failure after PATH changes", () =>

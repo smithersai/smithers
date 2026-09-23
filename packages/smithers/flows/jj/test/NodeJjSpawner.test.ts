@@ -29,6 +29,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { budgeted } from "./budgeted.ts"
 
 const script = `#!/bin/sh
 case "$1" in
@@ -171,7 +172,7 @@ const missingBinary = (allowVersion = false) =>
   ).pipe(Layer.provide(realSpawner))
 
 const run = <A, E>(effect: Effect.Effect<A, E, Jj>, spawner: Layer.Layer<ChildProcessSpawner>) =>
-  Effect.provide(effect, Layer.provide(NodeJj.layerSpawnerAt(directory), spawner))
+  Effect.provide(effect, Layer.provide(budgeted(NodeJj.layerSpawnerAt(directory)), spawner))
 
 process.on("exit", () => rmSync(directory, { recursive: true, force: true }))
 
@@ -190,7 +191,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       delete process.env.SMITHERS_JJ_PATH
       try {
         // A direct probe must not satisfy the spawner's own preflight.
-        yield* Effect.provide(Jj, NodeJj.layerAt(directory))
+        yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(directory)))
         const spawner = spawnerWithPath(oldDirectory, calls)
         const jj = yield* run(Jj, spawner)
         yield* run(Jj, spawner)
@@ -208,7 +209,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
 
   it.effect("checks the version reported by each host runner even after a passing direct probe", () =>
     Effect.gen(function*() {
-      yield* Effect.provide(Jj, NodeJj.layerAt(directory))
+      yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(directory)))
       const calls: Array<EffectChildProcess.StandardCommand> = []
       const error = yield* Effect.flip(run(Jj, spawnerWithPath(directory, calls, oldBinary)))
       expect(error).toMatchObject({ code: "unsupported_version", method: "version" })
@@ -228,7 +229,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       process.chdir(trusted)
       process.env.SMITHERS_JJ_PATH = "./bin/jj"
       try {
-        const jj = yield* Effect.provide(Jj, Layer.provide(NodeJj.layerSpawnerAt(repository), realSpawner))
+        const jj = yield* Effect.provide(Jj, Layer.provide(budgeted(NodeJj.layerSpawnerAt(repository)), realSpawner))
         expect(yield* jj.status()).toBe("the working copy is clean\n")
       } finally {
         process.chdir(previousCwd)
@@ -258,7 +259,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       // spawner that executes a supported jj at that path is authoritative for
       // its own layer: it is asked, and the ambient answer never decides.
       process.env.SMITHERS_JJ_PATH = oldBinary
-      const direct = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(directory)))
+      const direct = yield* Effect.flip(Effect.provide(Jj, budgeted(NodeJj.layerAt(directory))))
       expect(direct).toMatchObject({ code: "unsupported_version", method: "version" })
       const calls: Array<EffectChildProcess.StandardCommand> = []
       const jj = yield* run(Jj, spawnerWithPath(directory, calls, join(directory, "jj")))
@@ -285,7 +286,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
   it.effect("builds the unbound spawner layer and runs operations through the host", () =>
     Effect.gen(function*() {
       const output = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
-        Effect.provide(Layer.provide(NodeJj.layerSpawner, realSpawner))
+        Effect.provide(Layer.provide(budgeted(NodeJj.layerSpawner), realSpawner))
       )
       expect(output).toBe("the working copy is clean\n")
     }))
@@ -316,7 +317,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
           // layer deliberately does not redirect it — the shim answers with
           // the directory the child actually ran in.
           const root = yield* Effect.flatMap(Jj, (jj) => jj.root!(directory)).pipe(
-            Effect.provide(Layer.provide(NodeJj.layerSpawnerAt(bound), realSpawner))
+            Effect.provide(Layer.provide(budgeted(NodeJj.layerSpawnerAt(bound)), realSpawner))
           )
 
           expect(root).toBe(realpathSync(directory))
@@ -328,7 +329,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
   it.effect("builds a repository-bound adapter over the host spawner", () =>
     Effect.gen(function*() {
       const output = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
-        Effect.provide(Layer.provide(NodeJj.layerSpawnerAt(directory), realSpawner))
+        Effect.provide(Layer.provide(budgeted(NodeJj.layerSpawnerAt(directory)), realSpawner))
       )
 
       expect(output).toBe("the working copy is clean\n")
@@ -353,7 +354,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
             // this suite's beforeEach points SMITHERS_JJ_PATH at.
             delete process.env.SMITHERS_JJ_PATH
             const spawner = spawnerWithPath(process.env.PATH ?? "")
-            const layer = Layer.provide(NodeJj.layerSpawnerAt(bound), spawner)
+            const layer = Layer.provide(budgeted(NodeJj.layerSpawnerAt(bound)), spawner)
             const current = (cwd: string) =>
               execFileSync("jj", ["log", "-r", "@", "--no-graph", "-T", "change_id.short()"], {
                 cwd,
@@ -435,7 +436,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       const missing = join(directory, "absent-root")
       const error = yield* Effect.flip(Effect.provide(
         Effect.flatMap(Jj, (jj) => jj.status()),
-        Layer.provide(NodeJj.layerSpawnerAt(missing), missingBinary(true))
+        Layer.provide(budgeted(NodeJj.layerSpawnerAt(missing)), missingBinary(true))
       ))
 
       expect(error.code).toBe("unknown")
@@ -455,7 +456,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(error).toMatchObject({
         module: "NodeJj",
         method: "status",
-        command: "jj status --config snapshot.max-new-file-size=0"
+        command: "jj status --color=never --config snapshot.max-new-file-size=0"
       })
     }))
 

@@ -228,6 +228,9 @@ Node and Bun repository commands (except `root`) disable jj's default new-file s
 included. Any command that still warns `Refused to snapshot some files` fails
 with `JjError.code = "snapshot_refused"`, even when jj exits successfully.
 
+Every Node and Bun command passes `--color=never`, so a user config that sets
+`ui.color = "always"` cannot put ANSI escapes into change ids, diffs, or roots.
+
 One invocation buffers at most 64 MiB of each output stream, counted in bytes as
 they arrive rather than in decoded characters, and past the ceiling the child is
 killed and the operation fails `unknown`. The `command` recorded on a failure is
@@ -273,7 +276,8 @@ Decides which file `jj` is, and explains the answer.
 an existing file stays authoritative even when it cannot be executed, so a
 broken explicit path is reported instead of a different binary being quietly
 substituted. An override that names nothing falls through to `PATH`, and the
-fall-through is reported in `describe()`. Existing overrides and executable
+fall-through is reported in `describe()`, and the Node and Bun layers log a
+warning annotated with the variable and path when they are built. Existing overrides and executable
 PATH candidates resolve to absolute host paths. Relative paths resolve against
 the host cwd at layer construction. Preflight and operations use the same path
 through the same runner, including when the host spawner changes PATH.

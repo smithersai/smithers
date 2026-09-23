@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url"
 import * as BrowserJj from "../src/browser/BrowserJj.ts"
 import { isJjError, Jj, type JjErrorCode } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { budgeted } from "./budgeted.ts"
 import { rootedSyncFs } from "./RootedSyncFs.ts"
 
 const wasmPath = fileURLToPath(new URL("../wasm/flows_jj.wasm", import.meta.url))
@@ -61,7 +62,7 @@ describe.skipIf(!jjInstalled || wasmBytes === undefined)("Jj layer parity", () =
       fsModule.mkdirSync(join(browserHost, "repo"))
       try {
         execFileSync("jj", ["git", "init", repository], { stdio: "ignore" })
-        const node = yield* Effect.provide(Jj, NodeJj.layerAt(repository))
+        const node = yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(repository)))
         const browser = yield* Effect.provide(
           Jj,
           BrowserJj.layer({
@@ -95,7 +96,7 @@ describe.skipIf(!jjInstalled || wasmBytes === undefined)("Jj layer parity", () =
       fsModule.mkdirSync(join(browserHost, "repo"))
       try {
         execFileSync("jj", ["git", "init", repository], { stdio: "ignore" })
-        const node = yield* Effect.provide(Jj, NodeJj.layerAt(repository))
+        const node = yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(repository)))
         const browser = yield* Effect.provide(
           Jj,
           BrowserJj.layer({ wasm: wasmBytes!, fs: rootedSyncFs(browserHost), root: "/repo" })

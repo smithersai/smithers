@@ -54,14 +54,12 @@ describe("BrowserJj", () => {
   it.effect("reports `not_installed` for every operation, naming the jj command", () =>
     Effect.gen(function*() {
       const jj = yield* (Effect.provide(Jj, BrowserJj.layerUnsupported))
-      // The command is the one `NodeJj` would have run for that operation:
-      // `snapshot` is a `jj describe`, and `restore` is `jj restore`. The old
-      // table named `jj commit` and `jj edit`, subcommands this package never
-      // invokes for either.
+      // The command is the one `BrowserJj.layer` reports for that operation,
+      // so the journaled command does not depend on whether wasm was supplied.
       const calls: ReadonlyArray<
         readonly [string, Effect.Effect<unknown, Index.JjFailure | PlatformError>, string]
       > = [
-        ["snapshot", jj.snapshot("msg"), "jj describe"],
+        ["snapshot", jj.snapshot("msg"), "jj snapshot"],
         ["restore", jj.restore("abc"), "jj restore"],
         ["diff", jj.diff("a", "b"), "jj diff"],
         ["workspaceAdd", jj.workspaceAdd("lane", "/tmp/lane"), "jj workspace add"],
