@@ -151,7 +151,7 @@ const send = async (page: Page, text: string): Promise<void> => {
 /** Exercise workspace flows after the introduction, using its existing command. */
 const finishGuide = async (page: Page): Promise<void> => {
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
-  await page.getByRole("button", { name: "Dismiss recommended actions" }).click()
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click()
 }
 
 test.beforeEach(async ({ page }) => {

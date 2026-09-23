@@ -48,7 +48,7 @@ for (const width of [900, 390]) test(`the run reads in one column at ${width}px 
   })
   await page.goto("/")
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  const dismiss = page.getByRole("button", { name: "Dismiss recommended actions", exact: true })
+  const dismiss = page.getByRole("button", { name: "Dismiss", exact: true })
   if (await dismiss.isVisible()) await dismiss.click()
   await command(page, `/runs.open ${runId} ${repo}`)
   const card = page.getByTestId(`card-flow-run-${runId}`)
