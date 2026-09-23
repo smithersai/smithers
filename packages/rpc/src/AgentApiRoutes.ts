@@ -428,7 +428,7 @@ export const MODEL_CREDENTIAL_RECEIPT_PATH = "/api/model/credential/receipt"
 export const SHARED_BACKEND_CLIENT_ROUTES = [
   { method: "GET", path: BILLING_BALANCE_PATH, capability: "billing.checkout" },
   { method: "GET", path: PUBLIC_REPOS_PATH },
-  { method: "POST", path: RECOMMEND_PATH },
-  { method: "POST", path: RECOMMEND_OUTCOME_PATH },
-  { method: "POST", path: MODEL_STREAM_PATH, capability: "identity" }
+  { method: "POST", path: RECOMMEND_PATH, capability: "recommend" },
+  { method: "POST", path: RECOMMEND_OUTCOME_PATH, capability: "recommend" },
+  { method: "POST", path: MODEL_STREAM_PATH, capability: "model.turn" }
 ] as const

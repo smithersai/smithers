@@ -45,6 +45,7 @@ var migrationRegistry = []migrationSpec{
 	{11, "migrations/0011_onboarding_and_workspace_setup.sql"},
 	{12, "migrations/0012_workflow_run_coding_hosts.sql"},
 	{13, "migrations/0013_chat_turn_erasures.sql"},
+	{14, "migrations/0014_recommendation_logs.sql"},
 }
 
 type migration struct {

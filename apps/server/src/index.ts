@@ -277,6 +277,7 @@ const handleBootstrap = (request: Request): Effect.Effect<Response, never, Serve
         agent: config.chatAuthToken !== undefined || config.chatProductServiceToken !== undefined,
         checkout: config.billingCheckoutEnabled,
         terminal: true,
+        recommend: config.aiGatewayApiKey !== undefined,
         browser: Option.isSome(egress)
       }),
       authFlow: identity ? "native-handoff" : "none",

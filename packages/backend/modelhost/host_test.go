@@ -3,8 +3,10 @@ package modelhost
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/smithersai/smithers/packages/backend/ports"
@@ -54,6 +56,39 @@ func TestHostScopesResolutionAndCleansFailedTurn(t *testing.T) {
 		OwnerID: 7, RepositoryID: 11, Request: json.RawMessage(`{"runId":"run-1"}`),
 	})
 	require.ErrorContains(t, err, "status 503")
+	require.True(t, resolved)
+	require.True(t, lease.closed)
+}
+
+func TestModelStreamUsesOwnerResolverAndPrivateHost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "/v1/model/stream", request.URL.Path)
+		require.Equal(t, "Bearer private-token", request.Header.Get("Authorization"))
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), `"ownerId":7`)
+		require.Contains(t, string(body), `"messages"`)
+		_, _ = io.WriteString(w, "{\"type\":\"delta\",\"text\":\"provider token\"}\n")
+	}))
+	defer server.Close()
+	lease := &testLease{origin: server.URL}
+	resolved := false
+	host, err := New(ResolverFunc(func(_ context.Context, ownerID, repositoryID int64, request json.RawMessage) (Binding, error) {
+		require.EqualValues(t, 7, ownerID)
+		require.EqualValues(t, 11, repositoryID)
+		require.Contains(t, string(request), `"ownerId":7`)
+		resolved = true
+		return Binding{}, nil
+	}), testLauncher{lease: lease})
+	require.NoError(t, err)
+	stream, err := host.RunModelStream(context.Background(), ports.ModelStreamGrant{
+		OwnerID: 7, RepositoryID: 11, Request: json.RawMessage(`{"messages":[{"role":"user","content":"hi"}]}`),
+	})
+	require.NoError(t, err)
+	defer stream.Close()
+	body, err := io.ReadAll(stream)
+	require.NoError(t, err)
+	require.True(t, strings.Contains(string(body), "provider token"))
 	require.True(t, resolved)
 	require.True(t, lease.closed)
 }

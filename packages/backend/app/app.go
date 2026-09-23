@@ -67,6 +67,9 @@ type Config struct {
 	// ChatProducerBaseURL is the URL of ChatCallbackListener reachable from
 	// the selected model host. It is required for hosted workers.
 	ChatProducerBaseURL string
+	Recommender         ports.Recommender
+	RecommendationLog   ports.RecommendationLog
+	ModelStreamHost     ports.ModelStreamHost
 }
 
 type Role = compose.Role
@@ -133,6 +136,9 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 			ChatHost:              cfg.ChatHost,
 			ChatCallbackListener:  cfg.ChatCallbackListener,
 			ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
+			Recommender:           cfg.Recommender,
+			RecommendationLog:     cfg.RecommendationLog,
+			ModelStreamHost:       cfg.ModelStreamHost,
 		}, func(handler http.Handler) {
 			ready <- handler
 		}))
@@ -175,6 +181,9 @@ func Run(ctx context.Context, cfg Config) error {
 		ChatHost:              cfg.ChatHost,
 		ChatCallbackListener:  cfg.ChatCallbackListener,
 		ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
+		Recommender:           cfg.Recommender,
+		RecommendationLog:     cfg.RecommendationLog,
+		ModelStreamHost:       cfg.ModelStreamHost,
 	}))
 }
 

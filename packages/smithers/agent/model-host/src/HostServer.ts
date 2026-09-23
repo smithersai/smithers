@@ -5,11 +5,12 @@
  */
 import type * as Model from "@smthrs/model/Model"
 import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
-import type { FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
 import { z } from "zod"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import { runModelTurn } from "./ModelTurnHost.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
 /** The model host wire protocol identifier.
@@ -24,6 +25,8 @@ export const MODEL_HOST_PROTOCOL = "smithers.chat-model-host/v1"
  * @since 1.0.0-rc.0
  */
 export const MODEL_HOST_TURN_PATH = "/v1/chat/turn"
+/** The authenticated sealed model stream endpoint. */
+export const MODEL_HOST_STREAM_PATH = "/v1/model/stream"
 /** The protocol identity endpoint.
  *
  * @category protocol
@@ -131,6 +134,14 @@ const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant 
   }
 }
 
+const streamRequest = (value: unknown): StartAgentTurnRequest | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const body = value as Record<string, unknown>
+  if (typeof body.runId !== "string" || !Array.isArray(body.messages)) return undefined
+  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  return { ...body, instructions: typeof body.instructions === "string" ? body.instructions : "" } as StartAgentTurnRequest
+}
+
 const boundedJson = async (request: Request): Promise<unknown | undefined> => {
   const length = Number(request.headers.get("content-length") ?? "0")
   if (!Number.isFinite(length) || length < 0 || length > 2 * 1024 * 1024) return undefined
@@ -157,6 +168,40 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
     if (url.pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
       return Response.json({ protocol: MODEL_HOST_PROTOCOL })
     }
+		if (url.pathname === MODEL_HOST_STREAM_PATH) {
+			if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+			if (request.headers.get("authorization") !== `Bearer ${options.authorization}`) {
+				return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
+			}
+			const body = streamRequest(await boundedJson(request))
+			if (body === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
+			const wireBody = body as unknown as Record<string, unknown>
+			const ownerId = typeof wireBody.ownerId === "number" && Number.isSafeInteger(wireBody.ownerId)
+				? wireBody.ownerId : 0
+			const grant: DurableChatGrant = {
+				turnId: `model-stream-${body.runId}`,
+				ownerId,
+				runId: body.runId,
+				legId: body.runId,
+				generation: 1,
+				token: "model_stream_model_stream_model_stream_1234",
+				cursor: { version: 1, runId: body.runId, legId: body.runId, batch: 0, position: 0, hash: "0".repeat(64) },
+				expiresAt: new Date(Date.now() + 60_000).toISOString(),
+				request: body,
+				producerBaseUrl: callbackBaseUrl
+			}
+			try {
+				const resolved = await Effect.runPromise(options.resolve(grant), { signal: request.signal })
+				const frames: Array<AgentTurnFrame> = []
+				await Effect.runPromise(runModelTurn(resolved.model, body, resolved.options, (frame) => Effect.sync(() => { frames.push(frame) })), { signal: request.signal })
+				return new Response(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""), {
+					status: 200,
+					headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
+				})
+			} catch {
+				return Response.json({ status: "error", code: "stream_failed" }, { status: 502 })
+			}
+		}
     if (url.pathname !== MODEL_HOST_TURN_PATH) return new Response("Not found", { status: 404 })
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
     if (request.headers.get("authorization") !== `Bearer ${options.authorization}`) {

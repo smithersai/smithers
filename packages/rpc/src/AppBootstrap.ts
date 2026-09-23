@@ -29,6 +29,7 @@ export const APP_BOOTSTRAP_PATH = "/api/bootstrap"
 export const RuntimeCapabilitySchema = z.enum([
   "agent",
   "model.turn", // sealed turns on a configured model, independent of the default agent
+  "recommend", // provider-backed command recommendations
   "browser.read", // guarded, pinned HTTPS page reads on this host
   "identity",
   "github", // GitHub OAuth and import are configured on this host

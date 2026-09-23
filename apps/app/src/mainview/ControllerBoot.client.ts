@@ -81,7 +81,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
           repositoryApp: requested ?? undefined,
           frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true }),
           // The next-step recommender (state/Recommend.ts) is opt-in here, the one real composition root.
-          recommender: { enabled: true },
+          recommender: { enabled: hasCapability(bootstrap, "recommend") },
           ...(runtime.shell.kind === "native" ? { openExternal: runtime.shell.openExternal } : {})
         }
       )

@@ -4,13 +4,17 @@
 package modelhost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
@@ -86,6 +90,67 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 		return err
 	}
 	return transport.RunChatTurn(ctx, grant)
+}
+
+// RunModelStream uses the same owner resolver and short-lived local host as a
+// durable chat turn, but asks the host for a sealed NDJSON response directly.
+// The provider credential remains inside the launched host process.
+func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGrant) (stream io.ReadCloser, runErr error) {
+	if grant.OwnerID <= 0 {
+		return nil, errors.New("model stream has no authenticated owner")
+	}
+	var request map[string]any
+	if err := json.Unmarshal(grant.Request, &request); err != nil {
+		return nil, errors.New("model stream request is invalid")
+	}
+	runID := uuid.NewString()
+	request["runId"] = runID
+	request["ownerId"] = grant.OwnerID
+	requestBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode model stream request: %w", err)
+	}
+	binding, err := host.resolver.ResolveChatModel(ctx, grant.OwnerID, grant.RepositoryID, requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("resolve owner model: %w", err)
+	}
+	chatGrant := ports.ChatTurnGrant{
+		TurnID: "model-stream-" + runID, OwnerID: grant.OwnerID, RepositoryID: grant.RepositoryID,
+		RunID: runID, LegID: runID, Generation: 1, Token: "model-stream",
+		ExpiresAt: time.Now().Add(15 * time.Minute), Request: requestBody, ProducerBaseURL: "http://127.0.0.1",
+	}
+	lease, err := host.launcher.LaunchChatHost(ctx, chatGrant, binding)
+	if err != nil {
+		return nil, fmt.Errorf("launch owner model host: %w", err)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+		defer cancel()
+		runErr = errors.Join(runErr, lease.Close(cleanupCtx))
+	}()
+	baseURL, client, token := lease.Endpoint()
+	endpoint := strings.TrimRight(baseURL, "/") + "/v1/model/stream"
+	requestHTTP, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	requestHTTP.Header.Set("content-type", "application/json")
+	requestHTTP.Header.Set("authorization", "Bearer "+token)
+	response, err := client.Do(requestHTTP)
+	if err != nil {
+		return nil, fmt.Errorf("run model stream: %w", err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return nil, fmt.Errorf("model stream host refused request with status %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	response.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read model stream: %w", err)
+	}
+	return io.NopCloser(bytes.NewReader(body)), nil
 }
 
 // Close releases any launcher's retained cleanup work after dispatcher drain.

@@ -26,6 +26,7 @@ export interface CloudCapabilityEnv {
   readonly agent: boolean
   readonly checkout: boolean
   readonly terminal: boolean
+  readonly recommend?: boolean
 }
 
 /** What a Bun launch has configured. `cloud` is the cloud upstream; offline launches have none.
@@ -37,6 +38,7 @@ export interface LocalCapabilityOptions {
   readonly agent: boolean
   readonly identity: boolean
   readonly cloud: boolean
+  readonly recommend?: boolean
 }
 
 const present = (rows: ReadonlyArray<readonly [RuntimeCapability, boolean]>): Array<RuntimeCapability> =>
@@ -53,7 +55,8 @@ export const cloudCapabilities = (env: CloudCapabilityEnv): Array<RuntimeCapabil
     ["identity", env.identity],
     ["cloud", env.cloud],
     ["billing.checkout", env.checkout],
-    ["cloud.terminal", env.terminal]
+    ["cloud.terminal", env.terminal],
+    ["recommend", env.recommend === true]
   ])
 
 /**
@@ -71,5 +74,6 @@ export const localCapabilities = (opts: LocalCapabilityOptions): Array<RuntimeCa
     ["identity", opts.identity],
     ["cloud", opts.cloud],
     ["cloud.terminal", opts.cloud],
-    ["cloud.pat", opts.cloud]
+    ["cloud.pat", opts.cloud],
+    ["recommend", opts.recommend === true]
   ])

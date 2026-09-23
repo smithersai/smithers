@@ -4,7 +4,7 @@ import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import { Effect, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
-import { createModelTurnHandler, MODEL_HOST_PROTOCOL } from "../src/HostServer.ts"
+import { createModelTurnHandler, MODEL_HOST_PROTOCOL, MODEL_HOST_STREAM_PATH } from "../src/HostServer.ts"
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
 const grant = {
@@ -80,6 +80,39 @@ describe("model host HTTP binding", () => {
     const health = await handler(new Request("http://host.test/health"))
     expect(await health.json()).toEqual({ protocol: MODEL_HOST_PROTOCOL })
   })
+})
+
+test("the authenticated model stream emits provider frames through the configured owner model", async () => {
+  let resolvedOwner = 0
+  const handler = createModelTurnHandler({
+    authorization: "host-token",
+    callbackBaseUrl: "http://callback.test",
+    resolve: (accepted) => {
+      resolvedOwner = accepted.ownerId
+      return Effect.succeed({
+        model: Model.make({ stream: () => Stream.fromIterable([
+          { type: "text-delta", id: "t", text: "provider token" } as const,
+          { type: "settle", stopReason: "stop" } as const
+        ]) }),
+        options: { modelId: "fixture" }
+      })
+    }
+  })
+  const body = JSON.stringify({
+    runId: "run-stream", ownerId: 42, instructions: "summarize", messages: [{ role: "user", content: "hi" }]
+  })
+  const refused = await handler(new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, { method: "POST", body }))
+  expect(refused.status).toBe(401)
+  const response = await handler(new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, {
+    method: "POST", headers: { authorization: "Bearer host-token", "content-type": "application/json" }, body
+  }))
+  expect(response.status).toBe(200)
+  expect(resolvedOwner).toBe(42)
+  const frames = (await response.text()).trim().split("\n").map((line) => JSON.parse(line))
+  expect(frames).toEqual([
+    { runId: "run-stream", type: "delta", kind: "text", text: "provider token" },
+    { runId: "run-stream", type: "done", reason: "stop" }
+  ])
 })
 
 const options = {

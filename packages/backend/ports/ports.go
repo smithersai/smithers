@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -17,6 +18,55 @@ import (
 )
 
 var ErrModelCredentialMissing = errors.New("model credential is missing")
+
+// RecommendationCommand is one command the client offered to the decision
+// model. The model may only return names from this set.
+type RecommendationCommand struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+}
+
+type RecommendationTailMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
+
+type RecommendationRequest struct {
+	Repo     *string                     `json:"repo"`
+	Tail     []RecommendationTailMessage `json:"tail"`
+	Commands []RecommendationCommand     `json:"commands"`
+	Model    json.RawMessage             `json:"model,omitempty"`
+}
+
+type RecommendationResult struct {
+	Commands []string `json:"commands"`
+	Model    string   `json:"model"`
+}
+
+// Recommender is the deployment-provided decision model. Implementations own
+// provider credentials; the HTTP route only supplies bounded product input.
+type Recommender interface {
+	Recommend(context.Context, RecommendationRequest) (RecommendationResult, error)
+}
+
+// RecommendationLog persists the receipt that pairs a recommendation with
+// the next command the user runs.
+type RecommendationLog interface {
+	AppendRecommendation(context.Context, RecommendationRequest, RecommendationResult, string) (string, error)
+	RecordRecommendationOutcome(context.Context, string, string, time.Time) (int, error)
+}
+
+// ModelStreamHost runs a sealed, non-tool model request in the same owner
+// scoped model host used by durable chat turns.
+type ModelStreamHost interface {
+	RunModelStream(context.Context, ModelStreamGrant) (io.ReadCloser, error)
+}
+
+type ModelStreamGrant struct {
+	OwnerID      int64
+	RepositoryID int64
+	Request      json.RawMessage
+}
 
 // RepositoryEndpointResolver chooses the storage/execution endpoint for a
 // repository. The common repository client still owns its operation protocol;

@@ -35,6 +35,7 @@ type bootstrapFeatures struct {
 	github           bool
 	agent            bool
 	modelTurn        bool
+	recommend        bool
 	workspace        bool
 	terminal         bool
 	billingCheckout  bool
@@ -65,6 +66,9 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.modelTurn {
 		result.Capabilities = append(result.Capabilities, "model.turn")
+	}
+	if features.recommend {
+		result.Capabilities = append(result.Capabilities, "recommend")
 	}
 	if features.workspace {
 		result.Capabilities = append(result.Capabilities, "cloud")

@@ -114,6 +114,9 @@ type Options struct {
 	ChatHost              ports.ChatHost
 	ChatCallbackListener  net.Listener
 	ChatProducerBaseURL   string
+	Recommender           ports.Recommender
+	RecommendationLog     ports.RecommendationLog
+	ModelStreamHost       ports.ModelStreamHost
 }
 
 // Role selects only process responsibilities. Every role assembles the same
@@ -1449,6 +1452,23 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		repoGatewayHandler = nil
 	}
 
+	publicCatalog := routes.NewPublicRepositoryCatalog(queries)
+	var recommendationHandler *routes.RecommendationHandler
+	recommendationLog := options.RecommendationLog
+	if options.Recommender != nil && recommendationLog == nil {
+		recommendationLog = routes.NewPostgresRecommendationLog(pool)
+	}
+	if options.Recommender != nil && recommendationLog != nil {
+		recommendationHandler = routes.NewRecommendationHandler(options.Recommender, recommendationLog)
+	}
+	var modelStreamHandler *routes.ModelStreamHandler
+	modelStreamHost := options.ModelStreamHost
+	if modelStreamHost == nil {
+		modelStreamHost, _ = options.ChatHost.(ports.ModelStreamHost)
+	}
+	if modelStreamHost != nil {
+		modelStreamHandler = routes.NewModelStreamHandler(modelStreamHost)
+	}
 	router := buildRouter(
 		cfg,
 		queries,
@@ -1525,6 +1545,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		alertRemediationWorker != nil,
+		routerExtras{Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
 	)
 	if flow != nil && options.Role.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
@@ -1565,7 +1586,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		github:       gitHubImportHandler != nil && strings.TrimSpace(cfg.Auth.GitHubClientID) != "",
 		// A configured model turn is available only when the durable journal
 		// routes are mounted; it does not imply a separate agent executor.
-		modelTurn:        chatService != nil && options.Role.servesHTTP(),
+		modelTurn:        modelStreamHandler != nil && options.Role.servesHTTP(),
+		recommend:        recommendationHandler != nil && options.Role.servesHTTP(),
 		workspace:        options.Workspace != nil && options.Role.servesHTTP(),
 		terminal:         options.Workspace != nil && options.Role.servesHTTP(),
 		billingCheckout:  billingComposition.Service != nil,

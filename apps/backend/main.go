@@ -16,6 +16,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/localbootstrap"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
 	"github.com/smithersai/smithers/packages/backend/native"
+	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/postgres"
 	"github.com/smithersai/smithers/packages/backend/process"
 )
@@ -97,6 +98,13 @@ func run(ctx context.Context, args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
+	var recommender ports.Recommender
+	if key := strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")); key != "" {
+		recommender, err = modelhost.NewJevRecommender(key, os.Getenv("SMITHERS_JEV_ENDPOINT"), nil)
+		if err != nil {
+			return fmt.Errorf("configure recommender: %w", err)
+		}
+	}
 
 	appConfig := app.Config{
 		Role:             app.RoleLocal,
@@ -105,6 +113,7 @@ func run(ctx context.Context, args []string) (runErr error) {
 		Workspace:        workspaceRuntime,
 		FlowHostRegistry: &registry,
 		ChatHost:         chatHost,
+		Recommender:      recommender,
 	}
 	if nativeBin != "" {
 		stateRoot := strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))

@@ -29,6 +29,12 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
+type routerExtras struct {
+	Recommender *routes.RecommendationHandler
+	ModelStream *routes.ModelStreamHandler
+	Catalog     *routes.PublicRepositoryCatalogHandler
+}
+
 func buildRouter(
 	cfg *config.Config,
 	queries *db.Queries,
@@ -104,8 +110,21 @@ func buildRouter(
 	linearHandler *routes.LinearIntegrationHandler,
 	gitHubWebhookHandler *routes.GitHubWebhookHandler,
 	smithersMetrics *routes.SmithersMetrics,
-	alertRemediationReady ...bool,
+	routerOptions ...any,
 ) *chi.Mux {
+	alertRemediationReady := false
+	var extras routerExtras
+	for _, option := range routerOptions {
+		switch value := option.(type) {
+		case bool:
+			alertRemediationReady = value
+		case routerExtras:
+			extras = value
+		}
+	}
+	if extras.Catalog == nil {
+		extras.Catalog = routes.NewPublicRepositoryCatalog(queries)
+	}
 	r := chi.NewRouter()
 	// Fleet routes are available only when the hosted assembly supplied its
 	// runner handler. Their SQL belongs to the deployment adapter.
@@ -273,7 +292,7 @@ func buildRouter(
 		alertIncidentService = clusterservices.NewAlertIncidentService(clusterQueries, nil, clusterservices.WithAlertTransactions())
 	}
 	if alertWebhookHandler := routes.NewAlertWebhookHandler(os.Getenv("SMITHERS_ALERT_WEBHOOK_SIGNING_KEY")); alertWebhookHandler != nil {
-		ready := len(alertRemediationReady) > 0 && alertRemediationReady[0]
+		ready := alertRemediationReady
 		if hosted && queries != nil {
 			// Recording the incident must NOT depend on the remediation worker.
 			// It used to: with alertRemediation.enabled=false (the deliberate
@@ -645,7 +664,9 @@ func buildRouter(
 	// vocabulary it is actually running. Unauthenticated and read-only for the
 	// same reason /api/health is: it is a published contract.
 	r.Get("/api/meta/failure-codes", routes.FailureCodes)
-	r.Get("/api/public/repos", routes.PublicRepositoryCatalog)
+	if extras.Catalog != nil {
+		r.Get("/api/public/repos", extras.Catalog.ServeHTTP)
+	}
 	if billingHandler != nil {
 		r.With(
 			middleware.JSONTimeout(30*time.Second),
@@ -952,9 +973,13 @@ func buildRouter(
 		}
 		r.Use(apiCSRFMiddleware)
 		r.Use(middleware.ExcludePaths(middleware.GlobalAPIRateLimit(queries), "/api/search/", "/api/_test/", "/api/telemetry/", "/api/auth/github/token-exchange"))
-		r.Post("/recommend", routes.Recommend)
-		r.Post("/recommend/outcome", routes.RecommendOutcome)
-		r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/model/stream", routes.ModelStream)
+		if extras.Recommender != nil {
+			r.Post("/recommend", extras.Recommender.Recommend)
+			r.Post("/recommend/outcome", extras.Recommender.Outcome)
+		}
+		if extras.ModelStream != nil {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/model/stream", extras.ModelStream.ServeHTTP)
+		}
 
 		if strings.EqualFold(os.Getenv("SMITHERS_ENABLE_E2E_TEST_ROUTES"), "true") {
 			r.Get("/_test/panic", routes.MiddlewarePanic)
