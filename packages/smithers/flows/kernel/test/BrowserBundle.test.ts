@@ -1,11 +1,12 @@
 import { build } from "esbuild"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 describe("browser bundle", () => {
   it("resolves the complete root dependency graph without Node built-ins", async () => {
     const result = await build({
       bundle: true,
-      entryPoints: [new URL("../src/index.ts", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       external: [
         "effect",
         "effect/*"

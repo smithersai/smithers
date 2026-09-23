@@ -1,11 +1,12 @@
 import { build } from "esbuild"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 describe("browser bundle", () => {
   it("bundles the root without Node built-ins", async () => {
     const result = await build({
       entryPoints: ["src/index.ts"],
-      absWorkingDir: new URL("..", import.meta.url).pathname,
+      absWorkingDir: fileURLToPath(new URL("..", import.meta.url)),
       bundle: true,
       platform: "browser",
       format: "esm",

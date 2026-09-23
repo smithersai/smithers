@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
 
 it("serves the shared authenticated gateway protocol on Bun", async () => {
   const { stdout } = await promisify(execFile)(
     "bun",
-    [new URL("./fixtures/bun-gateway.ts", import.meta.url).pathname],
+    [fileURLToPath(new URL("./fixtures/bun-gateway.ts", import.meta.url))],
     {
       timeout: 60_000,
       maxBuffer: 1024 * 1024
